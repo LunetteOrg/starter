@@ -1,11 +1,5 @@
 {
   "permissions": {
-    "deny": [
-      "Read(_bmad/**)",
-      "Glob(_bmad/**)",
-      "Grep(_bmad/**)",
-      "Edit(_bmad/**)",
-      "Write(_bmad/**)"
-    ]
+    "deny": []
   }
 }
