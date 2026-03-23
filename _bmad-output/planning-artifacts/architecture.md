@@ -91,7 +91,29 @@ CI pipeline order: `migrate → test → deploy`
 | Tech Story | Merge freely to main — no user surface | None |
 | User Story | Merge behind feature flag | Flag on staging → PO sign off → flag on prod |
 
-Trunk-based: all branches max 1-2 days. Conventional commits enforced via commitlint + Lefthook.
+Trunk-based: all branches max 1-2 days. Conventional commits enforced via commitlint + Lefthook. Squash and merge — 1 story = 1 commit on main.
+
+**Branch Naming Convention:**
+```
+{type}/{story-id}/{short-slug}
+```
+
+| Segment | Values | Example |
+|---|---|---|
+| `type` | `feat`, `fix`, `chore`, `refactor`, `docs` | `feat` |
+| `story-id` | Epic + story number from epics list | `E1-S01` |
+| `short-slug` | 2-4 word kebab-case description | `project-scaffolding` |
+
+Examples:
+- `feat/E1-S01/project-scaffolding`
+- `fix/E2-S03/auth-token-refresh`
+- `chore/E1-S02/ci-pipeline-setup`
+
+Rules:
+- Lowercase only, hyphens and slashes as separators
+- No usernames in branch names — `git blame` covers attribution
+- Keep slug to 3-4 words max
+- For tech stories without a story ID, use `chore/no-story/short-slug`
 
 ### Feature Flag Lifecycle
 ```

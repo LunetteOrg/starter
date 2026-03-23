@@ -6,13 +6,15 @@ TypeScript monorepo starter template. See `_bmad-output/planning-artifacts/archi
 
 ## Conventions
 
-Source of truth: `docs/conventions.md`
+Source of truth: `CONTRIBUTING.md`
 
 ### Branch Naming
 
 ```
-story/<epic>.<story>-<short-description>
+{type}/{story-id}/{short-slug}
 ```
+
+Examples: `feat/E0-S02/biome-lefthook`, `chore/no-story/fix-typo`
 
 ### Commits
 
@@ -39,4 +41,4 @@ Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`
 - Architecture: `_bmad-output/planning-artifacts/architecture.md`
 - Epics & Stories: `_bmad-output/planning-artifacts/epics-and-stories.md`
 - BMAD skills: `.claude/skills/`
-- Conventions: `docs/conventions.md`
+- Contributing: `CONTRIBUTING.md`
