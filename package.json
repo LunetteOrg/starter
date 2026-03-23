@@ -1,6 +1,7 @@
 {
   "name": "starter",
   "private": true,
+  "type": "module",
   "scripts": {
     "build": "turbo run build",
     "dev": "docker compose up -d && turbo run dev",
@@ -15,6 +16,10 @@
     "db:generate": "turbo run db:generate"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.8",
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
+    "lefthook": "^2.1.4",
     "turbo": "^2.8.20",
     "typescript": "5.9.2"
   },
