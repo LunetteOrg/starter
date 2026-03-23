@@ -1,0 +1,25 @@
+{
+  "name": "starter",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "docker compose up -d && turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "setup": "pnpm install && pnpm infra:up && pnpm db:migrate",
+    "db:migrate": "turbo run db:migrate",
+    "db:generate": "turbo run db:generate"
+  },
+  "devDependencies": {
+    "turbo": "^2.8.20",
+    "typescript": "5.9.2"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}
