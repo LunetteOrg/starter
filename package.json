@@ -2,6 +2,7 @@
   "name": "starter",
   "private": true,
   "scripts": {
+    "preinstall": "npx only-allow pnpm",
     "build": "turbo run build",
     "dev": "docker compose up -d && turbo run dev",
     "lint": "turbo run lint",
