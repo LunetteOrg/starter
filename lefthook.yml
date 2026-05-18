@@ -1,0 +1,12 @@
+pre-commit:
+  commands:
+    lint:
+      run: pnpm turbo lint --filter=...[origin/main] -- --write
+      stage_fixed: true
+    typecheck:
+      run: pnpm turbo typecheck --filter=...[origin/main]
+
+commit-msg:
+  commands:
+    commitlint:
+      run: pnpm commitlint --edit {1}

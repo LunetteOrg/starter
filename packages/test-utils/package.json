@@ -1,0 +1,27 @@
+{
+  "name": "@starter/test-utils",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./plugin": "./src/plugin.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@testcontainers/postgresql": "^10.25.0",
+    "glob": "^11.0.0",
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.9",
+    "testcontainers": "^10.25.0"
+  },
+  "devDependencies": {
+    "@starter/typescript-config": "workspace:*",
+    "typescript": "5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

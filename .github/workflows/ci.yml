@@ -1,0 +1,77 @@
+name: CI
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - name: Cache Turbo
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/turbo
+          key: turbo-${{ github.sha }}
+          restore-keys: turbo-
+      - run: pnpm turbo lint typecheck test
+
+  # TODO: abilitare quando esiste un'app target con test e2e (Playwright).
+  # Aggiorna `--filter=@starter/<app>` sui comandi `playwright install` e `db:migrate`,
+  # e qualunque env var richiesta dall'app (SESSION_SECRET, ecc.).
+  e2e:
+    if: false
+    runs-on: ubuntu-latest
+    needs: [ci]
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: starter
+          POSTGRES_PASSWORD: starter
+          POSTGRES_DB: starter
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - name: Restore Turbo cache
+        uses: actions/cache/restore@v4
+        with:
+          path: node_modules/.cache/turbo
+          key: turbo-${{ github.sha }}
+          restore-keys: turbo-
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ hashFiles('pnpm-lock.yaml') }}
+      - run: pnpm exec playwright install --with-deps chromium firefox
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+      - run: pnpm exec playwright install-deps chromium firefox
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+      - run: pnpm turbo db:migrate
+        env:
+          DATABASE_URL: postgresql://starter:starter@localhost:5432/starter
+      - run: pnpm turbo build test:e2e
+        env:
+          DATABASE_URL: postgresql://starter:starter@localhost:5432/starter
+          NODE_ENV: test

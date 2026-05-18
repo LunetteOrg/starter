@@ -1,0 +1,4 @@
+{
+  "extends": "@starter/typescript-config/browser.json",
+  "include": ["src"]
+}

@@ -1,5 +1,32 @@
 {
+  "editor.defaultFormatter": "biomejs.biome",
+  "editor.formatOnSave": true,
+  "[typescript]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
   "search.exclude": {
     "_bmad/**": true
-  }
+  },
+  "files.associations": {
+    "**/typescript-config/*.json": "jsonc"
+  },
+  "json.schemas": [
+    {
+      "fileMatch": ["turbo.json"],
+      "url": "https://turborepo.dev/schema.json"
+    }
+  ],
+  "js/ts.tsdk.path": "node_modules/typescript/lib"
 }
