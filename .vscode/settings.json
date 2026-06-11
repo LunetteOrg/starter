@@ -16,9 +16,6 @@
   "[jsonc]": {
     "editor.defaultFormatter": "biomejs.biome"
   },
-  "search.exclude": {
-    "_bmad/**": true
-  },
   "files.associations": {
     "**/typescript-config/*.json": "jsonc"
   },
