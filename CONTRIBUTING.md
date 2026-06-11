@@ -10,21 +10,20 @@ pnpm dev            # daily — infra up + all apps in watch mode
 ## Branch Naming
 
 ```
-{type}/{story-id}/{short-slug}
+{type}/{issue-id}/{short-slug}
 ```
 
 | Segment | Values | Example |
 |---|---|---|
 | `type` | `feat`, `fix`, `chore`, `refactor`, `docs` | `feat` |
-| `story-id` | Epic + story number from epics list | `E1-S01` |
+| `issue-id` | Tracker issue number, or `no-issue` | `42` |
 | `short-slug` | 2-4 word kebab-case description | `project-scaffolding` |
 
 Examples:
 
-- `feat/E1-S01/project-scaffolding`
-- `fix/E2-S03/auth-token-refresh`
-- `chore/E1-S02/ci-pipeline-setup`
-- `chore/no-story/update-deps` (for work without a story ID)
+- `feat/42/project-scaffolding`
+- `fix/57/auth-token-refresh`
+- `chore/no-issue/update-deps` (for work without an issue)
 
 ## Commits
 
@@ -56,7 +55,7 @@ chore: bump drizzle-kit to 0.22
 - Never import framework (RR7) in domain packages
 - Use `context.app` in routes — never import use cases directly
 
-Violations are caught by **Biome `noRestrictedImports`** in CI.
+Violations are caught twice: **Biome `noRestrictedImports`** (pre-commit + CI) and per-app **architecture tests** (`app/arch.spec.ts`, built on `@starter/test-utils`). See [ADR-0004](./docs/adr/0004-import-boundaries-enforcement.md).
 
 ## Error Handling
 
@@ -76,4 +75,4 @@ Trunk-based development: all branches max **1-2 days**.
 
 ## Further Reading
 
-Full architecture decisions and patterns are documented in [`_bmad-output/planning-artifacts/architecture.md`](./_bmad-output/planning-artifacts/architecture.md).
+Architectural decisions are recorded as ADRs in [`docs/adr/`](./docs/adr/README.md). Significant architectural changes should land together with a new ADR.

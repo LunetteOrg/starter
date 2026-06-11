@@ -26,6 +26,8 @@ Il CLI è [`@lntt/create`](https://www.npmjs.com/package/@lntt/create) ([sorgent
 ## Cosa c'è dentro
 
 - **Tooling**: Biome (lint+format), Lefthook (pre-commit lint+typecheck, commit-msg commitlint), pnpm 10.16.1, Turbo 2.x
+- **Enforcement architetturale**: import boundaries per layer via Biome `noRestrictedImports` (domain/use-cases/routes, glob su `apps/*`), ban di `Date` a favore di `Temporal`, plugin GritQL per i test e2e, helper per architecture test in `@starter/test-utils` — vedi [ADR-0004](./docs/adr/0004-import-boundaries-enforcement.md)
+- **ADR**: decisioni architetturali in [`docs/adr/`](./docs/adr/README.md)
 - **Pacchetti condivisi** (`packages/`):
   - `@starter/biome-config` — preset Biome
   - `@starter/typescript-config` — `base.json` + `browser.json` (strict ES2024)
