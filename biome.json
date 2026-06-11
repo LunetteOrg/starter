@@ -1,7 +1,133 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.9/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
   "extends": ["./packages/biome-config/biome.json"],
   "files": {
-    "includes": ["**", "!**/dist/**", "!**/build/**", "!**/.react-router/**", "!**/_bmad/**", "!**/_bmad-output/**"]
-  }
+    "includes": [
+      "!**/dist",
+      "!**/build",
+      "!**/.react-router",
+      "!**/*.grit",
+      "!packages/test-utils/src/__fixtures__"
+    ]
+  },
+  "overrides": [
+    {
+      "includes": ["apps/*/app/**/*.ts", "apps/*/app/**/*.tsx", "!**/*.spec.ts", "!**/*.test.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "Date": "Use Temporal instead of Date. See ADR-0002."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/*/app/domain/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "react-router": "Framework forbidden in domain. Domain must stay pure (ADR-0004).",
+                  "#app/lib": "Lib forbidden in domain. Use injected interfaces only (ADR-0004)."
+                },
+                "patterns": [
+                  {
+                    "group": ["react-router/*", "react-router/**"],
+                    "message": "Framework forbidden in domain. Domain must stay pure (ADR-0004)."
+                  },
+                  {
+                    "group": ["#app/lib/*", "#app/lib/**"],
+                    "message": "Lib forbidden in domain. Use injected interfaces only (ADR-0004)."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/*/app/use-cases/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "react-router": "Framework forbidden in use-cases (ADR-0004).",
+                  "#app/lib/db": "DB forbidden in use-cases. Inject repository interfaces (ADR-0004)."
+                },
+                "patterns": [
+                  {
+                    "group": ["react-router/*", "react-router/**"],
+                    "message": "Framework forbidden in use-cases (ADR-0004)."
+                  },
+                  {
+                    "group": ["#app/lib/db/*", "#app/lib/db/**"],
+                    "message": "DB forbidden in use-cases. Inject repository interfaces (ADR-0004)."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/*/app/routes/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "#app/use-cases": "Use context.app.useCases instead (ADR-0004).",
+                  "#app/domain": "Use context.app instead (ADR-0004).",
+                  "#app/lib/db": "DB forbidden in routes (ADR-0004).",
+                  "#app/bootstrap": "Use context.app in routes, never import bootstrap directly (ADR-0004)."
+                },
+                "patterns": [
+                  {
+                    "group": ["#app/use-cases/*", "#app/use-cases/**"],
+                    "message": "Use context.app.useCases instead (ADR-0004)."
+                  },
+                  {
+                    "group": ["#app/domain/*", "#app/domain/**"],
+                    "message": "Use context.app instead (ADR-0004)."
+                  },
+                  {
+                    "group": ["#app/lib/db/*", "#app/lib/db/**"],
+                    "message": "DB forbidden in routes (ADR-0004)."
+                  },
+                  {
+                    "group": ["#app/bootstrap/*", "#app/bootstrap/**"],
+                    "message": "Use context.app in routes, never import bootstrap directly (ADR-0004)."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/*/__tests__/**/*.e2e.ts"],
+      "plugins": [
+        "./packages/biome-config/no-implicit-e2e-sync.grit",
+        "./packages/biome-config/no-react-internals.grit"
+      ]
+    }
+  ]
 }
