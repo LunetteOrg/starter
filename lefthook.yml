@@ -10,3 +10,18 @@ commit-msg:
   commands:
     commitlint:
       run: pnpm commitlint --edit {1}
+
+# I git worktree nascono senza node_modules: pnpm cerca i bin nel .bin locale
+# (assente) e gli hook di commit falliscono. Qui, alla nascita di un worktree,
+# installiamo le dipendenze hardlinkando dallo store globale — così lint,
+# typecheck e commitlint girano nel worktree esattamente come nel main, e ogni
+# worktree può divergere sulle proprie dipendenze.
+post-checkout:
+  commands:
+    ensure-node-modules:
+      run: |
+        # main worktree: git-dir e common-dir coincidono (nei worktree linkati
+        # il git-dir è .git/worktrees/<nome>, il common-dir resta .git)
+        [ "$(git rev-parse --absolute-git-dir)" = "$(git rev-parse --path-format=absolute --git-common-dir)" ] && exit 0
+        [ -e node_modules ] && exit 0      # già presente: no-op
+        pnpm install --prefer-offline
