@@ -23,6 +23,7 @@ Architectural decisions for this starter are recorded as ADRs — one decision p
 | [0015](./0015-storybook-design-system.md) | Storybook as the showcase for `packages/ui` | accepted |
 | [0016](./0016-self-arming-template-enforcement.md) | Self-arming enforcement for scaffolded apps | accepted |
 | [0017](./0017-dark-theme-semantic-token-scope.md) | Dark theme via semantic-token scope | accepted |
+| [0018](./0018-turbo-passthrough-all-env.md) | Turbo passes through all env vars | accepted |
 
 ## Writing a new ADR
 
