@@ -15,7 +15,7 @@
   "dependencies": {
     "@testcontainers/postgresql": "^10.25.0",
     "glob": "^11.0.0",
-    "drizzle-orm": "^0.45.2",
+    "drizzle-orm": "1.0.0-rc.4",
     "postgres": "^3.4.9",
     "testcontainers": "^10.25.0"
   },
