@@ -1,75 +1,125 @@
 ---
 name: party
-description: Convene a multi-persona round-table (BMAD-style "party mode") to brainstorm, pressure-test, or design a decision from several expert lenses at once. Interactive and stateful — stays in party mode across turns until the user exits. Use when the user asks for party mode, a round-table, a panel, or wants several perspectives at once on a problem/feature/trade-off.
+description: Run a multi-agent expert panel on a decision — fan out one independent agent per concern (architect, backend, design-system, QA, release), then synthesize their positions, disagreements, and candidate ADRs. Workflow-backed and one-shot (NOT an interactive chat). Use when the user asks for a panel, a multi-agent review, or genuinely independent perspectives on a problem, feature, or trade-off.
 ---
 
-# Party mode
+# Party — multi-agent panel
 
-A facilitated round-table of expert personas tailored to this starter. The point
-is **diverse, opinionated, grounded** input — real disagreement and trade-offs,
-not a chorus of agreement. Recreate BMAD's party mode: a group chat the user
-drives, in their language (Italian here unless they switch).
+A **Workflow-backed** expert panel. Unlike a single model wearing many hats, this
+fans out **real independent subagents** (separate contexts), so disagreement is
+genuine, not theatre. It is **one-shot and non-interactive**: the user poses a
+topic, the panel deliberates in the background, and you relay a synthesis. To go
+deeper, the user refines the topic and re-runs — there is no live back-and-forth.
 
-## The roster
+Invoking this skill **is** the user's explicit opt-in to multi-agent
+orchestration (the Workflow tool's gate). Each run spawns ~6 agents — real cost;
+don't run it for trivial questions where a single answer suffices.
 
-Each persona owns a **concern**, not a fixed set of ADR numbers. Speak in
-character, short and concrete, and cite the relevant ADR/file when a claim is
-repo-specific — but **look the ADR up at runtime** (see "Grounding"); never
-hardcode or assume a number.
+## How to run it
 
-- 🏛 **Ada — Architect.** Layering, import boundaries, composition root,
-  dependency direction, ADR stewardship. Asks "which layer, who injects what".
-- ⚙️ **Bruno — Backend/Domain.** Domain purity, use-cases, typed errors,
-  time/date handling, persistence & schema migrations, jobs/cron. Asks "where's
-  the side effect, and what's the error contract".
-- 🎨 **Dana — Design System.** `packages/ui`, Storybook, design tokens, a11y,
-  CSS Modules. Asks "is there a token for that? a story?".
-- 🧪 **Quinn — QA/Test.** Testing strategy, arch tests, e2e, fixtures, the
-  no-mock-the-DB rule. Asks "how do we know it works, and at which layer".
-- 🚀 **Remo — Release/DevOps.** Build pipeline, CI, git hooks, secrets, deploy,
-  runtime lifecycle. Asks "what breaks in CI/prod".
-- 📋 **Pia — Facilitator/Product.** Keeps focus, plays devil's advocate to
-  stress-test, converges, and extracts the outcome. Does not pad.
+1. Take the topic from the invocation args. If none was given, ask the user what
+   decision the panel should weigh in on (one question), then proceed.
+2. Call the **Workflow** tool with the script below, passing the topic via `args`.
+3. When it completes, relay the synthesis to the user as the panel's verdict —
+   lead with the decision and the *genuine disagreements*, not a bland summary.
 
-## How it runs
+## The roster (one independent agent per lens)
 
-1. **On invocation** (`/party [topic]`): Pia opens with a one-line framing of the
-   topic. If no topic was given, Pia asks what we're here to decide.
-2. **Only relevant personas speak each turn** — whoever genuinely has something to
-   add. Do not force all six to talk; silence beats noise.
-3. **Format** each line as `🏛 Ada (Architect): …`. Keep turns tight (1–4 sentences
-   each). Encourage explicit disagreement and trade-offs; surface tensions rather
-   than smoothing them. No false consensus.
-4. **The user drives.** They can address one persona (`@Bruno …` or "Bruno, …"),
-   ask the room, or push back. Honor direct addresses first.
-5. **Grounding (evolutive).** When a point depends on this repo's reality, check
-   the source before asserting — party mode is opinion *grounded in the code*,
-   not vibes. The ADR set changes (ADRs get added, renumbered, superseded), so a
-   persona who wants to cite a decision **reads `docs/adr/README.md` and the
-   relevant ADR now**, by topic, and cites what it actually finds. Never recite
-   an ADR number from memory or from this file.
-6. **Stay in party mode** across turns until the user exits — keep convening the
-   room on each of their messages.
+Concerns, not ADR numbers — each agent reads the repo (docs/adr/, code) to ground
+its take at runtime:
 
-## Converging & exit
+- **architect** — layering, import boundaries, composition root, dependency direction.
+- **backend** — domain purity, use-cases, typed errors, time/date, persistence & migrations, jobs.
+- **design-system** — packages/ui, Storybook, design tokens, a11y, CSS Modules.
+- **qa** — testing strategy, arch tests, e2e, fixtures, no-mock-the-DB.
+- **release** — build pipeline, CI, git hooks, secrets, deploy, runtime lifecycle.
 
-When the user asks to wrap up, says "exit party" / "esci dalla party", or the
-discussion has clearly resolved, **Pia closes** with a compact summary:
+Include the lenses relevant to the topic; you may drop one that's clearly
+irrelevant, but keep at least three for a real spread.
 
+## Workflow script (pass topic via args)
+
+```js
+export const meta = {
+  name: 'party-panel',
+  description: 'Independent multi-agent expert panel on a decision',
+  phases: [{ title: 'Panel' }, { title: 'Synthesis' }],
+}
+
+const TOPIC = typeof args === 'string' ? args : args?.topic
+if (!TOPIC) throw new Error('party-panel: no topic provided in args')
+
+const PERSONAS = [
+  { key: 'architect', lens: 'layering, import boundaries, composition root, dependency direction, ADR stewardship' },
+  { key: 'backend', lens: 'domain purity, use-cases, typed errors, time/date handling, persistence & schema migrations, jobs/cron' },
+  { key: 'design-system', lens: 'packages/ui, Storybook, design tokens, a11y, CSS Modules' },
+  { key: 'qa', lens: 'testing strategy, arch tests, e2e, fixtures, the no-mock-the-DB rule' },
+  { key: 'release', lens: 'build pipeline, CI, git hooks, secrets, deploy, runtime lifecycle' },
+]
+
+const VERDICT = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['lens', 'position', 'risks', 'recommendation', 'candidateAdrs', 'confidence'],
+  properties: {
+    lens: { type: 'string' },
+    position: { type: 'string', description: 'this lens’s independent take on the topic' },
+    risks: { type: 'array', items: { type: 'string' } },
+    recommendation: { type: 'string' },
+    candidateAdrs: { type: 'array', items: { type: 'string' }, description: 'decisions that should become ADRs' },
+    confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
+  },
+}
+
+const SYNTH = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['decision', 'consensus', 'disagreements', 'actionItems', 'candidateAdrs'],
+  properties: {
+    decision: { type: 'string', description: 'recommended decision, or the key open choice if unresolved' },
+    consensus: { type: 'array', items: { type: 'string' } },
+    disagreements: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['point', 'sides'],
+        properties: { point: { type: 'string' }, sides: { type: 'string', description: 'who argues what' } },
+      },
+    },
+    actionItems: { type: 'array', items: { type: 'string' } },
+    candidateAdrs: { type: 'array', items: { type: 'string' } },
+  },
+}
+
+phase('Panel')
+const takes = (await parallel(PERSONAS.map((p) => () =>
+  agent(
+    `You sit on an expert panel reviewing this decision:\n\n"${TOPIC}"\n\n` +
+    `Your lens: ${p.lens}. Ground every claim in THIS repo — read docs/adr/ and the relevant code before asserting; cite files/ADRs you actually find. ` +
+    `Give your INDEPENDENT position. Do not hedge to agree with other lenses — you work in isolation and disagreement is valuable. ` +
+    `Surface the real risks and a concrete recommendation.`,
+    { label: `panel:${p.key}`, phase: 'Panel', schema: VERDICT },
+  ).then((v) => (v ? { ...v, lens: p.key } : null)),
+))).filter(Boolean)
+
+phase('Synthesis')
+const synthesis = await agent(
+  `Synthesize this independent expert panel on:\n\n"${TOPIC}"\n\n` +
+  `Panel inputs (JSON): ${JSON.stringify(takes)}\n\n` +
+  `Produce: the recommended decision (or the key open choice if genuinely unresolved), points of real consensus, ` +
+  `the genuine disagreements (name which lens argues what — do NOT manufacture agreement), action items, and candidate ADRs. ` +
+  `Faithfully preserve dissent; a split panel is a valid outcome.`,
+  { schema: SYNTH, phase: 'Synthesis' },
+)
+
+return { topic: TOPIC, panel: takes, synthesis }
 ```
-## Party wrap-up — <topic>
-**Decisions:** …
-**Open questions:** …
-**Action items:** owner → task
-**Candidate ADRs:** <title> — why (hand off to `adr-check` / write via docs/adr/template.md)
-```
 
-Then return to normal mode. Never write files from party mode — it produces
-decisions and recommendations; turning them into ADRs/code is a separate step.
+## Relaying the result
 
-## Guardrails
-
-- Personas are lenses, not gatekeepers — they advise; the user decides.
-- Don't roleplay so hard it obscures substance; the value is the reasoning.
-- If a persona's area isn't touched by the topic, they stay quiet.
-- Keep it to this roster unless the user asks to add a guest voice.
+Present the synthesis clearly: **Decision** first, then **Disagreements** (the
+most valuable part — independent agents that diverge), then **Action items** and
+**Candidate ADRs** (hand off to `adr-check` or write via `docs/adr/template.md`).
+Don't bury the dissent under consensus. Never write files from here — the panel
+produces recommendations; acting on them is a separate step.
