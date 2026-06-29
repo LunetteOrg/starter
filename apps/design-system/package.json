@@ -7,7 +7,8 @@
     "dev": "storybook dev -p 6006 --no-open",
     "build": "storybook build -o build",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check ."
+    "lint": "biome check .",
+    "lint:fix": "biome check . --write"
   },
   "dependencies": {
     "react": "^19.2.0",

@@ -5,5 +5,13 @@
   "exports": {
     "./tokens.css": "./tokens.css",
     "./fonts.css": "./fonts.css"
+  },
+  "scripts": {
+    "lint": "stylelint \"**/*.css\"",
+    "lint:fix": "stylelint \"**/*.css\" --fix"
+  },
+  "devDependencies": {
+    "@starter/stylelint-config": "workspace:*",
+    "stylelint": "^17.14.0"
   }
 }

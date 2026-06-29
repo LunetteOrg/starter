@@ -19,7 +19,7 @@
    */
 
   /* Neutrals */
-  --color-neutral-0: #ffffff;
+  --color-neutral-0: #fff;
   --color-neutral-50: #f8fafc;
   --color-neutral-100: #f1f5f9;
   --color-neutral-200: #e2e8f0;
@@ -44,6 +44,7 @@
   --color-fg: var(--color-neutral-900);
   --color-fg-muted: var(--color-neutral-500);
   --color-border: var(--color-neutral-200);
+
   /* @tokens-end */
 
   /**
@@ -59,6 +60,7 @@
   --spacing-8: 2rem;
   --spacing-12: 3rem;
   --spacing-16: 4rem;
+
   /* @tokens-end */
 
   /**
@@ -70,6 +72,7 @@
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
   --radius-full: 9999px;
+
   /* @tokens-end */
 
   /**
@@ -78,6 +81,7 @@
    */
   --font-family-sans: var(--font-sans-stack);
   --font-family-mono: var(--font-mono-stack);
+
   /* @tokens-end */
 
   /**
@@ -90,6 +94,7 @@
   --font-size-lg: 1.125rem;
   --font-size-xl: 1.5rem;
   --font-size-2xl: 2rem;
+
   /* @tokens-end */
 
   /**
@@ -99,6 +104,7 @@
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-bold: 700;
+
   /* @tokens-end */
 
   /**
@@ -108,14 +114,16 @@
   --line-height-tight: 1.25;
   --line-height-normal: 1.5;
   --line-height-relaxed: 1.75;
+
   /* @tokens-end */
 
   /**
    * @tokens Shadows
    * @presenter Shadow
    */
-  --shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(15 23 42 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(15 23 42 / 0.1);
+  --shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 5%);
+  --shadow-md: 0 4px 6px -1px rgb(15 23 42 / 10%);
+  --shadow-lg: 0 10px 15px -3px rgb(15 23 42 / 10%);
+
   /* @tokens-end */
 }
