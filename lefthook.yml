@@ -10,6 +10,11 @@ commit-msg:
   commands:
     commitlint:
       run: pnpm commitlint --edit {1}
+    # Strip AI co-authorship noise from the message (keeps commits clean).
+    # Runs after commitlint (alphabetical order); git trims the trailing blank
+    # line the removed trailer leaves behind.
+    strip-coauthor:
+      run: grep -ivE '^(Co-authored-by:|🤖 Generated with)' {1} > {1}.tmp && mv {1}.tmp {1}
 
 # I git worktree nascono senza node_modules: pnpm cerca i bin nel .bin locale
 # (assente) e gli hook di commit falliscono. Qui, alla nascita di un worktree,

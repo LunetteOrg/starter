@@ -26,6 +26,9 @@ Examples: `feat/42/otp-login`, `chore/no-issue/fix-typo`
 
 Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`
 
+No `Co-Authored-By:` trailers or "Generated with …" lines in commit messages —
+keep them clean. The `commit-msg` hook strips them as a backstop (`lefthook.yml`).
+
 ### Workflow
 
 - Trunk-based, one PR per story, branches max 1-2 days
