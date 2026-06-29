@@ -20,7 +20,10 @@ jobs:
           path: node_modules/.cache/turbo
           key: turbo-${{ github.sha }}
           restore-keys: turbo-
-      - run: pnpm turbo lint typecheck test
+      # `build` is included so a broken build fails the PR, not a laptop later
+      # (ADR-0007). Today it builds the Storybook (design-system); it covers each
+      # app's build for free the moment one is scaffolded.
+      - run: pnpm turbo lint typecheck test build
 
   # TODO: abilitare quando esiste un'app target con test e2e (Playwright).
   # Aggiorna `--filter=@starter/<app>` sui comandi `playwright install` e `db:migrate`,

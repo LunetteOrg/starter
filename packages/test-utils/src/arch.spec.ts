@@ -50,6 +50,46 @@ describe('getImports', () => {
     })
   })
 
+  // Regression guard (ADR-0004): boundaries must not be launderable through
+  // re-exports or type-only imports. These forms all carry `from '...'`, so the
+  // current `from`-based scan catches them. If any of these ever fail, that is
+  // the signal to replace the regex scan with a TS-AST walk — not to relax the
+  // assertion.
+  describe('re-export and type-only import detection', () => {
+    it('captures `export *` and `export { } from` specifiers', async () => {
+      const imports = await getImports(`${FIXTURES}/reexport.ts`)
+      const fileImports = imports.get(resolve(FIXTURES, 'reexport.ts'))
+      expect(fileImports).toContain('~/domain/reexported-all')
+      expect(fileImports).toContain('~/domain/reexported-named')
+    })
+
+    it('captures `import type ... from` specifiers', async () => {
+      const imports = await getImports(`${FIXTURES}/type-import.ts`)
+      const fileImports = imports.get(resolve(FIXTURES, 'type-import.ts'))
+      expect(fileImports).toContain('~/domain/type-only')
+    })
+
+    it('fails a boundary check on a forbidden re-export', async () => {
+      await expect(
+        assertLayerBoundaries({
+          pattern: `${FIXTURES}/reexport.ts`,
+          layer: 'domain',
+          forbidden: [/~\/domain\//],
+        }),
+      ).rejects.toThrow(/domain violation/)
+    })
+
+    it('fails a boundary check on a forbidden type-only import', async () => {
+      await expect(
+        assertLayerBoundaries({
+          pattern: `${FIXTURES}/type-import.ts`,
+          layer: 'domain',
+          forbidden: [/~\/domain\//],
+        }),
+      ).rejects.toThrow(/domain violation/)
+    })
+  })
+
   describe('error handling', () => {
     it('throws when no files match', async () => {
       await expect(getImports(`${FIXTURES}/nonexistent/**/*.ts`)).rejects.toThrow(

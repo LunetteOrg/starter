@@ -21,6 +21,8 @@ Architectural decisions for this starter are recorded as ADRs — one decision p
 | [0013](./0013-use-case-composition.md) | Use-case composition in the composition root | accepted |
 | [0014](./0014-design-tokens-css-custom-properties.md) | Design tokens as CSS custom properties | accepted |
 | [0015](./0015-storybook-design-system.md) | Storybook as the showcase for `packages/ui` | accepted |
+| [0016](./0016-self-arming-template-enforcement.md) | Self-arming enforcement for scaffolded apps | accepted |
+| [0017](./0017-dark-theme-semantic-token-scope.md) | Dark theme via semantic-token scope | accepted |
 
 ## Writing a new ADR
 
