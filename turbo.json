@@ -1,7 +1,7 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "ui": "tui",
-  "globalPassThroughEnv": ["CI", "NODE_ENV"],
+  "globalPassThroughEnv": ["*"],
   "tasks": {
     "lint": { "outputs": [], "cache": false },
     "lint:fix": { "outputs": [], "cache": false },
