@@ -24,6 +24,7 @@ Architectural decisions for this starter are recorded as ADRs — one decision p
 | [0016](./0016-self-arming-template-enforcement.md) | Self-arming enforcement for scaffolded apps | accepted |
 | [0017](./0017-dark-theme-semantic-token-scope.md) | Dark theme via semantic-token scope | accepted |
 | [0018](./0018-turbo-passthrough-all-env.md) | Turbo passes through all env vars | accepted |
+| [0019](./0019-migration-safety-guard.md) | Mechanized migration-safety guard | accepted |
 
 ## Writing a new ADR
 

@@ -14,3 +14,8 @@ export {
   withTestDb,
 } from './db'
 export { defineFixture } from './fixtures'
+export {
+  assertNoMigrationSafetyViolations,
+  checkMigration,
+  type MigrationViolation,
+} from './migration-safety'

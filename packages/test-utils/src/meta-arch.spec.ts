@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { glob } from 'glob'
@@ -26,16 +26,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(__dirname, '../../..')
 const APPS_DIR = resolve(REPO_ROOT, 'apps')
 
+async function appsWithLayer(): Promise<string[]> {
+  const appDirs = await glob('*/', { cwd: APPS_DIR, absolute: true })
+  return appDirs.map((dir) => resolve(dir)).filter((dir) => existsSync(resolve(dir, 'app')))
+}
+
 describe('per-app architecture enforcement', () => {
   it('every app with an app/ layer ships an app/arch.spec.ts', async () => {
-    const appDirs = await glob('*/', {
-      cwd: APPS_DIR,
-      absolute: true,
-    })
-
-    const offenders = appDirs
-      .map((dir) => resolve(dir))
-      .filter((dir) => existsSync(resolve(dir, 'app')))
+    const offenders = (await appsWithLayer())
       .filter((dir) => !existsSync(resolve(dir, 'app/arch.spec.ts')))
       .map((dir) => resolve(dir, 'app/arch.spec.ts'))
 
@@ -44,6 +42,22 @@ describe('per-app architecture enforcement', () => {
       `Missing per-app architecture test(s). Copy ` +
         `packages/test-utils/templates/layer.arch.spec.ts.template into:\n` +
         offenders.map((f) => `  - ${f}`).join('\n'),
+    ).toEqual([])
+  })
+
+  // Presence alone is gameable: an empty or commented-out arch.spec.ts would
+  // pass the check above while enforcing nothing. Require it to actually invoke
+  // the boundary assertion, so the net cannot be silently defeated (ADR-0016).
+  it('each app/arch.spec.ts actually invokes assertLayerBoundaries', async () => {
+    const offenders = (await appsWithLayer())
+      .map((dir) => resolve(dir, 'app/arch.spec.ts'))
+      .filter((file) => existsSync(file))
+      .filter((file) => !readFileSync(file, 'utf-8').includes('assertLayerBoundaries'))
+
+    expect(
+      offenders,
+      `These arch.spec.ts files don't call assertLayerBoundaries (they enforce ` +
+        `nothing):\n${offenders.map((f) => `  - ${f}`).join('\n')}`,
     ).toEqual([])
   })
 })

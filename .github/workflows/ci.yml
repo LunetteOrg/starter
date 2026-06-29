@@ -6,6 +6,9 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    # `test` spins up a Testcontainers Postgres; cap the job so a hung image
+    # pull or container start fails fast instead of running to the default.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

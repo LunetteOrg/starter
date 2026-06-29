@@ -17,9 +17,11 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 export function Button({ variant = 'primary', style, ...props }: ButtonProps) {
+  // brand-700 (not brand-500) on neutral-0 clears WCAG AA (≈6.5:1); brand-500
+  // would be ~3.7:1 and fail. Keep the exemplar accessible by default.
   const palette =
     variant === 'primary'
-      ? { bg: 'var(--color-brand-500)', fg: 'var(--color-neutral-0)' }
+      ? { bg: 'var(--color-brand-700)', fg: 'var(--color-neutral-0)' }
       : { bg: 'var(--color-bg-muted)', fg: 'var(--color-fg)' }
 
   return (

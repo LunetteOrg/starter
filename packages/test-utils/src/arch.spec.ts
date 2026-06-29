@@ -51,22 +51,30 @@ describe('getImports', () => {
   })
 
   // Regression guard (ADR-0004): boundaries must not be launderable through
-  // re-exports or type-only imports. These forms all carry `from '...'`, so the
-  // current `from`-based scan catches them. If any of these ever fail, that is
-  // the signal to replace the regex scan with a TS-AST walk — not to relax the
-  // assertion.
-  describe('re-export and type-only import detection', () => {
-    it('captures `export *` and `export { } from` specifiers', async () => {
+  // re-exports, type-only imports, or side-effect imports. Re-exports and type
+  // imports carry `from '...'`; side-effect imports (`import '~/x'`) carry no
+  // `from` and are caught by a separate scan. If any of these ever fail, that
+  // is the signal to replace the regex scan with a TS-AST walk — not to relax
+  // the assertion.
+  describe('re-export, type-only, and side-effect import detection', () => {
+    it('captures `export *`, `export { } from`, and `export { default as }`', async () => {
       const imports = await getImports(`${FIXTURES}/reexport.ts`)
       const fileImports = imports.get(resolve(FIXTURES, 'reexport.ts'))
       expect(fileImports).toContain('~/domain/reexported-all')
       expect(fileImports).toContain('~/domain/reexported-named')
+      expect(fileImports).toContain('~/domain/default-reexport')
     })
 
     it('captures `import type ... from` specifiers', async () => {
       const imports = await getImports(`${FIXTURES}/type-import.ts`)
       const fileImports = imports.get(resolve(FIXTURES, 'type-import.ts'))
       expect(fileImports).toContain('~/domain/type-only')
+    })
+
+    it('captures side-effect imports that carry no `from`', async () => {
+      const imports = await getImports(`${FIXTURES}/side-effect.ts`)
+      const fileImports = imports.get(resolve(FIXTURES, 'side-effect.ts'))
+      expect(fileImports).toContain('~/domain/side-effect-dep')
     })
 
     it('fails a boundary check on a forbidden re-export', async () => {
@@ -83,6 +91,16 @@ describe('getImports', () => {
       await expect(
         assertLayerBoundaries({
           pattern: `${FIXTURES}/type-import.ts`,
+          layer: 'domain',
+          forbidden: [/~\/domain\//],
+        }),
+      ).rejects.toThrow(/domain violation/)
+    })
+
+    it('fails a boundary check on a forbidden side-effect import', async () => {
+      await expect(
+        assertLayerBoundaries({
+          pattern: `${FIXTURES}/side-effect.ts`,
           layer: 'domain',
           forbidden: [/~\/domain\//],
         }),
