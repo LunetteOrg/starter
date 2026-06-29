@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { sql } from 'drizzle-orm'
-import { afterAll, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { createTestDb } from './db'
 
 /**
@@ -61,17 +61,14 @@ describe.skipIf(!hasDocker)('createTestDb with migrations', () => {
   // db.ts) that the relationless default instance never touches. The fixture is
   // a drizzle rc.4 folder: `<timestamp>_<name>/migration.sql`, no _journal.json.
   //
-  // `reuse: false`: migrate() COMMITS the migration + `__drizzle_migrations`
-  // outside any transaction. On a shared (reused) container that committed state
+  // `databaseName`: migrate() COMMITS the migration + `__drizzle_migrations`
+  // outside any transaction. On the shared reused container that committed state
   // would leak across packages and collide with an app's own migrations, so this
-  // instance gets a private, disposable container that we stop afterwards.
+  // instance gets its own database on the same container — isolating its journal
+  // without stopping the shared container (ADR-0020).
   const migrated = createTestDb({
     migrationsFolder: './src/__fixtures__/migrations',
-    reuse: false,
-  })
-
-  afterAll(async () => {
-    await migrated.stopTestDb()
+    databaseName: 'migrate_probe',
   })
 
   it('applies migrations before running the test body', async () => {

@@ -19,13 +19,15 @@ export interface TestDbOptions<TRelations extends AnyRelations = EmptyRelations>
   /** Drizzle relations (from `defineRelations()`) — pass to get typed `tx.query` */
   relations?: TRelations
   /**
-   * Share the container across runs/packages via testcontainers `withReuse()`.
-   * Defaults to `true` (fast). Set `false` for an isolated, disposable container
-   * — required when the instance COMMITS state (e.g. real migrations), so it
-   * can't leak into a reused container shared by other suites. With `reuse:
-   * false`, `stopTestDb()` actually stops the container.
+   * Dedicated database NAME inside the (reused) container. Two `createTestDb`
+   * instances that share a reused container would otherwise share one Postgres
+   * database — and one `__drizzle_migrations` journal — so an instance that
+   * applies migrations (committed, outside the rollback wrapper) would leak that
+   * state to siblings. Passing a distinct name isolates this instance's schema
+   * and migration journal in its own database on the same server, without
+   * stopping the shared container (ADR-0020).
    */
-  reuse?: boolean
+  databaseName?: string
 }
 
 export interface TestDb<TRelations extends AnyRelations = EmptyRelations> {
@@ -62,15 +64,59 @@ export function createTestDb<TRelations extends AnyRelations = EmptyRelations>(
 
   function getContainer(): Promise<StartedPostgreSqlContainer> {
     if (!initPromise) {
-      const base = new PostgreSqlContainer('postgres:17').withTmpFs({
-        '/var/lib/postgresql/data': 'rw',
-      })
-      initPromise = (opts?.reuse === false ? base : base.withReuse()).start()
+      initPromise = new PostgreSqlContainer('postgres:17')
+        .withTmpFs({ '/var/lib/postgresql/data': 'rw' })
+        .withReuse()
+        .start()
       initPromise.catch(() => {
         initPromise = undefined
       })
     }
     return initPromise
+  }
+
+  let connectionStringPromise: Promise<string> | undefined
+
+  /**
+   * Resolve this instance's connection string. Without `databaseName` it is the
+   * container's default URI. With it, the named database is created once on the
+   * container (idempotent, advisory-locked to serialise parallel processes that
+   * share the reused container) and the URI is repointed at it — isolating this
+   * instance's schema + migration journal from any sibling instance (ADR-0020).
+   */
+  function getConnectionString(): Promise<string> {
+    if (!connectionStringPromise) {
+      connectionStringPromise = (async () => {
+        const container = await getContainer()
+        const baseUri = container.getConnectionUri()
+        if (!opts?.databaseName) return baseUri
+
+        const admin = postgres(baseUri, { max: 1 })
+        try {
+          await admin`SELECT pg_advisory_lock(7354219803490735)`
+          try {
+            const exists = await admin`
+              SELECT 1 FROM pg_database WHERE datname = ${opts.databaseName}
+            `
+            if (exists.length === 0) {
+              await admin.unsafe(`CREATE DATABASE "${opts.databaseName}"`)
+            }
+          } finally {
+            await admin`SELECT pg_advisory_unlock(7354219803490735)`
+          }
+        } finally {
+          await admin.end().catch(() => {})
+        }
+
+        const url = new URL(baseUri)
+        url.pathname = `/${opts.databaseName}`
+        return url.toString()
+      })()
+      connectionStringPromise.catch(() => {
+        connectionStringPromise = undefined
+      })
+    }
+    return connectionStringPromise
   }
 
   function runMigrations(connectionString: string): Promise<void> {
@@ -108,8 +154,7 @@ export function createTestDb<TRelations extends AnyRelations = EmptyRelations>(
   async function withTestDb(
     fn: (tx: PgAsyncTransaction<PostgresJsQueryResultHKT, TRelations>) => Promise<void>,
   ): Promise<void> {
-    const container = await getContainer()
-    const connectionString = container.getConnectionUri()
+    const connectionString = await getConnectionString()
     await runMigrations(connectionString)
     const client = postgres(connectionString)
     const db = opts?.relations
@@ -145,21 +190,20 @@ export function createTestDb<TRelations extends AnyRelations = EmptyRelations>(
   }
 
   async function stopTestDb(): Promise<void> {
-    // Reused containers (the default) are intentionally kept alive across runs
-    // and packages — calling `container.stop()` would defeat reuse and cause a
-    // "marked for removal" race when a sibling package re-attaches; the
-    // testcontainers reaper (Ryuk) culls them after the grace period.
-    //
-    // A non-reused container (`reuse: false`) is private to this instance, so
-    // we stop it here to dispose of any state it committed (e.g. migrations).
+    // The container is started with `.withReuse()`, which intentionally keeps it
+    // alive across test runs (and across packages running their tests in
+    // parallel). Calling `container.stop()` here would defeat reuse and cause a
+    // "marked for removal" race when a sibling package later attaches to the
+    // same labeled container. Cleanup is delegated to the testcontainers reaper
+    // (Ryuk), which culls non-reused containers at session end (ADR-0020).
     const promise = initPromise
     if (promise) {
       try {
-        const container = await promise
-        if (opts?.reuse === false) await container.stop()
+        await promise
       } finally {
         initPromise = undefined
         migratedPromise = undefined
+        connectionStringPromise = undefined
         registry.delete(stopTestDb)
       }
     }
