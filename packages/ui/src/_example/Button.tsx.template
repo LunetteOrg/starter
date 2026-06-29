@@ -1,0 +1,43 @@
+// TEMPLATE — the canonical shape of a shared UI component (ADR-0014, ADR-0015).
+// Copy into `packages/ui/src/<Component>/`, drop the `.template` suffix, then
+// re-export it from `packages/ui/src/index.ts`. Kept inert (a `.template` file
+// is not compiled, linted, or picked up by Storybook) so the template ships an
+// EXEMPLAR, not a live component the consuming project has to delete.
+//
+// The rules it demonstrates:
+//  - style only via design tokens (`var(--token)`), never raw values;
+//  - typed, documented props (react-docgen feeds Storybook Docs);
+//  - accessible by default (semantic element, forwarded props).
+
+import type { ButtonHTMLAttributes } from 'react'
+
+export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  /** Visual emphasis. */
+  variant?: 'primary' | 'secondary'
+}
+
+export function Button({ variant = 'primary', style, ...props }: ButtonProps) {
+  const palette =
+    variant === 'primary'
+      ? { bg: 'var(--color-brand-500)', fg: 'var(--color-neutral-0)' }
+      : { bg: 'var(--color-bg-muted)', fg: 'var(--color-fg)' }
+
+  return (
+    <button
+      type="button"
+      style={{
+        backgroundColor: palette.bg,
+        color: palette.fg,
+        border: '1px solid var(--color-border)',
+        borderRadius: 'var(--radius-md)',
+        padding: 'var(--spacing-2) var(--spacing-4)',
+        fontFamily: 'var(--font-family-sans)',
+        fontSize: 'var(--font-size-md)',
+        fontWeight: 'var(--font-weight-medium)',
+        cursor: 'pointer',
+        ...style,
+      }}
+      {...props}
+    />
+  )
+}
