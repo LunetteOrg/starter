@@ -1,7 +1,7 @@
 pre-commit:
   commands:
     lint:
-      run: pnpm turbo lint --filter=...[origin/main] -- --write
+      run: pnpm turbo lint:fix --filter=...[origin/main]
       stage_fixed: true
     typecheck:
       run: pnpm turbo typecheck --filter=...[origin/main]

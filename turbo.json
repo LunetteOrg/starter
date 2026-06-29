@@ -4,6 +4,7 @@
   "globalPassThroughEnv": ["*"],
   "tasks": {
     "lint": { "outputs": [], "cache": false },
+    "lint:fix": { "outputs": [], "cache": false },
     "typecheck": { "outputs": [] },
     "test": {
       "outputs": ["coverage/**"]

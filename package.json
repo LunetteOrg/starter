@@ -6,6 +6,7 @@
     "build": "turbo run build",
     "dev": "docker compose up -d && turbo run dev",
     "lint": "turbo run lint",
+    "lint:fix": "turbo run lint:fix",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
@@ -30,6 +31,7 @@
   "engines": {
     "node": ">=24.0.0"
   },
+  "browserslist": ["> 0.5%", "last 2 versions", "Firefox ESR", "not dead", "not op_mini all"],
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild",
