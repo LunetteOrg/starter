@@ -18,6 +18,14 @@ export interface TestDbOptions<TRelations extends AnyRelations = EmptyRelations>
   migrationsFolder?: string
   /** Drizzle relations (from `defineRelations()`) — pass to get typed `tx.query` */
   relations?: TRelations
+  /**
+   * Share the container across runs/packages via testcontainers `withReuse()`.
+   * Defaults to `true` (fast). Set `false` for an isolated, disposable container
+   * — required when the instance COMMITS state (e.g. real migrations), so it
+   * can't leak into a reused container shared by other suites. With `reuse:
+   * false`, `stopTestDb()` actually stops the container.
+   */
+  reuse?: boolean
 }
 
 export interface TestDb<TRelations extends AnyRelations = EmptyRelations> {
@@ -54,10 +62,10 @@ export function createTestDb<TRelations extends AnyRelations = EmptyRelations>(
 
   function getContainer(): Promise<StartedPostgreSqlContainer> {
     if (!initPromise) {
-      initPromise = new PostgreSqlContainer('postgres:17')
-        .withTmpFs({ '/var/lib/postgresql/data': 'rw' })
-        .withReuse()
-        .start()
+      const base = new PostgreSqlContainer('postgres:17').withTmpFs({
+        '/var/lib/postgresql/data': 'rw',
+      })
+      initPromise = (opts?.reuse === false ? base : base.withReuse()).start()
       initPromise.catch(() => {
         initPromise = undefined
       })
@@ -137,16 +145,18 @@ export function createTestDb<TRelations extends AnyRelations = EmptyRelations>(
   }
 
   async function stopTestDb(): Promise<void> {
-    // The container is started with `.withReuse()`, which intentionally keeps
-    // it alive across test runs (and across packages running their tests in
-    // parallel). Calling `container.stop()` here would defeat reuse and cause
-    // a "marked for removal" race when a sibling package later tries to attach
-    // to the same labeled container. Cleanup is delegated to the testcontainers
-    // reaper (Ryuk), which culls reused containers after the grace period.
+    // Reused containers (the default) are intentionally kept alive across runs
+    // and packages — calling `container.stop()` would defeat reuse and cause a
+    // "marked for removal" race when a sibling package re-attaches; the
+    // testcontainers reaper (Ryuk) culls them after the grace period.
+    //
+    // A non-reused container (`reuse: false`) is private to this instance, so
+    // we stop it here to dispose of any state it committed (e.g. migrations).
     const promise = initPromise
     if (promise) {
       try {
-        await promise
+        const container = await promise
+        if (opts?.reuse === false) await container.stop()
       } finally {
         initPromise = undefined
         migratedPromise = undefined

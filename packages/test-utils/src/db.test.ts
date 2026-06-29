@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { sql } from 'drizzle-orm'
-import { describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it } from 'vitest'
 import { createTestDb } from './db'
 
 /**
@@ -9,11 +9,19 @@ import { createTestDb } from './db'
  * NO application schema, so it stays in the template as a permanent infra
  * guarantee rather than a domain example to be deleted by the consuming project.
  *
- * Integration test (`.test.ts`): needs Docker/Testcontainers. We skip (rather
- * than fail loudly) when no Docker endpoint is discoverable, so a unit-only run
- * on a machine without Docker stays green.
+ * Integration test (`.test.ts`): needs Docker/Testcontainers. Locally we skip
+ * when no Docker endpoint is discoverable, so a unit-only run stays green — but
+ * in CI Docker is mandatory, so a missing endpoint there is a hard failure
+ * rather than a silent skip (which would be a false green).
  */
 const hasDocker = existsSync('/var/run/docker.sock') || Boolean(process.env.DOCKER_HOST)
+
+if (process.env.CI && !hasDocker) {
+  throw new Error(
+    'Integration tests require Docker, but no endpoint was found (checked ' +
+      '/var/run/docker.sock and $DOCKER_HOST). In CI this must not be skipped.',
+  )
+}
 
 describe.skipIf(!hasDocker)('withTestDb transaction-rollback isolation', () => {
   const { withTestDb } = createTestDb()
@@ -52,12 +60,22 @@ describe.skipIf(!hasDocker)('createTestDb with migrations', () => {
   // Exercises the real migration path (advisory lock + drizzle `migrate()` in
   // db.ts) that the relationless default instance never touches. The fixture is
   // a drizzle rc.4 folder: `<timestamp>_<name>/migration.sql`, no _journal.json.
-  const { withTestDb } = createTestDb({
+  //
+  // `reuse: false`: migrate() COMMITS the migration + `__drizzle_migrations`
+  // outside any transaction. On a shared (reused) container that committed state
+  // would leak across packages and collide with an app's own migrations, so this
+  // instance gets a private, disposable container that we stop afterwards.
+  const migrated = createTestDb({
     migrationsFolder: './src/__fixtures__/migrations',
+    reuse: false,
+  })
+
+  afterAll(async () => {
+    await migrated.stopTestDb()
   })
 
   it('applies migrations before running the test body', async () => {
-    await withTestDb(async (tx) => {
+    await migrated.withTestDb(async (tx) => {
       const rows = await tx.execute(sql`SELECT id FROM migrated_probe`)
       expect(rows.length).toBe(0)
     })

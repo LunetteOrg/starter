@@ -23,19 +23,26 @@ Add a self-arming check (`packages/test-utils/src/migration-safety.ts`, run by
 
 - **Down-migrations are forbidden.** A `*.down.sql` file or a `down/` segment
   fails — rollback is "don't deploy" (ADR-0007).
-- **Destructive statements must be an explicit contract step.** A migration
-  containing `DROP …` or `ALTER TABLE … RENAME …` must carry a `-- contract:`
-  annotation; otherwise it fails, pointing the author to either annotate it or
-  split it into expand/migrate/contract.
+- **Risky statements must be acknowledged, per statement.** A statement
+  containing `DROP …`, `ALTER TABLE … RENAME …`, `ALTER COLUMN … SET NOT NULL`,
+  `ALTER COLUMN … TYPE`, `TRUNCATE`, or `DELETE FROM` must carry an annotation
+  in its own statement: `-- contract: <reason>` for a contract-phase removal, or
+  `-- destructive: <reason>` for any other reviewed risky op. Otherwise it
+  fails, pointing the author to annotate or split into expand/migrate/contract.
 
-The rule logic is a pure function (`checkMigration(name, content)`) so it is
-unit-tested directly; the repo scan applies it centrally (no per-app setup).
+Detection masks comments and string literals (so a keyword inside them is not a
+false positive) and evaluates each `;`-separated statement on its own, so one
+annotation can't whitewash a sibling statement. The rule logic is a pure
+function (`checkMigration(name, content)`) so it is unit-tested directly; the
+repo scan applies it centrally (no per-app setup).
 
 ## Consequences
 
 - \+ The ADR-0007 red-flags fail CI instead of relying on a reviewer.
 - \+ Inert until the first migration; central, no per-app copy.
 - \+ Contract drops remain possible — they just have to be declared.
-- − Introduces a `-- contract:` annotation convention authors must learn.
-- − Regex-based: it can be fooled by unusual SQL formatting. It is a guard rail,
-  not a parser; tighten it if a real migration slips through.
+- − Introduces a `-- contract:` / `-- destructive:` annotation convention
+  authors must learn.
+- − Regex-based: comment/string masking and per-statement splitting cover the
+  common cases, but it is a guard rail, not a SQL parser, and unusual formatting
+  can still fool it. Tighten it if a real migration slips through.

@@ -14,7 +14,7 @@ up front is structure, not a design commitment.
 
 ## Decision
 
-Ship a `[data-theme='dark']` scope in `tokens.css` that re-maps **only** the
+Ship a `[data-theme="dark"]` scope in `tokens.css` that re-maps **only** the
 semantic color tokens onto existing neutrals. The project stays light by
 default; dark is opt-in by setting `data-theme="dark"` on a root element.
 Nothing is forced — no automatic `prefers-color-scheme` switch, no mandated
