@@ -25,6 +25,7 @@ Architectural decisions for this starter are recorded as ADRs — one decision p
 | [0017](./0017-dark-theme-semantic-token-scope.md) | Dark theme via semantic-token scope | accepted |
 | [0018](./0018-turbo-passthrough-all-env.md) | Turbo passes through all env vars | accepted |
 | [0019](./0019-migration-safety-guard.md) | Mechanized migration-safety guard | accepted |
+| [0020](./0020-testcontainer-reuse-and-db-isolation.md) | Postgres testcontainer reuse and per-instance DB isolation | accepted |
 
 ## Writing a new ADR
 
