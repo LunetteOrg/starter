@@ -21,7 +21,7 @@ Nothing is forced — no automatic `prefers-color-scheme` switch, no mandated
 toggle, no new raw values.
 
 ```css
-[data-theme='dark'] {
+[data-theme="dark"] {
   --color-bg: var(--color-neutral-900);
   --color-bg-muted: var(--color-neutral-700);
   --color-fg: var(--color-neutral-0);
@@ -33,6 +33,11 @@ toggle, no new raw values.
 Because components consume semantic names (never raw values), they theme
 automatically.
 
+Out of scope for this first pass: the `--shadow-*` tokens (hardcoded
+`rgb(15 23 42 …)`, near-invisible on a dark surface) and the feedback colors
+(`--color-success/-warning/-danger`) are **not** remapped. They should be
+revisited when a component actually relies on them in dark mode.
+
 ## Consequences
 
 - \+ Theming is available from day-0 without retrofitting consumers.
@@ -40,3 +45,4 @@ automatically.
 - − The dark neutrals are a starter default the project should tune to its brand.
 - − No `prefers-color-scheme` wiring is provided; the project decides how to
   toggle `data-theme`.
+- − Shadows and feedback colors are not yet dark-aware (see above).

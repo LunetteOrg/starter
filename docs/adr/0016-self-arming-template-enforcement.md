@@ -24,8 +24,10 @@ inert `.template` files to copy, never as live code.
 
 - A repo-level meta-test (`packages/test-utils/src/meta-arch.spec.ts`) discovers
   `apps/*` at runtime and, for each app that has an `app/` layer, requires an
-  `app/arch.spec.ts`. At day-0 (`apps/` holds only `.gitkeep`) it iterates over
-  nothing and passes; it arms itself the moment `apps/<x>/app/` appears.
+  `app/arch.spec.ts` that actually invokes `assertLayerBoundaries` (presence
+  alone is gameable — an empty file would enforce nothing). At day-0 (`apps/`
+  holds only `.gitkeep`) it iterates over nothing and passes; it arms itself the
+  moment `apps/<x>/app/` appears.
 - The boundary scanner's coverage is locked with regression fixtures
   (re-exports, `import type`) so a refactor cannot silently make a check pass
   vacuously. If those ever fail, that is the signal to move from the regex scan
@@ -45,3 +47,7 @@ application code → ship as a template to copy.
 - \+ Boundary coverage is regression-tested, not assumed.
 - − The meta-test encodes the `apps/*/app/arch.spec.ts` convention; changing the
   layout means updating it (one place).
+- − The arch-test template (`layer.arch.spec.ts.template`) assumes the layer
+  layout `app/{domain,use-cases,routes}/`; `assertLayerBoundaries` throws on an
+  empty glob, so an app that arms the test without one of those folders fails
+  until the template is adapted to its actual layers.

@@ -29,7 +29,17 @@ export async function getImports(
       throw new Error(`Failed to read ${file}: ${e instanceof Error ? e.message : String(e)}`)
     }
 
+    // `from '...'` — covers `import … from`, `import type … from`, and every
+    // re-export form (`export * from`, `export { x } from`, `export { default
+    // as X } from`).
     const staticImports = [...content.matchAll(/from\s+['"]([^'"]+)['"]/g)]
+      .map((m) => m[1])
+      .filter((s): s is string => s !== undefined)
+
+    // Side-effect imports carry NO `from`: `import '~/x'`. The leading
+    // whitespace + quote distinguishes them from `import {`, `import x from`,
+    // and dynamic `import(`.
+    const sideEffectImports = [...content.matchAll(/import\s+['"]([^'"]+)['"]/g)]
       .map((m) => m[1])
       .filter((s): s is string => s !== undefined)
 
@@ -42,7 +52,12 @@ export async function getImports(
       .map((m) => m[1])
       .filter((s): s is string => s !== undefined && s.length > 0)
 
-    result.set(file, [...staticImports, ...dynamicImports, ...templateImports])
+    result.set(file, [
+      ...staticImports,
+      ...sideEffectImports,
+      ...dynamicImports,
+      ...templateImports,
+    ])
   }
   return result
 }

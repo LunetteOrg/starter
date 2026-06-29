@@ -4,3 +4,4 @@
 // dependency through a barrel re-export.
 export * from '~/domain/reexported-all'
 export { something } from '~/domain/reexported-named'
+export { default as Renamed } from '~/domain/default-reexport'

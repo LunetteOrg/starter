@@ -10,7 +10,12 @@
     "lint:fix": { "outputs": [], "cache": false },
     "typecheck": { "outputs": [] },
     "test": {
-      "outputs": ["coverage/**"]
+      // Not cached: integration tests (.test.ts) depend on a live Docker /
+      // Testcontainers environment that Turbo can't hash, so a cached green
+      // could be replayed after the environment changed. Unit specs are fast
+      // enough that always running them is cheap insurance.
+      "outputs": ["coverage/**"],
+      "cache": false
     },
     "build": {
       "dependsOn": ["^build", "lint", "typecheck"],
