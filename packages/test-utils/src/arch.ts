@@ -60,3 +60,44 @@ export function assertNoForbiddenImports(
     }
   }
 }
+
+const DEFAULT_TEST_IGNORE = ['**/*.spec.ts', '**/*.test.ts']
+
+export interface LayerBoundaryOptions {
+  /**
+   * Absolute glob for the layer's source files
+   * (e.g. `resolve(__dirname, '**\/*.{ts,tsx}')`).
+   */
+  pattern: string
+  /** Layer name shown in violation messages (e.g. `'domain'`). */
+  layer: string
+  /** Import specifiers that must NOT appear in the layer, as regexes. */
+  forbidden: RegExp[]
+  /** Extra ignore globs, merged with the default `*.spec.ts`/`*.test.ts` excludes. */
+  ignore?: string[]
+}
+
+/**
+ * Auto-discovers a layer's source files and asserts none import a forbidden
+ * specifier. Built on {@link getImports}, so it also catches dynamic
+ * `import()` (static and template-literal forms) that inline regex guards miss.
+ *
+ * Mirror the matching Biome `noRestrictedImports` override (ADR-0004): the same
+ * violation should fail both lint and this test. `getImports` throws when the
+ * pattern matches no files, so a misconfigured path fails loudly instead of
+ * passing vacuously.
+ *
+ * @example
+ * ```ts
+ * await assertLayerBoundaries({
+ *   pattern: resolve(__dirname, '**\/*.{ts,tsx}'),
+ *   layer: 'domain',
+ *   forbidden: [/^react-router/, /^#app\/lib\//],
+ * })
+ * ```
+ */
+export async function assertLayerBoundaries(opts: LayerBoundaryOptions): Promise<void> {
+  const ignore = [...DEFAULT_TEST_IGNORE, ...(opts.ignore ?? [])]
+  const imports = await getImports(opts.pattern, { ignore })
+  assertNoForbiddenImports(imports, opts.forbidden, opts.layer)
+}

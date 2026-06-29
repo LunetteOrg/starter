@@ -19,36 +19,41 @@ Two independent nets, both expressing the same matrix:
 - `apps/*/app/**` (excluding tests) — `noRestrictedGlobals` bans `Date` in favour of `Temporal`.
 - `apps/*/__tests__/**/*.e2e.ts` — GritQL plugins from `packages/biome-config/` ban `waitForTimeout()` (implicit sync) and React internals (`__reactProps$`/`__reactFiber$`) in e2e tests.
 
-**2. Architecture tests, at CI time.** Each app ships an `app/arch.spec.ts` built on `@starter/test-utils` (`getImports` + `assertNoForbiddenImports`), asserting the same matrix by scanning sources. Canonical template:
+**2. Architecture tests, at CI time.** Each app ships an `app/arch.spec.ts` built on `@starter/test-utils`, asserting the same matrix by scanning sources. Use `assertLayerBoundaries` (auto-discovers a layer's files, merges the default `*.spec.ts`/`*.test.ts` excludes, and is built on `getImports` so it also catches dynamic `import()`); drop to the lower-level `getImports` + `assertNoForbiddenImports` only for bespoke checks. Canonical template:
 
 ```ts
 import { resolve } from 'node:path'
-import { assertNoForbiddenImports, getImports } from '@starter/test-utils'
+import { assertLayerBoundaries } from '@starter/test-utils'
 import { describe, it } from 'vitest'
 
 const APP = resolve(__dirname)
 
 describe('architecture boundaries', () => {
-  it('domain must not import react-router', async () => {
-    assertNoForbiddenImports(await getImports(`${APP}/domain/**/*.ts`), [/react-router/], 'domain')
+  it('domain imports no framework or lib', async () => {
+    await assertLayerBoundaries({
+      pattern: resolve(APP, 'domain/**/*.{ts,tsx}'),
+      layer: 'domain',
+      forbidden: [/^react-router/, /^#app\/lib\//],
+    })
   })
-  it('domain must not import #app/lib', async () => {
-    assertNoForbiddenImports(await getImports(`${APP}/domain/**/*.ts`), [/#app\/lib/], 'domain')
+  it('routes reach the app only through context', async () => {
+    await assertLayerBoundaries({
+      pattern: resolve(APP, 'routes/**/*.{ts,tsx}'),
+      layer: 'routes',
+      forbidden: [/^#app\/use-cases/, /^#app\/domain/, /^#app\/lib\/db/, /^#app\/bootstrap/],
+    })
   })
-  it('routes must not import use-cases/domain/db/bootstrap', async () => {
-    const imports = await getImports(`${APP}/routes/**/*.{ts,tsx}`)
-    assertNoForbiddenImports(
-      imports,
-      [/#app\/use-cases/, /#app\/domain/, /#app\/lib\/db/, /#app\/bootstrap/],
-      'routes',
-    )
-  })
-  it('use-cases must not import framework or db', async () => {
-    const imports = await getImports(`${APP}/use-cases/**/*.ts`)
-    assertNoForbiddenImports(imports, [/react-router/, /#app\/lib\/db/], 'use-cases')
+  it('use-cases import no framework or db', async () => {
+    await assertLayerBoundaries({
+      pattern: resolve(APP, 'use-cases/**/*.{ts,tsx}'),
+      layer: 'use-cases',
+      forbidden: [/^react-router/, /^#app\/lib\/db/],
+    })
   })
 })
 ```
+
+A ready-to-copy version lives at `packages/test-utils/templates/layer.arch.spec.ts.template`.
 
 Path aliases use Node.js subpath imports (`"imports": { "#app/*": … }` in each app's `package.json`) — portable, no bundler-specific config, and a stable target for both nets.
 

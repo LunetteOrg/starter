@@ -1,0 +1,50 @@
+// TEMPLATE — copia in `apps/<app>/app/arch.spec.ts` quando crei la prima app,
+// poi rinomina rimuovendo `.template`. Adatta i pattern `forbidden` ai layer
+// reali dell'app.
+//
+// Questi test rispecchiano gli override Biome `noRestrictedImports` in
+// `biome.json` (ADR-0004): la STESSA violazione deve far fallire sia il lint
+// sia questo test. Quando cambi un confine, aggiorna ENTRAMBI.
+//
+// Perché un test oltre al lint? `assertLayerBoundaries` è costruito su
+// `getImports`, quindi intercetta anche gli `import()` dinamici (statici e
+// template-literal) che `noRestrictedImports` (statico) non vede. E `getImports`
+// lancia se il glob non matcha nulla → niente "pass a vuoto" se sposti una
+// cartella.
+
+import { resolve } from 'node:path'
+import { assertLayerBoundaries } from '@starter/test-utils'
+import { describe, it } from 'vitest'
+
+const APP = resolve(__dirname)
+
+describe('architecture boundaries', () => {
+  // Il domain resta puro: niente framework, niente lib/infrastruttura.
+  // Unica eccezione tipica: il contratto degli errori tipizzati (ADR-0005).
+  it('domain imports nothing from framework or lib', async () => {
+    await assertLayerBoundaries({
+      pattern: resolve(APP, 'domain/**/*.{ts,tsx}'),
+      layer: 'domain',
+      forbidden: [/^react-router/, /^#app\/lib\/(?!db\/errors['"])/, /^@starter\/db/],
+    })
+  })
+
+  // I use-case orchestrano il domain via porte iniettate: niente framework,
+  // niente DB/adapter concreti, niente bootstrap (invertirebbe il layering).
+  it('use-cases import no framework, concrete db, adapters or bootstrap', async () => {
+    await assertLayerBoundaries({
+      pattern: resolve(APP, 'use-cases/**/*.{ts,tsx}'),
+      layer: 'use-cases',
+      forbidden: [/^react-router/, /^#app\/lib\/db/, /^#app\/bootstrap/, /^@starter\/db/],
+    })
+  })
+
+  // Le route consumano solo `context.app`: mai use-case/domain/db/bootstrap diretti.
+  it('routes reach the app only through context', async () => {
+    await assertLayerBoundaries({
+      pattern: resolve(APP, 'routes/**/*.{ts,tsx}'),
+      layer: 'routes',
+      forbidden: [/^#app\/use-cases/, /^#app\/domain/, /^#app\/lib\/db/, /^#app\/bootstrap/],
+    })
+  })
+})
