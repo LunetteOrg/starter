@@ -1,11 +1,121 @@
 /*
- * Design tokens del progetto.
+ * Design tokens del progetto — CSS custom properties pure (ADR-0014).
  *
- * Scaffold vuoto: definisci qui le CSS custom properties brand-specifiche
- * (colori, spacing, radius, tipografia, ombre). Importa questo file dalle
- * app via `@starter/ui-tokens/tokens.css`.
+ * Set neutro di partenza: sovrascrivi i valori per il brand del progetto
+ * derivato, ma mantieni i nomi dei token (i componenti li referenziano via
+ * `var(--token)` e non devono mai duplicare valori grezzi).
+ *
+ * I blocchi `@tokens ... @tokens-end` sono letti dall'addon
+ * `storybook-design-token` per generare le pagine Foundations. Non rimuovere
+ * le annotazioni quando aggiungi token: estendi il gruppo giusto.
+ *
+ * Importa da app/Storybook via `@starter/ui-tokens/tokens.css`.
  */
 
 :root {
-  /* TODO: definire i token brand */
+  /**
+   * @tokens Colors
+   * @presenter Color
+   */
+
+  /* Neutrals */
+  --color-neutral-0: #ffffff;
+  --color-neutral-50: #f8fafc;
+  --color-neutral-100: #f1f5f9;
+  --color-neutral-200: #e2e8f0;
+  --color-neutral-300: #cbd5e1;
+  --color-neutral-500: #64748b;
+  --color-neutral-700: #334155;
+  --color-neutral-900: #0f172a;
+
+  /* Brand accent (placeholder — sostituisci col colore del progetto) */
+  --color-brand-100: #dbeafe;
+  --color-brand-500: #3b82f6;
+  --color-brand-700: #1d4ed8;
+
+  /* Feedback */
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
+
+  /* Semantic surfaces / text */
+  --color-bg: var(--color-neutral-0);
+  --color-bg-muted: var(--color-neutral-50);
+  --color-fg: var(--color-neutral-900);
+  --color-fg-muted: var(--color-neutral-500);
+  --color-border: var(--color-neutral-200);
+  /* @tokens-end */
+
+  /**
+   * @tokens Spacing
+   * @presenter Spacing
+   */
+  --spacing-0: 0;
+  --spacing-1: 0.25rem;
+  --spacing-2: 0.5rem;
+  --spacing-3: 0.75rem;
+  --spacing-4: 1rem;
+  --spacing-6: 1.5rem;
+  --spacing-8: 2rem;
+  --spacing-12: 3rem;
+  --spacing-16: 4rem;
+  /* @tokens-end */
+
+  /**
+   * @tokens Border Radius
+   * @presenter BorderRadius
+   */
+  --radius-none: 0;
+  --radius-sm: 0.125rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-full: 9999px;
+  /* @tokens-end */
+
+  /**
+   * @tokens Font Family
+   * @presenter FontFamily
+   */
+  --font-family-sans: var(--font-sans-stack);
+  --font-family-mono: var(--font-mono-stack);
+  /* @tokens-end */
+
+  /**
+   * @tokens Font Size
+   * @presenter FontSize
+   */
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.5rem;
+  --font-size-2xl: 2rem;
+  /* @tokens-end */
+
+  /**
+   * @tokens Font Weight
+   * @presenter FontWeight
+   */
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-bold: 700;
+  /* @tokens-end */
+
+  /**
+   * @tokens Line Height
+   * @presenter LineHeight
+   */
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.75;
+  /* @tokens-end */
+
+  /**
+   * @tokens Shadows
+   * @presenter Shadow
+   */
+  --shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(15 23 42 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(15 23 42 / 0.1);
+  /* @tokens-end */
 }

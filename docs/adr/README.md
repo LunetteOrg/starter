@@ -19,6 +19,8 @@ Architectural decisions for this starter are recorded as ADRs — one decision p
 | [0011](./0011-jobs-and-cron.md) | Jobs and cron: pg-boss for business logic, GitHub Actions for ops | accepted |
 | [0012](./0012-graceful-shutdown.md) | Graceful shutdown for long-lived Node processes | accepted |
 | [0013](./0013-use-case-composition.md) | Use-case composition in the composition root | accepted |
+| [0014](./0014-design-tokens-css-custom-properties.md) | Design tokens as CSS custom properties | accepted |
+| [0015](./0015-storybook-design-system.md) | Storybook as the showcase for `packages/ui` | accepted |
 
 ## Writing a new ADR
 

@@ -1,6 +1,17 @@
 /*
- * Importazioni dei font del progetto.
+ * Font del progetto.
  *
- * Scaffold vuoto: aggiungi qui gli `@import` di @fontsource/... o le
- * @font-face dichiarate localmente.
+ * Default: font stack di sistema (zero richieste di rete, zero dipendenze).
+ * Per font self-hosted, installa `@fontsource/<famiglia>`, aggiungi qui gli
+ * `@import` e ridefinisci `--font-sans-stack` / `--font-mono-stack`.
+ *
+ * Importa da app/Storybook via `@starter/ui-tokens/fonts.css`.
  */
+
+:root {
+  --font-sans-stack:
+    system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji";
+  --font-mono-stack:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
