@@ -16,20 +16,18 @@ and recommended actions only.
    "Architecture Rules" in `CLAUDE.md` — it is the distilled, enforceable form
    of several ADRs.
 
-2. **Derive a check matrix** from those decisions. The current ADRs imply at
-   least these checks (re-derive from the files; don't trust this list blindly):
-   - `process.env` only inside `config/env.ts` (ADR-0002).
-   - No `new Date()` — `Temporal` instead (ADR-0002).
-   - No `throw new Error()` — typed `errore` errors (ADR-0005).
-   - Domain imports no framework (`react-router`) and no `lib/` (ADR-0003/0004).
-   - Routes use `context.app` only — no use-cases/domain/db/bootstrap imports (ADR-0004).
-   - Use-cases compose via injected deps, never import each other (ADR-0013).
-   - `tryAsync()` at the repository boundary, `matchError()` at routes (ADR-0005).
-   - Test naming: `.spec.ts` = unit, `.test.ts` = integration; no `vi.mock` of the DB (ADR-0006).
-   - E2E only for critical flows, clean `storageState` (ADR-0006).
-   - Migrations follow expand-migrate-contract (ADR-0007).
-   - Design tokens are CSS custom properties in `@starter/ui-tokens` (ADR-0014).
-   - Storybook stories co-located in `packages/ui`, Foundations from tokens (ADR-0015).
+2. **Derive the check matrix at runtime — do not hardcode it.** The ADR set
+   evolves (decisions get added, renumbered, superseded), so build the matrix
+   *now* from what you just read: for each accepted ADR, turn its `## Decision`
+   into one or more checkable rules, and pull the enforceable rules listed under
+   "Architecture Rules" in `CLAUDE.md`. Skip ADRs marked `deprecated` /
+   `superseded`, and follow the supersede link to the replacement. Tie every rule
+   back to the ADR it came from by reading the file, never by reciting a number
+   from memory. (Typical rules you'll derive today concern `process.env`
+   confinement, `Temporal` vs `Date`, typed `errore` errors, domain/use-case/route
+   import boundaries, the repository/route error handling seam, test-file naming
+   and no-mock-the-DB, migration strategy, and design-token/Storybook conventions
+   — but read the ADRs to get the current, authoritative set.)
 
 3. **Scan for violations.** Prefer the existing tooling and helpers over ad-hoc
    greps where they exist (Biome overrides in `biome.json`, per-app
