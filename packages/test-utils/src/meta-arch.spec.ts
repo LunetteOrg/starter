@@ -46,13 +46,14 @@ describe('per-app architecture enforcement', () => {
   })
 
   // Presence alone is gameable: an empty or commented-out arch.spec.ts would
-  // pass the check above while enforcing nothing. Require it to actually invoke
-  // the boundary assertion, so the net cannot be silently defeated (ADR-0016).
+  // pass the check above while enforcing nothing. Require an actual CALL to the
+  // boundary assertion (`assertLayerBoundaries(`), not a mere mention — so the
+  // net cannot be defeated by a file that only names it in a comment (ADR-0016).
   it('each app/arch.spec.ts actually invokes assertLayerBoundaries', async () => {
     const offenders = (await appsWithLayer())
       .map((dir) => resolve(dir, 'app/arch.spec.ts'))
       .filter((file) => existsSync(file))
-      .filter((file) => !readFileSync(file, 'utf-8').includes('assertLayerBoundaries'))
+      .filter((file) => !/assertLayerBoundaries\s*\(/.test(readFileSync(file, 'utf-8')))
 
     expect(
       offenders,

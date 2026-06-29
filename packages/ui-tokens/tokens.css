@@ -141,5 +141,8 @@
   --color-bg-muted: var(--color-neutral-700);
   --color-fg: var(--color-neutral-0);
   --color-fg-muted: var(--color-neutral-300);
-  --color-border: var(--color-neutral-700);
+
+  /* neutral-500 (not 700) so the border stays visible against bg-muted
+     (neutral-700) — otherwise a bordered surface loses its outline. */
+  --color-border: var(--color-neutral-500);
 }

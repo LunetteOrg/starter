@@ -8,10 +8,17 @@ import { expect } from 'vitest'
  *
  *  - **No down-migrations.** Rollback is "don't deploy", never a DB revert
  *    (ADR-0007). A `*.down.sql` file or a `down/` folder is always forbidden.
- *  - **Destructive statements must be an explicit contract step.** `DROP` /
- *    `RENAME` are legitimate in the contract phase but a red flag anywhere else.
- *    A migration containing them must declare intent with a `-- contract:`
- *    annotation; otherwise it must be split into expand/migrate/contract.
+ *  - **Risky statements must be acknowledged per statement.** `DROP` / `RENAME`
+ *    / `SET NOT NULL` / `ALTER … TYPE` / `TRUNCATE` / `DELETE` can break a
+ *    rolling deploy. Each such statement must carry a `-- contract:` (a
+ *    contract-phase removal) or `-- destructive:` (any other reviewed risky op)
+ *    annotation in its own statement; otherwise it must be split into
+ *    expand/migrate/contract.
+ *
+ * It is a guard rail, not a SQL parser: detection masks comments and string
+ * literals (so a keyword inside them is not a false positive) and splits on
+ * `;`, but unusual formatting can still fool it. Tighten if a real migration
+ * slips through.
  *
  * Pure function over (name, content) so it is unit-testable without touching the
  * filesystem; {@link assertNoMigrationSafetyViolations} applies it across the repo.
@@ -21,10 +28,29 @@ export interface MigrationViolation {
   reason: string
 }
 
-const DESTRUCTIVE =
-  /\bDROP\s+(TABLE|COLUMN|CONSTRAINT|INDEX|SCHEMA|TYPE|VIEW)\b|\bALTER\s+TABLE\b[\s\S]*?\bRENAME\b/i
-const CONTRACT_ANNOTATION = /--\s*contract\b/i
 const DOWN_MIGRATION = /(^|\/)down(\/|\.)|\.down\.sql$/i
+
+// Statements that can break a rolling/blue-green deploy (ADR-0007). Evaluated
+// per statement against a comment/string-masked copy, so matches are real SQL.
+const RISKY =
+  /\b(?:DROP\s+(?:TABLE|COLUMN|CONSTRAINT|INDEX|SCHEMA|TYPE|VIEW)|TRUNCATE|DELETE\s+FROM|ALTER\s+TABLE[\s\S]*?\bRENAME\b|ALTER\s+COLUMN[\s\S]*?\b(?:SET\s+NOT\s+NULL|TYPE)\b)\b/i
+
+const ANNOTATION = /--\s*(?:contract|destructive)\b/i
+
+const blank = (s: string) => ' '.repeat(s.length)
+
+/**
+ * Replace block comments, line comments, and string/identifier literals with
+ * spaces, preserving length and offsets so the masked copy can be sliced in
+ * lockstep with the original.
+ */
+function maskForDetection(sql: string): string {
+  return sql
+    .replace(/\/\*[\s\S]*?\*\//g, blank)
+    .replace(/--[^\n]*/g, blank)
+    .replace(/'(?:''|[^'])*'/g, blank)
+    .replace(/"(?:""|[^"])*"/g, blank)
+}
 
 export function checkMigration(file: string, content: string): MigrationViolation[] {
   const violations: MigrationViolation[] = []
@@ -36,14 +62,31 @@ export function checkMigration(file: string, content: string): MigrationViolatio
     })
   }
 
-  if (DESTRUCTIVE.test(content) && !CONTRACT_ANNOTATION.test(content)) {
-    violations.push({
-      file,
-      reason:
-        'destructive statement (DROP/RENAME) must be an explicit contract step: ' +
-        'annotate the migration with `-- contract: <reason>`, or split it into ' +
-        'expand/migrate/contract (ADR-0007).',
-    })
+  // Split into statements on the masked copy so a `;` inside a string/comment
+  // doesn't create a spurious boundary. Each range carries its own leading
+  // comments, so an annotation only acknowledges the statement it precedes.
+  const masked = maskForDetection(content)
+  const ranges: Array<[number, number]> = []
+  let start = 0
+  for (let i = 0; i < masked.length; i++) {
+    if (masked[i] === ';') {
+      ranges.push([start, i + 1])
+      start = i + 1
+    }
+  }
+  if (start < content.length) ranges.push([start, content.length])
+
+  for (const [s, e] of ranges) {
+    if (RISKY.test(masked.slice(s, e)) && !ANNOTATION.test(content.slice(s, e))) {
+      violations.push({
+        file,
+        reason:
+          'risky statement (DROP/RENAME/SET NOT NULL/ALTER TYPE/TRUNCATE/DELETE) ' +
+          'must be acknowledged: annotate it with `-- contract: <reason>` ' +
+          '(contract-phase removal) or `-- destructive: <reason>`, or split it ' +
+          'into expand/migrate/contract (ADR-0007).',
+      })
+    }
   }
 
   return violations
