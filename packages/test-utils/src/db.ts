@@ -1,32 +1,28 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
-import type { ExtractTablesWithRelations, TablesRelationalConfig } from 'drizzle-orm'
-import { TransactionRollbackError } from 'drizzle-orm'
-import type { PgTransaction } from 'drizzle-orm/pg-core'
+import { type AnyRelations, type EmptyRelations, TransactionRollbackError } from 'drizzle-orm'
+import type { PgAsyncTransaction } from 'drizzle-orm/pg-core'
 import { drizzle, type PostgresJsQueryResultHKT } from 'drizzle-orm/postgres-js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
 
-/** Transaction type produced by schema-aware createTestDb */
-export type TestTransaction<
-  TSchema extends Record<string, unknown> = Record<string, never>,
-  TRelations extends TablesRelationalConfig = ExtractTablesWithRelations<TSchema>,
-> = PgTransaction<PostgresJsQueryResultHKT, TSchema, TRelations>
+/** Transaction type produced by relations-aware createTestDb */
+export type TestTransaction<TRelations extends AnyRelations = EmptyRelations> = PgAsyncTransaction<
+  PostgresJsQueryResultHKT,
+  TRelations
+>
 
-export interface TestDbOptions<TSchema extends Record<string, unknown> = Record<string, never>> {
+export interface TestDbOptions<TRelations extends AnyRelations = EmptyRelations> {
   /** Relative path to Drizzle migrations folder (resolved from process.cwd()) */
   migrationsFolder?: string
-  /** Drizzle schema — pass to get typed transactions */
-  schema?: TSchema
+  /** Drizzle relations (from `defineRelations()`) — pass to get typed `tx.query` */
+  relations?: TRelations
 }
 
-export interface TestDb<
-  TSchema extends Record<string, unknown> = Record<string, never>,
-  TRelations extends TablesRelationalConfig = ExtractTablesWithRelations<TSchema>,
-> {
+export interface TestDb<TRelations extends AnyRelations = EmptyRelations> {
   withTestDb: (
-    fn: (tx: PgTransaction<PostgresJsQueryResultHKT, TSchema, TRelations>) => Promise<void>,
+    fn: (tx: PgAsyncTransaction<PostgresJsQueryResultHKT, TRelations>) => Promise<void>,
   ) => Promise<void>
   stopTestDb: () => Promise<void>
 }
@@ -42,17 +38,17 @@ const registry = new Set<() => Promise<void>>()
  *
  * @example
  * ```ts
- * // Schema-aware (typed transactions)
- * import * as schema from '#app/lib/db/schema'
- * const { withTestDb } = createTestDb({ migrationsFolder: './drizzle', schema })
+ * // Relations-aware (typed `tx.query`)
+ * import { relations } from '#app/lib/db/relations'
+ * const { withTestDb } = createTestDb({ migrationsFolder: './drizzle', relations })
  *
- * // Schemaless (for packages that don't have a schema)
+ * // Relationless (for packages that don't define relations)
  * const { withTestDb } = createTestDb({ migrationsFolder: './drizzle' })
  * ```
  */
-export function createTestDb<TSchema extends Record<string, unknown> = Record<string, never>>(
-  opts?: TestDbOptions<TSchema>,
-): TestDb<TSchema> {
+export function createTestDb<TRelations extends AnyRelations = EmptyRelations>(
+  opts?: TestDbOptions<TRelations>,
+): TestDb<TRelations> {
   let initPromise: Promise<StartedPostgreSqlContainer> | undefined
   let migratedPromise: Promise<void> | undefined
 
@@ -77,7 +73,7 @@ export function createTestDb<TSchema extends Record<string, unknown> = Record<st
           : undefined
         if (folder && existsSync(folder)) {
           const client = postgres(connectionString)
-          const db = drizzle(client)
+          const db = drizzle({ client })
           try {
             // Advisory lock serialises migrations across parallel test processes
             // that share the same container via withReuse(). Without the lock,
@@ -102,28 +98,22 @@ export function createTestDb<TSchema extends Record<string, unknown> = Record<st
   }
 
   async function withTestDb(
-    fn: (
-      tx: PgTransaction<PostgresJsQueryResultHKT, TSchema, ExtractTablesWithRelations<TSchema>>,
-    ) => Promise<void>,
+    fn: (tx: PgAsyncTransaction<PostgresJsQueryResultHKT, TRelations>) => Promise<void>,
   ): Promise<void> {
     const container = await getContainer()
     const connectionString = container.getConnectionUri()
     await runMigrations(connectionString)
     const client = postgres(connectionString)
-    const db = opts?.schema ? drizzle(client, { schema: opts.schema }) : drizzle(client)
+    const db = opts?.relations
+      ? drizzle({ client, relations: opts.relations })
+      : drizzle({ client })
 
     let testError: unknown
 
     try {
       await db.transaction(async (tx) => {
         try {
-          await fn(
-            tx as PgTransaction<
-              PostgresJsQueryResultHKT,
-              TSchema,
-              ExtractTablesWithRelations<TSchema>
-            >,
-          )
+          await fn(tx as PgAsyncTransaction<PostgresJsQueryResultHKT, TRelations>)
         } catch (e) {
           testError = e
         }
