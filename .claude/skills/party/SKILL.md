@@ -20,19 +20,22 @@ decisions that earn it, not trivia.
 ## Tools
 
 Load these first (deferred): `ToolSearch` →
-`select:Agent,SendMessage,TaskStop`. Use `Agent` (with `run_in_background: true`)
-to spawn each persona; `SendMessage` (to the agent's id/name) to continue it with
-its context intact; `TaskStop` to tear agents down on exit.
+`select:Agent,SendMessage,TaskStop`. Use `Agent` (with `run_in_background: true`
+and `subagent_type` set to the persona, below) to spawn each panelist;
+`SendMessage` (to the agent's id/name) to continue it with its context intact;
+`TaskStop` to tear agents down on exit.
 
-## The roster (one persistent agent per lens)
+## The roster (each is a defined subagent in `.claude/agents/`)
 
-Concerns, not ADR numbers — each agent reads the repo at runtime to ground itself:
+The personas live as first-class subagents — spawn them by `subagent_type`; their
+character and lens are in their definition, not duplicated here. Each reads the
+repo at runtime to ground itself.
 
-- **architect** — layering, import boundaries, composition root, dependency direction.
-- **backend** — domain purity, use-cases, typed errors, time/date, persistence & migrations, jobs.
-- **design-system** — packages/ui, Storybook, design tokens, a11y, CSS Modules.
-- **qa** — testing strategy, arch tests, e2e, fixtures, no-mock-the-DB.
-- **release** — build pipeline, CI, git hooks, secrets, deploy, runtime lifecycle.
+- `architect` — **Ada**: layering, boundaries, composition root, ADR stewardship.
+- `backend` — **Bruno**: domain purity, use-cases, typed errors, persistence & migrations.
+- `design-system` — **Dana**: packages/ui, Storybook, tokens, a11y, DX.
+- `qa` — **Quinn**: adversarial testability, test strategy, no-mock-the-DB.
+- `release` — **Remo**: CI, build pipeline, secrets, deploy, prod operability.
 
 Pick the lenses relevant to the topic (min 3 for a real spread); skip clearly
 irrelevant ones to save cost.
@@ -52,10 +55,12 @@ was created with.
 ## How it runs
 
 1. **Open.** Take the topic from the args (if none, ask once what to decide).
-   Spawn each chosen lens as a background `Agent` using the persona prompt below.
-   Keep a map `lens → agentId`. Collect each agent's opening position and present
-   the round, facilitated: as Pia, frame the topic in a line and **lead with the
-   tensions**, not a tidy summary.
+   Spawn each chosen lens as a background `Agent` with its `subagent_type`
+   (`architect`, `backend`, …), passing the topic as the panel question (and a
+   per-lens `model` if the user asked for one). Keep a map `lens → agentId`.
+   Collect each agent's opening position and present the round, facilitated: as
+   Pia, frame the topic in a line and **lead with the tensions**, not a tidy
+   summary.
 
 2. **Facilitate each turn.** On every user message:
    - If they address a lens (`@architect …` / "architect, …"), `SendMessage` to
@@ -68,15 +73,10 @@ was created with.
 
 3. **Stay in the panel** across turns until the user exits.
 
-## Persona prompt (per spawned agent)
-
-> You sit on an expert panel deliberating: "{TOPIC}". Your lens: {lens concerns}.
-> Ground every claim in THIS repo — read `docs/adr/` and the relevant code before
-> asserting; cite what you actually find. Reason INDEPENDENTLY: do not bend to
-> agree with other panelists, and say so plainly when you disagree. You'll receive
-> follow-ups and other panelists' points over several turns — stay in character,
-> keep replies tight (1–4 sentences), and defend or revise your position on the
-> merits. Open with your position on the topic and the top risk you see.
+When you spawn or message an agent, give it just the panel context it needs: the
+topic, the other panelists' relevant points, and the user's question. The agent's
+character, lens, and grounding rules already live in its `.claude/agents/`
+definition — don't re-specify them.
 
 ## Converging & exit
 
