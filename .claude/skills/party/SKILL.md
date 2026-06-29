@@ -37,6 +37,18 @@ Concerns, not ADR numbers — each agent reads the repo at runtime to ground its
 Pick the lenses relevant to the topic (min 3 for a real spread); skip clearly
 irrelevant ones to save cost.
 
+## Model per agent
+
+Each lens can run on its own model — pass `model` to the `Agent` spawn
+(`opus` | `sonnet` | `haiku` | `fable`). Omit it to **inherit the session
+model** (the safe default). The user may set a profile at invocation
+("architect and synthesis on opus, the rest on haiku"); honor it, otherwise
+inherit. Guidance: a cheaper model (e.g. `haiku`) is fine for breadth lenses to
+keep cost/latency down, while reserving a stronger model for the hardest lens
+and the synthesis pass; mixing models also genuinely diversifies the panel.
+The model is fixed at spawn — `SendMessage` continues an agent on the model it
+was created with.
+
 ## How it runs
 
 1. **Open.** Take the topic from the args (if none, ask once what to decide).
