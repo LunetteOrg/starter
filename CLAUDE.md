@@ -47,6 +47,13 @@ edit files). Run them up front, before the line-by-line pass:
 - `adr-check` — code vs `docs/adr/`: ADR violations + decisions that need a new ADR.
 - `story-check` — `packages/ui` components vs their Storybook stories/Foundations.
 
+**Deliver feedback on the PR.** When the review targets a PR (it has a GitHub
+PR), post findings as **inline PR comments** anchored to the relevant lines —
+not only as a chat summary. Prefer `/code-review --comment`, and attach the
+`adr-check`/`story-check` findings to the lines they reference. Reserve the chat
+summary for an overview; the actionable items live as PR comments. When there is
+no PR (local working diff), a chat report is fine.
+
 ## Key Paths
 
 - ADRs: `docs/adr/` (index in `docs/adr/README.md`)
