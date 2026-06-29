@@ -4,6 +4,12 @@
 
 TypeScript monorepo starter template. Architectural decisions are recorded as ADRs in `docs/adr/` — read the relevant ADR before changing anything it covers.
 
+**Record shared decisions in the repo.** Any team/project decision (config
+choices, architectural trade-offs, conventions) must live in a shared, in-repo
+form — an ADR under `docs/adr/` or a comment in the affected file — never only
+in a private or agent-local note. If it matters to more than one person, it
+belongs where everyone (and every machine) can see it.
+
 ## Conventions
 
 Source of truth: `CONTRIBUTING.md`
