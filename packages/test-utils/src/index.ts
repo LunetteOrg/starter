@@ -1,4 +1,9 @@
-export { assertNoForbiddenImports, getImports } from './arch'
+export {
+  assertLayerBoundaries,
+  assertNoForbiddenImports,
+  getImports,
+  type LayerBoundaryOptions,
+} from './arch'
 export {
   createTestDb,
   stopAllTestDbs,

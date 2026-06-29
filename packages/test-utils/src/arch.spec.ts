@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { getImports } from './arch'
+import { assertLayerBoundaries, getImports } from './arch'
 
 const FIXTURES = resolve(__dirname, '__fixtures__/layer')
 
@@ -56,5 +56,47 @@ describe('getImports', () => {
         /No files matched/,
       )
     })
+  })
+})
+
+describe('assertLayerBoundaries', () => {
+  it('passes when no file imports a forbidden specifier', async () => {
+    await expect(
+      assertLayerBoundaries({
+        pattern: `${FIXTURES}/**/*.ts`,
+        layer: 'domain',
+        forbidden: [/^react-router/],
+      }),
+    ).resolves.toBeUndefined()
+  })
+
+  it('fails on a forbidden static import', async () => {
+    await expect(
+      assertLayerBoundaries({
+        pattern: `${FIXTURES}/source.ts`,
+        layer: 'domain',
+        forbidden: [/~\/domain\//],
+      }),
+    ).rejects.toThrow(/domain violation/)
+  })
+
+  it('fails on a forbidden dynamic import() that inline regex guards would miss', async () => {
+    await expect(
+      assertLayerBoundaries({
+        pattern: `${FIXTURES}/lazy.ts`,
+        layer: 'domain',
+        forbidden: [/~\/domain\//],
+      }),
+    ).rejects.toThrow(/domain violation/)
+  })
+
+  it('throws (no vacuous pass) when the pattern matches no files', async () => {
+    await expect(
+      assertLayerBoundaries({
+        pattern: `${FIXTURES}/nonexistent/**/*.ts`,
+        layer: 'domain',
+        forbidden: [/whatever/],
+      }),
+    ).rejects.toThrow(/No files matched/)
   })
 })
