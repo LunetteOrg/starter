@@ -1,15 +1,15 @@
 /*
- * Design tokens del progetto — CSS custom properties pure (ADR-0014).
+ * Project design tokens — plain CSS custom properties (ADR-0014).
  *
- * Set neutro di partenza: sovrascrivi i valori per il brand del progetto
- * derivato, ma mantieni i nomi dei token (i componenti li referenziano via
- * `var(--token)` e non devono mai duplicare valori grezzi).
+ * Neutral starting set: override the values for the derived project's brand,
+ * but keep the token names (components reference them via `var(--token)` and
+ * must never duplicate raw values).
  *
- * I blocchi `@tokens ... @tokens-end` sono letti dall'addon
- * `storybook-design-token` per generare le pagine Foundations. Non rimuovere
- * le annotazioni quando aggiungi token: estendi il gruppo giusto.
+ * The `@tokens ... @tokens-end` blocks are read by the `storybook-design-token`
+ * addon to generate the Foundations pages. Don't remove the annotations when
+ * adding tokens: extend the right group.
  *
- * Importa da app/Storybook via `@starter/ui-tokens/tokens.css`.
+ * Import from app/Storybook via `@starter/ui-tokens/tokens.css`.
  */
 
 :root {
@@ -28,7 +28,7 @@
   --color-neutral-700: #334155;
   --color-neutral-900: #0f172a;
 
-  /* Brand accent (placeholder — sostituisci col colore del progetto) */
+  /* Brand accent (placeholder — replace with the project's colour) */
   --color-brand-100: #dbeafe;
   --color-brand-500: #3b82f6;
   --color-brand-700: #1d4ed8;

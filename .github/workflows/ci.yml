@@ -58,9 +58,9 @@ jobs:
         if: always()
         run: node scripts/coverage-summary.mjs
 
-  # TODO: abilitare quando esiste un'app target con test e2e (Playwright).
-  # Aggiorna `--filter=@starter/<app>` sui comandi `playwright install` e `db:migrate`,
-  # e qualunque env var richiesta dall'app (SESSION_SECRET, ecc.).
+  # TODO: enable once there's a target app with e2e tests (Playwright).
+  # Update `--filter=@starter/<app>` on the `playwright install` and `db:migrate`
+  # commands, plus any env var the app requires (SESSION_SECRET, etc.).
   e2e:
     if: false
     runs-on: ubuntu-latest

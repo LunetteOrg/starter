@@ -1,10 +1,10 @@
-# Render Blueprint — auto-deploy via push su main, nessun workflow GitHub Actions richiesto.
+# Render Blueprint — auto-deploy on push to main, no GitHub Actions workflow required.
 # Docs: https://render.com/docs/blueprint-spec
 #
-# Personalizzare prima del primo deploy:
-#   - `web.name` e `databases[].name`
-#   - `web.rootDir`/`buildCommand`/`startCommand` se l'app target non è la prima sotto apps/
-#   - aggiungere secrets via dashboard Render (envVars con `sync: false`)
+# Customize before the first deploy:
+#   - `web.name` and `databases[].name`
+#   - `web.rootDir`/`buildCommand`/`startCommand` if the target app isn't the first under apps/
+#   - add secrets via the Render dashboard (envVars with `sync: false`)
 
 databases:
   - name: starter-db
@@ -33,6 +33,6 @@ services:
         fromDatabase:
           name: starter-db
           property: connectionString
-      # TODO: aggiungere qui i secret applicativi (sync: false placeholder)
+      # TODO: add the application secrets here (sync: false placeholder)
       # - key: SESSION_SECRET
       #   sync: false

@@ -1,13 +1,13 @@
 /**
- * Config Stylelint condivisa dello starter.
+ * Shared Stylelint config for the starter.
  *
- * - `standard` + `css-modules`: regole CSS moderne + sintassi dei `*.module.css`
- *   (`:global`, `composes`, ecc.).
- * - `no-unsupported-browser-features`: gate di compatibilità su `browserslist`
- *   (severity `warning`, non blocca: i target li decide il browserslist a root).
+ * - `standard` + `css-modules`: modern CSS rules + `*.module.css` syntax
+ *   (`:global`, `composes`, etc.).
+ * - `no-unsupported-browser-features`: a compatibility gate over `browserslist`
+ *   (severity `warning`, non-blocking: the targets are decided by the root browserslist).
  *
- * Biome formatta/lint-a il CSS in modo base; Stylelint aggiunge le regole
- * CSS-specifiche (css-modules, compat browser) che Biome non copre.
+ * Biome formats/lints CSS at a basic level; Stylelint adds the CSS-specific
+ * rules (css-modules, browser compat) that Biome doesn't cover.
  */
 export default {
   extends: ['stylelint-config-standard', 'stylelint-config-css-modules'],
@@ -17,16 +17,16 @@ export default {
       true,
       {
         severity: 'warning',
-        // `css-nesting` è marcato "parziale" da caniuse ma è di fatto usabile.
+        // `css-nesting` is flagged "partial" by caniuse but is usable in practice.
         ignore: ['css-nesting'],
       },
     ],
-    // I nomi-classe dei CSS Modules usano camelCase.
+    // CSS Modules class names use camelCase.
     'selector-class-pattern': [
       '^[a-z][a-zA-Z0-9]*$',
       { message: 'CSS Modules classes use camelCase' },
     ],
-    // Target browser larghi: usa la forma classica min-/max-width, non la range.
+    // Broad browser targets: use the classic min-/max-width form, not the range.
     'media-feature-range-notation': 'prefix',
   },
 }

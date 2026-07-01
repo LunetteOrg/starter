@@ -1,16 +1,16 @@
-// TEMPLATE — copia in `apps/<app>/app/arch.spec.ts` quando crei la prima app,
-// poi rinomina rimuovendo `.template`. Adatta i pattern `forbidden` ai layer
-// reali dell'app.
+// TEMPLATE — copy to `apps/<app>/app/arch.spec.ts` when you create the first
+// app, then rename by dropping `.template`. Adapt the `forbidden` patterns to
+// the app's real layers.
 //
-// Questi test rispecchiano gli override Biome `noRestrictedImports` in
-// `biome.json` (ADR-0004): la STESSA violazione deve far fallire sia il lint
-// sia questo test. Quando cambi un confine, aggiorna ENTRAMBI.
+// These tests mirror the Biome `noRestrictedImports` overrides in `biome.json`
+// (ADR-0004): the SAME violation must fail both the lint and this test. When you
+// change a boundary, update BOTH.
 //
-// Perché un test oltre al lint? `assertLayerBoundaries` è costruito su
-// `getImports`, quindi intercetta anche gli `import()` dinamici (statici e
-// template-literal) che `noRestrictedImports` (statico) non vede. E `getImports`
-// lancia se il glob non matcha nulla → niente "pass a vuoto" se sposti una
-// cartella.
+// Why a test on top of the lint? `assertLayerBoundaries` is built on
+// `getImports`, so it also catches dynamic `import()` (static and
+// template-literal forms) that `noRestrictedImports` (static) misses. And
+// `getImports` throws if the glob matches nothing → no "empty pass" if you move
+// a folder.
 
 import { resolve } from 'node:path'
 import { assertLayerBoundaries } from '@starter/test-utils'
@@ -19,8 +19,8 @@ import { describe, it } from 'vitest'
 const APP = resolve(__dirname)
 
 describe('architecture boundaries', () => {
-  // Il domain resta puro: niente framework, niente lib/infrastruttura.
-  // Unica eccezione tipica: il contratto degli errori tipizzati (ADR-0005).
+  // The domain stays pure: no framework, no lib/infrastructure.
+  // The one typical exception: the typed-error contract (ADR-0005).
   it('domain imports nothing from framework or lib', async () => {
     await assertLayerBoundaries({
       pattern: resolve(APP, 'domain/**/*.{ts,tsx}'),
@@ -29,8 +29,8 @@ describe('architecture boundaries', () => {
     })
   })
 
-  // I use-case orchestrano il domain via porte iniettate: niente framework,
-  // niente DB/adapter concreti, niente bootstrap (invertirebbe il layering).
+  // Use-cases orchestrate the domain via injected ports: no framework,
+  // no concrete DB/adapters, no bootstrap (that would invert the layering).
   it('use-cases import no framework, concrete db, adapters or bootstrap', async () => {
     await assertLayerBoundaries({
       pattern: resolve(APP, 'use-cases/**/*.{ts,tsx}'),
@@ -39,7 +39,7 @@ describe('architecture boundaries', () => {
     })
   })
 
-  // Le route consumano solo `context.app`: mai use-case/domain/db/bootstrap diretti.
+  // Routes consume only `context.app`: never use-cases/domain/db/bootstrap directly.
   it('routes reach the app only through context', async () => {
     await assertLayerBoundaries({
       pattern: resolve(APP, 'routes/**/*.{ts,tsx}'),

@@ -1,10 +1,10 @@
 import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test'
 
 /**
- * Base config Playwright riutilizzabile dalle app (ADR-0006).
+ * Reusable Playwright base config for apps (ADR-0006).
  *
- * Le app non scrivono la config a mano: chiamano `definePlaywrightConfig`
- * passando la porta e (opzionale) i path di globalSetup/teardown.
+ * Apps don't write the config by hand: they call `definePlaywrightConfig`
+ * passing the port and (optionally) the globalSetup/teardown paths.
  *
  * @example
  * ```ts
@@ -19,20 +19,20 @@ import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/te
  * ```
  */
 export interface E2eConfigOptions {
-  /** Porta su cui il dev server dell'app ascolta (avviato in globalSetup). */
+  /** Port the app's dev server listens on (started in globalSetup). */
   port: number
-  /** Modulo globalSetup: avvia infra effimera (testcontainers) + app server. */
+  /** globalSetup module: starts ephemeral infra (testcontainers) + app server. */
   globalSetup?: string
-  /** Modulo globalTeardown: ferma quanto avviato in globalSetup. */
+  /** globalTeardown module: stops whatever globalSetup started. */
   globalTeardown?: string
   /**
-   * Path/regex a un file di warmup eseguito prima dei test (scalda l'optimizer
-   * di Vite, riduce il flake da timeout al primo avvio). Opzionale.
+   * Path/regex to a warmup file run before the tests (warms up Vite's optimizer,
+   * reduces first-start timeout flake). Optional.
    */
   warmupSetup?: string
-  /** Locale del browser (es. 'it-IT'); default = Desktop Chrome. */
+  /** Browser locale (e.g. 'it-IT'); default = Desktop Chrome. */
   locale?: string
-  /** Header HTTP extra (es. per pinnare un middleware i18n). */
+  /** Extra HTTP headers (e.g. to pin an i18n middleware). */
   extraHTTPHeaders?: Record<string, string>
 }
 
@@ -49,15 +49,15 @@ export function definePlaywrightConfig(options: E2eConfigOptions): PlaywrightTes
     retries: 0,
     forbidOnly: isCI,
     reporter: [['list']],
-    // NB: nessun `webServer`. Playwright avvierebbe il webServer PRIMA del
-    // globalSetup, mancando i testcontainers. Avvia il dev server dentro
-    // globalSetup usando gli helper di @starter/test-utils (ADR-0006).
+    // NB: no `webServer`. Playwright would start the webServer BEFORE
+    // globalSetup, missing the testcontainers. Start the dev server inside
+    // globalSetup using the @starter/test-utils helpers (ADR-0006).
     ...(globalSetup ? { globalSetup } : {}),
     ...(globalTeardown ? { globalTeardown } : {}),
     use: {
       baseURL: `http://localhost:${port}`,
       trace: 'on-first-retry',
-      // Stato pulito: i test che servono cookie li impostano esplicitamente.
+      // Clean state: tests that need cookies set them explicitly.
       storageState: { cookies: [], origins: [] },
       ...(locale ? { locale } : {}),
       ...(extraHTTPHeaders ? { extraHTTPHeaders } : {}),

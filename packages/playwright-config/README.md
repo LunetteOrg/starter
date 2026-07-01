@@ -1,7 +1,7 @@
 # @starter/playwright-config
 
-Base config Playwright condivisa — implementa la strategia E2E di **ADR-0006**.
-Le app non scrivono la config a mano: chiamano `definePlaywrightConfig`.
+Shared Playwright base config — implements the E2E strategy of **ADR-0006**.
+Apps don't write the config by hand: they call `definePlaywrightConfig`.
 
 ```ts
 // apps/<app>/playwright.config.ts
@@ -14,15 +14,15 @@ export default definePlaywrightConfig({
 })
 ```
 
-## Cosa codifica
+## What it encodes
 
-- `testDir: './__tests__'`, `testMatch: '**/*.e2e.ts'` — allineato al lint E2E in `biome.json`.
-- **Nessun `webServer`**: Playwright lo avvierebbe *prima* del `globalSetup`, mancando i testcontainers. Il dev server va avviato dentro `globalSetup` con gli helper di `@starter/test-utils`.
-- `storageState` pulito (`{ cookies: [], origins: [] }`): i test che servono cookie li impostano esplicitamente.
-- `workers: 1`, `fullyParallel: false`, `retries: 0`, `forbidOnly` in CI, reporter `list`, `trace: 'on-first-retry'`.
-- Project `chromium` (Desktop Chrome); `warmup` opzionale (`warmupSetup`) per scaldare l'optimizer di Vite.
+- `testDir: './__tests__'`, `testMatch: '**/*.e2e.ts'` — aligned with the E2E lint in `biome.json`.
+- **No `webServer`**: Playwright would start it *before* `globalSetup`, missing the testcontainers. The dev server must be started inside `globalSetup` with the `@starter/test-utils` helpers.
+- Clean `storageState` (`{ cookies: [], origins: [] }`): tests that need cookies set them explicitly.
+- `workers: 1`, `fullyParallel: false`, `retries: 0`, `forbidOnly` in CI, `list` reporter, `trace: 'on-first-retry'`.
+- `chromium` project (Desktop Chrome); optional `warmup` (`warmupSetup`) to warm up Vite's optimizer.
 
-> Lo starter non include un'app, quindi non c'è un E2E eseguibile: questa config
-> è il punto di aggancio per la prima app del progetto derivato. Installa
-> `@playwright/test` e `@starter/playwright-config` nell'app e crea
-> `playwright.config.ts` come sopra.
+> The starter ships no app, so there's no runnable E2E: this config is the
+> hook-in point for the derived project's first app. Install `@playwright/test`
+> and `@starter/playwright-config` in the app and create `playwright.config.ts`
+> as above.

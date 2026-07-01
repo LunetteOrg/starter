@@ -1,16 +1,16 @@
 # Lunette Starter
 
-Template TypeScript monorepo (Turbo + pnpm) con Biome, Lefthook, commitlint, drizzle/postgres + testcontainers, deploy Render via Blueprint, CI GitHub Actions.
+TypeScript monorepo template (Turbo + pnpm) with Biome, Lefthook, commitlint, drizzle/postgres + testcontainers, Render deploy via Blueprint, GitHub Actions CI.
 
-## Crea un nuovo progetto
+## Create a new project
 
 ```bash
 npm create @lntt my-app
-# oppure
+# or
 pnpm create @lntt my-app
 ```
 
-Poi:
+Then:
 
 ```bash
 cd my-app
@@ -19,24 +19,24 @@ pnpm infra:up
 pnpm dev
 ```
 
-Lo scaffolding fa il rename dei placeholder (`@starter/*`, credenziali DB, nomi servizi Render) col nome scelto, ed esegue `git init` + primo commit.
+Scaffolding renames the placeholders (`@starter/*`, DB credentials, Render service names) to the chosen name, and runs `git init` + the first commit.
 
-Il CLI è [`@lntt/create`](https://www.npmjs.com/package/@lntt/create) ([sorgente](https://github.com/LunetteOrg/create-lunette)).
+The CLI is [`@lntt/create`](https://www.npmjs.com/package/@lntt/create) ([source](https://github.com/LunetteOrg/create-lunette)).
 
-## Cosa c'è dentro
+## What's inside
 
 - **Tooling**: Biome (lint+format), Lefthook (pre-commit lint+typecheck, commit-msg commitlint), pnpm 10.16.1, Turbo 2.x
-- **Enforcement architetturale**: import boundaries per layer via Biome `noRestrictedImports` (domain/use-cases/routes, glob su `apps/*`), ban di `Date` a favore di `Temporal`, plugin GritQL per i test e2e, helper per architecture test in `@starter/test-utils` — vedi [ADR-0004](./docs/adr/0004-import-boundaries-enforcement.md)
-- **ADR**: decisioni architetturali in [`docs/adr/`](./docs/adr/README.md)
-- **Pacchetti condivisi** (`packages/`):
-  - `@starter/biome-config` — preset Biome
+- **Architectural enforcement**: per-layer import boundaries via Biome `noRestrictedImports` (domain/use-cases/routes, glob over `apps/*`), a ban on `Date` in favour of `Temporal`, a GritQL plugin for e2e tests, architecture-test helpers in `@starter/test-utils` — see [ADR-0004](./docs/adr/0004-import-boundaries-enforcement.md)
+- **ADRs**: architectural decisions in [`docs/adr/`](./docs/adr/README.md)
+- **Shared packages** (`packages/`):
+  - `@starter/biome-config` — Biome preset
   - `@starter/typescript-config` — `base.json` + `browser.json` (strict ES2024)
-  - `@starter/test-utils` — `createTestDb` + plugin Vitest (testcontainers + Postgres + transaction rollback)
-  - `@starter/ui`, `@starter/ui-tokens` — scaffold vuoti
-- **Infra**: `compose.yaml` (Postgres 17), `render.yaml` Blueprint (web + DB managed, autoDeploy)
-- **CI**: `.github/workflows/ci.yml` (lint+typecheck+test, job e2e disabilitato finché non c'è un'app target)
+  - `@starter/test-utils` — `createTestDb` + Vitest plugin (testcontainers + Postgres + transaction rollback)
+  - `@starter/ui`, `@starter/ui-tokens` — empty scaffolds
+- **Infra**: `compose.yaml` (Postgres 17), `render.yaml` Blueprint (web + managed DB, autoDeploy)
+- **CI**: `.github/workflows/ci.yml` (lint+typecheck+test, e2e job disabled until there's a target app)
 - **DX**: `.devcontainer/` (Node 24, Docker-in-Docker), `.vscode/` (default formatter Biome)
 
-## Convenzioni
+## Conventions
 
-Vedi [`CONTRIBUTING.md`](./CONTRIBUTING.md) per naming branch/commit/file e regole di import. Vedi [`CLAUDE.md`](./CLAUDE.md) per le regole architetturali rilevanti agli agenti AI.
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for branch/commit/file naming and import rules. See [`CLAUDE.md`](./CLAUDE.md) for the architectural rules relevant to AI agents.

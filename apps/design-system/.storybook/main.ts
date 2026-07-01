@@ -1,16 +1,16 @@
 import type { StorybookConfig } from '@storybook/react-vite'
 
 /**
- * Storybook è la vetrina di `packages/ui` e dei design token (ADR-0014).
- * Le storie vivono accanto ai componenti in `packages/ui`; questa app le
- * aggrega e aggiunge le pagine Foundations locali.
+ * Storybook is the showcase for `packages/ui` and the design tokens (ADR-0014).
+ * Stories live next to the components in `packages/ui`; this app aggregates
+ * them and adds the local Foundations pages.
  */
 const config: StorybookConfig = {
   stories: [
-    // Pagine locali (Welcome, Foundations)
+    // Local pages (Welcome, Foundations)
     '../src/**/*.mdx',
     '../src/**/*.stories.@(ts|tsx)',
-    // Storie co-locate nel package UI condiviso
+    // Stories co-located in the shared UI package
     '../../../packages/ui/src/**/*.mdx',
     '../../../packages/ui/src/**/*.stories.@(ts|tsx)',
   ],
@@ -20,7 +20,7 @@ const config: StorybookConfig = {
     {
       name: 'storybook-design-token',
       options: {
-        // Glob relativo alla root dell'app: legge i token da @starter/ui-tokens
+        // Glob relative to the app root: reads the tokens from @starter/ui-tokens
         designTokenGlob: '../../packages/ui-tokens/**/*.css',
       },
     },

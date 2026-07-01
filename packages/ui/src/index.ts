@@ -1,2 +1,2 @@
-// Scaffold intenzionalmente vuoto — aggiungi qui i componenti UI condivisi.
+// Intentionally empty scaffold — add the shared UI components here.
 export {}

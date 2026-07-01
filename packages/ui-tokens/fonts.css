@@ -1,11 +1,11 @@
 /*
- * Font del progetto.
+ * Project fonts.
  *
- * Default: font stack di sistema (zero richieste di rete, zero dipendenze).
- * Per font self-hosted, installa `@fontsource/<famiglia>`, aggiungi qui gli
- * `@import` e ridefinisci `--font-sans-stack` / `--font-mono-stack`.
+ * Default: system font stack (zero network requests, zero dependencies).
+ * For self-hosted fonts, install `@fontsource/<family>`, add the `@import`s
+ * here and redefine `--font-sans-stack` / `--font-mono-stack`.
  *
- * Importa da app/Storybook via `@starter/ui-tokens/fonts.css`.
+ * Import from app/Storybook via `@starter/ui-tokens/fonts.css`.
  */
 
 :root {

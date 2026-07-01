@@ -1,11 +1,11 @@
 # @starter/ui
 
-Pacchetto per i componenti React condivisi tra le app del monorepo.
+Package for the React components shared across the monorepo's apps.
 
-Scaffold vuoto: aggiungi i componenti in `src/` ed esportali da `src/index.ts`.
+Empty scaffold: add components in `src/` and export them from `src/index.ts`.
 
-## Convenzioni
+## Conventions
 
-- Componenti `PascalCase`, file `kebab-case` (vedi `CONTRIBUTING.md`).
-- I token visivi (colori, spacing, font) vivono in `@starter/ui-tokens` — qui non hardcodare valori brand.
-- Dipendenze peer: `react` ≥ 19 e `@starter/ui-tokens`.
+- `PascalCase` components, `kebab-case` files (see `CONTRIBUTING.md`).
+- Visual tokens (colours, spacing, fonts) live in `@starter/ui-tokens` — don't hardcode brand values here.
+- Peer dependencies: `react` ≥ 19 and `@starter/ui-tokens`.

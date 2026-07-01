@@ -5,16 +5,16 @@
 
 ## Context
 
-Componenti e app hanno bisogno di valori condivisi (colori, spacing, radius, tipografia, ombre) con un'unica fonte di verità. Le opzioni vanno da pipeline di build (style-dictionary, generazione multi-formato) a CSS custom properties scritte a mano. Lo starter privilegia il minor numero di build step e zero tooling da mantenere finché non serve davvero.
+Components and apps need shared values (colours, spacing, radius, typography, shadows) with a single source of truth. Options range from build pipelines (style-dictionary, multi-format generation) to hand-written CSS custom properties. The starter favours the fewest build steps and zero tooling to maintain until it's genuinely needed.
 
 ## Decision
 
-I design token vivono nel package `@starter/ui-tokens` come **CSS custom properties pure** in `tokens.css` — nessuna pipeline, nessun build step, nessun formato intermedio.
+Design tokens live in the `@starter/ui-tokens` package as **plain CSS custom properties** in `tokens.css` — no pipeline, no build step, no intermediate format.
 
-- I componenti referenziano i token via `var(--token-name)` e **non duplicano mai** valori grezzi.
-- App e Storybook importano `@starter/ui-tokens/tokens.css` (e `fonts.css`).
-- I font default sono lo **stack di sistema** (`fonts.css`); per font self-hosted si installa `@fontsource/*` e si ridefiniscono `--font-sans-stack` / `--font-mono-stack`.
-- I gruppi di token sono annotati con commenti `@tokens <Gruppo>` / `@presenter <Tipo>` / `@tokens-end`, parsati da `storybook-design-token` per generare le pagine Foundations (ADR-0015).
+- Components reference tokens via `var(--token-name)` and **never duplicate** raw values.
+- Apps and Storybook import `@starter/ui-tokens/tokens.css` (and `fonts.css`).
+- The default fonts are the **system stack** (`fonts.css`); for self-hosted fonts, install `@fontsource/*` and redefine `--font-sans-stack` / `--font-mono-stack`.
+- Token groups are annotated with `@tokens <Group>` / `@presenter <Type>` / `@tokens-end` comments, parsed by `storybook-design-token` to generate the Foundations pages (ADR-0015).
 
 ```css
 /**
@@ -25,12 +25,12 @@ I design token vivono nel package `@starter/ui-tokens` come **CSS custom propert
 /* @tokens-end */
 ```
 
-Il set di token versionato è **neutro**: è un punto di partenza da sovrascrivere col brand del progetto derivato, mantenendo i nomi dei token.
+The versioned token set is **neutral**: a starting point to override with the derived project's brand, keeping the token names.
 
 ## Consequences
 
-- \+ Zero build step e zero dipendenze per i token; modifica un valore e tutto si aggiorna.
-- \+ I token sono nativi del browser (cascade, theming via `:root`, override per scope).
-- \+ Le pagine Foundations si generano dalle annotazioni: nessuna doc da tenere allineata a mano.
-- − Niente generazione multi-piattaforma (iOS/Android) né tipi TypeScript sui nomi dei token: se servono, andrà introdotta una pipeline e questo ADR superato.
-- − Le annotazioni `@tokens` vanno mantenute quando si aggiungono token, altrimenti spariscono dalle Foundations.
+- \+ Zero build steps and zero dependencies for tokens; change a value and everything updates.
+- \+ Tokens are browser-native (cascade, theming via `:root`, per-scope overrides).
+- \+ The Foundations pages are generated from the annotations: no docs to keep in sync by hand.
+- − No multi-platform generation (iOS/Android) nor TypeScript types on token names: if needed, a pipeline must be introduced and this ADR superseded.
+- − The `@tokens` annotations must be maintained when adding tokens, otherwise they disappear from the Foundations.
