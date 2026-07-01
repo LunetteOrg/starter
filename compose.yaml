@@ -8,6 +8,14 @@ services:
     ports:
       - '5432:5432'
     volumes:
+      # Persisted in a Docker-managed NAMED VOLUME, not a bind mount to a project
+      # folder. This is deliberate: on macOS/Windows a host bind mount for the
+      # Postgres data dir goes through the Docker Desktop file-sharing layer
+      # (virtiofs/gRPC-FUSE) — slow I/O and occasional permission/fsync issues,
+      # since Postgres is strict about ownership of its data dir. The named volume
+      # lives inside the Docker VM (native speed) and keeps DB files out of the repo.
+      # Wipe the database with `docker compose down -v` (removes this volume);
+      # then `docker compose up -d && pnpm db:migrate` for a clean slate.
       - pgdata:/var/lib/postgresql/data
     stop_grace_period: 30s
     healthcheck:
