@@ -27,6 +27,30 @@ jobs:
       # (ADR-0007). Today it builds the Storybook (design-system); it covers each
       # app's build for free the moment one is scaffolded.
       - run: pnpm turbo lint typecheck build
+      # Schema-drift guard: the committed migrations must be a COMPLETE
+      # translation of the Drizzle schema. protect-migrations covers immutability
+      # and ADR-0019 covers safety, but neither catches a schema edit that was
+      # never captured in a migration — which makes production diverge silently.
+      # We regenerate migrations from the schema (offline: Drizzle diffs schema
+      # vs snapshots, no DB needed) and fail if that dirties the tree.
+      # Self-arming: no drizzle config yet → no-op (ADR-0016), so it stays green
+      # until the DB layer is scaffolded.
+      - name: Schema drift (migrations match the schema)
+        run: |
+          if [ -z "$(git ls-files '*drizzle.config.*')" ]; then
+            echo "No drizzle config yet — schema-drift check is a no-op."
+            exit 0
+          fi
+          pnpm turbo db:generate
+          git add -A
+          if git diff --cached --quiet -- ':(glob)**/drizzle/**'; then
+            echo "✅ Migrations are in sync with the schema."
+          else
+            echo "❌ Schema drift: the committed migrations don't match the schema."
+            git --no-pager diff --cached --stat -- ':(glob)**/drizzle/**'
+            echo "Run 'pnpm db:generate' and commit the generated migration."
+            exit 1
+          fi
       # `test` runs separately so `--coverage` reaches vitest without leaking to
       # the other tasks. Coverage feeds the job summary below.
       - run: pnpm turbo test -- --coverage
