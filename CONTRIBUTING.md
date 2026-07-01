@@ -64,6 +64,26 @@ Violations are caught twice: **Biome `noRestrictedImports`** (pre-commit + CI) a
 - Use `matchError()` in route actions for exhaustive handling
 - Never `throw` below the use-case layer
 
+## Testing
+
+Strategy and tiers are defined in [ADR-0006](./docs/adr/0006-testing-strategy.md)
+and [ADR-0020](./docs/adr/0020-testcontainer-reuse-and-db-isolation.md). The working rules:
+
+- **Bug → red test first.** Before fixing a bug, write a test that fails *for the
+  right reason* (reproduces the actual defect), then make it pass. The failing
+  run is the proof the test bites.
+- **Pick the tier by what you're proving**, not by habit:
+  - `*.spec.ts` — **unit**: pure logic (domain, use-case wiring, helpers). No I/O.
+  - `*.test.ts` — **integration**: real Postgres via `withTestDb` + transaction
+    rollback. Repositories, migrations, anything that touches the DB.
+  - **e2e** (Playwright) — full HTTP + DB path; add once there's a target app.
+- **Smell test:** if a test would still pass with the database and collaborators
+  fully mocked, it isn't proving the thing that breaks in production — push it
+  down a tier or assert on real effects.
+- **Never `vi.mock` the database.** Use `withTestDb` (ADR-0020). Mocking the DB
+  hides schema/migration/query bugs, which is exactly what integration tests exist
+  to catch.
+
 ## Merge Strategy
 
 | Story Type | Merge | UAT |

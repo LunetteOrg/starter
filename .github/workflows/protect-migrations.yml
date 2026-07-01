@@ -1,0 +1,55 @@
+name: Protect merged migrations
+
+# Migrations are immutable snapshots (ADR-0007, ADR-0019). Once a migration has
+# been merged, modifying / renaming / deleting it makes the schema applied on
+# production diverge from history. This guard fails a PR that touches an already
+# merged migration; ADDING new migrations is always allowed.
+#
+# Self-arming: the `paths` filter means the job only runs on PRs that touch a
+# `drizzle/` migration, so it is a no-op until the first migration lands.
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - '**/drizzle/**'
+
+jobs:
+  protect-migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history so git diff can compare HEAD against the base branch.
+          fetch-depth: 0
+
+      - name: Check that no existing migration has been modified
+        run: |
+          BASE_REF="${{ github.base_ref }}"
+
+          # Modified (M), Deleted (D) or Renamed (R) SQL migrations under any
+          # `drizzle/` dir. Added files (A) are excluded on purpose.
+          CHANGED=$(git diff --name-only --diff-filter=MDR \
+            "origin/${BASE_REF}...HEAD" \
+            -- ':(glob)**/drizzle/**/*.sql' \
+          || true)
+
+          if [ -z "$CHANGED" ]; then
+            echo "✅ No existing migration files were modified, deleted or renamed."
+            exit 0
+          fi
+
+          echo ""
+          echo "❌ The following merged migrations were modified, deleted or renamed:"
+          echo ""
+          echo "$CHANGED" | sed 's/^/   • /'
+          echo ""
+          echo "Merged migrations are immutable (ADR-0007). Altering one makes the"
+          echo "schema applied on production diverge from the migration history."
+          echo ""
+          echo "How to fix:"
+          echo "  • Revert the changes to the files listed above."
+          echo "  • To change the schema, generate a NEW migration:"
+          echo "      pnpm db:generate"
+          exit 1
