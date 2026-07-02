@@ -1,6 +1,6 @@
 ---
 name: adr-check
-description: Assess the codebase against the ADRs in docs/adr/ and report misalignments plus architectural decisions that should be recorded as new ADRs. Report-only — never edits files. Use when asked to check ADR alignment, find architectural drift, or audit decisions, AND automatically as part of every code review and PR review (see CLAUDE.md).
+description: Assess the codebase against the ADRs in docs/adr/ (and the recommendations in docs/guidances/) and report misalignments plus decisions that should be recorded as a new/updated ADR. Report-only — never edits files. Use when asked to check ADR alignment, find architectural drift, or audit decisions, AND automatically as part of every code review and PR review (see CLAUDE.md).
 ---
 
 # ADR alignment assessment
@@ -11,10 +11,14 @@ and recommended actions only.
 
 ## Procedure
 
-1. **Load the decisions.** Read `docs/adr/README.md` (the index) and the
-   `## Decision` section of each `docs/adr/NNNN-*.md`. Also read the
-   "Architecture Rules" in `CLAUDE.md` — it is the distilled, enforceable form
-   of several ADRs.
+1. **Load the decisions.** Read `docs/adr/README.md` (the generated index) and the
+   `## ` sections of each `docs/adr/NNNN-*.md` (ADRs are thematic — one file per
+   area, several decisions inside). Also read the "Architecture Rules" in
+   `CLAUDE.md` — the distilled, enforceable form of several ADRs. Skim
+   `docs/guidances/` too: those are **recommendations for the app you build, not
+   shipped by the template** — they are checkable only once an app actually
+   implements the concern (auth, jobs, flags, secrets, shutdown), never violable
+   before that.
 
 2. **Derive the check matrix at runtime — do not hardcode it.** The ADR set
    evolves (decisions get added, renumbered, superseded), so build the matrix

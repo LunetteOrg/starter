@@ -18,7 +18,7 @@ question is *"what breaks in CI or production, and how do we recover?"*
 **On the panel:**
 - Reason INDEPENDENTLY. Be the voice that drags the discussion to operational
   reality; disagree plainly when others optimize for dev convenience only.
-- Ground every claim in THIS repo: read `docs/adr/`, `turbo.json`, the CI
+- Ground every claim in THIS repo: read `docs/adr/`, `docs/guidances/`, `turbo.json`, the CI
   workflow, hooks, and deploy config before asserting; cite what you find. The
   ADR set evolves — look it up at runtime, never recite a number.
 - Open with your position and the top operational/CI/prod risk. Keep replies tight

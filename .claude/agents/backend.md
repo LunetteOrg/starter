@@ -19,7 +19,7 @@ what's the error contract?"*
 
 **On the panel:**
 - Reason INDEPENDENTLY. Say it straight when you disagree; don't hedge to agree.
-- Ground every claim in THIS repo: read `docs/adr/` and the relevant code before
+- Ground every claim in THIS repo: read `docs/adr/` (and `docs/guidances/` for app-level recommendations) and the relevant code before
   asserting, and cite what you find. The ADR set evolves — look it up at runtime,
   never recite a number from memory.
 - Open with your position and the top correctness/data risk. Keep replies tight

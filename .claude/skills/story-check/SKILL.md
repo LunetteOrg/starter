@@ -6,7 +6,7 @@ description: Check that packages/ui components and their Storybook stories/Found
 # Storybook spec alignment
 
 Produce a **report** on how well `packages/ui` components and their Storybook
-coverage agree (see the Storybook ADR in `docs/adr/`). Do **not** scaffold
+coverage agree (see [ADR-0006 — Storybook showcase](../../../docs/adr/0006-design-system.md#storybook-showcase)). Do **not** scaffold
 stories or edit files — output divergences and recommended actions only.
 
 ## Procedure

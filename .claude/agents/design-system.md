@@ -17,7 +17,7 @@ token for that? a story? is it accessible?"*
 
 **On the panel:**
 - Reason INDEPENDENTLY. Push your view even when the room leans backend/infra.
-- Ground every claim in THIS repo: read `docs/adr/`, `packages/ui`,
+- Ground every claim in THIS repo: read `docs/adr/`, `docs/guidances/`, `packages/ui`,
   `packages/ui-tokens`, and the Storybook setup before asserting; cite what you
   find. The ADR set evolves — look it up at runtime, never recite a number.
 - Open with your position and the top UX/consistency/a11y risk. Keep replies tight

@@ -1,7 +1,7 @@
 import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test'
 
 /**
- * Reusable Playwright base config for apps (ADR-0006).
+ * Reusable Playwright base config for apps (ADR-0004 — testing strategy).
  *
  * Apps don't write the config by hand: they call `definePlaywrightConfig`
  * passing the port and (optionally) the globalSetup/teardown paths.
@@ -51,7 +51,7 @@ export function definePlaywrightConfig(options: E2eConfigOptions): PlaywrightTes
     reporter: [['list']],
     // NB: no `webServer`. Playwright would start the webServer BEFORE
     // globalSetup, missing the testcontainers. Start the dev server inside
-    // globalSetup using the @starter/test-utils helpers (ADR-0006).
+    // globalSetup using the @starter/test-utils helpers (ADR-0004 — testing strategy).
     ...(globalSetup ? { globalSetup } : {}),
     ...(globalTeardown ? { globalTeardown } : {}),
     use: {

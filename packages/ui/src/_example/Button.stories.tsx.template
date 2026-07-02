@@ -1,4 +1,4 @@
-// TEMPLATE — the story that ships WITH a component (ADR-0015). Copy alongside
+// TEMPLATE — the story that ships WITH a component (ADR-0006 — Storybook showcase). Copy alongside
 // the component, drop the `.template` suffix. A component is not "done" without
 // its story (and an a11y pass via the Storybook a11y addon).
 //

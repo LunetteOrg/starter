@@ -20,7 +20,7 @@
               "level": "error",
               "options": {
                 "deniedGlobals": {
-                  "Date": "Use Temporal instead of Date. See ADR-0002."
+                  "Date": "Use Temporal instead of Date. See ADR-0003 (tech stack baseline)."
                 }
               }
             }
@@ -37,17 +37,17 @@
               "level": "error",
               "options": {
                 "paths": {
-                  "react-router": "Framework forbidden in domain. Domain must stay pure (ADR-0004).",
-                  "#app/lib": "Lib forbidden in domain. Use injected interfaces only (ADR-0004)."
+                  "react-router": "Framework forbidden in domain. Domain must stay pure (ADR-0002 — import boundaries).",
+                  "#app/lib": "Lib forbidden in domain. Use injected interfaces only (ADR-0002 — import boundaries)."
                 },
                 "patterns": [
                   {
                     "group": ["react-router/*", "react-router/**"],
-                    "message": "Framework forbidden in domain. Domain must stay pure (ADR-0004)."
+                    "message": "Framework forbidden in domain. Domain must stay pure (ADR-0002 — import boundaries)."
                   },
                   {
                     "group": ["#app/lib/*", "#app/lib/**"],
-                    "message": "Lib forbidden in domain. Use injected interfaces only (ADR-0004)."
+                    "message": "Lib forbidden in domain. Use injected interfaces only (ADR-0002 — import boundaries)."
                   }
                 ]
               }
@@ -65,17 +65,17 @@
               "level": "error",
               "options": {
                 "paths": {
-                  "react-router": "Framework forbidden in use-cases (ADR-0004).",
-                  "#app/lib/db": "DB forbidden in use-cases. Inject repository interfaces (ADR-0004)."
+                  "react-router": "Framework forbidden in use-cases (ADR-0002 — import boundaries).",
+                  "#app/lib/db": "DB forbidden in use-cases. Inject repository interfaces (ADR-0002 — import boundaries)."
                 },
                 "patterns": [
                   {
                     "group": ["react-router/*", "react-router/**"],
-                    "message": "Framework forbidden in use-cases (ADR-0004)."
+                    "message": "Framework forbidden in use-cases (ADR-0002 — import boundaries)."
                   },
                   {
                     "group": ["#app/lib/db/*", "#app/lib/db/**"],
-                    "message": "DB forbidden in use-cases. Inject repository interfaces (ADR-0004)."
+                    "message": "DB forbidden in use-cases. Inject repository interfaces (ADR-0002 — import boundaries)."
                   }
                 ]
               }
@@ -93,27 +93,27 @@
               "level": "error",
               "options": {
                 "paths": {
-                  "#app/use-cases": "Use context.app.useCases instead (ADR-0004).",
-                  "#app/domain": "Use context.app instead (ADR-0004).",
-                  "#app/lib/db": "DB forbidden in routes (ADR-0004).",
-                  "#app/bootstrap": "Use context.app in routes, never import bootstrap directly (ADR-0004)."
+                  "#app/use-cases": "Use context.app.useCases instead (ADR-0002 — import boundaries).",
+                  "#app/domain": "Use context.app instead (ADR-0002 — import boundaries).",
+                  "#app/lib/db": "DB forbidden in routes (ADR-0002 — import boundaries).",
+                  "#app/bootstrap": "Use context.app in routes, never import bootstrap directly (ADR-0002 — import boundaries)."
                 },
                 "patterns": [
                   {
                     "group": ["#app/use-cases/*", "#app/use-cases/**"],
-                    "message": "Use context.app.useCases instead (ADR-0004)."
+                    "message": "Use context.app.useCases instead (ADR-0002 — import boundaries)."
                   },
                   {
                     "group": ["#app/domain/*", "#app/domain/**"],
-                    "message": "Use context.app instead (ADR-0004)."
+                    "message": "Use context.app instead (ADR-0002 — import boundaries)."
                   },
                   {
                     "group": ["#app/lib/db/*", "#app/lib/db/**"],
-                    "message": "DB forbidden in routes (ADR-0004)."
+                    "message": "DB forbidden in routes (ADR-0002 — import boundaries)."
                   },
                   {
                     "group": ["#app/bootstrap/*", "#app/bootstrap/**"],
-                    "message": "Use context.app in routes, never import bootstrap directly (ADR-0004)."
+                    "message": "Use context.app in routes, never import bootstrap directly (ADR-0002 — import boundaries)."
                   }
                 ]
               }

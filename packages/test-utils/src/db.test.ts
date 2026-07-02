@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { createTestDb } from './db'
 
 /**
- * Proof that the `withTestDb` isolation promise (ADR-0006, "never vi.mock the
+ * Proof that the `withTestDb` isolation promise (ADR-0004 (testing strategy), "never vi.mock the
  * database") actually holds — exercised against a real Postgres container, with
  * NO application schema, so it stays in the template as a permanent infra
  * guarantee rather than a domain example to be deleted by the consuming project.
@@ -65,7 +65,7 @@ describe.skipIf(!hasDocker)('createTestDb with migrations', () => {
   // outside any transaction. On the shared reused container that committed state
   // would leak across packages and collide with an app's own migrations, so this
   // instance gets its own database on the same container — isolating its journal
-  // without stopping the shared container (ADR-0020).
+  // without stopping the shared container (ADR-0004 — test database isolation).
   const migrated = createTestDb({
     migrationsFolder: './src/__fixtures__/migrations',
     databaseName: 'migrate_probe',

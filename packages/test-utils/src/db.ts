@@ -25,7 +25,7 @@ export interface TestDbOptions<TRelations extends AnyRelations = EmptyRelations>
    * applies migrations (committed, outside the rollback wrapper) would leak that
    * state to siblings. Passing a distinct name isolates this instance's schema
    * and migration journal in its own database on the same server, without
-   * stopping the shared container (ADR-0020).
+   * stopping the shared container (ADR-0004 — test database isolation).
    */
   databaseName?: string
 }
@@ -82,7 +82,7 @@ export function createTestDb<TRelations extends AnyRelations = EmptyRelations>(
    * container's default URI. With it, the named database is created once on the
    * container (idempotent, advisory-locked to serialise parallel processes that
    * share the reused container) and the URI is repointed at it — isolating this
-   * instance's schema + migration journal from any sibling instance (ADR-0020).
+   * instance's schema + migration journal from any sibling instance (ADR-0004 — test database isolation).
    */
   function getConnectionString(): Promise<string> {
     if (!connectionStringPromise) {
@@ -195,7 +195,7 @@ export function createTestDb<TRelations extends AnyRelations = EmptyRelations>(
     // parallel). Calling `container.stop()` here would defeat reuse and cause a
     // "marked for removal" race when a sibling package later attaches to the
     // same labeled container. Cleanup is delegated to the testcontainers reaper
-    // (Ryuk), which culls non-reused containers at session end (ADR-0020).
+    // (Ryuk), which culls non-reused containers at session end (ADR-0004 — test database isolation).
     const promise = initPromise
     if (promise) {
       try {

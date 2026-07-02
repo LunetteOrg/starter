@@ -1,6 +1,6 @@
 name: Protect merged migrations
 
-# Migrations are immutable snapshots (ADR-0007, ADR-0019). Once a migration has
+# Migrations are immutable snapshots (ADR-0005: expand-migrate-contract and the migration-safety guard). Once a migration has
 # been merged, modifying / renaming / deleting it makes the schema applied on
 # production diverge from history. This guard fails a PR that touches an already
 # merged migration; ADDING new migrations is always allowed.
@@ -45,7 +45,7 @@ jobs:
           echo ""
           echo "$CHANGED" | sed 's/^/   • /'
           echo ""
-          echo "Merged migrations are immutable (ADR-0007). Altering one makes the"
+          echo "Merged migrations are immutable (ADR-0005 — expand-migrate-contract). Altering one makes the"
           echo "schema applied on production diverge from the migration history."
           echo ""
           echo "How to fix:"

@@ -97,7 +97,7 @@ export interface LayerBoundaryOptions {
  * specifier. Built on {@link getImports}, so it also catches dynamic
  * `import()` (static and template-literal forms) that inline regex guards miss.
  *
- * Mirror the matching Biome `noRestrictedImports` override (ADR-0004): the same
+ * Mirror the matching Biome `noRestrictedImports` override (ADR-0002 — import boundaries): the same
  * violation should fail both lint and this test. `getImports` throws when the
  * pattern matches no files, so a misconfigured path fails loudly instead of
  * passing vacuously.

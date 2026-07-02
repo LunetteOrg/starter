@@ -1,5 +1,5 @@
 /*
- * Project design tokens — plain CSS custom properties (ADR-0014).
+ * Project design tokens — plain CSS custom properties (ADR-0006 — design tokens).
  *
  * Neutral starting set: override the values for the derived project's brand,
  * but keep the token names (components reference them via `var(--token)` and
@@ -129,7 +129,7 @@
 }
 
 /*
- * Dark theme (ADR-0017). Opt-in via `data-theme="dark"` on a root element —
+ * Dark theme (ADR-0006 — dark theme). Opt-in via `data-theme="dark"` on a root element —
  * the project stays light by default and nothing is forced. This only re-maps
  * the SEMANTIC tokens onto existing neutrals; components consume the semantic
  * names, so they theme automatically without touching raw values. Predisposing

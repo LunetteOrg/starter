@@ -55,7 +55,7 @@ chore: bump drizzle-kit to 0.22
 - Never import framework (RR7) in domain packages
 - Use `context.app` in routes — never import use cases directly
 
-Violations are caught twice: **Biome `noRestrictedImports`** (pre-commit + CI) and per-app **architecture tests** (`app/arch.spec.ts`, built on `@starter/test-utils`). See [ADR-0004](./docs/adr/0004-import-boundaries-enforcement.md).
+Violations are caught twice: **Biome `noRestrictedImports`** (pre-commit + CI) and per-app **architecture tests** (`app/arch.spec.ts`, built on `@starter/test-utils`). See [ADR-0002 (import boundaries)](./docs/adr/0002-architecture-and-boundaries.md#import-boundaries).
 
 ## Error Handling
 
@@ -66,8 +66,9 @@ Violations are caught twice: **Biome `noRestrictedImports`** (pre-commit + CI) a
 
 ## Testing
 
-Strategy and tiers are defined in [ADR-0006](./docs/adr/0006-testing-strategy.md)
-and [ADR-0020](./docs/adr/0020-testcontainer-reuse-and-db-isolation.md). The working rules:
+Strategy and tiers are defined in [ADR-0004 (Testing)](./docs/adr/0004-testing.md)
+([strategy](./docs/adr/0004-testing.md#testing-strategy) and
+[test database isolation](./docs/adr/0004-testing.md#test-database-isolation)). The working rules:
 
 - **Bug → red test first.** Before fixing a bug, write a test that fails *for the
   right reason* (reproduces the actual defect), then make it pass. The failing
@@ -80,7 +81,7 @@ and [ADR-0020](./docs/adr/0020-testcontainer-reuse-and-db-isolation.md). The wor
 - **Smell test:** if a test would still pass with the database and collaborators
   fully mocked, it isn't proving the thing that breaks in production — push it
   down a tier or assert on real effects.
-- **Never `vi.mock` the database.** Use `withTestDb` (ADR-0020). Mocking the DB
+- **Never `vi.mock` the database.** Use `withTestDb` ([ADR-0004 — test database isolation](./docs/adr/0004-testing.md#test-database-isolation)). Mocking the DB
   hides schema/migration/query bugs, which is exactly what integration tests exist
   to catch.
 
@@ -95,4 +96,4 @@ Trunk-based development: all branches max **1-2 days**.
 
 ## Further Reading
 
-Architectural decisions are recorded as ADRs in [`docs/adr/`](./docs/adr/README.md). Significant architectural changes should land together with a new ADR.
+Architectural decisions are recorded as ADRs in [`docs/adr/`](./docs/adr/README.md); recommended patterns for the app you build (not shipped by the template) live in [`docs/guidances/`](./docs/guidances/README.md). A significant architectural change should land with a new or updated ADR (see [ADR-0001](./docs/adr/0001-recording-decisions.md)).

@@ -1,7 +1,7 @@
 import type { StorybookConfig } from '@storybook/react-vite'
 
 /**
- * Storybook is the showcase for `packages/ui` and the design tokens (ADR-0014).
+ * Storybook is the showcase for `packages/ui` and the design tokens (ADR-0006 — design tokens).
  * Stories live next to the components in `packages/ui`; this app aggregates
  * them and adds the local Foundations pages.
  */

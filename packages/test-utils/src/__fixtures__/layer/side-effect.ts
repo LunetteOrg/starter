@@ -1,4 +1,4 @@
 // @ts-nocheck — fake imports for arch boundary test fixtures
 // Side-effect import: no `from`, no binding. Still couples the layer to the
-// module and MUST be caught by the boundary scanner (ADR-0004).
+// module and MUST be caught by the boundary scanner (ADR-0002 — import boundaries).
 import '~/domain/side-effect-dep'

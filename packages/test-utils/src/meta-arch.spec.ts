@@ -5,7 +5,7 @@ import { glob } from 'glob'
 import { describe, expect, it } from 'vitest'
 
 /**
- * Self-arming architecture enforcement (ADR-0004, ADR-0016).
+ * Self-arming architecture enforcement (ADR-0002: import boundaries and self-arming enforcement).
  *
  * Import boundaries are guarded by TWO nets: Biome `noRestrictedImports`
  * overrides (auto-applied by glob to `apps/*`) and a per-app
@@ -48,7 +48,7 @@ describe('per-app architecture enforcement', () => {
   // Presence alone is gameable: an empty or commented-out arch.spec.ts would
   // pass the check above while enforcing nothing. Require an actual CALL to the
   // boundary assertion (`assertLayerBoundaries(`), not a mere mention — so the
-  // net cannot be defeated by a file that only names it in a comment (ADR-0016).
+  // net cannot be defeated by a file that only names it in a comment (ADR-0002 — self-arming enforcement).
   it('each app/arch.spec.ts actually invokes assertLayerBoundaries', async () => {
     const offenders = (await appsWithLayer())
       .map((dir) => resolve(dir, 'app/arch.spec.ts'))

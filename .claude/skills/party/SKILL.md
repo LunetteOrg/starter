@@ -89,7 +89,7 @@ When the user says "exit party" / "esci dalla party" or the decision resolves,
 **Consensus:** …
 **Disagreements:** which lens argues what (preserve the dissent)
 **Action items:** owner → task
-**Candidate ADRs:** title — why (hand off to `adr-check` / docs/adr/template.md)
+**Candidate ADRs / guidances:** title — why, and whether it's an `docs/adr/` decision or a `docs/guidances/` recommendation (hand off to `adr-check`; ADR template in `docs/adr/template.md`)
 ```
 
 Then **`TaskStop` the spawned agents** and return to normal mode. Never write

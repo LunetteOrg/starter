@@ -12,7 +12,7 @@ const preview: Preview = {
     },
     a11y: {
       // 'todo' = axe violations reported but non-blocking.
-      // Switch to 'error' to fail the build on violations (ADR-0015).
+      // Switch to 'error' to fail the build on violations (ADR-0006 — Storybook showcase).
       test: 'todo',
     },
   },

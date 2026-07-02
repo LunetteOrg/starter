@@ -50,7 +50,7 @@ describe('getImports', () => {
     })
   })
 
-  // Regression guard (ADR-0004): boundaries must not be launderable through
+  // Regression guard (ADR-0002 — import boundaries): boundaries must not be launderable through
   // re-exports, type-only imports, or side-effect imports. Re-exports and type
   // imports carry `from '...'`; side-effect imports (`import '~/x'`) carry no
   // `from` and are caught by a separate scan. If any of these ever fail, that

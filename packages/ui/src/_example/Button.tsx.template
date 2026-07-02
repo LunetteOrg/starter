@@ -1,4 +1,4 @@
-// TEMPLATE — the canonical shape of a shared UI component (ADR-0014, ADR-0015).
+// TEMPLATE — the canonical shape of a shared UI component (ADR-0006: design tokens and Storybook showcase).
 // Copy into `packages/ui/src/<Component>/`, drop the `.template` suffix, then
 // re-export it from `packages/ui/src/index.ts`. Kept inert (a `.template` file
 // is not compiled, linted, or picked up by Storybook) so the template ships an

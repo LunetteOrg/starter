@@ -11,7 +11,7 @@ To add your first real component:
 2. Copy `Button.stories.tsx.template` likewise.
 3. Re-export the component from `packages/ui/src/index.ts`.
 
-What the exemplar demonstrates (ADR-0014, ADR-0015):
+What the exemplar demonstrates (ADR-0006: design tokens and Storybook showcase):
 
 - styling only through design tokens (`var(--token)`), never raw values;
 - typed, documented props (feeds Storybook autodocs);

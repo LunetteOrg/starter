@@ -26,8 +26,8 @@ The CLI is [`@lntt/create`](https://www.npmjs.com/package/@lntt/create) ([source
 ## What's inside
 
 - **Tooling**: Biome (lint+format), Lefthook (pre-commit lint+typecheck, commit-msg commitlint), pnpm 10.16.1, Turbo 2.x
-- **Architectural enforcement**: per-layer import boundaries via Biome `noRestrictedImports` (domain/use-cases/routes, glob over `apps/*`), a ban on `Date` in favour of `Temporal`, a GritQL plugin for e2e tests, architecture-test helpers in `@starter/test-utils` — see [ADR-0004](./docs/adr/0004-import-boundaries-enforcement.md)
-- **ADRs**: architectural decisions in [`docs/adr/`](./docs/adr/README.md)
+- **Architectural enforcement**: per-layer import boundaries via Biome `noRestrictedImports` (domain/use-cases/routes, glob over `apps/*`), a ban on `Date` in favour of `Temporal`, a GritQL plugin for e2e tests, architecture-test helpers in `@starter/test-utils` — see [ADR-0002 (import boundaries)](./docs/adr/0002-architecture-and-boundaries.md#import-boundaries)
+- **ADRs & guidances**: how the template is built lives in [`docs/adr/`](./docs/adr/README.md); recommended patterns for the app you build on it (not shipped) are in [`docs/guidances/`](./docs/guidances/README.md)
 - **Shared packages** (`packages/`):
   - `@starter/biome-config` — Biome preset
   - `@starter/typescript-config` — `base.json` + `browser.json` (strict ES2024)
