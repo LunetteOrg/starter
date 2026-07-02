@@ -1,9 +1,11 @@
 pre-commit:
   commands:
     biome:
-      # Only the CLI sources — never the bundled templates (they carry their own
-      # tooling and must stay verbatim).
-      glob: "packages/create/{bin,test}/**/*.{js,mjs,ts,json}"
+      # Match any staged JS/TS/JSON; biome.json's `files.includes` scopes the
+      # actual checking to packages/create/{bin,test} and excludes the bundled
+      # templates (which carry their own tooling and must stay verbatim). A single
+      # brace group is used on purpose — lefthook doesn't match nested `{…}/{…}`.
+      glob: "**/*.{ts,tsx,js,mjs,cjs,json}"
       run: pnpm biome check --write --no-errors-on-unmatched {staged_files}
       stage_fixed: true
     typecheck:
