@@ -1,0 +1,22 @@
+{
+  "name": "@starter/playwright-config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check . --write"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.61.1"
+  },
+  "devDependencies": {
+    "@starter/typescript-config": "workspace:*",
+    "@types/node": "^25.8.0",
+    "typescript": "5.9.2"
+  }
+}

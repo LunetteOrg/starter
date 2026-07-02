@@ -1,0 +1,32 @@
+pre-commit:
+  commands:
+    lint:
+      run: pnpm turbo lint:fix --filter=...[origin/main]
+      stage_fixed: true
+    typecheck:
+      run: pnpm turbo typecheck --filter=...[origin/main]
+
+commit-msg:
+  commands:
+    commitlint:
+      run: pnpm commitlint --edit {1}
+    # Strip AI co-authorship noise from the message (keeps commits clean).
+    # Runs after commitlint (alphabetical order); git trims the trailing blank
+    # line the removed trailer leaves behind.
+    strip-coauthor:
+      run: grep -ivE '^(Co-authored-by:|🤖 Generated with)' {1} > {1}.tmp && mv {1}.tmp {1}
+
+# git worktrees are created without node_modules: pnpm looks for the bins in the
+# local .bin (absent) and the commit hooks fail. Here, when a worktree is born,
+# we install the dependencies hardlinking from the global store — so lint,
+# typecheck and commitlint run in the worktree exactly as in main, and each
+# worktree can diverge on its own dependencies.
+post-checkout:
+  commands:
+    ensure-node-modules:
+      run: |
+        # main worktree: git-dir and common-dir coincide (in linked worktrees
+        # the git-dir is .git/worktrees/<name>, the common-dir stays .git)
+        [ "$(git rev-parse --absolute-git-dir)" = "$(git rev-parse --path-format=absolute --git-common-dir)" ] && exit 0
+        [ -e node_modules ] && exit 0      # already present: no-op
+        pnpm install --prefer-offline

@@ -1,0 +1,13 @@
+// Ban reaching into React internals (`__reactProps$…`, `__reactFiber$…`)
+// from end-to-end tests. Those keys are React implementation details that
+// can change between minor versions; when a test needs to drive behaviour
+// behind a React guard (e.g. a disabled button), that behaviour is almost
+// always pure client-state logic better tested at the unit level with
+// @testing-library/react.
+`$s` where {
+  $s <: or { `"__reactProps$"`, `"__reactFiber$"`, `'__reactProps$'`, `'__reactFiber$'` },
+  register_diagnostic(
+    span = $s,
+    message = "Reaching into React internals (__reactProps$ / __reactFiber$) from e2e tests is banned. Move the behaviour under test to a unit test with @testing-library/react. See ADR-0002 (import boundaries)."
+  )
+}

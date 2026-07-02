@@ -1,0 +1,23 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Welcome" />
+
+# Starter Design System
+
+Showcase of the shared components (`@starter/ui`) and the design tokens
+(`@starter/ui-tokens`). See [ADR-0006 (Design system)](../../../docs/adr/0006-design-system.md) for the rationale.
+
+## How it's organized
+
+- **Foundations** — the design tokens (colours, spacing, typography, shadows)
+  generated from the CSS custom properties of `@starter/ui-tokens`.
+- **Components** — every component in `packages/ui` carries its own
+  `*.stories.tsx`, aggregated here automatically.
+
+## Adding a story
+
+Create `packages/ui/src/<Component>/<Component>.stories.tsx`: it will show up in
+this Storybook with no extra configuration.
+
+> This is a **starter**: replace the tokens with your brand's and add your own
+> components. The structure stays the same.

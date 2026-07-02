@@ -1,0 +1,12 @@
+// Ban `page.waitForTimeout(...)` as implicit sync in Playwright e2e tests.
+//
+// Arbitrary real-time waits are the classic "works on my machine" trap —
+// they hide race conditions on slow CI. Synchronize on observable state
+// instead: `toBeVisible`, `toHaveValue`, `toHaveAttribute`, `toBeEnabled`,
+// or `waitForResponse` when a network round-trip IS the state change.
+`$obj.waitForTimeout($_)` where {
+  register_diagnostic(
+    span = $obj,
+    message = "waitForTimeout(...) is banned in e2e tests — synchronize on observable state instead (toBeVisible / toHaveValue / toHaveAttribute / waitForResponse). See ADR-0002 (import boundaries)."
+  )
+}

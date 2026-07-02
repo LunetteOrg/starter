@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "deny": []
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; [ -n \"$f\" ] && pnpm exec biome check --write --no-errors-on-unmatched --files-ignore-unknown=true \"$f\"; } 2>/dev/null || true",
+            "statusMessage": "Biome check --write"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pnpm typecheck 2>&1 || exit 2",
+            "asyncRewake": true,
+            "rewakeSummary": "Typecheck failed",
+            "statusMessage": "Typecheck (async)"
+          }
+        ]
+      }
+    ]
+  }
+}

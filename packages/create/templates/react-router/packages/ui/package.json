@@ -1,0 +1,25 @@
+{
+  "name": "@starter/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check . && stylelint \"**/*.css\" --allow-empty-input",
+    "lint:fix": "biome check . --write && stylelint \"**/*.css\" --allow-empty-input --fix"
+  },
+  "peerDependencies": {
+    "@starter/ui-tokens": "workspace:*",
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@starter/stylelint-config": "workspace:*",
+    "@starter/typescript-config": "workspace:*",
+    "@types/react": "^19.2.14",
+    "stylelint": "^17.14.0",
+    "typescript": "5.9.2"
+  }
+}

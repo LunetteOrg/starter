@@ -1,0 +1,35 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "ui": "tui",
+  // Stays ["*"] on purpose — see docs/adr/0003-build-and-tooling.md#turbo-env-passthrough.
+  // Narrowing to an allowlist filters DOCKER_HOST / TESTCONTAINERS_* and breaks
+  // integration tests on non-default local Docker. Secrets boundary is the secrets guidance (docs/guidances/app-infrastructure.md#secrets).
+  "globalPassThroughEnv": ["*"],
+  "tasks": {
+    "lint": { "outputs": [], "cache": false },
+    "lint:fix": { "outputs": [], "cache": false },
+    "typecheck": { "outputs": [] },
+    "test": {
+      // Not cached: integration tests (.test.ts) depend on a live Docker /
+      // Testcontainers environment that Turbo can't hash, so a cached green
+      // could be replayed after the environment changed. Unit specs are fast
+      // enough that always running them is cheap insurance.
+      "outputs": ["coverage/**"],
+      "cache": false
+    },
+    "build": {
+      "dependsOn": ["^build", "lint", "typecheck"],
+      "inputs": ["$TURBO_DEFAULT$", ".env"],
+      "outputs": ["build/**", "dist/**", ".react-router/**"],
+      "env": ["NODE_ENV"]
+    },
+    "start": { "dependsOn": ["build"], "cache": false, "persistent": true },
+    "dev": { "cache": false, "persistent": true },
+    "db:migrate": { "cache": false, "outputs": [] },
+    "db:generate": { "cache": false, "outputs": ["drizzle/**"] },
+    "test:e2e": {
+      "dependsOn": ["build"],
+      "cache": false
+    }
+  }
+}

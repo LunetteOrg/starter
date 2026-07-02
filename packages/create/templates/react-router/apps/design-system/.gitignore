@@ -1,0 +1,4 @@
+# Storybook build output
+build/
+# Cache generata dall'addon storybook-design-token (contiene path assoluti)
+public/design-tokens.source.json

@@ -1,0 +1,38 @@
+# Render Blueprint — auto-deploy on push to main, no GitHub Actions workflow required.
+# Docs: https://render.com/docs/blueprint-spec
+#
+# Customize before the first deploy:
+#   - `web.name` and `databases[].name`
+#   - `web.rootDir`/`buildCommand`/`startCommand` if the target app isn't the first under apps/
+#   - add secrets via the Render dashboard (envVars with `sync: false`)
+
+databases:
+  - name: starter-db
+    databaseName: starter
+    user: starter
+    plan: free
+    region: frankfurt
+
+services:
+  - type: web
+    name: starter-web
+    runtime: node
+    region: frankfurt
+    plan: free
+    branch: main
+    autoDeploy: true
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm turbo run build
+    startCommand: pnpm turbo run start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: '24'
+      - key: DATABASE_URL
+        fromDatabase:
+          name: starter-db
+          property: connectionString
+      # TODO: add the application secrets here (sync: false placeholder)
+      # - key: SESSION_SECRET
+      #   sync: false

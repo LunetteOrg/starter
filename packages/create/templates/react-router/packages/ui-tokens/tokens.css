@@ -1,0 +1,148 @@
+/*
+ * Project design tokens — plain CSS custom properties (ADR-0006 — design tokens).
+ *
+ * Neutral starting set: override the values for the derived project's brand,
+ * but keep the token names (components reference them via `var(--token)` and
+ * must never duplicate raw values).
+ *
+ * The `@tokens ... @tokens-end` blocks are read by the `storybook-design-token`
+ * addon to generate the Foundations pages. Don't remove the annotations when
+ * adding tokens: extend the right group.
+ *
+ * Import from app/Storybook via `@starter/ui-tokens/tokens.css`.
+ */
+
+:root {
+  /**
+   * @tokens Colors
+   * @presenter Color
+   */
+
+  /* Neutrals */
+  --color-neutral-0: #fff;
+  --color-neutral-50: #f8fafc;
+  --color-neutral-100: #f1f5f9;
+  --color-neutral-200: #e2e8f0;
+  --color-neutral-300: #cbd5e1;
+  --color-neutral-500: #64748b;
+  --color-neutral-700: #334155;
+  --color-neutral-900: #0f172a;
+
+  /* Brand accent (placeholder — replace with the project's colour) */
+  --color-brand-100: #dbeafe;
+  --color-brand-500: #3b82f6;
+  --color-brand-700: #1d4ed8;
+
+  /* Feedback */
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
+
+  /* Semantic surfaces / text */
+  --color-bg: var(--color-neutral-0);
+  --color-bg-muted: var(--color-neutral-50);
+  --color-fg: var(--color-neutral-900);
+  --color-fg-muted: var(--color-neutral-500);
+  --color-border: var(--color-neutral-200);
+
+  /* @tokens-end */
+
+  /**
+   * @tokens Spacing
+   * @presenter Spacing
+   */
+  --spacing-0: 0;
+  --spacing-1: 0.25rem;
+  --spacing-2: 0.5rem;
+  --spacing-3: 0.75rem;
+  --spacing-4: 1rem;
+  --spacing-6: 1.5rem;
+  --spacing-8: 2rem;
+  --spacing-12: 3rem;
+  --spacing-16: 4rem;
+
+  /* @tokens-end */
+
+  /**
+   * @tokens Border Radius
+   * @presenter BorderRadius
+   */
+  --radius-none: 0;
+  --radius-sm: 0.125rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-full: 9999px;
+
+  /* @tokens-end */
+
+  /**
+   * @tokens Font Family
+   * @presenter FontFamily
+   */
+  --font-family-sans: var(--font-sans-stack);
+  --font-family-mono: var(--font-mono-stack);
+
+  /* @tokens-end */
+
+  /**
+   * @tokens Font Size
+   * @presenter FontSize
+   */
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.5rem;
+  --font-size-2xl: 2rem;
+
+  /* @tokens-end */
+
+  /**
+   * @tokens Font Weight
+   * @presenter FontWeight
+   */
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-bold: 700;
+
+  /* @tokens-end */
+
+  /**
+   * @tokens Line Height
+   * @presenter LineHeight
+   */
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.75;
+
+  /* @tokens-end */
+
+  /**
+   * @tokens Shadows
+   * @presenter Shadow
+   */
+  --shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 5%);
+  --shadow-md: 0 4px 6px -1px rgb(15 23 42 / 10%);
+  --shadow-lg: 0 10px 15px -3px rgb(15 23 42 / 10%);
+
+  /* @tokens-end */
+}
+
+/*
+ * Dark theme (ADR-0006 — dark theme). Opt-in via `data-theme="dark"` on a root element —
+ * the project stays light by default and nothing is forced. This only re-maps
+ * the SEMANTIC tokens onto existing neutrals; components consume the semantic
+ * names, so they theme automatically without touching raw values. Predisposing
+ * the scope now is structure, not a design choice: retrofitting it onto
+ * consumers later costs far more.
+ */
+[data-theme="dark"] {
+  --color-bg: var(--color-neutral-900);
+  --color-bg-muted: var(--color-neutral-700);
+  --color-fg: var(--color-neutral-0);
+  --color-fg-muted: var(--color-neutral-300);
+
+  /* neutral-500 (not 700) so the border stays visible against bg-muted
+     (neutral-700) — otherwise a bordered surface loses its outline. */
+  --color-border: var(--color-neutral-500);
+}

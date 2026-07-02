@@ -1,0 +1,17 @@
+/*
+ * Project fonts.
+ *
+ * Default: system font stack (zero network requests, zero dependencies).
+ * For self-hosted fonts, install `@fontsource/<family>`, add the `@import`s
+ * here and redefine `--font-sans-stack` / `--font-mono-stack`.
+ *
+ * Import from app/Storybook via `@starter/ui-tokens/fonts.css`.
+ */
+
+:root {
+  --font-sans-stack:
+    system-ui, -apple-system, "Segoe UI", roboto, helvetica, arial, sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji";
+  --font-mono-stack:
+    ui-monospace, sfmono-regular, "SF Mono", menlo, consolas, "Liberation Mono", monospace;
+}

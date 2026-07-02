@@ -1,0 +1,21 @@
+// TEMPLATE — the story that ships WITH a component (ADR-0006 — Storybook showcase). Copy alongside
+// the component, drop the `.template` suffix. A component is not "done" without
+// its story (and an a11y pass via the Storybook a11y addon).
+//
+// Kept inert as `.template` so it is not aggregated by Storybook until copied.
+
+import type { Meta, StoryObj } from '@storybook/react-vite'
+import { Button } from './Button'
+
+const meta = {
+  title: 'Components/Button',
+  component: Button,
+  tags: ['autodocs'],
+  args: { children: 'Button' },
+} satisfies Meta<typeof Button>
+
+export default meta
+type Story = StoryObj<typeof meta>
+
+export const Primary: Story = { args: { variant: 'primary' } }
+export const Secondary: Story = { args: { variant: 'secondary' } }
