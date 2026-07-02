@@ -11,8 +11,8 @@ const preview: Preview = {
       },
     },
     a11y: {
-      // 'todo' = violazioni axe segnalate ma non bloccanti.
-      // Passa a 'error' per far fallire la build sulle violazioni (ADR-0014).
+      // 'todo' = axe violations reported but non-blocking.
+      // Switch to 'error' to fail the build on violations (ADR-0015).
       test: 'todo',
     },
   },
