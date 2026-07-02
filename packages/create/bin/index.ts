@@ -15,6 +15,7 @@ import { argv, cwd, exit, stderr, stdin, stdout } from 'node:process'
 import { createInterface } from 'node:readline/promises'
 import { fileURLToPath } from 'node:url'
 
+const DEFAULT_TEMPLATE = 'react-router'
 const TEMPLATES_DIR = resolve(fileURLToPath(import.meta.url), '../../templates')
 const DOTFILES: Record<string, string> = { _gitignore: '.gitignore', _npmrc: '.npmrc', _env: '.env' }
 const SKIP = new Set(['node_modules', '.git', 'dist', 'build', '.turbo', '.react-router', 'coverage', '.jest-cache'])
@@ -118,7 +119,7 @@ async function main(): Promise<void> {
 
   if (!name) name = await prompt('Project name: ', '')
   if (!name || !/^[a-z][a-z0-9-]*$/.test(name)) die('Error: a kebab-case project name is required.')
-  if (!template) template = await prompt(`Template [${variants().join(', ')}] (default): `, 'default')
+  if (!template) template = await prompt(`Template [${variants().join(', ')}] (${DEFAULT_TEMPLATE}): `, DEFAULT_TEMPLATE)
   if (!variants().includes(template)) die(`Error: unknown template "${template}". Available: ${variants().join(', ')}.`)
 
   const targetDir = resolve(cwd(), name)

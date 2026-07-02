@@ -26,7 +26,7 @@ function filesContaining(dir: string, needle: string): string[] {
 }
 
 test('default template scaffolds a complete, renamed starter', () => {
-  const app = scaffold('my-app', 'default')
+  const app = scaffold('my-app', 'react-router')
   try {
     assert.ok(existsSync(join(app, 'packages')), 'has packages/')
     assert.ok(existsSync(join(app, 'apps')), 'has apps/')
