@@ -1,42 +1,30 @@
-# Lunette Starter
+# lunette-create
 
-TypeScript monorepo template (Turbo + pnpm) with Biome, Lefthook, commitlint, drizzle/postgres + testcontainers, Render deploy via Blueprint, GitHub Actions CI.
+Monorepo for **`@lntt/create`** — the scaffolder — and the **Lunette starter
+templates** it ships.
 
-## Create a new project
-
-```bash
-npm create @lntt my-app
-# or
-pnpm create @lntt my-app
+```
+packages/create/
+  bin/index.mjs        # the CLI
+  templates/
+    default/           # the full Lunette starter (monorepo, Biome, Drizzle, …)
 ```
 
-Then:
+## Use
 
 ```bash
-cd my-app
-pnpm install
-pnpm infra:up
-pnpm dev
+pnpm create @lntt my-app                 # interactive template pick
+pnpm create @lntt my-app --template default
 ```
 
-Scaffolding renames the placeholders (`@starter/*`, DB credentials, Render service names) to the chosen name, and runs `git init` + the first commit.
+## Develop
 
-The CLI is [`@lntt/create`](https://www.npmjs.com/package/@lntt/create) ([source](https://github.com/LunetteOrg/create-lunette)).
-
-## What's inside
-
-- **Tooling**: Biome (lint+format), Lefthook (pre-commit lint+typecheck, commit-msg commitlint), pnpm 10.16.1, Turbo 2.x
-- **Architectural enforcement**: per-layer import boundaries via Biome `noRestrictedImports` (domain/use-cases/routes, glob over `apps/*`), a ban on `Date` in favour of `Temporal`, a GritQL plugin for e2e tests, architecture-test helpers in `@starter/test-utils` — see [ADR-0002 (import boundaries)](./docs/adr/0002-architecture-and-boundaries.md#import-boundaries)
-- **ADRs & guidances**: how the template is built lives in [`docs/adr/`](./docs/adr/README.md); recommended patterns for the app you build on it (not shipped) are in [`docs/guidances/`](./docs/guidances/README.md)
-- **Shared packages** (`packages/`):
-  - `@starter/biome-config` — Biome preset
-  - `@starter/typescript-config` — `base.json` + `browser.json` (strict ES2024)
-  - `@starter/test-utils` — `createTestDb` + Vitest plugin (testcontainers + Postgres + transaction rollback)
-  - `@starter/ui`, `@starter/ui-tokens` — empty scaffolds
-- **Infra**: `compose.yaml` (Postgres 17), `render.yaml` Blueprint (web + managed DB, autoDeploy)
-- **CI**: `.github/workflows/ci.yml` (lint+typecheck+test, e2e job disabled until there's a target app)
-- **DX**: `.devcontainer/` (Node 24, Docker-in-Docker), `.vscode/` (default formatter Biome)
-
-## Conventions
-
-See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for branch/commit/file naming and import rules. See [`CLAUDE.md`](./CLAUDE.md) for the architectural rules relevant to AI agents.
+- The CLI is zero-dependency Node; `pnpm --filter @lntt/create test` scaffolds each
+  template into a temp dir and asserts the result.
+- A template is just a folder under `packages/create/templates/`. To work on the
+  default starter, `cd packages/create/templates/default && pnpm install` — it is a
+  self-contained monorepo and is intentionally **not** part of this repo's
+  workspace (the root `pnpm-workspace.yaml` only globs `packages/*`).
+- Templates carry a `.lunette-template` marker; the CLI strips it on scaffold, so
+  its presence means "you're editing the template", its absence means "scaffolded
+  project" (see the template's own `docs/adr/0001-recording-decisions.md`).
