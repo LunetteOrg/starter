@@ -49,7 +49,7 @@ is **named by that axis** (`react-router`, later `hono`, `remix3`). Secondary ax
 `react-router` template's own choice is a hexagonal/layered architecture with
 Drizzle + Postgres + Render, recorded in *its* `docs/adr/`.
 
-### Enforced spine vs recommended vocabulary
+### Enforced boundaries vs recommended vocabulary
 
 - **Enforced** (by machine, self-arming): the *structural* boundaries — dependency
   rule, domain purity, layer boundaries. You cannot violate them by accident.
