@@ -1,71 +1,64 @@
 ---
 name: adr-check
-description: Assess the codebase against the ADRs in docs/adr/ (and the recommendations in docs/guidances/) and report misalignments plus decisions that should be recorded as a new/updated ADR. Report-only — never edits files. Use when asked to check ADR alignment, find architectural drift, or audit decisions, AND automatically as part of every code review and PR review (see CLAUDE.md).
+description: Assess the create monorepo against its own ADRs in docs/adr/ (the templates system — the CLI, the template model, the scaffolding contract) and report misalignments plus decisions that should be recorded. Report-only — never edits files. Use when asked to check ADR alignment, audit the templates system, or find drift, AND automatically as part of every code review and PR review (see CLAUDE.md).
 ---
 
-# ADR alignment assessment
+# ADR alignment assessment (create monorepo)
 
-Produce a **report** comparing the code against the recorded architecture
-decisions. Do **not** edit files, create ADRs, or apply fixes — output findings
-and recommended actions only.
+Produce a **report** comparing this repo against its recorded decisions. Do **not**
+edit files, create ADRs, or apply fixes — output findings and recommended actions
+only.
+
+**Scope.** These ADRs govern the *templates system* (the CLI, the template model,
+the scaffolding contract) — see [ADR-0001](../../../docs/adr/0001-recording-decisions.md).
+A single template's *own* application architecture is recorded inside that template
+(`packages/create/templates/<framework>/docs/adr/`) and is NOT this skill's concern.
 
 ## Procedure
 
-1. **Load the decisions.** Read `docs/adr/README.md` (the generated index) and the
-   `## ` sections of each `docs/adr/NNNN-*.md` (ADRs are thematic — one file per
-   area, several decisions inside). Also read the "Architecture Rules" in
-   `CLAUDE.md` — the distilled, enforceable form of several ADRs. Skim
-   `docs/guidances/` too: those are **recommendations for the app you build, not
-   shipped by the template** — they are checkable only once an app actually
-   implements the concern (auth, jobs, flags, secrets, shutdown), never violable
-   before that.
+1. **Load the decisions.** Read `docs/adr/README.md` and the `## ` sections of each
+   `docs/adr/NNNN-*.md`, plus `CLAUDE.md`. Build the check matrix *now* from what
+   you read — never recite from memory; the ADR set evolves.
 
-2. **Derive the check matrix at runtime — do not hardcode it.** The ADR set
-   evolves (decisions get added, renumbered, superseded), so build the matrix
-   *now* from what you just read: for each accepted ADR, turn its `## Decision`
-   into one or more checkable rules, and pull the enforceable rules listed under
-   "Architecture Rules" in `CLAUDE.md`. Skip ADRs marked `deprecated` /
-   `superseded`, and follow the supersede link to the replacement. Tie every rule
-   back to the ADR it came from by reading the file, never by reciting a number
-   from memory. (Typical rules you'll derive today concern `process.env`
-   confinement, `Temporal` vs `Date`, typed `errore` errors, domain/use-case/route
-   import boundaries, the repository/route error handling seam, test-file naming
-   and no-mock-the-DB, migration strategy, and design-token/Storybook conventions
-   — but read the ADRs to get the current, authoritative set.)
+2. **Scan the system for violations.** Typical checks you'll derive today (read the
+   ADRs for the authoritative set):
+   - **ADR-0002 (shared base + enforced vs recommended):** does each template carry
+     the base (monorepo tooling, mechanically-enforced boundaries, ADR/guidance
+     structure, scaffolding contract)? Is a *recommendation* (DDD tactical, GoF,
+     Clean Code, FP) being enforced where it shouldn't, or vice versa?
+   - **ADR-0003 (bundled folders):** is `pnpm-workspace.yaml` still `packages/*`
+     only (templates NOT workspace members)? Does `@lntt/create` ship `files:
+     ["bin","templates"]`? Are templates named by their **web framework**? Has a
+     **shared package been extracted prematurely** (duplication-now is the rule)?
+   - **ADR-0004 (scaffolding contract):** does the CLI's text-file coverage include
+     every config type a template actually uses (the `.editorconfig` gap class)?
+     Does every template have a `.lunette-template` marker, and does the CLI strip
+     it + restore `_`-dotfiles? Are placeholders (`@starter`, creds) consistent?
+   - **ADR-0001 (scope split):** is a *system* decision recorded here, and a
+     *template-architecture* decision recorded in the template — not swapped?
 
-3. **Scan for violations.** Prefer the existing tooling and helpers over ad-hoc
-   greps where they exist (Biome overrides in `biome.json`, per-app
-   `app/arch.spec.ts`, `assertLayerBoundaries` / `getImports` in
-   `@starter/test-utils`). For rules not mechanically enforced, search the
-   sources directly. Record each hit as `path:line` with a one-line explanation.
-   Note explicitly when a rule is already guarded by Biome/arch tests and still
-   holds — that is a passing check, not a finding.
+3. **Prefer the existing tests.** `pnpm --filter @lntt/create test` scaffolds each
+   template and asserts invariants; treat a passing assertion as a passing check,
+   not a finding. Record each real hit as `path:line` with a one-line explanation.
 
-4. **Find unrecorded decisions.** Flag architecture-level choices present in the
-   code but not covered by any ADR — e.g. a new top-level package, a new
-   external dependency that shapes the architecture, a new layer or cross-cutting
-   pattern, a deviation from an accepted ADR that looks intentional. For each,
-   propose the ADR to write (title + one-line rationale), following the
-   MADR-lite `docs/adr/template.md`.
-
-5. **Handle the empty case.** The starter ships without apps; many checks will
-   have no files to scan. Say so plainly rather than reporting false passes.
+4. **Find unrecorded decisions.** Flag system-level choices present in the code but
+   not covered by any ADR (a new CLI capability, a new template axis in the naming,
+   a change to the contract). Propose the ADR to write, following `docs/adr/template.md`.
 
 ## Output format
 
 ```
-# ADR assessment
+# ADR assessment (create monorepo)
 
 ## Violations of existing ADRs
 - [severity] ADR-NNNN — <rule>. Evidence: path:line. Recommended action: …
 
 ## Unrecorded decisions (ADRs to create)
-- <proposed title> — <why it needs an ADR>. Suggested status: proposed.
+- <proposed title> — <why>. Suggested status: proposed.
 
 ## Passing checks (brief)
-- ADR-NNNN — <rule>: enforced by <Biome override / arch test>, holds.
+- ADR-NNNN — <rule>: holds (enforced by <test / config>).
 ```
 
-Use severities: **blocker** (violates an accepted ADR in shipped code),
-**warning** (drift or partial), **note** (worth a decision, not yet wrong).
-Keep it scannable; lead with blockers. End with nothing to fix if clean.
+Severities: **blocker** (violates an accepted ADR), **warning** (drift or partial),
+**note** (worth recording, not yet wrong). Lead with blockers; end clean if clean.

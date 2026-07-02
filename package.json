@@ -1,41 +1,20 @@
 {
-  "name": "starter",
+  "name": "lunette-create",
   "private": true,
+  "version": "0.0.0",
+  "description": "The @lntt/create scaffolder and the Lunette starter templates",
+  "packageManager": "pnpm@10.16.1+sha512.0e155aa2629db8672b49e8475da6226aa4bdea85fdcdfdc15350874946d4f3c91faaf64cbdc4a5d1ab8002f473d5c3fcedcd197989cf0390f9badd3c04678706",
   "scripts": {
-    "preinstall": "npx only-allow pnpm",
-    "build": "turbo run build",
-    "dev": "docker compose up -d && turbo run dev",
-    "lint": "turbo run lint",
-    "lint:fix": "turbo run lint:fix",
-    "typecheck": "turbo run typecheck",
-    "test": "turbo run test",
-    "test:e2e": "turbo run test:e2e",
-    "start": "turbo run start",
-    "infra:up": "docker compose up -d",
-    "infra:down": "docker compose down",
-    "setup": "pnpm install && pnpm infra:up && pnpm db:migrate",
-    "db:migrate": "turbo run db:migrate",
-    "db:generate": "turbo run db:generate",
-    "format": "biome format --write .",
-    "prepare": "lefthook install || true"
+    "test": "pnpm --filter @lntt/create test",
+    "typecheck": "pnpm --filter @lntt/create typecheck",
+    "lint": "biome check",
+    "lint:fix": "biome check --write",
+    "format": "biome format --write"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.9",
-    "@commitlint/cli": "^20.5.0",
-    "@commitlint/config-conventional": "^20.5.0",
-    "lefthook": "^2.1.4",
-    "turbo": "^2.8.20",
-    "typescript": "5.9.2"
-  },
-  "packageManager": "pnpm@10.16.1+sha512.0e155aa2629db8672b49e8475da6226aa4bdea85fdcdfdc15350874946d4f3c91faaf64cbdc4a5d1ab8002f473d5c3fcedcd197989cf0390f9badd3c04678706",
-  "engines": {
-    "node": ">=24.0.0"
-  },
-  "browserslist": ["> 0.5%", "last 2 versions", "Firefox ESR", "not dead", "not op_mini all"],
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "lefthook"
-    ]
+    "@biomejs/biome": "^2.5.2",
+    "@commitlint/cli": "^21.2.0",
+    "@commitlint/config-conventional": "^21.2.0",
+    "lefthook": "^2.1.9"
   }
 }

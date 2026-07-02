@@ -1,4 +1,5 @@
 name: CI
+
 on:
   pull_request:
     branches: [main]
@@ -6,9 +7,6 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
-    # `test` spins up a Testcontainers Postgres; cap the job so a hung image
-    # pull or container start fails fast instead of running to the default.
-    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -17,97 +15,7 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
-      - name: Cache Turbo
-        uses: actions/cache@v4
-        with:
-          path: node_modules/.cache/turbo
-          key: turbo-${{ github.sha }}
-          restore-keys: turbo-
-      # `build` is included so a broken build fails the PR, not a laptop later
-      # (ADR-0005 — expand-migrate-contract). Today it builds the Storybook (design-system); it covers each
-      # app's build for free the moment one is scaffolded.
-      - run: pnpm turbo lint typecheck build
-      # Schema-drift guard: the committed migrations must be a COMPLETE
-      # translation of the Drizzle schema. protect-migrations covers immutability
-      # and ADR-0005 (migration-safety guard) covers safety, but neither catches a schema edit that was
-      # never captured in a migration — which makes production diverge silently.
-      # We regenerate migrations from the schema (offline: Drizzle diffs schema
-      # vs snapshots, no DB needed) and fail if that dirties the tree.
-      # Self-arming: no drizzle config yet → no-op (ADR-0002 — self-arming enforcement), so it stays green
-      # until the DB layer is scaffolded.
-      - name: Schema drift (migrations match the schema)
-        run: |
-          if [ -z "$(git ls-files '*drizzle.config.*')" ]; then
-            echo "No drizzle config yet — schema-drift check is a no-op."
-            exit 0
-          fi
-          pnpm turbo db:generate
-          git add -A
-          if git diff --cached --quiet -- ':(glob)**/drizzle/**'; then
-            echo "✅ Migrations are in sync with the schema."
-          else
-            echo "❌ Schema drift: the committed migrations don't match the schema."
-            git --no-pager diff --cached --stat -- ':(glob)**/drizzle/**'
-            echo "Run 'pnpm db:generate' and commit the generated migration."
-            exit 1
-          fi
-      # `test` runs separately so `--coverage` reaches vitest without leaking to
-      # the other tasks. Coverage feeds the job summary below.
-      - run: pnpm turbo test -- --coverage
-      - name: Coverage summary
-        if: always()
-        run: node scripts/coverage-summary.mjs
-
-  # TODO: enable once there's a target app with e2e tests (Playwright).
-  # Update `--filter=@starter/<app>` on the `playwright install` and `db:migrate`
-  # commands, plus any env var the app requires (SESSION_SECRET, etc.).
-  e2e:
-    if: false
-    runs-on: ubuntu-latest
-    needs: [ci]
-    timeout-minutes: 15
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: starter
-          POSTGRES_PASSWORD: starter
-          POSTGRES_DB: starter
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: '.nvmrc'
-          cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile
-      - name: Restore Turbo cache
-        uses: actions/cache/restore@v4
-        with:
-          path: node_modules/.cache/turbo
-          key: turbo-${{ github.sha }}
-          restore-keys: turbo-
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ hashFiles('pnpm-lock.yaml') }}
-      - run: pnpm exec playwright install --with-deps chromium firefox
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-      - run: pnpm exec playwright install-deps chromium firefox
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-      - run: pnpm turbo db:migrate
-        env:
-          DATABASE_URL: postgresql://starter:starter@localhost:5432/starter
-      - run: pnpm turbo build test:e2e
-        env:
-          DATABASE_URL: postgresql://starter:starter@localhost:5432/starter
-          NODE_ENV: test
+      - run: pnpm lint
+      - run: pnpm typecheck
+      # scaffolds each template into a temp dir and asserts the result
+      - run: pnpm test

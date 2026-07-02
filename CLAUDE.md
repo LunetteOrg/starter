@@ -1,76 +1,54 @@
-# CLAUDE.md — Starter Template
+# CLAUDE.md — the create monorepo
 
-## Project Overview
+## What this repo is
 
-TypeScript monorepo starter template. Architectural decisions are recorded as numbered ADRs in `docs/adr/` (thematic — one file per area); recommended patterns for the app you build on the template, which it does not ship, live in `docs/guidances/`. Read the relevant ADR before changing anything it covers. See [ADR-0001](docs/adr/0001-recording-decisions.md).
+The **create monorepo**: it holds `@lntt/create` (the scaffolder) and the Lunette
+**templates**. It is *not* itself a Lunette template — it is the system that ships
+them. Read [`docs/adr/`](./docs/adr/README.md) before changing anything the ADRs
+cover, especially [what a Lunette template is](./docs/adr/0002-what-is-a-lunette-template.md).
 
-The **`.lunette-template`** marker file at the repo root means you are working ON
-the template (ADRs may be consolidated/renumbered). `create-lunette` deletes it on
-scaffold, so in a derived project it is absent and ADRs are append-only.
+## Two levels — do not confuse them
 
-**Record shared decisions in the repo.** Any team/project decision (config
-choices, architectural trade-offs, conventions) must live in a shared, in-repo
-form — an ADR under `docs/adr/` (or a `docs/guidances/` doc for app-level
-recommendations) or a comment in the affected file — never only in a private or
-agent-local note. If it matters to more than one person, it belongs where
-everyone (and every machine) can see it.
+- **This monorepo** governs the *templates system*: the CLI, the template model,
+  the scaffolding contract. Its decisions live in `docs/adr/`.
+- **Each template** (`packages/create/templates/<framework>/`) is a **self-contained
+  project** with its *own* tooling (its own `biome.json`, `lefthook.yml`, `docs/adr/`,
+  `.claude/`, …) and its *own* application architecture. Those files are template
+  content — do **not** "fix" them to match this repo, and do not import this repo's
+  conventions into them.
+- Templates are **duplicated, not shared** (ADR-0003). We extract shared packages
+  only once patterns prove themselves — not before (YAGNI).
+
+## Working on the CLI
+
+- `packages/create/bin/index.ts` — TypeScript, run directly on **Node ≥24** (native
+  type stripping, no build step). `pnpm --filter @lntt/create test` scaffolds each
+  template into a temp dir and asserts the result.
+- Tooling here is scoped to the CLI: Biome only lints `packages/create/{bin,test}`
+  (never the templates), plus lefthook + commitlint. `pnpm lint`, `pnpm typecheck`,
+  `pnpm test`.
+
+## The scaffolding contract
+
+If you change a placeholder, the `.lunette-template` marker, or the dotfile scheme
+([ADR-0004](./docs/adr/0004-scaffolding-contract.md)), change the **CLI and every
+template together** — they live in one repo, so it is one PR.
+
+## Adding a template
+
+A variant is a folder under `packages/create/templates/`, named by its **web
+framework** (`react-router`, later `hono`, …). It must honour the shared base
+([ADR-0002](./docs/adr/0002-what-is-a-lunette-template.md)) and the scaffolding
+contract; then it is selectable via `--template <name>`.
 
 ## Conventions
 
-Source of truth: `CONTRIBUTING.md`
+- Conventional commits; no `Co-Authored-By:` / "Generated with …" trailers (the
+  `commit-msg` hook strips them).
+- Trunk-based, short-lived branches, one PR per change.
 
-### Branch Naming
+## Key paths
 
-```
-{type}/{issue-id}/{short-slug}
-```
-
-Examples: `feat/42/otp-login`, `chore/no-issue/fix-typo`
-
-### Commits
-
-Conventional commits: `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`
-
-No `Co-Authored-By:` trailers or "Generated with …" lines in commit messages —
-keep them clean. The `commit-msg` hook strips them as a backstop (`lefthook.yml`).
-
-### Workflow
-
-- Trunk-based, one PR per story, branches max 1-2 days
-- Tech stories merge freely; user stories merge behind feature flag (see the [feature-flags guidance](docs/guidances/app-infrastructure.md#feature-flags))
-
-## Architecture Rules
-
-- `process.env` banned outside `config/env.ts`
-- `new Date()` banned — use `Temporal`
-- `throw new Error()` banned — use `errore` typed errors (ADR-0002 — typed errors)
-- Domain must not import framework (React Router) or `lib/`
-- Routes consume `context.app` only — never import use-cases/domain/bootstrap directly
-- Use-cases compose via injected deps in `bootstrap/` — never import each other (ADR-0002 — use-case composition)
-- `tryAsync()` at repository boundary, `matchError()` at route layer
-- `.spec.ts` = unit test, `.test.ts` = integration test
-- Never `vi.mock` the database — use `withTestDb` + transaction rollback
-- Import boundaries are enforced twice: Biome overrides in `biome.json` + per-app `app/arch.spec.ts` (ADR-0002 — import boundaries). Keep both in sync when boundaries change.
-
-## Reviews
-
-Every code review and PR review MUST also run the `adr-check` and `story-check`
-skills and fold their findings into the review. Both are report-only (they never
-edit files). Run them up front, before the line-by-line pass:
-
-- `adr-check` — code vs `docs/adr/` (and `docs/guidances/`): ADR violations + decisions that need a new/updated ADR.
-- `story-check` — `packages/ui` components vs their Storybook stories/Foundations.
-
-**Deliver feedback on the PR.** When the review targets a PR (it has a GitHub
-PR), post findings as **inline PR comments** anchored to the relevant lines —
-not only as a chat summary. Prefer `/code-review --comment`, and attach the
-`adr-check`/`story-check` findings to the lines they reference. Reserve the chat
-summary for an overview; the actionable items live as PR comments. When there is
-no PR (local working diff), a chat report is fine.
-
-## Key Paths
-
-- ADRs: `docs/adr/` (generated index in `docs/adr/README.md`) · Guidances: `docs/guidances/` (app-level recommendations, not shipped)
-- Contributing: `CONTRIBUTING.md`
-- Architecture test helpers: `packages/test-utils/src/arch.ts`
-- Review skills: `.claude/skills/adr-check/`, `.claude/skills/story-check/`
+- ADRs (this system): `docs/adr/`
+- The CLI: `packages/create/bin/index.ts`
+- Templates: `packages/create/templates/<framework>/`
