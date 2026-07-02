@@ -4,19 +4,24 @@
   "description": "Scaffold a new project from a Lunette starter template",
   "type": "module",
   "bin": {
-    "create-lntt": "bin/index.mjs"
+    "create-lntt": "bin/index.ts"
   },
   "files": [
     "bin",
     "templates"
   ],
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "publishConfig": {
     "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "typescript": "^6.0.3"
   }
 }

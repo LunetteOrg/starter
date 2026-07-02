@@ -6,9 +6,9 @@ import { dirname, join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/index.mjs')
+const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/index.ts')
 
-function scaffold(name, template) {
+function scaffold(name: string, template: string): string {
   const dir = mkdtempSync(join(tmpdir(), 'lntt-create-'))
   execFileSync('node', [BIN, name, '--template', template], { cwd: dir, stdio: 'ignore' })
   return join(dir, name)
@@ -16,11 +16,11 @@ function scaffold(name, template) {
 
 // Files under `dir` containing `needle`. `grep -rl` exits 1 (no throw here) when
 // nothing matches, which we treat as "clean".
-function filesContaining(dir, needle) {
+function filesContaining(dir: string, needle: string): string[] {
   try {
     return execFileSync('grep', ['-rl', needle, dir], { encoding: 'utf8' }).trim().split('\n').filter(Boolean)
   } catch (e) {
-    if (e.status === 1) return []
+    if ((e as { status?: number }).status === 1) return []
     throw e
   }
 }
