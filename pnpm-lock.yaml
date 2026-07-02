@@ -75,6 +75,8 @@ importers:
 
   packages/biome-config: {}
 
+  packages/create: {}
+
   packages/playwright-config:
     dependencies:
       '@playwright/test':

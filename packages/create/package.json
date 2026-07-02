@@ -1,0 +1,22 @@
+{
+  "name": "@lntt/create",
+  "version": "0.2.0-spike",
+  "description": "Scaffold a new project from a Lunette starter template (create-vite-style spike)",
+  "type": "module",
+  "bin": {
+    "create-lntt": "bin/index.mjs"
+  },
+  "files": [
+    "bin",
+    "templates"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

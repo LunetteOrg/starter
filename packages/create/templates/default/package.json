@@ -1,0 +1,9 @@
+{
+  "name": "starter",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@starter/ui": "workspace:*",
+    "@starter/ui-tokens": "workspace:*"
+  }
+}
