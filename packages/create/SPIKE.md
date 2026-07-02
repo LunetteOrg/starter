@@ -21,10 +21,31 @@ packages/create/
 Run it: `node packages/create/bin/index.mjs my-app --template default`
 Test it: `pnpm --filter @lntt/create test` (3/3 green).
 
+## Real de-risk (not just the toy)
+
+The `templates/{default,minimal}` folders in THIS package are small stand-ins to
+keep the diff readable. But the real question — *does a full monorepo survive as a
+template folder?* — was tested separately by building the actual tooling monorepo
+and copying the **whole current starter** into `templates/default/`. Results:
+
+- **Outer workspace exclusion holds at scale.** With `packages: ["packages/*"]`,
+  the outer `pnpm install` sees only `@lntt/create` — the template's 7 inner
+  packages + the design-system app are NOT members (they're `packages/create/templates/default/**`, too deep for the glob). No collision.
+- **Scaffold produces a complete, correct starter**: all 7 packages, `apps/design-system`, the 6 consolidated ADRs, `.lunette-template` removed, `@starter/*` → `@<name>/*`, `"name": "starter"` → the project name, branch `main`.
+- **The generated project actually works**: `pnpm install` clean, workspace
+  members correctly `@<name>/*`, `pnpm turbo typecheck` → 4/4 green.
+- **One gap found**: `.editorconfig` is not in the rename's text-file set, so a
+  comment `@starter/biome-config` survives. One-line fix (add the extension) —
+  same class of coverage gap we've hit before.
+
+Conclusion: the model works end-to-end with the real monorepo. The nested-monorepo
+fear (workspace pickup) is a non-issue given `packages/*` doesn't recurse.
+
 ## How it maps to reality
 
 - `templates/default/` here is a **stand-in**. In the real thing it holds the
-  entire current starter tree (packages/, apps/, turbo.json, docs/adr, …).
+  entire current starter tree (packages/, apps/, turbo.json, docs/adr, …), exactly
+  as de-risked above.
 - `templates/minimal/` shows a variant is **just an extra folder** — this is the
   whole point, and it's exactly what [issue #3](../../../) (multi-template +
   interactive prompt) asked for. The prompt + `--template` flag are already wired.
