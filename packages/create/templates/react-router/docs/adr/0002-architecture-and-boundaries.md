@@ -3,7 +3,7 @@
 - Status: accepted
 - Date: 2026-07-02
 
-How each app is layered, how those layers are mechanically kept apart, how errors flow through them as typed values, how use-cases compose in the composition root, and how the template arms its own enforcement the moment a real app appears.
+This template's application architecture is **hexagonal (ports and adapters)**: a pure domain at the center, the web framework (React Router) and infrastructure (DB, email, …) at the edges behind injected ports. Concretely — how each app is layered, how those layers are mechanically kept apart, how errors flow through them as typed values, how use-cases compose in the composition root, and how the template arms its own enforcement the moment a real app appears.
 
 ## Layered architecture
 
