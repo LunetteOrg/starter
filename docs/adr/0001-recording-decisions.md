@@ -30,6 +30,10 @@ keep the starting set small and coherent — history of the template's own draft
 is not the point; a clean foundation is. Once you scaffold a project, its ADRs are
 append-only from there.
 
+You can tell which mode you're in from the **`.lunette-template`** marker file at
+the repo root: `create-lunette` deletes it on scaffold. **Present → you're in the
+template (renumber/consolidate freely); absent → a derived project (append-only).**
+
 **Guidances vs ADRs.** Patterns the template does **not** ship — auth, feature
 flags, secrets, background jobs, graceful shutdown — are recommendations for the
 app *you* build, not decisions the template has made. They live in

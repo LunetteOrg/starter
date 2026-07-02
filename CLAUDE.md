@@ -4,6 +4,10 @@
 
 TypeScript monorepo starter template. Architectural decisions are recorded as numbered ADRs in `docs/adr/` (thematic — one file per area); recommended patterns for the app you build on the template, which it does not ship, live in `docs/guidances/`. Read the relevant ADR before changing anything it covers. See [ADR-0001](docs/adr/0001-recording-decisions.md).
 
+The **`.lunette-template`** marker file at the repo root means you are working ON
+the template (ADRs may be consolidated/renumbered). `create-lunette` deletes it on
+scaffold, so in a derived project it is absent and ADRs are append-only.
+
 **Record shared decisions in the repo.** Any team/project decision (config
 choices, architectural trade-offs, conventions) must live in a shared, in-repo
 form — an ADR under `docs/adr/` (or a `docs/guidances/` doc for app-level
