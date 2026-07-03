@@ -1,6 +1,10 @@
 name: CI
 
 on:
+  # Solo, trunk-based: work lands directly on main, so CI must run on push too —
+  # not only on PRs — or it never runs.
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
 
