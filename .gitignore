@@ -1,3 +1,27 @@
+# Dependencies / caches
 node_modules
+.pnp
+.pnp.js
 .turbo
+
+# Build outputs (CLI + any template developed in-place)
 dist
+build
+out
+.react-router
+coverage
+test-results
+playwright-report
+drizzle/meta
+
+# Local env
+.env
+.env.local
+.env.*.local
+
+# Logs / misc
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+*.pem
