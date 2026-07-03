@@ -1,0 +1,60 @@
+name: Release @lntt/create
+
+# Triggered by publishing a GitHub Release (which is always backed by a tag).
+#   gh release create v0.2.0 --generate-notes
+# The release tag (vX.Y.Z) must match packages/create/package.json.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write # npm provenance
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+
+      # Gate: never publish a broken commit.
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      - name: Release tag must match the package version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./packages/create/package.json').version")"
+          [ "$TAG" = "$PKG" ] || { echo "release tag '$TAG' != package version '$PKG'"; exit 1; }
+
+      # Smoke-test the ACTUAL tarball: pack it, scaffold from the packed files, and
+      # assert the result. This is what catches packing bugs (dotfile mangling,
+      # missing files) that the source-based test can't see.
+      - name: Pack and scaffold from the tarball
+        run: |
+          set -euo pipefail
+          cd packages/create
+          TARBALL="$(pwd)/$(npm pack --silent)"
+          WORK="$(mktemp -d)"
+          tar -xzf "$TARBALL" -C "$WORK" # -> $WORK/package
+          cd "$WORK"
+          node package/bin/index.ts smoke-app --template react-router
+          test -f smoke-app/.gitignore                 # _gitignore was restored
+          test -f smoke-app/.npmrc                      # _npmrc was restored
+          test ! -f smoke-app/.lunette-template         # marker stripped
+          if grep -rq '@starter' smoke-app; then echo "@starter residue in tarball scaffold"; exit 1; fi
+          echo "✔ packed tarball scaffolds cleanly"
+
+      - name: Publish
+        run: npm publish --provenance --access public
+        working-directory: packages/create
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
