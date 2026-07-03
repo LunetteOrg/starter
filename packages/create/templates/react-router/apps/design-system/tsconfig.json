@@ -1,4 +1,7 @@
 {
   "extends": "@starter/typescript-config/browser.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
   "include": [".storybook/**/*.ts", ".storybook/**/*.tsx", "src/**/*.ts", "src/**/*.tsx"]
 }
