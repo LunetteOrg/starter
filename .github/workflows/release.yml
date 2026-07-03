@@ -24,7 +24,9 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
 
-      # Gate: never publish a broken commit.
+      # Gate: never publish a broken commit. `pnpm test` includes pack.test.ts,
+      # which packs the tarball and scaffolds from it — the same packing check that
+      # runs on every PR in ci.yml, so a broken package never reaches this step.
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
@@ -34,24 +36,6 @@ jobs:
           TAG="${GITHUB_REF_NAME#v}"
           PKG="$(node -p "require('./packages/create/package.json').version")"
           [ "$TAG" = "$PKG" ] || { echo "release tag '$TAG' != package version '$PKG'"; exit 1; }
-
-      # Smoke-test the ACTUAL tarball: pack it, scaffold from the packed files, and
-      # assert the result. This is what catches packing bugs (dotfile mangling,
-      # missing files) that the source-based test can't see.
-      - name: Pack and scaffold from the tarball
-        run: |
-          set -euo pipefail
-          cd packages/create
-          TARBALL="$(pwd)/$(npm pack --silent)"
-          WORK="$(mktemp -d)"
-          tar -xzf "$TARBALL" -C "$WORK" # -> $WORK/package
-          cd "$WORK"
-          node package/bin/index.ts smoke-app --template react-router
-          test -f smoke-app/.gitignore                 # _gitignore was restored
-          test -f smoke-app/.npmrc                      # _npmrc was restored
-          test ! -f smoke-app/.lunette-template         # marker stripped
-          if grep -rq '@starter' smoke-app; then echo "@starter residue in tarball scaffold"; exit 1; fi
-          echo "✔ packed tarball scaffolds cleanly"
 
       - name: Publish
         run: npm publish --provenance --access public
