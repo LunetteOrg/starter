@@ -22,7 +22,7 @@ const SKIP = new Set(['node_modules', '.git', 'dist', 'build', '.turbo', '.react
 // Files whose contents carry placeholders. `.editorconfig` and dotless names are
 // matched too — the earlier miss that let `@starter/biome-config` survive.
 const TEXT =
-  /\.(json|jsonc|ya?ml|tsx?|jsx?|mjs|cjs|md|mdx|css|html|env|nvmrc|npmrc|gitignore|editorconfig|template)$|(^|\/)(Dockerfile|compose\.yaml|render\.yaml|lefthook\.yml|turbo\.json|biome\.json|\.editorconfig|_gitignore|_npmrc)$/
+  /\.(json|jsonc|ya?ml|tsx?|jsx?|mjs|cjs|md|mdx|css|html|env|nvmrc|npmrc|gitignore|editorconfig|grit|template)$|(^|\/)(Dockerfile|compose\.yaml|render\.yaml|lefthook\.yml|turbo\.json|biome\.json|\.editorconfig|_gitignore|_npmrc)$/
 
 const log = (m: string): void => void stdout.write(`${m}\n`)
 const die = (m: string): never => {
