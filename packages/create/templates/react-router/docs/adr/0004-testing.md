@@ -54,8 +54,6 @@ defeats reuse and races sibling packages re-attaching to the labeled container;
 database and one `__drizzle_migrations` journal, so an instance that applies its
 own migrations corrupts/leaks state for the others.
 
-This mirrors the decision already proven in the sibling repo (pelion ADR-0008).
-
 ### Decision
 
 1. **Reuse is a per-developer local opt-in, never committed, off in CI.** Each

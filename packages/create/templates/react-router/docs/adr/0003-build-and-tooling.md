@@ -57,13 +57,12 @@ but it filters the variables our toolchain needs at runtime — notably
 Integration tests use Testcontainers, so an allowlist that omits these passes in
 CI (default Docker socket) but breaks `turbo test` on a developer machine using
 colima, podman, or a non-default Docker context — "green in CI, broken on the
-laptop". This question has come up repeatedly across our repos.
+laptop". This question comes up repeatedly.
 
 ### Decision
 
 Keep `globalPassThroughEnv: ["*"]` in `turbo.json`. Do not narrow it to an
-explicit allowlist. The same choice is kept in sibling repos (e.g. pelion) for
-consistency.
+explicit allowlist.
 
 Secrets discipline is enforced where it actually matters, not at the Turbo
 boundary: env vars are read only in `config/env.ts` ([secrets](../guidances/app-infrastructure.md#secrets)). The cost of
