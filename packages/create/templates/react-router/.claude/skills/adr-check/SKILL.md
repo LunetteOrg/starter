@@ -27,11 +27,11 @@ and recommended actions only.
    "Architecture Rules" in `CLAUDE.md`. Skip ADRs marked `deprecated` /
    `superseded`, and follow the supersede link to the replacement. Tie every rule
    back to the ADR it came from by reading the file, never by reciting a number
-   from memory. (Typical rules you'll derive today concern `process.env`
-   confinement, `Temporal` vs `Date`, typed `errore` errors, domain/use-case/route
-   import boundaries, the repository/route error handling seam, test-file naming
-   and no-mock-the-DB, migration strategy, and design-token/Storybook conventions
-   — but read the ADRs to get the current, authoritative set.)
+   from memory. (Each rule is the mechanically-checkable form of an ADR's
+   `## Decision` — an import that must not appear, a banned global, a naming
+   convention, a required test seam. Read the ADRs for the current set; do not
+   assume a fixed catalogue, since decisions are added, renumbered and superseded
+   over time.)
 
 3. **Scan for violations.** Prefer the existing tooling and helpers over ad-hoc
    greps where they exist (Biome overrides in `biome.json`, per-app
