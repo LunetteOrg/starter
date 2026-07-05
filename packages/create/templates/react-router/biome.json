@@ -26,6 +26,30 @@
             }
           }
         }
+      },
+      "plugins": ["./packages/biome-config/no-throw-new-error.grit"]
+    },
+    {
+      "includes": [
+        "apps/*/app/**/*.ts",
+        "apps/*/app/**/*.tsx",
+        "!apps/*/app/config/env.ts",
+        "!**/*.spec.ts",
+        "!**/*.test.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "process": "process.env is banned outside config/env.ts — read env only there (ADR-0002 — layered architecture)."
+                }
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -128,6 +152,15 @@
         "./packages/biome-config/no-implicit-e2e-sync.grit",
         "./packages/biome-config/no-react-internals.grit"
       ]
+    },
+    {
+      "includes": [
+        "apps/*/app/routes/**/*.ts",
+        "apps/*/app/routes/**/*.tsx",
+        "!**/*.spec.ts",
+        "!**/*.test.ts"
+      ],
+      "plugins": ["./packages/biome-config/no-entity-spread-in-loader.grit"]
     }
   ]
 }

@@ -1,0 +1,36 @@
+// TEMPLATE — copy to `apps/<app>/app/routes/<route>/read-view.ts` (drop
+// `.template`) next to the route that returns it, or to a shared
+// `app/read-views/` folder. Adapt the fields to what the UI actually renders.
+//
+// The read-view is the presentation-layer DTO: the ONLY shape a loader/action is
+// allowed to return for this resource. It imports `zod` and nothing else — no
+// domain, no db — so it does not cross an import boundary (ADR-0002) and can live
+// in the routes layer.
+//
+// Why a runtime schema and not just a TS type (ADR-0002 — loader/action
+// serialization boundary): React Router 7 serializes the loader/action return
+// *whole* (turbo-stream) to the browser. A TS return-type annotation does NOT
+// strip excess keys at runtime — the excess-property check only fires on object
+// literals. `UserReadView.parse(x)` DOES: a zod object strips every key it does
+// not declare, so `passwordHash`, tokens and internal flags cannot leak even if
+// the source object carries them. This is the "drop undeclared keys" boundary.
+
+import { z } from 'zod'
+
+/** The exact set of user fields the browser is allowed to see. */
+export const UserReadView = z.object({
+  id: z.string(),
+  email: z.string(),
+  displayName: z.string(),
+})
+
+export type UserReadView = z.infer<typeof UserReadView>
+
+/**
+ * Project any user-shaped value onto the read-view at the route boundary,
+ * dropping undeclared keys. Pass the use-case result straight in — its inferred
+ * type may be the full domain entity; `.parse()` strips it down to the DTO.
+ */
+export function toUserReadView(user: unknown): UserReadView {
+  return UserReadView.parse(user)
+}

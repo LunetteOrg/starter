@@ -64,6 +64,29 @@ Violations are caught twice: **Biome `noRestrictedImports`** (pre-commit + CI) a
 - Use `matchError()` in route actions for exhaustive handling
 - Never `throw` below the use-case layer
 
+## Loader / action returns (no over-serialization)
+
+React Router 7 serializes a loader/action return **whole** (turbo-stream) and
+ships it to the browser — inline in the SSR HTML and in every `.data` request. A
+returned field is on the wire even if no component reads it, so a leaked column
+(`passwordHash`, tokens, internal flags, another user's data from a join) is
+exposed regardless of client code. TypeScript does not strip excess keys at
+runtime — only a runtime projection does.
+
+- Return an **explicit, flat read-view/DTO object literal** — the exact fields the
+  UI needs, spelled out.
+- **Never** `return { ...entity }`, `return entity`, or a nested entity
+  (`return { user }`). No spreads of domain/db values into the returned object.
+- Never return a domain/db type directly; project it first (an explicit literal,
+  or a `zod` read-view whose `.parse()` drops undeclared keys — see the templates
+  in `packages/test-utils/templates/serialization/`).
+- Actions serialize exactly like loaders — the same rule applies to their return.
+
+Enforced twice, like import boundaries: an **arch test**
+(`assertNoEntitySpreadInReturn`, in the per-app `arch.spec.ts`) fails on any
+spread into a loader/action return, and a per-route **golden test** pins the
+exact key set of the serialized payload. See [ADR-0002 (loader/action serialization boundary)](./docs/adr/0002-architecture-and-boundaries.md#loaderaction-serialization-boundary).
+
 ## Testing
 
 Strategy and tiers are defined in [ADR-0004 (Testing)](./docs/adr/0004-testing.md)

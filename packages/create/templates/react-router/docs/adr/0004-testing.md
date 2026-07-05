@@ -26,6 +26,7 @@ Rules:
 - `test` does not depend on `build` in the Turbo pipeline — Vitest runs on TypeScript sources (fast PR feedback). `test:e2e` depends on `build` and runs only on main push: Playwright gates the deploy, not the PR.
 - Playwright starts from clean cookie state (`storageState: { cookies: [], origins: [] }`); tests that need cookies set them explicitly.
 - E2E hygiene is linted ([import boundaries](./0002-architecture-and-boundaries.md#import-boundaries)): no `waitForTimeout()`, no reaching into React internals.
+- Every route that returns data ships a **golden serialization test** (`.test.ts`) pinning the exact key set of the loader/action payload, so a leaked field fails the build ([loader/action serialization boundary](./0002-architecture-and-boundaries.md#loaderaction-serialization-boundary)). Copy-paste template: `packages/test-utils/templates/serialization/`.
 
 ### Consequences
 

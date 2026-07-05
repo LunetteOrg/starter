@@ -50,6 +50,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
 - \+ Every dependency is injected → unit tests need no module mocking; integration tests wire a mini-app over a test transaction.
 - \+ Layer boundaries are mechanically enforceable ([import boundaries](#import-boundaries)).
+- \+ `process.env` is confined to `config/env.ts`, enforced by two nets: a Biome `noRestrictedGlobals` override (`apps/*/app/**` except `config/env.ts`) and the per-app `arch.spec.ts` via `assertNoSourcePattern`. Everything else reads validated config off the injected app.
 - − Wiring in `bootstrap/` grows with the app and is boilerplate-ish; this is accepted as the one place where everything is explicit.
 
 ## Import boundaries
@@ -115,6 +116,68 @@ Path aliases use Node.js subpath imports (`"imports": { "#app/*": … }` in each
 - − The matrix is written twice (Biome config + test). Accepted: the redundancy is the feature.
 - − The use-cases override must be extended manually when a new infrastructure module lands in `lib/`.
 
+## Loader/action serialization boundary
+
+### Context
+
+In React Router 7 the value a loader or action returns is serialized **whole**
+(turbo-stream) and reaches the browser twice: inline in the SSR HTML and again in
+every `.data` request. A returned field is on the wire even if no component reads
+it — so guarding client-side consumption protects nothing. The failure modes are
+concrete: leaking sensitive columns of the current user (`passwordHash`, tokens,
+internal flags) or another user's row pulled in by a join.
+
+TypeScript does not save us here. Annotating a loader's return type does **not**
+remove excess keys at runtime — the excess-property check only fires on object
+literals, not on a value flowing through a typed variable. Only a runtime
+projection actually strips them. Footgun #1 is `return { ...entity }`.
+
+The [import boundaries](#import-boundaries) already stop a route from *naming* a
+domain/db type (`#app/domain` / `#app/lib/db` are banned in `routes/**`, type
+imports included), so the residual risk is **structural**: spreading, or passing
+through, a value whose inferred type is an entity.
+
+### Decision
+
+A loader/action returns an explicit, flat **read-view/DTO** object literal — never
+a domain/db entity, never a nested entity, never `return { ...entity }`.
+
+- **Projection at the boundary.** The presentation shape is defined once as a
+  `zod` object (the stack's validator, matching `config`); its `.parse()` drops
+  every undeclared key, so sensitive columns cannot ride along even if the source
+  object carries them. The read-view module imports `zod` only — no domain, no db
+  — so it does not cross an import boundary and lives in the routes layer. Applied
+  at least to the current-user route.
+- **Two nets, mirroring import boundaries.** (1) An **arch test**,
+  `assertNoEntitySpreadInReturn` (`@starter/test-utils`), fails on any
+  object-literal spread inside a loader/action return; it ships in the canonical
+  `layer.arch.spec.ts.template`, so every app that copies the arch test inherits
+  it and `meta-arch` keeps it present. (2) A per-route **golden integration
+  test** pins the *exact* key set of the serialized payload for both the loader
+  and the action, catching structural leaks (a new column, a nested entity) the
+  spread scan cannot see.
+- Reference application code ships as inert `.template` files under
+  `packages/test-utils/templates/serialization/` (read-view, example route,
+  golden test), per [self-arming enforcement](#self-arming-enforcement).
+
+### Consequences
+
+- \+ Sensitive fields cannot reach the browser by accident: the spread footgun
+  fails the build, and every data-returning route pins its wire shape.
+- \+ The guarantee is runtime, not just type-level — it survives inferred types
+  and `any`.
+- − Each data-returning route copies its golden test; accepted — it is the
+  copy-paste pattern that keeps the harness armed as the app grows.
+- − The spread scanner is a pragmatic text scan (like the boundary scanner): it
+  flags object-property spreads *inside a return expression*, not every
+  conceivable leak. In particular, hoisting the spread out of the return
+  (`const dto = { ...user }; return dto`) evades both the scanner and the grit —
+  by design, they are a cheap syntactic early-warning for the `return { ...entity }`
+  footgun, not a proof. The **golden test is the only airtight net**: it asserts
+  the exact key set of the actual payload regardless of how it was built, so the
+  hoisted form still fails it. Escalate the scan to a TS-AST/dataflow walk only if
+  the syntactic net proves insufficient in practice.
+
 ## Typed errors
 
 ### Context
@@ -131,6 +194,8 @@ Errors are values, built with [`errore`](https://www.npmjs.com/package/errore) t
 - **Routes** handle the union exhaustively with `matchError()` — the only layer that translates errors into HTTP responses.
 
 `throw new Error()` is an anti-pattern everywhere in app code; `throw` is acceptable only where the framework demands it (e.g. `throw redirect(…)` in RR7).
+
+Enforced by two nets, mirroring [import boundaries](#import-boundaries): a Biome grit plugin (`no-throw-new-error.grit`, `apps/*/app/**`) flags `throw new *Error(...)` in the editor and pre-commit, and the per-app `arch.spec.ts` asserts the same via `assertNoSourcePattern` (which covers every argument form). `throw redirect(…)` / `throw new Response(…)` are not flagged.
 
 ### Consequences
 

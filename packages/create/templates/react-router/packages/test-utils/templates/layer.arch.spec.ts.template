@@ -13,7 +13,11 @@
 // a folder.
 
 import { resolve } from 'node:path'
-import { assertLayerBoundaries } from '@starter/test-utils'
+import {
+  assertLayerBoundaries,
+  assertNoEntitySpreadInReturn,
+  assertNoSourcePattern,
+} from '@starter/test-utils'
 import { describe, it } from 'vitest'
 
 const APP = resolve(__dirname)
@@ -45,6 +49,54 @@ describe('architecture boundaries', () => {
       pattern: resolve(APP, 'routes/**/*.{ts,tsx}'),
       layer: 'routes',
       forbidden: [/^#app\/use-cases/, /^#app\/domain/, /^#app\/lib\/db/, /^#app\/bootstrap/],
+    })
+  })
+
+  // Routes must not over-serialize: a loader/action's return is shipped whole to
+  // the browser (turbo-stream), so `return { ...entity }` leaks every column.
+  // Return an explicit read-view/DTO literal instead (ADR-0002 — loader/action
+  // serialization boundary). The per-route golden test (me.test.ts) pins the
+  // exact key set; this catches the spread footgun across all routes at once.
+  it('loaders/actions never spread an entity into the returned payload', async () => {
+    await assertNoEntitySpreadInReturn({
+      pattern: resolve(APP, 'routes/**/*.{ts,tsx}'),
+      layer: 'routes',
+    })
+  })
+})
+
+// Code rules (not import boundaries) — each mirrors a Biome net in `biome.json`
+// (ADR-0002): the SAME violation must fail both lint and this test. Keep them in
+// sync. `assertNoSourcePattern` throws on an empty glob, so a moved layer fails
+// loudly instead of passing vacuously.
+describe('app code rules', () => {
+  // Errors are values (`errore` typed errors), not exceptions — `throw` is only
+  // for framework signals (`throw redirect(...)`) (ADR-0002 — typed errors).
+  it('never `throw new Error()` anywhere in app code', async () => {
+    await assertNoSourcePattern({
+      pattern: resolve(APP, '**/*.{ts,tsx}'),
+      layer: 'app',
+      forbidden: [
+        {
+          regex: /\bthrow\s+new\s+\w*Error\b/,
+          message: 'Return an errore typed error instead of throwing (ADR-0002 — typed errors).',
+        },
+      ],
+    })
+  })
+
+  // `process.env` is read in exactly one place: config/env.ts (ADR-0002).
+  it('reads process.env only in config/env.ts', async () => {
+    await assertNoSourcePattern({
+      pattern: resolve(APP, '**/*.{ts,tsx}'),
+      layer: 'app',
+      forbidden: [
+        {
+          regex: /\bprocess\s*\.\s*env\b/,
+          message: 'Read env only in config/env.ts (ADR-0002 — layered architecture).',
+        },
+      ],
+      ignore: ['**/config/env.ts'],
     })
   })
 })

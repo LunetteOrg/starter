@@ -1,0 +1,105 @@
+// TEMPLATE — copy to `apps/<app>/app/routes/me.test.ts` (drop `.template`) when
+// you add a route that returns user data. This is the GOLDEN over-serialization
+// harness: it pins the EXACT set of keys the loader/action puts on the wire, so
+// the day someone adds a sensitive column to the entity (or writes
+// `return { ...user }`), this test goes red instead of the field silently
+// shipping to every browser.
+//
+// Why assert on the return value's keys (ADR-0002 — loader/action serialization
+// boundary): React Router 7 serializes the loader/action return *whole*
+// (turbo-stream), inline in the SSR HTML and again in every `.data` request. The
+// serialization is structural — the payload's keys ARE the return value's keys —
+// so pinning the returned shape pins the wire payload. Copy this file per route
+// that returns data; that is how every project keeps the harness armed.
+//
+// It is a `.test.ts` (integration, ADR-0004): it wires a real app over a rolled-
+// back test transaction — no mocks — so the assertion runs against the real
+// use-case output, the exact thing that leaks in production.
+
+import { withTestDb } from '@starter/test-utils'
+import { describe, expect, it } from 'vitest'
+import { createApp } from '#app/bootstrap' // your composition root (ADR-0002)
+import { appContext } from '#app/context' // the RR load-context key
+import { action, loader } from './me'
+
+// ── copy-paste helpers ──────────────────────────────────────────────────────
+
+// Exact-key assertion. Recurses, so a nested entity leak (`{ user: {...} }`) is
+// caught too, not just top-level keys. `shape` lists the ALLOWED keys; `true`
+// means "a leaf, any value", a nested object means "recurse with this shape".
+type Shape = { [k: string]: true | Shape }
+function expectExactPayloadKeys(payload: unknown, shape: Shape, path = '$'): void {
+  expect(payload, `${path}: expected an object`).toBeTypeOf('object')
+  expect(payload, `${path}: unexpected null`).not.toBeNull()
+  const obj = payload as Record<string, unknown>
+  expect(Object.keys(obj).sort(), `${path}: payload keys must match the read-view exactly`).toEqual(
+    Object.keys(shape).sort(),
+  )
+  for (const [key, spec] of Object.entries(shape)) {
+    if (spec !== true) expectExactPayloadKeys(obj[key], spec, `${path}.${key}`)
+  }
+}
+
+// RR7 loaders/actions may return a bare object OR `data(payload, init)`. Unwrap
+// to the value that actually gets serialized.
+function serialized(result: unknown): unknown {
+  if (result && typeof result === 'object' && 'data' in result) {
+    return (result as { data: unknown }).data
+  }
+  return result
+}
+
+// Minimal load context: the same shape your route reads via `context.get(...)`.
+// Mirror your app's `getLoadContext`/middleware if it provides more.
+function loadContext(app: ReturnType<typeof createApp>) {
+  const map = new Map<unknown, unknown>([[appContext, app]])
+  return { get: (key: unknown) => map.get(key) } as never
+}
+
+// ── the harness ─────────────────────────────────────────────────────────────
+
+// The one allow-list this test pins. Keep it in lockstep with the read-view.
+const USER_READ_VIEW: Shape = { id: true, email: true, displayName: true }
+
+describe('GET /me — loader serialization', () => {
+  it('returns exactly the user read-view — no entity fields leak', async () => {
+    await withTestDb(async (db) => {
+      const app = createApp({ db }) // adapt to your createApp signature
+      await app.useCases.users.seedForTest?.({ email: 'a@b.co' }) // arrange a user
+
+      const result = await loader({
+        request: new Request('http://localhost/me'),
+        context: loadContext(app),
+        params: {},
+      } as never)
+
+      expectExactPayloadKeys(serialized(result), USER_READ_VIEW)
+    })
+  })
+})
+
+describe('POST /me — action serialization', () => {
+  it('returns exactly the user read-view — no entity fields leak', async () => {
+    await withTestDb(async (db) => {
+      const app = createApp({ db })
+      await app.useCases.users.seedForTest?.({ email: 'a@b.co' })
+
+      const body = new FormData()
+      body.set('displayName', 'Ada')
+      const result = await action({
+        request: new Request('http://localhost/me', { method: 'POST', body }),
+        context: loadContext(app),
+        params: {},
+      } as never)
+
+      expectExactPayloadKeys(serialized(result), USER_READ_VIEW)
+    })
+  })
+})
+
+// ── optional: full `.data` round-trip ────────────────────────────────────────
+// The assertions above pin the serialized SHAPE, which is what leaks. If you also
+// want to prove the turbo-stream `.data` response over real HTTP, drive the route
+// with `createRoutesStub` from `react-router` and `fetch('/me.data')`, then assert
+// the decoded body with `expectExactPayloadKeys`. Kept optional: it adds a router
+// dependency to the test for the same guarantee.

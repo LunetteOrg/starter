@@ -46,6 +46,7 @@ keep them clean. The `commit-msg` hook strips them as a backstop (`lefthook.yml`
 - `throw new Error()` banned — use `errore` typed errors (ADR-0002 — typed errors)
 - Domain must not import framework (React Router) or `lib/`
 - Routes consume `context.app` only — never import use-cases/domain/bootstrap directly
+- Loaders/actions return an explicit, flat read-view/DTO literal — never a domain/db entity, never a nested entity, never `return { ...entity }` (RR7 serializes the return whole to the browser). Enforced by `assertNoEntitySpreadInReturn` + a per-route golden test (ADR-0002 — loader/action serialization boundary)
 - Use-cases compose via injected deps in `bootstrap/` — never import each other (ADR-0002 — use-case composition)
 - `tryAsync()` at repository boundary, `matchError()` at route layer
 - `.spec.ts` = unit test, `.test.ts` = integration test

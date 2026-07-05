@@ -19,3 +19,17 @@ export {
   checkMigration,
   type MigrationViolation,
 } from './migration-safety'
+export {
+  assertNoEntitySpreadInReturn,
+  findReturnSpreads,
+  type NoReturnSpreadOptions,
+  type ReturnSpreadViolation,
+} from './serialization'
+export {
+  assertNoSourcePattern,
+  blankCommentsAndStrings,
+  findSourceMatches,
+  type NoSourcePatternOptions,
+  type SourcePatternViolation,
+  type SourceRule,
+} from './source-scan'

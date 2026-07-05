@@ -1,0 +1,46 @@
+// TEMPLATE — copy to `apps/<app>/app/routes/me.tsx` (drop `.template`) and wire
+// it into your route config. This is the reference shape for a loader/action
+// that returns current-user data WITHOUT over-serializing it.
+//
+// The rule (ADR-0002 — loader/action serialization boundary): a loader/action
+// returns an explicit, flat read-view/DTO — never a domain/db entity, never a
+// nested entity, and never `return { ...entity }`. In RR7 the return is
+// serialized whole to the browser, so a runtime projection is the only thing
+// that actually keeps sensitive columns off the wire.
+
+import { data, Form } from 'react-router'
+import type { Route } from './+types/me'
+import { toUserReadView } from './read-view'
+
+export async function loader({ context }: Route.LoaderArgs) {
+  const app = context.get(appContext) // your app's load context (ADR-0002)
+  const user = await app.useCases.users.getCurrent()
+
+  // ✅ Project at the boundary. `user` may be the full domain entity; the
+  // read-view strips it to exactly { id, email, displayName }.
+  return toUserReadView(user)
+
+  // ❌ NEVER: `return user` or `return { ...user }` — that ships passwordHash,
+  //    tokens and internal flags to the browser, whether or not the UI reads them.
+}
+
+export async function action({ request, context }: Route.ActionArgs) {
+  const app = context.get(appContext)
+  const form = await request.formData()
+  const updated = await app.useCases.users.updateDisplayName({
+    displayName: String(form.get('displayName') ?? ''),
+  })
+
+  // ✅ The action's return serializes exactly like a loader's — project it too.
+  return data(toUserReadView(updated))
+}
+
+export default function Me({ loaderData }: Route.ComponentProps) {
+  return (
+    <Form method="post">
+      <p>{loaderData.email}</p>
+      <input name="displayName" defaultValue={loaderData.displayName} />
+      <button type="submit">Save</button>
+    </Form>
+  )
+}

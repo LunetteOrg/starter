@@ -1,0 +1,25 @@
+// Ban object-literal spread inside a loader/action `return` (`return { ...entity }`).
+//
+// In React Router 7 the value a loader/action returns is serialized WHOLE
+// (turbo-stream) and shipped to the browser — inline in the SSR HTML and in every
+// `.data` request. `return { ...entity }` flattens every column of a domain/DB row
+// (passwordHash, tokens, internal flags, another user's data from a join) onto the
+// wire, whether or not any component reads it. TypeScript does not strip excess
+// keys at runtime; only an explicit read-view/DTO projection does.
+//
+// This is the editor/pre-commit net; the arch test `assertNoEntitySpreadInReturn`
+// (@starter/test-utils) is the CI net — same rule, two nets (ADR-0002 — loader/
+// action serialization boundary). Return an explicit, flat read-view literal
+// instead. Matches an object spread anywhere in a return (mixed members, nested
+// objects, `data({ ...x })`), while excluding array spreads (`[...arr]`). One
+// known blind spot: a spread that merges headers inside a returned `Response`
+// object is also flagged — hoist that object out of the return.
+`return $ret` where {
+  $ret <: contains `...$s`,
+  $s <: within `{ $_ }`,
+  $s <: not within `[$_]`,
+  register_diagnostic(
+    span = $s,
+    message = "Object spread in a loader/action return over-serializes the entity to the browser (turbo-stream). Return an explicit, flat read-view/DTO literal — never `return { ...entity }`. See ADR-0002 (loader/action serialization boundary)."
+  )
+}

@@ -1,0 +1,24 @@
+// Ban `throw new Error(...)` (and any `*Error` subclass) in app code.
+//
+// Thrown exceptions are invisible in signatures: callers cannot know what can
+// fail and TypeScript cannot force them to handle it. This template models errors
+// as VALUES with `errore` tagged errors — domain errors are returned, repositories
+// wrap Drizzle in `tryAsync()`, routes translate with `matchError()` (ADR-0002 —
+// typed errors). `throw` is acceptable only where the framework demands it
+// (`throw redirect(...)`, `throw new Response(...)` in RR7), which this rule does
+// NOT flag — it targets only `new *Error` constructions.
+//
+// Editor/pre-commit net; the arch test `assertNoSourcePattern` (@starter/test-utils)
+// is the CI net and catches every argument form. Covers 0-2 constructor args
+// (message + `{ cause }`), the realistic cases.
+or {
+  `throw new $err()`,
+  `throw new $err($a)`,
+  `throw new $err($a, $b)`
+} where {
+  $err <: r"[A-Za-z0-9_$]*Error",
+  register_diagnostic(
+    span = $err,
+    message = "Don't `throw new Error()` — return an `errore` typed error instead (throw is only for framework signals like redirect). See ADR-0002 (typed errors)."
+  )
+}
