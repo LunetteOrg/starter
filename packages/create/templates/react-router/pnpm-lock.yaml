@@ -13,7 +13,7 @@ importers:
         version: 2.4.15
       '@commitlint/cli':
         specifier: ^20.5.0
-        version: 20.5.3(@types/node@25.8.0)(conventional-commits-parser@6.4.0)(typescript@5.9.2)
+        version: 20.5.3(@types/node@25.8.0)(conventional-commits-parser@6.4.0)(typescript@6.0.3)
       '@commitlint/config-conventional':
         specifier: ^20.5.0
         version: 20.5.3
@@ -24,8 +24,8 @@ importers:
         specifier: ^2.8.20
         version: 2.9.14
       typescript:
-        specifier: 5.9.2
-        version: 5.9.2
+        specifier: 6.0.3
+        version: 6.0.3
 
   apps/design-system:
     dependencies:
@@ -53,7 +53,7 @@ importers:
         version: 10.4.6(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(esbuild@0.27.7)(rollup@4.60.4)(storybook@10.4.6(@testing-library/dom@10.4.1)(@types/react@19.2.14)(prettier@2.8.8)(react@19.2.6))(vite@8.1.0(@types/node@25.8.0)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.48.0)(yaml@2.9.0))(webpack@5.108.2(esbuild@0.27.7)(postcss@8.5.14))
       '@storybook/react-vite':
         specifier: ^10.4.6
-        version: 10.4.6(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(esbuild@0.27.7)(react-dom@19.2.7(react@19.2.6))(react@19.2.6)(rollup@4.60.4)(storybook@10.4.6(@testing-library/dom@10.4.1)(@types/react@19.2.14)(prettier@2.8.8)(react@19.2.6))(typescript@5.9.2)(vite@8.1.0(@types/node@25.8.0)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.48.0)(yaml@2.9.0))(webpack@5.108.2(esbuild@0.27.7)(postcss@8.5.14))
+        version: 10.4.6(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(esbuild@0.27.7)(react-dom@19.2.7(react@19.2.6))(react@19.2.6)(rollup@4.60.4)(storybook@10.4.6(@testing-library/dom@10.4.1)(@types/react@19.2.14)(prettier@2.8.8)(react@19.2.6))(typescript@6.0.3)(vite@8.1.0(@types/node@25.8.0)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.48.0)(yaml@2.9.0))(webpack@5.108.2(esbuild@0.27.7)(postcss@8.5.14))
       '@types/react':
         specifier: ^19.2.14
         version: 19.2.14
@@ -67,8 +67,8 @@ importers:
         specifier: ^5.0.0
         version: 5.0.0(react-dom@19.2.7(react@19.2.6))(react@19.2.6)(storybook@10.4.6(@testing-library/dom@10.4.1)(@types/react@19.2.14)(prettier@2.8.8)(react@19.2.6))(webpack@5.108.2(esbuild@0.27.7)(postcss@8.5.14))
       typescript:
-        specifier: 5.9.2
-        version: 5.9.2
+        specifier: 6.0.3
+        version: 6.0.3
       vite:
         specifier: ^8.1.0
         version: 8.1.0(@types/node@25.8.0)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.48.0)(yaml@2.9.0)
@@ -88,23 +88,23 @@ importers:
         specifier: ^25.8.0
         version: 25.8.0
       typescript:
-        specifier: 5.9.2
-        version: 5.9.2
+        specifier: 6.0.3
+        version: 6.0.3
 
   packages/stylelint-config:
     dependencies:
       stylelint:
         specifier: ^17.0.0
-        version: 17.14.0(typescript@5.9.2)
+        version: 17.14.0(typescript@6.0.3)
       stylelint-config-css-modules:
         specifier: ^4.6.0
-        version: 4.6.0(stylelint@17.14.0(typescript@5.9.2))
+        version: 4.6.0(stylelint@17.14.0(typescript@6.0.3))
       stylelint-config-standard:
         specifier: ^40.0.0
-        version: 40.0.0(stylelint@17.14.0(typescript@5.9.2))
+        version: 40.0.0(stylelint@17.14.0(typescript@6.0.3))
       stylelint-no-unsupported-browser-features:
         specifier: ^8.1.1
-        version: 8.1.1(stylelint@17.14.0(typescript@5.9.2))
+        version: 8.1.1(stylelint@17.14.0(typescript@6.0.3))
 
   packages/test-utils:
     dependencies:
@@ -131,8 +131,8 @@ importers:
         specifier: ^3.2.6
         version: 3.2.6(vitest@3.2.6(@types/node@25.8.0)(jiti@2.6.1)(jsdom@21.1.2)(lightningcss@1.32.0)(terser@5.48.0)(yaml@2.9.0))
       typescript:
-        specifier: 5.9.2
-        version: 5.9.2
+        specifier: 6.0.3
+        version: 6.0.3
       vitest:
         specifier: ^3.2.6
         version: 3.2.6(@types/node@25.8.0)(jiti@2.6.1)(jsdom@21.1.2)(lightningcss@1.32.0)(terser@5.48.0)(yaml@2.9.0)
@@ -159,10 +159,10 @@ importers:
         version: 19.2.14
       stylelint:
         specifier: ^17.14.0
-        version: 17.14.0(typescript@5.9.2)
+        version: 17.14.0(typescript@6.0.3)
       typescript:
-        specifier: 5.9.2
-        version: 5.9.2
+        specifier: 6.0.3
+        version: 6.0.3
 
   packages/ui-tokens:
     devDependencies:
@@ -171,7 +171,7 @@ importers:
         version: link:../stylelint-config
       stylelint:
         specifier: ^17.14.0
-        version: 17.14.0(typescript@5.9.2)
+        version: 17.14.0(typescript@6.0.3)
 
 packages:
 
@@ -3632,8 +3632,8 @@ packages:
   tweetnacl@0.14.5:
     resolution: {integrity: sha512-KXXFFdAbFXY4geFIwoyNK+f5Z1b7swfXABfL7HXCmoIWMKU3dmS26672A4EeQtDzLKy7SXmfBu51JolvEKwtGA==}
 
-  typescript@5.9.2:
-    resolution: {integrity: sha512-CWBzXQrc/qOkhidw1OzBTQuYRbfyxDXJMVJ1XNwUHGROVmuaeiEm3OslpZ1RV96d7SKKjZKrSJu3+t/xlw3R9A==}
+  typescript@6.0.3:
+    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
     engines: {node: '>=14.17'}
     hasBin: true
 
@@ -4088,11 +4088,11 @@ snapshots:
       hashery: 1.5.1
       keyv: 5.6.0
 
-  '@commitlint/cli@20.5.3(@types/node@25.8.0)(conventional-commits-parser@6.4.0)(typescript@5.9.2)':
+  '@commitlint/cli@20.5.3(@types/node@25.8.0)(conventional-commits-parser@6.4.0)(typescript@6.0.3)':
     dependencies:
       '@commitlint/format': 20.5.0
       '@commitlint/lint': 20.5.3
-      '@commitlint/load': 20.5.3(@types/node@25.8.0)(typescript@5.9.2)
+      '@commitlint/load': 20.5.3(@types/node@25.8.0)(typescript@6.0.3)
       '@commitlint/read': 20.5.0(conventional-commits-parser@6.4.0)
       '@commitlint/types': 20.5.0
       tinyexec: 1.1.2
@@ -4137,14 +4137,14 @@ snapshots:
       '@commitlint/rules': 20.5.3
       '@commitlint/types': 20.5.0
 
-  '@commitlint/load@20.5.3(@types/node@25.8.0)(typescript@5.9.2)':
+  '@commitlint/load@20.5.3(@types/node@25.8.0)(typescript@6.0.3)':
     dependencies:
       '@commitlint/config-validator': 20.5.0
       '@commitlint/execute-rule': 20.0.0
       '@commitlint/resolve-extends': 20.5.3
       '@commitlint/types': 20.5.0
-      cosmiconfig: 9.0.1(typescript@5.9.2)
-      cosmiconfig-typescript-loader: 6.3.0(@types/node@25.8.0)(cosmiconfig@9.0.1(typescript@5.9.2))(typescript@5.9.2)
+      cosmiconfig: 9.0.1(typescript@6.0.3)
+      cosmiconfig-typescript-loader: 6.3.0(@types/node@25.8.0)(cosmiconfig@9.0.1(typescript@6.0.3))(typescript@6.0.3)
       es-toolkit: 1.46.1
       is-plain-obj: 4.1.0
       picocolors: 1.1.1
@@ -4389,13 +4389,13 @@ snapshots:
 
   '@istanbuljs/schema@0.1.6': {}
 
-  '@joshwooding/vite-plugin-react-docgen-typescript@0.7.0(typescript@5.9.2)(vite@8.1.0(@types/node@25.8.0)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.48.0)(yaml@2.9.0))':
+  '@joshwooding/vite-plugin-react-docgen-typescript@0.7.0(typescript@6.0.3)(vite@8.1.0(@types/node@25.8.0)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.48.0)(yaml@2.9.0))':
     dependencies:
       glob: 13.0.6
-      react-docgen-typescript: 2.4.0(typescript@5.9.2)
+      react-docgen-typescript: 2.4.0(typescript@6.0.3)
       vite: 8.1.0(@types/node@25.8.0)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.48.0)(yaml@2.9.0)
     optionalDependencies:
-      typescript: 5.9.2
+      typescript: 6.0.3
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
@@ -4836,12 +4836,12 @@ snapshots:
       '@types/react': 19.2.14
       '@types/react-dom': 19.2.3(@types/react@19.2.14)
 
-  '@storybook/react-vite@10.4.6(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(esbuild@0.27.7)(react-dom@19.2.7(react@19.2.6))(react@19.2.6)(rollup@4.60.4)(storybook@10.4.6(@testing-library/dom@10.4.1)(@types/react@19.2.14)(prettier@2.8.8)(react@19.2.6))(typescript@5.9.2)(vite@8.1.0(@types/node@25.8.0)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.48.0)(yaml@2.9.0))(webpack@5.108.2(esbuild@0.27.7)(postcss@8.5.14))':
+  '@storybook/react-vite@10.4.6(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(esbuild@0.27.7)(react-dom@19.2.7(react@19.2.6))(react@19.2.6)(rollup@4.60.4)(storybook@10.4.6(@testing-library/dom@10.4.1)(@types/react@19.2.14)(prettier@2.8.8)(react@19.2.6))(typescript@6.0.3)(vite@8.1.0(@types/node@25.8.0)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.48.0)(yaml@2.9.0))(webpack@5.108.2(esbuild@0.27.7)(postcss@8.5.14))':
     dependencies:
-      '@joshwooding/vite-plugin-react-docgen-typescript': 0.7.0(typescript@5.9.2)(vite@8.1.0(@types/node@25.8.0)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.48.0)(yaml@2.9.0))
+      '@joshwooding/vite-plugin-react-docgen-typescript': 0.7.0(typescript@6.0.3)(vite@8.1.0(@types/node@25.8.0)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.48.0)(yaml@2.9.0))
       '@rollup/pluginutils': 5.4.0(rollup@4.60.4)
       '@storybook/builder-vite': 10.4.6(esbuild@0.27.7)(rollup@4.60.4)(storybook@10.4.6(@testing-library/dom@10.4.1)(@types/react@19.2.14)(prettier@2.8.8)(react@19.2.6))(vite@8.1.0(@types/node@25.8.0)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.48.0)(yaml@2.9.0))(webpack@5.108.2(esbuild@0.27.7)(postcss@8.5.14))
-      '@storybook/react': 10.4.6(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.6))(react@19.2.6)(storybook@10.4.6(@testing-library/dom@10.4.1)(@types/react@19.2.14)(prettier@2.8.8)(react@19.2.6))(typescript@5.9.2)
+      '@storybook/react': 10.4.6(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.6))(react@19.2.6)(storybook@10.4.6(@testing-library/dom@10.4.1)(@types/react@19.2.14)(prettier@2.8.8)(react@19.2.6))(typescript@6.0.3)
       empathic: 2.0.1
       magic-string: 0.30.21
       react: 19.2.6
@@ -4860,19 +4860,19 @@ snapshots:
       - typescript
       - webpack
 
-  '@storybook/react@10.4.6(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.6))(react@19.2.6)(storybook@10.4.6(@testing-library/dom@10.4.1)(@types/react@19.2.14)(prettier@2.8.8)(react@19.2.6))(typescript@5.9.2)':
+  '@storybook/react@10.4.6(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.6))(react@19.2.6)(storybook@10.4.6(@testing-library/dom@10.4.1)(@types/react@19.2.14)(prettier@2.8.8)(react@19.2.6))(typescript@6.0.3)':
     dependencies:
       '@storybook/global': 5.0.0
       '@storybook/react-dom-shim': 10.4.6(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.6))(react@19.2.6)(storybook@10.4.6(@testing-library/dom@10.4.1)(@types/react@19.2.14)(prettier@2.8.8)(react@19.2.6))
       react: 19.2.6
       react-docgen: 8.0.3
-      react-docgen-typescript: 2.4.0(typescript@5.9.2)
+      react-docgen-typescript: 2.4.0(typescript@6.0.3)
       react-dom: 19.2.7(react@19.2.6)
       storybook: 10.4.6(@testing-library/dom@10.4.1)(@types/react@19.2.14)(prettier@2.8.8)(react@19.2.6)
     optionalDependencies:
       '@types/react': 19.2.14
       '@types/react-dom': 19.2.3(@types/react@19.2.14)
-      typescript: 5.9.2
+      typescript: 6.0.3
     transitivePeerDependencies:
       - supports-color
 
@@ -5515,30 +5515,30 @@ snapshots:
 
   core-util-is@1.0.3: {}
 
-  cosmiconfig-typescript-loader@6.3.0(@types/node@25.8.0)(cosmiconfig@9.0.1(typescript@5.9.2))(typescript@5.9.2):
+  cosmiconfig-typescript-loader@6.3.0(@types/node@25.8.0)(cosmiconfig@9.0.1(typescript@6.0.3))(typescript@6.0.3):
     dependencies:
       '@types/node': 25.8.0
-      cosmiconfig: 9.0.1(typescript@5.9.2)
+      cosmiconfig: 9.0.1(typescript@6.0.3)
       jiti: 2.6.1
-      typescript: 5.9.2
+      typescript: 6.0.3
 
-  cosmiconfig@9.0.1(typescript@5.9.2):
+  cosmiconfig@9.0.1(typescript@6.0.3):
     dependencies:
       env-paths: 2.2.1
       import-fresh: 3.3.1
       js-yaml: 4.1.1
       parse-json: 5.2.0
     optionalDependencies:
-      typescript: 5.9.2
+      typescript: 6.0.3
 
-  cosmiconfig@9.0.2(typescript@5.9.2):
+  cosmiconfig@9.0.2(typescript@6.0.3):
     dependencies:
       env-paths: 2.2.1
       import-fresh: 3.3.1
       js-yaml: 4.1.1
       parse-json: 5.2.0
     optionalDependencies:
-      typescript: 5.9.2
+      typescript: 6.0.3
 
   cpu-features@0.0.10:
     dependencies:
@@ -6623,9 +6623,9 @@ snapshots:
       schema-utils: 3.3.0
       webpack: 5.108.2(esbuild@0.27.7)(postcss@8.5.14)
 
-  react-docgen-typescript@2.4.0(typescript@5.9.2):
+  react-docgen-typescript@2.4.0(typescript@6.0.3):
     dependencies:
-      typescript: 5.9.2
+      typescript: 6.0.3
 
   react-docgen@8.0.3:
     dependencies:
@@ -6966,29 +6966,29 @@ snapshots:
     dependencies:
       js-tokens: 9.0.1
 
-  stylelint-config-css-modules@4.6.0(stylelint@17.14.0(typescript@5.9.2)):
+  stylelint-config-css-modules@4.6.0(stylelint@17.14.0(typescript@6.0.3)):
     dependencies:
-      stylelint: 17.14.0(typescript@5.9.2)
+      stylelint: 17.14.0(typescript@6.0.3)
     optionalDependencies:
-      stylelint-scss: 7.2.0(stylelint@17.14.0(typescript@5.9.2))
+      stylelint-scss: 7.2.0(stylelint@17.14.0(typescript@6.0.3))
 
-  stylelint-config-recommended@18.0.0(stylelint@17.14.0(typescript@5.9.2)):
+  stylelint-config-recommended@18.0.0(stylelint@17.14.0(typescript@6.0.3)):
     dependencies:
-      stylelint: 17.14.0(typescript@5.9.2)
+      stylelint: 17.14.0(typescript@6.0.3)
 
-  stylelint-config-standard@40.0.0(stylelint@17.14.0(typescript@5.9.2)):
+  stylelint-config-standard@40.0.0(stylelint@17.14.0(typescript@6.0.3)):
     dependencies:
-      stylelint: 17.14.0(typescript@5.9.2)
-      stylelint-config-recommended: 18.0.0(stylelint@17.14.0(typescript@5.9.2))
+      stylelint: 17.14.0(typescript@6.0.3)
+      stylelint-config-recommended: 18.0.0(stylelint@17.14.0(typescript@6.0.3))
 
-  stylelint-no-unsupported-browser-features@8.1.1(stylelint@17.14.0(typescript@5.9.2)):
+  stylelint-no-unsupported-browser-features@8.1.1(stylelint@17.14.0(typescript@6.0.3)):
     dependencies:
       browserslist: 4.28.4
       doiuse: 6.0.6
       postcss: 8.5.16
-      stylelint: 17.14.0(typescript@5.9.2)
+      stylelint: 17.14.0(typescript@6.0.3)
 
-  stylelint-scss@7.2.0(stylelint@17.14.0(typescript@5.9.2)):
+  stylelint-scss@7.2.0(stylelint@17.14.0(typescript@6.0.3)):
     dependencies:
       '@csstools/css-calc': 3.2.1(@csstools/css-parser-algorithms@4.0.0(@csstools/css-tokenizer@4.0.0))(@csstools/css-tokenizer@4.0.0)
       '@csstools/css-parser-algorithms': 4.0.0(@csstools/css-tokenizer@4.0.0)
@@ -7001,10 +7001,10 @@ snapshots:
       postcss-resolve-nested-selector: 0.1.6
       postcss-selector-parser: 7.1.4
       postcss-value-parser: 4.2.0
-      stylelint: 17.14.0(typescript@5.9.2)
+      stylelint: 17.14.0(typescript@6.0.3)
     optional: true
 
-  stylelint@17.14.0(typescript@5.9.2):
+  stylelint@17.14.0(typescript@6.0.3):
     dependencies:
       '@csstools/css-calc': 3.2.1(@csstools/css-parser-algorithms@4.0.0(@csstools/css-tokenizer@4.0.0))(@csstools/css-tokenizer@4.0.0)
       '@csstools/css-parser-algorithms': 4.0.0(@csstools/css-tokenizer@4.0.0)
@@ -7014,7 +7014,7 @@ snapshots:
       '@csstools/selector-resolve-nested': 4.0.0(postcss-selector-parser@7.1.4)
       '@csstools/selector-specificity': 6.0.0(postcss-selector-parser@7.1.4)
       colord: 2.9.3
-      cosmiconfig: 9.0.2(typescript@5.9.2)
+      cosmiconfig: 9.0.2(typescript@6.0.3)
       css-functions-list: 3.3.3
       css-tree: 3.2.1
       debug: 4.4.3
@@ -7220,7 +7220,7 @@ snapshots:
 
   tweetnacl@0.14.5: {}
 
-  typescript@5.9.2: {}
+  typescript@6.0.3: {}
 
   undici-types@5.26.5: {}
 

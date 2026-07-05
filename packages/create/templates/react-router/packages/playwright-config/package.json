@@ -17,6 +17,6 @@
   "devDependencies": {
     "@starter/typescript-config": "workspace:*",
     "@types/node": "^25.8.0",
-    "typescript": "5.9.2"
+    "typescript": "6.0.3"
   }
 }

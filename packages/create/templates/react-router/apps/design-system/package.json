@@ -25,7 +25,7 @@
     "@types/react-dom": "^19.2.0",
     "storybook": "^10.4.6",
     "storybook-design-token": "^5.0.0",
-    "typescript": "5.9.2",
+    "typescript": "6.0.3",
     "vite": "^8.1.0"
   }
 }
