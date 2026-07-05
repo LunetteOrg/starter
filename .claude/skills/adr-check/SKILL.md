@@ -9,10 +9,11 @@ Produce a **report** comparing this repo against its recorded decisions. Do **no
 edit files, create ADRs, or apply fixes — output findings and recommended actions
 only.
 
-**Scope.** These ADRs govern the *templates system* (the CLI, the template model,
-the scaffolding contract) — see [ADR-0001](../../../docs/adr/0001-recording-decisions.md).
-A single template's *own* application architecture is recorded inside that template
-(`packages/create/templates/<framework>/docs/adr/`) and is NOT this skill's concern.
+**Scope.** These ADRs govern the *templates system* — the CLI, the template model,
+the scaffolding contract. This skill checks that each template **carries the shared
+base and honours that contract** (a system-level concern); it does **not** assess a
+template's own *application* decisions (its routes/domain/design), which live in that
+template's own `docs/adr/` and are checked by that template's own `adr-check`.
 
 ## Procedure
 
@@ -20,21 +21,22 @@ A single template's *own* application architecture is recorded inside that templ
    `docs/adr/NNNN-*.md`, plus `CLAUDE.md`. Build the check matrix *now* from what
    you read — never recite from memory; the ADR set evolves.
 
-2. **Scan the system for violations.** Typical checks you'll derive today (read the
-   ADRs for the authoritative set):
-   - **ADR-0002 (shared base + enforced vs recommended):** does each template carry
-     the base (monorepo tooling, mechanically-enforced boundaries, ADR/guidance
-     structure, scaffolding contract)? Is a *recommendation* (DDD tactical, GoF,
-     Clean Code, FP) being enforced where it shouldn't, or vice versa?
-   - **ADR-0003 (bundled folders):** is `pnpm-workspace.yaml` still `packages/*`
-     only (templates NOT workspace members)? Does `@lntt/create` ship `files:
+2. **Scan the system for violations.** Derive the checks from what the ADRs
+   currently say — tie each back to the ADR that records it by reading the file, not
+   by number. The themes to cover today:
+   - **Shared base — enforced vs recommended:** does each template carry the base
+     (monorepo tooling, mechanically-enforced boundaries, ADR/guidance structure,
+     scaffolding contract)? Is a *recommendation* (DDD tactical, GoF, Clean Code,
+     FP) being enforced where it shouldn't, or vice versa?
+   - **Bundled folders:** is `pnpm-workspace.yaml` still `packages/*` only
+     (templates NOT workspace members)? Does `@lntt/create` ship `files:
      ["bin","templates"]`? Are templates named by their **web framework**? Has a
      **shared package been extracted prematurely** (duplication-now is the rule)?
-   - **ADR-0004 (scaffolding contract):** does the CLI's text-file coverage include
-     every config type a template actually uses (the `.editorconfig` gap class)?
-     Does every template have a `.lunette-template` marker, and does the CLI strip
-     it + restore `_`-dotfiles? Are placeholders (`@starter`, creds) consistent?
-   - **ADR-0001 (scope split):** is a *system* decision recorded here, and a
+   - **Scaffolding contract:** does the CLI's text-file coverage include every
+     config type a template actually uses (the `.editorconfig` gap class)? Does
+     every template have a `.lunette-template` marker, and does the CLI strip it +
+     restore `_`-dotfiles? Are placeholders (`@starter`, creds) consistent?
+   - **Scope split:** is a *system* decision recorded here, and a
      *template-architecture* decision recorded in the template — not swapped?
 
 3. **Prefer the existing tests.** `pnpm --filter @lntt/create test` scaffolds each
