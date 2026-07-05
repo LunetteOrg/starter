@@ -47,3 +47,7 @@ After copying and rewriting, the CLI runs `git init -b main` + an initial commit
   one PR).
 - − Text-file coverage is a list; a new config file type needs adding to it (the
   `.editorconfig` miss was exactly this).
+- \+ A scaffold-smoke CI check (`SCAFFOLD_SMOKE=1`) installs a generated project
+  and runs its own lint + typecheck, so a template-tooling regression (a malformed
+  grit, a broken Biome override, a missed `@starter` in a newly-covered file type)
+  fails in CI here — not only later in a scaffolded project's own CI.

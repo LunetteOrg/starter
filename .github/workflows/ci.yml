@@ -21,5 +21,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
-      # scaffolds each template into a temp dir and asserts the result
+      # scaffolds each template into a temp dir and asserts the result;
+      # SCAFFOLD_SMOKE additionally installs + lints + typechecks a generated
+      # project, so template-tooling breakage fails here, not post-push.
       - run: pnpm test
+        env:
+          SCAFFOLD_SMOKE: '1'

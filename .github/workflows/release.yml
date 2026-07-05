@@ -27,9 +27,12 @@ jobs:
       # Gate: never publish a broken commit. `pnpm test` includes pack.test.ts,
       # which packs the tarball and scaffolds from it — the same packing check that
       # runs on every PR in ci.yml, so a broken package never reaches this step.
+      # SCAFFOLD_SMOKE also installs + lints + typechecks a generated project.
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+        env:
+          SCAFFOLD_SMOKE: '1'
 
       - name: Release tag must match the package version
         run: |
