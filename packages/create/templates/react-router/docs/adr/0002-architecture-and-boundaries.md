@@ -36,6 +36,8 @@ Dependency matrix:
 | bootstrap | everything | — |
 | config | zod | anything else |
 
+This matrix governs cross-*layer* imports, not external libraries: a layer may use any external package that doesn't breach a boundary. `zod` in particular is not confined to `config` — it also shapes presentation read-views in `routes` (which import `zod` only, never domain/db), the runtime projection that keeps entity fields off the wire ([loader/action serialization boundary](#loaderaction-serialization-boundary)).
+
 Wiring: `createApp(env)` builds repos, services and use-cases once; `export type App = ReturnType<typeof createApp>` is the single source of truth for the app type. Routes receive the app through React Router context (`getLoadContext` / middleware), whose signature takes only a web-standard `Request` — no Express types — keeping the Cloudflare Workers path open.
 
 ```ts
