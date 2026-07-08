@@ -1,7 +1,7 @@
 name: Release @lntt/create
 
 # Triggered by publishing a GitHub Release (which is always backed by a tag).
-#   gh release create v0.2.0 --generate-notes
+#   gh release create vX.Y.Z --generate-notes
 # The release tag (vX.Y.Z) must match packages/create/package.json.
 on:
   release:
@@ -9,7 +9,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write # npm provenance
+  id-token: write # OIDC trusted publishing + provenance (no NPM token)
 
 jobs:
   release:
@@ -22,6 +22,8 @@ jobs:
           node-version-file: '.nvmrc'
           registry-url: 'https://registry.npmjs.org'
           cache: 'pnpm'
+      # Trusted publishing (OIDC) needs npm >= 11.5.1.
+      - run: npm install -g npm@^11.5.1
       - run: pnpm install --frozen-lockfile
 
       # Gate: never publish a broken commit. `pnpm test` includes pack.test.ts,
@@ -40,8 +42,9 @@ jobs:
           PKG="$(node -p "require('./packages/create/package.json').version")"
           [ "$TAG" = "$PKG" ] || { echo "release tag '$TAG' != package version '$PKG'"; exit 1; }
 
+      # Auth is OIDC via the trusted publisher configured on npmjs.com for this
+      # repo + workflow — no NPM_TOKEN secret. `prepack` compiles bin/ → dist/
+      # (ADR-0005); --provenance is automatic under trusted publishing.
       - name: Publish
         run: npm publish --provenance --access public
         working-directory: packages/create
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
