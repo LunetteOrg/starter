@@ -13,6 +13,7 @@ relate to the [`../guidances/`](../guidances/README.md) recommendations).
 | [0004](./0004-testing.md) | Testing | accepted |
 | [0005](./0005-data-and-migrations.md) | Data & migrations | accepted |
 | [0006](./0006-design-system.md) | Design system | accepted |
+| [0007](./0007-product-and-reference-spaces.md) | Product-decision & reference spaces | accepted |
 
 ## Writing a new ADR
 

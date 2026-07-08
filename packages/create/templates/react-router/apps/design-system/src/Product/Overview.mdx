@@ -1,0 +1,44 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Product/Overview" />
+
+# Product
+
+The **review surface** for product & design decisions. The source of truth is the
+markdown in [`docs/product/decisions/`](../../../../docs/product/README.md); every
+page under this `Product/` section *renders* one decision and puts the interactive
+prototype and the "before" it replaces right next to the rationale — so a
+non-technical stakeholder reviews the whole evolution on one screen, no markdown
+reading required.
+
+## How a decision page works
+
+One MDX page per PDR. It imports the markdown `?raw` and renders it with the
+`Markdown` block, then adds whatever makes the choice tangible — a live prototype
+`iframe`, screenshots of the legacy flow from `reference/`, the real component
+stories:
+
+```mdx
+import { Meta, Markdown } from '@storybook/addon-docs/blocks'
+import pdr from '../../../../docs/product/decisions/0001-onboarding.md?raw'
+
+<Meta title="Product/Onboarding" />
+
+<Markdown>{pdr}</Markdown>
+
+{/* the explored future, interactive */}
+<iframe src="https://…prototype…" style={{ width: '100%', height: 600, border: 0 }} />
+```
+
+See [`Product/Example`](?path=/docs/product-example--docs) for a live one, and the
+[`product-decision`](../../.claude/skills/product-decision/) skill to scaffold the
+PDR and this page together.
+
+## Reviewing with stakeholders
+
+Publish this Storybook and share the link; stakeholders comment on the decision
+page. The default review tool is **Chromatic** (free tier) — see
+[the product-decisions guidance](../../../../docs/guidances/product-decisions.md).
+
+> This section ships with the mechanism and one example page — the real decision
+> pages are your project's content.

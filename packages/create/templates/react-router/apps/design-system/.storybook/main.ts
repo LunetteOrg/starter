@@ -1,4 +1,10 @@
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { StorybookConfig } from '@storybook/react-vite'
+
+// The Product/* pages import PDR markdown from the repo-root `docs/product/`
+// (`?raw`), which is outside this app. Allow the dev server to read it.
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 
 /**
  * Storybook is the showcase for `packages/ui` and the design tokens (ADR-0006 — design tokens).
@@ -29,6 +35,13 @@ const config: StorybookConfig = {
     name: '@storybook/react-vite',
     options: {},
   },
+  viteFinal: (config) => ({
+    ...config,
+    server: {
+      ...config.server,
+      fs: { ...config.server?.fs, allow: [...(config.server?.fs?.allow ?? []), repoRoot] },
+    },
+  }),
   typescript: {
     reactDocgen: 'react-docgen-typescript',
   },
