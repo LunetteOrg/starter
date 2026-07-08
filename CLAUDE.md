@@ -21,9 +21,11 @@ cover, especially [what a Lunette template is](./docs/adr/0002-what-is-a-lunette
 
 ## Working on the CLI
 
-- `packages/create/bin/index.ts` — TypeScript, run directly on **Node ≥24** (native
-  type stripping, no build step). `pnpm --filter @lntt/create test` scaffolds each
-  template into a temp dir and asserts the result.
+- `packages/create/bin/index.ts` — TypeScript, run directly in-repo on **Node ≥24**
+  (native type stripping, no build step). Published, it is **compiled to `dist/`**
+  (`prepack`) — Node won't strip types under `node_modules` ([ADR-0005](./docs/adr/0005-publish-compiled-cli.md)).
+  `pnpm --filter @lntt/create test` scaffolds each template into a temp dir and
+  asserts the result.
 - Tooling here is scoped to the CLI: Biome only lints `packages/create/{bin,test}`
   (never the templates), plus lefthook + commitlint. `pnpm lint`, `pnpm typecheck`,
   `pnpm test`.

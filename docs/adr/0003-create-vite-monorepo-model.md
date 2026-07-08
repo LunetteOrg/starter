@@ -18,13 +18,14 @@ folders bundled inside the CLI package**, copied verbatim.
 
 ```
 packages/create/
-  bin/index.ts          # the CLI (TypeScript, run directly on Node >=24)
+  bin/index.ts          # the CLI (TypeScript; run directly in-repo, compiled to
+                        # dist/ on publish — see ADR-0005)
   templates/
     react-router/       # a full Lunette template
     <framework>/        # a variant = another folder
 ```
 
-- **Bundled, not cloned**: templates ship in the npm tarball (`files: ["templates"]`),
+- **Bundled, not cloned**: templates ship in the npm tarball (`files` includes `templates`),
   so the template is versioned *with* the CLI — reproducible, offline, one PR
   changes both. Cost: a template change requires publishing a new CLI version.
 - **A variant is a folder.** Add `templates/<name>/` and it is selectable

@@ -6,7 +6,9 @@
 // strips the `.lunette-template` marker, and rewrites the `@starter/*` scope and
 // `starter` credentials to the project name.
 //
-// Runs directly on Node >=24 via native type stripping — no build step.
+// In-repo this runs directly on Node >=24 via native type stripping. Published,
+// it ships compiled to dist/index.js — Node won't strip types under node_modules
+// (see ADR-0005).
 
 import { execSync } from 'node:child_process'
 import { cpSync, existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'

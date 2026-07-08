@@ -1,0 +1,13 @@
+{
+  // Emit config for the PUBLISHED artifact. Node refuses to strip TypeScript types
+  // under node_modules, so the package must ship JavaScript — `bin/index.ts` is
+  // compiled to `dist/index.js` on prepack. In-repo the source still runs directly
+  // via type stripping (tests invoke bin/index.ts); this is publish-only.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "bin"
+  },
+  "include": ["bin/**/*.ts"]
+}

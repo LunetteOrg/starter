@@ -1,6 +1,6 @@
 {
   "name": "@lntt/create",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Scaffold a new project from a Lunette starter template",
   "type": "module",
   "license": "MIT",
@@ -12,10 +12,10 @@
   "homepage": "https://github.com/LunetteOrg/starter/tree/main/packages/create#readme",
   "bugs": "https://github.com/LunetteOrg/starter/issues",
   "bin": {
-    "create-lntt": "bin/index.ts"
+    "create-lntt": "dist/index.js"
   },
   "files": [
-    "bin",
+    "dist",
     "templates",
     "!templates/**/node_modules",
     "!templates/**/.turbo",
@@ -26,6 +26,8 @@
     "!templates/**/coverage"
   ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },

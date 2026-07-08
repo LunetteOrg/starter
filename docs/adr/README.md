@@ -12,6 +12,7 @@ architecture is recorded inside that template (e.g.
 | [0002](./0002-what-is-a-lunette-template.md) | What a Lunette template is | accepted |
 | [0003](./0003-create-vite-monorepo-model.md) | Templates as bundled folders (the create-vite model) | accepted |
 | [0004](./0004-scaffolding-contract.md) | The scaffolding contract | accepted |
+| [0005](./0005-publish-compiled-cli.md) | Ship the CLI as compiled JavaScript | accepted |
 
 New ADR: copy [`template.md`](./template.md) to `NNNN-short-kebab-title.md`, keep it
 short (Context / Decision / Consequences), add a row above.

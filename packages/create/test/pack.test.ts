@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { after, test } from 'node:test'
@@ -28,8 +28,10 @@ test('the packed tarball scaffolds a clean project', () => {
   }).trim()
   const extract = mktmp()
   execFileSync('tar', ['-xzf', join(packDir, tarball), '-C', extract])
-  const bin = join(extract, 'package/bin/index.ts')
-  assert.ok(existsSync(bin), 'tarball ships bin/index.ts')
+  const pkgRoot = join(extract, 'package')
+  const binRel = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8')).bin['create-lntt']
+  const bin = join(pkgRoot, binRel)
+  assert.ok(existsSync(bin), `tarball ships the bin (${binRel})`)
 
   const out = mktmp()
   execFileSync('node', [bin, 'packed-app', '--template', 'react-router'], { cwd: out, stdio: 'ignore' })
