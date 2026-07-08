@@ -3,12 +3,27 @@
   "version": "0.2.0",
   "description": "Scaffold a new project from a Lunette starter template",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LunetteOrg/starter.git",
+    "directory": "packages/create"
+  },
+  "homepage": "https://github.com/LunetteOrg/starter/tree/main/packages/create#readme",
+  "bugs": "https://github.com/LunetteOrg/starter/issues",
   "bin": {
     "create-lntt": "bin/index.ts"
   },
   "files": [
     "bin",
-    "templates"
+    "templates",
+    "!templates/**/node_modules",
+    "!templates/**/.turbo",
+    "!templates/**/build",
+    "!templates/**/dist",
+    "!templates/**/.react-router",
+    "!templates/**/.cache",
+    "!templates/**/coverage"
   ],
   "scripts": {
     "test": "node --test test/*.test.ts",
