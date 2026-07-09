@@ -20,18 +20,24 @@
     "prepare": "lefthook install || true"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.9",
-    "@commitlint/cli": "^20.5.0",
-    "@commitlint/config-conventional": "^20.5.0",
-    "lefthook": "^2.1.4",
-    "turbo": "^2.8.20",
-    "typescript": "6.0.3"
+    "@biomejs/biome": "^2.5.3",
+    "@commitlint/cli": "^21.2.1",
+    "@commitlint/config-conventional": "^21.2.0",
+    "lefthook": "^2.1.10",
+    "turbo": "^2.10.4",
+    "typescript": "7.0.2"
   },
   "packageManager": "pnpm@10.16.1+sha512.0e155aa2629db8672b49e8475da6226aa4bdea85fdcdfdc15350874946d4f3c91faaf64cbdc4a5d1ab8002f473d5c3fcedcd197989cf0390f9badd3c04678706",
   "engines": {
     "node": ">=24.0.0"
   },
-  "browserslist": ["> 0.5%", "last 2 versions", "Firefox ESR", "not dead", "not op_mini all"],
+  "browserslist": [
+    "> 0.5%",
+    "last 2 versions",
+    "Firefox ESR",
+    "not dead",
+    "not op_mini all"
+  ],
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild",

@@ -14,16 +14,16 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@testcontainers/postgresql": "^10.25.0",
-    "glob": "^11.0.0",
+    "@testcontainers/postgresql": "^12.0.4",
     "drizzle-orm": "1.0.0-rc.4",
+    "glob": "^13.0.6",
     "postgres": "^3.4.9",
-    "testcontainers": "^10.25.0"
+    "testcontainers": "^12.0.4"
   },
   "devDependencies": {
     "@starter/typescript-config": "workspace:*",
-    "@vitest/coverage-v8": "^3.2.6",
-    "typescript": "6.0.3",
-    "vitest": "^3.2.6"
+    "@vitest/coverage-v8": "^4.1.10",
+    "typescript": "7.0.2",
+    "vitest": "^4.1.10"
   }
 }

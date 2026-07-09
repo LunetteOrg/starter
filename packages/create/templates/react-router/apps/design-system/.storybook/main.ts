@@ -43,7 +43,11 @@ const config: StorybookConfig = {
     },
   }),
   typescript: {
-    reactDocgen: 'react-docgen-typescript',
+    // `react-docgen-typescript` drives docgen through the TypeScript compiler
+    // API, which the native TS 7 compiler no longer exposes — the build crashes
+    // (`Cannot read properties of undefined (reading 'fileExists')`).
+    // `react-docgen` (Babel-based) covers our prop tables without that API.
+    reactDocgen: 'react-docgen',
   },
 }
 
