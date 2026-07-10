@@ -77,8 +77,16 @@ request includes them.
    "raw vs token" check).
 2. Scan the `*.module.css` files and inline `style=` props in scope: apply
    checks 1–5.
-3. For contrast, compute the WCAG ratio from the real hex values (a small
-   inline `node`/`python3` snippet is fine); evaluate light and dark.
+3. For contrast, run the bundled validator — it parses `tokens.css`, resolves
+   `var()` chains per theme and prints PASS/FAIL for every fg×bg pair in light
+   and dark (exit 1 on failures):
+
+   ```sh
+   node .claude/skills/design-check/scripts/contrast.mjs
+   ```
+
+   For pairs it can't resolve (e.g. `color-mix()`) or component-local colours,
+   fall back to computing the WCAG ratio inline.
 4. **Handle the empty case.** `packages/ui` ships empty in the starter. If
    there are no components yet, say so and audit only the token set itself
    (contrast of the semantic pairs in both themes, dark-scope completeness).
