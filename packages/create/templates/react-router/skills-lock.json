@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "postgres": {
+      "source": "timescale/pg-aiguide",
+      "sourceType": "github",
+      "skillPath": "skills/postgres/SKILL.md",
+      "computedHash": "a6bf1a45932f4a8cdbb7479d18e6d3cf35f015ed0cd7688e36e151e1a6b32dd9"
+    }
+  }
+}
