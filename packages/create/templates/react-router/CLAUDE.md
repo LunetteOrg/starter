@@ -55,17 +55,20 @@ keep them clean. The `commit-msg` hook strips them as a backstop (`lefthook.yml`
 
 ## Reviews
 
-Every code review and PR review MUST also run the `adr-check`, `story-check` and
-`product-check` skills and fold their findings into the review. All are
-report-only (they never edit files). Run them up front, before the line-by-line
-pass:
+Every code review and PR review MUST also run the `adr-check`, `story-check`,
+`product-check` and `design-check` skills and fold their findings into the
+review. All are report-only (they never edit files). Run them up front, before
+the line-by-line pass:
 
 - `adr-check` — code vs `docs/adr/` (and `docs/guidances/`): ADR violations + decisions that need a new/updated ADR.
 - `story-check` — `packages/ui` components vs their Storybook stories/Foundations.
 - `product-check` — `docs/product/` PDRs vs their Storybook `Product/` review pages: missing pages, broken `?raw` imports, stale `reference/` links.
+- `design-check` — design/UX discipline: tokens vs raw values, light+dark theming, AA contrast, focus/keyboard, motion, tooltips (scope: `packages/ui` and `ui-tokens`).
 
 To *record* a product/design decision (and its review page), use the
 `product-decision` skill — it writes the PDR + the `Product/*.mdx` that renders it.
+To *explore* 2–3 visual directions as Storybook prototypes before choosing, use
+`design-explore`.
 
 **Deliver feedback on the PR.** When the review targets a PR (it has a GitHub
 PR), post findings as **inline PR comments** anchored to the relevant lines —
@@ -80,4 +83,4 @@ no PR (local working diff), a chat report is fine.
 - Product decisions: `docs/product/` (PDR log) · rendered for review in Storybook's `Product/` section · raw input in `reference/` (quarantined) — see ADR-0007
 - Contributing: `CONTRIBUTING.md`
 - Architecture test helpers: `packages/test-utils/src/arch.ts`
-- Review skills: `.claude/skills/adr-check/`, `.claude/skills/story-check/`, `.claude/skills/product-check/` · Scaffolding skill: `.claude/skills/product-decision/`
+- Review skills: `.claude/skills/adr-check/`, `.claude/skills/story-check/`, `.claude/skills/product-check/`, `.claude/skills/design-check/` · Scaffolding skills: `.claude/skills/product-decision/`, `.claude/skills/design-explore/`
