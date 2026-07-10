@@ -1,7 +1,10 @@
-# ADR-0002: What a Lunette template is
+---
+status: accepted
+date: 2026-07-02
+tags: [template-model, contract]
+---
 
-- Status: accepted
-- Date: 2026-07-02
+# ADR-0002: What a Lunette template is
 
 ## Context
 

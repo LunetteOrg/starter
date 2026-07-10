@@ -1,7 +1,10 @@
-# ADR-0001: Recording decisions
+---
+status: accepted
+date: 2026-07-02
+tags: [process, adr]
+---
 
-- Status: accepted
-- Date: 2026-07-02
+# ADR-0001: Recording decisions
 
 ## Context
 
@@ -15,8 +18,13 @@ The two decision logs must not be confused.
 ## Decision
 
 Record decisions about the templates system as **numbered ADRs** in this repo's
-`docs/adr/`, MADR-lite (Status / Date / Context / Decision / Consequences),
-numbered sequentially. ADRs may be thematic.
+`docs/adr/`, in **MADR** format ([`template.md`](./template.md)): YAML
+frontmatter (`status`, `date`, `deciders`, `tags` — machine-readable, so ADRs
+can be searched and filtered by tag) and the sections Context / Decision /
+Alternatives considered / Consequences (Positive · Negative / accepted risks ·
+When to deviate). Numbered sequentially; ADRs may be thematic. ADRs written
+before this format carry the frontmatter but keep their original compact body —
+alternatives and revisit triggers are recorded going forward, not backfilled.
 
 - **Scope**: this log governs the *system* — the CLI, the template model, the
   shared contract. A template's *own* architecture (layering, ORM, framework) is

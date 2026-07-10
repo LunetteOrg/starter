@@ -1,7 +1,10 @@
-# ADR-0003: Build & tooling
+---
+status: accepted
+date: 2026-07-02
+tags: [build, tooling, biome, turbo]
+---
 
-- Status: accepted
-- Date: 2026-07-02
+# ADR-0003: Build & tooling
 
 This ADR records the template's build and tooling foundation: the baseline tech stack (runtime, monorepo, framework, database, and supporting tools) and how Turborepo handles environment-variable passthrough.
 

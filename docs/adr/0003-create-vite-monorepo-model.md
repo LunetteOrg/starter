@@ -1,7 +1,10 @@
-# ADR-0003: Templates as bundled folders (the create-vite model)
+---
+status: accepted
+date: 2026-07-02
+tags: [template-model, cli, monorepo]
+---
 
-- Status: accepted
-- Date: 2026-07-02
+# ADR-0003: Templates as bundled folders (the create-vite model)
 
 ## Context
 

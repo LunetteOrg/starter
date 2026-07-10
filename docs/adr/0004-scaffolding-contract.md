@@ -1,7 +1,10 @@
-# ADR-0004: The scaffolding contract
+---
+status: accepted
+date: 2026-07-02
+tags: [scaffolding, contract, cli]
+---
 
-- Status: accepted
-- Date: 2026-07-02
+# ADR-0004: The scaffolding contract
 
 ## Context
 

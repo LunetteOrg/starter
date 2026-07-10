@@ -1,7 +1,10 @@
-# ADR-0005: Data & migrations
+---
+status: accepted
+date: 2026-07-02
+tags: [database, postgres, drizzle, migrations]
+---
 
-- Status: accepted
-- Date: 2026-07-02
+# ADR-0005: Data & migrations
 
 How schema changes ship safely under rolling deploys, and how those rules are mechanically enforced.
 

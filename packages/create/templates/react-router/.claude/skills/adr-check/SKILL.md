@@ -46,7 +46,7 @@ and recommended actions only.
    external dependency that shapes the architecture, a new layer or cross-cutting
    pattern, a deviation from an accepted ADR that looks intentional. For each,
    propose the ADR to write (title + one-line rationale), following the
-   MADR-lite `docs/adr/template.md`.
+   MADR `docs/adr/template.md` (frontmatter + alternatives + revisit triggers).
 
 5. **Handle the empty case.** The starter ships without apps; many checks will
    have no files to scan. Say so plainly rather than reporting false passes.

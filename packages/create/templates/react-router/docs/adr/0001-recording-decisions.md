@@ -1,7 +1,10 @@
-# ADR-0001: Recording decisions
+---
+status: accepted
+date: 2026-07-02
+tags: [process, adr, guidances]
+---
 
-- Status: accepted
-- Date: 2026-07-02
+# ADR-0001: Recording decisions
 
 ## Context
 
@@ -14,9 +17,14 @@ from — not a long list of granular records to reconstruct in your head.
 
 ## Decision
 
-Record architectural decisions as **numbered ADRs** in `docs/adr/`, MADR-lite
-(Status / Date / Context / Decision / Consequences), numbered sequentially
-(`0001`, `0002`, …). An ADR may be **thematic**: related decisions are grouped in
+Record architectural decisions as **numbered ADRs** in `docs/adr/`, in **MADR**
+format ([`template.md`](./template.md)): YAML frontmatter (`status`, `date`,
+`deciders`, `tags` — machine-readable, so ADRs can be searched and filtered by
+tag) and the sections Context / Decision / Alternatives considered /
+Consequences (Positive · Negative / accepted risks · When to deviate), numbered
+sequentially (`0001`, `0002`, …). ADRs written before this format carry the
+frontmatter but keep their original compact body — alternatives and revisit
+triggers are recorded going forward, not backfilled. An ADR may be **thematic**: related decisions are grouped in
 one file under `## ` sections (e.g. `0002-architecture-and-boundaries.md` covers
 layering, import boundaries, typed errors, use-case composition, and self-arming
 enforcement). Reference a specific decision by its file plus heading anchor, e.g.

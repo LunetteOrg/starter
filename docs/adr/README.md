@@ -14,5 +14,7 @@ architecture is recorded inside that template (e.g.
 | [0004](./0004-scaffolding-contract.md) | The scaffolding contract | accepted |
 | [0005](./0005-publish-compiled-cli.md) | Ship the CLI as compiled JavaScript | accepted |
 
-New ADR: copy [`template.md`](./template.md) to `NNNN-short-kebab-title.md`, keep it
-short (Context / Decision / Consequences), add a row above.
+New ADR: copy [`template.md`](./template.md) (MADR: frontmatter with
+`status`/`date`/`deciders`/`tags`, then Context / Decision / Alternatives
+considered / Consequences with revisit triggers) to `NNNN-short-kebab-title.md`,
+keep it short, add a row above.

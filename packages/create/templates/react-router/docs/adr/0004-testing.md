@@ -1,7 +1,10 @@
-# ADR-0004: Testing
+---
+status: accepted
+date: 2026-07-02
+tags: [testing, vitest, playwright]
+---
 
-- Status: accepted
-- Date: 2026-07-02
+# ADR-0004: Testing
 
 How this template tests its code — the unit/integration/e2e strategy and the conventions that keep the suite fast and trustworthy — and how integration tests share a real Postgres testcontainer while staying isolated from one another.
 

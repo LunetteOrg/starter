@@ -1,7 +1,10 @@
-# ADR-0005: Ship the CLI as compiled JavaScript
+---
+status: accepted
+date: 2026-07-08
+tags: [cli, publishing, typescript]
+---
 
-- Status: accepted
-- Date: 2026-07-08
+# ADR-0005: Ship the CLI as compiled JavaScript
 
 ## Context
 

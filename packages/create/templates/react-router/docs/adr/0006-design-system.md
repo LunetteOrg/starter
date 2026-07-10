@@ -1,7 +1,10 @@
-# ADR-0006: Design system
+---
+status: accepted
+date: 2026-07-02
+tags: [design-system, tokens, storybook, theming, dark-mode]
+---
 
-- Status: accepted
-- Date: 2026-07-02
+# ADR-0006: Design system
 
 The design system is the shared visual foundation for `packages/ui` and the apps: design tokens as CSS custom properties, a Storybook showcase to develop and document components, and an opt-in dark theme. This ADR consolidates those decisions.
 

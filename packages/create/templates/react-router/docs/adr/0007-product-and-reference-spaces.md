@@ -1,7 +1,10 @@
-# ADR-0007: Product-decision and reference spaces
+---
+status: accepted
+date: 2026-07-08
+tags: [product, pdr, storybook, reference]
+---
 
-- Status: accepted
-- Date: 2026-07-08
+# ADR-0007: Product-decision and reference spaces
 
 ## Context
 
