@@ -40,10 +40,12 @@ unrecorded. Treat these as signals:
 
 When a signal fires: name the decision in one sentence, check `docs/adr/` at
 runtime for a decision that already covers it, and propose where it belongs —
-a new `## ` section in the matching thematic ADR, a new numbered ADR
-(MADR, per `docs/adr/template.md`: frontmatter with tags, alternatives
-considered, revisit triggers), or a `docs/guidances/` doc if it's app-level
-advice the template doesn't ship. Propose the title and the alternatives that
+a new **atomic dated ADR** (`YYYY-MM-DD-*.md`, one decision per file, MADR per
+`docs/adr/template.md`: frontmatter with tags, alternatives considered, revisit
+triggers), never a new section appended into a thematic seed file. If it
+*refines* a seed decision, propose superseding that `## ` section (mark it
+`superseded by …`, leave it in place, add the new dated file). Or a
+`docs/guidances/` doc if it's app-level advice the template doesn't ship. Propose the title and the alternatives that
 were actually on the table; the main agent (or the `product-decision` /
 ADR flow) does the writing.
 
