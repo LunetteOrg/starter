@@ -95,6 +95,9 @@ the same collision-freedom *and* chronology for free.
   signal — *numbered = shipped foundation, dated = your project's log* — not
   disorder.
 - You lose the "decision #N" count. Cosmetic; the date orders the log.
+- Chronology is **day-granular**: several records dated the same day sort
+  lexically by slug, not by the hour they were written. Acceptable — the id is
+  the date, and finer ordering has never mattered for a decision log.
 - Same-day, same-slug records still need a manual merge resolution — but a loud,
   trivial one.
 

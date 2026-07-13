@@ -10,7 +10,7 @@ first one.
 
 | Space | Holds | Nature |
 |---|---|---|
-| [`../adr/`](../adr/README.md) | architectural decisions | thematic seed + atomic dated evolution |
+| [`../adr/`](../adr/README.md) | architectural decisions | thematic seed + atomic dated evolution, immutable once scaffolded |
 | **`decisions/`** | product/design decisions (PDR) | atomic dated log, the source of truth |
 | [`../../reference/`](../../reference/README.md) | raw input (legacy, dumps, prototypes) | read-only history, quarantined |
 
