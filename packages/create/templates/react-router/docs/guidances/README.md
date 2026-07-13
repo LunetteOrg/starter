@@ -11,6 +11,7 @@ which:
 
 | Guidance | Kind | Covers |
 |---|---|---|
+| [Imports & module resolution](./imports.md) | recommended | Explicit `.ts`/`.tsx` extensions; `bundler` vs `nodenext` by layer; generated-code carve-out |
 | [Design approach](./design-approach.md) | recommended | Tactical DDD, GoF/SOLID, Clean Code, FP — when they earn their keep |
 | [Product decisions](./product-decisions.md) | recommended | Writing PDRs (`docs/product/`), rendering them for stakeholder review in Storybook |
 | [Auth](./auth.md) | not shipped | Own your auth as a domain module (sessions, OTP, email) |

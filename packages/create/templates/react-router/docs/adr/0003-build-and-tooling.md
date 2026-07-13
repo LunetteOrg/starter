@@ -119,6 +119,9 @@ runnable under Node is the *absence* of bundler imports, not the extension. The
 convention aligns writing style and strictness across the tree; portability is
 earned separately, by keeping the domain layer free of bundler dependencies.
 
+Operational how-to (type-only imports, per-layer resolution, generated-code
+carve-out): [imports guidance](../guidances/imports.md).
+
 ### Consequences
 
 - \+ One import style across UI, libraries, and Node scripts; moving a module
