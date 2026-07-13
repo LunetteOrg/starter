@@ -37,7 +37,8 @@ cover, especially [what a Lunette template is](./docs/adr/0002-what-is-a-lunette
 1. Bump `packages/create/package.json` and commit `chore(release): @lntt/create X.Y.Z`
    directly on `main` (releases don't go through a PR).
 2. `gh release create vX.Y.Z --generate-notes` — the tag **must** match the package
-   version.
+   version. **Always** pass `--generate-notes`: every release must ship generated
+   notes (the merged-PR changelog since the previous tag).
 
 Publishing a GitHub Release triggers `.github/workflows/release.yml`, which runs
 `pnpm test` as a gate, verifies `tag == package version`, and publishes via npm
