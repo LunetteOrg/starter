@@ -17,22 +17,41 @@ from — not a long list of granular records to reconstruct in your head.
 
 ## Decision
 
-Record architectural decisions as **numbered ADRs** in `docs/adr/`, in **MADR**
-format ([`template.md`](./template.md)): YAML frontmatter (`status`, `date`,
-`deciders`, `tags` — machine-readable, so ADRs can be searched and filtered by
-tag) and the sections Context / Decision / Alternatives considered /
-Consequences (Positive · Negative / accepted risks · When to deviate), numbered
-sequentially (`0001`, `0002`, …). ADRs written before this format carry the
-frontmatter but keep their original compact body — alternatives and revisit
-triggers are recorded going forward, not backfilled. An ADR may be **thematic**: related decisions are grouped in
-one file under `## ` sections (e.g. `0002-architecture-and-boundaries.md` covers
-layering, import boundaries, typed errors, use-case composition, and self-arming
-enforcement). Reference a specific decision by its file plus heading anchor, e.g.
-`docs/adr/0002-architecture-and-boundaries.md#import-boundaries`.
+Record architectural decisions in `docs/adr/`, in **MADR** format
+([`template.md`](./template.md)): YAML frontmatter (`status`, `date`, `deciders`,
+`tags` — machine-readable, so ADRs can be searched and filtered by tag) and the
+sections Context / Decision / Alternatives considered / Consequences (Positive ·
+Negative / accepted risks · When to deviate). The log has two parts:
+
+- **The seed** — the thematic ADRs shipped with the template, numbered
+  `0001-000N`. Each groups related decisions for one area under `## ` sections
+  (e.g. `0002-architecture-and-boundaries.md` covers layering, import boundaries,
+  typed errors, use-case composition, and self-arming enforcement). This is the
+  small, coherent foundation a new project reads in one sitting; its numeric ids
+  are the compact citation handle used across `CLAUDE.md`, code comments, and
+  arch tests. Reference a specific decision by file plus heading anchor, e.g.
+  `docs/adr/0002-architecture-and-boundaries.md#import-boundaries`.
+- **The evolution** — every *new* architectural decision you make in a derived
+  project is its **own atomic, dated file**, one decision per file, named
+  `YYYY-MM-DD-short-kebab-title.md` (today's date). It is **not** appended as a
+  section into a seed file. Dated ids never contend for "the next number", so two
+  concurrent PRs can't silently pick the same id (different filenames never
+  conflict in git, so a duplicate counter would land unnoticed); the date carries
+  chronology. Two records with the same slug on the same day *do* collide on the
+  same filename — a loud, correct "same decision recorded twice" conflict.
+
+ADRs written before this format carry the frontmatter but keep their original
+compact body — alternatives and revisit triggers are recorded going forward, not
+backfilled.
 
 **Immutability, and its scope.** An accepted ADR is immutable in meaning: changing
-a decision means writing a new ADR that supersedes the old one. **This applies to
-projects built *from* the template, not to building the template itself.** While
+a decision means writing a **new dated ADR** that supersedes the old one, never
+rewriting it in place. This holds down to the section level: to change one
+decision inside a thematic seed file, mark that `## ` section
+`superseded by YYYY-MM-DD-…`, **leave it in place**, and record the replacement as
+a new atomic dated ADR — the history accumulates (live decisions + superseded ones
+marked), it is never overwritten. **This applies to projects built *from* the
+template, not to building the template itself.** While
 the starter is being constructed, ADRs are consolidated and renumbered freely to
 keep the starting set small and coherent — history of the template's own drafting
 is not the point; a clean foundation is. Once you scaffold a project, its ADRs are

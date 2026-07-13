@@ -1,6 +1,7 @@
-# PDR-NNNN: Title
+# PDR YYYY-MM-DD: Title
+<!-- filename: YYYY-MM-DD-short-kebab-title.md — the date is the id. -->
 
-- Status: proposed | accepted | superseded by PDR-NNNN
+- Status: proposed | accepted | superseded by YYYY-MM-DD-…
 - Date: YYYY-MM-DD
 - Reviewers: <who signed off — client / product owner / …>
 

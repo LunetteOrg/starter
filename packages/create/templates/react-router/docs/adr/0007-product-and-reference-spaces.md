@@ -12,10 +12,11 @@ A real project makes many **product & design** decisions, and often starts from
 **prior material** — a legacy app, database dumps, prototypes. Two gaps in the
 scaffold:
 
-1. ADRs are deliberately a *small, thematic foundation*, not a granular per-decision
-   log ([ADR-0001](./0001-recording-decisions.md)). Product choices are numerous and
-   frequent; forcing them into ADRs would either bloat the architecture record or
-   leave them unrecorded.
+1. ADRs record **architecture** — a small thematic seed plus its dated evolution
+   ([ADR-0001](./0001-recording-decisions.md)). Product & design choices are a
+   different subject matter, numerous and frequent; folding them into the
+   architecture log would bloat it or leave them unrecorded. They get their own
+   space, split by subject, not structure.
 2. Reference material is heterogeneous (foreign languages, SQL dumps, prototype
    exports), potentially large, and must never enter the app's build/lint/test —
    yet it should be explorable from the same clone, so the evolution reads in one

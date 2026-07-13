@@ -11,9 +11,11 @@ and recommended actions only.
 
 ## Procedure
 
-1. **Load the decisions.** Read `docs/adr/README.md` (the generated index) and the
-   `## ` sections of each `docs/adr/NNNN-*.md` (ADRs are thematic — one file per
-   area, several decisions inside). Also read the "Architecture Rules" in
+1. **Load the decisions.** Read `docs/adr/README.md` (the index) and every
+   `docs/adr/*.md`: the numbered `000N-*.md` seed files are thematic (several
+   `## ` decisions inside), plus the dated `YYYY-MM-DD-*.md` evolution files (one
+   decision each, possibly superseding a seed section). Also read the
+   "Architecture Rules" in
    `CLAUDE.md` — the distilled, enforceable form of several ADRs. Skim
    `docs/guidances/` too: those are **recommendations for the app you build, not
    shipped by the template** — they are checkable only once an app actually
@@ -57,13 +59,13 @@ and recommended actions only.
 # ADR assessment
 
 ## Violations of existing ADRs
-- [severity] ADR-NNNN — <rule>. Evidence: path:line. Recommended action: …
+- [severity] ADR <id> — <rule>. Evidence: path:line. Recommended action: …
 
 ## Unrecorded decisions (ADRs to create)
 - <proposed title> — <why it needs an ADR>. Suggested status: proposed.
 
 ## Passing checks (brief)
-- ADR-NNNN — <rule>: enforced by <Biome override / arch test>, holds.
+- ADR <id> — <rule>: enforced by <Biome override / arch test>, holds.
 ```
 
 Use severities: **blocker** (violates an accepted ADR in shipped code),
