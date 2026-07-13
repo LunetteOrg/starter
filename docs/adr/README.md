@@ -14,6 +14,7 @@ architecture is recorded inside that template (e.g.
 | [0004](./0004-scaffolding-contract.md) | The scaffolding contract | accepted |
 | [0005](./0005-publish-compiled-cli.md) | Ship the CLI as compiled JavaScript | accepted |
 | [0006](./0006-decision-logs-in-generated-projects.md) | Decision logs in generated projects (thematic seed, atomic dated evolution) | accepted |
+| [0007](./0007-explicit-ts-import-extensions.md) | Explicit `.ts` import extensions for Node-executed code | accepted |
 
 New ADR: copy [`template.md`](./template.md) (MADR: frontmatter with
 `status`/`date`/`deciders`/`tags`, then Context / Decision / Alternatives

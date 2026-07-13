@@ -19,7 +19,7 @@ The starter targets complex full-stack TypeScript applications built by small te
 | Concern | Choice |
 |---|---|
 | Runtime | Node.js 24 LTS — native type stripping; scripts run with `node` directly, never `tsx`/`ts-node` |
-| Monorepo | pnpm workspaces + Turborepo; `moduleResolution: bundler`, no build step for internal packages |
+| Monorepo | pnpm workspaces + Turborepo; `moduleResolution: bundler` for bundled packages (see [module resolution & import convention](#module-resolution--import-convention)), no build step for internal packages |
 | Bundler | Vite (Rolldown) |
 | Web framework | React Router v7 — loaders/actions, server-rendered, progressive enhancement |
 | Webhooks / external HTTP | Hono |
@@ -80,3 +80,58 @@ machine) is not worth the marginal benefit over that boundary.
   give; declare task-specific `env`/`inputs` where cache correctness matters.
 - − Relies on the [secrets](../guidances/app-infrastructure.md#secrets) boundary (env read only in `config/env.ts`) as the real secrets
   boundary.
+
+## Module resolution & import convention
+
+### Context
+
+The stack splits by runtime. The UI runs behind the bundler (Vite/Rolldown),
+where a relative import can be extensionless. But this project also runs plain
+TypeScript **directly under Node** — native type stripping, scripts invoked with
+`node`, never `tsx`/`ts-node` — and Node ≥24 is LTS with type stripping on by
+default. Under native ESM the file extension in an `import` is imposed by **Node's
+resolver, not TypeScript**: extensionless ESM resolution does not exist, and no TS
+option makes the extension optional (`import './file.ts'`, not `'./file'`).
+TypeScript 7 moves the same way — TS 6.0+ assumes `allowImportingTsExtensions`.
+
+Two idioms could coexist (extensionless in the UI, explicit under Node). One
+convention is simpler to hold and to move code between.
+
+### Decision
+
+Write relative imports with the **explicit source extension** — `./x.ts`,
+`./x.tsx` — everywhere, UI included. Extensionless imports and the
+`.js`-pointing-at-`.ts` workaround are both out.
+
+Portability follows a gradient, and the point of the convention is to keep the
+portable end genuinely portable:
+
+- **Domain and non-UI libraries are Node-first.** They carry **no bundler-only
+  imports** — no JSX, no `.css`/asset/`?raw`/`virtual:` imports — so `node` can
+  run them directly. These packages use `moduleResolution: nodenext` (with
+  `rewriteRelativeImportExtensions` where they emit).
+- **UI / app packages stay on the bundler** (`moduleResolution: bundler`). The
+  explicit extension here is consistency, **not** portability.
+
+**Extension ≠ portability.** Writing `.ts` does not make a React component
+Node-runnable — JSX and CSS/asset imports are what tie it to the bundler. What keeps the domain
+runnable under Node is the *absence* of bundler imports, not the extension. The
+convention aligns writing style and strictness across the tree; portability is
+earned separately, by keeping the domain layer free of bundler dependencies.
+
+Operational how-to (type-only imports, per-layer resolution, generated-code
+carve-out): [imports guidance](../guidances/imports.md).
+
+### Consequences
+
+- \+ One import style across UI, libraries, and Node scripts; moving a module
+  between runtimes settles the extension axis up front.
+- \+ Aligned with where Node and TypeScript are going, not the bundler holdover.
+- − On UI code the explicit extension is cosmetic — it buys no portability, only
+  consistency.
+- − Generated code (React Router typegen, Storybook) stays extensionless, so the
+  tree is mixed by design; a lint rule that enforces the convention must exclude
+  generated directories.
+- − `moduleResolution` is not uniform: `bundler` for UI/bundled packages,
+  `nodenext` for Node-first domain/libraries. This split is the whole point.
+
