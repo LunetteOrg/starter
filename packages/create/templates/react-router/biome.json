@@ -110,7 +110,7 @@
       }
     },
     {
-      "includes": ["apps/*/app/routes/**"],
+      "includes": ["apps/*/app/routes/**", "!**/*.spec.ts", "!**/*.test.ts"],
       "linter": {
         "rules": {
           "style": {

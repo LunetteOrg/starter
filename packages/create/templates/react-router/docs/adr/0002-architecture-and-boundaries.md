@@ -112,6 +112,17 @@ describe('architecture boundaries', () => {
 
 A ready-to-copy version lives at `packages/test-utils/templates/layer.arch.spec.ts.template`.
 
+**Both nets exclude test files (`*.spec.ts`, `*.test.ts`).** The boundaries
+constrain *production* wiring: a route reaches the app through `context.app`, not
+by importing `#app/bootstrap`. A route's integration test legitimately does the
+opposite — it builds the app from the composition root (`createApp` from
+`#app/bootstrap`) and injects it as the load context. That is exactly what the
+canonical golden test does (`packages/test-utils/templates/serialization/current-user.route.test.ts.template`).
+So the exclusion is part of the contract, not a loophole: `assertLayerBoundaries`
+merges the default `*.spec.ts`/`*.test.ts` ignores, and every route-scoped Biome
+override carries the matching `!**/*.spec.ts`, `!**/*.test.ts` negations. When you
+add or change a route-scoped override, keep those negations so both nets agree.
+
 Path aliases use Node.js subpath imports (`"imports": { "#app/*": … }` in each app's `package.json`) — portable, no bundler-specific config, and a stable target for both nets.
 
 ### Consequences
