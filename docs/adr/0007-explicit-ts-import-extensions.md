@@ -30,8 +30,9 @@ guardrail for when the CLI grows a second module, not a migration.
 The same question reaches the templates, but they run under a different resolver.
 A template is a self-contained project ([ADR-0002](./0002-what-is-a-lunette-template.md),
 [ADR-0003](./0003-create-vite-monorepo-model.md)) whose UI runs behind a bundler,
-where extensionless resolution is legitimate. This ADR governs the **system** side
-and the cross-level stance; the template's own convention lives in its own ADR-0003.
+where extensionless resolution is legitimate — yet the template still opts for the
+explicit extension, for one uniform style. This ADR governs the **system** side and
+the cross-level stance; the template's own convention lives in its own ADR-0003.
 
 ## Decision
 
@@ -51,13 +52,15 @@ convention for a package that also **emits** (ADR-0005):
 Both are needed together: `allowImportingTsExtensions` alone requires `noEmit`;
 paired with `rewriteRelativeImportExtensions` it is allowed alongside the build.
 
-**Cross-level scope.** This convention binds code Node runs directly: the CLI, and
-in templates the Node-first domain / non-UI layer. Code behind a bundler (a
-template's UI/app) keeps `moduleResolution: bundler` and its own extension idiom —
-recorded in that template's ADR-0003. The two levels deliberately **diverge on
-runtime** (nodenext vs bundler) while **converging on writing convention and
-strictness**. There is no shared tsconfig base between them to reconcile; the
-divergence is intentional, not drift.
+**Cross-level scope.** This ADR governs the CLI directly. Templates are
+self-contained and decide their own conventions, but adopt the same explicit-
+extension convention independently — recorded in their own ADR-0003 (the
+react-router template applies it across both its Node-first domain layer and its
+bundler-bound UI). What differs across levels is the **runtime, not the writing
+convention**: code behind a bundler keeps `moduleResolution: bundler`, Node-run
+code uses `nodenext`. The two deliberately **diverge on runtime** while
+**converging on writing convention and strictness**. There is no shared tsconfig
+base between them to reconcile; the divergence is intentional, not drift.
 
 ## Alternatives considered
 

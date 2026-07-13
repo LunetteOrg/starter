@@ -114,7 +114,7 @@ portable end genuinely portable:
   explicit extension here is consistency, **not** portability.
 
 **Extension ≠ portability.** Writing `.ts` does not make a React component
-Node-runnable — JSX and CSS/asset imports do the binding. What keeps the domain
+Node-runnable — JSX and CSS/asset imports are what tie it to the bundler. What keeps the domain
 runnable under Node is the *absence* of bundler imports, not the extension. The
 convention aligns writing style and strictness across the tree; portability is
 earned separately, by keeping the domain layer free of bundler dependencies.
