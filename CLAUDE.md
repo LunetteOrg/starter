@@ -39,6 +39,10 @@ cover, especially [what a Lunette template is](./docs/adr/0002-what-is-a-lunette
 2. `gh release create vX.Y.Z --generate-notes` — the tag **must** match the package
    version. **Always** pass `--generate-notes`: every release must ship generated
    notes (the merged-PR changelog since the previous tag).
+3. Then **hand-integrate** what the generator misses: `--generate-notes` lists
+   merged PRs only, so add any user-facing change that landed as a direct commit
+   (`git log vPREV..vX.Y.Z --no-merges`) via `gh release edit vX.Y.Z --notes …`.
+   Skip the `chore(release)` bump and repo-internal commits (not shipped).
 
 Publishing a GitHub Release triggers `.github/workflows/release.yml`, which runs
 `pnpm test` as a gate, verifies `tag == package version`, and publishes via npm
