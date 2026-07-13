@@ -30,6 +30,20 @@ cover, especially [what a Lunette template is](./docs/adr/0002-what-is-a-lunette
   (never the templates), plus lefthook + commitlint. `pnpm lint`, `pnpm typecheck`,
   `pnpm test`.
 
+## Releasing
+
+**npm publish happens in CI, never locally.** The flow:
+
+1. Bump `packages/create/package.json` and commit `chore(release): @lntt/create X.Y.Z`
+   directly on `main` (releases don't go through a PR).
+2. `gh release create vX.Y.Z --generate-notes` — the tag **must** match the package
+   version.
+
+Publishing a GitHub Release triggers `.github/workflows/release.yml`, which runs
+`pnpm test` as a gate, verifies `tag == package version`, and publishes via npm
+**OIDC trusted publishing** (`--provenance`, no NPM token; [ADR-0005](./docs/adr/0005-publish-compiled-cli.md)).
+Do not run `npm publish` by hand.
+
 ## The scaffolding contract
 
 If you change a placeholder, the `.lunette-template` marker, or the dotfile scheme
