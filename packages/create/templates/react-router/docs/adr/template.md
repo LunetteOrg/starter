@@ -1,11 +1,14 @@
 ---
-status: proposed # proposed | accepted | deprecated | superseded by ADR-NNNN
+status: proposed # proposed | accepted | deprecated | superseded by YYYY-MM-DD-…
 date: YYYY-MM-DD
 deciders: [] # who was in the room (optional)
 tags: [] # searchable keywords, kebab-case
 ---
 
-# ADR-NNNN: Title
+# ADR YYYY-MM-DD: Title
+<!-- filename: YYYY-MM-DD-short-kebab-title.md — the date is the id. -->
+<!-- (Seed ADRs shipped with the template keep their ADR-000N heading.) -->
+
 
 ## Context
 

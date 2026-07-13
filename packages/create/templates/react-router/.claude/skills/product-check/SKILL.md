@@ -13,8 +13,8 @@ only. This is the product-side sibling of `adr-check` and `story-check`.
 
 ## Procedure
 
-1. **Enumerate PDRs.** List `docs/product/decisions/NNNN-*.md` (ignore
-   `template.md`). Note each number, title, and `Status`.
+1. **Enumerate PDRs.** List `docs/product/decisions/*.md` (ignore `template.md`) —
+   each is a dated `YYYY-MM-DD-*.md` record. Note each id, title, and `Status`.
 
 2. **Map pages to PDRs.** For each `apps/design-system/src/Product/*.mdx` (ignore
    `Overview.mdx`), read its `?raw` import path. Flag:
@@ -35,7 +35,7 @@ only. This is the product-side sibling of `adr-check` and `story-check`.
 4. **Check immutability & status.** If the `.lunette-template` marker is **absent**
    (derived project), flag any PDR whose `## Decision` appears to have been
    rewritten in meaning rather than superseded (compare against git history where
-   available). Flag `superseded by PDR-NNNN` pointing at a missing PDR.
+   available). Flag `superseded by YYYY-MM-DD-…` pointing at a missing PDR.
 
 5. **Report.** For each finding: `path:line`, one-line explanation, and the
    recommended action (scaffold a page via `product-decision`, fix an import, wire

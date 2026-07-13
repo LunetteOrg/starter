@@ -15,13 +15,14 @@ it for review, keeping the markdown as the single source of truth (see
 1. **Confirm intent.** Get the decision title and the gist (context, the choice,
    why). If the user is only exploring, stop — a PDR records a *made* decision.
 
-2. **Pick the number.** List `docs/product/decisions/NNNN-*.md`, take the next free
-   `NNNN` (zero-padded to 4). Never reuse or renumber existing ones (append-only
-   once scaffolded — check the `.lunette-template` marker: if absent you are in a
+2. **Form the id from today's date.** The record id is `YYYY-MM-DD-short-kebab-title`
+   (today's date — there is no shared counter to contend, so concurrent PRs never
+   collide on an id). Never rewrite or rename existing ones (append-only once
+   scaffolded — check the `.lunette-template` marker: if absent you are in a
    derived project and immutability applies).
 
 3. **Write the PDR.** Copy `docs/product/decisions/template.md` to
-   `docs/product/decisions/NNNN-short-kebab-title.md` and fill Status/Date/
+   `docs/product/decisions/YYYY-MM-DD-short-kebab-title.md` and fill Status/Date/
    Reviewers, Context, Decision, Rationale, Consequences. Use today's date. Keep it
    short and in active voice. Link any `reference/` material it draws on by relative
    path.
@@ -29,7 +30,7 @@ it for review, keeping the markdown as the single source of truth (see
 4. **Write the Storybook page.** Copy the shape of
    `apps/design-system/src/Product/Example.mdx` to
    `apps/design-system/src/Product/<TitleInPascalOrKebab>.mdx`:
-   - `import pdr from '../../../../docs/product/decisions/NNNN-….md?raw'`
+   - `import pdr from '../../../../docs/product/decisions/YYYY-MM-DD-….md?raw'`
    - `<Meta title="Product/<Human Title>" />` — one page per decision under the
      `Product/` hierarchy.
    - `<Markdown>{pdr}</Markdown>` to render the record (do **not** duplicate the

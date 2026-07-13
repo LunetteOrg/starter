@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-TypeScript monorepo starter template. Architectural decisions are recorded as numbered ADRs in `docs/adr/` (thematic — one file per area); recommended patterns for the app you build on the template, which it does not ship, live in `docs/guidances/`. Read the relevant ADR before changing anything it covers. See [ADR-0001](docs/adr/0001-recording-decisions.md).
+TypeScript monorepo starter template. Architectural decisions live in `docs/adr/`: a thematic **seed** (numbered `000N-*`, one file per area) plus **dated** evolution files (`YYYY-MM-DD-*`, one decision each — new decisions are dated files, never appended into a seed file, so concurrent PRs never collide on an id). Recommended patterns for the app you build on the template, which it does not ship, live in `docs/guidances/`. Read the relevant ADR before changing anything it covers. See [ADR-0001](docs/adr/0001-recording-decisions.md).
 
 The **`.lunette-template`** marker file at the repo root means you are working ON
 the template (ADRs may be consolidated/renumbered). `create-lunette` deletes it on
@@ -79,7 +79,7 @@ no PR (local working diff), a chat report is fine.
 
 ## Key Paths
 
-- ADRs: `docs/adr/` (generated index in `docs/adr/README.md`) · Guidances: `docs/guidances/` (app-level recommendations, not shipped)
+- ADRs: `docs/adr/` (index in `docs/adr/README.md`) · Guidances: `docs/guidances/` (app-level recommendations, not shipped)
 - Product decisions: `docs/product/` (PDR log) · rendered for review in Storybook's `Product/` section · raw input in `reference/` (quarantined) — see ADR-0007
 - Contributing: `CONTRIBUTING.md`
 - Architecture test helpers: `packages/test-utils/src/arch.ts`
