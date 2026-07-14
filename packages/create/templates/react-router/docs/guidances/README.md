@@ -16,5 +16,6 @@ which:
 | [Product decisions](./product-decisions.md) | recommended | Writing PDRs (`docs/product/`), rendering them for stakeholder review in Storybook |
 | [Auth](./auth.md) | not shipped | Own your auth as a domain module (sessions, OTP, email) |
 | [App infrastructure](./app-infrastructure.md) | not shipped | Feature flags, secrets, jobs & cron, graceful shutdown |
+| [Migration runner](./migration-runner.md) | not shipped | Whether the migration runner is a real choice; keeping `drizzle` and `CREATE INDEX CONCURRENTLY` together |
 
 See [ADR-0001](../adr/0001-recording-decisions.md) for how guidances relate to ADRs.
