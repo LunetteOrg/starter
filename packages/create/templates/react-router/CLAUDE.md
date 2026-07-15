@@ -38,6 +38,15 @@ keep them clean. The `commit-msg` hook strips them as a backstop (`lefthook.yml`
 
 - Trunk-based, one PR per story, branches max 1-2 days
 - Tech stories merge freely; user stories merge behind feature flag (see the [feature-flags guidance](docs/guidances/app-infrastructure.md#feature-flags))
+- **Worktree discipline** — when working in an isolated git worktree (Claude Code
+  agent isolation, `.claude/worktrees/…`), pin every `Bash` call's cwd to the
+  **worktree root**, not the shared checkout. `git checkout -b`, `pnpm add`, and
+  migrations in the shared root land in the wrong tree and leave uncommitted changes
+  to clean up by hand. If unsure which tree you're in, `git rev-parse --show-toplevel` first.
+- **Opening a PR fills the Retrospective block** — an agent that opens a PR always
+  completes the `🔁 Retrospective` block from `.github/pull_request_template.md`
+  (absorb `Retro:` commit trailers + sub-agent friction; `none` where it doesn't
+  apply). See the [`retrospective` skill](.claude/skills/retrospective/SKILL.md).
 
 ## Architecture Rules
 
@@ -84,3 +93,4 @@ no PR (local working diff), a chat report is fine.
 - Contributing: `CONTRIBUTING.md`
 - Architecture test helpers: `packages/test-utils/src/arch.ts`
 - Review skills: `.claude/skills/adr-check/`, `.claude/skills/story-check/`, `.claude/skills/product-check/`, `.claude/skills/design-check/` · Scaffolding skills: `.claude/skills/product-decision/`, `.claude/skills/design-explore/`
+- Planning skills: `.claude/skills/roadmap/` (objective → Features), `.claude/skills/plan-round/` (Features → sub-issues), `.claude/skills/github-board/` (issues + Project mechanics), `.claude/skills/retrospective/` (self-improvement loop) — see `CONTRIBUTING.md#planning--self-improvement`

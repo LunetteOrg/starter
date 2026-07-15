@@ -34,6 +34,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Agent worktrees (transient git worktrees created by Claude Code isolation)
+.claude/worktrees/
+
 # Misc
 .DS_Store
 *.pem

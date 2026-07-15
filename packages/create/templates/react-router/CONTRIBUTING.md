@@ -35,6 +35,20 @@ fix: handle expired session gracefully
 chore: bump drizzle-kit to 0.22
 ```
 
+Subjects must not contain an **em/en dash** (`—` `–`) — commitlint rejects them
+(`subject-no-em-dash`); use a plain hyphen `-` or rephrase.
+
+**`Retro:` trailer — track improvement signals.** When something was harder than it
+should be, or you did by hand what a hook/skill/agent could automate, add a trailer to
+that commit. It's the granular capture the PR Retrospective block absorbs (the
+`retrospective` skill harvests it):
+
+```
+fix: work around missing db:seed script
+
+Retro: no db:seed script — had to seed by hand; candidate for automation
+```
+
 ## File & Code Naming
 
 | Context | Convention | Example |
@@ -116,6 +130,24 @@ Strategy and tiers are defined in [ADR-0004 (Testing)](./docs/adr/0004-testing.m
 | User Story | Merge behind feature flag | Flag on staging → PO sign off → flag on prod |
 
 Trunk-based development: all branches max **1-2 days**.
+
+## Planning & Self-Improvement
+
+Planning and the issue board are driven by four Claude Code skills (in `.claude/skills/`):
+
+- **`roadmap`** — decomposes a broad objective into Features (epics) and schedules them
+  across iterations by measured velocity (the long horizon).
+- **`plan-round`** — breaks the Features due now into a sub-issue tree for one iteration
+  (explore → decide → triage backlog → materialize).
+- **`github-board`** — owns the issues + Project (v2) mechanics; its
+  [board reference](./.claude/skills/github-board/references/github-project.md) is the
+  source of truth for the board structure and the `gh`/GraphQL recipes.
+- **`retrospective`** — a continuous self-improvement loop: `Retro:` commit trailers →
+  PR Retrospective block → periodic harvest that proposes concrete tooling (a skill, a
+  Lefthook hook, a CI check, an ADR, a `CLAUDE.md` rule). See the PR template.
+
+An agent opening a PR always fills the Retrospective block (from
+`.github/pull_request_template.md`) — see `CLAUDE.md`.
 
 ## Further Reading
 

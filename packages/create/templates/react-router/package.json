@@ -13,9 +13,11 @@
     "start": "turbo run start",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
-    "setup": "pnpm install && pnpm infra:up && pnpm db:migrate",
+    "setup": "pnpm install && pnpm infra:up && pnpm db:migrate && pnpm db:seed",
     "db:migrate": "turbo run db:migrate",
     "db:generate": "turbo run db:generate",
+    "db:generate:init": "turbo run db:generate:init",
+    "db:seed": "turbo run db:seed",
     "format": "biome format --write .",
     "prepare": "lefthook install || true"
   },
