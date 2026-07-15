@@ -27,6 +27,8 @@
     "dev": { "cache": false, "persistent": true },
     "db:migrate": { "cache": false, "outputs": [] },
     "db:generate": { "cache": false, "outputs": ["drizzle/**"] },
+    "db:generate:init": { "cache": false, "outputs": ["drizzle/**"] },
+    "db:seed": { "cache": false, "outputs": [] },
     "test:e2e": {
       "dependsOn": ["build"],
       "cache": false

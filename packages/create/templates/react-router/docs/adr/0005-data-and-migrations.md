@@ -75,3 +75,35 @@ repo scan applies it centrally (no per-app setup).
 - − Regex-based: comment/string masking and per-statement splitting cover the
   common cases, but it is a guard rail, not a SQL parser, and unusual formatting
   can still fool it. Tighten it if a real migration slips through.
+
+## First migration & local seed
+
+### Context
+
+`drizzle-kit generate` diffs the schema against the previous migration and emits
+nothing when there is no schema yet — so the *first* migration of an app cannot be
+produced by the normal `db:generate`, and a new contributor hits a dead end trying.
+Separately, `pnpm setup` and `CONTRIBUTING.md` promise a seeded local database, but
+there is no shared seed entry point. Per [self-arming enforcement](./0002-architecture-and-boundaries.md#self-arming-enforcement), the wiring can land now
+and stay inert until the first data-owning app implements it — the template ships no
+schema yet ([migration-safety guard](#migration-safety-guard)).
+
+### Decision
+
+Two root scripts, both `turbo run <task>` fan-outs like `db:migrate`, so they are
+no-ops until an app declares the matching task:
+
+- **`db:generate:init`** — bootstrap the **first** migration from an empty schema.
+  The app's task runs `drizzle-kit generate --custom` (which emits an empty migration
+  file to fill in / re-generate against), not `drizzle-kit generate`. Use it once per
+  app to get off zero; every migration after that uses the normal `db:generate`.
+- **`db:seed`** — seed the local database. Part of `pnpm setup` (`install → infra →
+  migrate → seed`), matching what `CONTRIBUTING.md` already documents.
+
+### Consequences
+
+- \+ The empty-schema dead end and the missing seed step are documented and wired,
+  not rediscovered per app.
+- \+ Inert until an app opts in — consistent with the guard's self-arming stance.
+- − Two more root scripts that do nothing until a data-owning app lands; the seed
+  contents and the `--custom` migration body are still the app's to write.
