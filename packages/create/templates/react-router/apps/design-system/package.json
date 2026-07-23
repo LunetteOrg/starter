@@ -8,7 +8,8 @@
     "build": "storybook build -o build",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
-    "lint:fix": "biome check . --write"
+    "lint:fix": "biome check . --write",
+    "test": "vitest run"
   },
   "dependencies": {
     "react": "^19.2.7",
@@ -20,12 +21,18 @@
     "@starter/ui-tokens": "workspace:*",
     "@storybook/addon-a11y": "^10.4.6",
     "@storybook/addon-docs": "^10.4.6",
+    "@storybook/addon-vitest": "10.4.6",
     "@storybook/react-vite": "^10.4.6",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@vitest/browser": "4.1.10",
+    "@vitest/browser-playwright": "4.1.10",
+    "@vitest/coverage-v8": "4.1.10",
+    "playwright": "^1.61.1",
     "storybook": "^10.4.6",
     "storybook-design-token": "^5.0.0",
     "typescript": "7.0.2",
-    "vite": "^8.1.4"
+    "vite": "^8.1.4",
+    "vitest": "4.1.10"
   }
 }

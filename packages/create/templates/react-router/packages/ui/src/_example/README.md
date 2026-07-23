@@ -15,4 +15,12 @@ What the exemplar demonstrates (ADR-0006: design tokens and Storybook showcase):
 
 - styling only through design tokens (`var(--token)`), never raw values;
 - typed, documented props (feeds Storybook autodocs);
-- a co-located story, with the a11y addon kept green.
+- a co-located story that doubles as the component's **test** (ADR-0004 —
+  component tests): `pnpm test` renders it in a real browser and an axe
+  violation fails the build. The `play` function pins behaviour axe can't see —
+  here, that the button is reachable by Tab and fires on Enter.
+
+A green axe run means "no obvious markup defect", not "accessible": it misses
+focus/hover styling, the dark theme, and any interaction you don't assert. See
+the [component accessibility guidance](../../../../docs/guidances/component-a11y.md)
+for what to do about each.
