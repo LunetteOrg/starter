@@ -62,6 +62,26 @@ framework** (`react-router`, later `hono`, …). It must honour the shared base
 ([ADR-0002](./docs/adr/0002-what-is-a-lunette-template.md)) and the scaffolding
 contract; then it is selectable via `--template <name>`.
 
+## Give criteria before options
+
+When you put alternatives in front of someone — approaches, designs, trade-offs —
+lead with the *axes* that decide between them, not just the list. A menu of
+options with no criteria looks like deference but hands the analysis back to the
+reader instead of doing it.
+
+Draw the axes from verifiable constraints, and in this repo the sharpest one is
+inheritance: every mechanism shipped here is paid for by **every project
+generated from it**, forever. Weigh that against what the template already
+promises but does not enforce, and against what is cheap to reverse versus what
+is not. Where the criteria converge on one answer, say so and recommend it with
+the reasoning visible; where they genuinely don't, present the choice with the
+criteria beside it.
+
+The same norm ships to derived projects in the template's own `CLAUDE.md`. It is
+stated in both places on purpose: the two levels stay separate (see *Two levels*
+above), and this repo prefers duplication over premature sharing
+([ADR-0003](./docs/adr/0003-create-vite-monorepo-model.md)).
+
 ## Conventions
 
 - Conventional commits; no `Co-Authored-By:` / "Generated with …" trailers (the
