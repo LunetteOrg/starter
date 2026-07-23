@@ -23,6 +23,10 @@ const config: StorybookConfig = {
   addons: [
     '@storybook/addon-docs',
     '@storybook/addon-a11y',
+    // Runs the stories as Vitest browser tests (ADR-0004 — component tests).
+    // Registered here too, not only in vitest.config.ts, so the Storybook UI
+    // shows the test/a11y status next to each story.
+    '@storybook/addon-vitest',
     {
       name: 'storybook-design-token',
       options: {

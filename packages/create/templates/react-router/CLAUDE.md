@@ -49,7 +49,7 @@ keep them clean. The `commit-msg` hook strips them as a backstop (`lefthook.yml`
 - Loaders/actions return an explicit, flat read-view/DTO literal — never a domain/db entity, never a nested entity, never `return { ...entity }` (RR7 serializes the return whole to the browser). Enforced by `assertNoEntitySpreadInReturn` + a per-route golden test (ADR-0002 — loader/action serialization boundary)
 - Use-cases compose via injected deps in `bootstrap/` — never import each other (ADR-0002 — use-case composition)
 - `tryAsync()` at repository boundary, `matchError()` at route layer
-- `.spec.ts` = unit test, `.test.ts` = integration test
+- `.spec.ts` = unit test, `.test.ts` = integration test, `*.stories.tsx` in `packages/ui` = component test (the story runs in a real browser; a11y violations fail the build — ADR-0004 — component tests)
 - Never `vi.mock` the database — use `withTestDb` + transaction rollback
 - Import boundaries are enforced twice: Biome overrides in `biome.json` + per-app `app/arch.spec.ts` (ADR-0002 — import boundaries). Keep both in sync when boundaries change.
 

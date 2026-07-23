@@ -51,6 +51,27 @@ jobs:
             echo "Run 'pnpm db:generate' and commit the generated migration."
             exit 1
           fi
+      # Component tests (stories run as Vitest browser tests) need a real
+      # browser: Playwright is the ENGINE, not the runner (ADR-0004 — testing
+      # strategy). Chromium only — the e2e job below owns cross-browser.
+      # NB: the cache key names the browser SET, not just the lockfile. The e2e
+      # job below caches chromium+firefox under its own key; sharing one key
+      # would let this chromium-only cache satisfy that job's restore and leave
+      # it without firefox.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Install Chromium
+        run: pnpm --filter @starter/design-system exec playwright install --with-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+      # A cache hit restores the browser binaries but not the system libs they
+      # link against — install those separately.
+      - name: Install Chromium system deps
+        run: pnpm --filter @starter/design-system exec playwright install-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
       # `test` runs separately so `--coverage` reaches vitest without leaking to
       # the other tasks. Coverage feeds the job summary below.
       - run: pnpm turbo test -- --coverage
@@ -99,7 +120,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ hashFiles('pnpm-lock.yaml') }}
+          key: playwright-chromium-firefox-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm exec playwright install --with-deps chromium firefox
         if: steps.playwright-cache.outputs.cache-hit != 'true'
       - run: pnpm exec playwright install-deps chromium firefox

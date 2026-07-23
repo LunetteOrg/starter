@@ -13,6 +13,7 @@ which:
 |---|---|---|
 | [Imports & module resolution](./imports.md) | recommended | Explicit `.ts`/`.tsx` extensions; `bundler` vs `nodenext` by layer; generated-code carve-out |
 | [Design approach](./design-approach.md) | recommended | Tactical DDD, GoF/SOLID, Clean Code, FP — when they earn their keep |
+| [Component accessibility](./component-a11y.md) | recommended | What the blocking axe gate does *not* cover: dark theme, focus/hover/motion, the keyboard path |
 | [Product decisions](./product-decisions.md) | recommended | Writing PDRs (`docs/product/`), rendering them for stakeholder review in Storybook |
 | [Auth](./auth.md) | not shipped | Own your auth as a domain module (sessions, OTP, email) |
 | [App infrastructure](./app-infrastructure.md) | not shipped | Feature flags, secrets, jobs & cron, graceful shutdown |
