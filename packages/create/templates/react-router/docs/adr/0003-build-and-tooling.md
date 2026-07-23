@@ -26,7 +26,7 @@ The starter targets complex full-stack TypeScript applications built by small te
 | Database | Postgres only; Drizzle ORM + Drizzle Kit migrations |
 | Date/time | `Temporal` everywhere; `Date` is banned (see [import boundaries](./0002-architecture-and-boundaries.md#import-boundaries)) |
 | Lint/format | Biome (single tool) |
-| Tests | Vitest + Testcontainers + Playwright (see [testing strategy](./0004-testing.md#testing-strategy)) |
+| Tests | Vitest + Testcontainers, Storybook + Vitest browser mode for components, Playwright for e2e (see [testing strategy](./0004-testing.md#testing-strategy)) |
 | Git hooks | Lefthook + commitlint (conventional commits) |
 | Styling | CSS Modules for components + Tailwind for utilities |
 | TypeScript | `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitReturns` |

@@ -1,17 +1,19 @@
 // TEMPLATE — the story that ships WITH a component (ADR-0006 — Storybook showcase). Copy alongside
 // the component, drop the `.template` suffix. A component is not "done" without
-// its story (and an a11y pass via the Storybook a11y addon).
+// its story: the story IS its test (ADR-0004 — component tests), and an axe
+// violation fails the build.
 //
 // Kept inert as `.template` so it is not aggregated by Storybook until copied.
 
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { Button } from './Button'
+import { expect, fn } from 'storybook/test'
+import { Button } from './Button.tsx'
 
 const meta = {
   title: 'Components/Button',
   component: Button,
   tags: ['autodocs'],
-  args: { children: 'Button' },
+  args: { children: 'Button', onClick: fn() },
 } satisfies Meta<typeof Button>
 
 export default meta
@@ -19,3 +21,30 @@ type Story = StoryObj<typeof meta>
 
 export const Primary: Story = { args: { variant: 'primary' } }
 export const Secondary: Story = { args: { variant: 'secondary' } }
+
+// Every story is also a TEST: `pnpm test` renders it in a real browser and runs
+// the axe check on it — no extra file to write. Add a `play` function when the
+// component has behaviour worth pinning.
+//
+// Assert the KEYBOARD path explicitly: axe checks the static markup, it cannot
+// tell you whether the control is reachable by Tab and fires on Enter.
+//
+// `!autodocs` keeps this case off the docs page — it asserts behaviour, it does
+// not illustrate an appearance (ADR-0004 — component tests: stories must stay
+// readable as documentation).
+export const Activation: Story = {
+  tags: ['!autodocs'],
+  play: async ({ canvas, userEvent, args }) => {
+    const button = canvas.getByRole('button', { name: 'Button' })
+
+    // Keyboard first: a click would already move focus onto the button and
+    // make the reachability assertion vacuous.
+    await userEvent.tab()
+    await expect(button).toHaveFocus()
+    await userEvent.keyboard('{Enter}')
+    await expect(args.onClick).toHaveBeenCalledOnce()
+
+    await userEvent.click(button)
+    await expect(args.onClick).toHaveBeenCalledTimes(2)
+  },
+}
