@@ -15,6 +15,16 @@ recommendations) or a comment in the affected file — never only in a private o
 agent-local note. If it matters to more than one person, it belongs where
 everyone (and every machine) can see it.
 
+**Give criteria before options.** When you put alternatives in front of someone —
+approaches, designs, trade-offs — lead with the *axes* that decide between them,
+not just the list. Draw those axes from verifiable constraints: what this repo
+already promises but does not enforce, what the whole codebase and whoever
+maintains it next will have to live with, what is cheap to reverse versus what is
+not. A menu of options with no criteria hands the analysis back to the reader
+instead of doing it. Where the criteria converge on one answer, say so and
+recommend it, with the reasoning visible. Where they genuinely don't, present the
+choice — with the criteria beside it.
+
 ## Conventions
 
 Source of truth: `CONTRIBUTING.md`
