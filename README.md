@@ -25,6 +25,6 @@ pnpm create @lntt my-app --template default
   default starter, `cd packages/create/templates/default && pnpm install` — it is a
   self-contained monorepo and is intentionally **not** part of this repo's
   workspace (the root `pnpm-workspace.yaml` only globs `packages/*`).
-- Templates carry a `.lunette-template` marker; the CLI strips it on scaffold, so
-  its presence means "you're editing the template", its absence means "scaffolded
-  project" (see the template's own `docs/adr/0001-recording-decisions.md`).
+- A template's own ADRs may be edited freely while it is being drafted here; a
+  scaffolded project's are append-only. The path says which you are in — see
+  `CLAUDE.md` and [ADR-0008](./docs/adr/0008-drop-the-template-marker.md).

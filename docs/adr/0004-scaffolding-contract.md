@@ -26,10 +26,13 @@ matching rewrite:
 - **Credentials placeholder `starter`** in `compose.yaml`, `render.yaml`, and the
   CI DB URL (`POSTGRES_*`, `databaseName`/`user`, `postgresql://starter:starter@…`)
   → the project name.
-- **The `.lunette-template` marker** at the template root. Present = you are editing
+- ~~**The `.lunette-template` marker** at the template root. Present = you are editing
   the template (ADRs may be renumbered); the CLI **strips it** on scaffold, so its
   absence marks a scaffolded project (ADRs append-only). See the template's own
-  `docs/adr/0001-recording-decisions.md`.
+  `docs/adr/0001-recording-decisions.md`.~~
+  **Superseded by [ADR-0008](./0008-drop-the-template-marker.md)** — the marker is
+  gone; ADR mutability is stated in each `CLAUDE.md` instead of inferred from a
+  file's absence. The rest of this contract is unaffected.
 - **Dotfiles npm would mangle** are stored `_`-prefixed (`_gitignore`, `_npmrc`,
   `_env`) and the CLI restores the leading dot on scaffold. (Applied at publish
   time; a template checked out for development may keep real dotfiles.)

@@ -35,9 +35,11 @@ what makes a repo recognizably *Lunette*:
 4. **Decisions in the repo** — thematic numbered ADRs (`docs/adr/`) plus
    `docs/guidances/` for app-level recommendations; append-only once scaffolded; a
    *foundation to start aligned*, not a granular decision log.
-5. **Scaffolding contract** — the placeholder scheme, the `.lunette-template`
+5. ~~**Scaffolding contract** — the placeholder scheme, the `.lunette-template`
    marker, and the dotfile convention (see the scaffolding-contract ADR) so **one
-   CLI scaffolds any template**.
+   CLI scaffolds any template**.~~
+   **Amended by [ADR-0008](./0008-drop-the-template-marker.md)**: the marker is
+   gone. The contract is the placeholder scheme and the dotfile convention.
 
 **Strong defaults** (shared unless a template has a concrete reason to diverge):
 testcontainers-based testing (`withTestDb`, never mock the DB, migration-safety

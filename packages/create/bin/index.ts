@@ -3,15 +3,15 @@
 //
 // Templates are folders under `templates/` (create-vite style). The CLI copies
 // the chosen one verbatim, restores npm-mangled dotfiles (`_gitignore` etc.),
-// strips the `.lunette-template` marker, and rewrites the `@starter/*` scope and
-// `starter` credentials to the project name.
+// and rewrites the `@starter/*` scope and `starter` credentials to the project
+// name.
 //
 // In-repo this runs directly on Node >=24 via native type stripping. Published,
 // it ships compiled to dist/index.js — Node won't strip types under node_modules
 // (see ADR-0005).
 
 import { execSync } from 'node:child_process'
-import { cpSync, existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { argv, cwd, exit, stderr, stdin, stdout } from 'node:process'
 import { createInterface } from 'node:readline/promises'
@@ -60,7 +60,6 @@ function copyTemplate(srcDir: string, destDir: string): void {
     }
   }
   walk(srcDir)
-  rmSync(join(destDir, '.lunette-template'), { force: true }) // absence marks a scaffolded project
 }
 
 function renamePlaceholders(rootDir: string, name: string): void {

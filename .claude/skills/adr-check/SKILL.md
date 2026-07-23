@@ -34,8 +34,8 @@ template's own `docs/adr/` and are checked by that template's own `adr-check`.
      **shared package been extracted prematurely** (duplication-now is the rule)?
    - **Scaffolding contract:** does the CLI's text-file coverage include every
      config type a template actually uses (the `.editorconfig` gap class)? Does
-     every template have a `.lunette-template` marker, and does the CLI strip it +
-     restore `_`-dotfiles? Are placeholders (`@starter`, creds) consistent?
+     the CLI restore `_`-dotfiles? Are placeholders (`@starter`, creds)
+     consistent?
    - **Scope split:** is a *system* decision recorded here, and a
      *template-architecture* decision recorded in the template — not swapped?
 
