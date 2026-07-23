@@ -17,9 +17,8 @@ it for review, keeping the markdown as the single source of truth (see
 
 2. **Form the id from today's date.** The record id is `YYYY-MM-DD-short-kebab-title`
    (today's date — there is no shared counter to contend, so concurrent PRs never
-   collide on an id). Never rewrite or rename existing ones (append-only once
-   scaffolded — check the `.lunette-template` marker: if absent you are in a
-   derived project and immutability applies).
+   collide on an id). Never rewrite or rename existing ones — records are
+   append-only in a scaffolded project.
 
 3. **Write the PDR.** Copy `docs/product/decisions/template.md` to
    `docs/product/decisions/YYYY-MM-DD-short-kebab-title.md` and fill Status/Date/
@@ -52,5 +51,5 @@ it for review, keeping the markdown as the single source of truth (see
 - The markdown is the source of truth; the MDX **renders** it. Never let the two
   diverge — if you must add narration, add it in the MDX around the `<Markdown>`
   block, not by copying the record.
-- Stay generic only in the *template itself* (marker present). In a real project,
-  write the actual decision.
+- Stay generic only while drafting the template inside the Lunette starter. In a
+  real project, write the actual decision.

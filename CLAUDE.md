@@ -19,6 +19,18 @@ cover, especially [what a Lunette template is](./docs/adr/0002-what-is-a-lunette
 - Templates are **duplicated, not shared** (ADR-0003). We extract shared packages
   only once patterns prove themselves — not before (YAGNI).
 
+**Which ADRs you may edit, and where.** The path is the discriminator:
+
+- `docs/adr/` at this root — decisions about the templates system. **Append-only**
+  once accepted: supersede with a new numbered ADR, never rewrite in place.
+- `packages/create/templates/*/docs/adr/` — a template's own log. That template is
+  still being *drafted*, so these may be consolidated, renumbered and edited in
+  place freely; the goal is a small, coherent set to hand a new project.
+
+Each template's `CLAUDE.md` states that its ADRs are append-only. **That sentence
+addresses the derived project, not this repo** — it ships into scaffolded projects,
+where it is correct. Working here, the rule above wins ([ADR-0008](./docs/adr/0008-drop-the-template-marker.md)).
+
 ## Working on the CLI
 
 - `packages/create/bin/index.ts` — TypeScript, run directly in-repo on **Node ≥24**
@@ -51,9 +63,9 @@ Do not run `npm publish` by hand.
 
 ## The scaffolding contract
 
-If you change a placeholder, the `.lunette-template` marker, or the dotfile scheme
-([ADR-0004](./docs/adr/0004-scaffolding-contract.md)), change the **CLI and every
-template together** — they live in one repo, so it is one PR.
+If you change a placeholder or the dotfile scheme ([ADR-0004](./docs/adr/0004-scaffolding-contract.md)),
+change the **CLI and every template together** — they live in one repo, so it is
+one PR.
 
 ## Adding a template
 

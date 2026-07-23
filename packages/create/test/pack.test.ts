@@ -39,7 +39,6 @@ test('the packed tarball scaffolds a clean project', () => {
 
   assert.ok(existsSync(join(app, '.gitignore')), '_gitignore restored to .gitignore')
   assert.ok(existsSync(join(app, '.npmrc')), '_npmrc restored to .npmrc')
-  assert.ok(!existsSync(join(app, '.lunette-template')), 'marker stripped')
   assert.ok(existsSync(join(app, 'packages')), 'full monorepo shipped')
   assert.equal(readdirSync(app).filter((f) => f === '_gitignore' || f === '_npmrc').length, 0, 'no `_` residue')
   const residue = execFileSync('bash', ['-c', `grep -rl '@starter' ${app} || true`], { encoding: 'utf8' }).trim()

@@ -4,9 +4,11 @@
 
 TypeScript monorepo starter template. Architectural decisions live in `docs/adr/`: a thematic **seed** (numbered `000N-*`, one file per area) plus **dated** evolution files (`YYYY-MM-DD-*`, one decision each — new decisions are dated files, never appended into a seed file, so concurrent PRs never collide on an id). Recommended patterns for the app you build on the template, which it does not ship, live in `docs/guidances/`. Read the relevant ADR before changing anything it covers. See [ADR-0001](docs/adr/0001-recording-decisions.md).
 
-The **`.lunette-template`** marker file at the repo root means you are working ON
-the template (ADRs may be consolidated/renumbered). `create-lunette` deletes it on
-scaffold, so in a derived project it is absent and ADRs are append-only.
+**ADRs here are append-only.** An accepted ADR is immutable in meaning: to change
+a decision, write a **new dated ADR** that supersedes it — never rewrite the old
+one in place. This holds down to the `## ` section level of a seed file: mark the
+section `superseded by YYYY-MM-DD-…`, leave it where it is, and record the
+replacement as a new file. The history accumulates; it is never overwritten.
 
 **Record shared decisions in the repo.** Any team/project decision (config
 choices, architectural trade-offs, conventions) must live in a shared, in-repo

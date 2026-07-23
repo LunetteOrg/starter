@@ -50,16 +50,13 @@ rewriting it in place. This holds down to the section level: to change one
 decision inside a thematic seed file, mark that `## ` section
 `superseded by YYYY-MM-DD-…`, **leave it in place**, and record the replacement as
 a new atomic dated ADR — the history accumulates (live decisions + superseded ones
-marked), it is never overwritten. **This applies to projects built *from* the
-template, not to building the template itself.** While
-the starter is being constructed, ADRs are consolidated and renumbered freely to
-keep the starting set small and coherent — history of the template's own drafting
-is not the point; a clean foundation is. Once you scaffold a project, its ADRs are
-append-only from there.
+marked), it is never overwritten.
 
-You can tell which mode you're in from the **`.lunette-template`** marker file at
-the repo root: `create-lunette` deletes it on scaffold. **Present → you're in the
-template (renumber/consolidate freely); absent → a derived project (append-only).**
+**This applies from the moment you scaffold.** While a template is being drafted
+inside the Lunette starter its ADRs are consolidated and renumbered freely — the
+history of the template's own drafting is not the point, a clean foundation is.
+That work happens in the starter monorepo, which says so in its own `CLAUDE.md`.
+In *this* project the seed is fixed: append-only from here.
 
 **Guidances vs ADRs.** Patterns the template does **not** ship — auth, feature
 flags, secrets, background jobs, graceful shutdown — are recommendations for the
