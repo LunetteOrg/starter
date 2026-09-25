@@ -21,7 +21,7 @@ pnpm dev
 
 Scaffolding renames the placeholders (`@starter/*`, DB credentials, Render service names) to the chosen name, and runs `git init` + the first commit.
 
-The CLI is [`@lntt/create`](https://www.npmjs.com/package/@lntt/create) ([source](https://github.com/LunetteOrg/create-lunette)).
+The CLI is [`@lntt/create`](https://www.npmjs.com/package/@lntt/create) ([source](https://github.com/LunetteOrg/starter/tree/main/packages/create)).
 
 ## What's inside
 
