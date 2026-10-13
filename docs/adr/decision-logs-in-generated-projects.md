@@ -1,11 +1,10 @@
 ---
 status: accepted
 date: 2026-07-13
-deciders: []
 tags: [process, adr, pdr, scaffolding, templates]
 ---
 
-# ADR-0006: Decision logs in generated projects — thematic seed, atomic dated evolution
+# Decision logs in generated projects: thematic seed, atomic dated evolution
 
 ## Context
 
@@ -54,30 +53,8 @@ and that conflict means "the same decision was recorded twice", which is exactly
 what you want surfaced.
 
 **Scope.** This governs what templates ship *to generated projects*, where
-concurrent PRs are the norm. This system repo keeps sequential numbering for its
-own `docs/adr/` (few contributors, low PR concurrency) and may revisit.
-
-## Alternatives considered
-
-### A — Keep the counter, resolve collisions at merge
-
-Tolerate duplicate numbers and renumber the loser during merge. Rejected: the
-collision is *silent* (different filenames never conflict), so it relies on a
-reviewer noticing — or a bespoke lint the template must ship and maintain. And
-"renumber the loser" mutates a supposedly-stable id after the fact, chasing every
-inbound `superseded by` and code citation that already pointed at it.
-
-### B — One atomic dated log for everything, drop the thematic ADR seed
-
-Maximally faithful to the classic per-decision ledger. Rejected: it throws away
-the "read the foundation in one sitting" onboarding value that is the seed's whole
-purpose, and forces churn on every `ADR-000N` citation in `CLAUDE.md`, comments,
-and arch tests.
-
-### C — Opaque unique ids (ULID / random suffix)
-
-Collision-free by construction. Rejected: unordered and unreadable; a date gives
-the same collision-freedom *and* chronology for free.
+concurrent PRs are the norm. This repo records its own decisions differently, as
+thematic files corrected in place ([recording decisions](./recording-decisions.md)).
 
 ## Consequences
 
@@ -107,3 +84,15 @@ the same collision-freedom *and* chronology for free.
   plain counter.
 - If a seed file itself starts churning heavily in derived projects, reconsider
   whether that area should move to the atomic dated log too.
+
+## Discarded directions
+
+- **Keep the counter, resolve collisions at merge.** The collision is *silent*
+  (different filenames never conflict), so it relies on a reviewer noticing, or on
+  a bespoke lint the template must ship. Renumbering the loser mutates an id after
+  the fact, chasing every inbound `superseded by` and code citation.
+- **One atomic dated log for everything, no thematic seed.** It throws away the
+  "read the foundation in one sitting" value that is the seed's purpose, and
+  churns every `ADR-000N` citation in `CLAUDE.md`, comments and arch tests.
+- **Opaque unique ids (ULID, random suffix).** Collision-free but unordered and
+  unreadable; a date gives the same collision-freedom and chronology for free.

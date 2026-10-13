@@ -18,7 +18,7 @@ template's own `docs/adr/` and are checked by that template's own `adr-check`.
 ## Procedure
 
 1. **Load the decisions.** Read `docs/adr/README.md` and the `## ` sections of each
-   `docs/adr/NNNN-*.md`, plus `CLAUDE.md`. Build the check matrix *now* from what
+   `docs/adr/*.md` (except `README.md` and `template.md`), plus `CLAUDE.md`. Build the check matrix *now* from what
    you read — never recite from memory; the ADR set evolves.
 
 2. **Scan the system for violations.** Derive the checks from what the ADRs
@@ -34,8 +34,8 @@ template's own `docs/adr/` and are checked by that template's own `adr-check`.
      **shared package been extracted prematurely** (duplication-now is the rule)?
    - **Scaffolding contract:** does the CLI's text-file coverage include every
      config type a template actually uses (the `.editorconfig` gap class)? Does
-     every template have a `.lunette-template` marker, and does the CLI strip it +
-     restore `_`-dotfiles? Are placeholders (`@starter`, creds) consistent?
+     the CLI restore `_`-dotfiles? Are placeholders (`@starter`, creds)
+     consistent?
    - **Scope split:** is a *system* decision recorded here, and a
      *template-architecture* decision recorded in the template — not swapped?
 
@@ -53,13 +53,13 @@ template's own `docs/adr/` and are checked by that template's own `adr-check`.
 # ADR assessment (Lunette starter)
 
 ## Violations of existing ADRs
-- [severity] ADR-NNNN — <rule>. Evidence: path:line. Recommended action: …
+- [severity] <adr-file>#<anchor> — <rule>. Evidence: path:line. Recommended action: …
 
 ## Unrecorded decisions (ADRs to create)
 - <proposed title> — <why>. Suggested status: proposed.
 
 ## Passing checks (brief)
-- ADR-NNNN — <rule>: holds (enforced by <test / config>).
+- <adr-file>#<anchor> — <rule>: holds (enforced by <test / config>).
 ```
 
 Severities: **blocker** (violates an accepted ADR), **warning** (drift or partial),

@@ -32,7 +32,6 @@ test('default template scaffolds a complete, renamed starter', () => {
     assert.ok(existsSync(join(app, 'apps')), 'has apps/')
     const adrs = readdirSync(join(app, 'docs/adr')).filter((f) => /^\d{4}-.*\.md$/.test(f))
     assert.ok(adrs.length >= 6, `has the consolidated ADRs (${adrs.length})`)
-    assert.ok(!existsSync(join(app, '.lunette-template')), '.lunette-template stripped')
     assert.ok(existsSync(join(app, '.gitignore')), '.gitignore present')
     assert.equal(JSON.parse(readFileSync(join(app, 'packages/ui/package.json'), 'utf8')).name, '@my-app/ui')
     assert.deepEqual(filesContaining(app, '@starter'), [], 'no @starter residue')

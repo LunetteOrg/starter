@@ -19,7 +19,6 @@ npx  @lntt/create my-app --template react-router
 Copies the chosen template verbatim into `my-app/`, then:
 
 - restores npm-mangled dotfiles (`_gitignore` → `.gitignore`, `_npmrc` → `.npmrc`, `_env` → `.env`);
-- strips the `.lunette-template` marker;
 - rewrites the `@starter/*` scope and `starter` credentials to your project name.
 
 ## Templates
