@@ -12,6 +12,11 @@
         "index": "docs/adr/README.md",
         "template": "docs/adr/template.md",
         "scope": "Decisions about the templates system: the CLI, the template model, the scaffolding contract."
+      },
+      "process": {
+        "path": "docs/process",
+        "index": "docs/process/README.md",
+        "scope": "How work is done in this repo: mechanisms and reasons a configuration value cannot express. Never technical decisions."
       }
     }
   }

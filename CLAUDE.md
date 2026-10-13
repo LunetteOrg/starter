@@ -23,7 +23,7 @@ cover, especially [the template model](./docs/adr/template-model.md).
 
 - `docs/adr/` at this root — decisions about the templates system. One file per
   subject, **corrected in place**, rejected options in *Discarded directions*
-  ([recording decisions](./docs/adr/recording-decisions.md)).
+  (the `decisions` skill; [recording](./docs/process/recording.md)).
 - `packages/create/templates/*/docs/adr/` — a template's own log. That template is
   still being *drafted*, so these may be consolidated, renumbered and edited in
   place freely; the goal is a small, coherent set to hand a new project.

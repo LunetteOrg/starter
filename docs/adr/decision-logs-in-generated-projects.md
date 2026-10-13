@@ -54,7 +54,7 @@ what you want surfaced.
 
 **Scope.** This governs what templates ship *to generated projects*, where
 concurrent PRs are the norm. This repo records its own decisions differently, as
-thematic files corrected in place ([recording decisions](./recording-decisions.md)).
+thematic files corrected in place ([recording](../process/recording.md)).
 
 ## Consequences
 
