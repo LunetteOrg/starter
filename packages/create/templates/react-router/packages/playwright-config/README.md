@@ -1,6 +1,6 @@
 # @starter/playwright-config
 
-Shared Playwright base config — implements the E2E strategy of [testing (Testing)](../../docs/adr/testing.md#testing-strategy).
+Shared Playwright base config — implements the E2E strategy of [testing strategy](../../docs/adr/testing.md#testing-strategy).
 Apps don't write the config by hand: they call `definePlaywrightConfig`.
 
 ```ts

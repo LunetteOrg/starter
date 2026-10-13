@@ -14,7 +14,9 @@ import { ConfigError, check, type Located, locate, parse } from './files.ts'
 export { checkAgentsBlock, managedBlock, syncAgentsBlock } from './agents.ts'
 export { commitlintConfig } from './commitlint.ts'
 export { ConfigError, type Format, type Located } from './files.ts'
+export { type LocalApp, localApp } from './local.ts'
 export { loadOperator, type Operator } from './operator.ts'
+export { type Choice, chooseViewer, commandExists, detectHost, type Host, openWith, type Viewer } from './viewer.ts'
 
 export interface Loaded extends Located {
   data: Record<string, unknown>

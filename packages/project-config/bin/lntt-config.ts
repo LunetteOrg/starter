@@ -10,23 +10,32 @@
 //   lntt-config operator sources   the files it was read from, in merge order
 //   lntt-config agents sync        write the managed block of AGENTS.md
 //   lntt-config agents check       exit 1 when the block differs from its source
+//   lntt-config local app <name>   an app of local.apps, resolved for this worktree (port, url, commands)
+//   lntt-config viewer detect      where the session runs and which viewer shows pages, with why
+//   lntt-config viewer open <url>  open it there; exit 3 with the agent call when only the agent can
 //
 // Exit codes: 0 ok, 1 configuration error, 2 usage error.
 
-import { argv, cwd, exit, stderr, stdout } from 'node:process'
+import { execFileSync } from 'node:child_process'
+import { argv, cwd, env, exit, stderr, stdout } from 'node:process'
 import {
   ConfigError,
   checkAgentsBlock,
+  chooseViewer,
+  commandExists,
   findConfig,
   getValue,
   loadConfig,
   loadOperator,
+  localApp,
+  openWith,
   setValue,
   syncAgentsBlock,
+  type Viewer,
 } from '../src/index.ts'
 
 const USAGE =
-  'usage: lntt-config path | validate | get <key> | set <key> <json> | operator [get <key> | sources] | agents sync|check'
+  'usage: lntt-config path | validate | get <key> | set <key> <json> | operator [get <key> | sources] | agents sync|check | local app <name> | viewer detect|open <url>'
 
 function usage(): never {
   stderr.write(`${USAGE}\n`)
@@ -78,6 +87,26 @@ try {
         }
       } else usage()
       break
+    case 'local':
+      if (key !== 'app' || !raw) usage()
+      stdout.write(`${JSON.stringify(localApp(cwd(), raw))}\n`)
+      break
+    case 'viewer': {
+      const preferences = ((loadOperator(cwd()).profile.workspace as { viewers?: Viewer[] } | undefined)?.viewers ??
+        []) as Viewer[]
+      const choice = chooseViewer({ env, preferences, has: commandExists })
+      if (key === 'detect') stdout.write(`${JSON.stringify(choice)}\n`)
+      else if (key === 'open' && raw) {
+        const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
+        if (!openWith(choice, raw, root)) {
+          stdout.write(
+            `${JSON.stringify({ viewer: choice.viewer, ...(choice.agentCall ? { call: choice.agentCall } : {}), url: raw })}\n`,
+          )
+          exit(3)
+        }
+      } else usage()
+      break
+    }
     default:
       usage()
   }

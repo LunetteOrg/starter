@@ -6,9 +6,18 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "$schema": { "type": "string", "description": "Path or URL of this schema, for editors." },
-    "name": { "type": "string", "description": "How the agent addresses the operator." },
-    "handle": { "type": "string", "description": "GitHub handle." },
+    "$schema": {
+      "type": "string",
+      "description": "Path or URL of this schema, for editors."
+    },
+    "name": {
+      "type": "string",
+      "description": "How the agent addresses the operator."
+    },
+    "handle": {
+      "type": "string",
+      "description": "GitHub handle."
+    },
     "role": {
       "type": "string",
       "description": "What the operator does in this project. Without a profile the agent assumes developer.",
@@ -22,35 +31,52 @@
     "confidence": {
       "type": "object",
       "description": "How much the agent explains, per topic (git, ci, testing, databases, …). Level 1 = new to it, 5 = expert.",
-      "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
         "required": ["level"],
         "properties": {
-          "level": { "type": "integer", "minimum": 1, "maximum": 5 },
-          "wantsToLearn": { "type": "boolean", "description": "Explain the why, not only the how." }
+          "level": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "wantsToLearn": {
+            "type": "boolean",
+            "description": "Explain the why, not only the how."
+          }
         }
       }
     },
     "accounts": {
       "type": "object",
       "description": "Accounts this operator uses for this project's services, by service (google, github, npm, …).",
-      "additionalProperties": { "type": "string" }
+      "additionalProperties": {
+        "type": "string"
+      }
     },
     "workspace": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "viewer": {
-          "type": "string",
-          "description": "Where pages, diffs and questions are shown to the operator.",
-          "examples": ["orca", "browser", "ide"]
+        "viewers": {
+          "type": "array",
+          "description": "Where pages are shown to the operator, in order of preference; the first one available in the session wins (lntt-config viewer).",
+          "items": {
+            "type": "string",
+            "enum": ["orca", "wave", "claude-desktop", "chrome", "playwright", "browser"]
+          },
+          "uniqueItems": true
         },
         "agents": {
           "type": "array",
           "description": "Coding agents the operator uses, as named by `npx skills` (claude-code, codex, cursor, …).",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "uniqueItems": true
         }
       }
