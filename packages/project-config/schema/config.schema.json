@@ -27,6 +27,42 @@
         }
       }
     },
+    "delivery": {
+      "type": "object",
+      "description": "How a change reaches the main branch: commit messages today; pull request body, review and merge rules as skills need them.",
+      "additionalProperties": false,
+      "properties": {
+        "commits": {
+          "type": "object",
+          "description": "Commit message rules, read by commitlint (through @lntt/project-config) and by the commit-message skill.",
+          "additionalProperties": false,
+          "properties": {
+            "language": {
+              "type": "string",
+              "description": "Language of subjects and bodies, as a BCP 47 tag.",
+              "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]+)*$"
+            },
+            "scopes": {
+              "type": "array",
+              "description": "The only scopes allowed; omit to allow any.",
+              "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+              "uniqueItems": true
+            },
+            "maxLineLength": {
+              "type": "integer",
+              "minimum": 50,
+              "description": "Longest header, body or footer line. Default 100."
+            },
+            "longTrailers": {
+              "type": "array",
+              "description": "Trailers whose value is a sentence (Retro), exempt from the line limit.",
+              "items": { "type": "string", "pattern": "^[A-Za-z][A-Za-z-]*$" },
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    },
     "recording": {
       "type": "object",
       "description": "How the project records its decisions: which logs exist, where, and in which language.",
