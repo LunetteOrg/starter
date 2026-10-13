@@ -1,3 +1,8 @@
+# Hooks are installed by `prepare` (scripts/install-hooks.sh), which points them at
+# the main checkout's binary. Lefthook must not reinstall them on its own: run from a
+# worktree, it would bake that worktree's path into hooks every worktree shares.
+no_auto_install: true
+
 pre-commit:
   commands:
     biome:

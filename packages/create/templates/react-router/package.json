@@ -17,7 +17,7 @@
     "db:migrate": "turbo run db:migrate",
     "db:generate": "turbo run db:generate",
     "format": "biome format --write .",
-    "prepare": "lefthook install || true"
+    "prepare": "sh scripts/install-hooks.sh || true"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.3",
