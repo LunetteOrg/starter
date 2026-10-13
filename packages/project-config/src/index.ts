@@ -11,6 +11,7 @@ import { isMap, parseDocument } from 'yaml'
 import schema from '../schema/config.schema.json' with { type: 'json' }
 import { ConfigError, check, type Located, locate, parse } from './files.ts'
 
+export { checkAgentsBlock, managedBlock, syncAgentsBlock } from './agents.ts'
 export { ConfigError, type Format, type Located } from './files.ts'
 export { loadOperator, type Operator } from './operator.ts'
 

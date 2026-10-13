@@ -21,8 +21,7 @@ contract) and the templates themselves. Each level has its own log:
 
 A decision is filed by what it governs, not by where it was discussed: a change to
 the scaffolding contract is a system ADR even when it was found while working on a
-template. Two `CLAUDE.md` files are in scope inside this repo; the root one says
-which rules a template's files follow while the template is drafted here.
+template.
 
 Both levels keep their logs the same way: one file per subject, corrected in place.
 That a template ships its logs in this shape is part of the shared base

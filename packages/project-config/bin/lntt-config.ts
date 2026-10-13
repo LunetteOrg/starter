@@ -8,13 +8,25 @@
 //   lntt-config operator           the operator profile, merged, as plain JSON
 //   lntt-config operator get <key> one key of it
 //   lntt-config operator sources   the files it was read from, in merge order
+//   lntt-config agents sync        write the managed block of AGENTS.md
+//   lntt-config agents check       exit 1 when the block differs from its source
 //
 // Exit codes: 0 ok, 1 configuration error, 2 usage error.
 
 import { argv, cwd, exit, stderr, stdout } from 'node:process'
-import { ConfigError, findConfig, getValue, loadConfig, loadOperator, setValue } from '../src/index.ts'
+import {
+  ConfigError,
+  checkAgentsBlock,
+  findConfig,
+  getValue,
+  loadConfig,
+  loadOperator,
+  setValue,
+  syncAgentsBlock,
+} from '../src/index.ts'
 
-const USAGE = 'usage: lntt-config path | validate | get <key> | set <key> <json> | operator [get <key> | sources]'
+const USAGE =
+  'usage: lntt-config path | validate | get <key> | set <key> <json> | operator [get <key> | sources] | agents sync|check'
 
 function usage(): never {
   stderr.write(`${USAGE}\n`)
@@ -55,6 +67,17 @@ try {
       else usage()
       break
     }
+    case 'agents':
+      if (key === 'sync') syncAgentsBlock(cwd())
+      else if (key === 'check') {
+        if (!checkAgentsBlock(cwd())) {
+          stderr.write(
+            'lntt-config: the managed block of AGENTS.md is missing or edited; run lntt-config agents sync\n',
+          )
+          exit(1)
+        }
+      } else usage()
+      break
     default:
       usage()
   }

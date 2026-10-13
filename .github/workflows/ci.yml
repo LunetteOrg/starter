@@ -20,6 +20,8 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      # AGENTS.md's managed block must match its source (lntt-config agents sync).
+      - run: pnpm exec lntt-config agents check
       - run: pnpm typecheck
       # scaffolds each template into a temp dir and asserts the result;
       # SCAFFOLD_SMOKE additionally installs + lints + typechecks a generated
