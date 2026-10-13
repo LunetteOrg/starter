@@ -39,9 +39,10 @@ where it is correct. Working here, the rule above wins ([scaffolding contract](.
   (`prepack`) — Node won't strip types under `node_modules` ([CLI runtime and publishing](./docs/adr/cli-runtime-and-publishing.md)).
   `pnpm --filter @lntt/create test` scaffolds each template into a temp dir and
   asserts the result.
-- Tooling here is scoped to the CLI: Biome only lints `packages/create/{bin,test}`
-  (never the templates), plus lefthook + commitlint. `pnpm lint`, `pnpm typecheck`,
-  `pnpm test`.
+- Tooling here is scoped to this repo's own packages: Biome lints
+  `packages/create/{bin,test}` and `packages/project-config/` (never the templates),
+  plus lefthook + commitlint. `pnpm lint`, `pnpm typecheck`, `pnpm test` (every
+  package).
 
 ## Releasing
 
@@ -86,3 +87,6 @@ contract; then it is selectable via `--template <name>`.
 - ADRs (this system): `docs/adr/`
 - The CLI: `packages/create/bin/index.ts`
 - Templates: `packages/create/templates/<framework>/`
+- Project configuration: `.agents/config.jsonc`, read and edited through
+  `packages/project-config/` (`lntt-config get <key>`; never `jq` or `JSON.parse`,
+  the file has comments)
