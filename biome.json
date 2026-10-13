@@ -4,6 +4,7 @@
     "includes": [
       "packages/create/bin/**",
       "packages/create/test/**",
+      "packages/project-config/**",
       "package.json",
       "biome.json",
       "commitlint.config.mjs",

@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/LunetteOrg/starter/packages/project-config/schema/config.schema.json",
+  "title": "Lunette project configuration",
+  "description": "The values a Lunette project's skills and scripts read: .agents/config.jsonc or .agents/config.yml. One section per process area; a section is added when a skill needs it. The reasons behind a value go in a comment next to it, the longer ones in docs/process/<area>.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Path or URL of this schema, for editors."
+    },
+    "recording": {
+      "type": "object",
+      "description": "How the project records its decisions: which logs exist, where, and in which language.",
+      "additionalProperties": false,
+      "required": ["logs"],
+      "properties": {
+        "language": {
+          "type": "string",
+          "description": "Language the records are written in, as a BCP 47 tag (en, it).",
+          "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]+)*$"
+        },
+        "logs": {
+          "type": "object",
+          "description": "The decision logs, by name (adr, product, process). Each one is a folder of thematic files corrected in place.",
+          "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
+          "additionalProperties": { "$ref": "#/definitions/log" }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "log": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Folder of the log, relative to the repository root.",
+          "minLength": 1
+        },
+        "index": {
+          "type": "string",
+          "description": "The file that lists the records, relative to the repository root."
+        },
+        "template": {
+          "type": "string",
+          "description": "The file a new record is copied from, relative to the repository root."
+        },
+        "scope": {
+          "type": "string",
+          "description": "What this log records, in one sentence, so a decision is filed in the right one."
+        }
+      }
+    }
+  }
+}

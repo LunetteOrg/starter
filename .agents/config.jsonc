@@ -1,0 +1,18 @@
+{
+  "$schema": "../packages/project-config/schema/config.schema.json",
+
+  // How this repo records its decisions. A template's own logs live inside the
+  // template (packages/create/templates/<framework>/docs/adr/) and travel with the
+  // projects scaffolded from it; they are not listed here.
+  "recording": {
+    "language": "en",
+    "logs": {
+      "adr": {
+        "path": "docs/adr",
+        "index": "docs/adr/README.md",
+        "template": "docs/adr/template.md",
+        "scope": "Decisions about the templates system: the CLI, the template model, the scaffolding contract."
+      }
+    }
+  }
+}

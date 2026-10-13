@@ -1,0 +1,31 @@
+{
+  "name": "@lntt/project-config",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Reads, validates and edits a Lunette project's .agents/config.jsonc or .agents/config.yml",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema.json": "./schema/config.schema.json"
+  },
+  "bin": {
+    "lntt-config": "bin/lntt-config.ts"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "jsonc-parser": "^3.3.1",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "typescript": "^7.0.2"
+  }
+}
