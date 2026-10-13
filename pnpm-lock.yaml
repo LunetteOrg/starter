@@ -17,6 +17,9 @@ importers:
       '@commitlint/config-conventional':
         specifier: ^21.2.0
         version: 21.2.0
+      '@lntt/project-config':
+        specifier: workspace:*
+        version: link:packages/project-config
       lefthook:
         specifier: ^2.1.10
         version: 2.1.10
