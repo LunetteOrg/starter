@@ -19,5 +19,13 @@
         "scope": "How work is done in this repo: mechanisms and reasons a configuration value cannot express. Never technical decisions."
       }
     }
+  },
+  "delivery": {
+    "commits": {
+      "language": "en",
+      "longTrailers": [
+        "Retro"
+      ]
+    }
   }
 }

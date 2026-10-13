@@ -51,3 +51,20 @@ Editors validate the file against the schema through its first line:
 
 The package is private and runs from source on Node ≥ 24 until it is published with
 the other shared packages.
+
+## Commit messages
+
+`commitlintConfig()` builds a commitlint configuration from `delivery.commits`
+(language, scopes, line length, trailers exempt from it), with rules whose messages say
+what to write instead and name the `commit-message` skill:
+
+```js
+// commitlint.config.mjs
+import { commitlintConfig } from '@lntt/project-config'
+export default commitlintConfig()
+```
+
+## AGENTS.md
+
+`lntt-config agents sync` writes the managed block of `AGENTS.md` from
+[`agents/block.md`](./agents/block.md); `lntt-config agents check` fails when it differs.
