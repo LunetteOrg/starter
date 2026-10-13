@@ -19,6 +19,26 @@ lntt-config set recording.language '"it"'   # a JSON value, comments kept
 
 Exit codes: 0 ok, 1 configuration error, 2 usage error.
 
+## The operator profile
+
+Who is talking to the agent: personal, never tracked, validated by
+[`schema/operator.schema.json`](./schema/operator.schema.json) (name, handle, role,
+language, confidence per topic, accounts, workspace). Read from, in merge order:
+
+1. `~/.agents/operator.{jsonc,yml}`: every project;
+2. `<main checkout>/.agents/local/operator.{jsonc,yml}`: this project, found from any
+   worktree through `git rev-parse --git-common-dir`;
+3. otherwise `~/.agents/projects/<org>/<repo>/operator.{jsonc,yml}`: this project, when
+   the main checkout has none (a fresh clone, a cloud session).
+
+The project profile wins key by key. With none at all the speaker is a developer.
+
+```sh
+lntt-config operator                 # the merged profile
+lntt-config operator get language    # one key
+lntt-config operator sources         # the files it came from
+```
+
 Editors validate the file against the schema through its first line:
 
 ```jsonc

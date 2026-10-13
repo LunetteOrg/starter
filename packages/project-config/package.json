@@ -2,12 +2,13 @@
   "name": "@lntt/project-config",
   "version": "0.0.0",
   "private": true,
-  "description": "Reads, validates and edits a Lunette project's .agents/config.jsonc or .agents/config.yml",
+  "description": "Reads, validates and edits a Lunette project's .agents/config.{jsonc,yml} and the operator profile",
   "type": "module",
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
-    "./schema.json": "./schema/config.schema.json"
+    "./schema.json": "./schema/config.schema.json",
+    "./operator-schema.json": "./schema/operator.schema.json"
   },
   "bin": {
     "lntt-config": "bin/lntt-config.ts"
