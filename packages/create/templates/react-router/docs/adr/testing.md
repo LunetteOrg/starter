@@ -4,7 +4,7 @@ date: 2026-07-02
 tags: [testing, vitest, playwright, storybook, a11y]
 ---
 
-# ADR-0004: Testing
+# Testing
 
 How this template tests its code — the unit/integration/e2e strategy and the conventions that keep the suite fast and trustworthy — and how integration tests share a real Postgres testcontainer while staying isolated from one another.
 
@@ -30,8 +30,8 @@ Rules:
 - `test` does not depend on `build` in the Turbo pipeline — Vitest runs on TypeScript sources (fast PR feedback). `test:e2e` depends on `build` and runs only on main push: Playwright gates the deploy, not the PR.
 - A shared UI component is covered by its story, not by a separate spec file ([component tests](#component-tests)). Playwright is the browser *engine* there, never the runner: `@playwright/test` stays reserved for e2e.
 - Playwright starts from clean cookie state (`storageState: { cookies: [], origins: [] }`); tests that need cookies set them explicitly.
-- E2E hygiene is linted ([import boundaries](./0002-architecture-and-boundaries.md#import-boundaries)): no `waitForTimeout()`, no reaching into React internals.
-- Every route that returns data ships a **golden serialization test** (`.test.ts`) pinning the exact key set of the loader/action payload, so a leaked field fails the build ([loader/action serialization boundary](./0002-architecture-and-boundaries.md#loaderaction-serialization-boundary)). Copy-paste template: `packages/test-utils/templates/serialization/`.
+- E2E hygiene is linted ([import boundaries](./architecture-and-boundaries.md#import-boundaries)): no `waitForTimeout()`, no reaching into React internals.
+- Every route that returns data ships a **golden serialization test** (`.test.ts`) pinning the exact key set of the loader/action payload, so a leaked field fails the build ([loader/action serialization boundary](./architecture-and-boundaries.md#loaderaction-serialization-boundary)). Copy-paste template: `packages/test-utils/templates/serialization/`.
 
 ### Consequences
 
@@ -63,9 +63,9 @@ Run the **existing stories as browser tests** via `@storybook/addon-vitest`
 - **The story is the test.** Rendering every story in a real browser plus the axe
   check comes for free; a `play` function adds interaction assertions when the
   component has behaviour worth pinning. No parallel `*.spec.tsx` file.
-- **a11y is blocking**: `a11y.test: 'error'` ([Storybook showcase](./0006-design-system.md#storybook-showcase)) — an axe
+- **a11y is blocking**: `a11y.test: 'error'` ([Storybook showcase](./design-system.md#storybook-showcase)) — an axe
   violation fails `pnpm test`.
-- **Self-arming** ([self-arming enforcement](./0002-architecture-and-boundaries.md#self-arming-enforcement)): the template ships no live component, so
+- **Self-arming** ([self-arming enforcement](./architecture-and-boundaries.md#self-arming-enforcement)): the template ships no live component, so
   the project collects zero stories and passes (`passWithNoTests`). It arms
   itself with the first real component.
 - **Playwright is the engine, not the runner.** Only chromium is installed for
@@ -78,31 +78,19 @@ Run the **existing stories as browser tests** via `@storybook/addon-vitest`
   `@vitest/browser-playwright` declare an *exact* peer on `vitest` (e.g.
   `4.1.10`, not a range). Bump all three together, or the install breaks.
 
-### Alternatives considered
-
-- **Standalone Vitest browser specs** (`vitest-browser-react`, no Storybook):
-  keeps the test layer independent of Storybook, but discards the stories we
-  already write and leaves the a11y promise unenforced. Rejected: two artefacts
-  for one job.
-- **Both from day one**: the destination, not the starting point. Shipping two
-  conventions in a template makes *every* derived project pay to learn both.
-- **Leaving a11y advisory**: keeps a documented bar that nothing enforces —
-  precisely the gap this decision closes.
-
 ### Consequences
 
 - \+ Components get render, interaction and a11y coverage with no new file type.
 - \+ The a11y bar is enforced instead of aspirational.
 - \+ Storybook stops being a dev/docs-only dependency and starts paying for
-  itself as test infrastructure, softening a negative accepted in [ADR-0006](./0006-design-system.md#storybook-showcase).
+  itself as test infrastructure, softening a negative accepted in [design system](./design-system.md#storybook-showcase).
 - − The gate checks **one render**: default state, light theme, no interaction.
   Dark theme, focus/hover styling and the keyboard path stay uncovered unless the
   project extends them — deliberately a [guidance](../guidances/component-a11y.md), not a decision, since a
   project that ships no dark mode should not pay for that coverage.
 - − The component layer is coupled to Storybook: dropping Storybook drops it.
-- − CI must install a Chromium binary (cached) for the PR path, which previously
-  needed no browser.
-- − `packages/ui` now carries `storybook` devDependencies, since live stories
+- − CI must install a Chromium binary (cached) for the PR path.
+- − `packages/ui` carries `storybook` devDependencies, since live stories
   resolve `storybook/test`.
 - − **Revisit when**: a11y violations are routinely silenced rather than fixed,
   or `play` functions grow so numerous that the stories stop reading as
@@ -152,3 +140,16 @@ own migrations corrupts/leaks state for the others.
   `docker rm -f $(docker ps -aq --filter "label=org.testcontainers=true")`).
 - − The shared container is long-lived: after a Postgres image/config bump,
   remove it manually so a fresh one is created.
+
+## Discarded directions
+
+Component tests:
+
+- **Standalone Vitest browser specs** (`vitest-browser-react`, no Storybook):
+  keeps the test layer independent of Storybook, but discards the stories we
+  already write and leaves the a11y promise unenforced. Two artefacts
+  for one job.
+- **Both from day one**: the destination, not the starting point. Shipping two
+  conventions in a template makes *every* derived project pay to learn both.
+- **Leaving a11y advisory**: keeps a documented bar that nothing enforces —
+  precisely the gap this decision closes.

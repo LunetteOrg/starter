@@ -15,7 +15,7 @@ or another user's data pulled in by a join. TypeScript does not help at runtime:
 annotating the return type does **not** strip excess keys (the excess-property
 check only fires on object literals). Only a runtime projection removes them.
 
-See [ADR-0002 — loader/action serialization boundary](../../../../docs/adr/0002-architecture-and-boundaries.md#loaderaction-serialization-boundary).
+See [architecture & boundaries — loader/action serialization boundary](../../../../docs/adr/architecture-and-boundaries.md#loaderaction-serialization-boundary).
 
 ## The rule
 

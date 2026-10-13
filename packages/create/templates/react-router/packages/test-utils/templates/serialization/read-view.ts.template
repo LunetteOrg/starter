@@ -4,10 +4,10 @@
 //
 // The read-view is the presentation-layer DTO: the ONLY shape a loader/action is
 // allowed to return for this resource. It imports `zod` and nothing else — no
-// domain, no db — so it does not cross an import boundary (ADR-0002) and can live
+// domain, no db — so it does not cross an import boundary (docs/adr/architecture-and-boundaries.md) and can live
 // in the routes layer.
 //
-// Why a runtime schema and not just a TS type (ADR-0002 — loader/action
+// Why a runtime schema and not just a TS type (docs/adr/architecture-and-boundaries.md — loader/action
 // serialization boundary): React Router 7 serializes the loader/action return
 // *whole* (turbo-stream) to the browser. A TS return-type annotation does NOT
 // strip excess keys at runtime — the excess-property check only fires on object

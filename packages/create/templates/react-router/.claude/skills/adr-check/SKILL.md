@@ -12,9 +12,8 @@ and recommended actions only.
 ## Procedure
 
 1. **Load the decisions.** Read `docs/adr/README.md` (the index) and every
-   `docs/adr/*.md`: the numbered `000N-*.md` seed files are thematic (several
-   `## ` decisions inside), plus the dated `YYYY-MM-DD-*.md` evolution files (one
-   decision each, possibly superseding a seed section). Also read the
+   `docs/adr/*.md` (except `README.md` and `template.md`): one file per subject,
+   several `## ` decisions inside, each stating what holds now. Also read the
    "Architecture Rules" in
    `CLAUDE.md` — the distilled, enforceable form of several ADRs. Skim
    `docs/guidances/` too: those are **recommendations for the app you build, not
@@ -23,17 +22,14 @@ and recommended actions only.
    before that.
 
 2. **Derive the check matrix at runtime — do not hardcode it.** The ADR set
-   evolves (decisions get added, renumbered, superseded), so build the matrix
+   evolves (decisions get added and rewritten in place), so build the matrix
    *now* from what you just read: for each accepted ADR, turn its `## Decision`
    into one or more checkable rules, and pull the enforceable rules listed under
-   "Architecture Rules" in `CLAUDE.md`. Skip ADRs marked `deprecated` /
-   `superseded`, and follow the supersede link to the replacement. Tie every rule
-   back to the ADR it came from by reading the file, never by reciting a number
-   from memory. (Each rule is the mechanically-checkable form of an ADR's
+   "Architecture Rules" in `CLAUDE.md`. Tie every rule back to the file and
+   heading it came from by reading it, never by reciting from memory. (Each rule is the mechanically-checkable form of an ADR's
    `## Decision` — an import that must not appear, a banned global, a naming
    convention, a required test seam. Read the ADRs for the current set; do not
-   assume a fixed catalogue, since decisions are added, renumbered and superseded
-   over time.)
+   assume a fixed catalogue, since decisions are added and rewritten over time.)
 
 3. **Scan for violations.** Prefer the existing tooling and helpers over ad-hoc
    greps where they exist (Biome overrides in `biome.json`, per-app

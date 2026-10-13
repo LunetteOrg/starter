@@ -1,7 +1,7 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "ui": "tui",
-  // Stays ["*"] on purpose — see docs/adr/0003-build-and-tooling.md#turbo-env-passthrough.
+  // Stays ["*"] on purpose — see docs/adr/build-and-tooling.md#turbo-env-passthrough.
   // Narrowing to an allowlist filters DOCKER_HOST / TESTCONTAINERS_* and breaks
   // integration tests on non-default local Docker. Secrets boundary is the secrets guidance (docs/guidances/app-infrastructure.md#secrets).
   "globalPassThroughEnv": ["*"],

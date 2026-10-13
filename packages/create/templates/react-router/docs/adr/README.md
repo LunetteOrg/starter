@@ -1,43 +1,24 @@
 # Architecture Decision Records
 
-Architectural decisions are recorded as ADRs in [MADR](./template.md) format (YAML
-frontmatter with `status`/`date`/`deciders`/`tags` for search, then Context /
-Decision / Alternatives considered / Consequences). The log has two parts: a
-**thematic seed** — the numbered `0001-000N` files below, the foundation shipped
-with the template, one file per area — and the **evolution**: every new decision
-you make is its own atomic, dated file (`YYYY-MM-DD-title.md`), never a new
-section inside a seed file. Dated ids don't contend for "the next number", so
-concurrent PRs never silently collide. See
-[ADR-0001](./0001-recording-decisions.md) for the process (including how ADRs
-relate to the [`../guidances/`](../guidances/README.md) recommendations).
+One file per subject, corrected in place, in [MADR](./template.md) format. How the log
+is kept, and how it relates to the product decisions and the
+[`../guidances/`](../guidances/README.md) recommendations, is in
+[recording decisions](./recording-decisions.md).
 
-| ADR | Title | Status |
+| ADR | Subject | Status |
 |---|---|---|
-| [0001](./0001-recording-decisions.md) | Recording decisions | accepted |
-| [0002](./0002-architecture-and-boundaries.md) | Architecture & boundaries | accepted |
-| [0003](./0003-build-and-tooling.md) | Build & tooling | accepted |
-| [0004](./0004-testing.md) | Testing | accepted |
-| [0005](./0005-data-and-migrations.md) | Data & migrations | accepted |
-| [0006](./0006-design-system.md) | Design system | accepted |
-| [0007](./0007-product-and-reference-spaces.md) | Product-decision & reference spaces | accepted |
+| [recording-decisions](./recording-decisions.md) | How decisions are recorded | accepted |
+| [architecture-and-boundaries](./architecture-and-boundaries.md) | Layering, import boundaries, typed errors, serialization boundary | accepted |
+| [build-and-tooling](./build-and-tooling.md) | Tech stack, monorepo tooling, module resolution | accepted |
+| [testing](./testing.md) | Testing strategy, test database, component tests | accepted |
+| [data-and-migrations](./data-and-migrations.md) | Data access and migration safety | accepted |
+| [design-system](./design-system.md) | Design tokens, Storybook showcase, themes | accepted |
+| [product-and-reference-spaces](./product-and-reference-spaces.md) | Product decisions and quarantined reference input | accepted |
 
-## Writing a new ADR
+## Recording a decision
 
-1. Copy [`template.md`](./template.md) to `YYYY-MM-DD-short-kebab-title.md` —
-   today's date, one decision per file. Do **not** extend a seed file with a new
-   `## ` section: the seed is the shipped foundation, the log grows as dated files.
-2. Keep it short: Context (why a decision was needed), Decision (what we do),
-   Alternatives considered (fairly represented), Consequences (positive,
-   negative/accepted risks, and the triggers that should reopen the decision).
-   Fill the frontmatter `tags` — that's what makes the log searchable.
-3. Once a project is scaffolded from this template, ADRs are append-only: never
-   rewrite an accepted decision to mean something different — write a new dated ADR
-   and mark the old as `superseded by YYYY-MM-DD-…` (down to the `## ` section
-   level of a seed file: mark the section superseded, leave it in place, add the
-   replacement as a new file). This immutability applies to derived projects, not
-   to constructing the template itself — see ADR-0001.
-4. Add a row to the index above (dated ADRs append below the seed).
-
-App-level patterns the template does **not** ship (auth, feature flags, secrets,
-jobs, graceful shutdown) are recommendations, not decisions — they live in
-[`../guidances/`](../guidances/README.md), not here.
+1. **Find the subject.** If a file above covers it, rewrite the part that changed in
+   that file. A new file, copied from [`template.md`](./template.md) and named after
+   its subject, only for a new subject.
+2. State what holds now; options not taken go in *Discarded directions*.
+3. Add a new file to the table above.

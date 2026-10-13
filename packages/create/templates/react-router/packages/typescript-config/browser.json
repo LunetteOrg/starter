@@ -5,7 +5,7 @@
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "jsx": "react-jsx",
     // Relative imports carry the explicit source extension (`./x.tsx`) — see
-    // ADR-0003 (module resolution & import convention). Without this flag the
+    // docs/adr/build-and-tooling.md (module resolution & import convention). Without this flag the
     // convention doesn't compile. Safe here because browser packages never
     // emit (`noEmit`); emitting packages need `rewriteRelativeImportExtensions`.
     "allowImportingTsExtensions": true,

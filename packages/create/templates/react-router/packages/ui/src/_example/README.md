@@ -11,11 +11,11 @@ To add your first real component:
 2. Copy `Button.stories.tsx.template` likewise.
 3. Re-export the component from `packages/ui/src/index.ts`.
 
-What the exemplar demonstrates (ADR-0006: design tokens and Storybook showcase):
+What the exemplar demonstrates (docs/adr/design-system.md: design tokens and Storybook showcase):
 
 - styling only through design tokens (`var(--token)`), never raw values;
 - typed, documented props (feeds Storybook autodocs);
-- a co-located story that doubles as the component's **test** (ADR-0004 —
+- a co-located story that doubles as the component's **test** (docs/adr/testing.md —
   component tests): `pnpm test` renders it in a real browser and an axe
   violation fails the build. The `play` function pins behaviour axe can't see —
   here, that the button is reachable by Tab and fires on Enter.

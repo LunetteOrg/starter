@@ -1,6 +1,6 @@
-// TEMPLATE — the story that ships WITH a component (ADR-0006 — Storybook showcase). Copy alongside
+// TEMPLATE — the story that ships WITH a component (docs/adr/design-system.md — Storybook showcase). Copy alongside
 // the component, drop the `.template` suffix. A component is not "done" without
-// its story: the story IS its test (ADR-0004 — component tests), and an axe
+// its story: the story IS its test (docs/adr/testing.md — component tests), and an axe
 // violation fails the build.
 //
 // Kept inert as `.template` so it is not aggregated by Storybook until copied.
@@ -30,7 +30,7 @@ export const Secondary: Story = { args: { variant: 'secondary' } }
 // tell you whether the control is reachable by Tab and fires on Enter.
 //
 // `!autodocs` keeps this case off the docs page — it asserts behaviour, it does
-// not illustrate an appearance (ADR-0004 — component tests: stories must stay
+// not illustrate an appearance (docs/adr/testing.md — component tests: stories must stay
 // readable as documentation).
 export const Activation: Story = {
   tags: ['!autodocs'],

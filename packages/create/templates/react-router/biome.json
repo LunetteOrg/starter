@@ -21,7 +21,7 @@
               "level": "error",
               "options": {
                 "deniedGlobals": {
-                  "Date": "Use Temporal instead of Date. See ADR-0003 (tech stack baseline)."
+                  "Date": "Use Temporal instead of Date. See docs/adr/build-and-tooling.md (tech stack baseline)."
                 }
               }
             }
@@ -45,7 +45,7 @@
               "level": "error",
               "options": {
                 "deniedGlobals": {
-                  "process": "process.env is banned outside config/env.ts — read env only there (ADR-0002 — layered architecture)."
+                  "process": "process.env is banned outside config/env.ts — read env only there (docs/adr/architecture-and-boundaries.md — layered architecture)."
                 }
               }
             }
@@ -62,17 +62,17 @@
               "level": "error",
               "options": {
                 "paths": {
-                  "react-router": "Framework forbidden in domain. Domain must stay pure (ADR-0002 — import boundaries).",
-                  "#app/lib": "Lib forbidden in domain. Use injected interfaces only (ADR-0002 — import boundaries)."
+                  "react-router": "Framework forbidden in domain. Domain must stay pure (docs/adr/architecture-and-boundaries.md — import boundaries).",
+                  "#app/lib": "Lib forbidden in domain. Use injected interfaces only (docs/adr/architecture-and-boundaries.md — import boundaries)."
                 },
                 "patterns": [
                   {
                     "group": ["react-router/*", "react-router/**"],
-                    "message": "Framework forbidden in domain. Domain must stay pure (ADR-0002 — import boundaries)."
+                    "message": "Framework forbidden in domain. Domain must stay pure (docs/adr/architecture-and-boundaries.md — import boundaries)."
                   },
                   {
                     "group": ["#app/lib/*", "#app/lib/**"],
-                    "message": "Lib forbidden in domain. Use injected interfaces only (ADR-0002 — import boundaries)."
+                    "message": "Lib forbidden in domain. Use injected interfaces only (docs/adr/architecture-and-boundaries.md — import boundaries)."
                   }
                 ]
               }
@@ -90,17 +90,17 @@
               "level": "error",
               "options": {
                 "paths": {
-                  "react-router": "Framework forbidden in use-cases (ADR-0002 — import boundaries).",
-                  "#app/lib/db": "DB forbidden in use-cases. Inject repository interfaces (ADR-0002 — import boundaries)."
+                  "react-router": "Framework forbidden in use-cases (docs/adr/architecture-and-boundaries.md — import boundaries).",
+                  "#app/lib/db": "DB forbidden in use-cases. Inject repository interfaces (docs/adr/architecture-and-boundaries.md — import boundaries)."
                 },
                 "patterns": [
                   {
                     "group": ["react-router/*", "react-router/**"],
-                    "message": "Framework forbidden in use-cases (ADR-0002 — import boundaries)."
+                    "message": "Framework forbidden in use-cases (docs/adr/architecture-and-boundaries.md — import boundaries)."
                   },
                   {
                     "group": ["#app/lib/db/*", "#app/lib/db/**"],
-                    "message": "DB forbidden in use-cases. Inject repository interfaces (ADR-0002 — import boundaries)."
+                    "message": "DB forbidden in use-cases. Inject repository interfaces (docs/adr/architecture-and-boundaries.md — import boundaries)."
                   }
                 ]
               }
@@ -118,27 +118,27 @@
               "level": "error",
               "options": {
                 "paths": {
-                  "#app/use-cases": "Use context.app.useCases instead (ADR-0002 — import boundaries).",
-                  "#app/domain": "Use context.app instead (ADR-0002 — import boundaries).",
-                  "#app/lib/db": "DB forbidden in routes (ADR-0002 — import boundaries).",
-                  "#app/bootstrap": "Use context.app in routes, never import bootstrap directly (ADR-0002 — import boundaries)."
+                  "#app/use-cases": "Use context.app.useCases instead (docs/adr/architecture-and-boundaries.md — import boundaries).",
+                  "#app/domain": "Use context.app instead (docs/adr/architecture-and-boundaries.md — import boundaries).",
+                  "#app/lib/db": "DB forbidden in routes (docs/adr/architecture-and-boundaries.md — import boundaries).",
+                  "#app/bootstrap": "Use context.app in routes, never import bootstrap directly (docs/adr/architecture-and-boundaries.md — import boundaries)."
                 },
                 "patterns": [
                   {
                     "group": ["#app/use-cases/*", "#app/use-cases/**"],
-                    "message": "Use context.app.useCases instead (ADR-0002 — import boundaries)."
+                    "message": "Use context.app.useCases instead (docs/adr/architecture-and-boundaries.md — import boundaries)."
                   },
                   {
                     "group": ["#app/domain/*", "#app/domain/**"],
-                    "message": "Use context.app instead (ADR-0002 — import boundaries)."
+                    "message": "Use context.app instead (docs/adr/architecture-and-boundaries.md — import boundaries)."
                   },
                   {
                     "group": ["#app/lib/db/*", "#app/lib/db/**"],
-                    "message": "DB forbidden in routes (ADR-0002 — import boundaries)."
+                    "message": "DB forbidden in routes (docs/adr/architecture-and-boundaries.md — import boundaries)."
                   },
                   {
                     "group": ["#app/bootstrap/*", "#app/bootstrap/**"],
-                    "message": "Use context.app in routes, never import bootstrap directly (ADR-0002 — import boundaries)."
+                    "message": "Use context.app in routes, never import bootstrap directly (docs/adr/architecture-and-boundaries.md — import boundaries)."
                   }
                 ]
               }

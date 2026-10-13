@@ -19,18 +19,12 @@ cover, especially [the template model](./docs/adr/template-model.md).
 - Templates are **duplicated, not shared** ([template model](./docs/adr/template-model.md#templates-are-folders-bundled-inside-the-cli)). We extract shared packages
   only once patterns prove themselves — not before (YAGNI).
 
-**Which ADRs you may edit, and where.** The path is the discriminator:
-
-- `docs/adr/` at this root — decisions about the templates system. One file per
-  subject, **corrected in place**, rejected options in *Discarded directions*
-  (the `decisions` skill; [recording](./docs/process/recording.md)).
-- `packages/create/templates/*/docs/adr/` — a template's own log. That template is
-  still being *drafted*, so these may be consolidated, renumbered and edited in
-  place freely; the goal is a small, coherent set to hand a new project.
-
-Each template's `CLAUDE.md` states that its ADRs are append-only. **That sentence
-addresses the derived project, not this repo** — it ships into scaffolded projects,
-where it is correct. Working here, the rule above wins ([scaffolding contract](./docs/adr/scaffolding-contract.md#a-template-carries-no-mode-marker)).
+**Two decision logs, one rule.** `docs/adr/` at this root holds decisions about the
+templates system; `packages/create/templates/*/docs/adr/` (and `docs/product/`) hold a
+template's own, and travel into every project scaffolded from it. Both are one file
+per subject, **corrected in place**, with rejected options in *Discarded directions*
+(the `decisions` skill; [recording](./docs/process/recording.md)). A decision is
+filed by what it governs, not by where it was discussed.
 
 ## Working on the CLI
 

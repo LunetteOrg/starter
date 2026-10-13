@@ -7,7 +7,7 @@ import { expect } from 'vitest'
  * a layer's source. Complements {@link assertLayerBoundaries} (which scans
  * *imports*) for rules that are about *code*, not dependencies — e.g. `throw new
  * Error()` (use `errore` typed errors instead) or `process.env` outside
- * `config/env.ts` (ADR-0002).
+ * `config/env.ts` (docs/adr/architecture-and-boundaries.md).
  *
  * These rules are also enforced by Biome (`noRestrictedGlobals`, a grit plugin),
  * so the same violation fails both lint and this test — two nets, mirroring the

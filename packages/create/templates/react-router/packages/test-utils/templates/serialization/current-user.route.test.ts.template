@@ -5,20 +5,20 @@
 // `return { ...user }`), this test goes red instead of the field silently
 // shipping to every browser.
 //
-// Why assert on the return value's keys (ADR-0002 — loader/action serialization
+// Why assert on the return value's keys (docs/adr/architecture-and-boundaries.md — loader/action serialization
 // boundary): React Router 7 serializes the loader/action return *whole*
 // (turbo-stream), inline in the SSR HTML and again in every `.data` request. The
 // serialization is structural — the payload's keys ARE the return value's keys —
 // so pinning the returned shape pins the wire payload. Copy this file per route
 // that returns data; that is how every project keeps the harness armed.
 //
-// It is a `.test.ts` (integration, ADR-0004): it wires a real app over a rolled-
+// It is a `.test.ts` (integration, docs/adr/testing.md): it wires a real app over a rolled-
 // back test transaction — no mocks — so the assertion runs against the real
 // use-case output, the exact thing that leaks in production.
 
 import { withTestDb } from '@starter/test-utils'
 import { describe, expect, it } from 'vitest'
-import { createApp } from '#app/bootstrap' // your composition root (ADR-0002)
+import { createApp } from '#app/bootstrap' // your composition root (docs/adr/architecture-and-boundaries.md)
 import { appContext } from '#app/context' // the RR load-context key
 import { action, loader } from './me'
 

@@ -18,4 +18,4 @@ which:
 | [Auth](./auth.md) | not shipped | Own your auth as a domain module (sessions, OTP, email) |
 | [App infrastructure](./app-infrastructure.md) | not shipped | Feature flags, secrets, jobs & cron, graceful shutdown |
 
-See [ADR-0001](../adr/0001-recording-decisions.md) for how guidances relate to ADRs.
+See [recording decisions](../adr/recording-decisions.md) for how guidances relate to ADRs.

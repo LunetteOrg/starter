@@ -28,7 +28,7 @@ catalogue components, not final tokens.
    brief asks for them.
 3. **Fonts stay bundleable**: no remote font CDNs in prototypes meant to
    become real — use the system stack (`fonts.css`) or note the
-   `@fontsource/*` package to install (ADR-0006).
+   `@fontsource/*` package to install (docs/adr/design-system.md).
 
 ## Procedure
 

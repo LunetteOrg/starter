@@ -4,13 +4,13 @@
 > log ([`docs/product/`](../product/README.md)) rendered for review in Storybook's
 > `Product/` section, and a quarantined [`reference/`](../../reference/README.md)
 > for the raw material. How you run the review is up to you; this is the path we
-> recommend. See [ADR-0007](../adr/0007-product-and-reference-spaces.md) for why
+> recommend. See [product & reference spaces](../adr/product-and-reference-spaces.md) for why
 > these spaces exist.
 
 ## The mechanism
 
-- **Source of truth:** one markdown PDR per decision in `docs/product/decisions/`.
-  Greppable, versioned, append-only once scaffolded.
+- **Source of truth:** one markdown PDR per product subject in
+  `docs/product/decisions/`, corrected in place. Greppable, versioned.
 - **Review surface:** one Storybook page per PDR under `Product/`. It imports the
   markdown `?raw` and renders it with the `Markdown` block, then embeds the
   interactive prototype and the "before" from `reference/`. **No duplication** —

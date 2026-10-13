@@ -1,77 +1,77 @@
 ---
 status: accepted
-date: 2026-07-02
-tags: [process, adr, guidances]
+date: 2026-10-13
+tags: [process, adr, pdr, guidances]
 ---
 
-# ADR-0001: Recording decisions
+# Recording decisions
 
 ## Context
 
-Architectural decisions need a home that travels with every scaffolded project. A
-single large architecture document is hard to consume incrementally (by humans
-and AI agents alike) and tends to be rewritten in place, losing decision history.
-Decisions need a lightweight, append-only format instead. At the same time, the
-starter should hand a new project a *small, coherent* set of decisions to start
-from — not a long list of granular records to reconstruct in your head.
+Decisions need a home that travels with the project and that a person, or an agent,
+can read in one sitting. A single large architecture document is hard to consume
+piece by piece; a long list of granular records leaves every reader to reconstruct
+the current state from a chain of amendments.
 
 ## Decision
 
-Record architectural decisions in `docs/adr/`, in **MADR** format
-([`template.md`](./template.md)): YAML frontmatter (`status`, `date`, `deciders`,
-`tags` — machine-readable, so ADRs can be searched and filtered by tag) and the
-sections Context / Decision / Alternatives considered / Consequences (Positive ·
-Negative / accepted risks · When to deviate). The log has two parts:
+The project keeps two decision logs, plus recommendations:
 
-- **The seed** — the thematic ADRs shipped with the template, numbered
-  `0001-000N`. Each groups related decisions for one area under `## ` sections
-  (e.g. `0002-architecture-and-boundaries.md` covers layering, import boundaries,
-  typed errors, use-case composition, and self-arming enforcement). This is the
-  small, coherent foundation a new project reads in one sitting; its numeric ids
-  are the compact citation handle used across `CLAUDE.md`, code comments, and
-  arch tests. Reference a specific decision by file plus heading anchor, e.g.
-  `docs/adr/0002-architecture-and-boundaries.md#import-boundaries`.
-- **The evolution** — every *new* architectural decision you make in a derived
-  project is its **own atomic, dated file**, one decision per file, named
-  `YYYY-MM-DD-short-kebab-title.md` (today's date). It is **not** appended as a
-  section into a seed file. Dated ids never contend for "the next number", so two
-  concurrent PRs can't silently pick the same id (different filenames never
-  conflict in git, so a duplicate counter would land unnoticed); the date carries
-  chronology. Two records with the same slug on the same day *do* collide on the
-  same filename — a loud, correct "same decision recorded twice" conflict.
+- **Architecture decisions** in `docs/adr/`.
+- **Product and design decisions** (PDRs) in `docs/product/decisions/`, each with its
+  review page in Storybook's `Product/` section
+  ([product & reference spaces](./product-and-reference-spaces.md)).
+- **Guidances** in `docs/guidances/`: patterns the template does **not** ship (auth,
+  feature flags, secrets, background jobs, graceful shutdown), recommendations for
+  the app you build. A guidance becomes a decision when the project adopts it.
 
-ADRs written before this format carry the frontmatter but keep their original
-compact body — alternatives and revisit triggers are recorded going forward, not
-backfilled.
+Both logs follow the same rules:
 
-**Immutability, and its scope.** An accepted ADR is immutable in meaning: changing
-a decision means writing a **new dated ADR** that supersedes the old one, never
-rewriting it in place. This holds down to the section level: to change one
-decision inside a thematic seed file, mark that `## ` section
-`superseded by YYYY-MM-DD-…`, **leave it in place**, and record the replacement as
-a new atomic dated ADR — the history accumulates (live decisions + superseded ones
-marked), it is never overwritten.
-
-**This applies from the moment you scaffold.** While a template is being drafted
-inside the Lunette starter its ADRs are consolidated and renumbered freely — the
-history of the template's own drafting is not the point, a clean foundation is.
-That work happens in the starter monorepo, which says so in its own `CLAUDE.md`.
-In *this* project the seed is fixed: append-only from here.
-
-**Guidances vs ADRs.** Patterns the template does **not** ship — auth, feature
-flags, secrets, background jobs, graceful shutdown — are recommendations for the
-app *you* build, not decisions the template has made. They live in
-`docs/guidances/` (each marked "not shipped"), separate from `docs/adr/`. Turn a
-guidance into a real ADR in your project once you actually adopt it.
+- **One file per subject, named after it** (`architecture-and-boundaries.md`). The
+  file name is the id; there are no numbers and no dates in the name. A file groups
+  the related decisions of its subject under `## ` sections.
+- **Corrected in place.** A file states what holds now. When a decision changes, its
+  file is rewritten and the change lands as a commit; the history of a subject is
+  `git log --follow -- <file>`. No `superseded by`, no struck-through text, no
+  amendment sections.
+- **Options not taken** close the file in *Discarded directions*, each with the
+  reason it does not hold.
+- **MADR format** ([`template.md`](./template.md); the PDR log has its own): YAML
+  frontmatter (`status`, `date`, `tags`, optional `deciders`; tags make the log
+  searchable) and Context / Decision / Consequences / Discarded directions.
+- **Cited by file and heading anchor**, in prose and in code comments:
+  `docs/adr/architecture-and-boundaries.md#import-boundaries`.
+- **A new file only for a new subject.** A decision about a subject that has a file is
+  written into that file.
 
 ## Consequences
 
-- \+ A new project starts from a small set of thematic ADRs it can read (or load
-  into an AI context) in one sitting, plus clearly-labelled guidances it can adopt
-  on demand.
-- \+ `CLAUDE.md`, `CONTRIBUTING.md`, and code comments point to specific ADR
-  sections instead of a monolith.
-- \+ Guidances never masquerade as shipped decisions, so nobody mistakes a
-  suggestion for something the scaffold already provides.
-- − Recording a decision is a manual discipline; nothing enforces it. Code review
-  must ask "does this change need an ADR — or a new guidance?".
+### Positive
+
+- A new project starts from a small set of thematic ADRs it can read, or load into an
+  agent's context, in one sitting.
+- Every file reads as the current state; nobody reconciles a decision with its
+  amendments.
+- No contended counter between concurrent pull requests.
+- Guidances never pass for shipped decisions.
+
+### Negative / accepted risks
+
+- Recording a decision is a discipline nothing enforces; review must ask "does this
+  change need an ADR, a PDR, or a guidance?".
+- The history of a decision is in git, not in the file.
+
+### When to deviate (revisit triggers)
+
+- The project adopts the installable `decisions` skill: the generic rules move there,
+  and this file keeps only what is particular to the project.
+
+## Discarded directions
+
+- **Numbered, append-only records that supersede rather than rewrite.** A decision
+  spreads over an original and its amendments that every reader has to reconcile, and
+  the number is contended between concurrent pull requests, silently (two different
+  file names never conflict in git).
+- **A numbered seed plus one dated, immutable file per new decision.** Collision-free
+  and chronological, but a subject's current state is spread over many files.
+- **One architecture document.** Hard to read or load piece by piece.

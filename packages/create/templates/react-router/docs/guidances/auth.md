@@ -8,7 +8,7 @@
 
 The durable recommendation is simple: **own your auth**. Model sessions and OTP behind repository interfaces defined in the domain, keep the schema 100% yours, and never let a framework dictate your database shape or leak into your routes.
 
-Auth frameworks that own their database schema (e.g. Better-Auth-style batteries-included frameworks) prevent expressing sessions and OTP codes behind your own repository interfaces, breaking the [layered architecture](../adr/0002-architecture-and-boundaries.md#layered-architecture). That schema lock-in is the trade-off to avoid. (For reference, Lucia v3 is deprecated by its author, so it is not a path forward either.)
+Auth frameworks that own their database schema (e.g. Better-Auth-style batteries-included frameworks) prevent expressing sessions and OTP codes behind your own repository interfaces, breaking the [layered architecture](../adr/architecture-and-boundaries.md#layered-architecture). That schema lock-in is the trade-off to avoid. (For reference, Lucia v3 is deprecated by its author, so it is not a path forward either.)
 
 None of the libraries below are mandatory — pick primitives that let *you* keep ownership.
 
@@ -18,8 +18,8 @@ None of the libraries below are mandatory — pick primitives that let *you* kee
 
 - **Sessions**: cookie-based, stored in Postgres behind a `SessionRepository` interface defined in the domain; the schema lives in `lib/db/schema/sessions.ts` and is 100% yours. A Redis swap stays possible behind the same interface — the domain never knows where sessions live.
 - **OTP login**: an `OtpRepository` with a discriminated verify result (`valid | expired | invalid | used`), so callers handle every outcome explicitly rather than guessing from a boolean.
-- **Email delivery**: an `EmailService` interface in domain terms; the provider implementation lives in `lib/email/` with its own [typed errors](../adr/0002-architecture-and-boundaries.md#typed-errors) (an infrastructure concern). A stub `EmailService` in `@starter/test-utils` makes the full OTP flow testable offline.
-- **Routes never import the auth library**: session validation goes through `context.app.getSession(request)`. Wiring happens once at the [use-case composition](../adr/0002-architecture-and-boundaries.md#use-case-composition) root, not in route handlers.
+- **Email delivery**: an `EmailService` interface in domain terms; the provider implementation lives in `lib/email/` with its own [typed errors](../adr/architecture-and-boundaries.md#typed-errors) (an infrastructure concern). A stub `EmailService` in `@starter/test-utils` makes the full OTP flow testable offline.
+- **Routes never import the auth library**: session validation goes through `context.app.getSession(request)`. Wiring happens once at the [use-case composition](../adr/architecture-and-boundaries.md#use-case-composition) root, not in route handlers.
 
 ### A suggested primitive: Oslo
 
@@ -29,7 +29,7 @@ Treat Oslo as an implementation detail behind `SessionRepository` / `OtpReposito
 
 ## Testing
 
-Because auth is just another domain module, it follows the standard [testing strategy](../adr/0004-testing.md#testing-strategy): exercise repositories against a real database with [test database isolation](../adr/0004-testing.md#test-database-isolation) (`withTestDb`), and use the `@starter/test-utils` stub `EmailService` to drive the full OTP flow offline — no real provider, no network.
+Because auth is just another domain module, it follows the standard [testing strategy](../adr/testing.md#testing-strategy): exercise repositories against a real database with [test database isolation](../adr/testing.md#test-database-isolation) (`withTestDb`), and use the `@starter/test-utils` stub `EmailService` to drive the full OTP flow offline — no real provider, no network.
 
 ## Secrets
 

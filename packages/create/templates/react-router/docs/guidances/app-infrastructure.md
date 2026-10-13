@@ -41,7 +41,7 @@ Secrets must reach three contexts (local dev, CI, production) without a dedicate
 
 Use GitHub Secrets as the single source of truth for CI and production. Adding a secret takes three explicit steps: update `.env.example`, add it to GitHub Secrets, add it to the deploy workflow's env block.
 
-In app code, read secrets only ever in `config/env.ts` (validated, typed) and let them travel through `createApp(env)` — `process.env` is banned elsewhere (see [layered architecture](../adr/0002-architecture-and-boundaries.md#layered-architecture) and [import boundaries](../adr/0002-architecture-and-boundaries.md#import-boundaries)).
+In app code, read secrets only ever in `config/env.ts` (validated, typed) and let them travel through `createApp(env)` — `process.env` is banned elsewhere (see [layered architecture](../adr/architecture-and-boundaries.md#layered-architecture) and [import boundaries](../adr/architecture-and-boundaries.md#import-boundaries)).
 
 Never put secrets in deploy-tool "config" objects (e.g. Uncloud `configs`, which travel in plaintext over gRPC) — environment interpolation only.
 
@@ -62,7 +62,7 @@ Container platforms used for deploy have no native cron. Scheduled/async work sp
 
 - Use pg-boss (Postgres-backed: no Redis, schedule survives restarts, no clock drift). Run the worker as a separate service from the same image (`node workers/index.ts` — Node 24 strip types), and have its handlers call use-cases via the same composition root (`context.app.useCases…`).
 - Use GitHub Actions cron to run standalone scripts with `DATABASE_URL` from GitHub Secrets — zero infrastructure, logs and retries in GitHub.
-- Defer both until the first real need (see [tech stack baseline](../adr/0003-build-and-tooling.md#tech-stack-baseline)).
+- Defer both until the first real need (see [tech stack baseline](../adr/build-and-tooling.md#tech-stack-baseline)).
 
 Consequences:
 

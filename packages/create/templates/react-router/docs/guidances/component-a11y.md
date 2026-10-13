@@ -4,7 +4,7 @@
 
 > **Recommended, not enforced.** The *decision* — every story runs in a real
 > browser and an axe violation fails the build — lives in
-> [ADR-0004 → Component tests](../adr/0004-testing.md#component-tests). This page
+> [testing → Component tests](../adr/testing.md#component-tests). This page
 > is about the opposite: what that gate **does not** catch, so a green run isn't
 > mistaken for "this component is accessible".
 
@@ -22,7 +22,7 @@ interaction. Everything outside that render is uncovered.
 ### 1. The dark theme
 
 The template ships a `[data-theme="dark"]` scope
-([ADR-0006 → Dark theme](../adr/0006-design-system.md#dark-theme)) but **nothing
+([design system → Dark theme](../adr/design-system.md#dark-theme)) but **nothing
 forces a project to adopt it**, and stories render light unless you say
 otherwise. So axe checks light only.
 
@@ -53,7 +53,7 @@ the component-test run. A common middle ground is a single dark story per
 component that carries the risky surfaces, rather than a blanket doubling.
 
 Note that the starter's dark neutrals are a **starting point, not a validated
-palette**: ADR-0006 records the `--shadow-*` and feedback colours
+palette**: docs/adr/design-system.md records the `--shadow-*` and feedback colours
 (`--color-success/-warning/-danger`) as deliberately *not* remapped for dark. Turn
 the dark check on and those will surface as real contrast failures — that is the
 check working, and the signal to tune the palette to your brand.

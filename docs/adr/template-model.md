@@ -33,9 +33,10 @@ what makes a repo recognizably *Lunette*:
    **self-arming** (guards are inert until the code exists, then bite). *The shape
    of the boundaries is per-template; that they are enforced is invariant.*
 4. **Decisions in the repo**: a small set of thematic ADRs (`docs/adr/`) as a
-   *foundation to start aligned*, plus `docs/guidances/` for app-level
-   recommendations. How generated projects evolve that log is in
-   [decision logs in generated projects](./decision-logs-in-generated-projects.md).
+   *foundation to start aligned*, a product-decision log (`docs/product/decisions/`)
+   and `docs/guidances/` for app-level recommendations. Every log is one file per
+   subject, corrected in place, the same rules as this repo's
+   ([recording](../process/recording.md)).
 5. **Scaffolding contract**: the placeholder scheme and the dotfile convention
    ([scaffolding contract](./scaffolding-contract.md)), so **one CLI scaffolds any
    template**.

@@ -4,7 +4,7 @@ date: 2026-07-02
 tags: [database, postgres, drizzle, migrations]
 ---
 
-# ADR-0005: Data & migrations
+# Data & migrations
 
 How schema changes ship safely under rolling deploys, and how those rules are mechanically enforced.
 
@@ -37,7 +37,7 @@ CI order is `migrate → test → deploy`: migrations run against the (ephemeral
 [Expand-migrate-contract](#expand-migrate-contract) leaves two rules to human review: "any
 `DROP`/`RENAME` in a migration is a red flag unless it's a contract step", and
 rollback is never a DB revert (no down-migrations). Review red-flags get missed.
-Per the principle in [self-arming enforcement](./0002-architecture-and-boundaries.md#self-arming-enforcement) (enforcement lands now, inert until needed), this
+Per the principle in [self-arming enforcement](./architecture-and-boundaries.md#self-arming-enforcement) (enforcement lands now, inert until needed), this
 can be mechanized today without any application schema: there are no migrations
 yet, so a guard scans nothing and arms itself when the first one lands.
 

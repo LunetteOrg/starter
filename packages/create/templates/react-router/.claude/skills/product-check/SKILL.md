@@ -6,7 +6,7 @@ description: Check that product decisions (docs/product/decisions/ PDRs) and the
 # Product-decision alignment
 
 Produce a **report** on how well the PDR log and its Storybook review surface
-agree (see [ADR-0007](../../../docs/adr/0007-product-and-reference-spaces.md) and
+agree (see [product & reference spaces](../../../docs/adr/product-and-reference-spaces.md) and
 [the product-decisions guidance](../../../docs/guidances/product-decisions.md)). Do
 **not** scaffold pages or edit files — output divergences and recommended actions
 only. This is the product-side sibling of `adr-check` and `story-check`.
@@ -14,7 +14,7 @@ only. This is the product-side sibling of `adr-check` and `story-check`.
 ## Procedure
 
 1. **Enumerate PDRs.** List `docs/product/decisions/*.md` (ignore `template.md`) —
-   each is a dated `YYYY-MM-DD-*.md` record. Note each id, title, and `Status`.
+   one file per product subject. Note each file, title, and `Status`.
 
 2. **Map pages to PDRs.** For each `apps/design-system/src/Product/*.mdx` (ignore
    `Overview.mdx`), read its `?raw` import path. Flag:
@@ -32,14 +32,13 @@ only. This is the product-side sibling of `adr-check` and `story-check`.
    - `<iframe>` still pointing at the dashed placeholder on an `accepted` decision
      (never wired to a real prototype).
 
-4. **Check immutability & status.** Flag any PDR whose `## Decision` appears to
-   have been rewritten in meaning rather than superseded (compare against git
-   history where available). Flag `superseded by YYYY-MM-DD-…` pointing at a
-   missing PDR.
+4. **Check the records' shape.** Flag a PDR that carries amendment markers
+   (`superseded by`, struck-through text, an "update" section) instead of stating
+   what holds now, a dated or numbered file name, and two files on the same subject.
 
 5. **Report.** For each finding: `path:line`, one-line explanation, and the
    recommended action (scaffold a page via `product-decision`, fix an import, wire
-   the prototype, write a superseding PDR). If everything aligns, say so.
+   the prototype, rewrite the PDR in place). If everything aligns, say so.
 
 ## Notes
 
