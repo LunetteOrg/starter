@@ -19,5 +19,10 @@ Showcase of the shared components (`@starter/ui`) and the design tokens
 Create `packages/ui/src/<Component>/<Component>.stories.tsx`: it will show up in
 this Storybook with no extra configuration.
 
+**A story is also a test.** `pnpm test` renders every story in a real browser and
+runs the accessibility (axe) check on it — an a11y violation *fails the build*.
+Add a `play` function to assert behaviour the markup alone can't prove, such as
+the keyboard path. See the exemplar in `packages/ui/src/_example/`.
+
 > This is a **starter**: replace the tokens with your brand's and add your own
 > components. The structure stays the same.

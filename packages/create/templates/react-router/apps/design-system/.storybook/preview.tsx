@@ -11,9 +11,11 @@ const preview: Preview = {
       },
     },
     a11y: {
-      // 'todo' = axe violations reported but non-blocking.
-      // Switch to 'error' to fail the build on violations (ADR-0006 — Storybook showcase).
-      test: 'todo',
+      // 'error' = an axe violation FAILS `pnpm test`, in the browser run and in
+      // the Storybook UI alike (ADR-0006 — Storybook showcase). This is what
+      // makes "a component is not done without an a11y pass" enforceable rather
+      // than aspirational. Drop to 'todo' to report violations without blocking.
+      test: 'error',
     },
   },
 }
