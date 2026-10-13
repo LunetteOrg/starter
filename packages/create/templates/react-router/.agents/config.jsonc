@@ -1,0 +1,10 @@
+{
+  "$schema": "https://raw.githubusercontent.com/LunetteOrg/starter/main/packages/project-config/schema/config.schema.json",
+
+  // Where this project came from: the Lunette template and the @lntt/create version
+  // that scaffolded it. Written once by the CLI; a template update is computed from it.
+  "lunette": {
+    "template": "react-router",
+    "version": "__LNTT_CREATE_VERSION__"
+  }
+}
