@@ -10,6 +10,9 @@ packages/
     templates/
       react-router/     # the full Lunette starter (monorepo, Biome, Drizzle, …)
   project-config/       # reads .agents/config.* and the operator profile (lntt-config)
+plugins/
+  lunette/              # the Lunette plugin: skills installed unchanged in every project
+.claude-plugin/marketplace.json
 docs/
   adr/                  # decisions about the templates system
   process/              # how work is done in this repo
@@ -23,6 +26,19 @@ pnpm create @lntt my-app                 # interactive template pick
 pnpm create @lntt my-app --template react-router
 ```
 
+## The Lunette plugin
+
+The skills every Lunette project uses (`decisions`, `commit-message`) ship as a plugin
+from this repository's marketplace:
+
+```
+/plugin install lunette --marketplace LunetteOrg/starter      # Claude Code
+npx skills add LunetteOrg/starter                             # any other agent
+```
+
+They read the project's values from `.agents/config.*` and are never edited to fit a
+project. This repo installs its own plugin the same way (`.claude/settings.json`).
+
 ## Develop
 
 Node ≥ 24 and pnpm. `pnpm lint`, `pnpm typecheck` and `pnpm test` run every package;
@@ -35,4 +51,7 @@ Node ≥ 24 and pnpm. `pnpm lint`, `pnpm typecheck` and `pnpm test` run every pa
   framework ([template model](./docs/adr/template-model.md)). It is a self-contained
   monorepo, **not** part of this repo's workspace (the root `pnpm-workspace.yaml`
   only globs `packages/*`): to work on one, `cd` into it and `pnpm install`.
+- To work on the plugin, load it from the working tree instead of the installed copy:
+  `claude --plugin-dir plugins/lunette`, and `/reload-plugins` after an edit.
+  `claude plugin validate .` checks the marketplace and the plugin.
 - Agents read [`AGENTS.md`](./AGENTS.md).

@@ -28,5 +28,16 @@
         ]
       }
     ]
+  },
+  "extraKnownMarketplaces": {
+    "lunette": {
+      "source": {
+        "source": "github",
+        "repo": "LunetteOrg/starter"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "lunette@lunette": true
   }
 }
