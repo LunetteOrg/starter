@@ -84,8 +84,6 @@ only later in a scaffolded project's own CI.
 - The contract is a coupling point: changing a placeholder means changing every
   template *and* the CLI together (they live in one repo, so it is one PR).
 - Text-file coverage is a list; a new config file type needs adding to it.
-- Both `CLAUDE.md` files are in scope when working here, so the root one must say
-  explicitly that the template's rules address derived projects.
 
 ### When to deviate (revisit triggers)
 
@@ -98,8 +96,8 @@ only later in a scaffolded project's own CI.
 - **A `.lunette-template` marker file** whose presence meant "template" and whose
   absence meant "scaffolded project". Downstream the signal was the *absence* of a
   file, readable only by someone who already knew to look for it, which is
-  knowledge that arrives through the same `CLAUDE.md` that can state the rule
-  directly. Upstream it was redundant with the path. Its one advantage, that a
+  knowledge that arrives through the same agent instructions that can state the
+  rule directly. Upstream it was redundant with the path. Its one advantage, that a
   template folder copied out of this monorepo still declares what it is, covers a
   workflow nobody follows.
 - **A path rule alone** ("under `packages/create/templates/` → template"). It keys

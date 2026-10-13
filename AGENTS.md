@@ -1,86 +1,39 @@
-# CLAUDE.md — the Lunette starter
+<!-- lunette:start — managed by lntt-config agents sync: edit the source, not this block -->
+# Working in a Lunette project
 
-## What this repo is
+- **Where things are.** Project values: `.agents/config.jsonc` (or `.yml`), read with
+  `lntt-config get <key>`, never parsed by hand: it has comments. How the team works:
+  `docs/process/`. Decisions: the logs in `recording` (ADRs, PDRs), one file per
+  subject, corrected in place, written and checked with the `decisions` skill. Who
+  you are talking to: `lntt-config operator` (personal, from `.agents/local/` or
+  `~/.agents/`; with no profile, a developer).
+- **Shared decisions live in the repo.** A decision that matters to more than one
+  person goes in a record, a process description or a comment in the affected file,
+  never only in a private or agent-local note.
+- **Give criteria before options.** Lead with the axes that decide between
+  alternatives, drawn from verifiable constraints. Recommend where they converge;
+  where they don't, present the choice with the criteria beside it.
+- **Claims carry their proof.** "It works", "it passes", "it is faster" comes with
+  the command and its outcome, a `path:line` or a commit; what was not run is
+  written as deduced, from what.
+- **An agent never merges on its own.** A merge needs an explicit go from a person.
+- **Every review runs the `decisions` skill in check mode**, before the line-by-line
+  pass, and reports its findings with the review.
+<!-- lunette:end -->
 
-The **Lunette starter**: it holds `@lntt/create` (the scaffolder) and the Lunette
-**templates**. It is *not* itself a Lunette template — it is the system that ships
-them. Read [`docs/adr/`](./docs/adr/README.md) before changing anything the ADRs
-cover, especially [the template model](./docs/adr/template-model.md).
+# The Lunette starter
 
-## Two levels — do not confuse them
+This repo holds `@lntt/create` (the scaffolder), the Lunette templates it ships, and
+the shared pieces they use. It is **not** itself a Lunette template: it is the system
+that ships them. The layout and the commands are in the [README](./README.md).
 
-- **This monorepo** governs the *templates system*: the CLI, the template model,
-  the scaffolding contract. Its decisions live in `docs/adr/`.
-- **Each template** (`packages/create/templates/<framework>/`) is a **self-contained
-  project** with its *own* tooling (its own `biome.json`, `lefthook.yml`, `docs/adr/`,
-  `.claude/`, …) and its *own* application architecture. Those files are template
-  content — do **not** "fix" them to match this repo, and do not import this repo's
-  conventions into them.
-- Templates are **duplicated, not shared** ([template model](./docs/adr/template-model.md#templates-are-folders-bundled-inside-the-cli)). We extract shared packages
-  only once patterns prove themselves — not before (YAGNI).
-
-**Two decision logs, one rule.** `docs/adr/` at this root holds decisions about the
-templates system; `packages/create/templates/*/docs/adr/` (and `docs/product/`) hold a
-template's own, and travel into every project scaffolded from it. Both are one file
-per subject, **corrected in place**, with rejected options in *Discarded directions*
-(the `decisions` skill; [recording](./docs/process/recording.md)). A decision is
-filed by what it governs, not by where it was discussed.
-
-## Working on the CLI
-
-- `packages/create/bin/index.ts` — TypeScript, run directly in-repo on **Node ≥24**
-  (native type stripping, no build step). Published, it is **compiled to `dist/`**
-  (`prepack`) — Node won't strip types under `node_modules` ([CLI runtime and publishing](./docs/adr/cli-runtime-and-publishing.md)).
-  `pnpm --filter @lntt/create test` scaffolds each template into a temp dir and
-  asserts the result.
-- Tooling here is scoped to this repo's own packages: Biome lints
-  `packages/create/{bin,test}` and `packages/project-config/` (never the templates),
-  plus lefthook + commitlint. `pnpm lint`, `pnpm typecheck`, `pnpm test` (every
-  package).
-
-## Releasing
-
-**npm publish happens in CI, never locally.** The flow:
-
-1. Bump `packages/create/package.json` and commit `chore(release): @lntt/create X.Y.Z`
-   directly on `main` (releases don't go through a PR).
-2. `gh release create vX.Y.Z --generate-notes` — the tag **must** match the package
-   version. **Always** pass `--generate-notes`: every release must ship generated
-   notes (the merged-PR changelog since the previous tag).
-3. Then **hand-integrate** what the generator misses: `--generate-notes` lists
-   merged PRs only, so add any user-facing change that landed as a direct commit
-   (`git log vPREV..vX.Y.Z --no-merges`) via `gh release edit vX.Y.Z --notes …`.
-   Skip the `chore(release)` bump and repo-internal commits (not shipped).
-
-Publishing a GitHub Release triggers `.github/workflows/release.yml`, which runs
-`pnpm test` as a gate, verifies `tag == package version`, and publishes via npm
-**OIDC trusted publishing** (`--provenance`, no NPM token; [CLI runtime and publishing](./docs/adr/cli-runtime-and-publishing.md)).
-Do not run `npm publish` by hand.
-
-## The scaffolding contract
-
-If you change a placeholder or the dotfile scheme ([scaffolding contract](./docs/adr/scaffolding-contract.md)),
-change the **CLI and every template together** — they live in one repo, so it is
-one PR.
-
-## Adding a template
-
-A variant is a folder under `packages/create/templates/`, named by its **web
-framework** (`react-router`, later `hono`, …). It must honour the shared base
-([template model](./docs/adr/template-model.md)) and the scaffolding
-contract; then it is selectable via `--template <name>`.
-
-## Conventions
-
-- Conventional commits; no `Co-Authored-By:` / "Generated with …" trailers (the
-  `commit-msg` hook strips them).
-- Trunk-based, short-lived branches, one PR per change.
-
-## Key paths
-
-- ADRs (this system): `docs/adr/`
-- The CLI: `packages/create/bin/index.ts`
-- Templates: `packages/create/templates/<framework>/`
-- Project configuration: `.agents/config.jsonc`, read and edited through
-  `packages/project-config/` (`lntt-config get <key>`; never `jq` or `JSON.parse`,
-  the file has comments)
+- **Two levels, never confused.** This repo's [`docs/adr/`](./docs/adr/README.md)
+  decides the templates *system*: the CLI, the [template model](./docs/adr/template-model.md),
+  the [scaffolding contract](./docs/adr/scaffolding-contract.md). Each template
+  (`packages/create/templates/<framework>/`) is a self-contained project with its own
+  tooling, decisions and agent files: template content. Do not "fix" it to match
+  this repo, and do not bring this repo's conventions into it. A decision is filed by
+  what it governs, not by where it came up.
+- **A change to the scaffolding contract changes the CLI and every template in the
+  same pull request.**
+- **Releases are published by CI, never by hand** ([delivery](./docs/process/delivery.md)).
