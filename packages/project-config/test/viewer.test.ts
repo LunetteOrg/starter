@@ -57,13 +57,13 @@ describe('detecting where the session runs', () => {
 describe('choosing the viewer', () => {
   test('the first preference available in this session wins', () => {
     const env = { TERM_PROGRAM: 'Orca' }
-    const choice = chooseViewer({ env, preferences: ['wave', 'orca', 'browser'], has: has('orca', 'open') })
+    const choice = chooseViewer({ env, preferences: ['wave', 'orca', 'browser'], has: has('orca', 'open', 'xdg-open') })
     assert.equal(choice.viewer, 'orca')
     assert.match(choice.reason, /preference/)
   })
 
   test('a preference that is not available here is skipped: Orca outside Orca', () => {
-    const choice = chooseViewer({ env: {}, preferences: ['orca', 'browser'], has: has('orca', 'open') })
+    const choice = chooseViewer({ env: {}, preferences: ['orca', 'browser'], has: has('orca', 'open', 'xdg-open') })
     assert.equal(choice.viewer, 'browser')
   })
 
@@ -74,7 +74,7 @@ describe('choosing the viewer', () => {
   test('Claude desktop and Chrome are agent actions: the script names the call, it cannot make it', () => {
     const desktop = chooseViewer({ env: { CLAUDE_CODE_ENTRYPOINT: 'claude-desktop' }, preferences: [], has: has() })
     assert.deepEqual([desktop.viewer, desktop.agentCall], ['claude-desktop', 'preview_start'])
-    const chrome = chooseViewer({ env: {}, preferences: ['chrome'], has: has('open') })
+    const chrome = chooseViewer({ env: {}, preferences: ['chrome'], has: has('open', 'xdg-open') })
     assert.deepEqual([chrome.viewer, chrome.agentCall], ['chrome', 'navigate'])
   })
 
