@@ -41,6 +41,15 @@ keep them clean. The `commit-msg` hook strips them as a backstop (`lefthook.yml`
 - Trunk-based, one PR per story, branches max 1-2 days
 - Tech stories merge freely; user stories merge behind feature flag (see the [feature-flags guidance](docs/guidances/app-infrastructure.md#feature-flags))
 
+### Checking a running app with `curl`
+
+- Write every header out in full: `curl -H "Accept-Language: en-US" http://localhost:5173/`.
+  A header built from an expansion (`${1:+-H "…"}`, `set -- $args`, `for a in "-H …"`)
+  is not split into words in zsh, so `curl` silently drops it. Several headers go in an
+  array or through `"$@"`.
+- Before concluding that the server ignores a header or a cookie, confirm the request
+  carries it: `curl -v` prints what was sent.
+
 ## Architecture Rules
 
 - `process.env` banned outside `config/env.ts`
