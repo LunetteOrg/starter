@@ -32,10 +32,10 @@ only. This is the product-side sibling of `adr-check` and `story-check`.
    - `<iframe>` still pointing at the dashed placeholder on an `accepted` decision
      (never wired to a real prototype).
 
-4. **Check immutability & status.** If the `.lunette-template` marker is **absent**
-   (derived project), flag any PDR whose `## Decision` appears to have been
-   rewritten in meaning rather than superseded (compare against git history where
-   available). Flag `superseded by YYYY-MM-DD-…` pointing at a missing PDR.
+4. **Check immutability & status.** Flag any PDR whose `## Decision` appears to
+   have been rewritten in meaning rather than superseded (compare against git
+   history where available). Flag `superseded by YYYY-MM-DD-…` pointing at a
+   missing PDR.
 
 5. **Report.** For each finding: `path:line`, one-line explanation, and the
    recommended action (scaffold a page via `product-decision`, fix an import, wire

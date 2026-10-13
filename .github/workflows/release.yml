@@ -44,7 +44,7 @@ jobs:
 
       # Auth is OIDC via the trusted publisher configured on npmjs.com for this
       # repo + workflow — no NPM_TOKEN secret. `prepack` compiles bin/ → dist/
-      # (ADR-0005); --provenance is automatic under trusted publishing.
+      # (docs/adr/cli-runtime-and-publishing.md); --provenance is automatic under trusted publishing.
       - name: Publish
         run: npm publish --provenance --access public
         working-directory: packages/create

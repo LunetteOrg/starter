@@ -3,20 +3,16 @@
 Decisions about the **templates system** — `@lntt/create` and how templates are
 defined, organized, and scaffolded. A single template's *own* application
 architecture is recorded inside that template (e.g.
-`packages/create/templates/react-router/docs/adr/`), not here. See
-[ADR-0001](./0001-recording-decisions.md) for the scope split.
+`packages/create/templates/react-router/docs/adr/`), not here. How this log is
+kept is in [recording decisions](./recording-decisions.md).
 
-| ADR | Title | Status |
+| ADR | Subject | Status |
 |---|---|---|
-| [0001](./0001-recording-decisions.md) | Recording decisions | accepted |
-| [0002](./0002-what-is-a-lunette-template.md) | What a Lunette template is | accepted |
-| [0003](./0003-create-vite-monorepo-model.md) | Templates as bundled folders (the create-vite model) | accepted |
-| [0004](./0004-scaffolding-contract.md) | The scaffolding contract | accepted |
-| [0005](./0005-publish-compiled-cli.md) | Ship the CLI as compiled JavaScript | accepted |
-| [0006](./0006-decision-logs-in-generated-projects.md) | Decision logs in generated projects (thematic seed, atomic dated evolution) | accepted |
-| [0007](./0007-explicit-ts-import-extensions.md) | Explicit `.ts` import extensions for Node-executed code | accepted |
+| [recording-decisions](./recording-decisions.md) | How this repo records its decisions, and the scope split with template logs | accepted |
+| [template-model](./template-model.md) | What a Lunette template is; templates as folders bundled inside the CLI | accepted |
+| [scaffolding-contract](./scaffolding-contract.md) | Placeholders, dotfiles and text-file coverage every template honours | accepted |
+| [cli-runtime-and-publishing](./cli-runtime-and-publishing.md) | The CLI runs as TypeScript in-repo, ships compiled; explicit `.ts` imports | accepted |
+| [decision-logs-in-generated-projects](./decision-logs-in-generated-projects.md) | The decision logs templates ship to generated projects | accepted |
 
-New ADR: copy [`template.md`](./template.md) (MADR: frontmatter with
-`status`/`date`/`deciders`/`tags`, then Context / Decision / Alternatives
-considered / Consequences with revisit triggers) to `NNNN-short-kebab-title.md`,
-keep it short, add a row above.
+A new subject gets its own file: copy [`template.md`](./template.md) to
+`<subject>.md` and add a row above. A changed decision is rewritten in its file.
