@@ -10,6 +10,23 @@
       "type": "string",
       "description": "Path or URL of this schema, for editors."
     },
+    "lunette": {
+      "type": "object",
+      "description": "Where this project came from: written once by @lntt/create when it scaffolds the project. A template update is computed from it.",
+      "additionalProperties": false,
+      "required": ["template", "version"],
+      "properties": {
+        "template": {
+          "type": "string",
+          "description": "The Lunette template the project was scaffolded from (react-router, …)."
+        },
+        "version": {
+          "type": "string",
+          "description": "The @lntt/create version that scaffolded it.",
+          "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$"
+        }
+      }
+    },
     "recording": {
       "type": "object",
       "description": "How the project records its decisions: which logs exist, where, and in which language.",

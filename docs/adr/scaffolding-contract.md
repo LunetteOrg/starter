@@ -41,9 +41,18 @@ The rewrite runs over a known set of text extensions (including `.editorconfig`
 and dotless config basenames). A template must not hide a placeholder in a file
 type outside that set.
 
+### Provenance
+
+Every template ships `.agents/config.jsonc` with a `lunette` section naming the
+template and holding the placeholder `__LNTT_CREATE_VERSION__`; the CLI rewrites it
+to its own version. The section is written once and read when a template update is
+computed for the project (#24).
+
 ### After the copy
 
-After copying and rewriting, the CLI runs `git init -b main` and an initial commit.
+After copying and rewriting, the CLI runs `git init -b main` and an initial commit
+whose subject names both: `chore: scaffold <name> from @lntt/create <version>
+(template <template>)`.
 
 ### A template carries no mode marker
 

@@ -62,7 +62,7 @@ function copyTemplate(srcDir: string, destDir: string): void {
   walk(srcDir)
 }
 
-function renamePlaceholders(rootDir: string, name: string): void {
+function renamePlaceholders(rootDir: string, name: string, version: string): void {
   const scope = `@${name}`
   const scopeRe = /@starter(?=[\\/])/g
   const walk = (dir: string): void => {
@@ -77,6 +77,7 @@ function renamePlaceholders(rootDir: string, name: string): void {
       const orig = readFileSync(full, 'utf8')
       let c = orig
         .replace(scopeRe, scope)
+        .replaceAll('__LNTT_CREATE_VERSION__', version)
         .replaceAll('starter-db', `${name}-db`)
         .replaceAll('starter-web', `${name}-web`)
         .replaceAll('POSTGRES_USER: starter', `POSTGRES_USER: ${name}`)
@@ -98,11 +99,12 @@ function renamePlaceholders(rootDir: string, name: string): void {
   walk(rootDir)
 }
 
-function gitInit(rootDir: string, name: string): void {
+function gitInit(rootDir: string, name: string, version: string, template: string): void {
   try {
     execSync('git init -q -b main', { cwd: rootDir, stdio: 'ignore' })
     execSync('git add .', { cwd: rootDir, stdio: 'ignore' })
-    execSync(`git commit -q -m "chore: scaffold ${name} from @lntt/create"`, { cwd: rootDir, stdio: 'ignore' })
+    const subject = `chore: scaffold ${name} from @lntt/create ${version} (template ${template})`
+    execSync(`git commit -q -m "${subject}"`, { cwd: rootDir, stdio: 'ignore' })
   } catch {
     // git missing/failed — non-fatal
   }
@@ -129,8 +131,9 @@ async function main(): Promise<void> {
 
   log(`Scaffolding "${name}" from template "${template}"...`)
   copyTemplate(join(TEMPLATES_DIR, template), targetDir)
-  renamePlaceholders(targetDir, name)
-  gitInit(targetDir, name)
+  const { version } = JSON.parse(readFileSync(join(TEMPLATES_DIR, '../package.json'), 'utf8')) as { version: string }
+  renamePlaceholders(targetDir, name, version)
+  gitInit(targetDir, name, version, template)
   log(`\n✔ Created ${name} (template: ${template})\n\nNext:\n  cd ${name}\n  pnpm install\n  pnpm infra:up\n  pnpm dev`)
 }
 

@@ -10,7 +10,20 @@ const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/index.ts')
 
 function scaffold(name: string, template: string): string {
   const dir = mkdtempSync(join(tmpdir(), 'lntt-create-'))
-  execFileSync('node', [BIN, name, '--template', template], { cwd: dir, stdio: 'ignore' })
+  // gc.auto=0: the initial commit is large enough to start a background `git gc`,
+  // which would still be writing .git/objects/pack when the test removes the dir.
+  // An identity, because CI has none and the CLI skips the commit without one.
+  const env = {
+    ...process.env,
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'gc.auto',
+    GIT_CONFIG_VALUE_0: '0',
+    GIT_AUTHOR_NAME: 'test',
+    GIT_AUTHOR_EMAIL: 'test@example.org',
+    GIT_COMMITTER_NAME: 'test',
+    GIT_COMMITTER_EMAIL: 'test@example.org',
+  }
+  execFileSync('node', [BIN, name, '--template', template], { cwd: dir, stdio: 'ignore', env })
   return join(dir, name)
 }
 
@@ -40,6 +53,7 @@ test('default template scaffolds a complete, renamed starter', () => {
     assert.ok(existsSync(join(app, '.gitignore')), '.gitignore present')
     assert.equal(JSON.parse(readFileSync(join(app, 'packages/ui/package.json'), 'utf8')).name, '@my-app/ui')
     assert.deepEqual(filesContaining(app, '@starter'), [], 'no @starter residue')
+    assert.deepEqual(filesContaining(app, '__LNTT_'), [], 'no provenance placeholder residue')
   } finally {
     rmSync(dirname(app), { recursive: true, force: true })
   }
@@ -49,4 +63,18 @@ test('unknown template is rejected', () => {
   const dir = mkdtempSync(join(tmpdir(), 'lntt-create-'))
   assert.throws(() => execFileSync('node', [BIN, 'x', '--template', 'nope'], { cwd: dir, stdio: 'ignore' }))
   rmSync(dir, { recursive: true, force: true })
+})
+
+test('a scaffolded project records the template and the CLI version it came from', () => {
+  const app = scaffold('my-app', 'react-router')
+  try {
+    const version = JSON.parse(readFileSync(resolve(dirname(BIN), '../package.json'), 'utf8')).version
+    const config = readFileSync(join(app, '.agents/config.jsonc'), 'utf8')
+    const lunette = JSON.parse(config.replace(/^\s*\/\/.*$/gm, '')).lunette
+    assert.deepEqual(lunette, { template: 'react-router', version })
+    const subject = execFileSync('git', ['log', '-1', '--format=%s'], { cwd: app, encoding: 'utf8' }).trim()
+    assert.equal(subject, `chore: scaffold my-app from @lntt/create ${version} (template react-router)`)
+  } finally {
+    rmSync(dirname(app), { recursive: true, force: true })
+  }
 })
