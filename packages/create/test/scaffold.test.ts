@@ -12,7 +12,17 @@ function scaffold(name: string, template: string): string {
   const dir = mkdtempSync(join(tmpdir(), 'lntt-create-'))
   // gc.auto=0: the initial commit is large enough to start a background `git gc`,
   // which would still be writing .git/objects/pack when the test removes the dir.
-  const env = { ...process.env, GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'gc.auto', GIT_CONFIG_VALUE_0: '0' }
+  // An identity, because CI has none and the CLI skips the commit without one.
+  const env = {
+    ...process.env,
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'gc.auto',
+    GIT_CONFIG_VALUE_0: '0',
+    GIT_AUTHOR_NAME: 'test',
+    GIT_AUTHOR_EMAIL: 'test@example.org',
+    GIT_COMMITTER_NAME: 'test',
+    GIT_COMMITTER_EMAIL: 'test@example.org',
+  }
   execFileSync('node', [BIN, name, '--template', template], { cwd: dir, stdio: 'ignore', env })
   return join(dir, name)
 }
