@@ -83,7 +83,7 @@ describe('checkMigration', () => {
 
 describe('repo migrations', () => {
   // Self-arming: no migrations today → scans nothing → passes. Guards every
-  // real migration the moment one lands (ADR-0005: expand-migrate-contract and the migration-safety guard).
+  // real migration the moment one lands (docs/adr/data-and-migrations.md: expand-migrate-contract and the migration-safety guard).
   it('have no safety violations', async () => {
     await assertNoMigrationSafetyViolations(REPO_ROOT)
   })

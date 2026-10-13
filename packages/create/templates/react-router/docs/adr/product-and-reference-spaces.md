@@ -4,7 +4,7 @@ date: 2026-07-08
 tags: [product, pdr, storybook, reference]
 ---
 
-# ADR-0007: Product-decision and reference spaces
+# Product-decision and reference spaces
 
 ## Context
 
@@ -12,11 +12,9 @@ A real project makes many **product & design** decisions, and often starts from
 **prior material** — a legacy app, database dumps, prototypes. Two gaps in the
 scaffold:
 
-1. ADRs record **architecture** — a small thematic seed plus its dated evolution
-   ([ADR-0001](./0001-recording-decisions.md)). Product & design choices are a
-   different subject matter, numerous and frequent; folding them into the
-   architecture log would bloat it or leave them unrecorded. They get their own
-   space, split by subject, not structure.
+1. ADRs record **architecture**. Product & design choices are a different subject
+   matter, numerous and frequent; folded into the architecture log they would bloat
+   it or go unrecorded. They get their own log, split by subject matter.
 2. Reference material is heterogeneous (foreign languages, SQL dumps, prototype
    exports), potentially large, and must never enter the app's build/lint/test —
    yet it should be explorable from the same clone, so the evolution reads in one
@@ -29,9 +27,9 @@ won't read markdown in a repo.
 
 Ship three spaces in every scaffolded project:
 
-- **`docs/product/`** — the granular **product-decision log** (PDR), one markdown
-  file per decision, append-only once scaffolded (same immutability as ADRs). This
-  is the *source of truth* for product/design choices, complementary to `docs/adr/`.
+- **`docs/product/`**: the **product-decision log** (PDR), one file per product
+  subject, corrected in place like the ADRs ([recording decisions](./recording-decisions.md)).
+  It is the *source of truth* for product/design choices, next to `docs/adr/`.
 - **`reference/`** — a top-level **quarantine** for raw input. Committed (the
   reference travels with the code) but excluded from the toolchain: it is no
   workspace package (so Turbo/pnpm ignore it) and is added to Biome's ignore list,

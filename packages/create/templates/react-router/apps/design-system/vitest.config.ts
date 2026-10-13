@@ -4,11 +4,11 @@ import { defineConfig } from 'vitest/config'
 
 /**
  * Component-test project: runs the stories co-located in `packages/ui` as real
- * browser tests (ADR-0004 — component tests). Playwright is the browser
+ * browser tests (docs/adr/testing.md — component tests). Playwright is the browser
  * ENGINE here, not the runner: `@playwright/test` stays reserved for e2e
- * (ADR-0004 — testing strategy).
+ * (docs/adr/testing.md — testing strategy).
  *
- * Self-arming (ADR-0002 — self-arming enforcement): the template ships no live
+ * Self-arming (docs/adr/architecture-and-boundaries.md — self-arming enforcement): the template ships no live
  * component, so at day-0 this project collects zero stories and passes
  * (`passWithNoTests`). It arms itself the moment the first real component +
  * story lands in `packages/ui`.

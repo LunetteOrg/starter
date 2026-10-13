@@ -7,7 +7,7 @@ description: Scaffold a product/design decision (PDR) and its Storybook review p
 
 Create a **PDR** (product decision record) and the **Storybook page** that renders
 it for review, keeping the markdown as the single source of truth (see
-[ADR-0007](../../../docs/adr/0007-product-and-reference-spaces.md) and
+[product & reference spaces](../../../docs/adr/product-and-reference-spaces.md) and
 [the product-decisions guidance](../../../docs/guidances/product-decisions.md)).
 
 ## Procedure
@@ -15,22 +15,23 @@ it for review, keeping the markdown as the single source of truth (see
 1. **Confirm intent.** Get the decision title and the gist (context, the choice,
    why). If the user is only exploring, stop — a PDR records a *made* decision.
 
-2. **Form the id from today's date.** The record id is `YYYY-MM-DD-short-kebab-title`
-   (today's date — there is no shared counter to contend, so concurrent PRs never
-   collide on an id). Never rewrite or rename existing ones — records are
-   append-only in a scaffolded project.
+2. **Find the subject.** List `docs/product/decisions/`. If a file covers the
+   subject, the decision is written into it: rewrite what changed, keep the rest,
+   move the options not taken to *Discarded directions*. A new file, named after the
+   subject in kebab-case (`onboarding.md`), only for a new subject.
 
-3. **Write the PDR.** Copy `docs/product/decisions/template.md` to
-   `docs/product/decisions/YYYY-MM-DD-short-kebab-title.md` and fill Status/Date/
-   Reviewers, Context, Decision, Rationale, Consequences. Use today's date. Keep it
-   short and in active voice. Link any `reference/` material it draws on by relative
+3. **Write the PDR.** For a new subject, copy `docs/product/decisions/template.md`
+   to `docs/product/decisions/<subject>.md`. Fill Status/Date/Reviewers, Context,
+   Decision, Consequences, Discarded directions; Date is when the decision last
+   changed. Keep it short and in active voice; show the user the file, or the diff
+   of a rewritten one, before saving. Link any `reference/` material it draws on by relative
    path.
 
 4. **Write the Storybook page.** Copy the shape of
    `apps/design-system/src/Product/Example.mdx` to
    `apps/design-system/src/Product/<TitleInPascalOrKebab>.mdx`:
-   - `import pdr from '../../../../docs/product/decisions/YYYY-MM-DD-….md?raw'`
-   - `<Meta title="Product/<Human Title>" />` — one page per decision under the
+   - `import pdr from '../../../../docs/product/decisions/<subject>.md?raw'`
+   - `<Meta title="Product/<Human Title>" />` — one page per PDR file under the
      `Product/` hierarchy.
    - `<Markdown>{pdr}</Markdown>` to render the record (do **not** duplicate the
      prose into the MDX — render it).

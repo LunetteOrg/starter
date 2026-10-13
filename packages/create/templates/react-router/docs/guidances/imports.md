@@ -3,7 +3,7 @@
 - Status: guidance
 
 > **Recommended, not enforced (yet).** The *decision* — why explicit `.ts`
-> everywhere — lives in [ADR-0003 → Module resolution & import convention](../adr/0003-build-and-tooling.md#module-resolution--import-convention).
+> everywhere — lives in [build & tooling → Module resolution & import convention](../adr/build-and-tooling.md#module-resolution--import-convention).
 > This page is the operational how-to. It is not linted today; if a rule is added
 > it must carve out generated code (see below).
 

@@ -5,7 +5,7 @@ import { expect } from 'vitest'
 /**
  * Guards against over-serialization of React Router 7 loader/action returns.
  *
- * Why this exists (ADR-0002 — loader/action serialization boundary): in RR7 the
+ * Why this exists (docs/adr/architecture-and-boundaries.md — loader/action serialization boundary): in RR7 the
  * value a loader/action returns is serialized *whole* (turbo-stream) and shipped
  * to the browser — inline in the SSR HTML and again in every `.data` request. A
  * field is in the payload even if no component reads it, so checking client-side
@@ -187,7 +187,7 @@ export function findReturnSpreads(source: string): ReturnSpreadViolation[] {
 /**
  * Auto-discovers a layer's source files and asserts none spread a value into a
  * returned object literal (the `return { ...entity }` over-serialization footgun,
- * ADR-0002 — loader/action serialization boundary). Mirrors
+ * docs/adr/architecture-and-boundaries.md — loader/action serialization boundary). Mirrors
  * {@link assertLayerBoundaries}: it throws when the glob matches no files, so a
  * moved folder fails loudly instead of passing vacuously.
  *
@@ -222,7 +222,7 @@ export async function assertNoEntitySpreadInReturn(opts: NoReturnSpreadOptions):
 
   const message =
     `${layer}: object-literal spread found in a loader/action return — this over-serializes ` +
-    `the whole entity to the browser (ADR-0002 — loader/action serialization boundary). ` +
+    `the whole entity to the browser (docs/adr/architecture-and-boundaries.md — loader/action serialization boundary). ` +
     `Return an explicit, flat read-view/DTO literal instead of \`return { ...entity }\`:\n` +
     violations.map((v) => `  - ${v.file}:${v.line}  ${v.snippet}`).join('\n')
 

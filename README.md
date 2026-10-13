@@ -25,6 +25,5 @@ pnpm create @lntt my-app --template react-router
   default starter, `cd packages/create/templates/react-router && pnpm install` — it is a
   self-contained monorepo and is intentionally **not** part of this repo's
   workspace (the root `pnpm-workspace.yaml` only globs `packages/*`).
-- A template's own ADRs may be edited freely while it is being drafted here; a
-  scaffolded project's are append-only. The path says which you are in — see
-  `CLAUDE.md` and the [scaffolding contract](./docs/adr/scaffolding-contract.md).
+- A template's own ADRs and PDRs, like this repo's, are one file per subject,
+  corrected in place — see `CLAUDE.md` and [recording](./docs/process/recording.md).

@@ -24,8 +24,9 @@ the scaffolding contract is a system ADR even when it was found while working on
 template. Two `CLAUDE.md` files are in scope inside this repo; the root one says
 which rules a template's files follow while the template is drafted here.
 
-What a template hands to its generated projects (the shape of their logs) is itself a
-system decision: [decision logs in generated projects](../adr/decision-logs-in-generated-projects.md).
+Both levels keep their logs the same way: one file per subject, corrected in place.
+That a template ships its logs in this shape is part of the shared base
+([template model](../adr/template-model.md#the-shared-base)).
 
 ## Discarded directions
 

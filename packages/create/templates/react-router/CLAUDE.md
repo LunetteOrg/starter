@@ -2,13 +2,11 @@
 
 ## Project Overview
 
-TypeScript monorepo starter template. Architectural decisions live in `docs/adr/`: a thematic **seed** (numbered `000N-*`, one file per area) plus **dated** evolution files (`YYYY-MM-DD-*`, one decision each — new decisions are dated files, never appended into a seed file, so concurrent PRs never collide on an id). Recommended patterns for the app you build on the template, which it does not ship, live in `docs/guidances/`. Read the relevant ADR before changing anything it covers. See [ADR-0001](docs/adr/0001-recording-decisions.md).
+TypeScript monorepo starter template. Architectural decisions live in `docs/adr/` and product decisions in `docs/product/decisions/`: one file per subject, corrected in place. Recommended patterns for the app you build on the template, which it does not ship, live in `docs/guidances/`. Read the relevant ADR before changing anything it covers. See [recording decisions](docs/adr/recording-decisions.md).
 
-**ADRs here are append-only.** An accepted ADR is immutable in meaning: to change
-a decision, write a **new dated ADR** that supersedes it — never rewrite the old
-one in place. This holds down to the `## ` section level of a seed file: mark the
-section `superseded by YYYY-MM-DD-…`, leave it where it is, and record the
-replacement as a new file. The history accumulates; it is never overwritten.
+**A changed decision is rewritten in its file.** The file states what holds now,
+options not taken go in *Discarded directions*, and git keeps the history: no
+`superseded by`, no struck-through text, no new file for an existing subject.
 
 **Record shared decisions in the repo.** Any team/project decision (config
 choices, architectural trade-offs, conventions) must live in a shared, in-repo
@@ -45,15 +43,15 @@ keep them clean. The `commit-msg` hook strips them as a backstop (`lefthook.yml`
 
 - `process.env` banned outside `config/env.ts`
 - `new Date()` banned — use `Temporal`
-- `throw new Error()` banned — use `errore` typed errors (ADR-0002 — typed errors)
+- `throw new Error()` banned — use `errore` typed errors (docs/adr/architecture-and-boundaries.md — typed errors)
 - Domain must not import framework (React Router) or `lib/`
 - Routes consume `context.app` only — never import use-cases/domain/bootstrap directly
-- Loaders/actions return an explicit, flat read-view/DTO literal — never a domain/db entity, never a nested entity, never `return { ...entity }` (RR7 serializes the return whole to the browser). Enforced by `assertNoEntitySpreadInReturn` + a per-route golden test (ADR-0002 — loader/action serialization boundary)
-- Use-cases compose via injected deps in `bootstrap/` — never import each other (ADR-0002 — use-case composition)
+- Loaders/actions return an explicit, flat read-view/DTO literal — never a domain/db entity, never a nested entity, never `return { ...entity }` (RR7 serializes the return whole to the browser). Enforced by `assertNoEntitySpreadInReturn` + a per-route golden test (docs/adr/architecture-and-boundaries.md — loader/action serialization boundary)
+- Use-cases compose via injected deps in `bootstrap/` — never import each other (docs/adr/architecture-and-boundaries.md — use-case composition)
 - `tryAsync()` at repository boundary, `matchError()` at route layer
-- `.spec.ts` = unit test, `.test.ts` = integration test, `*.stories.tsx` in `packages/ui` = component test (the story runs in a real browser; a11y violations fail the build — ADR-0004 — component tests)
+- `.spec.ts` = unit test, `.test.ts` = integration test, `*.stories.tsx` in `packages/ui` = component test (the story runs in a real browser; a11y violations fail the build — docs/adr/testing.md — component tests)
 - Never `vi.mock` the database — use `withTestDb` + transaction rollback
-- Import boundaries are enforced twice: Biome overrides in `biome.json` + per-app `app/arch.spec.ts` (ADR-0002 — import boundaries). Keep both in sync when boundaries change.
+- Import boundaries are enforced twice: Biome overrides in `biome.json` + per-app `app/arch.spec.ts` (docs/adr/architecture-and-boundaries.md — import boundaries). Keep both in sync when boundaries change.
 
 ## Reviews
 
@@ -82,7 +80,7 @@ no PR (local working diff), a chat report is fine.
 ## Key Paths
 
 - ADRs: `docs/adr/` (index in `docs/adr/README.md`) · Guidances: `docs/guidances/` (app-level recommendations, not shipped)
-- Product decisions: `docs/product/` (PDR log) · rendered for review in Storybook's `Product/` section · raw input in `reference/` (quarantined) — see ADR-0007
+- Product decisions: `docs/product/` (PDR log) · rendered for review in Storybook's `Product/` section · raw input in `reference/` (quarantined) — see docs/adr/product-and-reference-spaces.md
 - Contributing: `CONTRIBUTING.md`
 - Architecture test helpers: `packages/test-utils/src/arch.ts`
 - Review skills: `.claude/skills/adr-check/`, `.claude/skills/story-check/`, `.claude/skills/product-check/`, `.claude/skills/design-check/` · Scaffolding skills: `.claude/skills/product-decision/`, `.claude/skills/design-explore/`

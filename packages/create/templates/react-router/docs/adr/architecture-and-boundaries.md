@@ -4,7 +4,7 @@ date: 2026-07-02
 tags: [architecture, boundaries, errors, use-cases, serialization]
 ---
 
-# ADR-0002: Architecture & boundaries
+# Architecture & boundaries
 
 This template's application architecture is **hexagonal (ports and adapters)**: a pure domain at the center, the web framework (React Router) and infrastructure (DB, email, …) at the edges behind injected ports. Concretely — how each app is layered, how those layers are mechanically kept apart, how errors flow through them as typed values, how use-cases compose in the composition root, and how the template arms its own enforcement the moment a real app appears.
 
@@ -223,7 +223,7 @@ Enforced by two nets, mirroring [import boundaries](#import-boundaries): a Biome
 
 ### Context
 
-Every use-case is a factory `makeX(deps)` returning an async function whose result is a union of success and typed errors ([layered architecture](#layered-architecture), [typed errors](#typed-errors)). As apps grow, use-cases need to reuse one another (e.g. "publish post" needs "detect language" and "translate upfront"), some flows need a shared database transaction, and some side effects must not fail the main operation. Alternatives considered: orchestrating multiple use-cases from the route (business logic leaks into the thin layer), a dedicated orchestrator layer (premature), and `Result`-pipe helpers to chain `T | Err` steps (deferred until the boilerplate actually hurts).
+Every use-case is a factory `makeX(deps)` returning an async function whose result is a union of success and typed errors ([layered architecture](#layered-architecture), [typed errors](#typed-errors)). As apps grow, use-cases need to reuse one another (e.g. "publish post" needs "detect language" and "translate upfront"), some flows need a shared database transaction, and some side effects must not fail the main operation.
 
 ### Decision
 
@@ -321,3 +321,13 @@ application code → ship as a template to copy.
   layout `app/{domain,use-cases,routes}/`; `assertLayerBoundaries` throws on an
   empty glob, so an app that arms the test without one of those folders fails
   until the template is adapted to its actual layers.
+
+## Discarded directions
+
+Use-case composition:
+
+- **Orchestrating several use-cases from the route.** Business logic leaks into the
+  thin layer.
+- **A dedicated orchestrator layer.** Premature for the apps this template starts.
+- **`Result`-pipe helpers to chain `T | Err` steps.** Deferred until the boilerplate
+  actually hurts.

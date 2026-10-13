@@ -1,5 +1,5 @@
 // @ts-nocheck — fixture: a loader that over-serializes by spreading the entity.
-// This is footgun #1 (ADR-0002 — loader/action serialization boundary): every
+// This is footgun #1 (docs/adr/architecture-and-boundaries.md — loader/action serialization boundary): every
 // column of `user` (passwordHash, tokens, internal flags) ships to the browser.
 
 export async function loader({ context }) {

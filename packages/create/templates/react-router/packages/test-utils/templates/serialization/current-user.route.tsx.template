@@ -2,7 +2,7 @@
 // it into your route config. This is the reference shape for a loader/action
 // that returns current-user data WITHOUT over-serializing it.
 //
-// The rule (ADR-0002 — loader/action serialization boundary): a loader/action
+// The rule (docs/adr/architecture-and-boundaries.md — loader/action serialization boundary): a loader/action
 // returns an explicit, flat read-view/DTO — never a domain/db entity, never a
 // nested entity, and never `return { ...entity }`. In RR7 the return is
 // serialized whole to the browser, so a runtime projection is the only thing
@@ -13,7 +13,7 @@ import type { Route } from './+types/me'
 import { toUserReadView } from './read-view'
 
 export async function loader({ context }: Route.LoaderArgs) {
-  const app = context.get(appContext) // your app's load context (ADR-0002)
+  const app = context.get(appContext) // your app's load context (docs/adr/architecture-and-boundaries.md)
   const user = await app.useCases.users.getCurrent()
 
   // ✅ Project at the boundary. `user` may be the full domain entity; the

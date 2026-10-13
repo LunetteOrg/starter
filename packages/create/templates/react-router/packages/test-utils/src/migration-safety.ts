@@ -3,11 +3,11 @@ import { glob } from 'glob'
 import { expect } from 'vitest'
 
 /**
- * Mechanizes the migration review red-flags from ADR-0005 (expand-migrate-contract) / ADR-0005 (migration-safety guard) so they
+ * Mechanizes the migration review red-flags from docs/adr/data-and-migrations.md (expand-migrate-contract) / docs/adr/data-and-migrations.md (migration-safety guard) so they
  * don't rely on a human catching them:
  *
  *  - **No down-migrations.** Rollback is "don't deploy", never a DB revert
- *    (ADR-0005 — expand-migrate-contract). A `*.down.sql` file or a `down/` folder is always forbidden.
+ *    (docs/adr/data-and-migrations.md — expand-migrate-contract). A `*.down.sql` file or a `down/` folder is always forbidden.
  *  - **Risky statements must be acknowledged per statement.** `DROP` / `RENAME`
  *    / `SET NOT NULL` / `ALTER … TYPE` / `TRUNCATE` / `DELETE` can break a
  *    rolling deploy. Each such statement must carry a `-- contract:` (a
@@ -30,7 +30,7 @@ export interface MigrationViolation {
 
 const DOWN_MIGRATION = /(^|\/)down(\/|\.)|\.down\.sql$/i
 
-// Statements that can break a rolling/blue-green deploy (ADR-0005 — expand-migrate-contract). Evaluated
+// Statements that can break a rolling/blue-green deploy (docs/adr/data-and-migrations.md — expand-migrate-contract). Evaluated
 // per statement against a comment/string-masked copy, so matches are real SQL.
 const RISKY =
   /\b(?:DROP\s+(?:TABLE|COLUMN|CONSTRAINT|INDEX|SCHEMA|TYPE|VIEW)|TRUNCATE|DELETE\s+FROM|ALTER\s+TABLE[\s\S]*?\bRENAME\b|ALTER\s+COLUMN[\s\S]*?\b(?:SET\s+NOT\s+NULL|TYPE)\b)\b/i
@@ -59,7 +59,7 @@ export function checkMigration(file: string, content: string): MigrationViolatio
     violations.push({
       file,
       reason:
-        'down-migrations are forbidden — rollback is "don\'t deploy" (ADR-0005 — expand-migrate-contract).',
+        'down-migrations are forbidden — rollback is "don\'t deploy" (docs/adr/data-and-migrations.md — expand-migrate-contract).',
     })
   }
 
@@ -85,7 +85,7 @@ export function checkMigration(file: string, content: string): MigrationViolatio
           'risky statement (DROP/RENAME/SET NOT NULL/ALTER TYPE/TRUNCATE/DELETE) ' +
           'must be acknowledged: annotate it with `-- contract: <reason>` ' +
           '(contract-phase removal) or `-- destructive: <reason>`, or split it ' +
-          'into expand/migrate/contract (ADR-0005 — expand-migrate-contract).',
+          'into expand/migrate/contract (docs/adr/data-and-migrations.md — expand-migrate-contract).',
       })
     }
   }
@@ -113,7 +113,7 @@ export async function assertNoMigrationSafetyViolations(repoRoot: string): Promi
 
   expect(
     violations,
-    `Migration safety violations (ADR-0005 — expand-migrate-contract):\n${violations
+    `Migration safety violations (docs/adr/data-and-migrations.md — expand-migrate-contract):\n${violations
       .map((v) => `  - ${v.file}: ${v.reason}`)
       .join('\n')}`,
   ).toEqual([])

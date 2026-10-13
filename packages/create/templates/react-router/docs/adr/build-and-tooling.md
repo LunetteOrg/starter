@@ -4,7 +4,7 @@ date: 2026-07-02
 tags: [build, tooling, biome, turbo]
 ---
 
-# ADR-0003: Build & tooling
+# Build & tooling
 
 This ADR records the template's build and tooling foundation: the baseline tech stack (runtime, monorepo, framework, database, and supporting tools) and how Turborepo handles environment-variable passthrough.
 
@@ -24,9 +24,9 @@ The starter targets complex full-stack TypeScript applications built by small te
 | Web framework | React Router v7 — loaders/actions, server-rendered, progressive enhancement |
 | Webhooks / external HTTP | Hono |
 | Database | Postgres only; Drizzle ORM + Drizzle Kit migrations |
-| Date/time | `Temporal` everywhere; `Date` is banned (see [import boundaries](./0002-architecture-and-boundaries.md#import-boundaries)) |
+| Date/time | `Temporal` everywhere; `Date` is banned (see [import boundaries](./architecture-and-boundaries.md#import-boundaries)) |
 | Lint/format | Biome (single tool) |
-| Tests | Vitest + Testcontainers, Storybook + Vitest browser mode for components, Playwright for e2e (see [testing strategy](./0004-testing.md#testing-strategy)) |
+| Tests | Vitest + Testcontainers, Storybook + Vitest browser mode for components, Playwright for e2e (see [testing strategy](./testing.md#testing-strategy)) |
 | Git hooks | Lefthook + commitlint (conventional commits) |
 | Styling | CSS Modules for components + Tailwind for utilities |
 | TypeScript | `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitReturns` |

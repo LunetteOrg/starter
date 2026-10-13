@@ -30,8 +30,13 @@ test('default template scaffolds a complete, renamed starter', () => {
   try {
     assert.ok(existsSync(join(app, 'packages')), 'has packages/')
     assert.ok(existsSync(join(app, 'apps')), 'has apps/')
-    const adrs = readdirSync(join(app, 'docs/adr')).filter((f) => /^\d{4}-.*\.md$/.test(f))
-    assert.ok(adrs.length >= 6, `has the consolidated ADRs (${adrs.length})`)
+    const adrs = readdirSync(join(app, 'docs/adr')).filter((f) => !['README.md', 'template.md'].includes(f))
+    assert.ok(adrs.length >= 6, `has the thematic ADRs (${adrs.length})`)
+    assert.deepEqual(
+      adrs.filter((f) => /^\d/.test(f)),
+      [],
+      'ADR files are named after their subject, not numbered or dated',
+    )
     assert.ok(existsSync(join(app, '.gitignore')), '.gitignore present')
     assert.equal(JSON.parse(readFileSync(join(app, 'packages/ui/package.json'), 'utf8')).name, '@my-app/ui')
     assert.deepEqual(filesContaining(app, '@starter'), [], 'no @starter residue')

@@ -48,10 +48,9 @@ After copying and rewriting, the CLI runs `git init -b main` and an initial comm
 ### A template carries no mode marker
 
 Nothing in a template tells "template" from "scaffolded project" by its presence or
-absence. The rules that differ between the two live where each audience reads
-them: this repo's `CLAUDE.md` says how a template's files are edited while it is
-drafted here, and the template's own `CLAUDE.md` addresses the project it becomes.
-Inside this monorepo the path already says which log you are in.
+absence, and nothing needs to: a template's files follow the same rules while it is
+drafted here as in the project it becomes. Inside this monorepo the path says which
+log you are in.
 
 ### Verified in CI
 

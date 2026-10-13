@@ -3,7 +3,7 @@
 - Status: guidance
 
 > **Recommended, not enforced.** The template mechanically enforces *structural
-> boundaries* (see [Architecture & boundaries](../adr/0002-architecture-and-boundaries.md)).
+> boundaries* (see [Architecture & boundaries](../adr/architecture-and-boundaries.md)).
 > Everything below is design vocabulary we recommend inside those boundaries — it
 > is modelling discipline, not something a linter can check. Use it where it earns
 > its keep; ignore it where it doesn't.

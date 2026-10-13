@@ -7,7 +7,7 @@ import type { StorybookConfig } from '@storybook/react-vite'
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 
 /**
- * Storybook is the showcase for `packages/ui` and the design tokens (ADR-0006 — design tokens).
+ * Storybook is the showcase for `packages/ui` and the design tokens (docs/adr/design-system.md — design tokens).
  * Stories live next to the components in `packages/ui`; this app aggregates
  * them and adds the local Foundations pages.
  */
@@ -23,7 +23,7 @@ const config: StorybookConfig = {
   addons: [
     '@storybook/addon-docs',
     '@storybook/addon-a11y',
-    // Runs the stories as Vitest browser tests (ADR-0004 — component tests).
+    // Runs the stories as Vitest browser tests (docs/adr/testing.md — component tests).
     // Registered here too, not only in vitest.config.ts, so the Storybook UI
     // shows the test/a11y status next to each story.
     '@storybook/addon-vitest',
