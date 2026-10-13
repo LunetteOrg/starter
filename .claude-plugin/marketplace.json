@@ -1,13 +1,19 @@
 {
   "name": "lunette",
   "description": "The Lunette plugin, for projects scaffolded with @lntt/create and for the starter itself.",
-  "owner": { "name": "LunetteOrg" },
+  "owner": {
+    "name": "LunetteOrg"
+  },
   "plugins": [
     {
       "name": "lunette",
       "source": "./plugins/lunette",
-      "description": "Decision records and process descriptions, commit messages; values from .agents/config.*",
-      "skills": ["./skills/decisions", "./skills/commit-message"]
+      "description": "Decision records and process descriptions, commit messages, running the app locally; values from .agents/config.*",
+      "skills": [
+        "./skills/decisions",
+        "./skills/commit-message",
+        "./skills/run-local"
+      ]
     }
   ]
 }

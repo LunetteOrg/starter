@@ -45,7 +45,10 @@
             "scopes": {
               "type": "array",
               "description": "The only scopes allowed; omit to allow any.",
-              "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$"
+              },
               "uniqueItems": true
             },
             "maxLineLength": {
@@ -56,7 +59,10 @@
             "longTrailers": {
               "type": "array",
               "description": "Trailers whose value is a sentence (Retro), exempt from the line limit.",
-              "items": { "type": "string", "pattern": "^[A-Za-z][A-Za-z-]*$" },
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z-]*$"
+              },
               "uniqueItems": true
             }
           }
@@ -77,8 +83,144 @@
         "logs": {
           "type": "object",
           "description": "The decision logs, by name (adr, product, process). Each one is a folder of thematic files corrected in place.",
-          "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
-          "additionalProperties": { "$ref": "#/definitions/log" }
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/log"
+          }
+        }
+      }
+    },
+    "local": {
+      "type": "object",
+      "description": "How the apps are started and reached locally, read by the run-local skill and lntt-config local.",
+      "additionalProperties": false,
+      "properties": {
+        "infra": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Shared services (database, storage).",
+          "properties": {
+            "up": {
+              "type": "string",
+              "description": "Starts them when they do not answer."
+            },
+            "check": {
+              "type": "string",
+              "description": "Exits 0 when they already answer; then they are reused, never restarted."
+            }
+          }
+        },
+        "apps": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["port", "url", "commands"],
+            "properties": {
+              "description": {
+                "type": "string",
+                "description": "What the app is, in one line."
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 65000,
+                "description": "Base port: the main checkout uses it, each linked worktree gets base + 10 × its slot."
+              },
+              "url": {
+                "type": "string",
+                "description": "Where the app answers; {port} is replaced by the worktree's port.",
+                "pattern": "^https?://"
+              },
+              "readyPath": {
+                "type": "string",
+                "description": "Path polled until it answers, after start. Default /.",
+                "pattern": "^/"
+              },
+              "commands": {
+                "type": "object",
+                "description": "Commands for this app by name (start, migrate, logs, …); start is required.",
+                "required": ["start"],
+                "propertyNames": {
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["run"],
+                  "properties": {
+                    "run": {
+                      "type": "string",
+                      "description": "The command, run from the repository root; {port} is replaced by the worktree's port."
+                    },
+                    "description": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "properties": {
+                  "start": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["run"],
+                    "properties": {
+                      "run": {
+                        "type": "string",
+                        "description": "The command, run from the repository root; {port} is replaced by the worktree's port."
+                      },
+                      "description": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "env": {
+                "type": "object",
+                "description": "Variables set when a command runs; {port} is replaced.",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "signIn": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "How to sign in: a test that does it, and a description for what a test cannot say.",
+                "properties": {
+                  "test": {
+                    "type": "string",
+                    "description": "Path of a test or setup file that signs in."
+                  },
+                  "doc": {
+                    "type": "string",
+                    "description": "Path (and anchor) of the prose, usually in docs/process/local.md."
+                  }
+                }
+              },
+              "users": {
+                "type": "object",
+                "description": "Seeded users, by name. Never a password: how to sign in is in signIn.",
+                "additionalProperties": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["login"],
+                  "properties": {
+                    "login": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     }

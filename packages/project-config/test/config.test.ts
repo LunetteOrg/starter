@@ -168,3 +168,32 @@ describe('the command line', () => {
     assert.equal(spawnSync('node', [BIN, 'frobnicate'], { cwd: root }).status, 2)
   })
 })
+
+describe('the local section', () => {
+  const web = {
+    description: 'The members site',
+    port: 5173,
+    url: 'http://localhost:{port}',
+    readyPath: '/',
+    commands: { start: { run: 'pnpm --filter @demo/web dev --port {port}', description: 'Dev server' } },
+    env: { APP_ORIGIN: 'http://localhost:{port}' },
+    signIn: { test: 'apps/web/e2e/auth.setup.ts', doc: 'docs/process/local.md#web' },
+    users: { member: { login: 'member@demo.test', role: 'member' } },
+  }
+
+  test('describes each app: commands, base port, URL, sign-in pointers, seeded users', () => {
+    write('.agents/config.jsonc', JSON.stringify({ local: { infra: { up: 'pnpm infra:up' }, apps: { web } } }))
+    assert.equal(getValue(loadConfig(root).data, 'local.apps.web.commands.start.run'), web.commands.start.run)
+  })
+
+  test('has no place for a password: how to sign in is the test or docs/process/local.md', () => {
+    const users = { member: { login: 'm@x', password: 'x' } }
+    write('.agents/config.jsonc', JSON.stringify({ local: { apps: { web: { ...web, users } } } }))
+    assert.throws(() => loadConfig(root), /password/)
+  })
+
+  test('an app needs a base port, a URL and a start command', () => {
+    write('.agents/config.jsonc', JSON.stringify({ local: { apps: { web: { url: 'http://localhost:{port}' } } } }))
+    assert.throws(() => loadConfig(root), /port|commands/)
+  })
+})

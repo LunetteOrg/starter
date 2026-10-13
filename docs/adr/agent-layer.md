@@ -44,7 +44,8 @@ it never guesses.
 ### Operator context is personal and found from any worktree
 
 The operator profile has its own schema (`packages/project-config/schema/operator.schema.json`:
-name, handle, role, language, confidence per topic, accounts, workspace) and is read,
+name, handle, role, language, confidence per topic, accounts, workspace with the
+preferred viewers in order) and is read,
 in merge order, from:
 
 1. `~/.agents/operator.{jsonc,yml}`, for every project;

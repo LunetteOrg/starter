@@ -23,7 +23,7 @@ Exit codes: 0 ok, 1 configuration error, 2 usage error.
 
 Who is talking to the agent: personal, never tracked, validated by
 [`schema/operator.schema.json`](./schema/operator.schema.json) (name, handle, role,
-language, confidence per topic, accounts, workspace). Read from, in merge order:
+language, confidence per topic, accounts, workspace: the preferred viewers in order). Read from, in merge order:
 
 1. `~/.agents/operator.{jsonc,yml}`: every project;
 2. `<main checkout>/.agents/local/operator.{jsonc,yml}`: this project, found from any
@@ -68,3 +68,24 @@ export default commitlintConfig()
 
 `lntt-config agents sync` writes the managed block of `AGENTS.md` from
 [`agents/block.md`](./agents/block.md); `lntt-config agents check` fails when it differs.
+
+## Running the apps locally
+
+`local.apps.<name>` describes each app: base `port`, `url`, `commands` (with `start`),
+`env`, `signIn` (a test and/or a document) and seeded `users`, never a password.
+`lntt-config local app <name>` resolves it for the current checkout: the main checkout
+uses the base port, each linked worktree a stable slot (base + 10 × slot, kept in
+`<git common dir>/lunette/ports.json`, freed when the worktree goes), with `{port}`
+filled in. The `run-local` skill starts from it.
+
+## Showing a page
+
+```sh
+lntt-config viewer detect        # where the session runs, the chosen viewer, why
+lntt-config viewer open <url>    # open it there; exit 3 + JSON when only the agent can
+```
+
+The choice: the first of the operator's `workspace.viewers` available in this
+session, else the app the session runs in (Orca opens in the browser of the same
+worktree), else the system browser. Claude desktop (`preview_start`) and Chrome
+(`navigate`) are tool calls only the agent can make: `open` prints the call.
