@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
@@ -22,6 +24,9 @@ jobs:
       - run: pnpm lint
       # AGENTS.md's managed block must match its source (lntt-config agents sync).
       - run: pnpm exec lntt-config agents check
+      # An installed plugin updates only when its version changes.
+      - if: github.event_name == 'pull_request'
+        run: sh scripts/check-plugin-version.sh origin/${{ github.base_ref }}
       - run: pnpm typecheck
       # scaffolds each template into a temp dir and asserts the result;
       # SCAFFOLD_SMOKE additionally installs + lints + typechecks a generated

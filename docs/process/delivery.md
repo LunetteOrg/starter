@@ -4,6 +4,12 @@ Trunk-based: a short-lived branch per change, one pull request each, merged into
 `main` once CI is green and the review (the `decisions` skill in check mode, then the
 line-by-line pass) is done. A merge always has a person's go.
 
+## The Lunette plugin
+
+A change under `plugins/lunette/` raises the version in its
+`.claude-plugin/plugin.json`: installed copies update only when the version changes.
+CI checks it on every pull request (`scripts/check-plugin-version.sh`).
+
 ## Releasing
 
 npm publishing happens in CI only, never from a machine:
