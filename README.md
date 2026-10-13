@@ -37,7 +37,10 @@ npx skills add LunetteOrg/starter                             # any other agent
 ```
 
 They read the project's values from `.agents/config.*` and are never edited to fit a
-project. This repo installs its own plugin the same way (`.claude/settings.json`).
+project. This repo uses its own plugin the same way: `.claude/settings.json` declares
+the marketplace and enables the plugin, and each machine installs it once with
+`claude plugin install lunette@lunette --scope project`. Claude Code does not install
+it by itself in a folder it already trusts.
 
 ## Develop
 
