@@ -1,6 +1,8 @@
 ---
 name: issues
 description: Manage GitHub issues with gh — triage them into release milestones and a P0–P3 priority field on a GitHub Project (v2). Discovers the repo/owner/project at runtime (never hardcoded) and bootstraps the structure if missing. Use when asked to create, triage, prioritize, or organize issues, plan a release/iteration, or set up the issue board.
+metadata:
+  internal: true # the starter's own board tooling, not part of the Lunette plugin
 ---
 
 # Issue management & triage

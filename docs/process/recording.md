@@ -1,7 +1,7 @@
 # Recording: how the starter keeps its decisions
 
 The rules for writing a record are the decisions skill's
-([`.claude/skills/decisions/references/recording-rules.md`](../../.claude/skills/decisions/references/recording-rules.md)).
+([`plugins/lunette/skills/decisions/references/recording-rules.md`](../../plugins/lunette/skills/decisions/references/recording-rules.md)).
 The logs, their paths and their language are in `recording` of
 [`.agents/config.jsonc`](../../.agents/config.jsonc). This page holds what is
 particular to this repo.
