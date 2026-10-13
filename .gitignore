@@ -25,3 +25,6 @@ yarn-debug.log*
 yarn-error.log*
 .DS_Store
 *.pem
+
+# Personal agent context (operator profile, notes): never tracked
+.agents/local/

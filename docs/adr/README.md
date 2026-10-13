@@ -13,6 +13,7 @@ decisions) is in [`docs/process/`](../process/README.md).
 | [template-model](./template-model.md) | What a Lunette template is; templates as folders bundled inside the CLI | accepted |
 | [scaffolding-contract](./scaffolding-contract.md) | Placeholders, dotfiles and text-file coverage every template honours | accepted |
 | [cli-runtime-and-publishing](./cli-runtime-and-publishing.md) | The CLI runs as TypeScript in-repo, ships compiled; explicit `.ts` imports | accepted |
+| [agent-layer](./agent-layer.md) | Installed skills are never edited; project values in `.agents/config.*`; operator context | accepted |
 | [decision-logs-in-generated-projects](./decision-logs-in-generated-projects.md) | The decision logs templates ship to generated projects | accepted |
 
 A new subject gets its own file: copy [`template.md`](./template.md) to

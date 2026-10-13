@@ -25,6 +25,7 @@ where they are.
 | `cycle` | Planning, grooming and retrospective cadence, where a retrospective is published |
 | `spaces` | Reference material, prototypes, spikes, personal notes: where they live and when they are archived |
 | `team` | Handles, roles and ownership that other people need (never personal profiles) |
+| `local` | How the app is started and reached locally: ports, URLs, seeded users |
 
 A skill working in an area reads `docs/process/<area>.md` when it exists, and the
 area's section of the configuration always.
