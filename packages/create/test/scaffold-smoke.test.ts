@@ -94,6 +94,39 @@ const adopt: Record<string, () => void> = {
     rewrite(/^tsconfig.*\.json$/, '@smoke-app/typescript-config/', '@lntt/typescript-config/'),
   '@lntt/stylelint-config': () =>
     rewrite(/^\.stylelintrc\.json$/, './packages/stylelint-config', '@lntt/stylelint-config'),
+  // No package of the template has database tests yet: a probe package does, the
+  // way an app would, and checks the project with the container rule.
+  '@lntt/test-utils': () => {
+    const probe = join(app, 'packages/db-probe')
+    mkdirSync(join(probe, 'drizzle/20260101000000_init'), { recursive: true })
+    const files: Record<string, string> = {
+      'package.json': JSON.stringify({ name: '@smoke-app/db-probe', private: true, type: 'module' }),
+      'vitest.config.ts':
+        "import { testDbPlugin } from '@lntt/test-utils/plugin'\nimport { defineConfig } from 'vitest/config'\n\n" +
+        'export default defineConfig({ plugins: [testDbPlugin()] })\n',
+      'drizzle/20260101000000_init/migration.sql': 'CREATE TABLE probe (id integer PRIMARY KEY);\n',
+      'probe.test.ts': [
+        "import { assertContainerUsersMountAPlugin, createTestDb, hasTestDatabase } from '@lntt/test-utils'",
+        "import { expect, it } from 'vitest'",
+        '',
+        "const db = createTestDb({ databaseName: 'probe', migrationsFolder: './drizzle' })",
+        '',
+        "it('runs on a migrated test database', async () => {",
+        '  expect(hasTestDatabase()).toBe(true)',
+        "  await db.withTestDb(async (tx) => expect(await tx.execute('SELECT id FROM probe')).toHaveLength(0))",
+        '})',
+        '',
+        "it('every package that starts containers mounts a plugin', () => {",
+        "  assertContainerUsersMountAPlugin(new URL('../..', import.meta.url).pathname)",
+        '})',
+        '',
+      ].join('\n'),
+    }
+    for (const [path, content] of Object.entries(files)) writeFileSync(join(probe, path), content)
+    // From the package directory, as turbo runs it: migrationsFolder resolves from there.
+    run('node', [join(app, 'node_modules/vitest/vitest.mjs'), 'run'], probe)
+    rmSync(probe, { recursive: true })
+  },
   // No app of the template has an e2e suite yet: import it as an app's config would.
   '@lntt/playwright-config': () => {
     const probe = join(app, 'playwright-probe.mjs')
@@ -110,7 +143,9 @@ const adopt: Record<string, () => void> = {
 // The packages a generated project installs from npm, installed here from the
 // tarballs `pnpm pack` produces, exactly the files a release would publish. The
 // project then lints and typechecks on them instead of its own copies.
-test('the published packages install into a scaffolded project, which lints and typechecks on them', { skip }, () => {
+test('the published packages install into a scaffolded project, which lints, typechecks and tests on them', {
+  skip,
+}, () => {
   const packages = publishedPackages()
   assert.deepEqual(
     packages.map((p) => p.name).filter((name) => !adopt[name]),
@@ -122,7 +157,7 @@ test('the published packages install into a scaffolded project, which lints and 
   for (const { dir } of packages) run('pnpm', ['pack', '--pack-destination', tarballs], dir)
   const files = readdirSync(tarballs).map((f) => join(tarballs, f))
   // The peers a project installs next to the packages.
-  const peers = ['stylelint@^17.0.0', '@playwright/test@^1.61.1']
+  const peers = ['stylelint@^17.0.0', '@playwright/test@^1.61.1', 'vitest@^4.1.10', 'drizzle-orm@1.0.0-rc.4']
   run('pnpm', ['add', '-w', '-D', '--ignore-scripts', ...files, ...peers], app)
 
   for (const { name } of packages) adopt[name]?.()

@@ -13,6 +13,7 @@ packages/
   typescript-config/    # @lntt/typescript-config: base and browser tsconfigs
   stylelint-config/     # @lntt/stylelint-config
   playwright-config/    # @lntt/playwright-config: definePlaywrightConfig
+  test-utils/           # @lntt/test-utils: test Postgres per run, architecture guards
   project-config/       # reads .agents/config.* and the operator profile (lntt-config)
 plugins/
   lunette/              # the Lunette plugin: skills installed unchanged in every project
@@ -49,15 +50,17 @@ it by itself in a folder it already trusts.
 ## Shared packages
 
 What every project must keep current lives in `packages/`, to be published by the
-release flow and consumed by version: `@lntt/biome-config`, `@lntt/typescript-config`, `@lntt/stylelint-config`,
-`@lntt/playwright-config`. The CLI never rewrites the `@lntt` scope
-([scaffolding contract](./docs/adr/scaffolding-contract.md)). Each package's README
-says how a project installs and uses it.
+release flow and consumed by version: `@lntt/biome-config`, `@lntt/typescript-config`,
+`@lntt/stylelint-config`, `@lntt/playwright-config`, `@lntt/test-utils`. The CLI never
+rewrites the `@lntt` scope ([scaffolding contract](./docs/adr/scaffolding-contract.md)).
+Each package's README says how a project installs and uses it.
 
 ## Develop
 
 Node ≥ 24 and pnpm. `pnpm lint`, `pnpm typecheck` and `pnpm test` run every package;
 `SCAFFOLD_SMOKE=1 pnpm test` also installs, lints and typechecks a generated project.
+The database tests of `@lntt/test-utils` need Docker: without it they skip locally and
+fail in CI.
 
 - The CLI is TypeScript run directly by Node in this repo and compiled to `dist/` when
   packed ([CLI runtime and publishing](./docs/adr/cli-runtime-and-publishing.md)).
