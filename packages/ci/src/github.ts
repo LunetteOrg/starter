@@ -43,6 +43,10 @@ export function githubContext(event: Event, root: string): Record<string, unknow
     ...(event.repository ? { repository: event.repository, repository_owner: event.repository.split('/')[0] } : {}),
   }
   const repo = event.repository ? { repo: { full_name: event.repository } } : {}
+  const repository = {
+    default_branch: event.defaultBranch,
+    ...(event.repository ? { full_name: event.repository } : {}),
+  }
   if (event.name === 'pull_request') {
     return {
       ...common,
@@ -50,6 +54,7 @@ export function githubContext(event: Event, root: string): Record<string, unknow
       head_ref: event.head,
       event: {
         action: 'synchronize',
+        repository,
         pull_request: {
           draft: false,
           base: { ref: event.base, ...repo },
@@ -65,7 +70,7 @@ export function githubContext(event: Event, root: string): Record<string, unknow
     ref_name: event.base,
     base_ref: '',
     head_ref: '',
-    event: { ref: `refs/heads/${event.base}` },
+    event: { ref: `refs/heads/${event.base}`, repository },
   }
 }
 

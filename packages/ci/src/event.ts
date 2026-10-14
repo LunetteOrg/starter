@@ -23,6 +23,8 @@ export interface Event {
   changed: string[] | null
   // owner/repo from the origin remote, when it is on GitHub.
   repository: string | null
+  // The repository's default branch: origin/HEAD's, else main.
+  defaultBranch: string
 }
 
 function git(cwd: string, ...args: string[]): string | null {
@@ -76,5 +78,6 @@ export function localEvent(cwd: string, name: EventName, base: string): Event {
     baseRef,
     changed,
     repository: repositoryOf(git(cwd, 'remote', 'get-url', 'origin')),
+    defaultBranch: defaultBranch(cwd),
   }
 }

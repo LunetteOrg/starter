@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, test } from 'node:test'
@@ -98,6 +98,64 @@ describe('lntt-ci local', () => {
     root = repo({})
     assert.equal(ci('nothing').status, 2)
     assert.equal(ci('local', '--event', 'release').status, 2)
+  })
+})
+
+describe('lntt-ci candidate', () => {
+  const CONFIG = { delivery: { candidate: { prefix: 'candidate/' } } }
+
+  function candidate(event: unknown, ...args: string[]) {
+    write(root, { '.git/event.json': JSON.stringify(event) })
+    // A gh that answers the open-candidate query and records every call.
+    write(root, {
+      '.git/bin/gh': `#!/bin/sh\necho "$*" >> "${root}/.git/gh.log"\ncase "$*" in *"--state open"*) echo '[{"number":40,"headRefName":"candidate/4","body":""}]';; esac\n`,
+    })
+    execFileSync('chmod', ['+x', join(root, '.git/bin/gh')])
+    return spawnSync(process.execPath, [BIN, 'candidate', ...args], {
+      cwd: root,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${join(root, '.git/bin')}:${process.env.PATH}`,
+        GITHUB_REPOSITORY: 'o/r',
+        GITHUB_EVENT_PATH: join(root, '.git/event.json'),
+      },
+    })
+  }
+
+  const opened = (fields = {}) => ({
+    action: 'opened',
+    pull_request: {
+      number: 7,
+      title: 't',
+      body: 'Closes #3',
+      base: { ref: 'main' },
+      head: { ref: 'feat/3/x' },
+      labels: [],
+      ...fields,
+    },
+  })
+
+  test('without delivery.candidate it does nothing, with a notice', () => {
+    root = repo({})
+    const out = candidate(opened())
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /::notice::no delivery\.candidate/)
+  })
+
+  test('a pull request opened into main moves onto the open candidate (dry run)', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidate(opened(), '--dry-run')
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /\[dry-run\] gh pr edit 7 --repo o\/r --base candidate\/4/)
+    assert.match(out.stdout, /\[dry-run\] gh pr comment 7/)
+  })
+
+  test('a hotfix stays on main and reads nothing', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidate(opened({ head: { ref: 'hotfix/login' } }))
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /it stays, a hotfix stays on main/)
   })
 })
 

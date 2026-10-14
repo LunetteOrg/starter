@@ -7,10 +7,33 @@ them and what it stands in for each step with is the tool's own documentation
 ([`@lntt/ci`](../../packages/ci/README.md)); this page holds the rules the team works
 by. The values are `ci.local` in [`.agents/config.jsonc`](../../.agents/config.jsonc).
 
+## What runs where
+
+Every cloud run costs minutes, and GitHub bills each job rounded up to the minute. The
+CI runs where a machine other than the author's can catch something, and once per
+batch for what is expensive ([delivery](./delivery.md) has the flow):
+
+| Event | What runs |
+|---|---|
+| A draft, into any base | nothing in the cloud; `pnpm ci:local` on the machine |
+| A ready pull request into a candidate, or into any branch other than `main` (a stacked pull request) | the minimal CI: frozen install, lint, typecheck, the AGENTS.md block, the plugin version |
+| The candidate's pull request into `main`, ready; a hotfix | the full CI: the minimal CI plus the tests and the scaffold smoke |
+| A push to `main` | the full CI, which gates a release |
+| A merge into a candidate | nothing |
+
+`ci.yml` is one job, so each run is billed once. The job is skipped on a draft, and
+`ready_for_review` starts it when the draft leaves draft. The tests and the smoke run
+when the base is the default branch or the event is a push. The candidate automation
+(`candidate.yml`) is not CI: it runs on its own three events, drafts included
+([delivery](./delivery.md#the-candidate-automation)).
+
 ## When to run it
 
 - **Before a push leaves the machine for review**: `pnpm ci:local` green on the head
   about to be pushed. It refuses uncommitted changes, so the run is about that head.
+  Its default base is `main`, so it runs the full CI, a superset of the minimal one;
+  `--base <candidate> --list` shows what the minimal CI runs.
+- **On the candidate, before it is marked ready** ([delivery](./delivery.md#the-candidate)).
 - **`pnpm ci:local --list`** before changing a workflow: it shows, per job, what the
   cloud runs and what the local run does instead.
 - **`--strict`** when the run must prove the whole of every job: anything the cloud
@@ -73,3 +96,8 @@ CircleCI configuration.
   secret belongs to the cloud, where the secret lives.
 - **A pre-push hook running ci:local.** Too slow for the push it guards, skipped with
   `--no-verify`, and it would block the pushes that save work in progress.
+- **`concurrency: cancel-in-progress` as the saving.** It cancels only runs still in
+  progress, and review rounds are minutes apart; the saving comes from not pushing
+  drafts.
+- **The full CI on every pull request into the candidate.** The candidate runs it on
+  the whole batch; on each pull request it would pay twice for the same checks.

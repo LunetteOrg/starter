@@ -2,9 +2,10 @@
 // provider's own configuration (`lntt-ci local`, `pnpm ci:local`).
 
 export { actionName, localAction, versionMatches } from './actions.ts'
+export * as candidate from './candidate.ts'
 export { circleciJobs, cliProcessor, mappingParameters, type Processor } from './circleci.ts'
 export { evaluateWhen } from './circleci-when.ts'
-export { type CiConfig, ciConfig, emptyConfig } from './config.ts'
+export { type CiConfig, candidateConfig, ciConfig, emptyConfig } from './config.ts'
 export { containerCommand, missingTools } from './container.ts'
 export { defaultBranch, type Event, type EventName, localEvent } from './event.ts'
 export { evaluate, interpolate } from './expressions.ts'

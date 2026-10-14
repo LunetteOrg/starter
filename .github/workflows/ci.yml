@@ -1,15 +1,22 @@
 name: CI
 
+# What runs where (docs/process/ci.md):
+# - a draft runs nothing: the job is skipped, and `ready_for_review` starts the run
+#   when it leaves draft. The author has `pnpm ci:local` green before that;
+# - a pull request into a candidate runs the minimal CI: what a clean machine catches
+#   and the author's machine may not (frozen install, lint, typecheck, the AGENTS.md
+#   block, the plugin version);
+# - a pull request into the default branch (the candidate itself, a hotfix) and a push
+#   to it run the full CI, tests and scaffold smoke included. The push gates a release.
 on:
-  # Solo, trunk-based: work lands directly on main, so CI must run on push too —
-  # not only on PRs — or it never runs.
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
   ci:
+    if: github.event_name == 'push' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -30,9 +37,10 @@ jobs:
       # Every published package carries the CLI's version (docs/adr/cli-runtime-and-publishing.md).
       - run: node scripts/packages-version.mts check
       - run: pnpm typecheck
-      # scaffolds each template into a temp dir and asserts the result;
-      # SCAFFOLD_SMOKE additionally installs + lints + typechecks a generated
-      # project, so template-tooling breakage fails here, not post-push.
-      - run: pnpm test
+      # Full CI only. Scaffolds each template into a temp dir and asserts the result;
+      # SCAFFOLD_SMOKE additionally installs + lints + typechecks a generated project,
+      # so template-tooling breakage fails here, not post-push.
+      - if: github.event_name == 'push' || github.base_ref == github.event.repository.default_branch
+        run: pnpm test
         env:
           SCAFFOLD_SMOKE: '1'

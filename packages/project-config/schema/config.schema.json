@@ -104,9 +104,44 @@
     },
     "delivery": {
       "type": "object",
-      "description": "How a change reaches the main branch: commit messages today; pull request body, review and merge rules as skills need them.",
+      "description": "How a change reaches the main branch: commit messages, the candidate branch; pull request body, review and merge rules as skills need them.",
       "additionalProperties": false,
       "properties": {
+        "candidate": {
+          "type": "object",
+          "description": "The candidate branch that collects pull requests before they reach the base together, read by the candidate automation (@lntt/ci). Without this section the automation does nothing.",
+          "additionalProperties": false,
+          "required": ["prefix"],
+          "properties": {
+            "base": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The branch candidates merge into. Default main."
+            },
+            "prefix": {
+              "type": "string",
+              "description": "The candidate branch prefix, followed by an incremental number: candidate/ gives candidate/1, candidate/2.",
+              "pattern": "^[A-Za-z0-9._/-]*[/._-]$"
+            },
+            "hotfix": {
+              "type": "object",
+              "description": "A pull request whose branch starts with prefix, or that carries label, stays on the base.",
+              "additionalProperties": false,
+              "properties": {
+                "prefix": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Default hotfix/."
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Default hotfix."
+                }
+              }
+            }
+          }
+        },
         "commits": {
           "type": "object",
           "description": "Commit message rules, read by commitlint (through @lntt/project-config) and by the commit-message skill.",

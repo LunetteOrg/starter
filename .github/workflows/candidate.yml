@@ -1,0 +1,92 @@
+name: Candidate
+
+# Moves every pull request into the default branch onto the open candidate (created
+# on the fly when none is open); when a pull request is merged into a candidate,
+# rebuilds from every pull request merged into it the list and the `Closes` lines of
+# the candidate's body, and tells each open issue they close, once, that the candidate
+# will close it. When the candidate is merged, closes the issues of its `Closes` lines
+# still open (keywords written by the automation link nothing) and moves the pull
+# requests still open on it onto the next candidate. Hotfixes stay on the default
+# branch. Prefix, base and hotfix markers: delivery.candidate in .agents/config.jsonc;
+# the logic: `lntt-ci candidate` (packages/ci/src/candidate.ts); the flow:
+# docs/process/delivery.md.
+#
+# It runs on drafts too, on these three events only, never on a push. It writes with
+# the token of the organization's candidate GitHub App: until its client ID
+# (variable CANDIDATE_APP_CLIENT_ID) and private key (secret
+# CANDIDATE_APP_PRIVATE_KEY) exist, the job ends at its first step with a notice.
+on:
+  pull_request:
+    types: [opened, ready_for_review, closed]
+
+permissions: {}
+
+# One run at a time across the repo: two pull requests opened together must not create
+# two candidates. GitHub keeps one running and one pending run per group, and a newer
+# pending run cancels the older one. A dropped merge into a candidate is recorded by
+# the next run, which rebuilds the lists from every merged pull request; a dropped
+# `opened`, or a dropped merge of the candidate, is redone from a terminal with
+# `pnpm exec lntt-ci candidate --pr <n>`.
+concurrency:
+  group: candidate
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    # Dependabot's events and a fork's pull requests get no repo secrets, hence no app
+    # token: those stay where they were opened. The script decides the rest from the
+    # configuration (which base, which prefix, hotfix or not).
+    if: >-
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.action != 'closed' || github.event.pull_request.merged)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - id: credentials
+        env:
+          CLIENT_ID: ${{ vars.CANDIDATE_APP_CLIENT_ID }}
+          HAS_KEY: ${{ secrets.CANDIDATE_APP_PRIVATE_KEY != '' }}
+        run: |
+          if [ -n "$CLIENT_ID" ] && [ "$HAS_KEY" = true ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=Candidate automation off::the variable CANDIDATE_APP_CLIENT_ID or the secret CANDIDATE_APP_PRIVATE_KEY is missing; pull request #${{ github.event.pull_request.number }} stays where it is (docs/process/delivery.md)"
+          fi
+      # GITHUB_TOKEN may not open a pull request while the repository keeps "Allow
+      # GitHub Actions to create and approve pull requests" off, and turning it on would
+      # also let a workflow approve one. The app has contents, pull requests and issues
+      # on this repository, and no approvals.
+      - id: app-token
+        if: steps.credentials.outputs.ready == 'true'
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.CANDIDATE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CANDIDATE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+      # The script and the configuration come from the default branch; the workflow
+      # file is the pull request's own, as for every pull_request run. A pull request
+      # from this repo gets nothing its author lacks, and a fork's gets no secrets.
+      - if: steps.credentials.outputs.ready == 'true'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - if: steps.credentials.outputs.ready == 'true'
+        uses: pnpm/action-setup@v6
+      - if: steps.credentials.outputs.ready == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+      - if: steps.credentials.outputs.ready == 'true'
+        run: pnpm install --frozen-lockfile
+      - name: Move or record the pull request, close or tell its issues
+        if: steps.credentials.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: node packages/ci/bin/lntt-ci.ts candidate

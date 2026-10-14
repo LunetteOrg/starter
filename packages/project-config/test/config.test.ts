@@ -220,3 +220,23 @@ describe('the ci section', () => {
     assert.throws(() => loadConfig(root), /actions/)
   })
 })
+
+describe('delivery.candidate', () => {
+  test('the candidate prefix, the base and the hotfix markers', () => {
+    const candidate = { base: 'main', prefix: 'candidate/', hotfix: { prefix: 'hotfix/', label: 'hotfix' } }
+    write('.agents/config.jsonc', JSON.stringify({ delivery: { candidate } }))
+    assert.equal(getValue(loadConfig(root).data, 'delivery.candidate.prefix'), 'candidate/')
+  })
+
+  test("pelion's release/ is a prefix like any other; only the prefix is required", () => {
+    write('.agents/config.jsonc', JSON.stringify({ delivery: { candidate: { prefix: 'release/' } } }))
+    assert.equal(getValue(loadConfig(root).data, 'delivery.candidate.prefix'), 'release/')
+    write('.agents/config.jsonc', JSON.stringify({ delivery: { candidate: { base: 'main' } } }))
+    assert.throws(() => loadConfig(root), /prefix/)
+  })
+
+  test('a prefix ends with a separator, so candidate/1 is never confused with candidate1x', () => {
+    write('.agents/config.jsonc', JSON.stringify({ delivery: { candidate: { prefix: 'candidate' } } }))
+    assert.throws(() => loadConfig(root), /prefix/)
+  })
+})
