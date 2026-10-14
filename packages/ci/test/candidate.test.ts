@@ -13,6 +13,7 @@ import {
   closeDecision,
   closingReferences,
   type Gh,
+  handle,
   isAnnounced,
   isCandidateMerge,
   isHotfix,
@@ -25,6 +26,8 @@ import {
   recordMerges,
   retarget,
   retargetDecision,
+  sweep,
+  sweepDecision,
 } from '../src/candidate.ts'
 
 const config: CandidateConfig = { base: 'main', prefix: 'candidate/', hotfix: { prefix: 'hotfix/', label: 'hotfix' } }
@@ -523,6 +526,77 @@ describe('candidateMerged', () => {
     assert.deepEqual(
       gh.writes.map((w) => w.args),
       ['pr edit 12 --repo o/r --base candidate/5', 'pr comment 12 --repo o/r --body-file -'],
+    )
+  })
+})
+
+describe('closing references as issue URLs', () => {
+  test('a full issue URL after the keyword counts, as owner/repo#N', () => {
+    assert.deepEqual(closingReferences('Closes https://github.com/LunetteOrg/starter/issues/31\nFixes #2'), [
+      'LunetteOrg/starter#31',
+      '#2',
+    ])
+    assert.deepEqual(closingReferences('Closes https://github.com/o/r/pull/3'), [])
+  })
+})
+
+describe('sweepDecision', () => {
+  const open = (number: number, fields = {}) => ({
+    number,
+    baseRef: 'main',
+    headRef: `feat/${number}/x`,
+    author: 'someone',
+    labels: [] as string[],
+    lastBaseChange: null as { from: string; to: string } | null,
+    ...fields,
+  })
+
+  test('pull requests stranded on a candidate that is no longer open move; others stay', () => {
+    const decision = sweepDecision(config, {
+      openCandidates: ['candidate/5'],
+      openPrs: [
+        open(1, { baseRef: 'candidate/4' }),
+        open(2, { lastBaseChange: { from: 'candidate/3', to: 'main' } }),
+        open(3, { baseRef: 'candidate/5' }),
+        open(4, { lastBaseChange: { from: 'candidate/5', to: 'main' } }),
+        open(5, { baseRef: 'candidate/4', labels: ['hotfix'] }),
+        open(6, { baseRef: 'candidate/4', author: 'dependabot[bot]' }),
+        open(7, { baseRef: 'main', headRef: 'candidate/5' }),
+        open(8),
+      ],
+    })
+    assert.deepEqual(decision.move, [1, 2])
+  })
+})
+
+describe('sweep', () => {
+  test('moves stranded pull requests onto the open candidate before the event is handled', () => {
+    const gh = fakeGh({
+      'api graphql': [node(12, { baseRefName: 'candidate/3' })],
+      '--state open': [{ number: 50, headRefName: 'candidate/5', body: '' }],
+    })
+    assert.deepEqual(sweep(run(gh)).move, [12])
+    assert.deepEqual(
+      gh.writes.map((w) => w.args),
+      ['pr edit 12 --repo o/r --base candidate/5', 'pr comment 12 --repo o/r --body-file -'],
+    )
+  })
+
+  test('nothing stranded: nothing read beyond the lists, nothing written', () => {
+    const gh = fakeGh({ 'api graphql': [node(1)], '--state open': [] })
+    assert.deepEqual(sweep(run(gh)).move, [])
+    assert.deepEqual(gh.writes, [])
+  })
+
+  test('handle sweeps on every event, then does what the event asks', () => {
+    const gh = fakeGh({
+      'api graphql': [node(12, { baseRefName: 'candidate/3' })],
+      '--state open': [{ number: 50, headRefName: 'candidate/5', body: '' }],
+    })
+    handle(run(gh), 'opened', pr)
+    assert.deepEqual(
+      gh.writes.filter((w) => w.args.includes('--base')).map((w) => w.args),
+      ['pr edit 12 --repo o/r --base candidate/5', 'pr edit 70 --repo o/r --base candidate/5'],
     )
   })
 })

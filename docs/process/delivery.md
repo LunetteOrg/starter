@@ -9,8 +9,9 @@ into `main`, has a person's go: an agent never merges on its own.
 
 ## One pull request
 
-1. **Draft.** A pull request opens as a draft, or at the final push. A draft runs no
-   CI in the cloud ([CI](./ci.md)).
+1. **Draft.** A pull request opens as a draft. A draft runs no CI in the cloud
+   ([CI](./ci.md)); a pull request opened ready into `main` runs the full CI once on
+   its `opened` event, before the automation moves it onto the candidate.
 2. **Review on the machine.** The review runs on the local branch (the `decisions`
    skill in check mode, then the line-by-line pass), and fixes are local commits. The
    branch reaches GitHub when a review round finds nothing: every push is a full run.
@@ -22,6 +23,13 @@ into `main`, has a person's go: an agent never merges on its own.
 5. **Squash into the candidate**, with the review closed, `ci:local` and the minimal
    CI green, and the person's go. The squash message keeps the pull request's
    `Closes #N` lines.
+
+**Merge methods are enforced** by repository rulesets: candidate branches
+(`refs/heads/candidate/*`) take squash merges only, `main` takes rebase merges only, and
+both take changes through pull requests only, with no required approval. The
+repository admin role bypasses both: the release bump is a direct commit on `main`,
+and rewriting a candidate (a red candidate, a rebase on `main`) is a force push an
+admin makes.
 
 ## The candidate
 
@@ -56,16 +64,24 @@ candidate exists on a day without pull requests.
   candidate's body is removed by hand. The fix comes in a new pull request.
 - **When `main` moves** (a hotfix), the candidate rebases on `main` and `ci:local` runs
   again.
+- **Stranded pull requests.** A pull request left on a candidate that is no longer open
+  (closed without merging, or a merge whose event the workflow dropped) moves onto the
+  open candidate at the automation's next run, whatever event starts it.
 
 **Hotfixes** stay on `main`: a branch named with the hotfix prefix, or the hotfix
 label, keeps the pull request on `main`, where it gets the full CI and merges on its
 own. A pull request moved by mistake goes back with the label and
 `gh pr edit <n> --base main`.
 
+**Pull requests from forks and from Dependabot** stay on `main`: their runs get no
+repository secrets, so no app token. A maintainer moves one onto the candidate with
+`pnpm exec lntt-ci candidate --pr <n>`, or merges it on `main` as a hotfix.
+
 The automation runs from a terminal too: `pnpm exec lntt-ci candidate --pr <n>` does
 what the workflow would do on that pull request's event (move it, rebuild a
 candidate's lists, or close and carry over on a merged candidate), and `--dry-run`
-prints the writes instead of making them.
+prints the writes instead of making them. A terminal run is outside the workflow's
+concurrency group: run one at a time, and not while the workflow is running.
 
 ## The candidate automation
 
@@ -91,17 +107,26 @@ and pull requests stay where they are opened. To turn it on:
      pull request, edit the body, comment), Issues *read and write* (comment on and
      close issues). Metadata *read* comes with them. Nothing else: no approvals, no
      administration, no workflows.
+   - **Homepage URL** (required by the form): this repository's URL.
    - **Webhook:** off. **Events:** none; the workflow brings the events.
    - **Where it can be installed:** only this account.
-2. **Install it** on this repository only.
+2. **Install it** with *Repository access: only select repositories*, and select this
+   repository only.
 3. **Store its credentials** in the repository (Settings → Secrets and variables →
    Actions): the app's **Client ID** in the variable `CANDIDATE_APP_CLIENT_ID`, and a
    generated **private key** (the whole `.pem`) in the secret
    `CANDIDATE_APP_PRIVATE_KEY`.
-4. **Repository settings:** rebase merge allowed (the candidate into `main`) and squash
-   merge allowed (a pull request into the candidate). *Automatically delete head
-   branches* may stay as it is: the automation finds the pull requests left behind
-   either way.
+4. **Add the app as a bypass actor of the candidates ruleset** (*candidates: squash
+   merge only*): it creates `candidate/<N>` with a commit, which the ruleset's
+   pull-request rule otherwise blocks.
+5. **Repository settings:** rebase merge and squash merge allowed (the rulesets narrow
+   each branch to one). *Automatically delete head branches* may stay as it is: the
+   automation finds the pull requests left behind either way.
+
+**Rotating the key.** A pull request from this repository runs its own copy of the
+workflow file, with the app's key in reach, so anyone with write access can use the
+token in a run. When someone loses write access, generate a new private key in the
+app, replace `CANDIDATE_APP_PRIVATE_KEY`, and delete the old key.
 
 ## The Lunette plugin
 
@@ -163,8 +188,10 @@ because npm configures a trusted publisher only on a package that exists:
   nothing would check that the tests ran on the published code.
 - **Release pull requests.** A version bump has nothing to review that CI does not
   already check.
-- **GitHub's merge queue.** It is the mechanism built for this, and on a private
-  repository it needs GitHub Enterprise Cloud.
+- **GitHub's merge queue.** It is the mechanism built for this. The flow here is the
+  one the templates ship to their projects, which are private and on plans without a
+  merge queue, and this repository exists to try that same flow: a merge queue here
+  could not be tested for them.
 - **A fixed `candidate` branch, or one created every day by a cron.** A cron opens
   candidates on days without work, and a pull request opened before it has nowhere to
   go; a fixed branch has to be reset after every merge. A numbered candidate created

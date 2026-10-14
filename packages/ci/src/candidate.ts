@@ -112,10 +112,11 @@ export function retargetDecision(
   return { move: true, reason: `it targets ${config.base}` }
 }
 
-const CLOSING = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\s+((?:[\w.-]+\/[\w.-]+)?#\d+)\b/gi
+const CLOSING =
+  /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\s+((?:[\w.-]+\/[\w.-]+)?#\d+|https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/\d+)\b/gi
 
-// The issues a body closes, as written after the keyword (`#12`, `owner/repo#12`), in
-// order and once each. Fenced code, inline code and HTML comments do not count, as on
+// The issues a body closes, as written after the keyword (`#12`, `owner/repo#12`, or an
+// issue URL, given as `owner/repo#12`), in order and once each. Fenced code, inline code and HTML comments do not count, as on
 // GitHub.
 export function closingReferences(body: string | null | undefined): string[] {
   const text = (body ?? '')
@@ -124,7 +125,9 @@ export function closingReferences(body: string | null | undefined): string[] {
     .replace(/`[^`\n]*`/g, '')
   const refs: string[] = []
   for (const match of text.matchAll(CLOSING)) {
-    if (!refs.includes(match[1])) refs.push(match[1])
+    const url = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/issues\/(\d+)$/i.exec(match[1])
+    const ref = url ? `${url[1]}#${url[2]}` : match[1]
+    if (!refs.includes(ref)) refs.push(ref)
   }
   return refs
 }
@@ -188,6 +191,28 @@ export function carryOverDecision(
 }
 
 const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
+
+// Open pull requests stranded on a candidate that is no longer open: still based on
+// it, or moved onto the base by GitHub when it was deleted. A dropped event (the
+// concurrency group keeps one pending run) or a candidate closed without merging
+// leaves them there; every run sweeps them onto the open candidate.
+export function sweepDecision(
+  config: CandidateConfig,
+  { openPrs, openCandidates }: { openPrs: OpenPullRequest[]; openCandidates: string[] },
+): { move: number[] } {
+  const stranded = (branch: string | undefined) =>
+    branch !== undefined && candidateNumber(config, branch) !== null && !openCandidates.includes(branch)
+  const move = openPrs
+    .filter(
+      (pr) =>
+        (stranded(pr.baseRef) || (pr.baseRef === config.base && stranded(pr.lastBaseChange?.from))) &&
+        pr.author !== 'dependabot[bot]' &&
+        retargetDecision(config, { ...pr, baseRef: config.base }).move,
+    )
+    .map((pr) => pr.number)
+    .sort((a, b) => a - b)
+  return { move }
+}
 
 export function candidateBody(config: CandidateConfig, n: number): string {
   return [
@@ -313,7 +338,7 @@ interface CandidatePr {
   body?: string
 }
 
-function openCandidate({ gh, repo, config }: Run): CandidatePr | null {
+function openCandidates({ gh, repo, config }: Run): CandidatePr[] {
   const prs = JSON.parse(
     gh.read([
       'pr',
@@ -330,10 +355,13 @@ function openCandidate({ gh, repo, config }: Run): CandidatePr | null {
       'number,headRefName,body',
     ]),
   ) as CandidatePr[]
-  const candidates = prs
+  return prs
     .filter((pr) => candidateNumber(config, pr.headRefName) !== null)
     .sort((a, b) => (candidateNumber(config, a.headRefName) ?? 0) - (candidateNumber(config, b.headRefName) ?? 0))
-  return candidates[0] ?? null
+}
+
+function openCandidate(run: Run): CandidatePr | null {
+  return openCandidates(run)[0] ?? null
 }
 
 function candidateNames({ gh, repo, config }: Run) {
@@ -692,6 +720,21 @@ export function record(run: Run, pr: PullRequest) {
   return { recorded }
 }
 
+export function sweep(run: Run) {
+  const candidates = openCandidates(run)
+  const { move } = sweepDecision(run.config, {
+    openPrs: openPrs(run),
+    openCandidates: candidates.map((c) => c.headRefName),
+  })
+  if (move.length === 0) return { move }
+  const candidate = candidates[0] ?? createCandidate(run)
+  run.log(
+    `candidate: ${move.map((n) => `#${n}`).join(', ')} stranded on a closed candidate: moving onto ${candidate.headRefName}.`,
+  )
+  for (const number of move) moveOnto(run, number, candidate)
+  return { move }
+}
+
 // The candidate is merged: its issues close, and the pull requests it left behind
 // move. One failing does not stop the other; the run fails after both.
 export function candidateMerged(run: Run, pr: PullRequest) {
@@ -706,8 +749,10 @@ export function candidateMerged(run: Run, pr: PullRequest) {
   if (errors.length > 0) throw new Error(errors.join('; '))
 }
 
-// What the event asks for: move, record, or close and carry over.
+// What the event asks for: move, record, or close and carry over; first, the sweep of
+// pull requests a dropped event left behind.
 export function handle(run: Run, action: string, pr: PullRequest) {
+  sweep(run)
   if (action === 'opened' || action === 'ready_for_review') retarget(run, pr)
   else if (action === 'closed' && isCandidateMerge(run.config, pr)) candidateMerged(run, pr)
   else if (action === 'closed') record(run, pr)
