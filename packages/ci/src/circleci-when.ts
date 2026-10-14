@@ -114,12 +114,26 @@ function expression(text: string, values: PipelineValues): boolean {
   return Boolean(result())
 }
 
+// `<< pipeline.git.branch >>` and the other pipeline values inside a logic map, from
+// the event; one the local run does not have is unknown, never left as literal text.
+function resolve(value: unknown, values: PipelineValues): unknown {
+  if (typeof value !== 'string') return value
+  const whole = /^<<\s*(pipeline\.[\w.-]+)\s*>>$/.exec(value)
+  const lookup = (name: string) => {
+    if (!Object.hasOwn(values, name)) throw new Unknown(name)
+    return values[name]
+  }
+  if (whole) return lookup(whole[1])
+  return value.replace(/<<\s*(pipeline\.[\w.-]+)\s*>>/g, (_, name) => lookup(name))
+}
+
 function logic(when: unknown, values: PipelineValues): boolean {
   if (when === undefined || when === null) return true
   if (typeof when === 'boolean') return when
   if (typeof when === 'string') {
-    if (when === 'true' || when === 'false') return when === 'true'
-    return expression(when, values)
+    const text = String(resolve(when, values))
+    if (text === 'true' || text === 'false') return text === 'true'
+    return expression(text, values)
   }
   if (typeof when === 'object') {
     const map = when as Record<string, unknown>
@@ -127,12 +141,12 @@ function logic(when: unknown, values: PipelineValues): boolean {
     if ('or' in map) return (map.or as unknown[]).some((c) => logic(c, values))
     if ('not' in map) return !logic(map.not, values)
     if ('equal' in map) {
-      const [first, ...rest] = map.equal as unknown[]
+      const [first, ...rest] = (map.equal as unknown[]).map((v) => resolve(v, values))
       return rest.every((v) => JSON.stringify(v) === JSON.stringify(first))
     }
     if ('matches' in map) {
       const { pattern, value } = map.matches as { pattern: string; value: string }
-      return new RegExp(pattern).test(String(value))
+      return new RegExp(String(resolve(pattern, values))).test(String(resolve(value, values)))
     }
     if ('condition' in map) return logic(map.condition, values)
   }

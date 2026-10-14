@@ -30,6 +30,7 @@ import {
   formatReport,
   githubJobs,
   localEvent,
+  missingTools,
   runJobs,
 } from '../src/index.ts'
 
@@ -90,6 +91,13 @@ try {
       `lntt-ci: the working tree has uncommitted changes; ci:local checks the commit about to be pushed:\n${dirty}\n`,
     )
     exit(1)
+  }
+  if (values.container) {
+    const missing = missingTools(jobs, values.job)
+    if (missing.length > 0) {
+      stderr.write(`lntt-ci: container mode needs ${missing.join(', ')} on the PATH\n`)
+      exit(1)
+    }
   }
   const results = await runJobs(jobs, {
     log: (line) => stdout.write(`${line}\n`),

@@ -239,3 +239,62 @@ jobs:
     )
   })
 })
+
+describe('review fixes', () => {
+  test('an unknown action fails even when its inputs read an undeclared secret', async () => {
+    const wf = `
+on: pull_request
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: some/deploy@v1
+        with:
+          token: \${{ secrets.DEPLOY }}
+`
+    const local = byKey(await jobs({ '.github/workflows/a.yml': wf }), 'a.yml/a').steps[0].local
+    assert.equal(local.kind, 'fail')
+  })
+
+  test('without shell: bash -e as GitHub runs it; an explicit shell: bash adds pipefail', async () => {
+    const wf = `
+on: pull_request
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'false | true'
+      - run: 'false | true'
+        shell: bash
+`
+    const steps = byKey(await jobs({ '.github/workflows/a.yml': wf }), 'a.yml/a').steps
+    assert.deepEqual(steps[0].local.kind === 'run' && steps[0].local.shell, ['bash', '-e', '-c'])
+    assert.deepEqual(steps[1].local.kind === 'run' && steps[1].local.shell, [
+      'bash',
+      '--noprofile',
+      '--norc',
+      '-eo',
+      'pipefail',
+      '-c',
+    ])
+  })
+
+  test('a job with needs gets its condition decided after them', async () => {
+    const wf = `
+on: pull_request
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps: [{ run: 'true' }]
+  notify:
+    needs: build
+    if: failure()
+    runs-on: ubuntu-latest
+    steps: [{ run: 'true' }]
+`
+    const notify = byKey(await jobs({ '.github/workflows/a.yml': wf }), 'a.yml/notify')
+    assert.deepEqual(notify.state, { state: 'run' })
+    assert.deepEqual(notify.condition?.decide({ success: false, failure: true }), { known: true, value: true })
+    assert.deepEqual(notify.condition?.decide({ success: true, failure: false }), { known: true, value: false })
+  })
+})

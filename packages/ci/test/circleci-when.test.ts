@@ -59,3 +59,21 @@ describe('substituteParameters', () => {
     )
   })
 })
+
+describe('pipeline values inside logic maps', () => {
+  test('<< pipeline.git.branch >> is the event branch', () => {
+    assert.deepEqual(evaluateWhen({ equal: ['main', '<< pipeline.git.branch >>'] }, push), { known: true, value: true })
+    assert.deepEqual(evaluateWhen({ equal: ['main', '<< pipeline.git.branch >>'] }, pr), { known: true, value: false })
+    assert.deepEqual(evaluateWhen({ matches: { pattern: '^feat/', value: '<< pipeline.git.branch >>' } }, pr), {
+      known: true,
+      value: true,
+    })
+  })
+
+  test('a pipeline value the local run does not have is unknown, not a silent false', () => {
+    assert.deepEqual(evaluateWhen({ equal: ['webapp', '<< pipeline.trigger_source >>'] }, pr), {
+      known: false,
+      unknown: ['pipeline.trigger_source'],
+    })
+  })
+})

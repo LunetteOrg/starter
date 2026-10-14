@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process'
 import type { Job, Local, Step } from './plan.ts'
 
 export type StepStatus = 'passed' | 'failed' | 'skipped' | 'noop' | 'blocked'
-export type JobStatus = 'passed' | 'failed' | 'skipped' | 'cloud-only' | 'blocked'
+export type JobStatus = 'passed' | 'failed' | 'skipped' | 'cloud-only' | 'blocked' | 'not-selected'
 
 export interface StepResult {
   label: string
@@ -122,17 +122,32 @@ export async function runJobs(jobs: Job[], options: RunOptions): Promise<JobResu
       results.set(job.key, { key: job.key, status, ...(reason ? { reason } : {}), steps, ms: Date.now() - started })
 
     if (options.only && !options.only.includes(job.key)) {
-      record('skipped', 'not selected with --job')
+      record('not-selected', 'not selected with --job')
       continue
     }
     if (job.state.state !== 'run') {
       record(job.state.state, job.state.reason)
       continue
     }
-    const failedNeed = job.needs.find((need) => results.get(need)?.status === 'failed')
-    if (failedNeed) {
-      record('skipped', `needs ${failedNeed}, which failed`)
-      continue
+    if (job.needs.length > 0) {
+      const statuses = job.needs.map((need) => [need, results.get(need)?.status ?? 'missing'] as const)
+      const needs = {
+        success: statuses.every(([, status]) => status === 'passed'),
+        failure: statuses.some(([, status]) => status === 'failed'),
+      }
+      const after = statuses.map(([need, status]) => `${need}: ${status}`).join(', ')
+      const decision = job.condition ? job.condition.decide(needs) : { known: true as const, value: needs.success }
+      if (!decision.known) {
+        record('blocked', `condition ${job.condition?.text} needs ${decision.unknown.join(', ')}`)
+        continue
+      }
+      if (!decision.value) {
+        record(
+          'skipped',
+          `${job.condition ? `condition ${job.condition.text} is false` : 'not every need passed'} (${after})`,
+        )
+        continue
+      }
     }
     options.onJob?.(job.key)
     options.log(`● ${job.key}`)

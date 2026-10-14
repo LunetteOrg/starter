@@ -159,9 +159,10 @@ function step(converted: TemplateJob & { type: 'job' }, index: number, raw: Toke
     const uses = scalar(source.uses, context)
     const usesText = uses.known ? uses.value : String(source.uses)
     const inputs = strings(find(raw, 'with'), context)
-    let local: Local
-    if (!inputs.known) local = { kind: 'blocked', reason: why(inputs.unknown) }
-    else local = localAction(usesText, inputs.value, scope.root, scope.config)
+    // The action decides first: one with no local equivalent fails whatever its inputs
+    // read, so a secret in its inputs cannot turn the failure into "not run".
+    let local = localAction(usesText, inputs.known ? inputs.value : {}, scope.root, scope.config)
+    if (local.kind !== 'fail' && !inputs.known) local = { kind: 'blocked', reason: why(inputs.unknown) }
     return { label: label(`uses: ${usesText}`), ...base, local }
   }
 
@@ -171,7 +172,7 @@ function step(converted: TemplateJob & { type: 'job' }, index: number, raw: Toke
   const result = (local: Local): Step => ({ label: label(`run: ${firstLine(written)}`), ...base, local })
   if (!env.known) return result({ kind: 'blocked', reason: why(env.unknown) })
   if (!run.known) return result({ kind: 'blocked', reason: why(run.unknown) })
-  const shellName = literal(find(raw, 'shell')) ?? scope.defaults.shell ?? 'bash'
+  const shellName = literal(find(raw, 'shell')) ?? scope.defaults.shell ?? 'default'
   const shell = SHELLS[shellName]
   if (!shell) return result({ kind: 'fail', reason: `shell ${shellName} is not supported by ci:local (bash, sh)` })
   const directory = literal(find(raw, 'working-directory')) ?? scope.defaults.workingDirectory
@@ -242,11 +243,23 @@ async function workflowJobs(root: string, file: string, event: Event, config: Ci
     const env = { ...(workflowEnv.known ? workflowEnv.value : {}), ...(jobEnv.known ? jobEnv.value : {}) }
     const context: Context = { github, secrets, vars, env }
 
+    const text = job.if.expression
+    // A job with needs is decided after them (success(), failure(), always()); here
+    // only a value the local run cannot know is caught.
+    const hasNeeds = base.needs.length > 0
+    const condition = hasNeeds
+      ? {
+          condition: {
+            text,
+            decide: ({ success, failure }: { success: boolean; failure: boolean }) =>
+              evaluate(text, context, { failed: failure, success }),
+          },
+        }
+      : {}
     if (state.state === 'run') {
-      const condition = evaluate(job.if.expression, context, { failed: false })
-      if (!condition.known)
-        state = { state: 'blocked', reason: `condition ${job.if.expression} ${why(condition.unknown)}` }
-      else if (!condition.value) state = { state: 'skipped', reason: `condition ${job.if.expression} is false` }
+      const now = evaluate(text, context, { failed: false })
+      if (!now.known) state = { state: 'blocked', reason: `condition ${text} ${why(now.unknown)}` }
+      else if (!now.value && !hasNeeds) state = { state: 'skipped', reason: `condition ${text} is false` }
       else if (!workflowEnv.known || !jobEnv.known) {
         state = {
           state: 'blocked',
@@ -274,6 +287,7 @@ async function workflowJobs(root: string, file: string, event: Event, config: Ci
     )
     jobs.push({
       ...base,
+      ...condition,
       state,
       notes: [...(trigger.runs && trigger.reason ? [trigger.reason] : []), ...jobNotes(job)],
       steps,

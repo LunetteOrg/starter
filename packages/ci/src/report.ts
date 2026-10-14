@@ -50,12 +50,20 @@ export function formatList(event: Event, jobs: Job[]): string {
   if (jobs.length === 0) lines.push('No CI configuration found (.github/workflows, .circleci/config.yml).')
   for (const job of jobs) {
     lines.push(`${job.key}  [${job.workflow}]  ${jobLine(job)}`)
-    if (job.needs.length > 0) lines.push(`    needs ${job.needs.join(', ')}`)
+    if (job.needs.length > 0) {
+      const after = job.condition ? `, then if ${job.condition.text}` : ''
+      lines.push(`    needs ${job.needs.join(', ')}${after}`)
+    }
     for (const note of job.notes) lines.push(`    note: ${note}`)
     for (const step of job.steps) {
       const condition = step.condition ? `  if ${step.condition.text}` : ''
+      // The condition as the job starts: no step has failed yet.
+      const decision = step.condition?.decide(false)
+      let action = local(step.local)
+      if (decision && !decision.known) action = `not run: the condition needs ${decision.unknown.join(', ')}`
+      else if (decision && !decision.value) action = 'skipped: the condition is false for this event'
       lines.push(`    ${step.label}${condition}`)
-      lines.push(`      → ${local(step.local)}`)
+      lines.push(`      → ${action}`)
     }
     lines.push('')
   }
@@ -68,7 +76,7 @@ const seconds = (ms: number | undefined) => (ms === undefined ? '' : `  ${(ms / 
 
 export function formatReport(event: Event, results: JobResult[], { strict }: { strict: boolean }): string {
   const lines = ['', `ci:local — ${describeEvent(event)}`, '']
-  const mark = { passed: '✔', failed: '✖', skipped: '–', 'cloud-only': '☁', blocked: '⚠' } as const
+  const mark = { passed: '✔', failed: '✖', skipped: '–', 'cloud-only': '☁', blocked: '⚠', 'not-selected': '·' } as const
   for (const result of results) {
     const reason = result.reason ? `  ${result.status}: ${result.reason}` : ''
     lines.push(`${mark[result.status]} ${result.key}${result.steps.length > 0 ? seconds(result.ms) : ''}${reason}`)
@@ -83,7 +91,15 @@ export function formatReport(event: Event, results: JobResult[], { strict }: { s
   const blockedSteps = results.flatMap((r) => r.steps).filter((s) => s.status === 'blocked').length
   lines.push(
     '',
-    `${count('passed')} passed, ${count('failed')} failed, ${count('cloud-only')} cloud only, ${count('skipped')} not triggered, ${count('blocked')} jobs and ${blockedSteps} steps not run`,
+    [
+      `${count('passed')} passed`,
+      `${count('failed')} failed`,
+      `${count('cloud-only')} cloud only`,
+      // The cloud would skip them too: trigger, filter, condition, or a need that did not pass.
+      `${count('skipped')} skipped`,
+      ...(count('not-selected') > 0 ? [`${count('not-selected')} not selected with --job`] : []),
+      `${count('blocked')} jobs and ${blockedSteps} steps not run`,
+    ].join(', '),
   )
   if (!strict && (count('blocked') > 0 || blockedSteps > 0)) {
     lines.push('Not run (⚠) does not fail the run; --strict makes it fail.')
