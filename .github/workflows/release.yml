@@ -52,7 +52,10 @@ jobs:
       - name: Publish
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          for dir in $(node scripts/packages-version.mts list); do
+          # On its own line: a failing list inside `for … in $(…)` would publish
+          # nothing and leave the step green.
+          dirs="$(node scripts/packages-version.mts list)"
+          for dir in $dirs; do
             name="$(node -p "require('./$dir/package.json').name")"
             if npm view "$name@$VERSION" version >/dev/null 2>&1; then
               echo "$name@$VERSION is already on npm: skipped"
