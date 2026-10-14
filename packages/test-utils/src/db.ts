@@ -1,11 +1,14 @@
 import { existsSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { PostgreSqlContainer } from '@testcontainers/postgresql'
 import { type AnyRelations, type EmptyRelations, TransactionRollbackError } from 'drizzle-orm'
 import type { PgAsyncTransaction } from 'drizzle-orm/pg-core'
 import { drizzle, type PostgresJsQueryResultHKT } from 'drizzle-orm/postgres-js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
+import { WORKSPACE_LABEL, workspaceRoot } from './workspace.ts'
+
+export { WORKSPACE_LABEL, workspaceRoot }
 
 /** Transaction type produced by a relations-aware createTestDb. */
 export type TestTransaction<TRelations extends AnyRelations = EmptyRelations> = PgAsyncTransaction<
@@ -15,29 +18,6 @@ export type TestTransaction<TRelations extends AnyRelations = EmptyRelations> = 
 
 /** The Postgres every test server runs: the major of the Lunette template. */
 export const POSTGRES_IMAGE = 'postgres:17'
-
-/**
- * Label stamped on every Postgres this package starts, valued with the workspace it
- * belongs to. It is what makes a cleanup safe: culling by image would destroy other
- * projects' Postgres. `lntt-clean-test` culls by this label only.
- */
-export const WORKSPACE_LABEL = 'com.lntt.workspace'
-
-/**
- * The root of the checkout a process belongs to: the nearest ancestor holding
- * `pnpm-workspace.yaml`, not the package directory vitest runs from. In a git
- * worktree it is the worktree. `lntt-clean-test` derives its default scope from the
- * same function, so the label and the cleanup cannot disagree.
- */
-export function workspaceRoot(from: string = process.cwd()): string {
-  let dir = resolve(from)
-  for (;;) {
-    if (existsSync(resolve(dir, 'pnpm-workspace.yaml'))) return dir
-    const parent = dirname(dir)
-    if (parent === dir) return resolve(from)
-    dir = parent
-  }
-}
 
 /**
  * The test Postgres, not yet started, labelled with the workspace. The tmpfs goes on

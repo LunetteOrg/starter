@@ -34,6 +34,17 @@ const mode = process.argv[2]
 // 'teardown' waits for a line on stdin, so the test can look at the container first.
 if (mode === 'teardown') process.stdin.once('data', async () => { await teardown(); console.log('DONE') })
 else if (mode === 'exit') process.exit(0)
+// 'restart' is vitest's watch mode: teardown, then setup again in the same process.
+else if (mode === 'restart') {
+  const handlers = () => process.listenerCount('exit') + ' ' + process.listenerCount('SIGTERM') + ' ' + process.listenerCount('SIGHUP')
+  console.log('BEFORE ' + handlers())
+  await teardown()
+  console.log('CLEARED ' + (process.env.TEST_DATABASE_URL ?? ''))
+  await setup()
+  console.log('AGAIN ' + (process.env.TEST_DATABASE_URL ?? ''))
+  console.log('AFTER ' + handlers())
+  await teardown()
+}
 else setInterval(() => {}, 1000)
 `,
   )
@@ -102,6 +113,27 @@ describe.skipIf(!hasTestDatabase())('the globalSetup owns one Postgres', () => {
     const run = start(dir, 'exit', own)
     await run.ready
     await run.exited
+    expect(containersOf(dir)).toEqual([])
+  })
+
+  // In watch mode vitest runs teardown and setup again in one process: the server it
+  // published must not survive as if it had been given from outside.
+  it('starts a new server when set up again after its teardown, with one set of handlers', async () => {
+    const dir = workspace()
+    const run = start(dir, 'restart', own)
+    const first = await run.ready
+    expect(await run.exited).toBe(0)
+    const line = (prefix: string) =>
+      run
+        .output()
+        .split('\n')
+        .find((l) => l.startsWith(prefix))
+        ?.slice(prefix.length + 1)
+    expect(line('CLEARED')).toBe('')
+    expect(line('AGAIN')).toMatch(/^postgres(ql)?:\/\//)
+    expect(line('AGAIN')).not.toBe(first)
+    // Other libraries listen too: what matters is that a second setup adds nothing.
+    expect(line('AFTER')).toBe(line('BEFORE'))
     expect(containersOf(dir)).toEqual([])
   })
 

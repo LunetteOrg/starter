@@ -12,6 +12,9 @@ import { dockerAvailable, testDbAction } from './docker.ts'
  * exits before anything can stop it.
  */
 let container: StartedPostgreSqlContainer | undefined
+/** The URL this module published, which teardown takes back. */
+let published: string | undefined
+let handlersRegistered = false
 
 export async function setup(): Promise<void> {
   // Before any early return: a hand-registered globalSetup, without the plugin, keeps
@@ -26,7 +29,8 @@ export async function setup(): Promise<void> {
   if (action !== 'start') return
 
   container = await postgresContainer().start()
-  process.env.TEST_DATABASE_URL = container.getConnectionUri()
+  published = container.getConnectionUri()
+  process.env.TEST_DATABASE_URL = published
   // Here, not at module scope: vitest may load this module once per project, and only
   // the load that owns a container must hold handlers.
   registerKillHandlers()
@@ -34,6 +38,10 @@ export async function setup(): Promise<void> {
 
 export async function teardown(): Promise<void> {
   await stopAllTestDbs()
+  // Vitest's watch mode runs setup again in this process: a URL left behind would
+  // read as a server given from outside, dead, and every database test would fail.
+  if (published && process.env.TEST_DATABASE_URL === published) delete process.env.TEST_DATABASE_URL
+  published = undefined
   if (!container) return
   try {
     await container.stop()
@@ -76,6 +84,9 @@ function removeContainerSync(): void {
 }
 
 function registerKillHandlers(): void {
+  // Once per process: the handlers read `container`, whichever run set it.
+  if (handlersRegistered) return
+  handlersRegistered = true
   process.on('exit', removeContainerSync)
   // `exit` does not run for a process felled by a signal it never caught. The
   // re-raise keeps a killed run from reporting itself clean.

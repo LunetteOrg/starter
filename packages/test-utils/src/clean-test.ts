@@ -7,7 +7,7 @@
 // of its own); `--all` widens to every workspace, for worktrees that no longer exist.
 // `--dry-run` lists and removes nothing.
 import { execFileSync } from 'node:child_process'
-import { WORKSPACE_LABEL, workspaceRoot } from './db.ts'
+import { WORKSPACE_LABEL, workspaceRoot } from './workspace.ts'
 
 const args = new Set(process.argv.slice(2))
 const docker = (argv: string[]): string => execFileSync('docker', argv, { encoding: 'utf8', stdio: 'pipe' })
