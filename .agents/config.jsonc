@@ -20,6 +20,14 @@
       }
     }
   },
+  // What pnpm ci:local leaves to the cloud (docs/process/ci.md).
+  "ci": {
+    "local": {
+      "cloudOnly": {
+        "release.yml": "publishes @lntt/create to npm with the OIDC token of a published GitHub Release"
+      }
+    }
+  },
   "delivery": {
     "commits": {
       "language": "en",

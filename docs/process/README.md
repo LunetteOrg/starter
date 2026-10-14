@@ -8,5 +8,6 @@ Technical decisions are in [`docs/adr/`](../adr/README.md), never here.
 
 | Area | Page |
 |---|---|
+| ci | [ci.md](./ci.md) |
 | delivery | [delivery.md](./delivery.md) |
 | recording | [recording.md](./recording.md) |

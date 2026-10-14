@@ -197,3 +197,26 @@ describe('the local section', () => {
     assert.throws(() => loadConfig(root), /port|commands/)
   })
 })
+
+describe('the ci section', () => {
+  const local = {
+    cloudOnly: { 'release.yml': 'publishes to npm', 'circleci/deploy': 'deploys' },
+    fake: { secrets: { CANARY: 'not-a-secret' }, vars: { REGION: 'eu' } },
+    actions: { 'actions/upload-artifact': { skip: 'nothing to upload' }, 'owner/lint': { run: 'pnpm lint' } },
+  }
+
+  test('declares cloud-only jobs, fake values and local stand-ins for actions', () => {
+    write('.agents/config.jsonc', JSON.stringify({ ci: { local } }))
+    assert.equal(getValue(loadConfig(root).data, 'ci.local.fake.secrets.CANARY'), 'not-a-secret')
+  })
+
+  test('a cloud-only job needs its reason', () => {
+    write('.agents/config.jsonc', JSON.stringify({ ci: { local: { cloudOnly: { 'release.yml': '' } } } }))
+    assert.throws(() => loadConfig(root), /cloudOnly/)
+  })
+
+  test('an action maps to a command or to a skip with its reason, not both', () => {
+    write('.agents/config.jsonc', JSON.stringify({ ci: { local: { actions: { 'a/b': { run: 'x', skip: 'y' } } } } }))
+    assert.throws(() => loadConfig(root), /actions/)
+  })
+})

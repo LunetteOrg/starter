@@ -15,6 +15,7 @@ packages/
   playwright-config/    # @lntt/playwright-config: definePlaywrightConfig
   test-utils/           # @lntt/test-utils: test Postgres per run, architecture guards
   project-config/       # reads .agents/config.* and the operator profile (lntt-config)
+  ci/                   # runs the CI configuration locally (lntt-ci, pnpm ci:local)
 plugins/
   lunette/              # the Lunette plugin: skills installed unchanged in every project
 .claude-plugin/marketplace.json
@@ -61,6 +62,8 @@ Node ≥ 24 and pnpm. `pnpm lint`, `pnpm typecheck` and `pnpm test` run every pa
 `SCAFFOLD_SMOKE=1 pnpm test` also installs, lints and typechecks a generated project.
 The database tests of `@lntt/test-utils` need Docker: without it they skip locally and
 fail in CI.
+`pnpm ci:local` runs the CI workflows on the working tree before a push
+([CI](./docs/process/ci.md)).
 
 - The CLI is TypeScript run directly by Node in this repo and compiled to `dist/` when
   packed ([CLI runtime and publishing](./docs/adr/cli-runtime-and-publishing.md)).
