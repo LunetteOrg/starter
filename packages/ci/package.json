@@ -2,7 +2,7 @@
   "name": "@lntt/ci",
   "version": "0.0.0",
   "private": true,
-  "description": "Runs a Lunette project's real CI configuration on the local machine (ci:local)",
+  "description": "Runs a Lunette project's real CI configuration on the local machine (ci:local), and its candidate automation",
   "type": "module",
   "license": "MIT",
   "exports": {

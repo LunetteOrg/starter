@@ -240,6 +240,36 @@ jobs:
   })
 })
 
+describe('the full and the minimal CI', () => {
+  const wf = `
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+jobs:
+  ci:
+    if: github.event_name == 'push' || !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    steps:
+      - run: pnpm lint
+      - if: github.event_name == 'push' || github.base_ref == github.event.repository.default_branch
+        run: pnpm test
+`
+
+  test('a pull request into the default branch runs the tests, one into a candidate does not', async () => {
+    root = repo({ '.github/workflows/ci.yml': wf })
+    const full = byKey(await githubJobs(root, localEvent(root, 'pull_request', 'main'), emptyConfig()), 'ci.yml/ci')
+    assert.deepEqual(full.steps[1].condition?.decide(false), { known: true, value: true })
+    const minimal = byKey(
+      await githubJobs(root, localEvent(root, 'pull_request', 'candidate/3'), emptyConfig()),
+      'ci.yml/ci',
+    )
+    assert.deepEqual(minimal.state, { state: 'run' })
+    assert.deepEqual(minimal.steps[1].condition?.decide(false), { known: true, value: false })
+  })
+})
+
 describe('review fixes', () => {
   test('an unknown action fails even when its inputs read an undeclared secret', async () => {
     const wf = `

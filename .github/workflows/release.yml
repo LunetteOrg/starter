@@ -37,7 +37,8 @@ jobs:
 
       # Gate: never publish a broken commit. `pnpm test` packs every package and
       # installs the tarballs into a scaffolded project (SCAFFOLD_SMOKE), the same
-      # checks every pull request runs in ci.yml.
+      # checks ci.yml's full CI runs on the candidate and on every push to main, and
+      # pnpm ci:local runs before a pull request leaves draft.
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test

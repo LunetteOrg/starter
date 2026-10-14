@@ -24,11 +24,19 @@
   "ci": {
     "local": {
       "cloudOnly": {
-        "release.yml": "publishes @lntt/create to npm with the OIDC token of a published GitHub Release"
+        "release.yml": "publishes @lntt/create to npm with the OIDC token of a published GitHub Release",
+        "candidate.yml": "moves pull requests and edits the candidate with the GitHub App's token"
       }
     }
   },
   "delivery": {
+    // Pull requests into main collect on candidate/<N>, which reaches main with a
+    // rebase merge (docs/process/delivery.md).
+    "candidate": {
+      "base": "main",
+      "prefix": "candidate/",
+      "hotfix": { "prefix": "hotfix/", "label": "hotfix" }
+    },
     "commits": {
       "language": "en",
       "longTrailers": [

@@ -1,6 +1,7 @@
 # @lntt/ci
 
-Runs a project's CI on the local machine from the provider's own configuration: GitHub
+Runs a project's CI on the local machine, and moves pull requests through the
+candidate branch. ci:local reads the provider's own configuration: GitHub
 Actions workflows parsed with `@actions/workflow-parser` (conditions evaluated with
 `@actions/expressions`), CircleCI expanded with `circleci config process` and read
 with `yaml`. The project's `ci.local` values (cloud-only jobs, fake secrets, actions
@@ -17,7 +18,15 @@ lntt-ci local --strict             # fail on anything the cloud runs and the run
 lntt-ci local --container          # each job in act / circleci local execute
 ```
 
-A project runs it as `pnpm ci:local`. Exit codes: 0 green, 1 a red job or a
+```sh
+lntt-ci candidate                     # in the candidate workflow: reads the pull_request event
+lntt-ci candidate --pr 12 --dry-run   # from a terminal: what the workflow would do for #12
+```
+
+A project runs the first as `pnpm ci:local`; the second is the candidate automation
+(`delivery.candidate`), run by the project's candidate workflow, whose flow is the
+delivery process description (`docs/process/delivery.md`). The candidate logic is
+adapted from DiscenTech/pelion's `scripts/ci/release-candidate.mjs`. Exit codes: 0 green, 1 a red job or a
 configuration error, 2 a usage error.
 
 ## What it runs
@@ -93,9 +102,17 @@ and Docker are on the PATH before starting.
 }
 ```
 
+```jsonc
+"delivery": {
+  // Pull requests into main collect on candidate/<N>.
+  "candidate": { "base": "main", "prefix": "candidate/", "hotfix": { "prefix": "hotfix/", "label": "hotfix" } }
+}
+```
+
 ## Requirements
 
-Node ≥ 24. CircleCI projects need the `circleci` CLI; container mode needs Docker and
+Node ≥ 24. The candidate automation needs `gh`, authenticated with a token that has
+contents, pull requests and issues on the repository. CircleCI projects need the `circleci` CLI; container mode needs Docker and
 `act` or the `circleci` CLI.
 
 The package is private and runs from source until it is published with the other
