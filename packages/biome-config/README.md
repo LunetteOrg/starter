@@ -42,4 +42,5 @@ formatted.
 The messages cite the ADRs of a project scaffolded from the Lunette `react-router`
 template (`docs/adr/architecture-and-boundaries.md`), where each rule's reason is
 recorded. `no-entity-spread-in-loader` and `no-throw-new-error` are the editor and
-pre-commit net; the matching CI net is in `@lntt/test-utils`.
+pre-commit net; the matching CI net is the architecture tests of the test-utils
+package (today the template's `packages/test-utils`, extracted as `@lntt/test-utils`).

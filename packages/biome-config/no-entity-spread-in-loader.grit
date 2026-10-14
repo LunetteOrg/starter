@@ -8,7 +8,7 @@
 // keys at runtime; only an explicit read-view/DTO projection does.
 //
 // This is the editor/pre-commit net; the arch test `assertNoEntitySpreadInReturn`
-// (@lntt/test-utils) is the CI net — same rule, two nets (docs/adr/architecture-and-boundaries.md — loader/
+// (test-utils) is the CI net — same rule, two nets (docs/adr/architecture-and-boundaries.md — loader/
 // action serialization boundary). Return an explicit, flat read-view literal
 // instead. Matches an object spread anywhere in a return (mixed members, nested
 // objects, `data({ ...x })`), while excluding array spreads (`[...arr]`). One

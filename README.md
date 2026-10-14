@@ -48,8 +48,8 @@ it by itself in a folder it already trusts.
 
 ## Shared packages
 
-What every project must keep current is published from `packages/` and consumed by
-version: `@lntt/biome-config`, `@lntt/typescript-config`, `@lntt/stylelint-config`,
+What every project must keep current lives in `packages/`, to be published by the
+release flow and consumed by version: `@lntt/biome-config`, `@lntt/typescript-config`, `@lntt/stylelint-config`,
 `@lntt/playwright-config`. The CLI never rewrites the `@lntt` scope
 ([scaffolding contract](./docs/adr/scaffolding-contract.md)). Each package's README
 says how a project installs and uses it.
