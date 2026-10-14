@@ -100,3 +100,31 @@ describe('lntt-ci local', () => {
     assert.equal(ci('local', '--event', 'release').status, 2)
   })
 })
+
+describe('reporting', () => {
+  test('--list says which steps the event skips', () => {
+    root = repo({
+      '.github/workflows/ci.yml': `
+on: pull_request
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - if: github.base_ref == 'main'
+        run: pnpm test
+`,
+    })
+    assert.match(ci('local', '--list').stdout, /pnpm test .*\n\s+→ runs on the host/)
+    assert.match(
+      ci('local', '--list', '--base', 'candidate/1').stdout,
+      /pnpm test .*\n\s+→ skipped: the condition is false for this event/,
+    )
+  })
+
+  test('the summary names jobs left out by --job as not selected', () => {
+    root = repo({ '.github/workflows/ci.yml': CI, '.github/workflows/release.yml': RELEASE, 'must-exist': '' })
+    const out = ci('local', '--job', 'ci.yml/ci')
+    assert.equal(out.status, 0, out.stdout + out.stderr)
+    assert.match(out.stdout, /1 passed, 0 failed, 0 cloud only, 0 skipped, 1 not selected with --job/)
+  })
+})

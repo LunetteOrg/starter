@@ -160,9 +160,82 @@ describe('runJobs', () => {
     assert.deepEqual(
       results.map((r) => [r.key, r.status]),
       [
-        ['ci.yml/a', 'skipped'],
+        ['ci.yml/a', 'not-selected'],
         ['ci.yml/b', 'passed'],
       ],
     )
   })
+})
+
+describe('job conditions after needs', () => {
+  const after = (text: string, f: (n: { success: boolean; failure: boolean }) => boolean) => ({
+    text,
+    decide: (n: { success: boolean; failure: boolean }) => ({ known: true as const, value: f(n) }),
+  })
+
+  test('always() and failure() jobs run after a failed need; a success() job does not', async () => {
+    const results = await runJobs(
+      [
+        job('ci.yml/build', [{ label: 'b', local: run('exit 1') }]),
+        job('ci.yml/deploy', [{ label: 'd', local: run('true') }], {
+          needs: ['ci.yml/build'],
+          condition: after('success()', (n) => n.success),
+        }),
+        job('ci.yml/notify', [{ label: 'n', local: run('true') }], {
+          needs: ['ci.yml/build'],
+          condition: after('failure()', (n) => n.failure),
+        }),
+        job('ci.yml/cleanup', [{ label: 'c', local: run('true') }], {
+          needs: ['ci.yml/build'],
+          condition: after('always()', () => true),
+        }),
+      ],
+      quiet,
+    )
+    assert.deepEqual(
+      results.map((r) => [r.key, r.status]),
+      [
+        ['ci.yml/build', 'failed'],
+        ['ci.yml/deploy', 'skipped'],
+        ['ci.yml/notify', 'passed'],
+        ['ci.yml/cleanup', 'passed'],
+      ],
+    )
+  })
+
+  test('a need that is cloud-only, blocked or skipped makes success() false; without a condition too', async () => {
+    const results = await runJobs(
+      [
+        job('ci.yml/release', [], { state: { state: 'cloud-only', reason: 'r' } }),
+        job('ci.yml/after', [{ label: 'a', local: run('true') }], {
+          needs: ['ci.yml/release'],
+          condition: after('success()', (n) => n.success),
+        }),
+        job('circleci/next', [{ label: 'n', local: run('true') }], { needs: ['ci.yml/release'] }),
+      ],
+      quiet,
+    )
+    assert.deepEqual(
+      results.map((r) => r.status),
+      ['cloud-only', 'skipped', 'skipped'],
+    )
+    assert.match(results[1].reason ?? '', /ci\.yml\/release: cloud-only/)
+  })
+
+  test('a job left out by --job is reported as not selected', async () => {
+    const results = await runJobs([job('ci.yml/a', [{ label: 'a', local: run('true') }])], { ...quiet, only: [] })
+    assert.equal(results[0].status, 'not-selected')
+  })
+})
+
+test('the default shell does not fail a pipeline on its first command, as on GitHub', async () => {
+  const results = await runJobs(
+    [
+      job('ci.yml/a', [
+        { label: 'p', local: { kind: 'run', command: 'false | true', shell: SHELLS.default, cwd: dir, env: {} } },
+      ]),
+    ],
+    quiet,
+  )
+  assert.equal(results[0].status, 'passed')
 })

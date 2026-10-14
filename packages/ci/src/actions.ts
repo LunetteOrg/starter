@@ -9,7 +9,10 @@ import { join } from 'node:path'
 import type { CiConfig } from './config.ts'
 import type { Local } from './plan.ts'
 
+// As GitHub runs them on Linux: a step without `shell:` gets `bash -e {0}`, without
+// pipefail; an explicit `shell: bash` adds it.
 export const SHELLS: Record<string, string[]> = {
+  default: ['bash', '-e', '-c'],
   bash: ['bash', '--noprofile', '--norc', '-eo', 'pipefail', '-c'],
   sh: ['sh', '-e', '-c'],
 }
@@ -64,7 +67,7 @@ function onPath(command: string): boolean {
 export function localAction(uses: string, inputs: Record<string, string>, root: string, config: CiConfig): Local {
   const name = actionName(uses)
   const mapped = config.actions[name]
-  if (mapped && 'run' in mapped) return { kind: 'run', command: mapped.run, shell: SHELLS.bash, cwd: root, env: {} }
+  if (mapped && 'run' in mapped) return { kind: 'run', command: mapped.run, shell: SHELLS.default, cwd: root, env: {} }
   if (mapped) return { kind: 'noop', note: mapped.skip }
   switch (name) {
     case 'actions/checkout':

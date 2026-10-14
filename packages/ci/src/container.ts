@@ -4,6 +4,7 @@
 // `act`, with an event file describing the same pull request or push and the fake
 // secrets as `-s`.
 
+import { spawnSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -37,4 +38,20 @@ export function containerCommand(event: Event, config: CiConfig): (job: Job) => 
       ...Object.entries(config.fake.vars).flatMap(([k, v]) => ['--var', `${k}=${v}`]),
     ]
   }
+}
+
+export function onPath(command: string): boolean {
+  return spawnSync('sh', ['-c', `command -v "$0"`, command], { stdio: 'ignore' }).status === 0
+}
+
+// The executables container mode needs for the jobs it would run, that are not on the
+// PATH: the provider's executor, and Docker behind it.
+export function missingTools(jobs: Job[], only?: string[], exists: (command: string) => boolean = onPath): string[] {
+  const needed = new Set<string>()
+  for (const job of jobs) {
+    if (job.state.state !== 'run' || !job.container || (only && !only.includes(job.key))) continue
+    needed.add(job.container[0])
+    needed.add('docker')
+  }
+  return [...needed].filter((command) => !exists(command))
 }

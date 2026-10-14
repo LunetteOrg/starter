@@ -13,6 +13,8 @@ export type Context = Record<string, unknown>
 
 export interface JobStatus {
   failed: boolean
+  // success() when it differs from !failed: for a job, every need passed.
+  success?: boolean
 }
 
 export type Outcome<T> = { known: true; value: T } | { known: false; unknown: string[] }
@@ -61,7 +63,7 @@ class LocalEvaluator extends Evaluator {
 
   constructor(expr: Expr, values: Context, status: JobStatus) {
     const results: Record<string, boolean> = {
-      success: !status.failed,
+      success: status.success ?? !status.failed,
       failure: status.failed,
       always: true,
       cancelled: false,

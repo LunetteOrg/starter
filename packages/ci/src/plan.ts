@@ -25,6 +25,18 @@ export interface Condition {
   decide: (failed: boolean) => Decision
 }
 
+// What a job's needs ended with, for its condition: success() when every need passed,
+// failure() when one failed.
+export interface NeedsOutcome {
+  success: boolean
+  failure: boolean
+}
+
+export interface JobCondition {
+  text: string
+  decide: (needs: NeedsOutcome) => Decision
+}
+
 export interface Step {
   // What the cloud runs, as written in the configuration.
   label: string
@@ -57,6 +69,9 @@ export interface Job {
   // What differs from the cloud and is worth saying: services not started, the image
   // the cloud runs in, contexts whose variables are absent.
   notes: string[]
+  // Decided after the needs have run. Without one, a job with needs runs when every
+  // need passed.
+  condition?: JobCondition
   steps: Step[]
   // How container mode starts this job, when the provider has a local executor.
   container?: string[]
