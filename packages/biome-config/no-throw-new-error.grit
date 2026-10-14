@@ -8,7 +8,7 @@
 // (`throw redirect(...)`, `throw new Response(...)` in RR7), which this rule does
 // NOT flag — it targets only `new *Error` constructions.
 //
-// Editor/pre-commit net; the arch test `assertNoSourcePattern` (@lntt/test-utils)
+// Editor/pre-commit net; the arch test `assertNoSourcePattern` (test-utils)
 // is the CI net and catches every argument form. Covers 0-2 constructor args
 // (message + `{ cause }`), the realistic cases.
 or {

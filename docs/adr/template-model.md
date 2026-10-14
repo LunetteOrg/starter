@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-07-02
+date: 2026-10-14
 tags: [template-model, contract, cli, monorepo]
 ---
 
@@ -87,12 +87,12 @@ packages/create/
 - **A variant is a folder.** Add `templates/<name>/` and it is selectable
   (`--template <name>` or the interactive prompt).
 - **Shared packages for what has proven itself, copies for the rest.** A pattern
-  that has proven itself across projects is extracted into a package published from
-  this repo's `packages/` (`@lntt/biome-config`, `@lntt/typescript-config`,
-  `@lntt/stylelint-config`, `@lntt/playwright-config`), which a template depends on by
-  version. Everything else of the base (`lefthook.yml`, `docs/adr/`, …) is a copy in
-  each template folder. The `react-router` template still carries its own copies of
-  the extracted packages until it adopts them (#60).
+  that has proven itself across projects is extracted into a package of this repo's
+  `packages/` (`@lntt/biome-config`, `@lntt/typescript-config`,
+  `@lntt/stylelint-config`, `@lntt/playwright-config`), released to npm and depended
+  on by version. Everything else of the base (`lefthook.yml`, `docs/adr/`, …) is a
+  copy in each template folder. The `react-router` template still carries its own
+  copies of the extracted packages until it adopts them (#60).
 - **Workspace exclusion.** The outer `pnpm-workspace.yaml` globs only
   `packages/*`, so template folders (`packages/create/templates/**`) are never
   pulled into this repo's workspace. Each template is a self-contained monorepo you

@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-07-23
+date: 2026-10-14
 tags: [scaffolding, contract, cli, packages]
 ---
 

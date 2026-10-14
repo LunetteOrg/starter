@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { after, before, test } from 'node:test'
@@ -47,21 +47,39 @@ test('scaffolded project installs, lints and typechecks clean', { skip }, () => 
 
 // Every package this repo publishes besides the CLI: not private, under packages/.
 function publishedPackages(): { name: string; dir: string }[] {
-  return readdirSync(PACKAGES)
-    .map((entry) => join(PACKAGES, entry))
+  return readdirSync(PACKAGES, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(PACKAGES, entry.name))
+    .filter((dir) => existsSync(join(dir, 'package.json')))
     .map((dir) => ({ dir, manifest: JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) }))
     .filter(({ manifest }) => manifest.private !== true && manifest.name !== '@lntt/create')
     .map(({ dir, manifest }) => ({ name: manifest.name as string, dir }))
 }
 
-// Rewrites every file under `dir` (node_modules aside) whose name matches `file`.
-function rewrite(dir: string, file: RegExp, from: string, to: string): void {
+// Rewrites every file under `dir` (node_modules aside) whose name matches `file`;
+// returns how many files changed.
+function rewriteIn(dir: string, file: RegExp, from: string, to: string): number {
+  let changed = 0
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === 'node_modules') continue
     const full = join(dir, entry.name)
-    if (entry.isDirectory()) rewrite(full, file, from, to)
-    else if (file.test(entry.name)) writeFileSync(full, readFileSync(full, 'utf8').replaceAll(from, to))
+    if (entry.isDirectory()) changed += rewriteIn(full, file, from, to)
+    else if (file.test(entry.name)) {
+      const before = readFileSync(full, 'utf8')
+      const after = before.replaceAll(from, to)
+      if (after !== before) {
+        writeFileSync(full, after)
+        changed++
+      }
+    }
   }
+  return changed
+}
+
+// An adoption that rewrites nothing would leave the project on the template's own
+// copies, and the lint and typecheck below would prove nothing about the packages.
+function rewrite(file: RegExp, from: string, to: string): void {
+  assert.ok(rewriteIn(app, file, from, to) > 0, `no ${file} in the project references ${from}`)
 }
 
 // How a generated project adopts each package, by its published name, in place of
@@ -69,13 +87,13 @@ function rewrite(dir: string, file: RegExp, from: string, to: string): void {
 // entry fails the test: publishing one means saying how a project consumes it.
 const adopt: Record<string, () => void> = {
   '@lntt/biome-config': () => {
-    rewrite(app, /^biome\.json$/, './packages/biome-config/biome.json', '@lntt/biome-config/biome')
-    rewrite(app, /^biome\.json$/, './packages/biome-config/', './node_modules/@lntt/biome-config/')
+    rewrite(/^biome\.json$/, './packages/biome-config/biome.json', '@lntt/biome-config/biome')
+    rewrite(/^biome\.json$/, './packages/biome-config/', './node_modules/@lntt/biome-config/')
   },
   '@lntt/typescript-config': () =>
-    rewrite(app, /^tsconfig.*\.json$/, '@smoke-app/typescript-config/', '@lntt/typescript-config/'),
+    rewrite(/^tsconfig.*\.json$/, '@smoke-app/typescript-config/', '@lntt/typescript-config/'),
   '@lntt/stylelint-config': () =>
-    rewrite(app, /^\.stylelintrc\.json$/, './packages/stylelint-config', '@lntt/stylelint-config'),
+    rewrite(/^\.stylelintrc\.json$/, './packages/stylelint-config', '@lntt/stylelint-config'),
   // No app of the template has an e2e suite yet: import it as an app's config would.
   '@lntt/playwright-config': () => {
     const probe = join(app, 'playwright-probe.mjs')

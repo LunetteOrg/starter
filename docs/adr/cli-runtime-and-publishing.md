@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-07-13
+date: 2026-10-14
 tags: [cli, publishing, packages, typescript, esm, imports, templates]
 ---
 
@@ -118,6 +118,11 @@ written for the projects; the divergence is intentional.
 ## Discarded directions
 
 - **Publishing the raw `.ts` bin.** It fails under `node_modules`, as above.
+- **The configured tool as a regular dependency** of its config package (as the
+  template's playwright-config had `@playwright/test`). The project installs the
+  tool too, to run it; two declared copies at different versions mean two runners
+  (Playwright refuses a second `@playwright/test`) or a config validated against a
+  tool the project does not run.
 - **Extensionless imports.** The bundler-era idiom; Node's ESM resolver cannot
   resolve them.
 - **`.js` specifiers pointing at `.ts` files.** Long the `nodenext` workaround; it
