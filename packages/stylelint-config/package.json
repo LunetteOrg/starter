@@ -1,6 +1,6 @@
 {
   "name": "@lntt/stylelint-config",
-  "version": "0.0.0",
+  "version": "0.5.0",
   "description": "The Stylelint config every Lunette project extends",
   "type": "module",
   "license": "MIT",

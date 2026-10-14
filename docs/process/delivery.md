@@ -12,21 +12,34 @@ CI checks it on every pull request (`scripts/check-plugin-version.sh`).
 
 ## Releasing
 
-npm publishing happens in CI only, never from a machine:
+npm publishing happens in CI only, never from a machine. One release publishes every
+package of `packages/` that is not private, all at one version
+([CLI runtime and publishing](../adr/cli-runtime-and-publishing.md)):
 
-1. Bump `packages/create/package.json` and commit `chore(release): @lntt/create X.Y.Z`
-   directly on `main`; a release does not go through a pull request.
-2. `gh release create vX.Y.Z --generate-notes`. The tag matches the package version,
-   and every release ships the generated notes (the merged pull requests since the
-   previous tag).
+1. `node scripts/packages-version.mts set X.Y.Z` and commit
+   `chore(release): X.Y.Z` directly on `main`; a release does not go through a pull
+   request.
+2. `gh release create vX.Y.Z --generate-notes`. The tag matches the packages'
+   version, and every release ships the generated notes (the merged pull requests
+   since the previous tag).
 3. Add by hand what the generator misses: it lists merged pull requests only, so a
    user-facing change that landed as a direct commit (`git log vPREV..vX.Y.Z
    --no-merges`) goes in with `gh release edit vX.Y.Z --notes …`. The release bump
    and repo-internal commits stay out.
 
-Publishing the GitHub Release starts `.github/workflows/release.yml`: it runs the
-tests, checks that the tag matches the package version, and publishes through npm
-trusted publishing (OIDC, `--provenance`, no npm token).
+Publishing the GitHub Release starts `.github/workflows/release.yml`: it checks that
+the tag is every package's version, runs lint, typecheck and the tests with the
+scaffold smoke, and publishes each package through npm trusted publishing (OIDC,
+`--provenance`, no npm token), skipping a version npm already has.
+
+**A dry run** is a pre-release: set a pre-release version on a branch
+(`node scripts/packages-version.mts set X.Y.Z-rc.N`, commit, push), then
+`gh release create vX.Y.Z-rc.N --prerelease --target <branch>`. The workflow runs every
+check and `npm publish --dry-run`; nothing reaches npm. Delete the pre-release, its
+tag and the branch afterwards.
+
+**A new package** needs its trusted publisher on npmjs.com (this repository, workflow
+`release.yml`) before the release that first publishes it, or its publish fails.
 
 ## Discarded directions
 

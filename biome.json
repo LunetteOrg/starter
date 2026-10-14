@@ -11,6 +11,7 @@
       "packages/playwright-config/**",
       "packages/test-utils/**",
       "!packages/test-utils/src/__fixtures__",
+      "scripts/**",
       "package.json",
       "biome.json",
       "commitlint.config.mjs",
