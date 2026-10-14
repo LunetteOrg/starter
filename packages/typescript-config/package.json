@@ -1,0 +1,36 @@
+{
+  "name": "@lntt/typescript-config",
+  "version": "0.0.0",
+  "description": "The TypeScript configs every Lunette project extends",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LunetteOrg/starter.git",
+    "directory": "packages/typescript-config"
+  },
+  "homepage": "https://github.com/LunetteOrg/starter/tree/main/packages/typescript-config#readme",
+  "bugs": "https://github.com/LunetteOrg/starter/issues",
+  "exports": {
+    "./base.json": "./base.json",
+    "./browser.json": "./browser.json"
+  },
+  "files": [
+    "base.json",
+    "browser.json"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "typescript": ">=7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,11 +1,13 @@
+import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { test } from 'node:test'
+import { after, before, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/index.ts')
+const PACKAGES = resolve(dirname(BIN), '../..')
 
 // A scaffolded project must be green on its OWN toolchain, not merely
 // structurally correct. This installs a generated project and runs its lint +
@@ -16,22 +18,97 @@ const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/index.ts')
 //
 // Installing the full template takes minutes, so it is gated behind
 // SCAFFOLD_SMOKE=1 (set by CI) to keep the default `pnpm test` fast for local runs.
-test('scaffolded project installs, lints and typechecks clean', {
-  skip: process.env.SCAFFOLD_SMOKE ? false : 'set SCAFFOLD_SMOKE=1 to run (installs the full template)',
-}, () => {
-  const root = mkdtempSync(join(tmpdir(), 'lntt-smoke-'))
-  const app = join(root, 'smoke-app')
-  // Any non-zero exit throws → the test fails with the tool's own output.
-  const run = (cmd: string, args: string[], cwd: string): void =>
-    void execFileSync(cmd, args, { cwd, stdio: 'inherit' })
-  try {
-    run('node', [BIN, 'smoke-app', '--template', 'react-router'], root)
-    // `--ignore-scripts`: skip lifecycle scripts (lefthook install, only-allow) —
-    // hermetic and faster; lint/typecheck need none of them.
-    run('pnpm', ['install', '--no-frozen-lockfile', '--ignore-scripts'], app)
-    run('pnpm', ['lint'], app)
-    run('pnpm', ['typecheck'], app)
-  } finally {
-    rmSync(root, { recursive: true, force: true })
+const skip = process.env.SCAFFOLD_SMOKE ? false : 'set SCAFFOLD_SMOKE=1 to run (installs the full template)'
+
+// Any non-zero exit throws → the test fails with the tool's own output.
+const run = (cmd: string, args: string[], cwd: string): void => void execFileSync(cmd, args, { cwd, stdio: 'inherit' })
+
+let root: string
+let app: string
+
+before(() => {
+  if (skip) return
+  root = mkdtempSync(join(tmpdir(), 'lntt-smoke-'))
+  app = join(root, 'smoke-app')
+  run('node', [BIN, 'smoke-app', '--template', 'react-router'], root)
+  // `--ignore-scripts`: skip lifecycle scripts (lefthook install, only-allow) —
+  // hermetic and faster; lint/typecheck need none of them.
+  run('pnpm', ['install', '--no-frozen-lockfile', '--ignore-scripts'], app)
+})
+
+after(() => {
+  if (root) rmSync(root, { recursive: true, force: true })
+})
+
+test('scaffolded project installs, lints and typechecks clean', { skip }, () => {
+  run('pnpm', ['lint'], app)
+  run('pnpm', ['typecheck'], app)
+})
+
+// Every package this repo publishes besides the CLI: not private, under packages/.
+function publishedPackages(): { name: string; dir: string }[] {
+  return readdirSync(PACKAGES)
+    .map((entry) => join(PACKAGES, entry))
+    .map((dir) => ({ dir, manifest: JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) }))
+    .filter(({ manifest }) => manifest.private !== true && manifest.name !== '@lntt/create')
+    .map(({ dir, manifest }) => ({ name: manifest.name as string, dir }))
+}
+
+// Rewrites every file under `dir` (node_modules aside) whose name matches `file`.
+function rewrite(dir: string, file: RegExp, from: string, to: string): void {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'node_modules') continue
+    const full = join(dir, entry.name)
+    if (entry.isDirectory()) rewrite(full, file, from, to)
+    else if (file.test(entry.name)) writeFileSync(full, readFileSync(full, 'utf8').replaceAll(from, to))
   }
+}
+
+// How a generated project adopts each package, by its published name, in place of
+// the template's own copy (the template switches for good in #60). A package with no
+// entry fails the test: publishing one means saying how a project consumes it.
+const adopt: Record<string, () => void> = {
+  '@lntt/biome-config': () => {
+    rewrite(app, /^biome\.json$/, './packages/biome-config/biome.json', '@lntt/biome-config/biome')
+    rewrite(app, /^biome\.json$/, './packages/biome-config/', './node_modules/@lntt/biome-config/')
+  },
+  '@lntt/typescript-config': () =>
+    rewrite(app, /^tsconfig.*\.json$/, '@smoke-app/typescript-config/', '@lntt/typescript-config/'),
+  '@lntt/stylelint-config': () =>
+    rewrite(app, /^\.stylelintrc\.json$/, './packages/stylelint-config', '@lntt/stylelint-config'),
+  // No app of the template has an e2e suite yet: import it as an app's config would.
+  '@lntt/playwright-config': () => {
+    const probe = join(app, 'playwright-probe.mjs')
+    writeFileSync(
+      probe,
+      "import { definePlaywrightConfig } from '@lntt/playwright-config'\n" +
+        'console.log(definePlaywrightConfig({ port: 4321 }).use.baseURL)\n',
+    )
+    assert.equal(execFileSync('node', [probe], { cwd: app, encoding: 'utf8' }).trim(), 'http://localhost:4321')
+    rmSync(probe)
+  },
+}
+
+// The packages a generated project installs from npm, installed here from the
+// tarballs `pnpm pack` produces, exactly the files a release would publish. The
+// project then lints and typechecks on them instead of its own copies.
+test('the published packages install into a scaffolded project, which lints and typechecks on them', { skip }, () => {
+  const packages = publishedPackages()
+  assert.deepEqual(
+    packages.map((p) => p.name).filter((name) => !adopt[name]),
+    [],
+    'every published package says how a project adopts it',
+  )
+  const tarballs = join(root, 'tarballs')
+  mkdirSync(tarballs)
+  for (const { dir } of packages) run('pnpm', ['pack', '--pack-destination', tarballs], dir)
+  const files = readdirSync(tarballs).map((f) => join(tarballs, f))
+  // The peers a project installs next to the packages.
+  const peers = ['stylelint@^17.0.0', '@playwright/test@^1.61.1']
+  run('pnpm', ['add', '-w', '-D', '--ignore-scripts', ...files, ...peers], app)
+
+  for (const { name } of packages) adopt[name]?.()
+  assert.doesNotMatch(readFileSync(join(app, 'biome.json'), 'utf8'), /packages\/biome-config/)
+  run('pnpm', ['lint'], app)
+  run('pnpm', ['typecheck'], app)
 })

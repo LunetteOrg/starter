@@ -1,0 +1,43 @@
+{
+  "name": "@lntt/playwright-config",
+  "version": "0.0.0",
+  "description": "The Playwright base config every Lunette app's e2e suite is built on",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LunetteOrg/starter.git",
+    "directory": "packages/playwright-config"
+  },
+  "homepage": "https://github.com/LunetteOrg/starter/tree/main/packages/playwright-config#readme",
+  "bugs": "https://github.com/LunetteOrg/starter/issues",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "pnpm run build",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@playwright/test": "^1.61.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^26.1.1",
+    "typescript": "^7.0.2"
+  }
+}

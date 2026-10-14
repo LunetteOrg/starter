@@ -5,6 +5,10 @@
       "packages/create/bin/**",
       "packages/create/test/**",
       "packages/project-config/**",
+      "packages/biome-config/**",
+      "packages/typescript-config/**",
+      "packages/stylelint-config/**",
+      "packages/playwright-config/**",
       "package.json",
       "biome.json",
       "commitlint.config.mjs",
@@ -24,6 +28,12 @@
       "preset": "recommended"
     }
   },
+  "overrides": [
+    {
+      "includes": ["packages/typescript-config/*.json"],
+      "json": { "parser": { "allowComments": true } }
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "single",
