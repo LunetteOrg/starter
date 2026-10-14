@@ -1,0 +1,41 @@
+{
+  "name": "@lntt/stylelint-config",
+  "version": "0.0.0",
+  "description": "The Stylelint config every Lunette project extends",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LunetteOrg/starter.git",
+    "directory": "packages/stylelint-config"
+  },
+  "homepage": "https://github.com/LunetteOrg/starter/tree/main/packages/stylelint-config#readme",
+  "bugs": "https://github.com/LunetteOrg/starter/issues",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "index.js"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "stylelint-config-css-modules": "^4.6.0",
+    "stylelint-config-standard": "^40.0.0",
+    "stylelint-no-unsupported-browser-features": "^8.1.1"
+  },
+  "peerDependencies": {
+    "stylelint": "^17.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "stylelint": "^17.0.0",
+    "typescript": "^7.0.2"
+  }
+}

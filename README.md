@@ -9,6 +9,10 @@ packages/
     bin/index.ts        # the CLI
     templates/
       react-router/     # the full Lunette starter (monorepo, Biome, Drizzle, …)
+  biome-config/         # @lntt/biome-config: Biome config + GritQL plugins
+  typescript-config/    # @lntt/typescript-config: base and browser tsconfigs
+  stylelint-config/     # @lntt/stylelint-config
+  playwright-config/    # @lntt/playwright-config: definePlaywrightConfig
   project-config/       # reads .agents/config.* and the operator profile (lntt-config)
 plugins/
   lunette/              # the Lunette plugin: skills installed unchanged in every project
@@ -41,6 +45,14 @@ project. This repo uses its own plugin the same way: `.claude/settings.json` dec
 the marketplace and enables the plugin, and each machine installs it once with
 `claude plugin install lunette@lunette --scope project`. Claude Code does not install
 it by itself in a folder it already trusts.
+
+## Shared packages
+
+What every project must keep current is published from `packages/` and consumed by
+version: `@lntt/biome-config`, `@lntt/typescript-config`, `@lntt/stylelint-config`,
+`@lntt/playwright-config`. The CLI never rewrites the `@lntt` scope
+([scaffolding contract](./docs/adr/scaffolding-contract.md)). Each package's README
+says how a project installs and uses it.
 
 ## Develop
 

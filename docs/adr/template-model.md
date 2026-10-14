@@ -86,9 +86,13 @@ packages/create/
   and one PR changes both.
 - **A variant is a folder.** Add `templates/<name>/` and it is selectable
   (`--template <name>` or the interactive prompt).
-- **Duplication now, shared packages later.** Each template folder carries its own
-  copy of the base (its own `biome.json`, `lefthook.yml`, `docs/adr/`, …). Shared
-  packages are extracted only once a pattern has proven itself across projects.
+- **Shared packages for what has proven itself, copies for the rest.** A pattern
+  that has proven itself across projects is extracted into a package published from
+  this repo's `packages/` (`@lntt/biome-config`, `@lntt/typescript-config`,
+  `@lntt/stylelint-config`, `@lntt/playwright-config`), which a template depends on by
+  version. Everything else of the base (`lefthook.yml`, `docs/adr/`, …) is a copy in
+  each template folder. The `react-router` template still carries its own copies of
+  the extracted packages until it adopts them (#60).
 - **Workspace exclusion.** The outer `pnpm-workspace.yaml` globs only
   `packages/*`, so template folders (`packages/create/templates/**`) are never
   pulled into this repo's workspace. Each template is a self-contained monorepo you
@@ -107,8 +111,8 @@ packages/create/
 
 ### Negative / accepted risks
 
-- The base is **duplicated** in each template, not shared code. Keeping bases in
-  sync is manual until shared packages are extracted.
+- What is not in a shared package is **duplicated** in each template, and keeping
+  those copies in sync is manual.
 - The enforced/recommended line is a judgement call per rule; reviews must place
   each new decision on the right side, or concretize it deliberately.
 - A template change ships only when the CLI is republished.

@@ -11,8 +11,8 @@ decisions) is in [`docs/process/`](../process/README.md).
 | ADR | Subject | Status |
 |---|---|---|
 | [template-model](./template-model.md) | What a Lunette template is; templates as folders bundled inside the CLI | accepted |
-| [scaffolding-contract](./scaffolding-contract.md) | Placeholders, dotfiles and text-file coverage every template honours | accepted |
-| [cli-runtime-and-publishing](./cli-runtime-and-publishing.md) | The CLI runs as TypeScript in-repo, ships compiled; explicit `.ts` imports | accepted |
+| [scaffolding-contract](./scaffolding-contract.md) | Placeholders, the `@lntt/*` scope, dotfiles and text-file coverage every template honours | accepted |
+| [cli-runtime-and-publishing](./cli-runtime-and-publishing.md) | The CLI and the `@lntt/*` packages run as TypeScript in-repo and ship compiled; explicit `.ts` imports | accepted |
 | [agent-layer](./agent-layer.md) | Installed skills are never edited; project values in `.agents/config.*`; operator context | accepted |
 
 A new subject gets its own file: copy [`template.md`](./template.md) to

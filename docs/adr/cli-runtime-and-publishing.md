@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-07-13
-tags: [cli, publishing, typescript, esm, imports, templates]
+tags: [cli, publishing, packages, typescript, esm, imports, templates]
 ---
 
 # CLI runtime and publishing
@@ -45,6 +45,26 @@ it ships:
   no npm token); `.github/workflows/release.yml` runs the tests and checks that the
   tag matches the package version.
 
+### The other `@lntt/*` packages
+
+The packages published from `packages/` besides the CLI follow the same rule.
+
+- **A package whose code Node runs** (`@lntt/playwright-config`) is authored in
+  TypeScript and published compiled: `tsconfig.build.json` emits `src/` to `dist/`
+  with declarations, `exports` points at `dist/`, `prepack` builds, `files` ships
+  `dist`. Its tests import the sources; `test/installed.test.ts` packs it and
+  imports it by name from a `node_modules`.
+- **A config package** (`@lntt/biome-config`, `@lntt/typescript-config`,
+  `@lntt/stylelint-config`) ships its files as they are, listed in `files` and
+  `exports`.
+- **The tool a package configures is a peer dependency** (`@biomejs/biome`,
+  `typescript`, `stylelint`, `@playwright/test`): the project installs it once, at
+  the version it chooses within the range.
+- **Tests consume a package by its published name** from a `node_modules`, the way a
+  project does. The scaffold smoke installs every published package from its
+  tarball into a generated project
+  ([scaffolding contract](./scaffolding-contract.md#verified-in-ci)).
+
 ### Explicit `.ts` extensions for code Node executes
 
 Relative imports in TypeScript that **Node executes directly** carry the explicit
@@ -62,19 +82,20 @@ options that make the convention work for a package that also **emits**:
 
 Both are needed together: `allowImportingTsExtensions` alone requires `noEmit`.
 
-**Across levels.** This governs the CLI. Templates are self-contained and decide
-their own conventions; the `react-router` template adopts the same explicit
-extension in its own ADRs, for both its Node-first domain layer and its
-bundler-bound UI. What differs is the **runtime, not the writing convention**:
-code behind a bundler keeps `moduleResolution: bundler`, Node-run code uses
-`nodenext`. There is no shared tsconfig base between the two levels; the
-divergence is intentional.
+**Across levels.** This governs the CLI and the packages published from this repo.
+Templates are self-contained and decide their own conventions; the `react-router`
+template adopts the same explicit extension in its own ADRs, for both its
+Node-first domain layer and its bundler-bound UI. What differs is the **runtime, not
+the writing convention**: code behind a bundler keeps `moduleResolution: bundler`,
+Node-run code uses `nodenext`. There is no shared tsconfig base between the two
+levels: this repo's packages do not extend `@lntt/typescript-config`, which is
+written for the projects; the divergence is intentional.
 
 ## Consequences
 
 ### Positive
 
-- The published CLI runs where users install it.
+- The published CLI and packages run where users install them.
 - TypeScript authoring and the build-free in-repo loop are kept.
 - Import specifiers name the file that exists, aligned with where Node and
   TypeScript are going.

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { test } from 'node:test'
@@ -74,6 +74,56 @@ test('a scaffolded project records the template and the CLI version it came from
     assert.deepEqual(lunette, { template: 'react-router', version })
     const subject = execFileSync('git', ['log', '-1', '--format=%s'], { cwd: app, encoding: 'utf8' }).trim()
     assert.equal(subject, `chore: scaffold my-app from @lntt/create ${version} (template react-router)`)
+  } finally {
+    rmSync(dirname(app), { recursive: true, force: true })
+  }
+})
+
+// The CLI rewrites only `@starter`. Packages published from this repo (`@lntt/*`) are
+// consumed by version and keep their names in every generated project
+// (docs/adr/scaffolding-contract.md). A fixture template beside a copy of the bin
+// asserts it independently of what today's templates happen to reference.
+test('the @lntt scope survives scaffolding; @starter is rewritten', () => {
+  const root = mkdtempSync(join(tmpdir(), 'lntt-create-'))
+  try {
+    mkdirSync(join(root, 'bin'))
+    cpSync(BIN, join(root, 'bin/index.ts'))
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ version: '0.0.0-test' }))
+    const fixture = join(root, 'templates/fixture')
+    mkdirSync(fixture, { recursive: true })
+    const manifest = {
+      name: 'starter',
+      devDependencies: { '@starter/ui': 'workspace:*', '@lntt/biome-config': '^1.0.0', '@lntt/test-utils': '^1.0.0' },
+    }
+    writeFileSync(join(fixture, 'package.json'), JSON.stringify(manifest))
+    writeFileSync(join(fixture, 'biome.json'), JSON.stringify({ extends: ['@lntt/biome-config/biome'] }))
+    writeFileSync(
+      join(fixture, 'vitest.config.ts'),
+      "import { testDbPlugin } from '@lntt/test-utils/plugin'\nimport { ui } from '@starter/ui'\n",
+    )
+    execFileSync('node', [join(root, 'bin/index.ts'), 'demo', '--template', 'fixture'], { cwd: root, stdio: 'ignore' })
+
+    const app = join(root, 'demo')
+    assert.deepEqual(JSON.parse(readFileSync(join(app, 'package.json'), 'utf8')).devDependencies, {
+      '@demo/ui': 'workspace:*',
+      '@lntt/biome-config': '^1.0.0',
+      '@lntt/test-utils': '^1.0.0',
+    })
+    assert.deepEqual(JSON.parse(readFileSync(join(app, 'biome.json'), 'utf8')).extends, ['@lntt/biome-config/biome'])
+    assert.equal(
+      readFileSync(join(app, 'vitest.config.ts'), 'utf8'),
+      "import { testDbPlugin } from '@lntt/test-utils/plugin'\nimport { ui } from '@demo/ui'\n",
+    )
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('the react-router template keeps naming @lntt/create after scaffolding', () => {
+  const app = scaffold('my-app', 'react-router')
+  try {
+    assert.match(readFileSync(join(app, 'README.md'), 'utf8'), /@lntt\/create/)
+    assert.deepEqual(filesContaining(app, '@my-app/create'), [], 'no @lntt rewritten to the project scope')
   } finally {
     rmSync(dirname(app), { recursive: true, force: true })
   }

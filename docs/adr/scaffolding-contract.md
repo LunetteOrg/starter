@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-07-23
-tags: [scaffolding, contract, cli]
+tags: [scaffolding, contract, cli, packages]
 ---
 
 # The scaffolding contract
@@ -23,6 +23,11 @@ matching rewrite:
   scope; the CLI rewrites `@starter` → `@<project-name>` when it prefixes a path
   (plain `/` or a regex-escaped `\/`). Do not use `@starter` for anything that
   should survive scaffolding.
+- **`@lntt/*` survives scaffolding.** The packages this repo publishes
+  (`@lntt/create`, `@lntt/biome-config`, `@lntt/typescript-config`, …) are consumed
+  by version and keep their names in every generated project: a template depends on
+  them as `"@lntt/<name>": "^X.Y.Z"` and imports them by that name. The CLI rewrites
+  no other scope.
 - **`"name": "starter"`** in the root and devcontainer `package.json` → the project
   name. Nested package names ride on the scope rewrite.
 - **Credentials placeholder `starter`** in `compose.yaml`, `render.yaml`, and the
@@ -66,7 +71,12 @@ log you are in.
 A scaffold-smoke check (`SCAFFOLD_SMOKE=1`) installs a generated project and runs
 its own lint + typecheck. A template-tooling regression (a malformed grit, a broken
 Biome override, a missed `@starter` in a newly covered file type) fails here, not
-only later in a scaffolded project's own CI.
+only later in a scaffolded project's own CI. The same check packs every published
+`@lntt/*` package, installs the tarballs into the generated project and uses each by
+its name.
+
+`packages/create/test/scaffold.test.ts` scaffolds a fixture template that references
+both scopes and asserts that `@starter` is rewritten and `@lntt` is not.
 
 ## Consequences
 
