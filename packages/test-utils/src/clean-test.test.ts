@@ -78,7 +78,10 @@ describe.skipIf(!hasTestDatabase())('lntt-clean-test', () => {
   })
 })
 
-describe('lntt-clean-test without a Docker daemon', () => {
+// Without the docker CLI the bin has nothing to ask and exits 0: a different case.
+const dockerCli = spawnSync('docker', ['--version'], { stdio: 'ignore' }).status === 0
+
+describe.skipIf(!dockerCli)('lntt-clean-test without a Docker daemon', () => {
   it('fails instead of reporting a clean machine it cannot see', () => {
     const r = clean(workspace(), [], { DOCKER_HOST: 'unix:///nonexistent/docker.sock' })
     expect(r.status).toBe(1)

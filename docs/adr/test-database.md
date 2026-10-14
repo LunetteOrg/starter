@@ -72,12 +72,17 @@ vitest main process
    locally; with `CI` set it is a hard error.
 9. **Killed runs** remove their container with a synchronous `docker rm --force` on
    `exit`, `SIGTERM` and `SIGHUP`, registered only by the process that started it.
-10. **`withTestDb`** rolls each test back; **`connectionString()`** gives the migrated
-    database to a test that must commit and cleans up after itself.
-11. **`TEST_DATABASE_URL` set from outside** is used as is: right for a server fresh
-    per run (a CI service, a job image), wrong for one that outlives the run (the
-    compose Postgres), which brings the stale-schema false green back. The package
-    README says so.
+10. **`withTestDb`** rolls each test back. **`connectionString()`** gives the migrated
+    database to a test that must commit; that test removes what it committed.
+11. **`TEST_DATABASE_URL` set from outside** is used as is, and the globalSetup neither
+    starts nor stops anything. When that is right and when it brings the stale-schema
+    false green back is in the package README (§ `TEST_DATABASE_URL` set by you).
+12. **Watch mode** runs setup and teardown again in one process: teardown takes back
+    the `TEST_DATABASE_URL` it published, and the kill handlers are registered once.
+
+The package also carries the template's guards (architecture boundaries,
+serialization, source patterns, migration safety) unchanged; their messages cite the
+template's ADR files, which every project scaffolded from it has.
 
 Tests in `packages/test-utils` cover each point; `workspaces.test.ts` runs two
 checkouts' suites at once with the same `databaseName` and migration name and
