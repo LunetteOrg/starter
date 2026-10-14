@@ -24,9 +24,10 @@ permissions: {}
 # One run at a time across the repo: two pull requests opened together must not create
 # two candidates. GitHub keeps one running and one pending run per group, and a newer
 # pending run cancels the older one. A dropped merge into a candidate is recorded by
-# the next run, which rebuilds the lists from every merged pull request; a dropped
-# `opened`, or a dropped merge of the candidate, is redone from a terminal with
-# `pnpm exec lntt-ci candidate --pr <n>`.
+# the next run, which rebuilds the lists from every merged pull request; every run
+# also sweeps pull requests stranded on a candidate that is no longer open onto the
+# open one. A dropped `opened` is redone from a terminal with
+# `pnpm exec lntt-ci candidate --pr <n>`, which runs outside this group: one at a time.
 concurrency:
   group: candidate
   cancel-in-progress: false
@@ -34,12 +35,20 @@ concurrency:
 jobs:
   candidate:
     # Dependabot's events and a fork's pull requests get no repo secrets, hence no app
-    # token: those stay where they were opened. The script decides the rest from the
-    # configuration (which base, which prefix, hotfix or not).
+    # token: those stay where they were opened. Only the events with something to do
+    # start a runner: a pull request opened or ready into the default branch, not a
+    # candidate itself; a merge into another branch (a candidate); the candidate's own
+    # merge. `candidate/` is delivery.candidate.prefix, repeated here because a job's
+    # condition cannot read the configuration; the script decides the rest from it.
     if: >-
       github.event.pull_request.user.login != 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      (github.event.action != 'closed' || github.event.pull_request.merged)
+      ((github.event.action != 'closed' &&
+      github.event.pull_request.base.ref == github.event.repository.default_branch &&
+      !startsWith(github.event.pull_request.head.ref, 'candidate/')) ||
+      (github.event.action == 'closed' && github.event.pull_request.merged &&
+      (github.event.pull_request.base.ref != github.event.repository.default_branch ||
+      startsWith(github.event.pull_request.head.ref, 'candidate/'))))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -83,8 +92,9 @@ jobs:
         with:
           node-version-file: '.nvmrc'
           cache: 'pnpm'
+      # Only @lntt/ci and what it depends on.
       - if: steps.credentials.outputs.ready == 'true'
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --filter '@lntt/ci...'
       - name: Move or record the pull request, close or tell its issues
         if: steps.credentials.outputs.ready == 'true'
         env:
