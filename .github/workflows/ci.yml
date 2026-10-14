@@ -27,6 +27,8 @@ jobs:
       # An installed plugin updates only when its version changes.
       - if: github.event_name == 'pull_request'
         run: sh scripts/check-plugin-version.sh origin/${{ github.base_ref }}
+      # Every published package carries the CLI's version (docs/adr/cli-runtime-and-publishing.md).
+      - run: node scripts/packages-version.mts check
       - run: pnpm typecheck
       # scaffolds each template into a temp dir and asserts the result;
       # SCAFFOLD_SMOKE additionally installs + lints + typechecks a generated

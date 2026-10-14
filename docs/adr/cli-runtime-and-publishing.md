@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-10-14
-tags: [cli, publishing, packages, typescript, esm, imports, templates]
+tags: [cli, publishing, packages, release, versioning, typescript, esm, imports, templates]
 ---
 
 # CLI runtime and publishing
@@ -42,8 +42,7 @@ it ships:
   `node_modules/@lntt/create`, and runs the published `bin` from there, so the
   install-time failure above fails in CI.
 - Publishing happens in CI only, with npm OIDC trusted publishing (`--provenance`,
-  no npm token); `.github/workflows/release.yml` runs the tests and checks that the
-  tag matches the package version.
+  no npm token), as the next section describes for every package.
 
 ### The other `@lntt/*` packages
 
@@ -64,6 +63,24 @@ The packages published from `packages/` besides the CLI follow the same rule.
   project does. The scaffold smoke installs every published package from its
   tarball into a generated project
   ([scaffolding contract](./scaffolding-contract.md#verified-in-ci)).
+
+### One version for every published package, one release
+
+Every package under `packages/` that is not `private` (`@lntt/create` and the other
+`@lntt/*`) carries the same version. A release is one tag, `vX.Y.Z`, and publishes
+them all.
+
+- `scripts/packages-version.mts` lists the published packages (`list`, the CLI last),
+  checks that they share one version (`check [X.Y.Z]`) and writes it into all of them
+  (`set X.Y.Z`). CI runs `check` on every pull request.
+- `.github/workflows/release.yml` runs on a published GitHub Release: it checks that
+  the tag is the version of **every** published package, then lint, typecheck and the
+  tests with the scaffold smoke, then `npm publish --provenance` in each package's
+  directory. A version already on npm is skipped, so a failed run can be re-run.
+- **A release marked as pre-release is a dry run**: the same checks, then
+  `npm publish --dry-run --tag next`; nothing reaches npm.
+- A package with nothing new still gets the new version: the version names a release
+  of the whole set, which the template depends on as one.
 
 ### Explicit `.ts` extensions for code Node executes
 
@@ -114,6 +131,11 @@ written for the projects; the divergence is intentional.
 - Node allows type stripping under `node_modules`: the compile step can go.
 - Node or TypeScript change the ESM resolver contract.
 - A package here runs *only* behind a bundler: it follows the bundler idiom.
+- The packages evolve at very different rates, so that one version bumps packages
+  with nothing new often enough to confuse their users: per-package versions
+  (changesets) become worth their cost.
+- A real pre-release channel is needed: a pre-release then publishes under `next`
+  instead of dry-running, and the dry run moves to a manual trigger.
 
 ## Discarded directions
 
@@ -123,6 +145,10 @@ written for the projects; the divergence is intentional.
   tool too, to run it; two declared copies at different versions mean two runners
   (Playwright refuses a second `@playwright/test`) or a config validated against a
   tool the project does not run.
+- **A version per package, with changesets.** Each change carries a changeset, a
+  release PR collects them, every package moves on its own. It pays off when packages
+  evolve at very different rates; here they ship together and the template depends
+  on the set, so it adds a file per change and a release PR for no information.
 - **Extensionless imports.** The bundler-era idiom; Node's ESM resolver cannot
   resolve them.
 - **`.js` specifiers pointing at `.ts` files.** Long the `nodenext` workaround; it
