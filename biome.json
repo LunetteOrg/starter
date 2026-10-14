@@ -9,6 +9,8 @@
       "packages/typescript-config/**",
       "packages/stylelint-config/**",
       "packages/playwright-config/**",
+      "packages/test-utils/**",
+      "!packages/test-utils/src/__fixtures__",
       "package.json",
       "biome.json",
       "commitlint.config.mjs",

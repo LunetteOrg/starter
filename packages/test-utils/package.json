@@ -1,0 +1,58 @@
+{
+  "name": "@lntt/test-utils",
+  "version": "0.0.0",
+  "description": "Test helpers every Lunette project uses: one Postgres per vitest run, rollback per test, architecture and migration guards",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LunetteOrg/starter.git",
+    "directory": "packages/test-utils"
+  },
+  "homepage": "https://github.com/LunetteOrg/starter/tree/main/packages/test-utils#readme",
+  "bugs": "https://github.com/LunetteOrg/starter/issues",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "default": "./dist/plugin.js"
+    }
+  },
+  "bin": {
+    "lntt-clean-test": "dist/clean-test.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "pnpm run build",
+    "test": "pnpm run build && vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@testcontainers/postgresql": "^12.0.4",
+    "glob": "^13.0.6",
+    "postgres": "^3.4.9",
+    "testcontainers": "^12.0.4"
+  },
+  "peerDependencies": {
+    "drizzle-orm": "^1.0.0-rc.4",
+    "vitest": "^4.1.10"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "drizzle-orm": "1.0.0-rc.4",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

@@ -49,11 +49,11 @@ it ships:
 
 The packages published from `packages/` besides the CLI follow the same rule.
 
-- **A package whose code Node runs** (`@lntt/playwright-config`) is authored in
-  TypeScript and published compiled: `tsconfig.build.json` emits `src/` to `dist/`
-  with declarations, `exports` points at `dist/`, `prepack` builds, `files` ships
-  `dist`. Its tests import the sources; `test/installed.test.ts` packs it and
-  imports it by name from a `node_modules`.
+- **A package whose code Node runs** (`@lntt/playwright-config`, `@lntt/test-utils`)
+  is authored in TypeScript and published compiled: `tsconfig.build.json` emits
+  `src/` to `dist/` with declarations, `exports` and `bin` point at `dist/`,
+  `prepack` builds, `files` ships `dist`. Its tests import the sources, and at least
+  one imports it by name from a `node_modules`, built.
 - **A config package** (`@lntt/biome-config`, `@lntt/typescript-config`,
   `@lntt/stylelint-config`) ships its files as they are, listed in `files` and
   `exports`.
