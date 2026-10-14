@@ -12,7 +12,8 @@ CI checks it on every pull request (`scripts/check-plugin-version.sh`).
 
 ## Releasing
 
-npm publishing happens in CI only, never from a machine. One release publishes every
+npm publishing happens in CI only, never from a machine, with the one exception of a
+new package's placeholder (below). One release publishes every
 package of `packages/` that is not private, all at one version
 ([CLI runtime and publishing](../adr/cli-runtime-and-publishing.md)):
 
@@ -38,8 +39,24 @@ scaffold smoke, and publishes each package through npm trusted publishing (OIDC,
 check and `npm publish --dry-run`; nothing reaches npm. Delete the pre-release, its
 tag and the branch afterwards.
 
-**A new package** needs its trusted publisher on npmjs.com (this repository, workflow
-`release.yml`) before the release that first publishes it, or its publish fails.
+Promoting a pre-release to a full release publishes nothing: the promotion fires
+`released`, and the workflow runs on `published`. Release the version as its own tag.
+
+**A new package** reaches npm by hand once, before the release that first carries it,
+because npm configures a trusted publisher only on a package that exists:
+
+1. Publish a `0.0.0` placeholder from the package directory, logged in to npm with
+   publish rights on the `@lntt` scope:
+   `npm version 0.0.0 --no-git-tag-version && npm publish --access public && git checkout package.json`.
+   It is the only publish ever made from a machine
+   ([CLI runtime and publishing](../adr/cli-runtime-and-publishing.md)); the version
+   set by the release bump is untouched.
+2. On the package's page on npmjs.com, Settings → Trusted publishing: repository
+   `LunetteOrg/starter`, workflow `release.yml`, with **allow `npm publish`**
+   ticked; a configuration created after 2026-09-03 otherwise allows only
+   `npm stage publish`.
+3. Run the CI release within two days: an unused trusted publisher configuration
+   expires.
 
 ## Discarded directions
 

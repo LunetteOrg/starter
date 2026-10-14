@@ -41,8 +41,7 @@ it ships:
 - `test/installed-bin.test.ts` packs, extracts into a real
   `node_modules/@lntt/create`, and runs the published `bin` from there, so the
   install-time failure above fails in CI.
-- Publishing happens in CI only, with npm OIDC trusted publishing (`--provenance`,
-  no npm token), as the next section describes for every package.
+- Publishing happens in CI only, as the next section describes for every package.
 
 ### The other `@lntt/*` packages
 
@@ -67,20 +66,25 @@ The packages published from `packages/` besides the CLI follow the same rule.
 ### One version for every published package, one release
 
 Every package under `packages/` that is not `private` (`@lntt/create` and the other
-`@lntt/*`) carries the same version. A release is one tag, `vX.Y.Z`, and publishes
-them all.
+`@lntt/*`) carries the same version, and one tag, `vX.Y.Z`, releases them all. A
+package with nothing new still gets the new version: the version names a release of
+the whole set, which the template depends on as one.
 
-- `scripts/packages-version.mts` lists the published packages (`list`, the CLI last),
-  checks that they share one version (`check [X.Y.Z]`) and writes it into all of them
-  (`set X.Y.Z`). CI runs `check` on every pull request.
-- `.github/workflows/release.yml` runs on a published GitHub Release: it checks that
-  the tag is the version of **every** published package, then lint, typecheck and the
-  tests with the scaffold smoke, then `npm publish --provenance` in each package's
-  directory. A version already on npm is skipped, so a failed run can be re-run.
-- **A release marked as pre-release is a dry run**: the same checks, then
-  `npm publish --dry-run --tag next`; nothing reaches npm.
-- A package with nothing new still gets the new version: the version names a release
-  of the whole set, which the template depends on as one.
+- **The tag is checked against every published package** before anything is
+  published (`scripts/packages-version.mts`, which CI also runs on every pull
+  request to keep the versions equal).
+- **Publishing is CI only**, from `.github/workflows/release.yml`, through npm OIDC
+  trusted publishing (`--provenance`, no npm token). A version already on npm is
+  skipped, so a failed run can be re-run.
+- **A release marked as pre-release is a dry run**: every check, then
+  `npm publish --dry-run`; nothing reaches npm.
+- **The one exception: a new package's first publish is by hand**, once, as a
+  `0.0.0` placeholder. npm configures a trusted publisher only on a package that
+  already exists (npm/cli#8544); the placeholder exists so the first CI release can
+  publish the real version through OIDC.
+
+The steps (release, dry run, first publish of a new package) are in
+[delivery](../process/delivery.md#releasing).
 
 ### Explicit `.ts` extensions for code Node executes
 
@@ -145,6 +149,11 @@ written for the projects; the divergence is intentional.
   tool too, to run it; two declared copies at different versions mean two runners
   (Playwright refuses a second `@playwright/test`) or a config validated against a
   tool the project does not run.
+- **A token for the first publish of a new package** (an npm automation token as a
+  repository secret, used once by the workflow). It puts a long-lived publish token
+  in the repository for a step that happens once per package, and npm still needs
+  the package to exist before OIDC replaces it; a placeholder published by hand
+  costs one command and leaves no secret behind.
 - **A version per package, with changesets.** Each change carries a changeset, a
   release PR collects them, every package moves on its own. It pays off when packages
   evolve at very different rates; here they ship together and the template depends
