@@ -27,6 +27,81 @@
         }
       }
     },
+    "ci": {
+      "type": "object",
+      "description": "How the project's CI runs: in the cloud, from the provider's own configuration, and locally with ci:local (@lntt/ci).",
+      "additionalProperties": false,
+      "properties": {
+        "local": {
+          "type": "object",
+          "description": "What ci:local does where the cloud configuration alone cannot say: the jobs it leaves to the cloud, the fake values it stands in for secrets with, and the actions it maps.",
+          "additionalProperties": false,
+          "properties": {
+            "cloudOnly": {
+              "type": "object",
+              "description": "Jobs that run only in the cloud (real secrets, a release, a deploy), by key: `<workflow file>/<job>` or a whole `<workflow file>` for GitHub Actions, `circleci/<job>` for CircleCI. The value is the reason, shown in the report.",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "fake": {
+              "type": "object",
+              "description": "Values a local run uses in place of the cloud's, for canaries and checks that only need a value to be present. Never a real secret: this file is tracked.",
+              "additionalProperties": false,
+              "properties": {
+                "secrets": {
+                  "type": "object",
+                  "description": "secrets.<NAME> in GitHub Actions; environment variables of every CircleCI job.",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "vars": {
+                  "type": "object",
+                  "description": "vars.<NAME> in GitHub Actions.",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "actions": {
+              "type": "object",
+              "description": "What a local run does for a GitHub Actions `uses:` it does not know, by action name without the ref (`owner/repo[/path]`): a command to run instead, or a skip with its reason. An action listed nowhere fails the run.",
+              "additionalProperties": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["run"],
+                    "properties": {
+                      "run": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "A shell command run from the repository root."
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["skip"],
+                    "properties": {
+                      "skip": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Why nothing needs to run locally."
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "delivery": {
       "type": "object",
       "description": "How a change reaches the main branch: commit messages today; pull request body, review and merge rules as skills need them.",

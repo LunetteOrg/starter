@@ -12,6 +12,7 @@
       "packages/test-utils/**",
       "!packages/test-utils/src/__fixtures__",
       "scripts/**",
+      "packages/ci/**",
       "package.json",
       "biome.json",
       "commitlint.config.mjs",
