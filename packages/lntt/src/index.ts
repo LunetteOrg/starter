@@ -27,6 +27,19 @@ export { ConfigError, type Format, type Located } from './files.ts'
 export { type LocalApp, localApp } from './local.ts'
 export { loadOperator, type Operator } from './operator.ts'
 export { type Choice, chooseViewer, commandExists, detectHost, type Host, openWith, type Viewer } from './viewer.ts'
+export {
+  type BriefValues,
+  type Runner,
+  renderBrief,
+  type Start,
+  type Started,
+  setupScript,
+  startGit,
+  startHerdr,
+  startOrca,
+  type WorktreeHost,
+  worktreeHost,
+} from './worktree.ts'
 
 export interface Loaded extends Located {
   data: Record<string, unknown>

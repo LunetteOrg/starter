@@ -26,6 +26,11 @@ name:
 - `lntt branch check` stops a branch outside the convention before push (lefthook) and
   on the pull request (CI), with the name it should have.
 
+Starting work on an issue in its own worktree, with an agent in it, is one command:
+`lntt worktree start --issue <n>`, on Orca, Herdr or plain git
+([`packages/lntt`](../../packages/lntt/README.md#starting-work-on-an-issue)). The agent
+stops at the draft pull request.
+
 ## One pull request
 
 1. **Draft.** A pull request opens as a draft. A draft runs no CI in the cloud

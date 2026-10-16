@@ -129,3 +129,26 @@ describe('lntt branch rename', () => {
     assert.equal(git('branch', '--show-current'), 'ilmeskio/chore-98-orca-yaml')
   })
 })
+
+describe('lntt worktree start', () => {
+  test('in a plain terminal: a git worktree on the issue branch, setup run, the brief printed', () => {
+    stub('gh', ISSUE_77)
+    writeFileSync(join(repo, 'orca.yaml'), 'scripts:\n  setup: |\n    echo ready > setup-ran\n')
+    git('add', '.')
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'setup')
+    const r = lntt(['worktree', 'start', '--issue', '77'])
+    assert.equal(r.status, 0, r.stderr)
+    const path = join(repo, '.worktrees', 'feat-77-branch-names-follow-type')
+    assert.equal(
+      execFileSync('git', ['branch', '--show-current'], { cwd: path, encoding: 'utf8' }).trim(),
+      'feat/77/branch-names-follow-type',
+    )
+    assert.match(r.stdout, /"host":"git"/)
+    assert.match(r.stdout, /You are working on issue #77/)
+  })
+
+  test('--host forces the adapter; an unknown one is a usage error', () => {
+    assert.equal(lntt(['worktree', 'start', '--issue', '77', '--host', 'wave']).status, 2)
+    assert.equal(lntt(['worktree', 'start']).status, 2)
+  })
+})

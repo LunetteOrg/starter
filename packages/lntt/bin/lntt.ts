@@ -26,6 +26,14 @@
 //   lntt branch rename        rename the current branch to the convention, from the name a
 //                             tool gave it or, in Orca, from the linked issue; never fails
 //
+//   lntt worktree start --issue <n> [--issue <n>]... [--host orca|herdr|git]
+//                       [--agent <id> | --no-agent] [--base <branch>]
+//                             per issue: a worktree on its branch, the setup orca.yaml
+//                             declares, and an agent with the brief (agents/brief.md);
+//                             one JSON line each. The host is the innermost one the
+//                             session runs in (Herdr, Orca), else plain git, where the
+//                             brief is printed for the person to start the agent
+//
 //   lntt ci local [--event pull_request|push] [--base <branch>] [--job <key>]...
 //                 [--list] [--strict] [--container]
 //
@@ -57,4 +65,5 @@ import { argv } from 'node:process'
 const args = argv.slice(2)
 if (args[0] === 'ci') await (await import('../src/ci/cli.ts')).main(args.slice(1))
 else if (args[0] === 'branch') (await import('../src/branch-cli.ts')).main(args.slice(1))
+else if (args[0] === 'worktree') (await import('../src/worktree-cli.ts')).main(args.slice(1))
 else (await import('../src/cli.ts')).main(args)

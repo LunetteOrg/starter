@@ -22,6 +22,7 @@ const USAGE = [
   'usage: lntt path | validate | get <key> | set <key> <json> | operator [get <key> | sources]',
   '       lntt sync | check | local app <name> | viewer detect|open <url>',
   '       lntt branch name|check|rename [...]',
+  '       lntt worktree start --issue <n> [...]',
   '       lntt ci local|candidate [...]',
 ].join('\n')
 

@@ -26,7 +26,7 @@ function run(command: string, args: string[]): string {
 }
 
 // A project without a configuration file still gets the default rules.
-function rules(): BranchRules {
+export function rules(): BranchRules {
   try {
     return branchRules(loadConfig(cwd()).data)
   } catch (error) {
@@ -35,14 +35,21 @@ function rules(): BranchRules {
   }
 }
 
-interface Issue {
+export interface Issue {
   title: string
   labels: { name: string }[]
   type?: { name: string } | null
 }
 
-function nameFromIssue(issue: number, overrides: { type?: string; slug?: string }): string {
-  const data = JSON.parse(run('gh', ['api', `repos/{owner}/{repo}/issues/${issue}`])) as Issue
+export function readIssue(issue: number): Issue {
+  return JSON.parse(run('gh', ['api', `repos/{owner}/{repo}/issues/${issue}`])) as Issue
+}
+
+export function nameFromIssue(
+  issue: number,
+  overrides: { type?: string; slug?: string },
+  data = readIssue(issue),
+): string {
   const type = overrides.type ?? typeFor({ type: data.type?.name ?? null, labels: data.labels.map((l) => l.name) })
   return branchName(type, issue, overrides.slug ?? slugify(data.title))
 }

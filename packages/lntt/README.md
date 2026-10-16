@@ -91,6 +91,33 @@ back from a flattened name (Orca's `<user>/<type>-<issue>-<slug>`, the agent har
 `worktree-<type>+<issue>+<slug>`) or, inside Orca, builds it from the issue linked to the
 worktree (`orca worktree current`); it leaves an existing branch alone.
 
+## Starting work on an issue
+
+```sh
+lntt worktree start --issue 78                 # a worktree, its setup, an agent with the brief
+lntt worktree start --issue 78 --issue 85      # one each
+lntt worktree start --issue 78 --no-agent      # the worktree only; the brief is printed
+lntt worktree start --issue 78 --host git      # force the host
+```
+
+Per issue: the branch name from `lntt branch name`, a worktree on it, the setup
+`orca.yaml` declares, and an agent (`--agent`, default `claude`) handed the brief in
+[`agents/brief.md`](./agents/brief.md): the issue is the mandate, work only in this
+worktree, review and `pnpm ci:local` green, a **draft** pull request, then stop (no
+merge, no `gh pr ready`) and return a summary and the friction met. One JSON line per
+issue: host, branch, path, and the agent's handle.
+
+The host is the innermost one the session runs in, detected from the environment:
+
+- **Herdr** (`HERDR_ENV=1`, also inside an Orca terminal): `herdr worktree create` on the
+  branch, the setup run here (Herdr has no hook), `herdr agent start` in the new pane,
+  `herdr agent prompt` with the brief.
+- **Orca** (`TERM_PROGRAM=Orca`): one `orca worktree create` with the issue linked, the
+  setup run by Orca (its `lntt branch rename` turns `<user>/<name>` into the
+  convention) and the agent started after it (`setupAgentStartupPolicy: wait-for-setup`).
+- **Plain git** otherwise, Wave and Claude desktop included: `git worktree add` under
+  `<main checkout>/.worktrees/`, the setup, and the brief printed for the person.
+
 ## Running the apps locally
 
 `local.apps.<name>` describes each app: base `port`, `url`, `commands` (with `start`),
