@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -111,6 +111,13 @@ describe('Orca', () => {
     })
   })
 
+  test('a reply without the agent handle does not crash, and still counts the agent as started', () => {
+    const { runner } = recorder({ 'orca worktree create': '' })
+    const started = startOrca(START, runner)
+    assert.equal(started.path, null)
+    assert.equal(started.agent, 'unknown')
+  })
+
   test('without an agent, no --agent and no --prompt', () => {
     const { calls, runner } = recorder({
       'orca worktree create': JSON.stringify({ result: { worktree: { path: '/p' } } }),
@@ -163,7 +170,7 @@ describe('Orca with a model or an effort', () => {
     const started = startOrca(
       { ...START, agent: { kind: 'codex', model: 'gpt-6' } },
       runner,
-      'pnpm install --frozen-lockfile\n',
+      () => 'pnpm install --frozen-lockfile\n',
     )
     assert.deepEqual(calls, [
       'orca orchestration run-current --json',
@@ -181,7 +188,7 @@ describe('Orca with a model or an effort', () => {
       'orca terminal create': JSON.stringify({ result: { terminal: { handle: 'term_7' } } }),
       'orca terminal wait': JSON.stringify({ result: { wait: { satisfied: true } } }),
     })
-    const started = startOrca({ ...START, agent: { kind: 'opencode', model: 'opencode/x' } }, runner, 'pnpm i')
+    const started = startOrca({ ...START, agent: { kind: 'opencode', model: 'opencode/x' } }, runner, () => 'pnpm i')
     assert.deepEqual(calls, [
       'orca worktree create --name feat-78-start-agent --issue 78 --base-branch main --setup skip --json',
       'setup in /w: pnpm i',
@@ -217,10 +224,11 @@ describe('Herdr', () => {
     const { calls, runner } = recorder({
       'herdr worktree create': JSON.stringify({ result: { workspace: { root_pane: { pane_id: 'w2:p1' } } } }),
     })
-    const started = startHerdr(START, runner, 'pnpm install --frozen-lockfile\n')
+    const started = startHerdr(START, runner, () => 'pnpm install --frozen-lockfile\n')
     const path = '/repo/.worktrees/feat-78-start-agent'
     assert.deepEqual(calls, [
       `herdr worktree create --cwd /repo --branch feat/78/start-agent --base main --path ${path} --label feat-78-start-agent --no-focus`,
+      'git branch --unset-upstream feat/78/start-agent',
       `setup in ${path}: pnpm install --frozen-lockfile`,
       'herdr agent start feat-78-start-agent --kind claude --pane w2:p1',
       'herdr agent prompt feat-78-start-agent BRIEF',
@@ -242,8 +250,8 @@ describe('Herdr', () => {
       }
       return base(command, args, opts)
     }
-    const started = startHerdr({ ...START, agent: { kind: 'opencode', model: 'opencode/x' } }, runner, null)
-    assert.deepEqual(calls.slice(1), [
+    const started = startHerdr({ ...START, agent: { kind: 'opencode', model: 'opencode/x' } }, runner, () => null)
+    assert.deepEqual(calls.slice(2), [
       `herdr pane run w2:p1 OPENCODE_CONFIG_CONTENT='{"model":"opencode/x"}' opencode --standalone`,
       'herdr agent list',
       'herdr agent list',
@@ -256,7 +264,7 @@ describe('Herdr', () => {
     const { calls, runner } = recorder({
       'herdr worktree create': JSON.stringify({ result: { pane: { pane_id: 'w2:p1' } } }),
     })
-    startHerdr({ ...START, agent: { kind: 'claude', model: 'sonnet', effort: 'high' } }, runner, null)
+    startHerdr({ ...START, agent: { kind: 'claude', model: 'sonnet', effort: 'high' } }, runner, () => null)
     assert.ok(
       calls.includes(
         'herdr agent start feat-78-start-agent --kind claude --pane w2:p1 -- --model sonnet --effort high',
@@ -269,7 +277,7 @@ describe('Herdr', () => {
       'herdr worktree create': JSON.stringify({ result: { workspace: { workspace_id: 'wF' } } }),
       'herdr pane list': JSON.stringify({ result: { panes: [{ pane_id: 'wF:p1' }] } }),
     })
-    startHerdr(START, runner, null)
+    startHerdr(START, runner, () => null)
     assert.ok(calls.includes('herdr pane list --workspace wF'))
     assert.ok(calls.includes('herdr agent start feat-78-start-agent --kind claude --pane wF:p1'))
   })
@@ -294,12 +302,14 @@ describe('plain git', () => {
   })
 
   test('adds the worktree on the branch, runs the setup in it, leaves the agent to the person', () => {
+    // The main checkout's working copy is not what the new worktree checks out.
+    writeFileSync(join(repo, 'orca.yaml'), 'scripts:\n  setup: |\n    echo uncommitted > setup-ran\n')
     const real: Runner = {
       run: (command, args, opts) => execFileSync(command, args, { cwd: opts?.cwd ?? repo, encoding: 'utf8' }),
       shell: (script, cwd) => execFileSync('sh', ['-c', script], { cwd }),
       sleep: () => {},
     }
-    const started = startGit({ ...START, root: repo }, real, setupScript(repo))
+    const started = startGit({ ...START, root: repo, base: 'main' }, real, setupScript)
     const path = join(repo, '.worktrees', 'feat-78-start-agent')
     assert.deepEqual(started, { host: 'git', issue: 78, branch: 'feat/78/start-agent', path, agent: null })
     assert.equal(
@@ -307,6 +317,8 @@ describe('plain git', () => {
       'feat/78/start-agent',
     )
     assert.ok(existsSync(join(path, 'setup-ran')))
-    assert.equal(readFileSync(join(path, 'setup-ran'), 'utf8').trim(), 'ready')
+    assert.equal(readFileSync(join(path, 'setup-ran'), 'utf8').trim(), 'ready', "the new worktree's own orca.yaml")
+    const upstream = spawnSync('git', ['rev-parse', '--abbrev-ref', '@{upstream}'], { cwd: path, encoding: 'utf8' })
+    assert.notEqual(upstream.status, 0, `no upstream for a new branch, got ${upstream.stdout}`)
   })
 })

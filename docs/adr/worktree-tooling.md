@@ -31,7 +31,8 @@ small adapter that makes the calls it understands.
   (`HERDR_ENV=1`, also when it runs inside an Orca terminal), then Orca
   (`TERM_PROGRAM=Orca` or `ORCA_WORKTREE_ID`), else plain git. Wave and Claude desktop
   create no worktrees: plain git. `--host` overrides it.
-- **One setup**, the one `orca.yaml` declares. Orca runs it through its hook; `lntt`
+- **One setup**, the one the new worktree's own `orca.yaml` declares (the revision it
+  checks out, not the main checkout's working copy). Orca runs it through its hook; `lntt`
   runs it itself where the host has none (Herdr, git) and wherever it must know when the
   setup has ended, because Orca's setup terminal stays open as a shell.
 - **One brief**, `packages/lntt/agents/brief.md`: the issue is the mandate, work only in
@@ -47,11 +48,17 @@ small adapter that makes the calls it understands.
     (`OPENCODE_CONFIG_CONTENT`) on a standalone server, started as a shell command in a
     terminal or pane of its own, and prompted once the tool sees it ready.
   - Herdr: `herdr agent start --kind` with the model and effort after `--`.
-- **What an agent cannot take is refused before anything is created**, never dropped:
-  an agent started on another model or effort than the one asked for is a different
-  agent.
+- **What cannot start is refused before anything is created**, never dropped or left
+  half done: an agent flag the agent cannot take (one started on another model or
+  effort than the one asked for is a different agent), and in a batch any issue that
+  cannot be read or named, so several `--issue` start whole or not at all.
 - **Worktrees made by `lntt`** (git, Herdr) go under `<main checkout>/.worktrees/`,
-  ignored by git with `.claude/worktrees/` of the agent harnesses.
+  ignored by git with `.claude/worktrees/` of the agent harnesses. Their branch has no
+  upstream until it is first pushed: created from `origin/<base>`, it would otherwise
+  track the base.
+- **`rename` never fails a setup.** A name it cannot fix, or one the issue cannot give
+  (a title with nothing to slug), is reported and the branch stays; the pre-push check
+  (on the branches being pushed) and CI stop it if it stays wrong.
 
 ## Consequences
 

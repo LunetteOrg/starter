@@ -73,10 +73,13 @@ export function renderBrief(template: string | undefined, values: BriefValues): 
   return text.replace(/\{\{(issue|title|branch|worktree)\}\}/g, (_, key: keyof BriefValues) => String(values[key]))
 }
 
-// The setup every new worktree gets: the one orca.yaml declares, run by hand on the
-// hosts that have no hook for it.
-export function setupScript(root: string): string | null {
-  const file = join(root, 'orca.yaml')
+// The setup a worktree gets, read from its own orca.yaml (the revision it checks out,
+// not the main checkout's working copy), run by hand on the hosts that have no hook
+// for it.
+export type SetupFor = (worktree: string) => string | null
+
+export function setupScript(worktree: string): string | null {
+  const file = join(worktree, 'orca.yaml')
   if (!existsSync(file)) return null
   const setup = (parse(readFileSync(file, 'utf8')) as { scripts?: { setup?: unknown } } | null)?.scripts?.setup
   return typeof setup === 'string' && setup.trim() !== '' ? setup : null
@@ -113,14 +116,14 @@ function flat(branch: string): string {
 // Orca prefixes the worktree name with the user (`<user>/feat-78-slug`); its setup
 // (orca.yaml, `lntt branch rename`) reads the convention back. The agent starts after
 // the setup (setupAgentStartupPolicy: wait-for-setup).
-export function startOrca(start: Start, runner: Runner, setup: string | null = null): Started {
+export function startOrca(start: Start, runner: Runner, setupFor: SetupFor = () => null): Started {
   const shell = start.agent ? shellLaunch(start.agent) : null
-  if (shell) return startOrcaShell(start, shell, runner, setup)
-  if (start.agent?.model || start.agent?.effort) return startOrcaWorker(start, start.agent, runner, setup)
+  if (shell) return startOrcaShell(start, shell, runner, setupFor)
+  if (start.agent?.model || start.agent?.effort) return startOrcaWorker(start, start.agent, runner, setupFor)
   const args = ['worktree', 'create', '--name', flat(start.branch), '--issue', String(start.issue)]
   args.push('--base-branch', start.base, '--setup', 'run', '--json')
   if (start.agent) args.push('--agent', start.agent.kind, '--prompt', start.brief)
-  const reply = JSON.parse(runner.run('orca', args)) as {
+  const reply = JSON.parse(runner.run('orca', args) || '{}') as {
     result?: { worktree?: { path?: string }; agentTerminalHandle?: string; startupTerminal?: { handle?: string } }
   }
   const handle = reply.result?.agentTerminalHandle ?? reply.result?.startupTerminal?.handle ?? null
@@ -129,17 +132,19 @@ export function startOrca(start: Start, runner: Runner, setup: string | null = n
     issue: start.issue,
     branch: start.branch,
     path: reply.result?.worktree?.path ?? null,
-    agent: start.agent ? handle : null,
+    // Orca started the agent even when its reply names no handle.
+    agent: start.agent ? (handle ?? 'unknown') : null,
   }
 }
 
 // The worktree with its issue linked and Orca's setup skipped, then the setup run here:
 // Orca's setup terminal stays open as a shell, with no end to wait for.
-function orcaWorktree(start: Start, runner: Runner, setup: string | null): string {
+function orcaWorktree(start: Start, runner: Runner, setupFor: SetupFor): string {
   const args = ['worktree', 'create', '--name', flat(start.branch), '--issue', String(start.issue)]
   args.push('--base-branch', start.base, '--setup', 'skip', '--json')
   const path = find(JSON.parse(runner.run('orca', args) || '{}'), 'path')
   if (typeof path !== 'string') throw new Error('orca worktree create returned no path')
+  const setup = setupFor(path)
   if (setup) runner.shell(setup, path)
   return path
 }
@@ -147,8 +152,8 @@ function orcaWorktree(start: Start, runner: Runner, setup: string | null): strin
 // An agent started by a shell command (shellLaunch) in a terminal of its own; the brief
 // is sent once its interface is idle, never before: text typed into a starting
 // interface is lost.
-function startOrcaShell(start: Start, command: string, runner: Runner, setup: string | null): Started {
-  const path = orcaWorktree(start, runner, setup)
+function startOrcaShell(start: Start, command: string, runner: Runner, setupFor: SetupFor): Started {
+  const path = orcaWorktree(start, runner, setupFor)
   const created = runner.run('orca', [
     'terminal',
     'create',
@@ -184,13 +189,13 @@ function startOrcaShell(start: Start, command: string, runner: Runner, setup: st
 // a worktree that already exists (orcaWorktree). It needs a Run bound to the calling
 // terminal, created when there is none; Orca wraps the brief in its own preamble and
 // the agent reports `worker_done` to the Run.
-function startOrcaWorker(start: Start, agent: Agent, runner: Runner, setup: string | null): Started {
+function startOrcaWorker(start: Start, agent: Agent, runner: Runner, setupFor: SetupFor): Started {
   agentArgs(agent) // what the agent cannot take fails before anything is created
   const current = JSON.parse(runner.run('orca', ['orchestration', 'run-current', '--json']) || '{}')
   if (!find(current, 'run')) {
     runner.run('orca', ['orchestration', 'run-create', '--objective', `lntt worktree start #${start.issue}`, '--json'])
   }
-  const path = orcaWorktree(start, runner, setup)
+  const path = orcaWorktree(start, runner, setupFor)
   const worker = ['orchestration', 'worker-start', '--spec', start.brief, '--worktree', `path:${path}`]
   worker.push('--agent', agent.kind, '--json')
   if (agent.model) worker.push('--model', agent.model)
@@ -201,7 +206,7 @@ function startOrcaWorker(start: Start, agent: Agent, runner: Runner, setup: stri
     issue: start.issue,
     branch: start.branch,
     path,
-    agent: typeof dispatch === 'string' ? dispatch : null,
+    agent: typeof dispatch === 'string' ? dispatch : 'unknown',
   }
 }
 
@@ -241,7 +246,7 @@ function herdrAgentIn(pane: string, runner: Runner): void {
 // Herdr takes the branch name as given and has no setup hook: the setup runs here,
 // before the agent starts in the new workspace's pane. `--cwd` names the repository,
 // so the call works from outside a Herdr workspace too.
-export function startHerdr(start: Start, runner: Runner, setup: string | null): Started {
+export function startHerdr(start: Start, runner: Runner, setupFor: SetupFor): Started {
   const name = flat(start.branch)
   const path = join(start.root, '.worktrees', name)
   const reply = runner.run('herdr', [
@@ -259,6 +264,8 @@ export function startHerdr(start: Start, runner: Runner, setup: string | null): 
     name,
     '--no-focus',
   ])
+  untrack(start, runner)
+  const setup = setupFor(path)
   if (setup) runner.shell(setup, path)
   if (!start.agent) return { host: 'herdr', issue: start.issue, branch: start.branch, path, agent: null }
   const pane = herdrPane(JSON.parse(reply || '{}'), runner)
@@ -279,10 +286,22 @@ export function startHerdr(start: Start, runner: Runner, setup: string | null): 
   return { host: 'herdr', issue: start.issue, branch: start.branch, path, agent }
 }
 
+// Herdr creates the branch from origin/<base>, which git may record as its upstream: a
+// pull would then track the base. The branch gets its upstream when it is first pushed.
+function untrack(start: Start, runner: Runner): void {
+  try {
+    runner.run('git', ['branch', '--unset-upstream', start.branch], { cwd: start.root })
+  } catch {
+    // No upstream was set.
+  }
+}
+
 // Plain git: the worktree and its setup; the person starts the agent with the brief.
-export function startGit(start: Start, runner: Runner, setup: string | null): Started {
+export function startGit(start: Start, runner: Runner, setupFor: SetupFor): Started {
   const path = join(start.root, '.worktrees', flat(start.branch))
-  runner.run('git', ['worktree', 'add', '-b', start.branch, path, start.base], { cwd: start.root })
+  // From origin/<base>, git would otherwise make the base the new branch's upstream.
+  runner.run('git', ['worktree', 'add', '--no-track', '-b', start.branch, path, start.base], { cwd: start.root })
+  const setup = setupFor(path)
   if (setup) runner.shell(setup, path)
   return { host: 'git', issue: start.issue, branch: start.branch, path, agent: null }
 }

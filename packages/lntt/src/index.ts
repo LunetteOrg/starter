@@ -33,6 +33,7 @@ export {
   type BriefValues,
   type Runner,
   renderBrief,
+  type SetupFor,
   type Start,
   type Started,
   setupScript,

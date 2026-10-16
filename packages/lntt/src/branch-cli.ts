@@ -2,6 +2,7 @@
 // the rename that fixes the name a tool gave it (usage: bin/lntt.ts).
 
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { type BranchRules, branchName, branchRules, checkBranch, fromToolName, slugify, typeFor } from './branch.ts'
@@ -84,26 +85,54 @@ function name(args: string[]): void {
     result = branchName(values.type, null, values.slug)
   }
   const check = checkBranch(result, rules())
-  if (!check.ok) usage(check.reason)
+  if (!check.ok) {
+    stderr.write(`lntt branch: ${result} is not a valid name: ${check.reason}; give --slug (or --type)\n`)
+    exit(1)
+  }
   stdout.write(`${result}\n`)
 }
 
 function check(args: string[]): void {
-  const { values } = parseArgs({ args, options: { branch: { type: 'string' } } })
-  const branch = values.branch || run('git', ['branch', '--show-current'])
-  const result = checkBranch(branch, rules())
-  if (result.ok) return
-  const fix = result.expected
-    ? `rename it: git branch -m ${result.expected}`
-    : 'rename it to the name lntt branch name --issue <n> prints'
-  stderr.write(`lntt branch: ${branch} does not follow type/issue/slug: ${result.reason}; ${fix}\n`)
-  exit(1)
+  const { values } = parseArgs({
+    args,
+    options: { branch: { type: 'string' }, 'pre-push': { type: 'boolean', default: false } },
+  })
+  const ruleset = rules()
+  const branches = values['pre-push']
+    ? pushedBranches(readFileSync(0, 'utf8'))
+    : [values.branch || run('git', ['branch', '--show-current'])]
+  let failed = false
+  for (const branch of branches) {
+    const result = checkBranch(branch, ruleset)
+    if (result.ok) continue
+    const fix = result.expected
+      ? `rename it: git branch -m ${result.expected}`
+      : 'rename it to the name lntt branch name --issue <n> prints'
+    stderr.write(`lntt branch: ${branch} does not follow type/issue/slug: ${result.reason}; ${fix}\n`)
+    failed = true
+  }
+  if (failed) exit(1)
+}
+
+// The branches a push creates or updates, from the lines git gives the pre-push hook
+// (`<local ref> <local sha> <remote ref> <remote sha>`): tags and deletions are not
+// branch names to check.
+function pushedBranches(input: string): string[] {
+  return input
+    .split('\n')
+    .map((line) => line.trim().split(/\s+/))
+    .filter(([, localSha, remoteRef]) => localSha && !/^0+$/.test(localSha) && remoteRef?.startsWith('refs/heads/'))
+    .map(([, , remoteRef]) => (remoteRef as string).slice('refs/heads/'.length))
 }
 
 // Never fails: it runs in a worktree's setup, where a name it cannot fix is reported,
 // not fatal. CI and the pre-push hook stop the branch if it stays wrong.
 function rename(): void {
   const current = run('git', ['branch', '--show-current'])
+  if (current === '') {
+    stderr.write('lntt branch: HEAD is detached; nothing to rename\n')
+    return
+  }
   const ruleset = rules()
   if (checkBranch(current, ruleset).ok) return
   let target = fromToolName(current, ruleset)
@@ -116,6 +145,13 @@ function rename(): void {
         stderr.write(`lntt branch: could not read issue #${issue}: ${(error as Error).message}\n`)
       }
     }
+  }
+  const valid = target ? checkBranch(target, ruleset) : null
+  if (target && valid && !valid.ok) {
+    stderr.write(
+      `lntt branch: ${target}, built from the issue, is not a valid name: ${valid.reason}; ${current} stays\n`,
+    )
+    return
   }
   if (!target) {
     stderr.write(

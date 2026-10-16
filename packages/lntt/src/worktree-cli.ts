@@ -104,38 +104,40 @@ function start(args: string[]): void {
   shellLaunch(agent)
   const root = mainCheckout()
   const base = values.base ?? configuredBase()
-  const setup = setupScript(root)
   const ruleset = rules()
-  for (const raw of issues) {
+  // Every issue is read and named before anything is created: a batch either starts
+  // whole or not at all.
+  const jobs: Start[] = issues.map((raw) => {
     const issue = Number(raw)
     const data = readIssue(issue)
     const branch = nameFromIssue(issue, {}, data)
     const check = checkBranch(branch, ruleset)
-    if (!check.ok) throw new Error(`#${issue}: ${check.reason}`)
+    if (!check.ok) throw new Error(`#${issue}: ${branch} is not a valid name: ${check.reason}`)
     const worktree =
       host === 'orca' ? 'the worktree this session starts in' : `${root}/.worktrees/${branch.replace(/\//g, '-')}`
-    const brief = values.prompt ?? renderBrief(undefined, { issue, title: data.title, branch, worktree })
-    const job: Start = {
+    return {
       issue,
       title: data.title,
       branch,
       base: host === 'orca' ? base : gitBase(root, base),
       agent: values['no-agent'] || host === 'git' ? null : agent,
       root,
-      brief,
+      brief: values.prompt ?? renderBrief(undefined, { issue, title: data.title, branch, worktree }),
     }
+  })
+  for (const job of jobs) {
     const started =
       host === 'orca'
-        ? startOrca(job, runner, setup)
+        ? startOrca(job, runner, setupScript)
         : host === 'herdr'
-          ? startHerdr(job, runner, setup)
-          : startGit(job, runner, setup)
+          ? startHerdr(job, runner, setupScript)
+          : startGit(job, runner, setupScript)
     stdout.write(`${JSON.stringify(started)}\n`)
-    // Nobody started an agent: the command and the brief are for the person who will.
-    if (started.agent === null) {
+    // Nobody was asked to start an agent: the command and the brief are for the person who will.
+    if (job.agent === null) {
       const launch = shellLaunch(agent) ?? [agent.kind, ...agentArgs(agent)].join(' ')
       const command = host === 'git' ? `${launch}  # in ${started.path}\n\n` : ''
-      stdout.write(`\n${command}${brief}\n`)
+      stdout.write(`\n${command}${job.brief}\n`)
     }
   }
 }

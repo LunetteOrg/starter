@@ -80,6 +80,7 @@ lntt branch name --issue 77          # feat/77/branch-names-follow-type: type, i
 lntt branch name --issue 77 --slug worktree-names   # --type and --slug override
 lntt branch name --type docs --slug version-numbering   # docs/no-issue/version-numbering
 lntt branch check                    # exit 1 off the convention, with the expected name
+lntt branch check --pre-push         # the branches a push creates or updates (git's hook input)
 lntt branch rename                   # fix the name a tool gave the current branch; never fails
 ```
 
@@ -121,10 +122,10 @@ The host is the innermost one the session runs in, detected from the environment
 - **Orca** (`TERM_PROGRAM=Orca`): one `orca worktree create` with the issue linked, the
   setup run by Orca (its `lntt branch rename` turns `<user>/<name>` into the
   convention) and the agent started after it (`setupAgentStartupPolicy: wait-for-setup`).
-  With `--model` or `--effort`, which `worktree create` does not take, a supervised
-  worker instead (`orca orchestration worker-start`, in a Run created when none is
-  bound to the terminal), then the issue linked with `orca worktree set`; the agent
-  reports `worker_done` to the Run. opencode with a model starts in a terminal of its own
+  With `--model` or `--effort`, which `worktree create` does not take: the worktree
+  with its issue and Orca's setup skipped, the setup run by `lntt`, then a supervised
+  worker on it (`orca orchestration worker-start`, in a Run created when none is bound
+  to the terminal); the agent reports `worker_done` to the Run. opencode with a model starts in a terminal of its own
   instead (Orca refuses an opencode model to its worker), and gets the brief once idle.
 - **Plain git** otherwise, Wave and Claude desktop included: `git worktree add` under
   `<main checkout>/.worktrees/`, the setup, and the brief printed for the person.
