@@ -1,8 +1,8 @@
 # @lntt/lntt
 
 The `lntt` command, for the people and the agents of a Lunette project: its
-configuration and the operator profile, the managed block of `AGENTS.md`, the apps run
-locally, and its CI run on the local machine with the candidate automation
+configuration and the operator profile, the managed block of `AGENTS.md`, branch names,
+the apps run locally, and its CI run on the local machine with the candidate automation
 ([`lntt ci`](#ci-lntt-ci)).
 
 ## The configuration
@@ -72,6 +72,24 @@ export default commitlintConfig()
 
 `lntt sync` writes the managed block of `AGENTS.md` from
 [`agents/block.md`](./agents/block.md); `lntt check` fails when it differs.
+
+## Branch names
+
+```sh
+lntt branch name --issue 77          # feat/77/branch-names-follow-type: type, issue, slug of the title
+lntt branch name --issue 77 --slug worktree-names   # --type and --slug override
+lntt branch name --type docs --slug version-numbering   # docs/no-issue/version-numbering
+lntt branch check                    # exit 1 off the convention, with the expected name
+lntt branch rename                   # fix the name a tool gave the current branch; never fails
+```
+
+The convention is `<type>/<issue>/<slug>` or `<type>/no-issue/<slug>`; the types are
+`delivery.branches.types` plus the hotfix prefix, and the base, the candidates and
+Dependabot's branches are exempt. `name` reads the issue with `gh` (its native type,
+else the labels `bug` and `documentation`, else `feat`). `rename` reads the convention
+back from a flattened name (Orca's `<user>/<type>-<issue>-<slug>`, the agent harness's
+`worktree-<type>+<issue>+<slug>`) or, inside Orca, builds it from the issue linked to the
+worktree (`orca worktree current`); it leaves an existing branch alone.
 
 ## Running the apps locally
 

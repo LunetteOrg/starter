@@ -16,6 +16,13 @@ pre-commit:
     typecheck:
       run: pnpm typecheck
 
+pre-push:
+  commands:
+    # The branch name follows type/issue/slug whatever created it (lntt branch); CI
+    # checks it again on the pull request.
+    branch-name:
+      run: pnpm exec lntt branch check
+
 commit-msg:
   commands:
     commitlint:

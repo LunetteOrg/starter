@@ -1,12 +1,21 @@
 # Orca's worktree hooks, shared by everyone who opens this repository in Orca. Setup
 # runs in the new worktree and is read from that worktree's copy of this file.
 #
-# setup: the dependencies. A new worktree has no node_modules, so tests, lint and the
-#   git hooks fail until they are installed. `pnpm install` also runs `prepare`, which
-#   points the shared git hooks at the main checkout's lefthook
-#   (scripts/install-hooks.sh). Nothing else is needed: no build step, no database.
+# Orca runs it only when the repository's *Command source* setting is "orca.yaml only"
+# (or "Run both"): a script once saved in the local setup field switches the setting to
+# "Local only", and this file is then ignored without a warning.
+#
+# setup:
+#   - the dependencies. A new worktree has no node_modules, so tests, lint and the git
+#     hooks fail until they are installed. `pnpm install` also runs `prepare`, which
+#     points the shared git hooks at the main checkout's lefthook
+#     (scripts/install-hooks.sh). No build step, no database.
+#   - the branch name. Orca names the branch `<user>/<worktree name>`; `lntt branch
+#     rename` gives it type/issue/slug, from the name or from the issue linked to the
+#     worktree, and only reports a name it cannot fix.
 scripts:
   setup: |
     pnpm install --frozen-lockfile
+    pnpm exec lntt branch rename
 # The agent starts on a worktree whose dependencies are in place.
 setupAgentStartupPolicy: wait-for-setup
