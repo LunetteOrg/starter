@@ -16,6 +16,7 @@ import {
   type Start,
   type Started,
   setupScript,
+  shellLaunch,
   startGit,
   startHerdr,
   startOrca,
@@ -40,6 +41,7 @@ const runner: Runner = {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'inherit'],
     }).trim(),
+  sleep: (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms),
   shell: (script, dir) => {
     // The setup's output goes to stderr: stdout carries one JSON line per worktree.
     execFileSync('bash', ['-e', '-c', script], { cwd: dir, stdio: ['ignore', process.stderr, 'inherit'] })
@@ -122,7 +124,10 @@ function start(args: string[]): void {
       brief,
     }
     // Refused before anything is created: what the agent cannot take.
-    if (job.agent) agentArgs(job.agent)
+    if (job.agent) {
+      agentArgs(job.agent)
+      shellLaunch(job.agent)
+    }
     const started =
       host === 'orca'
         ? startOrca(job, runner, setup)
@@ -133,7 +138,8 @@ function start(args: string[]): void {
     stdout.write(`${JSON.stringify(started)}\n`)
     // Nobody started an agent: the command and the brief are for the person who will.
     if (started.agent === null) {
-      const command = host === 'git' ? `${[agent.kind, ...agentArgs(agent)].join(' ')}  # in ${started.path}\n\n` : ''
+      const launch = shellLaunch(agent) ?? [agent.kind, ...agentArgs(agent)].join(' ')
+      const command = host === 'git' ? `${launch}  # in ${started.path}\n\n` : ''
       stdout.write(`\n${command}${brief}\n`)
     }
   }

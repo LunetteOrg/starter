@@ -10,6 +10,7 @@ import {
   renderBrief,
   type Start,
   setupScript,
+  shellLaunch,
   startGit,
   startHerdr,
   startOrca,
@@ -69,6 +70,7 @@ function recorder(answers: Record<string, string> = {}) {
     shell(script, cwd) {
       calls.push(`setup in ${cwd}: ${script.trim()}`)
     },
+    sleep() {},
   }
   return { calls, runner }
 }
@@ -136,8 +138,18 @@ describe('the agent arguments', () => {
   })
 
   test('what the agent cannot take is an error, not a silent drop', () => {
-    assert.throws(() => agentArgs({ kind: 'opencode', model: 'opencode/x' }), /opencode/)
+    assert.throws(() => agentArgs({ kind: 'opencode', effort: 'high' }), /opencode/)
     assert.throws(() => agentArgs({ kind: 'pi', effort: 'high' }), /pi/)
+  })
+
+  test('opencode takes its model through its inline configuration, on a standalone server', () => {
+    assert.equal(
+      shellLaunch({ kind: 'opencode', model: 'opencode/deepseek-v4.1-flash-free' }),
+      `OPENCODE_CONFIG_CONTENT='{"model":"opencode/deepseek-v4.1-flash-free"}' opencode --standalone`,
+    )
+    assert.equal(shellLaunch({ kind: 'opencode' }), null)
+    assert.equal(shellLaunch({ kind: 'claude', model: 'sonnet' }), null)
+    assert.throws(() => shellLaunch({ kind: 'opencode', model: "x'; rm -rf ~" }), /provider\/model/)
   })
 })
 
@@ -163,10 +175,30 @@ describe('Orca with a model or an effort', () => {
     assert.equal(started.path, '/w')
   })
 
-  test('an opencode model is refused before anything is created', () => {
-    const { calls, runner } = recorder()
-    assert.throws(() => startOrca({ ...START, agent: { kind: 'opencode', model: 'opencode/x' } }, runner), /opencode/)
-    assert.deepEqual(calls, [])
+  test('opencode with a model: the worktree, the setup, then opencode in a terminal and the brief sent', () => {
+    const { calls, runner } = recorder({
+      'orca worktree create': JSON.stringify({ result: { worktree: { path: '/w' } } }),
+      'orca terminal create': JSON.stringify({ result: { terminal: { handle: 'term_7' } } }),
+      'orca terminal wait': JSON.stringify({ result: { wait: { satisfied: true } } }),
+    })
+    const started = startOrca({ ...START, agent: { kind: 'opencode', model: 'opencode/x' } }, runner, 'pnpm i')
+    assert.deepEqual(calls, [
+      'orca worktree create --name feat-78-start-agent --issue 78 --base-branch main --setup skip --json',
+      'setup in /w: pnpm i',
+      `orca terminal create --worktree path:/w --title feat-78-start-agent --command OPENCODE_CONFIG_CONTENT='{"model":"opencode/x"}' opencode --standalone --json`,
+      'orca terminal wait --terminal term_7 --for tui-idle --timeout-ms 120000 --json',
+      'orca terminal send --terminal term_7 --text BRIEF --enter --json',
+    ])
+    assert.equal(started.agent, 'term_7')
+  })
+
+  test('a brief is never typed into an agent that is not ready', () => {
+    const { runner } = recorder({
+      'orca worktree create': JSON.stringify({ result: { worktree: { path: '/w' } } }),
+      'orca terminal create': JSON.stringify({ result: { terminal: { handle: 'term_7' } } }),
+      'orca terminal wait': JSON.stringify({ result: { wait: { satisfied: false } } }),
+    })
+    assert.throws(() => startOrca({ ...START, agent: { kind: 'opencode', model: 'opencode/x' } }, runner), /not ready/)
   })
 
   test('creates the Run when none is bound', () => {
@@ -194,6 +226,30 @@ describe('Herdr', () => {
       'herdr agent prompt feat-78-start-agent BRIEF',
     ])
     assert.equal(started.agent, 'feat-78-start-agent')
+  })
+
+  test('opencode with a model: started in the pane, found by Herdr, prompted through the pane', () => {
+    let listed = 0
+    const { calls, runner } = recorder({
+      'herdr worktree create': JSON.stringify({ result: { pane: { pane_id: 'w2:p1' } } }),
+    })
+    const base = runner.run
+    runner.run = (command, args, opts) => {
+      if (command === 'herdr' && args[0] === 'agent' && args[1] === 'list') {
+        calls.push('herdr agent list')
+        listed += 1
+        return JSON.stringify({ result: { agents: listed < 2 ? [] : [{ agent: 'opencode', pane_id: 'w2:p1' }] } })
+      }
+      return base(command, args, opts)
+    }
+    const started = startHerdr({ ...START, agent: { kind: 'opencode', model: 'opencode/x' } }, runner, null)
+    assert.deepEqual(calls.slice(1), [
+      `herdr pane run w2:p1 OPENCODE_CONFIG_CONTENT='{"model":"opencode/x"}' opencode --standalone`,
+      'herdr agent list',
+      'herdr agent list',
+      'herdr agent prompt w2:p1 BRIEF',
+    ])
+    assert.equal(started.agent, 'w2:p1')
   })
 
   test('model and effort go to the agent after --', () => {
@@ -241,6 +297,7 @@ describe('plain git', () => {
     const real: Runner = {
       run: (command, args, opts) => execFileSync(command, args, { cwd: opts?.cwd ?? repo, encoding: 'utf8' }),
       shell: (script, cwd) => execFileSync('sh', ['-c', script], { cwd }),
+      sleep: () => {},
     }
     const started = startGit({ ...START, root: repo }, real, setupScript(repo))
     const path = join(repo, '.worktrees', 'feat-78-start-agent')

@@ -36,6 +36,7 @@ export {
   type Start,
   type Started,
   setupScript,
+  shellLaunch,
   startGit,
   startHerdr,
   startOrca,

@@ -15,6 +15,7 @@ export type WorktreeHost = 'orca' | 'herdr' | 'git'
 export interface Runner {
   run(command: string, args: string[], opts?: { cwd?: string }): string
   shell(script: string, cwd: string): void
+  sleep(ms: number): void
 }
 
 export interface Start {
@@ -84,14 +85,23 @@ export function setupScript(root: string): string | null {
 // the command printed for plain git). What the agent has no flag for is an error:
 // dropping it would launch a different agent than the one asked for.
 export function agentArgs(agent: Agent): string[] {
-  if (agent.kind === 'opencode' && agent.model) {
-    throw new Error('opencode takes no model when its interface starts: set the model in its configuration')
-  }
+  // opencode's model goes through its configuration: shellLaunch.
+  if (agent.kind === 'opencode' && !agent.effort) return []
   const args = agent.model ? ['--model', agent.model] : []
   if (!agent.effort) return args
   if (agent.kind === 'claude') return [...args, '--effort', agent.effort]
   if (agent.kind === 'codex') return [...args, '-c', `model_reasoning_effort="${agent.effort}"`]
   throw new Error(`${agent.kind} takes no effort from the command line; drop --effort or set it in its configuration`)
+}
+
+// opencode's interface has no model flag; its configuration has one, inline through
+// OPENCODE_CONFIG_CONTENT, which only a standalone server reads (the shared background
+// service ignores it). Such a start is a shell command, not an executable with
+// arguments. Null for an agent that starts with plain arguments.
+export function shellLaunch(agent: Agent): string | null {
+  if (agent.kind !== 'opencode' || !agent.model) return null
+  if (!/^[\w.:-]+\/[\w.:/-]+$/.test(agent.model)) throw new Error(`opencode model ${agent.model} is not provider/model`)
+  return `OPENCODE_CONFIG_CONTENT='${JSON.stringify({ model: agent.model })}' opencode --standalone`
 }
 
 // A branch name as one path segment: Orca's worktree name, Herdr's label, the folder.
@@ -103,6 +113,8 @@ function flat(branch: string): string {
 // (orca.yaml, `lntt branch rename`) reads the convention back. The agent starts after
 // the setup (setupAgentStartupPolicy: wait-for-setup).
 export function startOrca(start: Start, runner: Runner, setup: string | null = null): Started {
+  const shell = start.agent ? shellLaunch(start.agent) : null
+  if (shell) return startOrcaShell(start, shell, runner, setup)
   if (start.agent?.model || start.agent?.effort) return startOrcaWorker(start, start.agent, runner, setup)
   const args = ['worktree', 'create', '--name', flat(start.branch), '--issue', String(start.issue)]
   args.push('--base-branch', start.base, '--setup', 'run', '--json')
@@ -120,11 +132,55 @@ export function startOrca(start: Start, runner: Runner, setup: string | null = n
   }
 }
 
+// The worktree with its issue linked and Orca's setup skipped, then the setup run here:
+// Orca's setup terminal stays open as a shell, with no end to wait for.
+function orcaWorktree(start: Start, runner: Runner, setup: string | null): string {
+  const args = ['worktree', 'create', '--name', flat(start.branch), '--issue', String(start.issue)]
+  args.push('--base-branch', start.base, '--setup', 'skip', '--json')
+  const path = find(JSON.parse(runner.run('orca', args) || '{}'), 'path')
+  if (typeof path !== 'string') throw new Error('orca worktree create returned no path')
+  if (setup) runner.shell(setup, path)
+  return path
+}
+
+// An agent started by a shell command (shellLaunch) in a terminal of its own; the brief
+// is sent once its interface is idle, never before: text typed into a starting
+// interface is lost.
+function startOrcaShell(start: Start, command: string, runner: Runner, setup: string | null): Started {
+  const path = orcaWorktree(start, runner, setup)
+  const created = runner.run('orca', [
+    'terminal',
+    'create',
+    '--worktree',
+    `path:${path}`,
+    '--title',
+    flat(start.branch),
+    '--command',
+    command,
+    '--json',
+  ])
+  const handle = find(JSON.parse(created || '{}'), 'handle')
+  if (typeof handle !== 'string') throw new Error(`orca terminal create returned no handle: ${created}`)
+  const waited = runner.run('orca', [
+    'terminal',
+    'wait',
+    '--terminal',
+    handle,
+    '--for',
+    'tui-idle',
+    '--timeout-ms',
+    '120000',
+    '--json',
+  ])
+  if (find(JSON.parse(waited || '{}'), 'satisfied') !== true) {
+    throw new Error(`the agent in ${handle} is not ready; the brief was not sent`)
+  }
+  runner.run('orca', ['terminal', 'send', '--terminal', handle, '--text', start.brief, '--enter', '--json'])
+  return { host: 'orca', issue: start.issue, branch: start.branch, path, agent: handle }
+}
+
 // `worktree create --agent` takes no model or effort; Orca's supervised worker does,
-// and for OpenCode only on a worktree that already exists. So: the worktree first,
-// with the issue linked and Orca's setup skipped; the setup run here, as for Herdr
-// (Orca's setup terminal stays open as a shell, with no end to wait for); then the
-// worker on that worktree. It needs a Run bound to the calling terminal, created when
+// on a worktree that already exists (orcaWorktree). It needs a Run bound to the calling terminal, created when
 // there is none; Orca wraps the brief in its own preamble and the agent reports
 // `worker_done` to the Run.
 function startOrcaWorker(start: Start, agent: Agent, runner: Runner, setup: string | null): Started {
@@ -133,11 +189,7 @@ function startOrcaWorker(start: Start, agent: Agent, runner: Runner, setup: stri
   if (!find(current, 'run')) {
     runner.run('orca', ['orchestration', 'run-create', '--objective', `lntt worktree start #${start.issue}`, '--json'])
   }
-  const args = ['worktree', 'create', '--name', flat(start.branch), '--issue', String(start.issue)]
-  args.push('--base-branch', start.base, '--setup', 'skip', '--json')
-  const path = find(JSON.parse(runner.run('orca', args) || '{}'), 'path')
-  if (typeof path !== 'string') throw new Error('orca worktree create returned no path')
-  if (setup) runner.shell(setup, path)
+  const path = orcaWorktree(start, runner, setup)
   const worker = ['orchestration', 'worker-start', '--spec', start.brief, '--worktree', `path:${path}`]
   worker.push('--agent', agent.kind, '--json')
   if (agent.model) worker.push('--model', agent.model)
@@ -174,6 +226,17 @@ function herdrPane(reply: unknown, runner: Runner): string | null {
   return typeof listed === 'string' ? listed : null
 }
 
+// An agent started by a shell command is not named by Herdr: wait until Herdr detects
+// it in the pane, so the brief reaches the agent and not the shell.
+function herdrAgentIn(pane: string, runner: Runner): void {
+  for (let tries = 0; tries < 60; tries += 1) {
+    const agents = find(JSON.parse(runner.run('herdr', ['agent', 'list']) || '{}'), 'agents')
+    if (Array.isArray(agents) && agents.some((a) => (a as { pane_id?: string }).pane_id === pane)) return
+    runner.sleep(1000)
+  }
+  throw new Error(`herdr detected no agent in ${pane}; the brief was not sent`)
+}
+
 // Herdr takes the branch name as given and has no setup hook: the setup runs here,
 // before the agent starts in the new workspace's pane. `--cwd` names the repository,
 // so the call works from outside a Herdr workspace too.
@@ -197,7 +260,15 @@ export function startHerdr(start: Start, runner: Runner, setup: string | null): 
   ])
   if (setup) runner.shell(setup, path)
   let agent: string | null = null
-  if (start.agent) {
+  const shell = start.agent ? shellLaunch(start.agent) : null
+  if (shell) {
+    const pane = herdrPane(JSON.parse(reply || '{}'), runner)
+    if (!pane) throw new Error(`no pane found in the workspace herdr created: ${reply}`)
+    runner.run('herdr', ['pane', 'run', pane, shell])
+    herdrAgentIn(pane, runner)
+    runner.run('herdr', ['agent', 'prompt', pane, start.brief])
+    agent = pane
+  } else if (start.agent) {
     const pane = herdrPane(JSON.parse(reply || '{}'), runner)
     if (!pane) throw new Error(`no pane found in the workspace herdr created: ${reply}`)
     const extra = agentArgs(start.agent)
