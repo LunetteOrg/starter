@@ -108,14 +108,28 @@ function find(value: unknown, key: string): unknown {
   return undefined
 }
 
+// The new workspace's pane: in the create reply when Herdr includes it, else the first
+// pane of the workspace it names.
+function herdrPane(reply: unknown, runner: Runner): string | null {
+  const pane = find(reply, 'pane_id')
+  if (typeof pane === 'string') return pane
+  const workspace = find(reply, 'workspace_id')
+  if (typeof workspace !== 'string') return null
+  const listed = find(JSON.parse(runner.run('herdr', ['pane', 'list', '--workspace', workspace]) || '{}'), 'pane_id')
+  return typeof listed === 'string' ? listed : null
+}
+
 // Herdr takes the branch name as given and has no setup hook: the setup runs here,
-// before the agent starts in the new workspace's pane.
+// before the agent starts in the new workspace's pane. `--cwd` names the repository,
+// so the call works from outside a Herdr workspace too.
 export function startHerdr(start: Start, runner: Runner, setup: string | null): Started {
   const name = flat(start.branch)
   const path = join(start.root, '.worktrees', name)
   const reply = runner.run('herdr', [
     'worktree',
     'create',
+    '--cwd',
+    start.root,
     '--branch',
     start.branch,
     '--base',
@@ -129,8 +143,8 @@ export function startHerdr(start: Start, runner: Runner, setup: string | null): 
   if (setup) runner.shell(setup, path)
   let agent: string | null = null
   if (start.agent) {
-    const pane = find(JSON.parse(reply || '{}'), 'pane_id')
-    if (typeof pane !== 'string') throw new Error(`herdr worktree create returned no pane_id: ${reply}`)
+    const pane = herdrPane(JSON.parse(reply || '{}'), runner)
+    if (!pane) throw new Error(`no pane found in the workspace herdr created: ${reply}`)
     runner.run('herdr', ['agent', 'start', name, '--kind', start.agent, '--pane', pane])
     runner.run('herdr', ['agent', 'prompt', name, start.brief])
     agent = name

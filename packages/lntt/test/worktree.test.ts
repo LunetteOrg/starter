@@ -125,12 +125,22 @@ describe('Herdr', () => {
     const started = startHerdr(START, runner, 'pnpm install --frozen-lockfile\n')
     const path = '/repo/.worktrees/feat-78-start-agent'
     assert.deepEqual(calls, [
-      `herdr worktree create --branch feat/78/start-agent --base main --path ${path} --label feat-78-start-agent --no-focus`,
+      `herdr worktree create --cwd /repo --branch feat/78/start-agent --base main --path ${path} --label feat-78-start-agent --no-focus`,
       `setup in ${path}: pnpm install --frozen-lockfile`,
       'herdr agent start feat-78-start-agent --kind claude --pane w2:p1',
       'herdr agent prompt feat-78-start-agent BRIEF',
     ])
     assert.equal(started.agent, 'feat-78-start-agent')
+  })
+
+  test('finds the pane through the workspace when the create reply has none', () => {
+    const { calls, runner } = recorder({
+      'herdr worktree create': JSON.stringify({ result: { workspace: { workspace_id: 'wF' } } }),
+      'herdr pane list': JSON.stringify({ result: { panes: [{ pane_id: 'wF:p1' }] } }),
+    })
+    startHerdr(START, runner, null)
+    assert.ok(calls.includes('herdr pane list --workspace wF'))
+    assert.ok(calls.includes('herdr agent start feat-78-start-agent --kind claude --pane wF:p1'))
   })
 })
 
