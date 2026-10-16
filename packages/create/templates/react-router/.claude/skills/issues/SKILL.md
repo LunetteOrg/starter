@@ -1,6 +1,6 @@
 ---
 name: issues
-description: Manage GitHub issues with gh — triage them into release milestones and a P0–P3 priority field on a GitHub Project (v2). Discovers the repo/owner/project at runtime (never hardcoded) and bootstraps the structure if missing. Use when asked to create, triage, prioritize, or organize issues, plan a release/iteration, or set up the issue board.
+description: Manage GitHub issues with gh — triage them into release milestones and a P0–P3 priority field on a GitHub Project (v2). Discovers the repo/owner/project at runtime (never hardcoded) and bootstraps the structure if missing. Use when asked to create, write or retitle, triage, prioritize, or organize issues, plan a release/iteration, or set up the issue board.
 ---
 
 # Issue management & triage
@@ -13,6 +13,24 @@ Organize GitHub issues with the `gh` CLI following the template's convention:
   Project (v2)** (`P0` = critical … `P3` = low).
 - **Status** lives on the Project board (Todo/In Progress/Done — the default
   fields of a new Project v2).
+
+## Titles
+
+A title is read on the board, in a milestone, in a list: without the body. Write it
+so that the list is enough.
+
+- **Unambiguous: a problem found, or a change to make.** Either is fine:
+  "Delivery process: three gaps found while releasing 0.6.0", "Turn Ryuk back on".
+  A present-tense statement that reads both as how things are and as how they
+  should become is not: "Issue titles are unambiguous" (are they now, or must they
+  be made so?). A title that names a problem without listing it is acceptable for a
+  group of small fixes; the body lists them.
+- **Ideally actionable and measurable.** An action verb, then the observable result
+  that closes the issue: "Turn Ryuk back on, so a killed run cleans up after
+  itself". A user story ("As a …, I want …") helps while it stays short; it is not
+  required.
+- **In conversation, never the number alone.** Name an issue by its title, or after
+  describing it in the same message: a bare `#81` says nothing to whoever reads it.
 
 This skill mutates GitHub (creates milestones/projects/fields, edits issues), so
 it works against a PR/board the user owns. **Always show the plan and confirm

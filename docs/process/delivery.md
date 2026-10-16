@@ -139,7 +139,12 @@ CI checks it on every pull request (`scripts/check-plugin-version.sh`).
 npm publishing happens in CI only, never from a machine, with the one exception of a
 new package's placeholder (below). One release publishes every
 package of `packages/` that is not private, all at one version
-([CLI runtime and publishing](../adr/cli-runtime-and-publishing.md)):
+([CLI runtime and publishing](../adr/cli-runtime-and-publishing.md)).
+
+**Choosing the version.** Until 1.0.0 every release is a patch (`0.6.N`), one per
+milestone, and the milestone is named after the version it ships. 1.0.0 is declared
+only after months of intensive use across several projects, not when a piece of work
+ends.
 
 1. `node scripts/packages-version.mts set X.Y.Z` and commit
    `chore(release): X.Y.Z` directly on `main`; a release does not go through a pull
