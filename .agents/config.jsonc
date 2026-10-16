@@ -1,5 +1,5 @@
 {
-  "$schema": "../packages/project-config/schema/config.schema.json",
+  "$schema": "../packages/lntt/schema/config.schema.json",
 
   // How this repo records its decisions. A template's own logs live inside the
   // template (packages/create/templates/<framework>/docs/adr/) and travel with the

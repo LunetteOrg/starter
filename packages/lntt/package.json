@@ -1,0 +1,38 @@
+{
+  "name": "@lntt/lntt",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The lntt command: a Lunette project's configuration and operator profile, the managed block of AGENTS.md, and its CI run on the local machine with the candidate automation",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./ci": "./src/ci/index.ts",
+    "./schema.json": "./schema/config.schema.json",
+    "./operator-schema.json": "./schema/operator.schema.json"
+  },
+  "bin": {
+    "lntt": "bin/lntt.ts"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.ts test/ci/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@actions/expressions": "0.3.61",
+    "@actions/workflow-parser": "0.3.61",
+    "ajv": "^8.20.0",
+    "jsonc-parser": "^3.3.1",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@commitlint/config-conventional": "^21.2.0",
+    "@commitlint/lint": "^21.2.0",
+    "@commitlint/load": "^21.2.0",
+    "@types/node": "^26.1.1",
+    "typescript": "^7.0.2"
+  }
+}

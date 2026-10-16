@@ -12,7 +12,7 @@ procedure; never edit it to fit one project.
 ## 1. Read the rules
 
 ```sh
-lntt-config get delivery.commits    # or: pnpm exec lntt-config get delivery.commits
+lntt get delivery.commits    # or: pnpm exec lntt get delivery.commits
 ```
 
 `language`, `scopes` (when listed, the only ones allowed), `maxLineLength` (default

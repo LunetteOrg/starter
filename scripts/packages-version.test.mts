@@ -35,7 +35,7 @@ test('list names the published packages, the CLI last, never a private one', () 
     ['@lntt/create', '1.0.0'],
     ['@lntt/test-utils', '1.0.0'],
     ['@lntt/biome-config', '1.0.0'],
-    ['@lntt/project-config', '0.0.0', true],
+    ['@lntt/lntt', '0.0.0', true],
   ])
   const r = run('list')
   assert.equal(r.status, 0, r.out)
@@ -46,7 +46,7 @@ test('check passes when every published package has one version, and the tag mat
   repo([
     ['@lntt/create', '1.2.0'],
     ['@lntt/biome-config', '1.2.0'],
-    ['@lntt/project-config', '0.0.0', true],
+    ['@lntt/lntt', '0.0.0', true],
   ])
   assert.equal(run('check').status, 0)
   assert.equal(run('check', '1.2.0').status, 0)
@@ -76,14 +76,11 @@ test('set writes one version into every published package and leaves private one
   repo([
     ['@lntt/create', '1.2.0'],
     ['@lntt/biome-config', '1.1.0'],
-    ['@lntt/project-config', '0.0.0', true],
+    ['@lntt/lntt', '0.0.0', true],
   ])
   const r = run('set', '1.3.0-rc.0')
   assert.equal(r.status, 0, r.out)
-  assert.deepEqual(
-    [version('create'), version('biome-config'), version('project-config')],
-    ['1.3.0-rc.0', '1.3.0-rc.0', '0.0.0'],
-  )
+  assert.deepEqual([version('create'), version('biome-config'), version('lntt')], ['1.3.0-rc.0', '1.3.0-rc.0', '0.0.0'])
   assert.equal(run('check', '1.3.0-rc.0').status, 0)
 })
 
