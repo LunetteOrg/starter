@@ -38,7 +38,8 @@ lntt ci local | candidate
   this package and its dependencies.
 - **Output for scripts.** stdout carries only the result: a bare value (`lntt path`,
   `lntt branch name`), JSON (`lntt get`, `lntt operator`), or one JSON line per item
-  (`lntt worktree start`); progress and child-process output go to stderr. Exit codes:
+  (`lntt worktree start`, followed by the brief when no agent was started, for the
+  person who will start one); progress and child-process output go to stderr. Exit codes:
   0 ok, 1 a configuration error or a red result, 2 a usage error.
 - **No aliases for old names.** A command is renamed in the same pull request as every
   caller, and the plugin's version moves with its skills.
