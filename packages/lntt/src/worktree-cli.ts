@@ -39,7 +39,8 @@ const runner: Runner = {
       stdio: ['ignore', 'pipe', 'inherit'],
     }).trim(),
   shell: (script, dir) => {
-    execFileSync('bash', ['-e', '-c', script], { cwd: dir, stdio: ['ignore', 'inherit', 'inherit'] })
+    // The setup's output goes to stderr: stdout carries one JSON line per worktree.
+    execFileSync('bash', ['-e', '-c', script], { cwd: dir, stdio: ['ignore', process.stderr, 'inherit'] })
   },
 }
 
