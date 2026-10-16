@@ -8,7 +8,7 @@ name: Candidate
 # still open (keywords written by the automation link nothing) and moves the pull
 # requests still open on it onto the next candidate. Hotfixes stay on the default
 # branch. Prefix, base and hotfix markers: delivery.candidate in .agents/config.jsonc;
-# the logic: `lntt-ci candidate` (packages/ci/src/candidate.ts); the flow:
+# the logic: `lntt ci candidate` (packages/lntt/src/ci/candidate.ts); the flow:
 # docs/process/delivery.md.
 #
 # It runs on drafts too, on these three events only, never on a push. It writes with
@@ -27,7 +27,7 @@ permissions: {}
 # the next run, which rebuilds the lists from every merged pull request; every run
 # also sweeps pull requests stranded on a candidate that is no longer open onto the
 # open one. A dropped `opened` is redone from a terminal with
-# `pnpm exec lntt-ci candidate --pr <n>`, which runs outside this group: one at a time.
+# `pnpm exec lntt ci candidate --pr <n>`, which runs outside this group: one at a time.
 concurrency:
   group: candidate
   cancel-in-progress: false
@@ -92,11 +92,23 @@ jobs:
         with:
           node-version-file: '.nvmrc'
           cache: 'pnpm'
-      # Only @lntt/ci and what it depends on.
+      # Only the package that holds the automation, and what it depends on. A default
+      # branch from before @lntt/lntt (0.6.0) still has it as @lntt/ci: this file can
+      # be newer than the code it runs.
       - if: steps.credentials.outputs.ready == 'true'
-        run: pnpm install --frozen-lockfile --filter '@lntt/ci...'
+        run: |
+          if [ -f packages/lntt/bin/lntt.ts ]; then
+            pnpm install --frozen-lockfile --filter '@lntt/lntt...'
+          else
+            pnpm install --frozen-lockfile --filter '@lntt/ci...'
+          fi
       - name: Move or record the pull request, close or tell its issues
         if: steps.credentials.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: node packages/ci/bin/lntt-ci.ts candidate
+        run: |
+          if [ -f packages/lntt/bin/lntt.ts ]; then
+            node packages/lntt/bin/lntt.ts ci candidate
+          else
+            node packages/ci/bin/lntt-ci.ts candidate
+          fi

@@ -1,6 +1,6 @@
 {
   "name": "lunette",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Skills for Lunette projects: decision records and process descriptions, commit messages. Project values come from .agents/config.*; the skills are installed unchanged.",
   "author": { "name": "LunetteOrg" },
   "homepage": "https://github.com/LunetteOrg/starter",

@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/LunetteOrg/starter/packages/project-config/schema/operator.schema.json",
+  "$id": "https://github.com/LunetteOrg/starter/packages/lntt/schema/operator.schema.json",
   "title": "Lunette operator profile",
   "description": "Who is talking to the agent: personal, never tracked. Read from ~/.agents/operator.{jsonc,yml} (every project) and from <main checkout>/.agents/local/operator.{jsonc,yml}, or ~/.agents/projects/<org>/<repo>/operator.{jsonc,yml} when the checkout has none (this project). The project profile wins key by key. What other people need (handle, role, ownership) also goes in the tracked team section of the project configuration.",
   "type": "object",
@@ -64,7 +64,7 @@
       "properties": {
         "viewers": {
           "type": "array",
-          "description": "Where pages are shown to the operator, in order of preference; the first one available in the session wins (lntt-config viewer).",
+          "description": "Where pages are shown to the operator, in order of preference; the first one available in the session wins (lntt viewer).",
           "items": {
             "type": "string",
             "enum": ["orca", "wave", "claude-desktop", "chrome", "playwright", "browser"]

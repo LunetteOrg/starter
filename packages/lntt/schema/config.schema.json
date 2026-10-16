@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/LunetteOrg/starter/packages/project-config/schema/config.schema.json",
+  "$id": "https://github.com/LunetteOrg/starter/packages/lntt/schema/config.schema.json",
   "title": "Lunette project configuration",
   "description": "The values a Lunette project's skills and scripts read: .agents/config.jsonc or .agents/config.yml. One section per process area; a section is added when a skill needs it. The reasons behind a value go in a comment next to it, the longer ones in docs/process/<area>.md.",
   "type": "object",
@@ -144,7 +144,7 @@
         },
         "commits": {
           "type": "object",
-          "description": "Commit message rules, read by commitlint (through @lntt/project-config) and by the commit-message skill.",
+          "description": "Commit message rules, read by commitlint (through @lntt/lntt) and by the commit-message skill.",
           "additionalProperties": false,
           "properties": {
             "language": {
@@ -204,7 +204,7 @@
     },
     "local": {
       "type": "object",
-      "description": "How the apps are started and reached locally, read by the run-local skill and lntt-config local.",
+      "description": "How the apps are started and reached locally, read by the run-local skill and lntt local.",
       "additionalProperties": false,
       "properties": {
         "infra": {

@@ -75,9 +75,9 @@ own. A pull request moved by mistake goes back with the label and
 
 **Pull requests from forks and from Dependabot** stay on `main`: their runs get no
 repository secrets, so no app token. A maintainer moves one onto the candidate with
-`pnpm exec lntt-ci candidate --pr <n>`, or merges it on `main` as a hotfix.
+`pnpm exec lntt ci candidate --pr <n>`, or merges it on `main` as a hotfix.
 
-The automation runs from a terminal too: `pnpm exec lntt-ci candidate --pr <n>` does
+The automation runs from a terminal too: `pnpm exec lntt ci candidate --pr <n>` does
 what the workflow would do on that pull request's event (move it, rebuild a
 candidate's lists, or close and carry over on a merged candidate), and `--dry-run`
 prints the writes instead of making them. A terminal run is outside the workflow's
@@ -85,7 +85,7 @@ concurrency group: run one at a time, and not while the workflow is running.
 
 ## The candidate automation
 
-`.github/workflows/candidate.yml` runs `lntt-ci candidate` (`@lntt/ci`) on three
+`.github/workflows/candidate.yml` runs `lntt ci candidate` (`@lntt/lntt`) on three
 `pull_request` events (`opened`, `ready_for_review`, `closed`), drafts included, never
 on a push. One run at a time across the repository, so two pull requests opened
 together find the same candidate. The script and the configuration are read from the

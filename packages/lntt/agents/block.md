@@ -1,10 +1,10 @@
 # Working in a Lunette project
 
 - **Where things are.** Project values: `.agents/config.jsonc` (or `.yml`), read with
-  `lntt-config get <key>`, never parsed by hand: it has comments. How the team works:
+  `lntt get <key>`, never parsed by hand: it has comments. How the team works:
   `docs/process/`. Decisions: the logs in `recording` (ADRs, PDRs), one file per
   subject, corrected in place, written and checked with the `decisions` skill. Who
-  you are talking to: `lntt-config operator` (personal, from `.agents/local/` or
+  you are talking to: `lntt operator` (personal, from `.agents/local/` or
   `~/.agents/`; with no profile, a developer).
 - **Shared decisions live in the repo.** A decision that matters to more than one
   person goes in a record, a process description or a comment in the affected file,
