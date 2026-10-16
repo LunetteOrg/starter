@@ -121,11 +121,11 @@ function start(args: string[]): void {
       root,
       brief,
     }
-    // Refused before anything is created: what the agent cannot take (Orca checks its own).
-    if (host !== 'orca' && job.agent) agentArgs(job.agent)
+    // Refused before anything is created: what the agent cannot take.
+    if (job.agent) agentArgs(job.agent)
     const started =
       host === 'orca'
-        ? startOrca(job, runner)
+        ? startOrca(job, runner, setup)
         : host === 'herdr'
           ? startHerdr(job, runner, setup)
           : startGit(job, runner, setup)

@@ -130,7 +130,7 @@ export function startOrca(start: Start, runner: Runner, setup: string | null = n
 // there is none; Orca wraps the brief in its own preamble and the agent reports
 // `worker_done` to the Run.
 function startOrcaWorker(start: Start, agent: Agent, runner: Runner, setup: string | null): Started {
-  if (agent.kind !== 'opencode') agentArgs(agent) // an effort the agent cannot take fails before anything is created
+  agentArgs(agent) // what the agent cannot take fails before anything is created
   const current = JSON.parse(runner.run('orca', ['orchestration', 'run-current', '--json']) || '{}')
   if (!find(current, 'run')) {
     runner.run('orca', ['orchestration', 'run-create', '--objective', `lntt worktree start #${start.issue}`, '--json'])

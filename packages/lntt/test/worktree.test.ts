@@ -149,7 +149,7 @@ describe('Orca with a model or an effort', () => {
       'orca orchestration worker-start': JSON.stringify({ ok: true, result: { dispatch: { dispatchId: 'ctx_9' } } }),
     })
     const started = startOrca(
-      { ...START, agent: { kind: 'opencode', model: 'opencode/deepseek' } },
+      { ...START, agent: { kind: 'codex', model: 'gpt-6' } },
       runner,
       'pnpm install --frozen-lockfile\n',
     )
@@ -157,10 +157,16 @@ describe('Orca with a model or an effort', () => {
       'orca orchestration run-current --json',
       'orca worktree create --name feat-78-start-agent --issue 78 --base-branch main --setup skip --json',
       'setup in /w: pnpm install --frozen-lockfile',
-      'orca orchestration worker-start --spec BRIEF --worktree path:/w --agent opencode --json --model opencode/deepseek',
+      'orca orchestration worker-start --spec BRIEF --worktree path:/w --agent codex --json --model gpt-6',
     ])
     assert.equal(started.agent, 'ctx_9')
     assert.equal(started.path, '/w')
+  })
+
+  test('an opencode model is refused before anything is created', () => {
+    const { calls, runner } = recorder()
+    assert.throws(() => startOrca({ ...START, agent: { kind: 'opencode', model: 'opencode/x' } }, runner), /opencode/)
+    assert.deepEqual(calls, [])
   })
 
   test('creates the Run when none is bound', () => {
