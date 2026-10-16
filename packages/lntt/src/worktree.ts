@@ -80,9 +80,15 @@ export function setupScript(root: string): string | null {
   return typeof setup === 'string' && setup.trim() !== '' ? setup : null
 }
 
-// Model and effort as each agent CLI takes them. An effort the agent has no flag for
-// is an error: dropping it would launch a different agent than the one asked for.
+// Model and effort as each agent CLI takes them on its interactive command line (Herdr,
+// the command printed for plain git). What the agent has no flag for is an error:
+// dropping it would launch a different agent than the one asked for.
 export function agentArgs(agent: Agent): string[] {
+  if (agent.kind === 'opencode' && agent.model) {
+    throw new Error(
+      'opencode takes no model on its interactive command line: set it in its configuration, or start it from Orca',
+    )
+  }
   const args = agent.model ? ['--model', agent.model] : []
   if (!agent.effort) return args
   if (agent.kind === 'claude') return [...args, '--effort', agent.effort]
@@ -98,8 +104,8 @@ function flat(branch: string): string {
 // Orca prefixes the worktree name with the user (`<user>/feat-78-slug`); its setup
 // (orca.yaml, `lntt branch rename`) reads the convention back. The agent starts after
 // the setup (setupAgentStartupPolicy: wait-for-setup).
-export function startOrca(start: Start, runner: Runner): Started {
-  if (start.agent?.model || start.agent?.effort) return startOrcaWorker(start, start.agent, runner)
+export function startOrca(start: Start, runner: Runner, setup: string | null = null): Started {
+  if (start.agent?.model || start.agent?.effort) return startOrcaWorker(start, start.agent, runner, setup)
   const args = ['worktree', 'create', '--name', flat(start.branch), '--issue', String(start.issue)]
   args.push('--base-branch', start.base, '--setup', 'run', '--json')
   if (start.agent) args.push('--agent', start.agent.kind, '--prompt', start.brief)
@@ -116,32 +122,34 @@ export function startOrca(start: Start, runner: Runner): Started {
   }
 }
 
-// `worktree create --agent` takes no model or effort; Orca's supervised worker does.
-// It needs a Run bound to the calling terminal (created when there is none), wraps the
-// brief in Orca's own preamble, and has the agent report `worker_done` to the Run. It
-// takes no issue: the link is set once the worktree exists.
-function startOrcaWorker(start: Start, agent: Agent, runner: Runner): Started {
-  agentArgs(agent) // an effort the agent cannot take fails before anything is created
+// `worktree create --agent` takes no model or effort; Orca's supervised worker does,
+// and for OpenCode only on a worktree that already exists. So: the worktree first,
+// with the issue linked and Orca's setup skipped; the setup run here, as for Herdr
+// (Orca's setup terminal stays open as a shell, with no end to wait for); then the
+// worker on that worktree. It needs a Run bound to the calling terminal, created when
+// there is none; Orca wraps the brief in its own preamble and the agent reports
+// `worker_done` to the Run.
+function startOrcaWorker(start: Start, agent: Agent, runner: Runner, setup: string | null): Started {
+  if (agent.kind !== 'opencode') agentArgs(agent) // an effort the agent cannot take fails before anything is created
   const current = JSON.parse(runner.run('orca', ['orchestration', 'run-current', '--json']) || '{}')
   if (!find(current, 'run')) {
     runner.run('orca', ['orchestration', 'run-create', '--objective', `lntt worktree start #${start.issue}`, '--json'])
   }
-  const name = flat(start.branch)
-  const args = ['orchestration', 'worker-start', '--spec', start.brief, '--worktree', 'new-top-level']
-  args.push('--agent', agent.kind, '--name', name, '--base-branch', start.base, '--setup', 'run', '--json')
-  if (agent.model) args.push('--model', agent.model)
-  if (agent.effort) args.push('--effort', agent.effort)
-  const dispatch = find(JSON.parse(runner.run('orca', args) || '{}'), 'dispatchId')
-  const shown = JSON.parse(runner.run('orca', ['worktree', 'show', '--worktree', `name:${name}`, '--json']) || '{}')
-  const path = find(shown, 'path')
-  if (typeof path === 'string') {
-    runner.run('orca', ['worktree', 'set', '--worktree', `path:${path}`, '--issue', String(start.issue), '--json'])
-  }
+  const args = ['worktree', 'create', '--name', flat(start.branch), '--issue', String(start.issue)]
+  args.push('--base-branch', start.base, '--setup', 'skip', '--json')
+  const path = find(JSON.parse(runner.run('orca', args) || '{}'), 'path')
+  if (typeof path !== 'string') throw new Error('orca worktree create returned no path')
+  if (setup) runner.shell(setup, path)
+  const worker = ['orchestration', 'worker-start', '--spec', start.brief, '--worktree', `path:${path}`]
+  worker.push('--agent', agent.kind, '--json')
+  if (agent.model) worker.push('--model', agent.model)
+  if (agent.effort) worker.push('--effort', agent.effort)
+  const dispatch = find(JSON.parse(runner.run('orca', worker) || '{}'), 'dispatchId')
   return {
     host: 'orca',
     issue: start.issue,
     branch: start.branch,
-    path: typeof path === 'string' ? path : null,
+    path,
     agent: typeof dispatch === 'string' ? dispatch : null,
   }
 }

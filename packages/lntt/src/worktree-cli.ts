@@ -98,7 +98,6 @@ function start(args: string[]): void {
     ...(values.model ? { model: values.model } : {}),
     ...(values.effort ? { effort: values.effort } : {}),
   }
-  agentArgs(agent) // an effort the agent cannot take is refused before anything is created
   const root = mainCheckout()
   const base = values.base ?? configuredBase()
   const setup = setupScript(root)
@@ -122,6 +121,8 @@ function start(args: string[]): void {
       root,
       brief,
     }
+    // Refused before anything is created: what the agent cannot take (Orca checks its own).
+    if (host !== 'orca' && job.agent) agentArgs(job.agent)
     const started =
       host === 'orca'
         ? startOrca(job, runner)
@@ -132,7 +133,8 @@ function start(args: string[]): void {
     stdout.write(`${JSON.stringify(started)}\n`)
     // Nobody started an agent: the command and the brief are for the person who will.
     if (started.agent === null) {
-      stdout.write(`\n${[agent.kind, ...agentArgs(agent)].join(' ')}  # in ${started.path}\n\n${brief}\n`)
+      const command = host === 'git' ? `${[agent.kind, ...agentArgs(agent)].join(' ')}  # in ${started.path}\n\n` : ''
+      stdout.write(`\n${command}${brief}\n`)
     }
   }
 }

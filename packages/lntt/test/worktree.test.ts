@@ -132,46 +132,45 @@ describe('the agent arguments', () => {
       '-c',
       'model_reasoning_effort="xhigh"',
     ])
-    assert.deepEqual(agentArgs({ kind: 'opencode', model: 'anthropic/claude-sonnet-5-5' }), [
-      '--model',
-      'anthropic/claude-sonnet-5-5',
-    ])
     assert.deepEqual(agentArgs({ kind: 'claude' }), [])
   })
 
-  test('an effort the agent cannot take is an error, not a silent drop', () => {
-    assert.throws(() => agentArgs({ kind: 'opencode', model: 'x', effort: 'high' }), /opencode/)
+  test('what the agent cannot take is an error, not a silent drop', () => {
+    assert.throws(() => agentArgs({ kind: 'opencode', model: 'opencode/x' }), /opencode/)
+    assert.throws(() => agentArgs({ kind: 'pi', effort: 'high' }), /pi/)
   })
 })
 
 describe('Orca with a model or an effort', () => {
-  test('a supervised worker (worker-start) in a Run, then the issue linked', () => {
+  test('the worktree with its issue, the setup run here, then a supervised worker on it', () => {
     const { calls, runner } = recorder({
       'orca orchestration run-current': JSON.stringify({ ok: true, result: { run: { id: 'run_1' } } }),
+      'orca worktree create': JSON.stringify({ result: { worktree: { path: '/w' } } }),
       'orca orchestration worker-start': JSON.stringify({ ok: true, result: { dispatch: { dispatchId: 'ctx_9' } } }),
-      'orca worktree show': JSON.stringify({
-        result: { worktree: { path: '/repo/.worktrees/starter/feat-78-start-agent' } },
-      }),
     })
-    const started = startOrca({ ...START, agent: { kind: 'claude', model: 'sonnet', effort: 'high' } }, runner)
+    const started = startOrca(
+      { ...START, agent: { kind: 'opencode', model: 'opencode/deepseek' } },
+      runner,
+      'pnpm install --frozen-lockfile\n',
+    )
     assert.deepEqual(calls, [
       'orca orchestration run-current --json',
-      'orca orchestration worker-start --spec BRIEF --worktree new-top-level --agent claude --name feat-78-start-agent --base-branch main --setup run --json --model sonnet --effort high',
-      'orca worktree show --worktree name:feat-78-start-agent --json',
-      'orca worktree set --worktree path:/repo/.worktrees/starter/feat-78-start-agent --issue 78 --json',
+      'orca worktree create --name feat-78-start-agent --issue 78 --base-branch main --setup skip --json',
+      'setup in /w: pnpm install --frozen-lockfile',
+      'orca orchestration worker-start --spec BRIEF --worktree path:/w --agent opencode --json --model opencode/deepseek',
     ])
     assert.equal(started.agent, 'ctx_9')
-    assert.equal(started.path, '/repo/.worktrees/starter/feat-78-start-agent')
+    assert.equal(started.path, '/w')
   })
 
   test('creates the Run when none is bound', () => {
     const { calls, runner } = recorder({
       'orca orchestration run-current': JSON.stringify({ ok: true, result: { run: null } }),
-      'orca orchestration worker-start': JSON.stringify({ ok: true, result: { dispatchId: 'ctx_9' } }),
-      'orca worktree show': JSON.stringify({ result: { worktree: { path: '/p' } } }),
+      'orca worktree create': JSON.stringify({ result: { worktree: { path: '/w' } } }),
     })
-    startOrca({ ...START, agent: { kind: 'claude', model: 'sonnet' } }, runner)
+    startOrca({ ...START, agent: { kind: 'claude', model: 'sonnet', effort: 'high' } }, runner)
     assert.match(calls[1] as string, /^orca orchestration run-create --objective .+ --json$/)
+    assert.match(calls.at(-1) as string, /--model sonnet --effort high$/)
   })
 })
 
