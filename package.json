@@ -7,7 +7,7 @@
   "scripts": {
     "prepare": "sh scripts/install-hooks.sh || true",
     "test": "pnpm -r test && node --test scripts/*.test.mts",
-    "ci:local": "lntt-ci local",
+    "ci:local": "lntt ci local",
     "typecheck": "pnpm -r typecheck",
     "lint": "biome check",
     "lint:fix": "biome check --write",
@@ -17,8 +17,7 @@
     "@biomejs/biome": "^2.5.3",
     "@commitlint/cli": "^21.2.1",
     "@commitlint/config-conventional": "^21.2.0",
-    "@lntt/ci": "workspace:*",
-    "@lntt/project-config": "workspace:*",
+    "@lntt/lntt": "workspace:*",
     "lefthook": "^2.1.10"
   }
 }

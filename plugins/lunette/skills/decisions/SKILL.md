@@ -18,7 +18,7 @@ Read the `recording` section through the configuration reader, never by parsing 
 file yourself (it has comments):
 
 ```sh
-lntt-config get recording        # or: pnpm exec lntt-config get recording
+lntt get recording        # or: pnpm exec lntt get recording
 ```
 
 It returns `language` and `logs`: one entry per log (`adr`, `product`, `process`, …)

@@ -28,7 +28,7 @@ Skills hold procedure. Everything particular to a project lives outside them, in
 places a skill reads:
 
 - **Values** in `.agents/config.jsonc` or `.agents/config.yml` at the repository root
-  (one of the two), validated by `packages/project-config/schema/config.schema.json`.
+  (one of the two), validated by `packages/lntt/schema/config.schema.json`.
   Sections are named after fixed process areas (`recording`, `board`, `ci`,
   `delivery`, `cycle`, `spaces`, `team`, `local`); a section is added when a skill
   needs it. A short reason for a value is a comment next to it.
@@ -36,14 +36,13 @@ places a skill reads:
   cannot express. Kept apart from technical decisions; it cites configuration keys and
   never repeats their values.
 
-Scripts and skills read the configuration through `@lntt/project-config`
-(`lntt-config get <key>`), never with `jq` or `JSON.parse`: the file has comments, and
-writes must keep them. A skill that finds its section missing stops and proposes it;
+Scripts and skills read the configuration through `@lntt/lntt` (`lntt get <key>`),
+never with `jq` or `JSON.parse`: the file has comments, and writes must keep them. A skill that finds its section missing stops and proposes it;
 it never guesses.
 
 ### Operator context is personal and found from any worktree
 
-The operator profile has its own schema (`packages/project-config/schema/operator.schema.json`:
+The operator profile has its own schema (`packages/lntt/schema/operator.schema.json`:
 name, handle, role, language, confidence per topic, accounts, workspace with the
 preferred viewers in order) and is read,
 in merge order, from:
@@ -75,8 +74,8 @@ guidance use `.agents/skills/` and `~/.agents/skills/` across clients.
 
 ### Negative / accepted risks
 
-- Skills depend on `lntt-config`; a generated project needs it installed, which ties
-  the template to a published `@lntt/project-config`.
+- Skills depend on `lntt`; a generated project needs it installed, which ties the
+  template to a published `@lntt/lntt`.
 - Reading the profile from the main checkout fails over to the home directory when the
   main checkout is gone; a profile kept only in a deleted clone is lost with it.
 - The fixed list of areas is a contract between skills and projects: renaming an area

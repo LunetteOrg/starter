@@ -14,10 +14,10 @@ This skill is the procedure; never edit it to fit one project.
 
 - Work from the worktree root: `git rev-parse --show-toplevel`. A command run from the
   shared main checkout starts the wrong tree.
-- `lntt-config get local` (or `pnpm exec lntt-config get local`). **No `local`
+- `lntt get local` (or `pnpm exec lntt get local`). **No `local`
   section:** stop and propose one (the apps you can see, their dev commands and ports);
   never guess and carry on.
-- `lntt-config local app <name>` gives the app **resolved for this worktree**: its
+- `lntt local app <name>` gives the app **resolved for this worktree**: its
   port (base port in the main checkout, base + 10 × a stable slot in a linked worktree),
   URL, commands and env with `{port}` filled in. Always start from it, never from the
   base values.
@@ -54,7 +54,7 @@ This skill is the procedure; never edit it to fit one project.
   every header out in full (`-H "Accept-Language: en-US"`); a header built from a
   shell expansion is not split in zsh and is silently dropped. Before concluding the
   server ignores a header or a cookie, confirm with `-v` that it was sent.
-- **Showing a page to the person**: `lntt-config viewer open <url>`. It detects where
+- **Showing a page to the person**: `lntt viewer open <url>`. It detects where
   the session runs (Orca, Wave, Claude desktop, a terminal) and opens the page in the
   operator's preferred viewer (`workspace.viewers` in the operator profile), in this
   worktree when the viewer belongs to one. **Exit 3** prints a JSON with `call`: the

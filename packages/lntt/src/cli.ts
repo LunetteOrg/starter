@@ -1,0 +1,108 @@
+// The configuration commands of `lntt` (usage: bin/lntt.ts).
+
+import { execFileSync } from 'node:child_process'
+import { cwd, env, exit, stderr, stdout } from 'node:process'
+import {
+  ConfigError,
+  checkAgentsBlock,
+  chooseViewer,
+  commandExists,
+  findConfig,
+  getValue,
+  loadConfig,
+  loadOperator,
+  localApp,
+  openWith,
+  setValue,
+  syncAgentsBlock,
+  type Viewer,
+} from './index.ts'
+
+const USAGE = [
+  'usage: lntt path | validate | get <key> | set <key> <json> | operator [get <key> | sources]',
+  '       lntt sync | check | local app <name> | viewer detect|open <url>',
+  '       lntt ci local|candidate [...]',
+].join('\n')
+
+function usage(): never {
+  stderr.write(`${USAGE}\n`)
+  exit(2)
+}
+
+// `lntt <command> [...]`, every command but `ci` (./ci/cli.ts).
+export function main(args: string[]): void {
+  const [command, key, raw] = args
+  try {
+    run(command, key, raw)
+  } catch (e) {
+    if (!(e instanceof ConfigError)) throw e
+    stderr.write(`lntt: ${e.message}\n`)
+    exit(1)
+  }
+}
+
+function run(command: string | undefined, key: string | undefined, raw: string | undefined): void {
+  switch (command) {
+    case 'path':
+      stdout.write(`${findConfig(cwd()).path}\n`)
+      break
+    case 'validate':
+      loadConfig(cwd())
+      break
+    case 'get':
+      if (!key) usage()
+      stdout.write(`${JSON.stringify(getValue(loadConfig(cwd()).data, key))}\n`)
+      break
+    case 'set': {
+      if (!key || raw === undefined) usage()
+      let value: unknown
+      try {
+        value = JSON.parse(raw)
+      } catch {
+        stderr.write(`lntt: ${raw} is not JSON (a string needs quotes: '"it"')\n`)
+        exit(2)
+      }
+      setValue(cwd(), key, value)
+      break
+    }
+    case 'operator': {
+      const { profile, sources } = loadOperator(cwd())
+      if (key === undefined) stdout.write(`${JSON.stringify(profile)}\n`)
+      else if (key === 'sources') stdout.write(sources.map((s) => `${s}\n`).join(''))
+      else if (key === 'get' && raw) stdout.write(`${JSON.stringify(getValue(profile, raw))}\n`)
+      else usage()
+      break
+    }
+    case 'sync':
+      syncAgentsBlock(cwd())
+      break
+    case 'check':
+      if (!checkAgentsBlock(cwd())) {
+        stderr.write('lntt: the managed block of AGENTS.md is missing or edited; run lntt sync\n')
+        exit(1)
+      }
+      break
+    case 'local':
+      if (key !== 'app' || !raw) usage()
+      stdout.write(`${JSON.stringify(localApp(cwd(), raw))}\n`)
+      break
+    case 'viewer': {
+      const preferences = ((loadOperator(cwd()).profile.workspace as { viewers?: Viewer[] } | undefined)?.viewers ??
+        []) as Viewer[]
+      const choice = chooseViewer({ env, preferences, has: commandExists })
+      if (key === 'detect') stdout.write(`${JSON.stringify(choice)}\n`)
+      else if (key === 'open' && raw) {
+        const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
+        if (!openWith(choice, raw, root)) {
+          stdout.write(
+            `${JSON.stringify({ viewer: choice.viewer, ...(choice.agentCall ? { call: choice.agentCall } : {}), url: raw })}\n`,
+          )
+          exit(3)
+        }
+      } else usage()
+      break
+    }
+    default:
+      usage()
+  }
+}

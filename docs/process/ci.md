@@ -4,8 +4,8 @@ The cloud CI is GitHub Actions (`.github/workflows/`). The same checks run on th
 author's machine with `pnpm ci:local`, which reads those workflow files and runs their
 steps: there is no second list of commands to keep in step with them. How it reads
 them and what it stands in for each step with is the tool's own documentation
-([`@lntt/ci`](../../packages/ci/README.md)); this page holds the rules the team works
-by. The values are `ci.local` in [`.agents/config.jsonc`](../../.agents/config.jsonc).
+([`lntt ci`](../../packages/lntt/README.md#ci-lntt-ci)); this page holds the rules the
+team works by. The values are `ci.local` in [`.agents/config.jsonc`](../../.agents/config.jsonc).
 
 ## What runs where
 
