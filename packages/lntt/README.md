@@ -105,7 +105,8 @@ lntt worktree start --issue 78 --kind codex --model gpt-6 --effort high
 Per issue: the branch name from `lntt branch name`, a worktree on it, the setup
 `orca.yaml` declares, and an agent (`--kind`: claude by default, codex, opencode, …;
 `--model` and `--effort` as that agent takes them, an effort it has no flag for is
-refused) handed the brief in
+refused; opencode gets its model through its inline configuration,
+`OPENCODE_CONFIG_CONTENT`, on a standalone server) handed the brief in
 [`agents/brief.md`](./agents/brief.md): the issue is the mandate, work only in this
 worktree, review and `pnpm ci:local` green, a **draft** pull request, then stop (no
 merge, no `gh pr ready`) and return a summary and the friction met. One JSON line per
@@ -115,14 +116,16 @@ The host is the innermost one the session runs in, detected from the environment
 
 - **Herdr** (`HERDR_ENV=1`, also inside an Orca terminal): `herdr worktree create` on the
   branch, the setup run here (Herdr has no hook), `herdr agent start` in the new pane
-  (model and effort after `--`), `herdr agent prompt` with the brief.
+  (model and effort after `--`), `herdr agent prompt` with the brief. opencode with a
+  model is typed into the pane instead and prompted through the pane once Herdr detects it.
 - **Orca** (`TERM_PROGRAM=Orca`): one `orca worktree create` with the issue linked, the
   setup run by Orca (its `lntt branch rename` turns `<user>/<name>` into the
   convention) and the agent started after it (`setupAgentStartupPolicy: wait-for-setup`).
   With `--model` or `--effort`, which `worktree create` does not take, a supervised
   worker instead (`orca orchestration worker-start`, in a Run created when none is
   bound to the terminal), then the issue linked with `orca worktree set`; the agent
-  reports `worker_done` to the Run.
+  reports `worker_done` to the Run. opencode with a model starts in a terminal of its own
+  instead (Orca refuses an opencode model to its worker), and gets the brief once idle.
 - **Plain git** otherwise, Wave and Claude desktop included: `git worktree add` under
   `<main checkout>/.worktrees/`, the setup, and the brief printed for the person.
 
