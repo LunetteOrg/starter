@@ -16,6 +16,9 @@
 - **Claims carry their proof.** "It works", "it passes", "it is faster" comes with
   the command and its outcome, a `path:line` or a commit; what was not run is
   written as deduced, from what.
+- **Name an issue by what it is about, not by its number alone.** Give its title, or
+  describe it earlier in the same message; a bare `#N` makes the reader open it.
+  How a title is written: the `issues` skill.
 - **An agent never merges on its own.** A merge needs an explicit go from a person.
 - **Before a commit, follow the `commit-message` skill.**
 - **Every review runs the `decisions` skill in check mode**, before the line-by-line
