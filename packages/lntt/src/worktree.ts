@@ -22,11 +22,19 @@ export interface Start {
   title: string
   branch: string
   base: string
-  // The agent to launch (claude, codex, …), or null to leave it to the person.
-  agent: string | null
+  // The agent to launch, or null to leave it to the person.
+  agent: Agent | null
   // The main checkout: plain git and Herdr put worktrees under <root>/.worktrees/.
   root: string
   brief: string
+}
+
+// kind: the agent CLI (claude, codex, opencode, …), as Orca's --agent and Herdr's
+// --kind name it. model and effort: left to the agent's own configuration when absent.
+export interface Agent {
+  kind: string
+  model?: string
+  effort?: string
 }
 
 export interface Started {
@@ -34,7 +42,7 @@ export interface Started {
   issue: number
   branch: string
   path: string | null
-  // How to reach the agent: Orca's terminal handle, Herdr's agent name.
+  // How to reach the agent: Orca's terminal handle or dispatch id, Herdr's agent name.
   agent: string | null
 }
 
@@ -72,6 +80,16 @@ export function setupScript(root: string): string | null {
   return typeof setup === 'string' && setup.trim() !== '' ? setup : null
 }
 
+// Model and effort as each agent CLI takes them. An effort the agent has no flag for
+// is an error: dropping it would launch a different agent than the one asked for.
+export function agentArgs(agent: Agent): string[] {
+  const args = agent.model ? ['--model', agent.model] : []
+  if (!agent.effort) return args
+  if (agent.kind === 'claude') return [...args, '--effort', agent.effort]
+  if (agent.kind === 'codex') return [...args, '-c', `model_reasoning_effort="${agent.effort}"`]
+  throw new Error(`${agent.kind} takes no effort from the command line; drop --effort or set it in its configuration`)
+}
+
 // A branch name as one path segment: Orca's worktree name, Herdr's label, the folder.
 function flat(branch: string): string {
   return branch.replace(/\//g, '-')
@@ -81,9 +99,10 @@ function flat(branch: string): string {
 // (orca.yaml, `lntt branch rename`) reads the convention back. The agent starts after
 // the setup (setupAgentStartupPolicy: wait-for-setup).
 export function startOrca(start: Start, runner: Runner): Started {
+  if (start.agent?.model || start.agent?.effort) return startOrcaWorker(start, start.agent, runner)
   const args = ['worktree', 'create', '--name', flat(start.branch), '--issue', String(start.issue)]
   args.push('--base-branch', start.base, '--setup', 'run', '--json')
-  if (start.agent) args.push('--agent', start.agent, '--prompt', start.brief)
+  if (start.agent) args.push('--agent', start.agent.kind, '--prompt', start.brief)
   const reply = JSON.parse(runner.run('orca', args)) as {
     result?: { worktree?: { path?: string }; agentTerminalHandle?: string; startupTerminal?: { handle?: string } }
   }
@@ -94,6 +113,36 @@ export function startOrca(start: Start, runner: Runner): Started {
     branch: start.branch,
     path: reply.result?.worktree?.path ?? null,
     agent: start.agent ? handle : null,
+  }
+}
+
+// `worktree create --agent` takes no model or effort; Orca's supervised worker does.
+// It needs a Run bound to the calling terminal (created when there is none), wraps the
+// brief in Orca's own preamble, and has the agent report `worker_done` to the Run. It
+// takes no issue: the link is set once the worktree exists.
+function startOrcaWorker(start: Start, agent: Agent, runner: Runner): Started {
+  agentArgs(agent) // an effort the agent cannot take fails before anything is created
+  const current = JSON.parse(runner.run('orca', ['orchestration', 'run-current', '--json']) || '{}')
+  if (!find(current, 'run')) {
+    runner.run('orca', ['orchestration', 'run-create', '--objective', `lntt worktree start #${start.issue}`, '--json'])
+  }
+  const name = flat(start.branch)
+  const args = ['orchestration', 'worker-start', '--spec', start.brief, '--worktree', 'new-top-level']
+  args.push('--agent', agent.kind, '--name', name, '--base-branch', start.base, '--setup', 'run', '--json')
+  if (agent.model) args.push('--model', agent.model)
+  if (agent.effort) args.push('--effort', agent.effort)
+  const dispatch = find(JSON.parse(runner.run('orca', args) || '{}'), 'dispatchId')
+  const shown = JSON.parse(runner.run('orca', ['worktree', 'show', '--worktree', `name:${name}`, '--json']) || '{}')
+  const path = find(shown, 'path')
+  if (typeof path === 'string') {
+    runner.run('orca', ['worktree', 'set', '--worktree', `path:${path}`, '--issue', String(start.issue), '--json'])
+  }
+  return {
+    host: 'orca',
+    issue: start.issue,
+    branch: start.branch,
+    path: typeof path === 'string' ? path : null,
+    agent: typeof dispatch === 'string' ? dispatch : null,
   }
 }
 
@@ -145,7 +194,17 @@ export function startHerdr(start: Start, runner: Runner, setup: string | null): 
   if (start.agent) {
     const pane = herdrPane(JSON.parse(reply || '{}'), runner)
     if (!pane) throw new Error(`no pane found in the workspace herdr created: ${reply}`)
-    runner.run('herdr', ['agent', 'start', name, '--kind', start.agent, '--pane', pane])
+    const extra = agentArgs(start.agent)
+    runner.run('herdr', [
+      'agent',
+      'start',
+      name,
+      '--kind',
+      start.agent.kind,
+      '--pane',
+      pane,
+      ...(extra.length ? ['--', ...extra] : []),
+    ])
     runner.run('herdr', ['agent', 'prompt', name, start.brief])
     agent = name
   }

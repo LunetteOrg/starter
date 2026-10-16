@@ -28,6 +28,8 @@ export { type LocalApp, localApp } from './local.ts'
 export { loadOperator, type Operator } from './operator.ts'
 export { type Choice, chooseViewer, commandExists, detectHost, type Host, openWith, type Viewer } from './viewer.ts'
 export {
+  type Agent,
+  agentArgs,
   type BriefValues,
   type Runner,
   renderBrief,

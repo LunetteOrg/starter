@@ -9,6 +9,8 @@ import { nameFromIssue, readIssue, rules } from './branch-cli.ts'
 import { ConfigError } from './files.ts'
 import { loadConfig } from './index.ts'
 import {
+  type Agent,
+  agentArgs,
   type Runner,
   renderBrief,
   type Start,
@@ -22,7 +24,7 @@ import {
 } from './worktree.ts'
 
 const USAGE =
-  'usage: lntt worktree start --issue <n> [--issue <n>]... [--host orca|herdr|git] [--agent <id> | --no-agent] [--base <branch>] [--prompt <text>]'
+  'usage: lntt worktree start --issue <n> [--issue <n>]... [--host orca|herdr|git] [--kind <agent>] [--model <id>] [--effort <level>] [--no-agent] [--base <branch>] [--prompt <text>]'
 const HOSTS: WorktreeHost[] = ['orca', 'herdr', 'git']
 
 function usage(message?: string): never {
@@ -77,7 +79,9 @@ function start(args: string[]): void {
     options: {
       issue: { type: 'string', multiple: true },
       host: { type: 'string' },
-      agent: { type: 'string', default: 'claude' },
+      kind: { type: 'string', default: 'claude' },
+      model: { type: 'string' },
+      effort: { type: 'string' },
       'no-agent': { type: 'boolean', default: false },
       base: { type: 'string' },
       prompt: { type: 'string' },
@@ -89,6 +93,12 @@ function start(args: string[]): void {
   const host = (values.host ?? worktreeHost(env)) as WorktreeHost
   if (!HOSTS.includes(host)) usage(`--host is ${HOSTS.join(', ')}, not ${values.host}`)
 
+  const agent: Agent = {
+    kind: values.kind,
+    ...(values.model ? { model: values.model } : {}),
+    ...(values.effort ? { effort: values.effort } : {}),
+  }
+  agentArgs(agent) // an effort the agent cannot take is refused before anything is created
   const root = mainCheckout()
   const base = values.base ?? configuredBase()
   const setup = setupScript(root)
@@ -108,7 +118,7 @@ function start(args: string[]): void {
       title: data.title,
       branch,
       base: host === 'orca' ? base : gitBase(root, base),
-      agent: values['no-agent'] || host === 'git' ? null : values.agent,
+      agent: values['no-agent'] || host === 'git' ? null : agent,
       root,
       brief,
     }
@@ -120,8 +130,10 @@ function start(args: string[]): void {
           : startGit(job, runner, setup)
     results.push(started)
     stdout.write(`${JSON.stringify(started)}\n`)
-    // Nobody started an agent: the brief is for the person who will.
-    if (started.agent === null) stdout.write(`\n${brief}\n`)
+    // Nobody started an agent: the command and the brief are for the person who will.
+    if (started.agent === null) {
+      stdout.write(`\n${[agent.kind, ...agentArgs(agent)].join(' ')}  # in ${started.path}\n\n${brief}\n`)
+    }
   }
 }
 

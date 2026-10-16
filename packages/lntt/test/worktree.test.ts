@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import {
+  agentArgs,
   type Runner,
   renderBrief,
   type Start,
@@ -77,7 +78,7 @@ const START: Start = {
   title: 'Start an agent',
   branch: 'feat/78/start-agent',
   base: 'main',
-  agent: 'claude',
+  agent: { kind: 'claude' },
   root: '/repo',
   brief: 'BRIEF',
 }
@@ -117,6 +118,63 @@ describe('Orca', () => {
   })
 })
 
+describe('the agent arguments', () => {
+  test('model and effort, as each agent spells them', () => {
+    assert.deepEqual(agentArgs({ kind: 'claude', model: 'sonnet', effort: 'high' }), [
+      '--model',
+      'sonnet',
+      '--effort',
+      'high',
+    ])
+    assert.deepEqual(agentArgs({ kind: 'codex', model: 'gpt-6', effort: 'xhigh' }), [
+      '--model',
+      'gpt-6',
+      '-c',
+      'model_reasoning_effort="xhigh"',
+    ])
+    assert.deepEqual(agentArgs({ kind: 'opencode', model: 'anthropic/claude-sonnet-5-5' }), [
+      '--model',
+      'anthropic/claude-sonnet-5-5',
+    ])
+    assert.deepEqual(agentArgs({ kind: 'claude' }), [])
+  })
+
+  test('an effort the agent cannot take is an error, not a silent drop', () => {
+    assert.throws(() => agentArgs({ kind: 'opencode', model: 'x', effort: 'high' }), /opencode/)
+  })
+})
+
+describe('Orca with a model or an effort', () => {
+  test('a supervised worker (worker-start) in a Run, then the issue linked', () => {
+    const { calls, runner } = recorder({
+      'orca orchestration run-current': JSON.stringify({ ok: true, result: { run: { id: 'run_1' } } }),
+      'orca orchestration worker-start': JSON.stringify({ ok: true, result: { dispatch: { dispatchId: 'ctx_9' } } }),
+      'orca worktree show': JSON.stringify({
+        result: { worktree: { path: '/repo/.worktrees/starter/feat-78-start-agent' } },
+      }),
+    })
+    const started = startOrca({ ...START, agent: { kind: 'claude', model: 'sonnet', effort: 'high' } }, runner)
+    assert.deepEqual(calls, [
+      'orca orchestration run-current --json',
+      'orca orchestration worker-start --spec BRIEF --worktree new-top-level --agent claude --name feat-78-start-agent --base-branch main --setup run --json --model sonnet --effort high',
+      'orca worktree show --worktree name:feat-78-start-agent --json',
+      'orca worktree set --worktree path:/repo/.worktrees/starter/feat-78-start-agent --issue 78 --json',
+    ])
+    assert.equal(started.agent, 'ctx_9')
+    assert.equal(started.path, '/repo/.worktrees/starter/feat-78-start-agent')
+  })
+
+  test('creates the Run when none is bound', () => {
+    const { calls, runner } = recorder({
+      'orca orchestration run-current': JSON.stringify({ ok: true, result: { run: null } }),
+      'orca orchestration worker-start': JSON.stringify({ ok: true, result: { dispatchId: 'ctx_9' } }),
+      'orca worktree show': JSON.stringify({ result: { worktree: { path: '/p' } } }),
+    })
+    startOrca({ ...START, agent: { kind: 'claude', model: 'sonnet' } }, runner)
+    assert.match(calls[1] as string, /^orca orchestration run-create --objective .+ --json$/)
+  })
+})
+
 describe('Herdr', () => {
   test('creates the worktree on the right name, runs the setup, starts the agent, sends the brief', () => {
     const { calls, runner } = recorder({
@@ -131,6 +189,18 @@ describe('Herdr', () => {
       'herdr agent prompt feat-78-start-agent BRIEF',
     ])
     assert.equal(started.agent, 'feat-78-start-agent')
+  })
+
+  test('model and effort go to the agent after --', () => {
+    const { calls, runner } = recorder({
+      'herdr worktree create': JSON.stringify({ result: { pane: { pane_id: 'w2:p1' } } }),
+    })
+    startHerdr({ ...START, agent: { kind: 'claude', model: 'sonnet', effort: 'high' } }, runner, null)
+    assert.ok(
+      calls.includes(
+        'herdr agent start feat-78-start-agent --kind claude --pane w2:p1 -- --model sonnet --effort high',
+      ),
+    )
   })
 
   test('finds the pane through the workspace when the create reply has none', () => {
