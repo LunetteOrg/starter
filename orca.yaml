@@ -1,0 +1,12 @@
+# Orca's worktree hooks, shared by everyone who opens this repository in Orca. Setup
+# runs in the new worktree and is read from that worktree's copy of this file.
+#
+# setup: the dependencies. A new worktree has no node_modules, so tests, lint and the
+#   git hooks fail until they are installed. `pnpm install` also runs `prepare`, which
+#   points the shared git hooks at the main checkout's lefthook
+#   (scripts/install-hooks.sh). Nothing else is needed: no build step, no database.
+scripts:
+  setup: |
+    pnpm install --frozen-lockfile
+# The agent starts on a worktree whose dependencies are in place.
+setupAgentStartupPolicy: wait-for-setup
