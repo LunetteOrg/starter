@@ -1,26 +1,29 @@
 {
-  "name": "@lntt/project-config",
+  "name": "@lntt/lntt",
   "version": "0.0.0",
   "private": true,
-  "description": "Reads, validates and edits a Lunette project's .agents/config.{jsonc,yml} and the operator profile",
+  "description": "The lntt command: a Lunette project's configuration and operator profile, the managed block of AGENTS.md, and its CI run on the local machine with the candidate automation",
   "type": "module",
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
+    "./ci": "./src/ci/index.ts",
     "./schema.json": "./schema/config.schema.json",
     "./operator-schema.json": "./schema/operator.schema.json"
   },
   "bin": {
-    "lntt-config": "bin/lntt-config.ts"
+    "lntt": "bin/lntt.ts"
   },
   "scripts": {
-    "test": "node --test test/*.test.ts",
+    "test": "node --test test/*.test.ts test/ci/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
     "node": ">=24"
   },
   "dependencies": {
+    "@actions/expressions": "0.3.61",
+    "@actions/workflow-parser": "0.3.61",
     "ajv": "^8.20.0",
     "jsonc-parser": "^3.3.1",
     "yaml": "^2.9.1"

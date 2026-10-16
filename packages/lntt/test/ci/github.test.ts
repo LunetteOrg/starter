@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { rmSync } from 'node:fs'
 import { afterEach, describe, test } from 'node:test'
-import { emptyConfig } from '../src/config.ts'
-import { localEvent } from '../src/event.ts'
-import { githubJobs } from '../src/github.ts'
-import type { Job } from '../src/plan.ts'
+import { emptyConfig } from '../../src/ci/config.ts'
+import { localEvent } from '../../src/ci/event.ts'
+import { githubJobs } from '../../src/ci/github.ts'
+import type { Job } from '../../src/ci/plan.ts'
 import { repo } from './helpers.ts'
 
 const CI = `

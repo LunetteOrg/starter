@@ -1,8 +1,8 @@
-// The sections of .agents/config.* this package reads, through @lntt/project-config:
+// The sections of .agents/config.* this package reads, through the configuration reader:
 // `ci.local` (without it: nothing cloud-only, no fake values, the built-in actions
 // only) and `delivery.candidate` (without it: no candidate).
 
-import { ConfigError, loadConfig } from '@lntt/project-config'
+import { ConfigError, loadConfig } from '../index.ts'
 import type { CandidateConfig } from './candidate.ts'
 
 export type ActionMapping = { run: string } | { skip: string }

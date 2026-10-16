@@ -1,35 +1,6 @@
-#!/usr/bin/env node
-// lntt-ci — the project's CI on the local machine, and its candidate automation.
-//
-//   lntt-ci local [--event pull_request|push] [--base <branch>] [--job <key>]...
-//                 [--list] [--strict] [--container]
-//
-//     --event      what the cloud would see: a ready pull request into the base
-//                  (default), or a push to it
-//     --base       the pull request's base, or the branch pushed to (default:
-//                  origin/HEAD's branch, else main)
-//     --job        run only this job (`ci.yml/ci`, `circleci/test`); repeatable
-//     --list       per job, what the cloud runs and what the local run does; runs nothing
-//     --strict     fail when a step or job the cloud runs was not run locally
-//     --container  run each job in the provider's local executor (act, circleci local
-//                  execute) instead of on the host
-//
-//   The run starts only on a clean working tree: it checks the commit about to be pushed.
-//
-//   lntt-ci candidate [--pr <n>] [--event opened|ready_for_review|closed]
-//                     [--head-ref <ref>] [--labels a,b] [--merged] [--dry-run]
-//
-//     In Actions it reads the pull_request event (GITHUB_EVENT_PATH). From a terminal,
-//     --pr reads the pull request with gh and does what the workflow would do on its
-//     event; --head-ref, --labels and --merged override what was read, to try a case
-//     without creating it; --dry-run prints every write instead of making it. Without
-//     delivery.candidate in the configuration it does nothing.
-//
-// Exit codes: 0 green, 1 red or a configuration error, 2 usage error.
-
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { argv, cwd, env, exit, stderr, stdout } from 'node:process'
+import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import {
   candidate,
@@ -45,15 +16,15 @@ import {
   localEvent,
   missingTools,
   runJobs,
-} from '../src/index.ts'
+} from './index.ts'
 
 const USAGE = [
-  'usage: lntt-ci local [--event pull_request|push] [--base <branch>] [--job <key>]... [--list] [--strict] [--container]',
-  '       lntt-ci candidate [--pr <n>] [--event <action>] [--head-ref <ref>] [--labels a,b] [--merged] [--dry-run]',
+  'usage: lntt ci local [--event pull_request|push] [--base <branch>] [--job <key>]... [--list] [--strict] [--container]',
+  '       lntt ci candidate [--pr <n>] [--event <action>] [--head-ref <ref>] [--labels a,b] [--merged] [--dry-run]',
 ].join('\n')
 
 function usage(message?: string): never {
-  if (message) stderr.write(`lntt-ci: ${message}\n`)
+  if (message) stderr.write(`lntt ci: ${message}\n`)
   stderr.write(`${USAGE}\n`)
   exit(2)
 }
@@ -71,10 +42,10 @@ function guard<T>(parse: () => T): T {
   }
 }
 
-async function local(): Promise<number> {
+async function local(args: string[]): Promise<number> {
   const { values } = guard(() =>
     parseArgs({
-      args: argv.slice(3),
+      args,
       options: {
         event: { type: 'string', default: 'pull_request' },
         base: { type: 'string' },
@@ -103,7 +74,7 @@ async function local(): Promise<number> {
   const dirty = git('status', '--porcelain')
   if (dirty !== '') {
     stderr.write(
-      `lntt-ci: the working tree has uncommitted changes; ci:local checks the commit about to be pushed:\n${dirty}\n`,
+      `lntt ci: the working tree has uncommitted changes; ci:local checks the commit about to be pushed:\n${dirty}\n`,
     )
     return 1
   }
@@ -111,7 +82,7 @@ async function local(): Promise<number> {
   if (values.container) {
     const missing = missingTools(jobs, only)
     if (missing.length > 0) {
-      stderr.write(`lntt-ci: container mode needs ${missing.join(', ')} on the PATH\n`)
+      stderr.write(`lntt ci: container mode needs ${missing.join(', ')} on the PATH\n`)
       return 1
     }
   }
@@ -124,10 +95,10 @@ async function local(): Promise<number> {
   return exitCode(results, { strict })
 }
 
-function candidateRun(): number {
+function candidateRun(args: string[]): number {
   const { values } = guard(() =>
     parseArgs({
-      args: argv.slice(3),
+      args,
       options: {
         pr: { type: 'string' },
         event: { type: 'string' },
@@ -166,12 +137,14 @@ function candidateRun(): number {
   return 0
 }
 
-try {
-  const command = argv[2]
-  if (command === 'local') exit(await local())
-  else if (command === 'candidate') exit(candidateRun())
-  else usage()
-} catch (error) {
-  stderr.write(`lntt-ci: ${(error as Error).message}\n`)
-  exit(1)
+// `lntt ci <command> [...]`: the arguments after `ci`.
+export async function main([command, ...args]: string[]): Promise<never> {
+  try {
+    if (command === 'local') exit(await local(args))
+    if (command === 'candidate') exit(candidateRun(args))
+    usage()
+  } catch (error) {
+    stderr.write(`lntt ci: ${(error as Error).message}\n`)
+    exit(1)
+  }
 }

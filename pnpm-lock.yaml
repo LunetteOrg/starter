@@ -17,12 +17,9 @@ importers:
       '@commitlint/config-conventional':
         specifier: ^21.2.0
         version: 21.2.0
-      '@lntt/ci':
+      '@lntt/lntt':
         specifier: workspace:*
-        version: link:packages/ci
-      '@lntt/project-config':
-        specifier: workspace:*
-        version: link:packages/project-config
+        version: link:packages/lntt
       lefthook:
         specifier: ^2.1.10
         version: 2.1.10
@@ -39,28 +36,6 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/ci:
-    dependencies:
-      '@actions/expressions':
-        specifier: 0.3.61
-        version: 0.3.61
-      '@actions/workflow-parser':
-        specifier: 0.3.61
-        version: 0.3.61
-      '@lntt/project-config':
-        specifier: workspace:*
-        version: link:../project-config
-      yaml:
-        specifier: ^2.9.1
-        version: 2.9.1
-    devDependencies:
-      '@types/node':
-        specifier: ^26.1.1
-        version: 26.1.1
-      typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
-
   packages/create:
     devDependencies:
       '@types/node':
@@ -70,20 +45,14 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  packages/playwright-config:
-    devDependencies:
-      '@playwright/test':
-        specifier: ^1.61.1
-        version: 1.64.0
-      '@types/node':
-        specifier: ^26.1.1
-        version: 26.1.1
-      typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
-
-  packages/project-config:
+  packages/lntt:
     dependencies:
+      '@actions/expressions':
+        specifier: 0.3.61
+        version: 0.3.61
+      '@actions/workflow-parser':
+        specifier: 0.3.61
+        version: 0.3.61
       ajv:
         specifier: ^8.20.0
         version: 8.20.0
@@ -103,6 +72,18 @@ importers:
       '@commitlint/load':
         specifier: ^21.2.0
         version: 21.2.0(@types/node@26.1.1)(typescript@7.0.2)
+      '@types/node':
+        specifier: ^26.1.1
+        version: 26.1.1
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  packages/playwright-config:
+    devDependencies:
+      '@playwright/test':
+        specifier: ^1.61.1
+        version: 1.64.0
       '@types/node':
         specifier: ^26.1.1
         version: 26.1.1

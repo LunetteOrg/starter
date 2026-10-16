@@ -1,5 +1,5 @@
-// @lntt/ci: the CI of a Lunette project, run on the local machine from the
-// provider's own configuration (`lntt-ci local`, `pnpm ci:local`).
+// `lntt ci`: the CI of a Lunette project, run on the local machine from the
+// provider's own configuration (`lntt ci local`, `pnpm ci:local`).
 
 export { actionName, localAction, versionMatches } from './actions.ts'
 export * as candidate from './candidate.ts'

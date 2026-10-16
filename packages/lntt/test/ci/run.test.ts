@@ -3,9 +3,9 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
-import { SHELLS } from '../src/actions.ts'
-import type { Job, Local, Step } from '../src/plan.ts'
-import { exitCode, ordered, runJobs } from '../src/run.ts'
+import { SHELLS } from '../../src/ci/actions.ts'
+import type { Job, Local, Step } from '../../src/ci/plan.ts'
+import { exitCode, ordered, runJobs } from '../../src/ci/run.ts'
 
 let dir: string
 beforeEach(() => {

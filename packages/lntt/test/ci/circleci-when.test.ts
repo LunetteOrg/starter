@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { evaluateWhen, substituteParameters } from '../src/circleci-when.ts'
+import { evaluateWhen, substituteParameters } from '../../src/ci/circleci-when.ts'
 
 const pr = {
   'pipeline.event.name': 'pull_request',

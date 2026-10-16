@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { chooseViewer, detectHost } from '../src/index.ts'
 
-const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt-config.ts')
+const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
 
 let tmp: string
 let stubs: string

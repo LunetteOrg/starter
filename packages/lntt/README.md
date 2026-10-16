@@ -1,26 +1,122 @@
-# @lntt/ci
+# @lntt/lntt
+
+The `lntt` command, for the people and the agents of a Lunette project: its
+configuration and the operator profile, the managed block of `AGENTS.md`, the apps run
+locally, and its CI run on the local machine with the candidate automation
+([`lntt ci`](#ci-lntt-ci)).
+
+## The configuration
+
+Reads, validates and edits a Lunette project's configuration: the values skills and
+scripts need, in `.agents/config.jsonc` **or** `.agents/config.yml` at the repository
+root (one of the two; both is an error). Sections are named after process areas
+(`recording` today); [`schema/config.schema.json`](./schema/config.schema.json) says
+what each one holds.
+
+Both formats allow comments: a short reason for a value goes next to it. So scripts
+never parse the file themselves (`jq` and `JSON.parse` reject comments), and writes go
+through an editor that keeps them.
+
+```sh
+lntt path                       # the file in use
+lntt validate                   # exit 0 when it matches the schema
+lntt get recording.logs         # a dotted key, as plain JSON (pipe it to jq)
+lntt set recording.language '"it"'   # a JSON value, comments kept
+```
+
+Exit codes: 0 ok, 1 configuration error, 2 usage error.
+
+## The operator profile
+
+Who is talking to the agent: personal, never tracked, validated by
+[`schema/operator.schema.json`](./schema/operator.schema.json) (name, handle, role,
+language, confidence per topic, accounts, workspace: the preferred viewers in order). Read from, in merge order:
+
+1. `~/.agents/operator.{jsonc,yml}`: every project;
+2. `<main checkout>/.agents/local/operator.{jsonc,yml}`: this project, found from any
+   worktree through `git rev-parse --git-common-dir`;
+3. otherwise `~/.agents/projects/<org>/<repo>/operator.{jsonc,yml}`: this project, when
+   the main checkout has none (a fresh clone, a cloud session).
+
+The project profile wins key by key. With none at all the speaker is a developer.
+
+```sh
+lntt operator                 # the merged profile
+lntt operator get language    # one key
+lntt operator sources         # the files it came from
+```
+
+Editors validate the file against the schema through its first line:
+
+```jsonc
+{ "$schema": "<path or URL of config.schema.json>", … }
+```
+
+```yaml
+# yaml-language-server: $schema=<path or URL of config.schema.json>
+```
+
+## Commit messages
+
+`commitlintConfig()` builds a commitlint configuration from `delivery.commits`
+(language, scopes, line length, trailers exempt from it), with rules whose messages say
+what to write instead and name the `commit-message` skill:
+
+```js
+// commitlint.config.mjs
+import { commitlintConfig } from '@lntt/lntt'
+export default commitlintConfig()
+```
+
+## AGENTS.md
+
+`lntt sync` writes the managed block of `AGENTS.md` from
+[`agents/block.md`](./agents/block.md); `lntt check` fails when it differs.
+
+## Running the apps locally
+
+`local.apps.<name>` describes each app: base `port`, `url`, `commands` (with `start`),
+`env`, `signIn` (a test and/or a document) and seeded `users`, never a password.
+`lntt local app <name>` resolves it for the current checkout: the main checkout
+uses the base port, each linked worktree a stable slot (base + 10 × slot, kept in
+`<git common dir>/lunette/ports.json`, freed when the worktree goes), with `{port}`
+filled in. The `run-local` skill starts from it.
+
+## Showing a page
+
+```sh
+lntt viewer detect        # where the session runs, the chosen viewer, why
+lntt viewer open <url>    # open it there; exit 3 + JSON when only the agent can
+```
+
+The choice: the first of the operator's `workspace.viewers` available in this
+session, else the app the session runs in (Orca opens in the browser of the same
+worktree), else the system browser. Claude desktop (`preview_start`) and Chrome
+(`navigate`) are tool calls only the agent can make: `open` prints the call.
+
+## CI (`lntt ci`)
 
 Runs a project's CI on the local machine, and moves pull requests through the
 candidate branch. ci:local reads the provider's own configuration: GitHub
 Actions workflows parsed with `@actions/workflow-parser` (conditions evaluated with
 `@actions/expressions`), CircleCI expanded with `circleci config process` and read
 with `yaml`. The project's `ci.local` values (cloud-only jobs, fake secrets, actions
-mapped to local commands) are read with `@lntt/project-config`. When to run it and the
+mapped to local commands) are read from the configuration above. When to run it and the
 secrets policy are the project's CI process description (`docs/process/ci.md`).
 
 ```sh
-lntt-ci local                      # the jobs a ready pull request into the base triggers
-lntt-ci local --list               # per job: what the cloud runs, what runs locally
-lntt-ci local --base candidate/3   # the pull request into another base
-lntt-ci local --event push         # a push to the base
-lntt-ci local --job ci.yml/ci      # one job (repeatable)
-lntt-ci local --strict             # fail on anything the cloud runs and the run did not
-lntt-ci local --container          # each job in act / circleci local execute
+lntt ci local                      # the jobs a ready pull request into the base triggers
+lntt ci local --list               # per job: what the cloud runs, what runs locally
+lntt ci local --base candidate/3   # the pull request into another base
+lntt ci local --event push         # a push to the base
+lntt ci local --job ci.yml/ci      # one job (repeatable)
+lntt ci local --strict             # fail on anything the cloud runs and the run did not
+lntt ci local --container          # each job in act / circleci local execute
 ```
 
 ```sh
-lntt-ci candidate                     # in the candidate workflow: reads the pull_request event
-lntt-ci candidate --pr 12 --dry-run   # from a terminal: what the workflow would do for #12
+lntt ci candidate                     # in the candidate workflow: reads the pull_request event
+lntt ci candidate --pr 12 --dry-run   # from a terminal: what the workflow would do for #12
 ```
 
 A project runs the first as `pnpm ci:local`; the second is the candidate automation
@@ -29,7 +125,7 @@ delivery process description (`docs/process/delivery.md`). The candidate logic i
 adapted from DiscenTech/pelion's `scripts/ci/release-candidate.mjs`. Exit codes: 0 green, 1 a red job or a
 configuration error, 2 a usage error.
 
-## What it runs
+### What it runs
 
 - **The event.** By default a pull request from the current branch into the base,
   ready for review: the run the cloud starts once a draft leaves draft. The base
@@ -59,7 +155,7 @@ configuration error, 2 a usage error.
 - **Not run, reported:** a step whose env or inputs read an undeclared secret,
   matrices, reusable workflows, `services:` (not started), CircleCI background steps.
 
-## CircleCI
+### CircleCI
 
 `circleci config process` expands `.circleci/config.yml` (orbs, commands, parameters).
 Which workflows run is decided from the raw file's `when:` against the event's
@@ -77,7 +173,7 @@ the branch the pipeline builds. A job with a `context` is reported as not run un
 cloud-only; project environment variables are not visible in the configuration and
 are not detected.
 
-## Container mode
+### Container mode
 
 `--container` runs each job whole instead of step by step. For GitHub Actions it uses
 `act`, with an event file for the same pull request or push, the fake secrets as `-s`
@@ -86,7 +182,7 @@ and the fake vars as `--var`; `act` reads its runner images from `.actrc`
 processed configuration, with the fake secrets as `-e`. It checks that the executor
 and Docker are on the PATH before starting.
 
-## Configuration
+### Configuration
 
 ```jsonc
 "ci": {
@@ -109,11 +205,13 @@ and Docker are on the PATH before starting.
 }
 ```
 
+### Requirements
+
+The candidate automation needs `gh`, authenticated with a token that has
+contents, pull requests and issues on the repository. CircleCI projects need the `circleci` CLI; container mode needs Docker and `act`
+or the `circleci` CLI.
+
 ## Requirements
 
-Node ≥ 24. The candidate automation needs `gh`, authenticated with a token that has
-contents, pull requests and issues on the repository. CircleCI projects need the `circleci` CLI; container mode needs Docker and
-`act` or the `circleci` CLI.
-
-The package is private and runs from source until it is published with the other
-shared packages.
+Node ≥ 24. The package is private and runs from source until it is published with the
+other shared packages.

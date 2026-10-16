@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { ConfigError, findConfig, getValue, loadConfig, setValue } from '../src/index.ts'
 
-const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt-config.ts')
+const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
 
 const JSONC = `{
   // The decision logs of this repo.

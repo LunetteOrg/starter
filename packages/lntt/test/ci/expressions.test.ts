@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { type Context, evaluate, interpolate } from '../src/expressions.ts'
+import { type Context, evaluate, interpolate } from '../../src/ci/expressions.ts'
 
 const context: Context = {
   github: {

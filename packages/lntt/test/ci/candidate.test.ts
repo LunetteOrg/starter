@@ -28,7 +28,7 @@ import {
   retargetDecision,
   sweep,
   sweepDecision,
-} from '../src/candidate.ts'
+} from '../../src/ci/candidate.ts'
 
 const config: CandidateConfig = { base: 'main', prefix: 'candidate/', hotfix: { prefix: 'hotfix/', label: 'hotfix' } }
 // pelion's shape: release/<N>, same base and hotfix markers.

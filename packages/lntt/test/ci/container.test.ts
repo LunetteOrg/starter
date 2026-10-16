@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { missingTools } from '../src/container.ts'
-import type { Job } from '../src/plan.ts'
+import { missingTools } from '../../src/ci/container.ts'
+import type { Job } from '../../src/ci/plan.ts'
 
 const job = (key: string, container: string[], state: Job['state'] = { state: 'run' }): Job => ({
   key,

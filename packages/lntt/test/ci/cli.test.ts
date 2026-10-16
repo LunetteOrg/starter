@@ -6,7 +6,7 @@ import { afterEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { git, repo, write } from './helpers.ts'
 
-const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt-ci.ts')
+const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../../bin/lntt.ts')
 
 const CI = `
 on:
@@ -36,14 +36,14 @@ let root: string
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
 function ci(...args: string[]) {
-  return spawnSync(process.execPath, [BIN, ...args], {
+  return spawnSync(process.execPath, [BIN, 'ci', ...args], {
     cwd: root,
     encoding: 'utf8',
     env: { ...process.env, RUNNER_LOG: join(root, '.git', 'runner.log') },
   })
 }
 
-describe('lntt-ci local', () => {
+describe('lntt ci local', () => {
   test('--list shows each job, what the cloud runs and what runs locally', () => {
     root = repo({ '.github/workflows/ci.yml': CI })
     const out = ci('local', '--list')
@@ -101,7 +101,7 @@ describe('lntt-ci local', () => {
   })
 })
 
-describe('lntt-ci candidate', () => {
+describe('lntt ci candidate', () => {
   const CONFIG = { delivery: { candidate: { prefix: 'candidate/' } } }
 
   function candidate(event: unknown, ...args: string[]) {
@@ -111,7 +111,7 @@ describe('lntt-ci candidate', () => {
       '.git/bin/gh': `#!/bin/sh\necho "$*" >> "${root}/.git/gh.log"\ncase "$*" in *"--state open"*) echo '[{"number":40,"headRefName":"candidate/4","body":""}]';; esac\n`,
     })
     execFileSync('chmod', ['+x', join(root, '.git/bin/gh')])
-    return spawnSync(process.execPath, [BIN, 'candidate', ...args], {
+    return spawnSync(process.execPath, [BIN, 'ci', 'candidate', ...args], {
       cwd: root,
       encoding: 'utf8',
       env: {

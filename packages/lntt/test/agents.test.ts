@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { checkAgentsBlock, managedBlock, syncAgentsBlock } from '../src/index.ts'
 
-const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt-config.ts')
+const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
 
 let root: string
 let agents: string
@@ -24,9 +24,9 @@ afterEach(() => {
 })
 
 describe('the managed block', () => {
-  test('is wrapped in the lunette markers', () => {
+  test('is wrapped in the lunette markers, naming the command that writes it', () => {
     const block = managedBlock()
-    assert.match(block, /^<!-- lunette:start/)
+    assert.match(block, /^<!-- lunette:start — managed by lntt sync:/)
     assert.match(block, /<!-- lunette:end -->\n$/)
   })
 
@@ -62,9 +62,9 @@ describe('the managed block', () => {
 })
 
 describe('the command line', () => {
-  test('agents sync then agents check', () => {
-    assert.equal(spawnSync('node', [BIN, 'agents', 'check'], { cwd: root }).status, 1)
-    assert.equal(spawnSync('node', [BIN, 'agents', 'sync'], { cwd: root }).status, 0)
-    assert.equal(spawnSync('node', [BIN, 'agents', 'check'], { cwd: root }).status, 0)
+  test('sync then check', () => {
+    assert.equal(spawnSync('node', [BIN, 'check'], { cwd: root }).status, 1)
+    assert.equal(spawnSync('node', [BIN, 'sync'], { cwd: root }).status, 0)
+    assert.equal(spawnSync('node', [BIN, 'check'], { cwd: root }).status, 0)
   })
 })

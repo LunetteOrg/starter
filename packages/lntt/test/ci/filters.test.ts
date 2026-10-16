@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { branchFilter, globToRegExp, pathFilter } from '../src/filters.ts'
+import { branchFilter, globToRegExp, pathFilter } from '../../src/ci/filters.ts'
 
 describe('globToRegExp', () => {
   test('* stops at a slash, ** crosses it', () => {

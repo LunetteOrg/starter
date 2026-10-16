@@ -4,7 +4,7 @@
     "includes": [
       "packages/create/bin/**",
       "packages/create/test/**",
-      "packages/project-config/**",
+      "packages/lntt/**",
       "packages/biome-config/**",
       "packages/typescript-config/**",
       "packages/stylelint-config/**",
@@ -12,7 +12,6 @@
       "packages/test-utils/**",
       "!packages/test-utils/src/__fixtures__",
       "scripts/**",
-      "packages/ci/**",
       "package.json",
       "biome.json",
       "commitlint.config.mjs",

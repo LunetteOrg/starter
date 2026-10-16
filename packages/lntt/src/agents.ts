@@ -15,7 +15,7 @@ const BLOCK = new RegExp(`${START}[^\\n]*-->\\n[\\s\\S]*?${END}\\n?`)
 
 export function managedBlock(): string {
   const body = readFileSync(SOURCE, 'utf8').trimEnd()
-  return `${START} — managed by lntt-config agents sync: edit the source, not this block -->\n${body}\n${END}\n`
+  return `${START} — managed by lntt sync: edit the source, not this block -->\n${body}\n${END}\n`
 }
 
 // AGENTS.md sits next to `.agents/`, at the project root.
