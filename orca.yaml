@@ -6,6 +6,17 @@
 # "Local only", and this file is then ignored without a warning.
 #
 # setup:
+#   - the submodules, when the repository has any, first: a workspace package may live
+#     in one. `protocol.file.allow=always` is there on purpose, for this one command. A
+#     main checkout may override a submodule's URL with a path on disk
+#     (`submodule.<name>.url = /abs/path`, one SSH approval less per checkout), and
+#     worktrees share that config; git refuses the `file` transport by default
+#     (CVE-2022-39253), so without the flag every new worktree comes up without its
+#     submodules. The path allowed is the same person's main checkout, not a local
+#     path smuggled in by a cloned repository, which is what the default protects
+#     against. Without the override the URL stays SSH and the flag changes nothing.
+#     A failure does not stop the setup: git's error says why, and the line after it
+#     says the worktree has no submodules.
 #   - the dependencies. A new worktree has no node_modules, so tests, lint and the git
 #     hooks fail until they are installed. `pnpm install` also runs `prepare`, which
 #     points the shared git hooks at the main checkout's lefthook
@@ -15,6 +26,10 @@
 #     worktree, and only reports a name it cannot fix.
 scripts:
   setup: |
+    if [ -f .gitmodules ]; then
+      git -c protocol.file.allow=always submodule update --init \
+        || echo "setup: submodules not checked out (git's error above); this worktree starts without them" >&2
+    fi
     pnpm install --frozen-lockfile
     pnpm exec lntt branch rename
 # The agent starts on a worktree whose dependencies are in place.
