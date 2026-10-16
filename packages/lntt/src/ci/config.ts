@@ -1,4 +1,4 @@
-// The sections of .agents/config.* this package reads, through the configuration reader:
+// The sections of .agents/config.* that `lntt ci` reads, with `loadConfig`:
 // `ci.local` (without it: nothing cloud-only, no fake values, the built-in actions
 // only) and `delivery.candidate` (without it: no candidate).
 

@@ -1,3 +1,5 @@
+// The configuration commands of `lntt` (usage: bin/lntt.ts).
+
 import { execFileSync } from 'node:child_process'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import {
@@ -22,12 +24,12 @@ const USAGE = [
   '       lntt ci local|candidate [...]',
 ].join('\n')
 
-export function usage(): never {
+function usage(): never {
   stderr.write(`${USAGE}\n`)
   exit(2)
 }
 
-// The configuration commands; `lntt ci` is `./ci/cli.ts`.
+// `lntt <command> [...]`, every command but `ci` (./ci/cli.ts).
 export function main(args: string[]): void {
   const [command, key, raw] = args
   try {

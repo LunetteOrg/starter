@@ -1,3 +1,6 @@
+// `lntt ci`: the project's CI on the local machine, and its candidate automation
+// (usage: bin/lntt.ts).
+
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
