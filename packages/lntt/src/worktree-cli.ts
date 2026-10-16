@@ -22,7 +22,7 @@ import {
 } from './worktree.ts'
 
 const USAGE =
-  'usage: lntt worktree start --issue <n> [--issue <n>]... [--host orca|herdr|git] [--agent <id> | --no-agent] [--base <branch>]'
+  'usage: lntt worktree start --issue <n> [--issue <n>]... [--host orca|herdr|git] [--agent <id> | --no-agent] [--base <branch>] [--prompt <text>]'
 const HOSTS: WorktreeHost[] = ['orca', 'herdr', 'git']
 
 function usage(message?: string): never {
@@ -79,6 +79,7 @@ function start(args: string[]): void {
       agent: { type: 'string', default: 'claude' },
       'no-agent': { type: 'boolean', default: false },
       base: { type: 'string' },
+      prompt: { type: 'string' },
     },
   })
   const issues = values.issue ?? []
@@ -100,7 +101,7 @@ function start(args: string[]): void {
     if (!check.ok) throw new Error(`#${issue}: ${check.reason}`)
     const worktree =
       host === 'orca' ? 'the worktree this session starts in' : `${root}/.worktrees/${branch.replace(/\//g, '-')}`
-    const brief = renderBrief(undefined, { issue, title: data.title, branch, worktree })
+    const brief = values.prompt ?? renderBrief(undefined, { issue, title: data.title, branch, worktree })
     const job: Start = {
       issue,
       title: data.title,

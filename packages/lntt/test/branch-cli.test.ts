@@ -147,6 +147,14 @@ describe('lntt worktree start', () => {
     assert.match(r.stdout, /You are working on issue #77/)
   })
 
+  test('--prompt replaces the brief', () => {
+    stub('gh', ISSUE_77)
+    const r = lntt(['worktree', 'start', '--issue', '77', '--prompt', 'Just say hello'])
+    assert.equal(r.status, 0, r.stderr)
+    assert.match(r.stdout, /Just say hello/)
+    assert.doesNotMatch(r.stdout, /You are working on issue/)
+  })
+
   test('--host forces the adapter; an unknown one is a usage error', () => {
     assert.equal(lntt(['worktree', 'start', '--issue', '77', '--host', 'wave']).status, 2)
     assert.equal(lntt(['worktree', 'start']).status, 2)

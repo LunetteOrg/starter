@@ -98,6 +98,7 @@ lntt worktree start --issue 78                 # a worktree, its setup, an agent
 lntt worktree start --issue 78 --issue 85      # one each
 lntt worktree start --issue 78 --no-agent      # the worktree only; the brief is printed
 lntt worktree start --issue 78 --host git      # force the host
+lntt worktree start --issue 78 --prompt '…'    # a prompt of your own instead of the brief
 ```
 
 Per issue: the branch name from `lntt branch name`, a worktree on it, the setup

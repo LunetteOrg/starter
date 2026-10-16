@@ -27,12 +27,13 @@
 //                             tool gave it or, in Orca, from the linked issue; never fails
 //
 //   lntt worktree start --issue <n> [--issue <n>]... [--host orca|herdr|git]
-//                       [--agent <id> | --no-agent] [--base <branch>]
+//                       [--agent <id> | --no-agent] [--base <branch>] [--prompt <text>]
 //                             per issue: a worktree on its branch, the setup orca.yaml
 //                             declares, and an agent with the brief (agents/brief.md);
 //                             one JSON line each. The host is the innermost one the
 //                             session runs in (Herdr, Orca), else plain git, where the
-//                             brief is printed for the person to start the agent
+//                             brief is printed for the person to start the agent;
+//                             --prompt replaces the brief (a coordinator's own, a trial)
 //
 //   lntt ci local [--event pull_request|push] [--base <branch>] [--job <key>]...
 //                 [--list] [--strict] [--container]
