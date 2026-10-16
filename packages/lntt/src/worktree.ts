@@ -43,7 +43,8 @@ export interface Started {
   issue: number
   branch: string
   path: string | null
-  // How to reach the agent: Orca's terminal handle or dispatch id, Herdr's agent name.
+  // How to reach the agent: Orca's terminal handle or dispatch id, Herdr's agent name or
+  // pane.
   agent: string | null
 }
 
@@ -179,10 +180,10 @@ function startOrcaShell(start: Start, command: string, runner: Runner, setup: st
   return { host: 'orca', issue: start.issue, branch: start.branch, path, agent: handle }
 }
 
-// `worktree create --agent` takes no model or effort; Orca's supervised worker does,
-// on a worktree that already exists (orcaWorktree). It needs a Run bound to the calling terminal, created when
-// there is none; Orca wraps the brief in its own preamble and the agent reports
-// `worker_done` to the Run.
+// `worktree create --agent` takes no model or effort; Orca's supervised worker does, on
+// a worktree that already exists (orcaWorktree). It needs a Run bound to the calling
+// terminal, created when there is none; Orca wraps the brief in its own preamble and
+// the agent reports `worker_done` to the Run.
 function startOrcaWorker(start: Start, agent: Agent, runner: Runner, setup: string | null): Started {
   agentArgs(agent) // what the agent cannot take fails before anything is created
   const current = JSON.parse(runner.run('orca', ['orchestration', 'run-current', '--json']) || '{}')
@@ -259,32 +260,22 @@ export function startHerdr(start: Start, runner: Runner, setup: string | null): 
     '--no-focus',
   ])
   if (setup) runner.shell(setup, path)
-  let agent: string | null = null
-  const shell = start.agent ? shellLaunch(start.agent) : null
+  if (!start.agent) return { host: 'herdr', issue: start.issue, branch: start.branch, path, agent: null }
+  const pane = herdrPane(JSON.parse(reply || '{}'), runner)
+  if (!pane) throw new Error(`no pane found in the workspace herdr created: ${reply}`)
+  let agent: string
+  const shell = shellLaunch(start.agent)
   if (shell) {
-    const pane = herdrPane(JSON.parse(reply || '{}'), runner)
-    if (!pane) throw new Error(`no pane found in the workspace herdr created: ${reply}`)
     runner.run('herdr', ['pane', 'run', pane, shell])
     herdrAgentIn(pane, runner)
-    runner.run('herdr', ['agent', 'prompt', pane, start.brief])
     agent = pane
-  } else if (start.agent) {
-    const pane = herdrPane(JSON.parse(reply || '{}'), runner)
-    if (!pane) throw new Error(`no pane found in the workspace herdr created: ${reply}`)
+  } else {
     const extra = agentArgs(start.agent)
-    runner.run('herdr', [
-      'agent',
-      'start',
-      name,
-      '--kind',
-      start.agent.kind,
-      '--pane',
-      pane,
-      ...(extra.length ? ['--', ...extra] : []),
-    ])
-    runner.run('herdr', ['agent', 'prompt', name, start.brief])
+    const args = ['agent', 'start', name, '--kind', start.agent.kind, '--pane', pane]
+    runner.run('herdr', [...args, ...(extra.length ? ['--', ...extra] : [])])
     agent = name
   }
+  runner.run('herdr', ['agent', 'prompt', agent, start.brief])
   return { host: 'herdr', issue: start.issue, branch: start.branch, path, agent }
 }
 

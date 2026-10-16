@@ -14,7 +14,6 @@ import {
   type Runner,
   renderBrief,
   type Start,
-  type Started,
   setupScript,
   shellLaunch,
   startGit,
@@ -100,11 +99,13 @@ function start(args: string[]): void {
     ...(values.model ? { model: values.model } : {}),
     ...(values.effort ? { effort: values.effort } : {}),
   }
+  // Refused before anything is created: what the agent cannot take.
+  agentArgs(agent)
+  shellLaunch(agent)
   const root = mainCheckout()
   const base = values.base ?? configuredBase()
   const setup = setupScript(root)
   const ruleset = rules()
-  const results: Started[] = []
   for (const raw of issues) {
     const issue = Number(raw)
     const data = readIssue(issue)
@@ -123,18 +124,12 @@ function start(args: string[]): void {
       root,
       brief,
     }
-    // Refused before anything is created: what the agent cannot take.
-    if (job.agent) {
-      agentArgs(job.agent)
-      shellLaunch(job.agent)
-    }
     const started =
       host === 'orca'
         ? startOrca(job, runner, setup)
         : host === 'herdr'
           ? startHerdr(job, runner, setup)
           : startGit(job, runner, setup)
-    results.push(started)
     stdout.write(`${JSON.stringify(started)}\n`)
     // Nobody started an agent: the command and the brief are for the person who will.
     if (started.agent === null) {
