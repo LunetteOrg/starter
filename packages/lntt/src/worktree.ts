@@ -85,9 +85,7 @@ export function setupScript(root: string): string | null {
 // dropping it would launch a different agent than the one asked for.
 export function agentArgs(agent: Agent): string[] {
   if (agent.kind === 'opencode' && agent.model) {
-    throw new Error(
-      'opencode takes no model on its interactive command line: set it in its configuration, or start it from Orca',
-    )
+    throw new Error('opencode takes no model when its interface starts: set the model in its configuration')
   }
   const args = agent.model ? ['--model', agent.model] : []
   if (!agent.effort) return args
