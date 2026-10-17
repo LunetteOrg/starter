@@ -70,7 +70,7 @@ would nest git worktrees inside one the host does not track.
 children not yet approved and creates nothing until the answer is `approve`, `approved`,
 `yes` or `ok`, with at most a final `.` or `!`. Approvals are kept per theme in the shared mailbox directory
 (`approved-<theme>.txt`), written by `--approve` at the coordinator's start and by an
-approving answer. No flag of `lntt` approves a child for the coordinator.
+approving answer; the file may be edited by hand, one issue number per line. No flag of `lntt` approves a child for the coordinator.
 
 ### The model per role
 
@@ -90,7 +90,7 @@ host, with no messaging command of Orca or Herdr:
 <git common dir>/lntt-messages/to-<role>/<YYYYMMDD-HHMMSS>-<topic>.answer.md    the answer
 ```
 
-- `<topic>` is `--topic`, else the first words of the question, else `message`.
+- `<topic>` is `--topic`, else the first line of the question slugged and cut to 40 characters, else `message`.
 - `<role>` is `orchestrator`, `coordinator` or `child`. Several coordinators and children
   share one repository, so a coordinator is addressed by its theme
   (`to-coordinator-<theme>`, `--theme`) and a child by its issue (`to-child-<issue>`,
@@ -128,11 +128,13 @@ that `@lntt/lntt` ships; no placeholder, dotfile, provenance field or rewrite of
 
 ### Negative / accepted risks
 
-- Polling every 20 seconds (the default) means an answer takes up to 20 seconds to be seen, and a blocked
+- Polling at the default interval means an answer takes up to 20 seconds to be seen, and a blocked
   `ask` holds its terminal.
 - The gate stops a coordinator that follows `lntt`. A coordinator that calls `orca` or `git`
   directly, or writes into the mailbox directory (an answer to its own proposal, the approved
   file), bypasses it. The brief tells it not to.
+- Two approvals of one theme written at the same moment can drop one: the file is renamed
+  into place whole but not locked. The orchestrator answers one proposal at a time.
 - Herdr and git show no lineage; the theme's structure there is the mailbox and the briefs.
 - The opt-in keyword lives in `workflow.md`, one file a coordinator has no reason to read.
 

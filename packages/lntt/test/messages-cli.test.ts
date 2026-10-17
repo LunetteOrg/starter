@@ -23,7 +23,7 @@ let worktree: string
 
 function clean(): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(process.env).filter(([k]) => !/^(ORCA_|HERDR_|TERM_PROGRAM|LNTT_)/.test(k)),
+    Object.entries(process.env).filter(([k]) => !/^(ORCA_|HERDR_|TERM_PROGRAM|LNTT_|GIT_)/.test(k)),
   ) as Record<string, string>
 }
 

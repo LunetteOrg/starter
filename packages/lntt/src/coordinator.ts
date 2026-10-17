@@ -63,7 +63,10 @@ export function isApproval(answer: string): boolean {
 // The children a person approved for a theme, kept next to the mailbox they were
 // approved through. No lntt command lets a coordinator add to it; one that writes the
 // file itself is outside what the gate can stop (docs/adr/coordinator-mode.md).
-const approvedFile = (root: string, theme: string) => join(root, `approved-${theme}.txt`)
+const approvedFile = (root: string, theme: string) => {
+  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(theme)) throw new Error(`the theme ${theme} is not a slug`)
+  return join(root, `approved-${theme}.txt`)
+}
 
 export function approvals(root: string, theme: string): Set<number> {
   const file = approvedFile(root, theme)

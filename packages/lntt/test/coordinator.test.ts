@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -84,6 +84,7 @@ describe('the gate', () => {
       'approved #89 only',
       'yes.!',
       'ok!!!',
+      'ok .',
     ])
       assert.ok(!isApproval(no), no)
   })
@@ -101,6 +102,19 @@ describe('the approved issues', () => {
     assert.deepEqual(readdirSync(dir), ['approved-alpha.txt'])
     writeFileSync(join(dir, 'approved-beta.txt'), '5\r\n6\r\n')
     assert.deepEqual([...approvals(dir, 'beta')], [5, 6])
+  })
+
+  test('a failed write leaves the list as it was and no temporary file', () => {
+    approve(dir, 'alpha', [89])
+    // The target cannot be replaced: renaming a file over a directory fails.
+    mkdirSync(join(dir, 'approved-gamma.txt'))
+    assert.throws(() => approve(dir, 'gamma', [1]))
+    assert.deepEqual(readdirSync(dir).sort(), ['approved-alpha.txt', 'approved-gamma.txt'])
+    assert.deepEqual([...approvals(dir, 'alpha')], [89])
+  })
+
+  test('a theme that is not a slug is refused', () => {
+    assert.throws(() => approve(dir, '../x', [1]), /not a slug/)
   })
 
   test('skip lines that are not issue numbers', () => {

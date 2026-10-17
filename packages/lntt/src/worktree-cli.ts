@@ -142,7 +142,7 @@ function passTheGate(config: Config, theme: string, jobs: Start[], size: string 
   const sent = send(
     box,
     'orchestrator',
-    `Coordinator ${theme} proposes to start${size ? ` (size ${size})` : ''}:\n${list}\nAnswer "approve" to start; anything else declines.`,
+    `Coordinator ${theme} proposes to start${size ? ` (size ${size})` : ''}:\n${list}\nAnswer "approve" (or "yes", "ok") alone to start; anything else declines.`,
     {
       topic: `start-${issues.join('-')}`,
     },
