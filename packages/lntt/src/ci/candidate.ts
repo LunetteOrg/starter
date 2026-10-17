@@ -672,7 +672,7 @@ interface BoardItem {
   project: { id: string; title: string; field?: { id?: string; options?: Array<{ id: string; name: string }> } | null }
 }
 
-const NOT_PERMITTED = /not accessible by integration|forbidden|insufficient|required scope|has not been granted/i
+const NOT_PERMITTED = /resource not accessible|forbidden|insufficient|required scope|has not been granted/i
 
 // Moves each issue to `status` on every Project it is on that has that status. What
 // cannot be moved is told in a `::notice` and returned in `skipped`; only a failure
@@ -722,7 +722,7 @@ export function setBoardStatus(run: Run, issues: number[], status: string) {
       const option = field.options?.find((o) => o.name.toLowerCase() === status.toLowerCase())
       if (!option) {
         log(
-          `::notice title=Board not moved::"${status}" is not an option of the Status field of project "${node.project.title}": #${number} is not moved. Add it from the project's web UI (field menu, edit), never with updateProjectV2Field, which resets every item's status (the issues skill, "Changing a field's options").`,
+          `::notice title=Board not moved::"${status}" is not an option of the Status field of project "${node.project.title}" (${(field.options ?? []).map((o) => o.name).join(', ')}): #${number} is not moved. Check delivery.candidate.status, or add it from the project's web UI (field menu, edit), never with updateProjectV2Field, which resets every item's status (the issues skill, "Changing a field's options").`,
         )
         continue
       }
@@ -755,6 +755,8 @@ export function setBoardStatus(run: Run, issues: number[], status: string) {
       log(
         `::notice title=Board not moved::the token lacks the Projects permission, #${number} stays on its status instead of "${status}": ${message.split('\n')[0]}`,
       )
+      const at = moved.indexOf(number)
+      if (at !== -1) moved.splice(at, 1)
       if (!skipped.includes(number)) skipped.push(number)
     }
   })

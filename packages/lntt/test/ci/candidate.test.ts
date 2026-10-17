@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import {
   announce,
@@ -18,6 +21,7 @@ import {
   isCandidateMerge,
   isHotfix,
   issueNumber,
+  makeGh,
   nextCandidateNumber,
   orphanCandidate,
   type PullRequest,
@@ -740,6 +744,28 @@ describe('setBoardStatus', () => {
     assert.throws(() => setBoardStatus({ ...run(fakeGh({})), board }, [69], 'In release'), /#69: API rate limit/)
   })
 
+  test('a refusal after a first project was written leaves the issue skipped, not moved', () => {
+    let writes = 0
+    const base = fakeGh(items(item('i1'), item('i2')))
+    const board: Gh = {
+      read: base.read,
+      write: (args) => {
+        if (++writes === 2) throw new Error('Resource not accessible by personal access token')
+        return base.write(args)
+      },
+    }
+    const { moved, skipped } = setBoardStatus({ ...run(fakeGh({})), board }, [69], 'In release')
+    assert.deepEqual(moved, [])
+    assert.deepEqual(skipped, [69])
+  })
+
+  test('the notice for a missing option lists the options the project has', () => {
+    const out = notices()
+    const board = fakeGh(items(item('i1', { options: ['Todo', 'Done'] })))
+    setBoardStatus({ ...run(fakeGh({})), board, log: out.log }, [69], 'Dne')
+    assert.match(out.lines.join('\n'), /\(Todo, Done\).*delivery\.candidate\.status/s)
+  })
+
   test('any other failure fails the step', () => {
     const board: Gh = {
       read: () => {
@@ -840,6 +866,47 @@ describe('the board follows the candidate', () => {
       gh.writes.map((w) => w.args),
       ['issue close 69 --repo o/r --reason completed'],
     )
+  })
+})
+
+describe('makeGh', () => {
+  // A gh on the PATH that answers from the environment.
+  function withFakeGh(script: string, body: () => void) {
+    const dir = mkdtempSync(join(tmpdir(), 'fake-gh-'))
+    const bin = join(dir, 'gh')
+    writeFileSync(bin, `#!/bin/sh\n${script}\n`)
+    chmodSync(bin, 0o755)
+    const before = process.env.PATH
+    process.env.PATH = `${dir}:${before}`
+    try {
+      body()
+    } finally {
+      process.env.PATH = before
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+
+  test('a failing gh puts its stderr in the error, which is what NOT_PERMITTED reads', () => {
+    withFakeGh('echo "Resource not accessible by personal access token" >&2; exit 1', () => {
+      assert.throws(
+        () => makeGh({ dryRun: false, log: silent }).read(['api', 'graphql']),
+        /Command failed: gh api graphql: Resource not accessible by personal access token/,
+      )
+    })
+  })
+
+  test('the token reaches gh as GH_TOKEN, and stdout comes back trimmed', () => {
+    withFakeGh('echo "$GH_TOKEN"', () => {
+      assert.equal(makeGh({ dryRun: false, log: silent, token: 'tok' }).read(['x']), 'tok')
+    })
+  })
+
+  test('a dry run writes nothing', () => {
+    withFakeGh('exit 1', () => {
+      const lines: string[] = []
+      makeGh({ dryRun: true, log: (l) => lines.push(l) }).write(['issue', 'close', '1'])
+      assert.match(lines[0] ?? '', /\[dry-run\] gh issue close 1/)
+    })
   })
 })
 
