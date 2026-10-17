@@ -37,12 +37,13 @@
       "prefix": "candidate/",
       "hotfix": { "prefix": "hotfix/", "label": "hotfix" }
     },
-    // Who reviews before a pull request is marked ready (lntt review): each lens on
-    // agents of more than one provider, so a blind spot of one model is not the
-    // review's; the verifiers try to refute every blocker and warning.
+    // Who reviews before a pull request is marked ready (lntt review): the code lens
+    // and the verifiers on more than one provider, so a blind spot of one model is
+    // not the review's; the verifiers try to refute every blocker and warning.
     "review": {
       "reviewers": {
-        "decisions": { "with": [{ "kind": "claude", "model": "haiku" }] },
+        // sonnet until lntt check decisions does the structural checks (#110)
+        "decisions": { "with": [{ "kind": "claude", "model": "sonnet" }] },
         "code": {
           "with": [
             { "kind": "claude", "model": "sonnet" },
