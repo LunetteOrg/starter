@@ -19,6 +19,12 @@ lntt review --base <branch>       # a pull request stacked on another branch
 lntt review --plan                # the range, the lenses and the agents; runs nothing
 ```
 
+A round takes minutes. stderr says what runs: a line when each reviewer or verifier
+starts and ends, the ones still running every 30 seconds, and `round N done` at the
+end. Run it in the background when your harness can, and wake only on the lines that
+need you: watch for `lntt review: (failed|round [0-9]+ done)`, not every line; the
+rest is for the person at the terminal.
+
 stdout is JSON: `findings` (what to act on: `confirmed`, `undecided`, `unverified`),
 `refuted` (with the verifiers' proofs; nothing to do), `failed` (a reviewer that did
 not answer). Exit 0: a clean round. Exit 1: findings or a failure.

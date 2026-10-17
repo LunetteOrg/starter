@@ -126,4 +126,25 @@ describe('several agents at once', () => {
       { ok: true, reply: { text: 're C', session: 'C', cost: null } },
     ])
   })
+
+  test('reports each start and end, with the label and the time it took', async () => {
+    const events: string[] = []
+    const spawn: Spawn = (inv) =>
+      inv.stdin === 'B'
+        ? Promise.reject(new Error('exited 1'))
+        : Promise.resolve(JSON.stringify({ result: 'r', session_id: 's', is_error: false, total_cost_usd: 0.5 }))
+    await askAll(
+      [
+        { agent: { kind: 'claude' }, prompt: 'A', label: 'code · claude' },
+        { agent: { kind: 'claude' }, prompt: 'B', label: 'tests · claude' },
+      ],
+      spawn,
+      (event) =>
+        events.push(
+          `${event.label} ${event.type}${event.type === 'end' ? ` ${event.answer.ok} ${typeof event.ms}` : ''}`,
+        ),
+    )
+    assert.deepEqual(events.slice(0, 2), ['code · claude start', 'tests · claude start'])
+    assert.deepEqual(events.slice(2).sort(), ['code · claude end true number', 'tests · claude end false number'])
+  })
 })

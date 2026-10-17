@@ -25,6 +25,8 @@ export interface Question {
   prompt: string
   // A session to resume: the same reviewer, answering the author.
   session?: string
+  // How progress names it: `code · claude sonnet`.
+  label?: string
 }
 
 export type Answer = { ok: true; reply: Reply } | { ok: false; error: string }
@@ -101,16 +103,30 @@ export function parseReply(kind: string, stdout: string): Reply {
   return { text, session: events.find((e) => e.sessionID)?.sessionID ?? null, cost: null }
 }
 
-// Every question starts at once; each answer stays in its question's place.
-export async function askAll(questions: Question[], spawn: Spawn): Promise<Answer[]> {
-  return Promise.all(
-    questions.map(async (q): Promise<Answer> => {
+export type Progress = { type: 'start'; label: string } | { type: 'end'; label: string; answer: Answer; ms: number }
+
+// Every question starts at once; each answer stays in its question's place. Progress
+// hears each start, then each end as it comes.
+export async function askAll(
+  questions: Question[],
+  spawn: Spawn,
+  progress: (event: Progress) => void = () => {},
+): Promise<Answer[]> {
+  const runs = questions.map((q) => {
+    const label = q.label ?? q.agent.kind
+    const started = Date.now()
+    progress({ type: 'start', label })
+    return (async (): Promise<Answer> => {
+      let answer: Answer
       try {
         const stdout = await spawn(headlessInvocation(q.agent, q.prompt, q.session))
-        return { ok: true, reply: parseReply(q.agent.kind, stdout) }
+        answer = { ok: true, reply: parseReply(q.agent.kind, stdout) }
       } catch (error) {
-        return { ok: false, error: (error as Error).message }
+        answer = { ok: false, error: (error as Error).message }
       }
-    }),
-  )
+      progress({ type: 'end', label, answer, ms: Date.now() - started })
+      return answer
+    })()
+  })
+  return Promise.all(runs)
 }

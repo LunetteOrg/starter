@@ -282,17 +282,20 @@ describe('a round', () => {
   function asker(answers: (prompt: string, kind: string, model?: string) => string | Error): {
     ask: Ask
     asked: string[]
+    labels: string[]
   } {
     const asked: string[] = []
+    const labels: string[] = []
     const ask: Ask = async (jobs) =>
       jobs.map((job) => {
         asked.push(`${agentLabel(job.agent)}${job.session ? ` resumes ${job.session}` : ''}`)
+        labels.push(job.label ?? '')
         const answer = answers(job.prompt, job.agent.kind, job.agent.model)
         return answer instanceof Error
           ? { ok: false as const, error: answer.message }
           : { ok: true as const, reply: { text: answer, session: `s-${job.agent.model}`, cost: 0.01 } }
       })
-    return { ask, asked }
+    return { ask, asked, labels }
   }
 
   const config = reviewConfig({
@@ -327,7 +330,7 @@ describe('a round', () => {
   }
 
   test('reviewers in parallel, then each blocker or warning verified by the others, notes left unverified', async () => {
-    const { ask, asked } = asker((prompt, _kind, model) => {
+    const { ask, asked, labels } = asker((prompt, _kind, model) => {
       if (prompt.includes('Lens: decisions')) return 'no findings'
       if (prompt.includes('Lens: code') && model === 'sonnet')
         return '- [blocker] a.ts:1 — breaks — fix\n- [note] a.ts:5 — wording — reword'
@@ -337,6 +340,12 @@ describe('a round', () => {
     const result = await runRound(config, input, ask)
     assert.deepEqual(asked.slice(0, 3), ['claude haiku', 'claude sonnet', 'claude opus'])
     assert.deepEqual(asked.slice(3), ['claude opus'], 'the finder does not verify its own finding')
+    assert.deepEqual(labels, [
+      'decisions · claude haiku',
+      'code · claude sonnet',
+      'code · claude opus',
+      'verify f1 · claude opus',
+    ])
     assert.deepEqual(
       result.findings.map((f) => [f.id, f.severity, f.verdict]),
       [

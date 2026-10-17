@@ -360,7 +360,9 @@ export async function runRound(
     const prompt = renderReviewPrompt(lens, values, brief)
     for (const agent of def.with) jobs.push({ lens, agent, prompt })
   }
-  const answers = await ask(jobs.map(({ agent, prompt }) => ({ agent, prompt })))
+  const answers = await ask(
+    jobs.map(({ lens, agent, prompt }) => ({ agent, prompt, label: `${lens} · ${agentLabel(agent)}` })),
+  )
   const reviewed: Reviewed[] = []
   answers.forEach((answer, i) => {
     const job = jobs[i] as (typeof jobs)[number]
@@ -385,7 +387,13 @@ export async function runRound(
     }
   })
   const verdicts = await (checks.length > 0
-    ? ask(checks.map((c) => ({ agent: c.agent, prompt: renderVerifyPrompt(found[c.finding] as Found, values) })))
+    ? ask(
+        checks.map((c) => ({
+          agent: c.agent,
+          prompt: renderVerifyPrompt(found[c.finding] as Found, values),
+          label: `verify ${(found[c.finding] as Found).id} · ${agentLabel(c.agent)}`,
+        })),
+      )
     : Promise.resolve([]))
   const proofs: Proof[][] = found.map(() => [])
   verdicts.forEach((answer, i) => {

@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { ConfigError } from './files.ts'
-import { askAll, headlessInvocation, type Invocation, type Spawn } from './headless.ts'
+import { askAll, headlessInvocation, type Invocation, type Progress, type Spawn } from './headless.ts'
 import { loadConfig } from './index.ts'
 import {
   agentLabel,
@@ -81,6 +81,41 @@ function checkAgents(agents: Agent[]): void {
   for (const agent of agents) {
     headlessInvocation(agent, '')
     if (!commandExists(agent.kind)) throw new Error(`${agentLabel(agent)}: ${agent.kind} is not on the PATH`)
+  }
+}
+
+function duration(ms: number): string {
+  const s = Math.round(ms / 1000)
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`
+}
+
+// One stderr line per start and end, and every 30 seconds the ones still running, for a
+// person at the terminal. A watcher that should wake only when it matters (the review
+// skill's) filters `failed` and `round N done`: every other line is routine.
+function reporter(): { progress: (event: Progress) => void; stop: () => void } {
+  const running = new Map<string, number>()
+  const since = Date.now()
+  const timer = setInterval(() => {
+    if (running.size === 0) return
+    const labels = [...running.keys()].join(', ')
+    stderr.write(`lntt review: running ${running.size} (${duration(Date.now() - since)}): ${labels}\n`)
+  }, 30_000)
+  return {
+    progress(event) {
+      if (event.type === 'start') {
+        running.set(event.label, Date.now())
+        stderr.write(`lntt review: start ${event.label}\n`)
+        return
+      }
+      running.delete(event.label)
+      const took = duration(event.ms)
+      if (!event.answer.ok) stderr.write(`lntt review: failed ${event.label} in ${took}: ${event.answer.error}\n`)
+      else {
+        const cost = event.answer.reply.cost === null ? '' : ` (${event.answer.reply.cost.toFixed(3)} $)`
+        stderr.write(`lntt review: done ${event.label} in ${took}${cost}\n`)
+      }
+    },
+    stop: () => clearInterval(timer),
   }
 }
 
@@ -170,6 +205,8 @@ async function round(args: string[]): Promise<number> {
   if (values.plan) return 0
 
   const open = state?.branch === branch ? state.result.findings : []
+  const report = reporter()
+  const began = Date.now()
   const result = await runRound(
     config,
     {
@@ -180,7 +217,7 @@ async function round(args: string[]): Promise<number> {
       records: records(data),
       range,
     },
-    (questions) => askAll(questions, spawner(config.timeoutMinutes)),
+    (questions) => askAll(questions, spawner(config.timeoutMinutes), report.progress),
     open,
   )
   // An empty delta keeps the last round's number: nothing new was read.
@@ -191,6 +228,11 @@ async function round(args: string[]): Promise<number> {
     result,
   }
   writeFileSync(statePath(), `${JSON.stringify(saved, null, 2)}\n`)
+  report.stop()
+  const cost = result.cost === null ? '' : `, ${result.cost.toFixed(3)} $`
+  stderr.write(
+    `lntt review: round ${saved.round} done in ${duration(Date.now() - began)}: ${result.findings.length} findings, ${result.refuted.length} refuted, ${result.failed.length} failed${cost}\n`,
+  )
   stdout.write(`${JSON.stringify(result, null, 2)}\n`)
   return roundClean(result) ? 0 : 1
 }
@@ -206,6 +248,7 @@ async function reply(args: string[]): Promise<number> {
   const config: ReviewConfig = reviewConfig(loaded())
   const known = new Map<string, Agent>()
   for (const lens of Object.values(config.reviewers)) for (const a of lens.with) known.set(agentLabel(a), a)
+  const report = reporter()
   const finders = finding.foundBy.filter((b) => b.session && known.has(b.agent))
   if (finders.length === 0) throw new Error(`${id}: none of its reviewers can be resumed`)
   const answers = await askAll(
@@ -213,9 +256,12 @@ async function reply(args: string[]): Promise<number> {
       agent: known.get(b.agent) as Agent,
       prompt: renderReplyPrompt(finding, words.join(' ')),
       session: b.session as string,
+      label: `reply ${id} · ${b.agent}`,
     })),
     spawner(config.timeoutMinutes),
+    report.progress,
   )
+  report.stop()
   const replies = answers.map((a, i) => ({
     agent: finders[i]?.agent,
     ...(a.ok ? parseWithdrawal(a.reply.text) : { withdrawn: false, reason: a.error }),
