@@ -223,7 +223,7 @@ describe('lntt check tests rules', () => {
     project('defects')
     writeFileSync(
       join(repo, 'docs/adr/test.md'),
-      '# Tests\n\n## 3. No module mocks\n\n## Waits\n\n## Waits\n\n```\n# Not a heading\n```\n\n## After a fence\n\n~~~\n# Tilde\n```\n# Mixed\n~~~\n\n````\n```\n# Long\n```js\n# Info\n````\n\n## A [link heading](http://x) ##\n\n## no_module_mocks\n\n## Before an open fence\n\n```\n# Never closed\n',
+      '# Tests\n\n## 3. No module mocks\n\n## Waits\n\n## Waits\n\n```\n# Not a heading\n```\n\n## After a fence\n\n~~~\n# Tilde\n```\n# Mixed\n~~~\n\n````\n```\n# Long\n```js\n# Info\n````\n\n## A [link heading](http://x) ##\n\n## no_module_mocks\n\n  ## Indented\n\n```code``` is a paragraph\n\n## After a paragraph\n\n  ```\n# Indented fence\n  ```\n\n  ````\n  ```\n# Closes only on a long enough run\n  ```js\n# Info\n  ````\n\n## Last\n\n## Before an open fence\n\n```\n# Never closed\n',
     )
     const anchors: Record<string, boolean> = {
       'docs/adr/test.md': true,
@@ -238,6 +238,11 @@ describe('lntt check tests rules', () => {
       'docs/adr/test.md#info': false,
       'docs/adr/test.md#before-an-open-fence': true,
       'docs/adr/test.md#never-closed': false,
+      'docs/adr/test.md#indented': true,
+      'docs/adr/test.md#after-a-paragraph': true,
+      'docs/adr/test.md#indented-fence': false,
+      'docs/adr/test.md#closes-only-on-a-long-enough-run': false,
+      'docs/adr/test.md#last': true,
       'docs/adr/test.md#waits#1': false,
       'docs/adr/test.md#a-link-heading': true,
       'docs/adr/test.md#waits-2': false,

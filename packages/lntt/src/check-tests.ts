@@ -345,7 +345,7 @@ export function recordMissing(root: string, anchor: string): string | null {
     // CommonMark: a fence opens on a run of three or more ` or ~ and closes on a bare
     // run of the same character at least as long.
     if (fence === null) {
-      const open = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1]
+      const open = /^ {0,3}(`{3,}(?!.*`)|~{3,})/.exec(line)?.[1]
       if (open) {
         fence = open
         continue
@@ -355,10 +355,10 @@ export function recordMissing(root: string, anchor: string): string | null {
       if (close && close[0] === fence[0] && close.length >= fence.length) fence = null
       continue
     }
-    if (fence !== null || !/^#{1,6}\s/.test(line)) continue
+    if (fence !== null || !/^ {0,3}#{1,6}(?:\s|$)/.test(line)) continue
     const base = slug(
       line
-        .replace(/^#{1,6}\s+/, '')
+        .replace(/^ {0,3}#{1,6}\s*/, '')
         .replace(/\s+#+\s*$/, '')
         .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'),
     )

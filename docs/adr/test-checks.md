@@ -85,7 +85,8 @@ reason, and sits at the lowest level where its assertion can.
 - A mutation is proposed in a line whose text and mutated text hold no
   backtick: the reviewer reports other lines as notes.
 - An interrupted run (SIGINT, SIGTERM) leaves its scratch worktree registered under the
-  system's temp folder. The working tree is untouched.
+  system's temp folder; the working tree is untouched, and `git worktree prune` once
+  the `lntt-mutate-*` folder is removed clears the registration.
 - A mutation run costs the tests of the files that import the changed file. A timeout
   stops the shell that runs the command; a process it started may outlive it.
 - Each scratch worktree copies the links of `node_modules`; a project whose tests need
