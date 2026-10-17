@@ -29,7 +29,7 @@
 // Adapted from DiscenTech/pelion `scripts/ci/release-candidate.mjs`; the branch
 // prefix, base and hotfix markers come from the configuration.
 
-import { execFileSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 
 export interface CandidateConfig {
   // The branch candidates merge into (main).
@@ -39,6 +39,9 @@ export interface CandidateConfig {
   // A pull request whose branch starts with `prefix` or that carries `label` stays on
   // the base.
   hotfix: { prefix: string; label: string }
+  // The board statuses the automation sets: `inRelease` when a pull request is squashed
+  // into a candidate, `done` when the candidate merges.
+  status: { inRelease: string; done: string }
 }
 
 export interface PullRequest {
@@ -326,13 +329,22 @@ export function candidateClosingReferences(body: string | null | undefined): str
 // --- I/O ------------------------------------------------------------------------
 
 export function makeGh({ dryRun, log, token }: { dryRun: boolean; log: (line: string) => void; token?: string }): Gh {
-  const run = (args: string[], input?: string) =>
-    execFileSync('gh', args, {
+  // gh's own refusal text (a token without a permission) is in stderr, so it goes into
+  // the error: callers tell a refused token from a broken connection by it.
+  const run = (args: string[], input?: string) => {
+    const result = spawnSync('gh', args, {
       encoding: 'utf8',
       input,
-      stdio: ['pipe', 'pipe', 'inherit'],
       ...(token ? { env: { ...process.env, GH_TOKEN: token } } : {}),
-    }).trim()
+    })
+    if (result.stderr) process.stderr.write(result.stderr)
+    if (result.error) throw result.error
+    if (result.status !== 0) {
+      const detail = result.stderr.trim()
+      throw new Error(`Command failed: gh ${args.slice(0, 2).join(' ')}${detail ? `: ${detail}` : ''}`)
+    }
+    return result.stdout.trim()
+  }
   return {
     read: (args) => run(args),
     write: (args, input) => {
@@ -344,6 +356,14 @@ export function makeGh({ dryRun, log, token }: { dryRun: boolean; log: (line: st
       return run(args, input)
     },
   }
+}
+
+// The client for the board: the Projects token when the workflow has one, none inside
+// a workflow without it (the board is left as it is, with a notice), the operator's own
+// client in a terminal.
+export function pickBoard<T>(token: string | undefined, inWorkflow: boolean, own: T, withToken: (t: string) => T) {
+  if (token) return withToken(token)
+  return inWorkflow ? undefined : own
 }
 
 interface CandidatePr {
@@ -622,13 +642,10 @@ function failIfAny(failed: string[], what: string) {
 
 // --- The board ------------------------------------------------------------------
 
-export const IN_RELEASE = 'In release'
-export const DONE = 'Done'
-
 const BOARD_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     issue(number: $number) {
-      projectItems(first: 20) {
+      projectItems(first: 50) {
         nodes {
           id
           fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { optionId } }
@@ -655,7 +672,7 @@ interface BoardItem {
   project: { id: string; title: string; field?: { id?: string; options?: Array<{ id: string; name: string }> } | null }
 }
 
-const NOT_PERMITTED = /not accessible by integration|forbidden|insufficient|required scope|permission/i
+const NOT_PERMITTED = /not accessible by integration|forbidden|insufficient|required scope|has not been granted/i
 
 // Moves each issue to `status` on every Project it is on that has that status. What
 // cannot be moved is told in a `::notice` and returned in `skipped`; only a failure
@@ -672,39 +689,28 @@ export function setBoardStatus(run: Run, issues: number[], status: string) {
     return { moved, skipped: [...issues] }
   }
   const [owner, name] = repo.split('/')
-  const failed = eachIssue(issues, (number) => {
-    let nodes: BoardItem[]
-    try {
-      const out = JSON.parse(
-        board.read([
-          'api',
-          'graphql',
-          '-f',
-          `query=${BOARD_QUERY}`,
-          '-f',
-          `owner=${owner}`,
-          '-f',
-          `name=${name}`,
-          '-F',
-          `number=${number}`,
-        ]),
-      ) as { data: { repository: { issue: { projectItems: { nodes: BoardItem[] } } } } }
-      nodes = out.data.repository.issue.projectItems.nodes
-    } catch (error) {
-      const message = (error as Error).message
-      if (!NOT_PERMITTED.test(message)) throw error
-      log(
-        `::notice title=Board not moved::the token lacks the Projects permission, #${number} stays on its status instead of "${status}": ${message.split('\n')[0]}`,
-      )
-      skipped.push(number)
-      return
-    }
+  const moveOne = (number: number) => {
+    const out = JSON.parse(
+      board.read([
+        'api',
+        'graphql',
+        '-f',
+        `query=${BOARD_QUERY}`,
+        '-f',
+        `owner=${owner}`,
+        '-f',
+        `name=${name}`,
+        '-F',
+        `number=${number}`,
+      ]),
+    ) as { data: { repository: { issue: { projectItems: { nodes: BoardItem[] } } } } }
+    const nodes = out.data.repository.issue.projectItems.nodes
     if (nodes.length === 0) {
       log(`::notice title=Board not moved::#${number} is on no project: nothing to move to "${status}".`)
       skipped.push(number)
       return
     }
-    let done = false
+    let found = false
     for (const node of nodes) {
       const field = node.project.field
       if (!field?.id) {
@@ -720,7 +726,7 @@ export function setBoardStatus(run: Run, issues: number[], status: string) {
         )
         continue
       }
-      done = true
+      found = true
       if (node.fieldValueByName?.optionId === option.id) continue
       board.write([
         'api',
@@ -738,7 +744,19 @@ export function setBoardStatus(run: Run, issues: number[], status: string) {
       ])
       if (!moved.includes(number)) moved.push(number)
     }
-    if (!done) skipped.push(number)
+    if (!found) skipped.push(number)
+  }
+  const failed = eachIssue(issues, (number) => {
+    try {
+      moveOne(number)
+    } catch (error) {
+      const message = (error as Error).message
+      if (!NOT_PERMITTED.test(message)) throw error
+      log(
+        `::notice title=Board not moved::the token lacks the Projects permission, #${number} stays on its status instead of "${status}": ${message.split('\n')[0]}`,
+      )
+      if (!skipped.includes(number)) skipped.push(number)
+    }
   })
   log(`candidate: board "${status}": moved ${list(moved)}; skipped ${list(skipped)}.`)
   failIfAny(failed, `issues not moved to "${status}"`)
@@ -761,20 +779,27 @@ export function closeCandidateIssues(run: Run, pr: PullRequest) {
   const unclosed = eachIssue(decision.close, (number) =>
     run.gh.write(['issue', 'close', String(number), '--repo', run.repo, '--reason', 'completed']),
   )
-  const unmoved: string[] = []
+  // The issues closed before the merge count too: one closed by hand after reaching
+  // `In release` has nothing else to move it to `Done`.
+  const errors: string[] = []
   try {
-    setBoardStatus(run, [...decision.close, ...decision.alreadyClosed], DONE)
+    failIfAny([...unread, ...unclosed], `issues not closed by the merge of ${pr.headRef}`)
   } catch (error) {
-    unmoved.push((error as Error).message)
+    errors.push((error as Error).message)
   }
-  failIfAny([...unread, ...unclosed, ...unmoved], `issues not closed by the merge of ${pr.headRef}`)
+  try {
+    setBoardStatus(run, [...decision.close, ...decision.alreadyClosed], run.config.status.done)
+  } catch (error) {
+    errors.push((error as Error).message)
+  }
+  if (errors.length > 0) throw new Error(errors.join('; '))
   return decision
 }
 
 // Tells each open issue that `prs` close that the candidate's merge will close it, once
 // per issue and candidate: a comment carrying the candidate's marker is not written
 // again.
-export function announce(run: Run, candidate: CandidatePr, prs: Array<{ body: string }>) {
+function announceIssues(run: Run, candidate: CandidatePr, prs: Array<{ body: string }>) {
   const numbers = localIssues(
     run,
     prs.flatMap((pr) => closingReferences(pr.body)),
@@ -795,6 +820,11 @@ export function announce(run: Run, candidate: CandidatePr, prs: Array<{ body: st
   run.log(
     `candidate: announcing ${candidate.headRefName} (#${candidate.number}) on ${list(announced)}, of ${list(numbers)}.`,
   )
+  return { announced, open, failed }
+}
+
+export function announce(run: Run, candidate: CandidatePr, prs: Array<{ body: string }>) {
+  const { announced, open, failed } = announceIssues(run, candidate, prs)
   failIfAny(failed, `issues without the announcement of ${candidate.headRefName}`)
   return { announced, open }
 }
@@ -863,8 +893,21 @@ export function record(run: Run, pr: PullRequest) {
   } else {
     log(`candidate: #${pr.number} is already in #${candidate.number}.`)
   }
-  const { open } = announce(run, { number: candidate.number, headRefName: pr.baseRef }, all)
-  setBoardStatus(run, open, IN_RELEASE)
+  // The board moves for the issues announced or not, and a failing comment is reported
+  // after it: the next run finds both done.
+  const { open, failed } = announceIssues(run, { number: candidate.number, headRefName: pr.baseRef }, all)
+  const errors: string[] = []
+  try {
+    failIfAny(failed, `issues without the announcement of ${pr.baseRef}`)
+  } catch (error) {
+    errors.push((error as Error).message)
+  }
+  try {
+    setBoardStatus(run, open, config.status.inRelease)
+  } catch (error) {
+    errors.push((error as Error).message)
+  }
+  if (errors.length > 0) throw new Error(errors.join('; '))
   return { recorded }
 }
 

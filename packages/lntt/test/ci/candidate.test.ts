@@ -21,6 +21,7 @@ import {
   nextCandidateNumber,
   orphanCandidate,
   type PullRequest,
+  pickBoard,
   type Run,
   record,
   recordMerges,
@@ -31,7 +32,12 @@ import {
   sweepDecision,
 } from '../../src/ci/candidate.ts'
 
-const config: CandidateConfig = { base: 'main', prefix: 'candidate/', hotfix: { prefix: 'hotfix/', label: 'hotfix' } }
+const config: CandidateConfig = {
+  base: 'main',
+  prefix: 'candidate/',
+  hotfix: { prefix: 'hotfix/', label: 'hotfix' },
+  status: { inRelease: 'In release', done: 'Done' },
+}
 // pelion's shape: release/<N>, same base and hotfix markers.
 const pelion: CandidateConfig = { ...config, prefix: 'release/' }
 
@@ -692,6 +698,48 @@ describe('setBoardStatus', () => {
     assert.match(out.lines.join('\n'), /::notice .*Projects permission.*Resource not accessible/s)
   })
 
+  test('a token that reads but cannot write is a notice, and the next issue is still moved', () => {
+    const out = notices()
+    let writes = 0
+    const base = fakeGh(items(item('i1')))
+    const board: Gh = {
+      read: base.read,
+      write: (args) => {
+        if (++writes === 1) throw new Error('Command failed: gh api graphql: Resource not accessible by integration')
+        return base.write(args)
+      },
+    }
+    const { moved, skipped } = setBoardStatus({ ...run(fakeGh({})), board, log: out.log }, [69, 70], 'In release')
+    assert.deepEqual(skipped, [69])
+    assert.deepEqual(moved, [70])
+    assert.match(out.lines.join('\n'), /::notice .*Projects permission.*#69/s)
+  })
+
+  test('the option is found whatever its case, and an item with no status yet is moved', () => {
+    const board = fakeGh(items({ ...item('i1', { options: ['in release'] }), fieldValueByName: null }))
+    assert.deepEqual(setBoardStatus({ ...run(fakeGh({})), board }, [69], 'In release').moved, [69])
+  })
+
+  test('a project without the option does not stop the next one, and the issue counts as moved', () => {
+    const out = notices()
+    const board = fakeGh(items(item('i1', { options: ['Todo', 'Done'] }), item('i2')))
+    const { moved, skipped } = setBoardStatus({ ...run(fakeGh({})), board, log: out.log }, [69], 'In release')
+    assert.deepEqual(moved, [69])
+    assert.deepEqual(skipped, [])
+    assert.equal(board.writes.length, 1)
+    assert.match(board.writes[0]?.args ?? '', /item=i2/)
+  })
+
+  test('a failure that is not a refusal names the message, and a rate limit is one', () => {
+    const board: Gh = {
+      read: () => {
+        throw new Error('API rate limit exceeded')
+      },
+      write: () => '',
+    }
+    assert.throws(() => setBoardStatus({ ...run(fakeGh({})), board }, [69], 'In release'), /#69: API rate limit/)
+  })
+
   test('any other failure fails the step', () => {
     const board: Gh = {
       read: () => {
@@ -716,6 +764,35 @@ describe('the board follows the candidate', () => {
     assert.match(board.writes.at(-1)?.args ?? '', /option=opt-In release/)
   })
 
+  test('an issue already announced is still moved, so a second run finishes the first', () => {
+    const comment = announceComment(config, { candidateBranch: 'candidate/4', candidatePr: 40 })
+    const board = fakeGh(items(item('i1')))
+    record({ ...run(fakeGh({ ...record1, ...issue(69, { comments: [comment] }) })), board }, merged)
+    assert.match(board.writes.at(-1)?.args ?? '', /option=opt-In release/)
+  })
+
+  test('a comment that fails does not leave the board behind, and fails the run after it', () => {
+    const board = fakeGh(items(item('i1')))
+    assert.throws(() => record({ ...run(fakeGh({ ...record1 })), board }, merged), /issues without the announcement/)
+    assert.deepEqual(board.writes, [])
+    const failing = fakeGh({ ...record1, ...issue(69) })
+    const write = failing.write
+    failing.write = (args, input) => {
+      if (args[0] === 'issue') throw new Error('comment refused')
+      return write(args, input)
+    }
+    const second = fakeGh(items(item('i1')))
+    assert.throws(() => record({ ...run(failing), board: second }, merged), /comment refused/)
+    assert.match(second.writes.at(-1)?.args ?? '', /option=opt-In release/)
+  })
+
+  test('the statuses come from the configuration', () => {
+    const board = fakeGh(items(item('i1', { options: ['Todo', 'Shipping'] })))
+    const custom = { ...config, status: { inRelease: 'Shipping', done: 'Done' } }
+    record({ ...run(fakeGh({ ...record1, ...issue(69) }), custom), board }, merged)
+    assert.match(board.writes.at(-1)?.args ?? '', /option=opt-Shipping/)
+  })
+
   test('an issue closed already is not moved', () => {
     const board = fakeGh(items(item('i1')))
     record({ ...run(fakeGh({ ...record1, ...issue(69, { state: 'closed' }) })), board }, merged)
@@ -729,6 +806,32 @@ describe('the board follows the candidate', () => {
     assert.match(board.writes.at(-1)?.args ?? '', /option=opt-Done/)
   })
 
+  test('an issue closed by hand while In release ends at Done', () => {
+    const candidate = { ...pr, number: 40, baseRef: 'main', headRef: 'candidate/4', merged: true, body: 'Closes #69' }
+    const board = fakeGh(items(item('i1', { current: 'In release' })))
+    closeCandidateIssues({ ...run(fakeGh({ ...issue(69, { state: 'closed' }) })), board }, candidate)
+    assert.match(board.writes.at(-1)?.args ?? '', /option=opt-Done/)
+  })
+
+  test('a board that fails is reported apart from the close', () => {
+    const candidate = { ...pr, number: 40, baseRef: 'main', headRef: 'candidate/4', merged: true, body: 'Closes #69' }
+    const board: Gh = {
+      read: () => {
+        throw new Error('API rate limit exceeded')
+      },
+      write: () => '',
+    }
+    const gh = fakeGh({ ...issue(69) })
+    assert.throws(
+      () => closeCandidateIssues({ ...run(gh), board }, candidate),
+      (error: Error) => /issues not moved to "Done"/.test(error.message) && !/not closed/.test(error.message),
+    )
+    assert.deepEqual(
+      gh.writes.map((w) => w.args),
+      ['issue close 69 --repo o/r --reason completed'],
+    )
+  })
+
   test('a board that cannot be moved does not stop the close', () => {
     const candidate = { ...pr, number: 40, baseRef: 'main', headRef: 'candidate/4', merged: true, body: 'Closes #69' }
     const gh = fakeGh({ ...issue(69) })
@@ -737,5 +840,21 @@ describe('the board follows the candidate', () => {
       gh.writes.map((w) => w.args),
       ['issue close 69 --repo o/r --reason completed'],
     )
+  })
+})
+
+describe('pickBoard', () => {
+  const own = { name: 'own' }
+  const withToken = (t: string) => ({ name: t })
+
+  test('the Projects token wins, in a workflow or not', () => {
+    assert.deepEqual(pickBoard('tok', true, own, withToken), { name: 'tok' })
+    assert.deepEqual(pickBoard('tok', false, own, withToken), { name: 'tok' })
+  })
+
+  test('a workflow without the token has no board, a terminal uses its own login', () => {
+    assert.equal(pickBoard(undefined, true, own, withToken), undefined)
+    assert.equal(pickBoard(undefined, false, own, withToken), own)
+    assert.equal(pickBoard('', true, own, withToken), undefined)
   })
 })

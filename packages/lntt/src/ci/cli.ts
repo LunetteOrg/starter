@@ -121,11 +121,9 @@ function candidateRun(args: string[]): number {
   const gh = candidate.makeGh({ dryRun: values['dry-run'], log })
   // The Projects permission is another token in the workflow (PROJECTS_GH_TOKEN); from
   // a terminal the operator's own gh login is the one in use.
-  const board = env.PROJECTS_GH_TOKEN
-    ? candidate.makeGh({ dryRun: values['dry-run'], log, token: env.PROJECTS_GH_TOKEN })
-    : env.GITHUB_ACTIONS
-      ? undefined
-      : gh
+  const board = candidate.pickBoard(env.PROJECTS_GH_TOKEN, Boolean(env.GITHUB_ACTIONS), gh, (token) =>
+    candidate.makeGh({ dryRun: values['dry-run'], log, token }),
+  )
   const repo = env.GITHUB_REPOSITORY ?? gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])
   let action: string
   let pr: candidate.PullRequest

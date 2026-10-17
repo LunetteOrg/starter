@@ -77,9 +77,11 @@ candidate exists on a day without pull requests.
   Squashes into the candidate happen before it is marked ready: a push to a ready
   candidate starts the full CI again.
 - **The board follows.** An open issue that a pull request squashed into the candidate
-  closes moves to the Status `In release`: merged into the open candidate, waiting for
-  the candidate's merge. The automation moves it in the same run that rebuilds the
-  lists; on the candidate's merge it moves the issues it closes to `Done`. One status
+  closes moves to the Status `delivery.candidate.status.inRelease`: merged into the open
+  candidate, waiting for the candidate's merge. The automation moves it in the same run
+  that rebuilds the lists; on the candidate's merge every issue of the `Closes` lines
+  moves to `delivery.candidate.status.done`, an issue closed by hand in between
+  included. One status
   serves overlapping candidates: the issue's comment says which candidate holds it. A
   hotfix merges into `main` and closes its issue at once, so it never has the status.
   The status is an option of the Project's Status field that the Project's owner adds
@@ -118,7 +120,8 @@ repository secrets, so no app token. A maintainer moves one onto the candidate w
 The automation runs from a terminal too: `pnpm exec lntt ci candidate --pr <n>` does
 what the workflow would do on that pull request's event (move it, rebuild a
 candidate's lists, or close and carry over on a merged candidate), and `--dry-run`
-prints the writes instead of making them. A terminal run is outside the workflow's
+prints the writes instead of making them. A terminal run moves the board too, with the
+login of `gh`, which needs the `project` scope (`gh auth refresh -s project`). A terminal run is outside the workflow's
 concurrency group: run one at a time, and not while the workflow is running.
 
 ## The candidate automation
@@ -143,7 +146,8 @@ and pull requests stay where they are opened. To turn it on:
    - **Repository permissions:** Contents *read and write* (the candidate branch and
      its empty commit), Pull requests *read and write* (create the candidate, move a
      pull request, edit the body, comment), Issues *read and write* (comment on and
-     close issues). Metadata *read* comes with them. Nothing else: no approvals, no
+     close issues). Metadata *read* comes with them. Nothing else on the repository, and
+     the organization permission Projects of the board (below): no approvals, no
      administration, no workflows.
    - **Homepage URL** (required by the form): this repository's URL.
    - **Webhook:** off. **Events:** none; the workflow brings the events.
