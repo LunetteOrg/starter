@@ -8,6 +8,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -44,6 +45,19 @@ process.stdin.on('data', (d) => (prompt += d)).on('end', () => {
   if (process.env['FAKE_LOG_TERM_' + model]) {
     process.on('SIGTERM', () => { fs.appendFileSync(process.env.FAKE_PIDS, 'TERM\\n'); process.exit(0) })
     fs.appendFileSync(process.env.FAKE_PIDS, 'started\\n')
+    setInterval(() => {}, 1000)
+    return
+  }
+  // A leader that exits on SIGTERM and leaves a child of its group that ignores it.
+  if (process.env['FAKE_ORPHAN_' + model]) {
+    require('node:child_process').spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); require('node:fs').appendFileSync(process.env.FAKE_CHILD_PIDS, String(process.pid)); setTimeout(() => {}, 60000)"], { stdio: 'ignore' })
+    const childUntil = Date.now() + 5000
+    while (Date.now() < childUntil) {
+      try { if (fs.readFileSync(process.env.FAKE_CHILD_PIDS, 'utf8').trim()) break } catch {}
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
+    }
+    process.on('SIGTERM', () => process.exit(0))
+    fs.appendFileSync(process.env.FAKE_PIDS, 'leader\\n')
     setInterval(() => {}, 1000)
     return
   }
@@ -485,6 +499,17 @@ describe('lntt review, end to end with a fake agent', () => {
     assert.equal(r.code, 0, r.err)
     const pid = Number(readFileSync(pids, 'utf8').trim())
     assert.ok(pid > 0)
+    // The exit handler's SIGKILL is sent as lntt review exits; the kernel takes the process
+    // away a moment later.
+    const until = Date.now() + 3000
+    while (Date.now() < until) {
+      try {
+        process.kill(pid, 0)
+      } catch {
+        break
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
+    }
     assert.throws(() => process.kill(pid, 0), 'the stubborn agent is gone')
   })
 
@@ -499,7 +524,7 @@ describe('lntt review, end to end with a fake agent', () => {
     assert.match(JSON.parse(r.out).failed[0].error, /the round took longer than/)
   })
 
-  test("the progress names lntt review's pid and beats while agents run; an error starts a new file", () => {
+  test("the progress names lntt review's pid; an error starts a new file", () => {
     lntt(['--base', 'main'])
     const first = JSON.parse(readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8').split('\n')[0] as string)
     assert.equal(first.type, 'round')
@@ -677,5 +702,205 @@ describe('lntt review, end to end with a fake agent', () => {
     assert.equal(lntt(['--base', 'main']).code, 0)
     writeFileSync(join(repo, '.git/lntt-review.lock'), String(process.pid))
     assert.match(lntt(['reply', 'f99', 'x']).err, /no open finding f99/)
+  })
+})
+
+// The 5-second SIGKILL timer of `terminate` is the only thing that can kill the stubborn
+// agent while the round is open: the exit handler kills what is left only when lntt
+// review exits, and a verifier holds the round open past the timer.
+describe('an agent that ignores SIGTERM, while the round goes on', () => {
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  test('is alive until the timer, and gone after it', { timeout: 60000 }, async () => {
+    writeFileSync(
+      join(repo, '.agents/config.jsonc'),
+      JSON.stringify({
+        delivery: {
+          review: {
+            reviewers: {
+              decisions: { with: [] },
+              tests: { with: [] },
+              code: {
+                with: [
+                  { kind: 'claude', model: 'sonnet' },
+                  { kind: 'claude', model: 'opus', optional: true },
+                ],
+              },
+            },
+            verify: { with: [{ kind: 'claude', model: 'haiku' }] },
+            optionalGraceMinutes: 0,
+          },
+        },
+      }),
+    )
+    git('commit', '-qam', 'stubborn optional, slow verifier')
+    const pids = join(repo, '.pids')
+    const release = join(bin, 'release')
+    writeFileSync(pids, '')
+    // The required reviewer answers once the optional one has named its pid, and the
+    // grace (0) stops it at once; the verifier then holds the round open until released.
+    const child = spawn(process.execPath, [BIN, 'review', '--base', 'main'], {
+      cwd: repo,
+      env: {
+        HOME: repo,
+        PATH: [bin, dirname(process.execPath), '/usr/bin', '/bin'].join(':'),
+        FAKE_LOG: log,
+        FAKE_IGNORE_TERM_opus: '1',
+        FAKE_PIDS: pids,
+        FAKE_WAIT_FILE_sonnet: pids,
+        FAKE_WAIT_FILE_haiku: release,
+        FAKE_REVIEW: '- [blocker] a.ts:1 — wrong — fix',
+      },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    })
+    let err = ''
+    child.stderr.on('data', (d) => {
+      err += d
+    })
+    const exited = new Promise((resolve) => child.on('exit', resolve))
+    try {
+      const until = Date.now() + 10_000
+      while (!readFileSync(pids, 'utf8').trim() && Date.now() < until) await sleep(50)
+      const pid = Number(readFileSync(pids, 'utf8').trim())
+      assert.ok(pid > 0, `the stubborn agent named its pid: ${err}`)
+      // SIGTERM follows the pid being named (the required reviewer answers after it), so
+      // the timer's 5 seconds start no earlier than the file's last write.
+      const stopped = statSync(pids).mtimeMs
+      await sleep(Math.max(0, stopped + 2000 - Date.now()))
+      assert.ok(alive(pid), 'SIGTERM did not stop it, and the timer has not fired yet')
+      while (alive(pid) && Date.now() < stopped + 8000) await sleep(100)
+      assert.ok(!alive(pid), 'the timer killed it while the round was still open')
+      assert.ok(Date.now() - stopped >= 5000, 'not before the 5 seconds')
+    } finally {
+      writeFileSync(release, 'go\n')
+      await exited
+    }
+  })
+})
+
+// The lock keeps a second round or reply from overwriting the state and the progress of
+// the first (acquireLock, and the `own` guard of main).
+describe('the lock of a worktree, held by a live process', () => {
+  const lock = () => join(repo, '.git/lntt-review.lock')
+  const progress = () => join(repo, '.git/lntt-review.progress')
+
+  test('a reply takes it: refused while a round holds it, and the lock goes with the reply', () => {
+    const r = lntt(['--base', 'main'], { FAKE_REVIEW: '- [warning] a.ts:1 — w — a' })
+    assert.equal(JSON.parse(r.out).findings[0].id, 'f1', r.err)
+    writeFileSync(lock(), String(process.pid))
+    const refused = lntt(['reply', 'f1', 'no'])
+    assert.equal(refused.code, 1)
+    assert.match(refused.err, /a round is already running in this worktree \(pid \d+\)/)
+    assert.equal(readFileSync(lock(), 'utf8'), String(process.pid), 'the holder keeps its lock')
+    rmSync(lock())
+    lntt(['reply', 'f1', 'no'])
+    assert.equal(existsSync(lock()), false, 'the lock goes with the reply')
+  })
+
+  test('--plan does not take it: it prints the plan, and the holder keeps its lock and progress', () => {
+    lntt(['--base', 'main'])
+    const before = readFileSync(progress(), 'utf8')
+    writeFileSync(lock(), String(process.pid))
+    const r = lntt(['--plan', '--base', 'main'])
+    assert.equal(r.code, 0, r.err)
+    assert.match(r.err, /round \d+, /)
+    assert.equal(readFileSync(lock(), 'utf8'), String(process.pid))
+    assert.equal(readFileSync(progress(), 'utf8'), before)
+  })
+
+  test("a round it refuses leaves the running round's progress file alone", () => {
+    writeFileSync(progress(), '{"type":"round","pid":1}\n')
+    writeFileSync(lock(), String(process.pid))
+    const r = lntt(['--base', 'main'])
+    assert.equal(r.code, 1)
+    assert.match(r.err, /^lntt review: error: a round is already running/m)
+    assert.equal(readFileSync(progress(), 'utf8'), '{"type":"round","pid":1}\n')
+  })
+})
+
+// lntt review signalled the agent's group: the SIGKILL that follows goes to the group
+// whatever the leader did, so a child that ignored SIGTERM does not outlive it. A verifier
+// holds the round open, so only the timer can be what kills the child.
+describe('a child of an agent that exited on SIGTERM', () => {
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  test('is killed with its group, though the leader is gone', { timeout: 60000 }, async () => {
+    writeFileSync(
+      join(repo, '.agents/config.jsonc'),
+      JSON.stringify({
+        delivery: {
+          review: {
+            reviewers: {
+              decisions: { with: [] },
+              tests: { with: [] },
+              code: {
+                with: [
+                  { kind: 'claude', model: 'sonnet' },
+                  { kind: 'claude', model: 'opus', optional: true },
+                ],
+              },
+            },
+            verify: { with: [{ kind: 'claude', model: 'haiku' }] },
+            optionalGraceMinutes: 0,
+          },
+        },
+      }),
+    )
+    git('commit', '-qam', 'orphan child, slow verifier')
+    const pids = join(repo, '.pids')
+    const childPids = join(repo, '.caffeinate')
+    const release = join(bin, 'release')
+    writeFileSync(pids, '')
+    writeFileSync(childPids, '')
+    const lntt = spawn(process.execPath, [BIN, 'review', '--base', 'main'], {
+      cwd: repo,
+      env: {
+        HOME: repo,
+        PATH: [bin, dirname(process.execPath), '/usr/bin', '/bin'].join(':'),
+        FAKE_LOG: log,
+        FAKE_ORPHAN_opus: '1',
+        FAKE_PIDS: pids,
+        FAKE_CHILD_PIDS: childPids,
+        FAKE_WAIT_FILE_sonnet: pids,
+        FAKE_WAIT_FILE_haiku: release,
+        FAKE_REVIEW: '- [blocker] a.ts:1 — wrong — fix',
+      },
+      stdio: ['ignore', 'ignore', 'ignore'],
+    })
+    const exited = new Promise((resolve) => lntt.on('exit', resolve))
+    let child = 0
+    try {
+      const until = Date.now() + 10_000
+      while (!readFileSync(pids, 'utf8').trim() && Date.now() < until) await sleep(50)
+      child = Number(readFileSync(childPids, 'utf8').trim())
+      assert.ok(child > 0, 'the child named its pid')
+      const stopped = statSync(pids).mtimeMs
+      while (alive(child) && Date.now() < stopped + 8000) await sleep(100)
+      assert.ok(!alive(child), 'the child that ignored SIGTERM is gone while the round is still open')
+    } finally {
+      writeFileSync(release, 'go\n')
+      await exited
+      if (child > 0) {
+        try {
+          process.kill(child, 'SIGKILL')
+        } catch {}
+      }
+    }
   })
 })
