@@ -35,18 +35,16 @@ function usage(message?: string): never {
 }
 
 // One call to a tool: its stdout, trimmed, is the result. What it says on stderr reaches
-// the person when it succeeds; when it refuses, the reason is in the error, once. A tool
-// that is not installed is an error.
-export function runTool(
-  command: string,
-  args: string[],
-  dir: string,
-  say: (text: string) => void = (text) => stderr.write(text),
-): string {
-  const r = spawnSync(command, args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+// the person as it says it (a long setup shows its progress); a refusal's reason comes
+// from its reply on stdout (Orca's JSON), else its exit code points at what it printed.
+// A tool that is not installed is an error.
+export function runTool(command: string, args: string[], dir: string): string {
+  const r = spawnSync(command, args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] })
   if (r.error) throw r.error
-  if (r.status !== 0) throw new Error(toolFailure(command, args, r.stdout ?? '', r.stderr ?? ''))
-  if (r.stderr) say(r.stderr)
+  if (r.status !== 0) {
+    const why = toolFailure(command, args, r.stdout ?? '', '')
+    throw new Error(why.endsWith(' failed') ? `${why} (exit ${r.status ?? r.signal}; its output is above)` : why)
+  }
   return (r.stdout ?? '').trim()
 }
 

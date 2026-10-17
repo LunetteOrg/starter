@@ -420,25 +420,22 @@ describe('a tool that refuses', () => {
 describe('running a tool', () => {
   const node = (code: string) => [process.execPath, ['-e', code]] as const
 
-  test('stdout trimmed is the result; what the tool says on stderr reaches the person', () => {
-    const said: string[] = []
-    const [cmd, args] = node("process.stdout.write('  out  '); process.stderr.write('note')")
-    assert.equal(
-      runTool(cmd, [...args], process.cwd(), (t) => said.push(t)),
-      'out',
-    )
-    assert.deepEqual(said, ['note'])
+  test('stdout trimmed is the result', () => {
+    const [cmd, args] = node("process.stdout.write('  out  ')")
+    assert.equal(runTool(cmd, [...args], process.cwd()), 'out')
   })
 
-  test('a refusal is reported once, in the error, not also on stderr', () => {
-    const said: string[] = []
-    const [cmd, args] = node("process.stderr.write('no such pane'); process.exit(2)")
-    assert.throws(() => runTool(cmd, [...args], process.cwd(), (t) => said.push(t)), /no such pane/)
-    assert.deepEqual(said, [])
+  test('a refusal carries the reason in the reply, or the exit code and a pointer to the output', () => {
+    const [a, aa] = node(
+      "process.stdout.write(JSON.stringify({ ok: false, error: { message: 'no such pane' } })); process.exit(2)",
+    )
+    assert.throws(() => runTool(a, [...aa], process.cwd()), /: no such pane$/)
+    const [b, bb] = node('process.exit(3)')
+    assert.throws(() => runTool(b, [...bb], process.cwd()), /failed \(exit 3; its output is above\)$/)
   })
 
   test('a tool that is not installed is an error, not an empty result', () => {
-    assert.throws(() => runTool('lntt-no-such-tool', [], process.cwd(), () => {}), /ENOENT/)
+    assert.throws(() => runTool('lntt-no-such-tool', [], process.cwd()), /ENOENT/)
   })
 
   test('Orca whose help says nothing on stdout cannot say what it takes', () => {
