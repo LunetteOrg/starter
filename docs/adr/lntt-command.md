@@ -27,20 +27,22 @@ lntt check [agents-md | decisions [structure | numbers] | tests [levels | focus 
 lntt branch name | check | rename
 lntt review [reply]
 lntt worktree start
+lntt ask | inbox | answer
 lntt ci local | candidate
 ```
 
 - **One entry point, one module per command group.** `bin/lntt.ts` dispatches to
   `src/cli.ts` (configuration, operator, `AGENTS.md`, local apps, viewer),
-  `src/check-cli.ts`, `src/branch-cli.ts`, `src/review-cli.ts`, `src/worktree-cli.ts`
-  and `src/ci/cli.ts`. A group loads only when it runs.
+  `src/check-cli.ts`, `src/branch-cli.ts`, `src/review-cli.ts`, `src/worktree-cli.ts`,
+  `src/messages-cli.ts` (`ask`, `inbox`, `answer`) and `src/ci/cli.ts`. A group loads only when it runs.
 - **What a person types is what an agent runs.** Skills, workflows, git hooks and
   `orca.yaml` call `lntt`, never a package's files by path, with one exception: the
   candidate workflow runs `node packages/lntt/bin/lntt.ts`, because it installs only
   this package and its dependencies.
 - **Output for scripts.** stdout carries only the result: a bare value (`lntt path`,
   `lntt branch name`), JSON (`lntt get`, `lntt operator`), or one JSON line per item
-  (`lntt worktree start`, followed by the brief when no agent was started, for the
+  (`lntt worktree start`, whose `issue` is null for a coordinator and which names the `parent`
+  of a child, followed by the brief when no agent was started, for the
   person who will start one; `lntt check --json`), or a report for a person (`lntt
   check` without `--json`); progress and child-process output go to stderr. Exit codes:
   0 ok, 1 a configuration error, a red result or a check that cannot run (one line on

@@ -19,6 +19,7 @@ decisions) is in [`docs/process/`](../process/README.md).
 | [review-agents](./review-agents.md) | Reviews by agents with no context, per-project lenses, agents and models; adversarial verification; `lntt review` | accepted |
 | [test-checks](./test-checks.md) | `lntt check tests`: the test levels, `focus`, `rules`, `touched`, and the mutations a reviewer proposes and `lntt` runs | accepted |
 | [worktree-tooling](./worktree-tooling.md) | Branch names, setup, brief and agent launch decided in `lntt`; Orca, Herdr and git as adapters | accepted |
+| [coordinator-mode](./coordinator-mode.md) | A theme's coordinator worktree delegates each issue to a child and writes no code; the gate, the model per role and the mailbox (`lntt ask`) | accepted |
 
 A new subject gets its own file: copy [`template.md`](./template.md) to
 `<subject>.md` and add a row above. A changed decision is rewritten in its file.
