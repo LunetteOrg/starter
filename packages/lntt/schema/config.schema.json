@@ -509,7 +509,7 @@
         "gate": {
           "type": "string",
           "enum": ["propose", "free"],
-          "description": "Whether a coordinator may start a child on its own. propose (default): lntt worktree start --theme asks the orchestrator through lntt ask and creates the child only on an answer that is approve, yes or ok, unless the issue was listed with --approve when the coordinator started or approved before. free: it starts at once."
+          "description": "Whether a coordinator may start a child on its own. propose (default): lntt worktree start --theme asks the orchestrator through lntt ask and creates the child only on an answer that is approve, approved, yes or ok, unless the issue was listed with --approve when the coordinator started or approved before. free: it starts at once."
         },
         "models": {
           "type": "object",

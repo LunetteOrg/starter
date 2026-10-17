@@ -136,6 +136,7 @@ describe('answering', () => {
     writeFileSync(join(dir, 'x', '20261017-101500-t.md'), 'q\n')
     assert.throws(() => answer(dir, '../outside', 'x'), /no message/)
     assert.throws(() => answer(dir, '../x/20261017-101500-t', 'x'), /no message/)
+    assert.throws(() => answer(dir, '../x/20261017-101500-t.md', 'x'), /no message/)
     assert.ok(!existsSync(join(dir, 'outside.answer.md')))
     assert.ok(!existsSync(join(dir, 'x', '20261017-101500-t.answer.md')))
   })

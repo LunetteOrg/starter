@@ -67,8 +67,8 @@ would nest git worktrees inside one the host does not track.
 
 `coordinator.gate` in `.agents/config.jsonc` is `propose` (default) or `free`. Under
 `propose`, `lntt worktree start --theme` sends one message to the orchestrator for the
-children not yet approved and creates nothing until the answer is `approve`, `yes`
-or `ok` and nothing else. Approvals are kept per theme in the shared mailbox directory
+children not yet approved and creates nothing until the answer is `approve`, `approved`,
+`yes` or `ok` and nothing else. Approvals are kept per theme in the shared mailbox directory
 (`approved-<theme>.txt`), written by `--approve` at the coordinator's start and by an
 approving answer. No flag of `lntt` approves a child for the coordinator.
 
@@ -77,7 +77,8 @@ approving answer. No flag of `lntt` approves a child for the coordinator.
 `coordinator.models` names the agent (`kind`, `model`, `effort`) of the coordinator and of
 the children by the issue's Size. `--size` picks the child's entry; `--kind`, `--model` and
 `--effort` on the command line win, field by field. A role without an entry runs on the
-agent's own default. Reviews keep `delivery.review`.
+agent's own default. Which Size an issue has is the coordinator's judgement (the
+`coordinate` skill says how). Reviews keep `delivery.review`.
 
 ### The mailbox
 
@@ -89,6 +90,7 @@ host, with no messaging command of Orca or Herdr:
 <git common dir>/lntt-messages/to-<role>/<YYYYMMDD-HHMMSS>-<topic>.answer.md    the answer
 ```
 
+- `<topic>` is `--topic`, else the first words of the question, else `message`.
 - `<role>` is `orchestrator`, `coordinator` or `child`. Several coordinators and children
   share one repository, so a coordinator is addressed by its theme
   (`to-coordinator-<theme>`, `--theme`) and a child by its issue (`to-child-<issue>`,
@@ -104,7 +106,8 @@ host, with no messaging command of Orca or Herdr:
 
 The commands read and answer files written by hand with the same names, and a
 `to-coordinator` directory is the unqualified coordinator's. `LNTT_ROLE`, `LNTT_THEME` and
-`LNTT_ISSUE` default `inbox`'s role and address; `--interval` sets one call's poll.
+`LNTT_ISSUE` default `inbox`'s role and address (the issue for a child, the theme for a
+coordinator); `--interval` sets one call's poll.
 
 ### The scaffolding contract
 
@@ -125,7 +128,7 @@ that `@lntt/lntt` ships; no placeholder, dotfile, provenance field or rewrite of
 
 ### Negative / accepted risks
 
-- Polling every 20 seconds means an answer takes up to 20 seconds to be seen, and a blocked
+- Polling every 20 seconds (the default) means an answer takes up to 20 seconds to be seen, and a blocked
   `ask` holds its terminal.
 - The gate stops a coordinator that follows `lntt`. A coordinator that calls `orca` or `git`
   directly, or writes into the mailbox directory (an answer to its own proposal, the approved

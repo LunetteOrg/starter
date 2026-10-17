@@ -167,6 +167,34 @@ describe('lntt ask / inbox / answer', () => {
     assert.equal(JSON.parse(r.stdout).id, '20261015-090000-q')
   })
 
+  test('each role reads its own address from the environment, and ignores the other’s', () => {
+    const inbox = (role: string, vars: Record<string, string>) =>
+      spawnSync(process.execPath, [BIN, 'inbox', '--as', role], {
+        cwd: repo,
+        encoding: 'utf8',
+        env: { ...clean(), ...vars },
+      })
+    mkdirSync(join(box(), 'to-child-84'), { recursive: true })
+    writeFileSync(join(box(), 'to-child-84', '20261015-090000-c.md'), 'for the child\n')
+    mkdirSync(join(box(), 'to-coordinator-alpha'), { recursive: true })
+    writeFileSync(join(box(), 'to-coordinator-alpha', '20261015-090000-k.md'), 'for the coordinator\n')
+    const both = { LNTT_ISSUE: '84', LNTT_THEME: 'alpha' }
+    assert.equal(JSON.parse(inbox('child', both).stdout).question, 'for the child')
+    assert.equal(JSON.parse(inbox('coordinator', both).stdout).question, 'for the coordinator')
+    assert.equal(inbox('child', { LNTT_THEME: 'alpha' }).stdout, '')
+    assert.equal(inbox('coordinator', { LNTT_ISSUE: '84' }).stdout, '')
+  })
+
+  test('outside a git repository the reason is said, not a stack', () => {
+    const outside = spawnSync(process.execPath, [BIN, 'inbox', '--as', 'coordinator'], {
+      cwd: tmp,
+      encoding: 'utf8',
+      env: { ...clean(), GIT_CEILING_DIRECTORIES: dirname(tmp) },
+    })
+    assert.equal(outside.status, 1)
+    assert.match(outside.stderr, /^lntt inbox: the mailbox lives in the git common directory/)
+  })
+
   test('usage errors exit 2, others exit 1 with one line', () => {
     assert.equal(lntt(['ask', 'Question without --to']).status, 2)
     assert.equal(lntt(['ask', '--to', 'coordinator', '--timeout', 'soon', 'q']).status, 2)

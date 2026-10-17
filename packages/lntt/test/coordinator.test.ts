@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -71,8 +71,17 @@ describe('the gate', () => {
   })
 
   test('an answer approves only when it is the word', () => {
-    for (const yes of ['approve', 'Approved.', 'yes', 'OK', '  ok\n']) assert.ok(isApproval(yes), yes)
-    for (const no of ['no', 'not yet', 'wait: #89 first', '', 'okay but later', 'yes, but not #84', 'approve #89 only'])
+    for (const yes of ['approve', 'Approved.', 'yes!', 'OK', '  ok.\n', 'approved']) assert.ok(isApproval(yes), yes)
+    for (const no of [
+      'no',
+      'not yet',
+      'wait: #89 first',
+      '',
+      'okay but later',
+      'yes, but not #84',
+      'approve #89 only',
+      'ok\nbut wait',
+    ])
       assert.ok(!isApproval(no), no)
   })
 })
@@ -83,6 +92,13 @@ describe('the approved issues', () => {
     dir = mkdtempSync(join(tmpdir(), 'lntt-approved-'))
   })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  test('are written whole: no temporary file is left, and a hand-edited CRLF file is read', () => {
+    approve(dir, 'alpha', [89])
+    assert.deepEqual(readdirSync(dir), ['approved-alpha.txt'])
+    writeFileSync(join(dir, 'approved-beta.txt'), '5\r\n6\r\n')
+    assert.deepEqual([...approvals(dir, 'beta')], [5, 6])
+  })
 
   test('skip lines that are not issue numbers', () => {
     writeFileSync(join(dir, 'approved-alpha.txt'), '89\n\n0\n-3\nabc\n111\n')
