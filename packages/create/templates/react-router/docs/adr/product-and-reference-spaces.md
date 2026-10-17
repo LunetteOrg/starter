@@ -59,7 +59,12 @@ to fill in.
 - − Another convention to learn (ADR vs PDR vs reference); the READMEs and
   `product-check` carry that weight.
 - − `reference/` is committed, so large dumps live in git history forever — the
-  README calls this out and says to link out instead when a dump is huge.
+  README calls this out and says to link out instead when a dump is huge. A prototype
+  kept as a subtree adds its tree to history at every update, squashed into one
+  commit each time.
+- \+ A prototype's own `package.json` and lockfile stay out of the workspace:
+  `reference/` is in no `pnpm-workspace.yaml` glob, so pnpm and Turbo never install or
+  build it.
 
 ## Discarded directions
 
