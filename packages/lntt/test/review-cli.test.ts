@@ -48,6 +48,19 @@ process.stdin.on('data', (d) => (prompt += d)).on('end', () => {
     setInterval(() => {}, 1000)
     return
   }
+  // A leader that exits on SIGTERM and leaves a child of its group that ignores it.
+  if (process.env['FAKE_ORPHAN_' + model]) {
+    require('node:child_process').spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); require('node:fs').appendFileSync(process.env.FAKE_CHILD_PIDS, String(process.pid)); setTimeout(() => {}, 60000)"], { stdio: 'ignore' })
+    const childUntil = Date.now() + 5000
+    while (Date.now() < childUntil) {
+      try { if (fs.readFileSync(process.env.FAKE_CHILD_PIDS, 'utf8').trim()) break } catch {}
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
+    }
+    process.on('SIGTERM', () => process.exit(0))
+    fs.appendFileSync(process.env.FAKE_PIDS, 'leader\\n')
+    setInterval(() => {}, 1000)
+    return
+  }
   if (process.env['FAKE_IGNORE_TERM_' + model]) {
     process.on('SIGTERM', () => {})
     fs.appendFileSync(process.env.FAKE_PIDS, process.pid + '\\n')
@@ -810,5 +823,84 @@ describe('the lock of a worktree, held by a live process', () => {
     assert.equal(r.code, 1)
     assert.match(r.err, /^lntt review: error: a round is already running/m)
     assert.equal(readFileSync(progress(), 'utf8'), '{"type":"round","pid":1}\n')
+  })
+})
+
+// lntt review signalled the agent's group: the SIGKILL that follows goes to the group
+// whatever the leader did, so a child that ignored SIGTERM does not outlive it. A verifier
+// holds the round open, so only the timer can be what kills the child.
+describe('a child of an agent that exited on SIGTERM', () => {
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  test('is killed with its group, though the leader is gone', { timeout: 60000 }, async () => {
+    writeFileSync(
+      join(repo, '.agents/config.jsonc'),
+      JSON.stringify({
+        delivery: {
+          review: {
+            reviewers: {
+              decisions: { with: [] },
+              tests: { with: [] },
+              code: {
+                with: [
+                  { kind: 'claude', model: 'sonnet' },
+                  { kind: 'claude', model: 'opus', optional: true },
+                ],
+              },
+            },
+            verify: { with: [{ kind: 'claude', model: 'haiku' }] },
+            optionalGraceMinutes: 0,
+          },
+        },
+      }),
+    )
+    git('commit', '-qam', 'orphan child, slow verifier')
+    const pids = join(repo, '.pids')
+    const childPids = join(repo, '.caffeinate')
+    const release = join(bin, 'release')
+    writeFileSync(pids, '')
+    writeFileSync(childPids, '')
+    const lntt = spawn(process.execPath, [BIN, 'review', '--base', 'main'], {
+      cwd: repo,
+      env: {
+        HOME: repo,
+        PATH: [bin, dirname(process.execPath), '/usr/bin', '/bin'].join(':'),
+        FAKE_LOG: log,
+        FAKE_ORPHAN_opus: '1',
+        FAKE_PIDS: pids,
+        FAKE_CHILD_PIDS: childPids,
+        FAKE_WAIT_FILE_sonnet: pids,
+        FAKE_WAIT_FILE_haiku: release,
+        FAKE_REVIEW: '- [blocker] a.ts:1 — wrong — fix',
+      },
+      stdio: ['ignore', 'ignore', 'ignore'],
+    })
+    const exited = new Promise((resolve) => lntt.on('exit', resolve))
+    let child = 0
+    try {
+      const until = Date.now() + 10_000
+      while (!readFileSync(pids, 'utf8').trim() && Date.now() < until) await sleep(50)
+      child = Number(readFileSync(childPids, 'utf8').trim())
+      assert.ok(child > 0, 'the child named its pid')
+      const stopped = statSync(pids).mtimeMs
+      while (alive(child) && Date.now() < stopped + 8000) await sleep(100)
+      assert.ok(!alive(child), 'the child that ignored SIGTERM is gone while the round is still open')
+    } finally {
+      writeFileSync(release, 'go\n')
+      await exited
+      if (child > 0) {
+        try {
+          process.kill(child, 'SIGKILL')
+        } catch {}
+      }
+    }
   })
 })

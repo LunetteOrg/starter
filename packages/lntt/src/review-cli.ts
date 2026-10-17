@@ -225,19 +225,26 @@ export function reporter(orca: Subagents | null = null): {
 // started; an interrupt of lntt review stops every group still running.
 const groups = new Set<number>()
 
-// SIGTERM to the group, then SIGKILL to what is still there five seconds later. Only a
-// group still running: a closed agent's pid may already belong to another process.
+// The groups SIGTERM was sent to, until their SIGKILL: a closed leader says nothing of its
+// group, where a child that ignored SIGTERM may still run.
+const terminated = new Set<number>()
+
+// SIGTERM to the group, then SIGKILL to the group five seconds later, whatever the leader
+// did meanwhile: a process group id is not reused while a member lives, so the SIGKILL can
+// only reach what ignored SIGTERM (an empty group fails with ESRCH). Only a group still
+// running is signalled at first: a closed agent's pid may already belong to another process.
 function terminate(pid: number): void {
   if (!groups.has(pid)) return
   try {
     process.kill(-pid, 'SIGTERM')
   } catch {}
+  terminated.add(pid)
   setTimeout(() => {
-    if (!groups.has(pid)) return
     try {
       process.kill(-pid, 'SIGKILL')
     } catch {}
     groups.delete(pid)
+    terminated.delete(pid)
   }, 5000).unref()
 }
 
@@ -247,7 +254,7 @@ function stopGroups(): void {
 
 // Whatever ignored SIGTERM and is still running when lntt review exits goes with it.
 process.on('exit', () => {
-  for (const pid of groups) {
+  for (const pid of [...groups, ...terminated]) {
     try {
       process.kill(-pid, 'SIGKILL')
     } catch {}
