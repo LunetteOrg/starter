@@ -763,7 +763,7 @@ describe('an agent that ignores SIGTERM, while the round goes on', () => {
       const stopped = statSync(pids).mtimeMs
       await sleep(Math.max(0, stopped + 2000 - Date.now()))
       assert.ok(alive(pid), 'SIGTERM did not stop it, and the timer has not fired yet')
-      while (alive(pid) && Date.now() < stopped + 12_000) await sleep(100)
+      while (alive(pid) && Date.now() < stopped + 8000) await sleep(100)
       assert.ok(!alive(pid), 'the timer killed it while the round was still open')
       assert.ok(Date.now() - stopped >= 5000, 'not before the 5 seconds')
     } finally {
