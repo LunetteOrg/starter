@@ -8,6 +8,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, join, relative } from 'node:path'
 import { checkAgentsBlock } from './agents.ts'
 import { checkDecisions, decisionFigures } from './check-decisions.ts'
+import { runTests } from './check-tests.ts'
 
 export type Status = 'PASS' | 'FAIL' | 'NOT RUN' | 'INFO'
 
@@ -20,7 +21,7 @@ export interface Result {
   message: string
 }
 
-export const AREAS = ['agents-md', 'decisions'] as const
+export const AREAS = ['agents-md', 'decisions', 'tests'] as const
 export type Area = (typeof AREAS)[number]
 
 export function isArea(name: string): name is Area {
@@ -37,6 +38,8 @@ export interface CheckOptions {
   data: Record<string, unknown>
   // Limits a check to what the diff from this ref touches, where that makes sense.
   base?: string
+  // `tests mutate`: what is on the line, and what it becomes.
+  mutation?: { text: string; to: string }
 }
 
 // The files a check reads: tracked or new and not ignored, relative to the root, less
@@ -82,9 +85,11 @@ function agentsMd(root: string): Result[] {
   ]
 }
 
-// One area, or one of its checks: `structure` and `numbers` for the decisions.
+// One area, or one of its checks: `structure` and `numbers` for the decisions, `levels`,
+// `focus`, `rules`, `touched` and `mutate` for the tests.
 export function runArea(area: Area, check: string | undefined, files: string[], options: CheckOptions): Result[] {
   if (area === 'agents-md') return agentsMd(options.root)
+  if (area === 'tests') return runTests(check, files, options)
   if (check === 'numbers') return decisionFigures(options, files)
   return checkDecisions(options, { figures: check === undefined })
 }

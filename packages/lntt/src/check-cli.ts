@@ -19,7 +19,8 @@ import {
 } from './check.ts'
 import { ConfigError, loadConfig } from './index.ts'
 
-const USAGE = `usage: lntt check [agents-md | decisions [structure | numbers [<file>...]]] [--base <ref>] [--json]
+const USAGE = `usage: lntt check [agents-md | decisions [structure | numbers [<file>...]] | tests [levels | focus | rules | touched]] [--base <ref>] [--json]
+       lntt check tests mutate <path:line> --text <on the line> --to <mutated> [--json]
        lntt check cite <path:line>... [--json]`
 
 function usage(message?: string): never {
@@ -28,13 +29,22 @@ function usage(message?: string): never {
   exit(2)
 }
 
-const CHECKS: Record<string, string[]> = { 'agents-md': [], decisions: ['structure', 'numbers'] }
+const CHECKS: Record<string, string[]> = {
+  'agents-md': [],
+  decisions: ['structure', 'numbers'],
+  tests: ['levels', 'focus', 'rules', 'touched', 'mutate'],
+}
 
 function run(args: string[]): Result[] {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
-    options: { base: { type: 'string' }, json: { type: 'boolean', default: false } },
+    options: {
+      base: { type: 'string' },
+      json: { type: 'boolean', default: false },
+      text: { type: 'string' },
+      to: { type: 'string' },
+    },
   })
   // Every argument is checked before the configuration is read: a usage error is one
   // in any project.
@@ -51,14 +61,25 @@ function run(args: string[]): Result[] {
     if (check !== undefined && !(CHECKS[area] as string[]).includes(check)) {
       usage(`no check ${check} in ${area}${CHECKS[area]?.length ? `: ${CHECKS[area]?.join(', ')}` : ''}`)
     }
-    if (rest.length > 0 && check !== 'numbers') usage(`${check ?? area} takes no file`)
+    if (rest.length > 0 && check !== 'numbers' && check !== 'mutate') usage(`${check ?? area} takes no file`)
     if (check === 'numbers' && rest.length === 0 && base === undefined) usage('numbers needs files or --base')
+    if (check === 'mutate') {
+      if (rest.length !== 1 || !ANCHOR_LINE.test(rest[0] as string)) usage('mutate needs one path:line')
+      if (values.text === undefined || values.text === '' || values.to === undefined) {
+        usage('mutate needs --text <what is on the line> and --to <what it becomes>')
+      }
+    } else if (values.text !== undefined || values.to !== undefined) usage('--text and --to are for tests mutate')
   }
   // The root of the project whose configuration is read, as `lntt sync` writes it.
   const loaded = loadConfig(cwd())
   const root = dirname(dirname(loaded.path))
   if (area === 'cite') return citeAll(root, positionals.slice(1))
-  const options = { root, data: loaded.data, ...(base === undefined ? {} : { base }) }
+  const options = {
+    root,
+    data: loaded.data,
+    ...(base === undefined ? {} : { base }),
+    ...(values.text === undefined ? {} : { mutation: { text: values.text, to: values.to as string } }),
+  }
   if (area === undefined) return AREAS.flatMap((a) => runArea(a, undefined, [], options))
   return runArea(area as Area, check, rest, options)
 }
