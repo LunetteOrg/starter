@@ -53,20 +53,39 @@ Follow [`references/recording-rules.md`](./references/recording-rules.md). In sh
 Compare the repo with what its records say. Do **not** edit files, write records or
 apply fixes: output findings and recommended actions only.
 
-1. **Load the records now.** Read each log's index and the `##` sections of every
+1. **Run the structural checks first**, never by eye:
+
+   ```sh
+   lntt check decisions                  # the whole logs
+   lntt check decisions --base <ref>     # on a change: also its inventory and figures
+   ```
+
+   Every `FAIL` is a finding, at its `path:line`, as it is; every `PASS` a passing
+   check; every `NOT RUN` is printed with its reason. Do not redo what it checks
+   (index and files, references, append-only residues, file names, titles, statuses),
+   and copy its counts instead of counting again. The `inventory` lines (with
+   `--base`) say which records the change touches: name them first in the report.
+2. **Load the records now.** Read each log's index and the `##` sections of every
    record. Build the checks from what they say today; never recite from memory.
-2. **Derive the checks from the records.** Each decision that can be checked in code
+3. **Derive the checks from the records.** Each decision that can be checked in code
    or config becomes a check, tied to its file and heading anchor. Respect each log's
    `scope`: a decision filed in the wrong log is a finding.
-3. **Prefer the project's tests.** When a test or a lint rule already asserts a
+4. **Prefer the project's tests.** When a test or a lint rule already asserts a
    decision, a passing run is a passing check, not a finding. Run what the project's
    scripts provide rather than re-deriving it by hand.
-4. **Find unrecorded decisions.** A choice visible in the code that no record covers
+5. **Find unrecorded decisions.** A choice visible in the code that no record covers
    (a new capability, a new convention, a changed contract): propose the record to
    write, in the log its scope says.
-5. **Check the records themselves** against the recording rules: a numbered or
-   superseded-by record, a struck-through amendment, a process rule inside an ADR, a
-   value repeated from the configuration instead of citing its key.
+6. **Read the prose of the records the change touches** against the recording rules:
+   a process rule inside an ADR, a value repeated from the configuration instead of
+   citing its key, a record that narrates how it was reached, discarded options outside
+   *Discarded directions*.
+7. **Reconcile the figures** of those records (`lntt check decisions numbers <file>`,
+   or the `figures` lines with `--base`): a figure about the world outside or a count
+   of today's code is stale in a year; one about the technology holds.
+8. **Cite only what you reread:** before writing a finding, pass its `path:line` to
+   `lntt check cite <path:line>...`. A line that does not exist, or that does not say
+   what the finding claims, drops the finding; never adjust the number by eye.
 
 Output:
 
@@ -81,6 +100,9 @@ Output:
 
 ## Records out of shape
 - <file> — <which recording rule>. Recommended action: …
+
+## Not run
+- <check> — <its reason, from lntt check>. (`none` when nothing: the section stays.)
 
 ## Passing checks (brief)
 - <file>#<anchor> — <rule>: holds (enforced by <test / config>).

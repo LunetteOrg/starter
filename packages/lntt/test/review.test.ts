@@ -290,6 +290,22 @@ describe('the prompt', () => {
     const prompt = renderReviewPrompt('decisions', { base: 'mb', head: 'h', files: [], diff: '', records: 'RECORDS' })
     assert.match(prompt, /RECORDS/)
   })
+
+  test('a lens with an area of lntt check gets its results; another lens nothing of them', () => {
+    const values = {
+      base: 'mb',
+      head: 'h',
+      files: [],
+      diff: '',
+      records: 'R',
+      checks: { decisions: '{"status":"FAIL"}' },
+    }
+    const decisions = renderReviewPrompt('decisions', values)
+    assert.match(decisions, /lntt check decisions --base mb --json/)
+    assert.match(decisions, /\{"status":"FAIL"\}/)
+    assert.doesNotMatch(renderReviewPrompt('code', values), /lntt check|"status"/)
+    assert.doesNotMatch(renderReviewPrompt('code', values), /\{\{/)
+  })
 })
 
 describe('a round', () => {
@@ -389,6 +405,84 @@ describe('a round', () => {
     assert.equal(roundClean(result), true)
   })
 
+  test('a finding whose line does not exist is refuted by cite before any verifier; the others carry their line', async () => {
+    const { ask, asked } = asker((prompt, _kind, model) => {
+      if (isLens(prompt, 'code') && model === 'sonnet')
+        return '- [blocker] a.ts:1 — breaks — fix\n- [warning] a.ts:99 — invented — fix'
+      if (isLens(prompt)) return 'no findings'
+      return prompt.includes('const x = 1') ? 'confirmed\na.ts:1' : 'undecided\nno line given'
+    })
+    const cite = (path: string, line: number | null) =>
+      path === 'a.ts' && line === 1
+        ? { text: 'const x = 1' }
+        : { missing: 'no line 99: the file has 3 lines', what: 'line' as const }
+    const result = await runRound(config, { ...input, cite }, ask)
+    assert.deepEqual(asked.slice(3), ['claude opus'], 'only the finding on a real line is verified')
+    assert.deepEqual(
+      result.findings.map((f) => [f.path, f.line, f.verdict, f.cited]),
+      [['a.ts', 1, 'confirmed', 'const x = 1']],
+    )
+    assert.deepEqual(
+      result.refuted.map((f) => [f.line, f.proofs]),
+      [[99, [{ by: 'lntt check cite', outcome: 'refuted', proof: 'a.ts:99: no line 99: the file has 3 lines' }]]],
+    )
+  })
+
+  test('a finding on a file that is not there goes to its verifiers: the change may delete it', async () => {
+    const { ask, asked } = asker((prompt, _kind, model) => {
+      if (isLens(prompt, 'code') && model === 'sonnet') return '- [warning] gone.ts:3 — still imported — fix'
+      if (isLens(prompt)) return 'no findings'
+      return 'confirmed\nb.ts:1 imports it'
+    })
+    const cite = () => ({ missing: 'no such file', what: 'file' as const })
+    const result = await runRound(config, { ...input, cite }, ask)
+    assert.deepEqual(asked.slice(3), ['claude opus'])
+    assert.deepEqual(
+      result.findings.map((f) => [f.path, f.verdict]),
+      [['gone.ts', 'confirmed']],
+    )
+  })
+
+  test('a finding carried from the last round whose line is gone is refuted by cite; the next carried one stays carried', async () => {
+    const carried = (id: string, line: number, severity: 'warning' | 'note' = 'warning'): Checked => ({
+      id,
+      severity,
+      path: 'a.ts',
+      line,
+      what: `open-${id}`,
+      action: 'a',
+      foundBy: [{ lens: 'code', agent: 'claude sonnet', session: 's' }],
+      verdict: 'unverified',
+      proofs: [],
+    })
+    // A fresh note after them: never verified, wherever the carried ones end.
+    const { ask, labels } = asker((prompt, _kind, model) => {
+      if (isLens(prompt, 'code') && model === 'sonnet') return '- [note] a.ts:3 — wording — reword'
+      if (isLens(prompt)) return 'no findings'
+      return prompt.includes('open-f2') ? 'undecided\nstill there' : 'confirmed\na.ts:1'
+    })
+    const cite = (_path: string, line: number | null) =>
+      line === 40 ? { missing: 'no line 40: the file has 3 lines', what: 'line' as const } : { text: 'x' }
+    const result = await runRound(config, { ...input, cite }, ask, [carried('f1', 40), carried('f2', 2)])
+    assert.deepEqual(
+      result.refuted.map((f) => [f.id, f.proofs[0]?.by]),
+      [['f1', 'lntt check cite']],
+    )
+    // f2 is still a carried finding: verified on the new head, keeping its id; the note
+    // is not.
+    assert.deepEqual(
+      result.findings.map((f) => [f.id, f.verdict]),
+      [
+        ['f2', 'undecided'],
+        ['f3', 'unverified'],
+      ],
+    )
+    assert.deepEqual(
+      labels.filter((l) => l.startsWith('verify')),
+      ['verify f2 · claude opus'],
+    )
+  })
+
   test('a reviewer that fails makes the round not clean, never "no findings"', async () => {
     const { ask } = asker((prompt, _kind, model) => {
       if (isLens(prompt, 'code') && model === 'opus') return new Error('timed out after 20 minutes')
@@ -452,6 +546,29 @@ describe('a round', () => {
 })
 
 describe('what the first real round taught', () => {
+  test('a column, an en-dash range or a list of lines names the first line', () => {
+    assert.deepEqual(
+      parseFindings('- [note] a.ts:12:5 — x — y\n- [note] b.ts:3–7 — x — y\n- [note] c.ts:4,9 — x — y').map((f) => [
+        f.path,
+        f.line,
+      ]),
+      [
+        ['a.ts', 12],
+        ['b.ts', 3],
+        ['c.ts', 4],
+      ],
+    )
+  })
+
+  test('a range of lines names its first; a parenthesis after the anchor is not the finding', () => {
+    const text = '- [blocker] `.agents/config.jsonc:54-72` (`delivery.review`) — off — restore'
+    assert.equal(unreadableFindings(text), 0)
+    assert.deepEqual(
+      parseFindings(text).map((f) => [f.path, f.line, f.what, f.action]),
+      [['.agents/config.jsonc', 54, 'off', 'restore']],
+    )
+  })
+
   test('an anchor in backticks or bold is read as the anchor', () => {
     assert.deepEqual(
       parseFindings('- [warning] `src/a.ts:12` — x — y\n- **[blocker]** **b.ts:3** — z — w').map((f) => [

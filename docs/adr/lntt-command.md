@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-10-16
+date: 2026-10-17
 tags: [cli, packages, agents, ci, commands]
 ---
 
@@ -22,7 +22,8 @@ One package, `@lntt/lntt`, with one command, `lntt`. The package is named after 
 command, so a reader who sees `lntt` in a script knows which package provides it.
 
 ```
-lntt path | validate | get | set | operator | sync | check | local app | viewer
+lntt path | validate | get | set | operator | sync | local app | viewer
+lntt check [agents-md | decisions [structure | numbers]] | check cite
 lntt branch name | check | rename
 lntt review [reply]
 lntt worktree start
@@ -31,8 +32,8 @@ lntt ci local | candidate
 
 - **One entry point, one module per command group.** `bin/lntt.ts` dispatches to
   `src/cli.ts` (configuration, operator, `AGENTS.md`, local apps, viewer),
-  `src/branch-cli.ts`, `src/review-cli.ts`, `src/worktree-cli.ts` and `src/ci/cli.ts`. A
-  group loads only when it runs.
+  `src/check-cli.ts`, `src/branch-cli.ts`, `src/review-cli.ts`, `src/worktree-cli.ts`
+  and `src/ci/cli.ts`. A group loads only when it runs.
 - **What a person types is what an agent runs.** Skills, workflows, git hooks and
   `orca.yaml` call `lntt`, never a package's files by path, with one exception: the
   candidate workflow runs `node packages/lntt/bin/lntt.ts`, because it installs only
@@ -40,10 +41,25 @@ lntt ci local | candidate
 - **Output for scripts.** stdout carries only the result: a bare value (`lntt path`,
   `lntt branch name`), JSON (`lntt get`, `lntt operator`), or one JSON line per item
   (`lntt worktree start`, followed by the brief when no agent was started, for the
-  person who will start one); progress and child-process output go to stderr. Exit codes:
-  0 ok, 1 a configuration error or a red result, 2 a usage error.
-- **No aliases for old names.** A command is renamed in the same pull request as every
-  caller, and the plugin's version moves with its skills.
+  person who will start one; `lntt check --json`), or a report for a person (`lntt
+  check` without `--json`); progress and child-process output go to stderr. Exit codes:
+  0 ok, 1 a configuration error, a red result or a check that cannot run (one line on
+  stderr), 2 a usage error; a defect of `lntt` itself exits 1 with its stack trace.
+- **`lntt check` is the one verb for what is checked without judgement**, in areas:
+  `decisions`, whose results its review lens reads, and `agents-md`, which no lens
+  needs; a lens's checks are the area named after it. Alone it runs every area, which is
+  what CI runs. Every check reports `PASS`, `FAIL` or `NOT RUN` with its reason, so a
+  check that did not run is never read as one that passed, and `INFO` for what it prints
+  without a verdict; `--json` gives one line per result (`area`, `check`, `status`,
+  `path`, `line`, `message`), `--base <ref>` limits a check to what the diff touches
+  where that makes sense. What a project ships to others (a shared package, a skill)
+  cites the records of the project that installs it: `recording.externalReferences`
+  names those files with the reason, and a glob that matches nothing fails. A new
+  deterministic check is a check of an area, or a new area, never a script beside a
+  skill.
+- **No aliases for old names.** A renamed command answers only to its new name, so its
+  callers (workflows, skills, the README) change with it, and the plugin's version
+  follows the [delivery](../process/delivery.md#the-lunette-plugin) rule.
 
 ## Consequences
 
@@ -57,7 +73,7 @@ lntt ci local | candidate
 ### Negative / accepted risks
 
 - A project that only reads its configuration still installs the CI's dependencies
-  (`@actions/expressions`, `@actions/workflow-parser`, about 2 MB): accepted, since every
+  (`@actions/expressions`, `@actions/workflow-parser`): accepted, since every
   Lunette project runs `ci:local` too.
 - `@lntt/lntt` repeats the scope in the name; it is seen in `package.json` and
   `npx @lntt/lntt`, never in daily use.

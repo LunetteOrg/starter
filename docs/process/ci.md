@@ -16,7 +16,7 @@ batch for what is expensive ([delivery](./delivery.md) has the flow):
 | Event | What runs |
 |---|---|
 | A draft, into any base | nothing in the cloud; `pnpm ci:local` on the machine |
-| A ready pull request into a candidate, or into any branch other than `main` (a stacked pull request) | the minimal CI: frozen install, lint, typecheck, the AGENTS.md block, the branch name, the plugin version, the tests |
+| A ready pull request into a candidate, or into any branch other than `main` (a stacked pull request) | the minimal CI: frozen install, lint, typecheck, `lntt check` (the AGENTS.md block, the decision logs), the branch name, the plugin version, the tests |
 | The candidate's pull request into `main`, ready; a hotfix | the full CI: the minimal CI plus the scaffold smoke |
 | A push to `main` | the full CI, which gates a release |
 | A merge into a candidate | nothing |
@@ -78,11 +78,11 @@ No real secret runs locally, and ci:local never reads one from a password manage
 default stays native: it needs Docker and gigabytes of images, and its runner images
 are not the cloud's.
 
-Tried, on macOS with Docker Desktop: a one-step job in each executor, with a fake
-secret; and this repository's `ci.yml` in `act` with `node:24-bookworm-slim`, green up
-to `pnpm test`, which failed because that image has no `git`. **Not tried:** a full
-job green in either executor, the larger `act` images, a job with services, a dynamic
-CircleCI configuration.
+Known to work, on macOS with Docker Desktop: a one-step job in each executor, with a
+fake secret. A full job needs a runner image that has what its steps call (`git` for
+`pnpm test` here), which the slim images lack. **Unproven:** a full job green in either
+executor, the larger `act` images, a job with services, a dynamic CircleCI
+configuration.
 
 ## Discarded directions
 

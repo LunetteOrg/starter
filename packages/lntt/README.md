@@ -1,9 +1,9 @@
 # @lntt/lntt
 
 The `lntt` command, for the people and the agents of a Lunette project: its
-configuration and the operator profile, the managed block of `AGENTS.md`, branch names,
-the apps run locally, and its CI run on the local machine with the candidate automation
-([`lntt ci`](#ci-lntt-ci)).
+configuration and the operator profile, the managed block of `AGENTS.md`, the checks and
+the review of a change, branch names, the apps run locally, and its CI run on the local
+machine with the candidate automation ([`lntt ci`](#ci-lntt-ci)).
 
 ## The configuration
 
@@ -71,7 +71,57 @@ export default commitlintConfig()
 ## AGENTS.md
 
 `lntt sync` writes the managed block of `AGENTS.md` from
-[`agents/block.md`](./agents/block.md); `lntt check` fails when it differs.
+[`agents/block.md`](./agents/block.md); `lntt check agents-md` fails when it differs.
+
+## Checks (`lntt check`)
+
+What is checked without judgement, one area per review lens, so a reviewer reads the
+result instead of redoing it by eye.
+
+```sh
+lntt check                                              # every area: what CI runs
+lntt check agents-md                                    # the managed block of AGENTS.md
+lntt check decisions                                    # the decision logs of recording
+lntt check decisions --base main                        # … and what the diff from main touches
+lntt check decisions numbers docs/adr/review-agents.md  # every line carrying a figure
+lntt check cite docs/adr/review-agents.md:12 a.ts:40    # what is on those lines
+lntt check --json                                       # one JSON line per result
+```
+
+Every check reports `PASS`, `FAIL` or `NOT RUN` with its reason: an area or a log the
+project has not configured is `NOT RUN`, never a silent pass. `INFO` is printed without
+passing or failing (the diff inventory, the figures). Exit 1 on a `FAIL`, 2 on a usage
+error. `--json` prints one line per result: `area`, `check`, `status`, `path`, `line`,
+`message`.
+
+`lntt check decisions` (or `decisions structure`) reads every log of `recording.logs`:
+
+- **index:** no index row without its file, no record left out of the index, a row
+  labelled with a subject points at that subject's file. A log with no `index` is
+  `NOT RUN`.
+- **references:** every relative link into a log and every path to a record
+  (`docs/adr/<subject>.md`, in a document or in code, also wrapped over two lines)
+  resolves to a file that exists; a record cited by number (`ADR-NNNN`) is an error.
+  Files that cite the records of the project they ship to, not this one's, are listed
+  in `recording.externalReferences` with their reason; a glob that matches no file
+  fails.
+- **residues:** no append-only marker in a record (`Superseded by`, `Supersedes`,
+  `Amended by`, `## Update`, `## Addendum`, struck-through text, their Italian forms),
+  outside code spans.
+- **names:** the file name is the subject in kebab-case (no number, no date), the title
+  carries no number, and the status is one the log's `template` lists in its
+  frontmatter (`status: proposed # proposed | accepted`).
+
+With `--base <ref>` it adds the **inventory** of the diff (`<ref>...HEAD`: each record
+added, modified, deleted or renamed, and the other files), checks residues and names on
+the records the diff touches only, and prints the **figures** of those records.
+`numbers` prints the figures alone: every line carrying a percentage, an "N of M" or a
+number of two digits or more, the frontmatter, issue numbers and dates apart. Files of a
+nested project (a folder with a `.agents/config.*` of its own, a template) are that
+project's check.
+
+`cite` reads the working tree: the text of each line, or `FAIL` when the file or the
+line does not exist.
 
 ## Branch names
 
@@ -147,7 +197,10 @@ A round, on a clean working tree:
 1. **What to read:** the branch from where it left the base the first time, then only
    the commits after the last reviewed one (after a rebase, the whole branch again).
    The state is `lntt-review.json` in the worktree's git directory.
-2. **Reviewers**, all at once: every agent of every lens in `delivery.review.reviewers`
+2. **Checks**: a lens named after an area of `lntt check` (`decisions`) gets
+   `lntt check <area> --base <first commit read> --json` in its prompt, and its brief
+   keeps only what needs judgement.
+3. **Reviewers**, all at once: every agent of every lens in `delivery.review.reviewers`
    whose `paths` the diff touches. `decisions`, `code` and `tests` ship their briefs in
    [`agents/review/`](./agents/review/); another lens brings its own `brief`. Each agent
    runs headless with no context but its prompt (on stdin) and no tool that writes:
@@ -155,7 +208,11 @@ A round, on a clean working tree:
    standalone server with an inline agent that denies every tool and allows read, grep,
    glob and list back. `--plan` and every round name where the diff goes: the provider
    of each configured agent.
-3. **Verifiers**, all at once: each blocker and warning (`delivery.review.verify`) goes
+4. **Citations**: `lntt check cite` reads the line of every finding (the working tree,
+   clean at the head). A finding on a line past the end of its file is refuted there,
+   with no verifier; the others take the line's text to their verifiers. A file that is
+   not there goes to the verifiers: the change may delete it.
+5. **Verifiers**, all at once: each blocker and warning (`delivery.review.verify`) goes
    to every verifier but the agents that found it, briefed to refute it
    ([`agents/verify.md`](./agents/verify.md)). All confirm: confirmed. All refute:
    refuted. Otherwise undecided. Findings still open from the last round go back to

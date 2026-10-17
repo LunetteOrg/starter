@@ -4,8 +4,8 @@ name: CI
 # - a draft runs nothing: the job is skipped, and `ready_for_review` starts the run
 #   when it leaves draft. The author has `pnpm ci:local` green before that;
 # - a pull request into a candidate runs the minimal CI: what a clean machine catches
-#   and the author's machine may not (frozen install, lint, typecheck, the AGENTS.md
-#   block, the branch name, the plugin version);
+#   and the author's machine may not (frozen install, lint, typecheck, lntt check, the
+#   branch name, the plugin version);
 # - a pull request into the default branch (the candidate itself, a hotfix) and a push
 #   to it run the full CI, tests and scaffold smoke included. The push gates a release.
 on:
@@ -29,7 +29,8 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
-      # AGENTS.md's managed block must match its source (lntt sync).
+      # Every area of lntt check: AGENTS.md's managed block matches its source, the
+      # decision logs follow the recording rules.
       - run: pnpm exec lntt check
       # The branch follows type/issue/slug, whatever tool created it (lntt branch).
       - if: github.event_name == 'pull_request'

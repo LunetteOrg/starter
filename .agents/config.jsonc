@@ -18,6 +18,15 @@
         "index": "docs/process/README.md",
         "scope": "How work is done in this repo: mechanisms and reasons a configuration value cannot express. Never technical decisions."
       }
+    },
+    // What ships to other projects cites their records, not this repo's: lntt check
+    // decisions does not resolve the paths these files name.
+    "externalReferences": {
+      "packages/biome-config/**": "lint rules every project installs, citing that project's ADRs",
+      "packages/test-utils/**": "test helpers every project installs, citing that project's ADRs",
+      "packages/lntt/schema/**": "the schema of every project's configuration, citing that project's process pages",
+      "packages/lntt/test/**": "tests that name the records of their fixtures",
+      "plugins/**": "skills installed unchanged in every project, citing that project's records"
     }
   },
   // What pnpm ci:local leaves to the cloud (docs/process/ci.md).
@@ -44,9 +53,8 @@
     // not wait on them.
     "review": {
       "reviewers": {
-        // sonnet until the issue "lntt check decisions runs the structural checks of the
-        // decision logs, so the decisions review can run on a cheap model" is done
-        "decisions": { "with": [{ "kind": "claude", "model": "sonnet" }] },
+        // haiku: lntt check decisions does the structural checks, the lens only judges
+        "decisions": { "with": [{ "kind": "claude", "model": "haiku" }] },
         "code": {
           "with": [
             { "kind": "claude", "model": "sonnet" },
