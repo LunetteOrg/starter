@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import {
   chmodSync,
   existsSync,
@@ -31,6 +31,13 @@ process.stdin.on('data', (d) => (prompt += d)).on('end', () => {
   fs.appendFileSync(process.env.FAKE_LOG, kind + ' ' + args.join(' ') + '\\n')
   const model = args[args.indexOf('--model') + 1]
   if (process.env.FAKE_ENVLOG) fs.appendFileSync(process.env.FAKE_ENVLOG, (process.env.ORCA_AGENT_HOOK_PORT ? 'orca-hook-env' : 'clean') + '\\n')
+  if (process.env.FAKE_DIRTY) fs.writeFileSync('a.ts', 'changed during the round\\n')
+  if (process.env['FAKE_LOG_TERM_' + model]) {
+    process.on('SIGTERM', () => { fs.appendFileSync(process.env.FAKE_PIDS, 'TERM\\n'); process.exit(0) })
+    fs.appendFileSync(process.env.FAKE_PIDS, 'started\\n')
+    setInterval(() => {}, 1000)
+    return
+  }
   if (process.env['FAKE_IGNORE_TERM_' + model]) {
     process.on('SIGTERM', () => {})
     fs.appendFileSync(process.env.FAKE_PIDS, process.pid + '\\n')
@@ -435,5 +442,67 @@ describe('lntt review, end to end with a fake agent', () => {
       lines.map((l) => JSON.parse(l).type),
       ['error'],
     )
+  })
+
+  test('a branch that changes while the round runs makes the round fail', () => {
+    const r = lntt(['--base', 'main'], { FAKE_DIRTY: '1' })
+    assert.equal(r.code, 1)
+    assert.match(JSON.parse(r.out).failed.at(-1).error, /the branch moved/)
+  })
+
+  test('a round that fails on another branch than the saved one keeps no reviewed commit', () => {
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    git('switch', '-qc', 'feat/2/y')
+    writeFileSync(join(repo, 'a.ts'), 'export const a = 9\n')
+    git('commit', '-qam', 'other branch')
+    lntt(['--base', 'main'], { FAKE_FAIL_REVIEW: '1' })
+    assert.deepEqual([state().branch, state().reviewed], ['feat/2/y', null])
+  })
+
+  test('--plan as the first argument: an error leaves the progress file of the last round alone', () => {
+    lntt(['--base', 'main'])
+    const before = readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8')
+    writeFileSync(join(repo, '.agents/config.jsonc'), '{"delivery":{"review":{"timeoutMinutes":0}}}')
+    git('commit', '-qam', 'bad')
+    assert.equal(lntt(['--plan', '--base', 'main']).code, 1)
+    assert.equal(readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8'), before)
+  })
+
+  test('Ctrl-C gives the agents SIGTERM before anything harder', { timeout: 30000 }, async () => {
+    writeFileSync(
+      join(repo, '.agents/config.jsonc'),
+      JSON.stringify({
+        delivery: {
+          review: {
+            reviewers: {
+              decisions: { with: [] },
+              tests: { with: [] },
+              code: { with: [{ kind: 'claude', model: 'sonnet' }] },
+            },
+            verify: false,
+          },
+        },
+      }),
+    )
+    git('commit', '-qam', 'one reviewer')
+    const pids = join(repo, '.pids')
+    writeFileSync(pids, '')
+    const child = spawn(process.execPath, [BIN, 'review', '--base', 'main'], {
+      cwd: repo,
+      env: {
+        HOME: repo,
+        PATH: [bin, dirname(process.execPath), '/usr/bin', '/bin'].join(':'),
+        FAKE_LOG: log,
+        FAKE_LOG_TERM_sonnet: '1',
+        FAKE_PIDS: pids,
+      },
+      stdio: 'ignore',
+    })
+    const until = Date.now() + 10_000
+    while (!readFileSync(pids, 'utf8').includes('started') && Date.now() < until)
+      await new Promise((r) => setTimeout(r, 50))
+    child.kill('SIGINT')
+    await new Promise((r) => child.on('exit', r))
+    assert.match(readFileSync(pids, 'utf8'), /TERM/)
   })
 })

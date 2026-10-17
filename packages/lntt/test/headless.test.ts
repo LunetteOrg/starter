@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { askAll, headlessInvocation, parseReply, providerOf, type Spawn } from '../src/index.ts'
+import { askAll, headlessInvocation, parseReply, providerOf, type Spawn, timerMs } from '../src/index.ts'
 
 describe('a headless agent, read-only', () => {
   test('claude: print mode, JSON, only the read tools and no MCP server, the prompt on stdin', () => {
@@ -363,5 +363,27 @@ describe('several agents at once', () => {
       ['the round took longer than 60 minutes', 'the round took longer than 60 minutes'],
     )
     assert.equal(started, 1)
+  })
+
+  test('a required agent that fails also starts the grace of the optional ones', { timeout: 5000 }, async () => {
+    const spawn: Spawn = (inv, signal) =>
+      inv.stdin === 'required'
+        ? Promise.reject(new Error('exited 1'))
+        : new Promise((_, reject) => signal?.addEventListener('abort', () => reject(new Error(String(signal.reason)))))
+    const results = await askAll(
+      [
+        { agent: { kind: 'claude' }, prompt: 'required' },
+        { agent: { kind: 'claude', optional: true }, prompt: 'optional' },
+      ],
+      spawn,
+      () => {},
+      { optionalGraceMs: 5 },
+    )
+    assert.match(results[1]?.ok ? '' : (results[1]?.error ?? ''), /stopped/)
+  })
+
+  test('a delay past what a timer can hold is held at the maximum, not fired at once', () => {
+    assert.equal(timerMs(60 * 60_000), 3_600_000)
+    assert.equal(timerMs(1e12), 2 ** 31 - 1)
   })
 })

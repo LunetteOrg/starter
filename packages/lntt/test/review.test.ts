@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { describe, test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 import {
   type Ask,
   agentLabel,
@@ -857,5 +860,32 @@ describe('what the fourth real round taught', () => {
       result.findings[0]?.foundBy.map((b) => [b.agent, b.session]),
       [['claude sonnet', 's2']],
     )
+  })
+})
+
+describe('what the fifth real round taught', () => {
+  test('a finding whose action follows a semicolon, or has none, is still a finding', () => {
+    assert.deepEqual(
+      parseFindings('- [note] a.ts:3 — the guard is untested; add a case').map((f) => [f.what, f.action]),
+      [['the guard is untested; add a case', '']],
+    )
+    assert.deepEqual(
+      parseFindings('- [warning] a.ts:3 — x — y — z').map((f) => [f.what, f.action]),
+      [['x — y', 'z']],
+    )
+  })
+
+  test('only a line with no anchor or no separator is unreadable', () => {
+    assert.equal(unreadableFindings('- [warning] something is off'), 1)
+    assert.equal(unreadableFindings('- [warning] a.ts:1 — something is off'), 0)
+  })
+
+  test('the reply a real reviewer gave in round 5 reads whole: eleven findings', () => {
+    const reply = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'fixtures/review-reply-round5-tests.txt'),
+      'utf8',
+    )
+    assert.equal(unreadableFindings(reply), 0)
+    assert.equal(parseFindings(reply).length, 11)
   })
 })

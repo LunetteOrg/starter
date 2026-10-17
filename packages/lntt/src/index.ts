@@ -36,6 +36,7 @@ export {
   type Question,
   type Reply,
   type Spawn,
+  timerMs,
 } from './headless.ts'
 export { type LocalApp, localApp } from './local.ts'
 export { loadOperator, type Operator } from './operator.ts'

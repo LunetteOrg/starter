@@ -114,7 +114,10 @@ export interface Finding {
 // fields; `(no anchor)` in place of the anchor. Backticks and bold around the severity
 // or the anchor, which models add, are dropped first. Other lines are the reviewer
 // talking.
-const FINDING = /^\s*[-*]\s*\[(blocker|warning|note)\]\s+(\(no anchor\)|\S+?)\s+(?:—|–|-)\s+(.+?)\s+(?:—|–|-)\s+(.+)$/
+const FINDING = /^\s*[-*]\s*\[(blocker|warning|note)\]\s+(\(no anchor\)|\S+?)\s+(?:—|–|-)\s+(.+)$/
+// The action is what follows the last separator, when there is one more; otherwise the
+// whole text is the finding and the action stays empty.
+const LAST_SEPARATOR = /^(.+)\s+(?:—|–|-)\s+(.+)$/
 
 function unwrap(line: string): string {
   return line.replace(/^(\s*[-*]\s*)\*\*(\[\w+\])\*\*/, '$1$2').replace(/(\]\s+)[`*]+([^\s`*]+)[`*]+(?=\s)/, '$1$2')
@@ -155,7 +158,10 @@ export function parseFindings(text: string): Finding[] {
     const line = unwrap(raw)
     const m = FINDING.exec(line)
     if (!m) continue
-    const [, severity, anchor, what, action] = m as unknown as [string, Severity, string, string, string]
+    const [, severity, anchor, rest] = m as unknown as [string, Severity, string, string]
+    const split = LAST_SEPARATOR.exec(rest)
+    const what = split ? (split[1] as string) : rest
+    const action = split ? (split[2] as string) : ''
     const at = anchor === '(no anchor)' ? null : /^(.+?)(?::(\d+))?$/.exec(anchor)
     findings.push({
       severity,

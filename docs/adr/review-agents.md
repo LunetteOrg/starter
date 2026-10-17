@@ -34,16 +34,21 @@ same way every time; the `review` skill keeps the judgement.
   the brief.
 - **Adversarial verification:** every finding at a severity in `verify.severities`
   goes, at once, to every verifier in `verify.with` other than the agents that found it,
-  each briefed to refute it. All confirm: confirmed; all refute: refuted, kept out of
-  the author's list with the proofs; otherwise undecided.
+  each briefed to refute it; when those left are all optional, the required finders
+  verify too, so a finding always has a required verifier. The verdict counts the
+  verifiers that answered: all confirm, confirmed; all refute, refuted, kept out of the
+  author's list with the proofs; otherwise undecided.
 - **Rounds:** the first reads the branch from the base, later ones the commits after the
   last reviewed one, with fresh reviewers; findings still open go back to the verifiers
   on the new head, notes excepted. The state stays in the worktree's git directory. A
   clean round (exit 0) has no blocker or warning left and no reviewer or verifier that
-  failed; notes are reported, never blocking. A reply in neither the findings' format nor
-  `no findings` counts as a failed reviewer, and a round with a failure does not move the
-  reviewed commit. A fresh finding at the anchor of an open one joins it. A round runs
-  on a branch (a detached HEAD is refused) whose head does not move until it ends.
+  failed; notes are reported, never blocking. A finding is a bullet with its severity,
+  an anchor and its text (the action after a last separator, when there is one), wrapped
+  over as many lines as the reviewer likes; a reply with a finding line that has no
+  anchor or no text, or with neither findings nor `no findings`, counts as a failed
+  reviewer, and a round with a failure does not move the reviewed commit. A fresh
+  finding at the anchor of an open one joins it. A round runs on a branch (a detached
+  HEAD is refused) whose head does not move until it ends.
 - **Load:** at most `perProvider` agents of one provider run at once, the others waiting
   their turn; a provider given dozens of sessions at once queues them until they time
   out. Optional agents queue apart, so a slow one never holds a required agent's turn.

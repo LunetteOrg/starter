@@ -147,6 +147,11 @@ export function parseReply(kind: string, stdout: string): Reply {
   return { text, session: events.find((e) => e.sessionID)?.sessionID ?? null, cost: null, tokens }
 }
 
+// setTimeout holds at most 2^31-1 ms (about 24.8 days); a longer delay fires at once.
+export function timerMs(ms: number): number {
+  return Math.min(Math.max(0, ms), 2 ** 31 - 1)
+}
+
 export type Progress =
   | { type: 'start'; index: number; label: string; optional: boolean }
   | { type: 'end'; index: number; label: string; optional: boolean; answer: Answer; ms: number }
@@ -215,7 +220,7 @@ export async function askAll(
     progress({ type: 'end', index, label, optional, answer, ms: Date.now() - started })
     if (!optional && ++answered === required && grace !== undefined) {
       const reason = `stopped: the other agents answered ${Math.round(grace / 1000)}s before`
-      setTimeout(() => stop.abort(reason), grace).unref()
+      setTimeout(() => stop.abort(reason), timerMs(grace)).unref()
     }
     return answer
   })

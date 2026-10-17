@@ -15,6 +15,7 @@ import {
   type Progress,
   providerOf,
   type Spawn,
+  timerMs,
 } from './headless.ts'
 import { findConfig, loadConfig } from './index.ts'
 import { orcaSubagents, type Subagents } from './orca-subagents.ts'
@@ -211,8 +212,10 @@ function reporter(orca: Subagents | null = null): {
 // started; an interrupt of lntt review stops every group still running.
 const groups = new Set<number>()
 
-// SIGTERM to the group, then SIGKILL to what is still there five seconds later.
+// SIGTERM to the group, then SIGKILL to what is still there five seconds later. Only a
+// group still running: a closed agent's pid may already belong to another process.
 function terminate(pid: number): void {
+  if (!groups.has(pid)) return
   try {
     process.kill(-pid, 'SIGTERM')
   } catch {}
@@ -250,10 +253,17 @@ export function agentEnv(
   for (const [name, value] of Object.entries(base)) if (value !== undefined && !HOST_HOOKS.test(name)) out[name] = value
   return { ...out, ...extra }
 }
+// An interrupt gives the agents SIGTERM and up to five seconds to go before exiting; the
+// exit handler kills what is left.
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
     stopGroups()
-    exit(130)
+    const until = Date.now() + 5000
+    const wait = setInterval(() => {
+      if (groups.size > 0 && Date.now() < until) return
+      clearInterval(wait)
+      exit(130)
+    }, 100)
   })
 }
 
@@ -266,10 +276,11 @@ function spawner(timeoutMinutes: number): Spawn {
         detached: true,
       })
       if (child.pid) groups.add(child.pid)
-      signal?.addEventListener('abort', () => {
+      const onAbort = () => {
         if (child.pid) terminate(child.pid)
-        reject(new Error(String(signal.reason)))
-      })
+        reject(new Error(String(signal?.reason)))
+      }
+      signal?.addEventListener('abort', onAbort, { once: true })
       let out = ''
       let err = ''
       child.stdout.on('data', (chunk) => {
@@ -278,16 +289,20 @@ function spawner(timeoutMinutes: number): Spawn {
       child.stderr.on('data', (chunk) => {
         err += chunk
       })
-      const timer = setTimeout(() => {
-        if (child.pid) terminate(child.pid)
-        reject(new Error(`timed out after ${timeoutMinutes} minutes`))
-      }, timeoutMinutes * 60_000)
+      const timer = setTimeout(
+        () => {
+          if (child.pid) terminate(child.pid)
+          reject(new Error(`timed out after ${timeoutMinutes} minutes`))
+        },
+        timerMs(timeoutMinutes * 60_000),
+      )
       child.on('error', (error) => {
         clearTimeout(timer)
         reject(error)
       })
       child.on('close', (code) => {
         clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
         if (child.pid) groups.delete(child.pid)
         if (code === 0) resolve(out)
         else
@@ -376,7 +391,7 @@ async function round(args: string[]): Promise<number> {
   const deadline = new AbortController()
   setTimeout(
     () => deadline.abort(`the round took longer than ${config.roundTimeoutMinutes} minutes`),
-    config.roundTimeoutMinutes * 60_000,
+    timerMs(config.roundTimeoutMinutes * 60_000),
   ).unref()
   emit({
     type: 'round',
@@ -495,7 +510,7 @@ export async function main([command, ...args]: string[]): Promise<void> {
     }
     // `error:` is what the review skill watches for, with `failed` and `round N done`.
     stderr.write(`lntt review: error: ${(error as Error).message}\n`)
-    if (command !== 'reply' && !progressFile && !args.includes('--plan')) startProgress()
+    if (command !== 'reply' && !progressFile && ![command, ...args].includes('--plan')) startProgress()
     emit({ type: 'error', message: (error as Error).message })
     exit(1)
   }
