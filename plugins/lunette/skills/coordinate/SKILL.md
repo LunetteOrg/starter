@@ -144,3 +144,20 @@ mark ready; return the state of the theme and the friction. Also say:
 - **A round cap for `lntt review` is set by the coordinator in the child's context.** A
   review that keeps finding small notes after several rounds (one child ran 7) stops where the
   coordinator said it stops; without a cap, the child's judgement is the only brake.
+- **Reports to the person go to the orchestrator's mailbox, not only the tab:** a short status
+  when asked, and the final report when the last draft pull request is open.
+- **A candidate automation retargets draft pull requests** after they open (from the base
+  branch to the open candidate, and a stacked one twice). Read each pull request's base with
+  `gh` before listing the merge order.
+- **A review stops where the coordinator says.** Name the rule in the child's context: a round
+  cap, or stop when only notes and findings outside the issue remain, and list those in the
+  pull request. A round that is not empty at the cap is reported as such.
+- **Ask each child for its review cost in one line:** rounds, tokens and USD. Agents report
+  cost differently (tokens, USD, nothing).
+- **A skipped optional verifier** (a free model that timed out or was rate limited) is
+  reported in the round's `skipped`; say in the child's context that a round with skipped
+  verifiers still counts, and that the confirmed findings are what block.
+- **What worked:** a sibling signals a stacked child by message (the base is pushed and its
+  interface stable) and the stacked child starts from that branch; the theme section names the
+  files shared between siblings; a child puts an open decision to the coordinator through the
+  mailbox with its criteria.
