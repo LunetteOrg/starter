@@ -27,6 +27,11 @@ export function isArea(name: string): name is Area {
   return (AREAS as readonly string[]).includes(name)
 }
 
+// A check that cannot run at all: the project is not a git repository, or git is missing.
+export class CannotRunError extends Error {
+  override name = 'CannotRunError'
+}
+
 export interface CheckOptions {
   root: string
   data: Record<string, unknown>
@@ -46,7 +51,7 @@ export function projectFiles(root: string): string[] {
       maxBuffer: 256 * 1024 * 1024,
     })
   } catch {
-    throw new Error(`git cannot list the files of ${root}: lntt check reads a git repository`)
+    throw new CannotRunError(`git cannot list the files of ${root}: lntt check reads a git repository`)
   }
   const files = listed.split('\0').filter(Boolean)
   const nested = [

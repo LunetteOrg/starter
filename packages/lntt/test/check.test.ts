@@ -29,8 +29,13 @@ function project(fixture: string): void {
   git('commit', '-q', '-m', 'init')
 }
 
+// git never looks above the test's repository, wherever the temp directory is.
 function lntt(args: string[]) {
-  return spawnSync(process.execPath, [BIN, ...args], { cwd: repo, encoding: 'utf8' })
+  return spawnSync(process.execPath, [BIN, ...args], {
+    cwd: repo,
+    encoding: 'utf8',
+    env: { ...process.env, GIT_CEILING_DIRECTORIES: dirname(repo) },
+  })
 }
 
 function results(args: string[]): { status: number | null; results: Result[] } {
@@ -199,16 +204,22 @@ describe('lntt check decisions structure', () => {
     // report says so.
     writeFileSync(join(repo, 'docs/adr/template.md'), '---\nstatus: proposed\n---\n\n# Subject\n')
     assert.deepEqual(fails(names()), [])
-    assert.match((names()[0] as Result).message, /adr: 2 records, file name, title \(no template listing statuses/)
+    assert.match((names()[0] as Result).message, /no template listing two statuses or more/)
     // So does a template that is not there.
     rmSync(join(repo, 'docs/adr/template.md'))
     assert.deepEqual(fails(names()), [])
   })
 
-  test('a title that opens on a count is words, not a number', () => {
+  test('a title that opens on a small count is words; a numbered title fails at any count', () => {
     project('clean')
-    writeFileSync(join(repo, 'docs/adr/api-shape.md'), '---\nstatus: proposed\n---\n\n# 3 retries at most\n')
-    assert.deepEqual(fails(results(['check', 'decisions', 'structure']).results), [])
+    const title = (t: string) => {
+      writeFileSync(join(repo, 'docs/adr/api-shape.md'), `---\nstatus: proposed\n---\n\n# ${t}\n`)
+      return fails(results(['check', 'decisions', 'structure']).results).filter((f) => f.startsWith('names'))
+    }
+    assert.deepEqual(title('3 retries at most'), [])
+    for (const t of ['1. Record decisions', '7: Caching', '12 — API shape', '0003 Old thing']) {
+      assert.deepEqual(title(t), ['names docs/adr/api-shape.md:5'], t)
+    }
   })
 
   test('an untracked record is seen: a new file left out of the index fails before it is added', () => {
@@ -342,6 +353,8 @@ describe('lntt check cite', () => {
     assert.deepEqual(cite(repo, './src/app.ts', 3), { text: 'export const answer = 42' })
     assert.deepEqual(cite(repo, 'src/app.ts:3-4', null), { text: 'export const answer = 42' })
     assert.deepEqual(cite(repo, 'src/app.ts:3:7', null), { text: 'export const answer = 42' })
+    assert.deepEqual(cite(repo, 'src/app.ts:3–4', null), { text: 'export const answer = 42' })
+    assert.deepEqual(cite(repo, 'src/app.ts:3,1', null), { text: 'export const answer = 42' })
     assert.deepEqual(cite(repo, 'docs/adr/storage.md#decision', null), { text: null })
     assert.deepEqual(cite(repo, join(repo, 'src/app.ts'), 1), {
       text: '// Where data lives: docs/adr/storage.md. How it answers: docs/adr/',
@@ -391,6 +404,7 @@ describe('lntt check', () => {
       ['check', '--nope'],
       ['check', 'decisions', 'structure', 'docs/adr/storage.md'],
       ['check', 'decisions', '--base=-x'],
+      ['check', 'decisions', '--base='],
     ]) {
       const r = lntt(args)
       assert.equal(r.status, 2, args.join(' '))

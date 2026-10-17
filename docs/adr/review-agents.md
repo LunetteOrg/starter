@@ -65,12 +65,12 @@ same way every time; the `review` skill keeps the judgement.
   reviewed commit. A fresh finding at the anchor of an open one joins it. A round runs
   on a branch (a detached HEAD is refused) whose head does not move until it ends.
 - **Load:** at most `perProvider` required agents of one provider run at once, and as
-  many optional ones in a queue of their own, the others waiting their turn; a provider given dozens of sessions at once queues them until they time
-  out. A slow optional agent never holds a required agent's turn.
-  A verdict counts the verifiers that answered. An agent marked `optional` (a free
-  model) that fails is reported in `skipped` and does not fail the round; once the
-  others have answered it has `optionalGraceMinutes` more, then it is stopped, so a
-  round never waits on it.
+  many optional ones in a queue of their own, the others waiting their turn; a provider
+  given dozens of sessions at once queues them until they time out. A slow optional
+  agent never holds a required agent's turn. An agent marked `optional` (a free model)
+  that fails is reported in `skipped` and does not fail the round; once the others have
+  answered it has `optionalGraceMinutes` more, then it is stopped, so a round never
+  waits on it.
 - **Nothing runs forever:** each agent stops at `timeoutMinutes`, the whole round (or a
   reply) at `roundTimeoutMinutes` (the round fails and keeps what it gathered), an
   interrupt keeps the waiting agents from starting, and an agent that

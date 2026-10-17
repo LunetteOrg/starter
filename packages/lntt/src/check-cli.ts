@@ -4,7 +4,18 @@
 import { dirname } from 'node:path'
 import { cwd, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
-import { ANCHOR_LINE, AREAS, citeAll, failed, formatJson, formatText, isArea, type Result, runArea } from './check.ts'
+import {
+  ANCHOR_LINE,
+  AREAS,
+  CannotRunError,
+  citeAll,
+  failed,
+  formatJson,
+  formatText,
+  isArea,
+  type Result,
+  runArea,
+} from './check.ts'
 import { ConfigError, loadConfig } from './index.ts'
 
 const USAGE = `usage: lntt check [agents-md | decisions [structure | numbers [<file>...]]] [--base <ref>] [--json]
@@ -43,7 +54,9 @@ function run(args: string[]): Result[] {
   }
   if (rest.length > 0 && check !== 'numbers') usage(`${check ?? area} takes no file`)
   if (check === 'numbers' && rest.length === 0 && values.base === undefined) usage('numbers needs files or --base')
-  if (values.base?.startsWith('-')) usage(`--base ${values.base} is not a ref`)
+  if (values.base !== undefined && (values.base === '' || values.base.startsWith('-'))) {
+    usage(`--base ${values.base || "''"} is not a ref`)
+  }
   return runArea(area, check, rest, options)
 }
 
@@ -55,9 +68,10 @@ export function main(args: string[]): void {
     if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
       usage(error.message)
     }
-    // A configuration error, or a check that could not run at all (not a git
-    // repository, git missing): said in one line, never a stack trace.
-    stderr.write(`lntt: ${error instanceof ConfigError ? '' : 'error: '}${(error as Error).message}\n`)
+    // A configuration error, or a check that could not run at all: one line. Anything
+    // else is a defect of lntt and keeps its stack.
+    if (!(error instanceof ConfigError || error instanceof CannotRunError)) throw error
+    stderr.write(`lntt: ${error instanceof CannotRunError ? 'error: ' : ''}${error.message}\n`)
     exit(1)
   }
   stdout.write(args.includes('--json') ? formatJson(results) : formatText(results))

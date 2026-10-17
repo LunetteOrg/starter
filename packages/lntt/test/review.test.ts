@@ -455,7 +455,9 @@ describe('a round', () => {
       verdict: 'unverified',
       proofs: [],
     })
-    const { ask } = asker((prompt) => {
+    // A fresh note after them: never verified, wherever the carried ones end.
+    const { ask, labels } = asker((prompt, _kind, model) => {
+      if (isLens(prompt, 'code') && model === 'sonnet') return '- [note] a.ts:3 — wording — reword'
       if (isLens(prompt)) return 'no findings'
       return prompt.includes('open-f2') ? 'undecided\nstill there' : 'confirmed\na.ts:1'
     })
@@ -466,10 +468,18 @@ describe('a round', () => {
       result.refuted.map((f) => [f.id, f.proofs[0]?.by]),
       [['f1', 'lntt check cite']],
     )
-    // f2 is still a carried finding: verified on the new head, keeping its id.
+    // f2 is still a carried finding: verified on the new head, keeping its id; the note
+    // is not.
     assert.deepEqual(
       result.findings.map((f) => [f.id, f.verdict]),
-      [['f2', 'undecided']],
+      [
+        ['f2', 'undecided'],
+        ['f3', 'unverified'],
+      ],
+    )
+    assert.deepEqual(
+      labels.filter((l) => l.startsWith('verify')),
+      ['verify f2 · claude opus'],
     )
   })
 

@@ -43,7 +43,8 @@ lntt ci local | candidate
   (`lntt worktree start`, followed by the brief when no agent was started, for the
   person who will start one; `lntt check --json`), or a report for a person (`lntt
   check` without `--json`); progress and child-process output go to stderr. Exit codes:
-  0 ok, 1 a configuration error or a red result, 2 a usage error.
+  0 ok, 1 a configuration error, a red result or a check that cannot run (one line on
+  stderr), 2 a usage error; a defect of `lntt` itself keeps its stack trace.
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
   `decisions`, whose results its review lens reads, and `agents-md`, which no lens
   needs; a lens's checks are the area named after it. Alone it runs every area, which is

@@ -358,8 +358,9 @@ function namesCheck(root: string, logs: Log[], files: string[], only: Set<string
         .split('\n')
         .findIndex((l) => /^# /.test(l))
       if (title === -1) fail(record, 1, 'no title: a record starts with `# <subject>`')
-      // `# ADR NN — …`, `# NNNN. …`; a title that opens on a count (`# 3 retries`) is words.
-      else if (/^#\s+(?:[AP]DR\b|\d{2,}[\s.:)-])|[AP]DR[ \-#]?\d/.test(lines[title] as string)) {
+      // `# ADR NN — …`, `# N. …`, `# N: …`, `# NNNN …`; a title that opens on a small count
+      // (`# 3 retries`) is words.
+      else if (/^#\s+(?:[AP]DR\b|\d+[.:)]|\d+\s*[-–—]\s|\d{2,}[\s-])|[AP]DR[ \-#]?\d/.test(lines[title] as string)) {
         fail(record, title + 1, `the title carries a number: ${(lines[title] as string).trim()}`)
       }
       if (!statuses) continue
@@ -371,7 +372,7 @@ function namesCheck(root: string, logs: Log[], files: string[], only: Set<string
       }
     }
     summary.push(
-      `${log.name}: ${records.length} records${only ? ' the diff touches' : ''}, file name, title${statuses ? `, status (${statuses.join('|')})` : ' (no template listing statuses: no status)'}`,
+      `${log.name}: ${records.length} records${only ? ' the diff touches' : ''}, file name, title${statuses ? `, status (${statuses.join('|')})` : ' (no template listing two statuses or more: no status)'}`,
     )
   }
   if (out.length === 0) {

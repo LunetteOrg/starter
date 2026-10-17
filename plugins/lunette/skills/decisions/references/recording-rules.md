@@ -29,8 +29,10 @@ where, which language, what each one is for) are in the `recording` section of
 
 ## The shape of a record
 
-Use the log's `template` when the configuration names one. The default, for ADRs and
-PDRs, is MADR with YAML frontmatter:
+Use the log's `template` when the configuration names one. The comment beside its
+`status:` lists the statuses the log allows (`proposed | accepted`), and
+`lntt check decisions` checks every record against it. The default, for ADRs and PDRs,
+is MADR with YAML frontmatter:
 
 ```markdown
 ---
