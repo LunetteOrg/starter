@@ -38,7 +38,9 @@ small adapter that makes the calls it understands.
   setup has ended, because Orca's setup terminal stays open as a shell.
 - **One brief**, `packages/lntt/agents/brief.md`: the issue is the mandate, work only in
   this worktree, review and `ci:local` green, a draft pull request, then stop, and
-  report the friction met. `--prompt` replaces it for a coordinator's own instructions.
+  report the friction met. `--prompt` replaces it with instructions of one's own. A theme's
+  coordinator and its children are [coordinator mode](./coordinator-mode.md): the same
+  entry point, other briefs, a model per role.
 - **The agent, its model and its effort** (`--kind`, `--model`, `--effort`) reach each
   tool in the form it accepts:
   - Orca: one `worktree create --issue --agent --prompt`, with `--model` and

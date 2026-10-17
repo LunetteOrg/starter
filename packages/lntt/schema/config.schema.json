@@ -354,12 +354,18 @@
         "ignore": {
           "type": "array",
           "description": "Globs of files named like tests that are not tests (fixtures a test reads).",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         "assertions": {
           "type": "array",
           "description": "Functions that fail the test by throwing, which count as an assertion besides expect, assert and the names containing assert, expect, verify or check (run, runOrThrow).",
-          "items": { "type": "string", "pattern": "^[A-Za-z_$][\\w$]*$" }
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_$][\\w$]*$"
+          }
         }
       }
     },
@@ -494,6 +500,50 @@
           }
         }
       }
+    },
+    "coordinator": {
+      "type": "object",
+      "description": "Coordinator mode, read by lntt worktree start and the coordinate skill: a theme's parent worktree delegates each issue to a child worktree and writes no code. Reviews keep delivery.review; nothing here changes them.",
+      "additionalProperties": false,
+      "properties": {
+        "gate": {
+          "type": "string",
+          "enum": ["propose", "free"],
+          "description": "Whether a coordinator may start a child on its own. propose (default): lntt worktree start --parent asks the orchestrator through lntt ask and starts only on an answer that approves, unless the child was approved in the coordinator's brief (--approved). free: it starts at once."
+        },
+        "models": {
+          "type": "object",
+          "description": "The agent per role. A role without an entry runs on the agent's own default; --kind, --model and --effort on the command line win over these.",
+          "additionalProperties": false,
+          "properties": {
+            "coordinator": {
+              "$ref": "#/definitions/startAgent"
+            },
+            "children": {
+              "type": "object",
+              "description": "The child's agent by the issue's Size (lntt worktree start --size).",
+              "additionalProperties": false,
+              "properties": {
+                "XS": {
+                  "$ref": "#/definitions/startAgent"
+                },
+                "S": {
+                  "$ref": "#/definitions/startAgent"
+                },
+                "M": {
+                  "$ref": "#/definitions/startAgent"
+                },
+                "L": {
+                  "$ref": "#/definitions/startAgent"
+                },
+                "XL": {
+                  "$ref": "#/definitions/startAgent"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "definitions": {
@@ -534,13 +584,19 @@
         "files": {
           "type": "array",
           "description": "Globs from the project root of the test files at this level.",
-          "items": { "type": "string", "minLength": 1 },
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "minItems": 1
         },
         "exclude": {
           "type": "array",
           "description": "Globs of files the level's files do not take, so that each test file matches one level.",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         "environment": {
           "type": "string",
@@ -550,7 +606,10 @@
         "harness": {
           "type": "array",
           "description": "Identifiers a file at this level must open (tx, withTestDb, createTestDb): a file that names none of them does not integrate and fails the check.",
-          "items": { "type": "string", "pattern": "^[A-Za-z_$][\\w$]*$" },
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_$][\\w$]*$"
+          },
           "minItems": 1
         },
         "run": {
@@ -597,7 +656,10 @@
         "files": {
           "type": "array",
           "description": "Globs of the files the rule applies to. Default every test file.",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         "message": {
           "type": "string",
@@ -639,6 +701,27 @@
         "optional": {
           "type": "boolean",
           "description": "A failure of this agent (a free model that times out) is reported in skipped and does not fail the round. Default false."
+        }
+      }
+    },
+    "startAgent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The agent CLI as Orca's --agent and Herdr's --kind name it (claude, codex, opencode). Default claude."
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The model, as the agent names it. Default: the agent's own."
+        },
+        "effort": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The reasoning effort, for the agents that take one."
         }
       }
     }

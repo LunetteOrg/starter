@@ -81,6 +81,22 @@
       }
     }
   },
+  // Coordinator mode (docs/adr/coordinator-mode.md). The coordinator's work is mostly
+  // mechanical (starting children, reading their reports), so it runs on sonnet; a child
+  // by the Size of its issue, the top model for M and up.
+  "coordinator": {
+    "gate": "propose",
+    "models": {
+      "coordinator": { "kind": "claude", "model": "sonnet" },
+      "children": {
+        "XS": { "kind": "claude", "model": "sonnet" },
+        "S": { "kind": "claude", "model": "sonnet" },
+        "M": { "kind": "claude", "model": "opus" },
+        "L": { "kind": "claude", "model": "opus" },
+        "XL": { "kind": "claude", "model": "opus" }
+      }
+    }
+  },
   "delivery": {
     // Pull requests into main collect on candidate/<N>, which reaches main with a
     // rebase merge (docs/process/delivery.md).

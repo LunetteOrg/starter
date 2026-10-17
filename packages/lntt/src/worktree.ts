@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
+import { fill } from './template.ts'
 
 export type WorktreeHost = 'orca' | 'herdr' | 'git'
 
@@ -19,7 +20,8 @@ export interface Runner {
 }
 
 export interface Start {
-  issue: number
+  // Null for a coordinator's own worktree, which is on no issue.
+  issue: number | null
   title: string
   branch: string
   base: string
@@ -28,6 +30,10 @@ export interface Start {
   // The main checkout: plain git and Herdr put worktrees under <root>/.worktrees/.
   root: string
   brief: string
+  // The coordinator's worktree, as the host selects it. Orca draws the lineage from it;
+  // Herdr and plain git have none, and the child reaches its coordinator through the
+  // mailbox.
+  parent?: string
 }
 
 // kind: the agent CLI (claude, codex, opencode, …), as Orca's --agent and Herdr's
@@ -40,7 +46,7 @@ export interface Agent {
 
 export interface Started {
   host: WorktreeHost
-  issue: number
+  issue: number | null
   branch: string
   path: string | null
   // How to reach the agent: Orca's terminal handle or dispatch id, Herdr's agent name or
@@ -68,9 +74,9 @@ export interface BriefValues {
   worktree: string
 }
 
+// The brief of a plain issue; a child of a coordinator gets childBrief (coordinator.ts).
 export function renderBrief(template: string | undefined, values: BriefValues): string {
-  const text = template ?? readFileSync(BRIEF, 'utf8')
-  return text.replace(/\{\{(issue|title|branch|worktree)\}\}/g, (_, key: keyof BriefValues) => String(values[key]))
+  return fill(template ?? readFileSync(BRIEF, 'utf8'), { theme: '', reporting: '', workflow: '', ...values })
 }
 
 // The setup a worktree gets, read from its own orca.yaml (the revision it checks out,
@@ -135,6 +141,15 @@ function orcaTakesModel(runner: Runner): boolean {
   return /--model\b/.test(help)
 }
 
+// `orca worktree create`: the name, the issue it is linked to and the coordinator it
+// descends from, when there are any.
+function createArgs(start: Start): string[] {
+  const args = ['worktree', 'create', '--name', flat(start.branch)]
+  if (start.issue !== null) args.push('--issue', String(start.issue))
+  if (start.parent) args.push('--parent-worktree', start.parent)
+  return args
+}
+
 // Orca prefixes the worktree name with the user (`<user>/feat-78-slug`); its setup
 // (orca.yaml, `lntt branch rename`) reads the convention back. The agent starts after
 // the setup (setupAgentStartupPolicy: wait-for-setup).
@@ -143,7 +158,7 @@ export function startOrca(start: Start, runner: Runner, setupFor: SetupFor = () 
   if (shell) return startOrcaShell(start, shell, runner, setupFor)
   const tuned = Boolean(start.agent?.model || start.agent?.effort)
   if (start.agent && tuned && !orcaTakesModel(runner)) return startOrcaWorker(start, start.agent, runner, setupFor)
-  const args = ['worktree', 'create', '--name', flat(start.branch), '--issue', String(start.issue)]
+  const args = createArgs(start)
   args.push('--base-branch', start.base, '--setup', 'run', '--json')
   if (start.agent) {
     args.push('--agent', start.agent.kind, '--prompt', start.brief)
@@ -168,13 +183,14 @@ export function startOrca(start: Start, runner: Runner, setupFor: SetupFor = () 
     path: reply.result?.worktree?.path ?? null,
     // Orca started the agent even when its reply names no handle.
     agent: start.agent ? (handle ?? 'unknown') : null,
+    ...parentOf(start),
   }
 }
 
 // The worktree with its issue linked and Orca's setup skipped, then the setup run here:
 // Orca's setup terminal stays open as a shell, with no end to wait for.
 function orcaWorktree(start: Start, runner: Runner, setupFor: SetupFor): string {
-  const args = ['worktree', 'create', '--name', flat(start.branch), '--issue', String(start.issue)]
+  const args = createArgs(start)
   args.push('--base-branch', start.base, '--setup', 'skip', '--json')
   const path = find(JSON.parse(runner.run('orca', args) || '{}'), 'path')
   if (typeof path !== 'string') throw new Error('orca worktree create returned no path')
@@ -216,7 +232,7 @@ function startOrcaShell(start: Start, command: string, runner: Runner, setupFor:
     throw new Error(`the agent in ${handle} is not ready; the brief was not sent`)
   }
   runner.run('orca', ['terminal', 'send', '--terminal', handle, '--text', start.brief, '--enter', '--json'])
-  return { host: 'orca', issue: start.issue, branch: start.branch, path, agent: handle }
+  return { host: 'orca', issue: start.issue, branch: start.branch, path, agent: handle, ...parentOf(start) }
 }
 
 // On an Orca whose `worktree create --agent` takes no model or effort, Orca's
@@ -228,7 +244,13 @@ function startOrcaWorker(start: Start, agent: Agent, runner: Runner, setupFor: S
   agentArgs(agent) // what the agent cannot take fails before anything is created
   const current = JSON.parse(runner.run('orca', ['orchestration', 'run-current', '--json']) || '{}')
   if (!find(current, 'run')) {
-    runner.run('orca', ['orchestration', 'run-create', '--objective', `lntt worktree start #${start.issue}`, '--json'])
+    runner.run('orca', [
+      'orchestration',
+      'run-create',
+      '--objective',
+      `lntt worktree start ${start.issue === null ? start.title : `#${start.issue}`}`,
+      '--json',
+    ])
   }
   const path = orcaWorktree(start, runner, setupFor)
   const worker = ['orchestration', 'worker-start', '--spec', start.brief, '--worktree', `path:${path}`]
@@ -242,8 +264,11 @@ function startOrcaWorker(start: Start, agent: Agent, runner: Runner, setupFor: S
     branch: start.branch,
     path,
     agent: typeof dispatch === 'string' ? dispatch : 'unknown',
+    ...parentOf(start),
   }
 }
+
+const parentOf = (start: Start) => (start.parent ? { parent: start.parent } : {})
 
 // The first value of `key` anywhere in a JSON reply.
 function find(value: unknown, key: string): unknown {
@@ -302,7 +327,8 @@ export function startHerdr(start: Start, runner: Runner, setupFor: SetupFor): St
   untrack(start, runner)
   const setup = setupFor(path)
   if (setup) runner.shell(setup, path)
-  if (!start.agent) return { host: 'herdr', issue: start.issue, branch: start.branch, path, agent: null }
+  if (!start.agent)
+    return { host: 'herdr', issue: start.issue, branch: start.branch, path, agent: null, ...parentOf(start) }
   const pane = herdrPane(JSON.parse(reply || '{}'), runner)
   if (!pane) throw new Error(`no pane found in the workspace herdr created: ${reply}`)
   let agent: string
@@ -318,7 +344,7 @@ export function startHerdr(start: Start, runner: Runner, setupFor: SetupFor): St
     agent = name
   }
   runner.run('herdr', ['agent', 'prompt', agent, start.brief])
-  return { host: 'herdr', issue: start.issue, branch: start.branch, path, agent }
+  return { host: 'herdr', issue: start.issue, branch: start.branch, path, agent, ...parentOf(start) }
 }
 
 // Herdr creates the branch from origin/<base>, which git may record as its upstream: a
@@ -338,5 +364,5 @@ export function startGit(start: Start, runner: Runner, setupFor: SetupFor): Star
   runner.run('git', ['worktree', 'add', '--no-track', '-b', start.branch, path, start.base], { cwd: start.root })
   const setup = setupFor(path)
   if (setup) runner.shell(setup, path)
-  return { host: 'git', issue: start.issue, branch: start.branch, path, agent: null }
+  return { host: 'git', issue: start.issue, branch: start.branch, path, agent: null, ...parentOf(start) }
 }

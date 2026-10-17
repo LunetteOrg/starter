@@ -207,6 +207,42 @@ The host is the innermost one the session runs in, detected from the environment
 - **Plain git** otherwise, Wave and Claude desktop included: `git worktree add` under
   `<main checkout>/.worktrees/`, the setup, and the brief printed for the person.
 
+## Coordinating a theme
+
+A theme is several issues at once. Its coordinator is a worktree that writes no code and
+starts one child per issue ([coordinator mode](../../docs/adr/coordinator-mode.md); the
+instructions are the `coordinate` skill of the `lunette` plugin).
+
+```sh
+lntt worktree start --coordinator --theme release-0-6-1 --issue 84 --issue 89 --approve 89
+lntt worktree start --theme release-0-6-1 --parent current --issue 89 \
+  --context theme-89.md --size S [--base <branch>] [--workflow]
+```
+
+- `--coordinator` starts the theme's coordinator on the model of `coordinator.models.coordinator`,
+  with [`agents/coordinator.md`](./agents/coordinator.md); `--approve` lists the children it
+  may start without asking.
+- `--theme` makes a child the theme's: `--context` is the child's section of the theme,
+  rendered into its brief; `--size` picks its model from `coordinator.models.children`
+  (`--kind`, `--model` and `--effort` win); `--parent` is the coordinator's worktree for Orca's
+  lineage; `--workflow` adds the multi-agent section ([`agents/workflow.md`](./agents/workflow.md)).
+- With `coordinator.gate` at `propose` (default), a child not yet approved is proposed to the
+  orchestrator and nothing is created until it answers `approve`.
+
+The agents talk through the mailbox, which needs no Orca or Herdr:
+
+```sh
+lntt ask --to coordinator --theme release-0-6-1 "Which pull request first?"   # waits; stdout is the answer
+lntt inbox --as coordinator --theme release-0-6-1 [--wait]    # unanswered messages, one JSON line each
+lntt answer 20261017-101500-which-pull-request "The CLI one."
+```
+
+A message is `<git common dir>/lntt-messages/to-<role>/<YYYYMMDD-HHMMSS>-<topic>.md`, its answer the
+same name ending in `.answer.md`; polled every 20 seconds (`LNTT_POLL_SECONDS`). A child is
+addressed by `--issue`, a coordinator by `--theme`. `--timeout <s>` ends a wait with exit 1 and
+leaves the message in place; `-` reads the text from stdin; `LNTT_ROLE`, `LNTT_THEME` and
+`LNTT_ISSUE` default `inbox`'s role and address.
+
 ## Reviewing a change
 
 ```sh
