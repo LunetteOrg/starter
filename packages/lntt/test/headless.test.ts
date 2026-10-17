@@ -303,14 +303,24 @@ describe('several agents at once', () => {
   })
 
   test('when every agent is optional, none is stopped early', { timeout: 5000 }, async () => {
-    const spawn: Spawn = () =>
-      new Promise((resolve) =>
-        setTimeout(() => resolve(JSON.stringify({ result: 'r', session_id: 's', is_error: false })), 20),
-      )
-    const results = await askAll([{ agent: { kind: 'claude', optional: true }, prompt: 'P' }], spawn, () => {}, {
-      optionalGraceMs: 1,
-    })
-    assert.equal(results[0]?.ok, true)
+    const ok = JSON.stringify({ result: 'r', session_id: 's', is_error: false })
+    // One answers at once and one long after the grace: an answer of an optional agent
+    // never starts the grace, so the slow one is awaited.
+    const spawn: Spawn = (inv) =>
+      inv.stdin === 'fast' ? Promise.resolve(ok) : new Promise((resolve) => setTimeout(() => resolve(ok), 50))
+    const results = await askAll(
+      [
+        { agent: { kind: 'claude', optional: true }, prompt: 'fast' },
+        { agent: { kind: 'claude', optional: true }, prompt: 'slow' },
+      ],
+      spawn,
+      () => {},
+      { optionalGraceMs: 1 },
+    )
+    assert.deepEqual(
+      results.map((a) => a.ok),
+      [true, true],
+    )
   })
 
   test('optional agents have slots of their own: a required one of the same provider never waits behind them', {
@@ -385,5 +395,77 @@ describe('several agents at once', () => {
   test('a delay past what a timer can hold is held at the maximum, not fired at once', () => {
     assert.equal(timerMs(60 * 60_000), 3_600_000)
     assert.equal(timerMs(1e12), 2 ** 31 - 1)
+  })
+})
+
+// The grace starts with the answer of the last required agent: not with the first, not
+// with an optional one. Each case orders two events (a required agent answering, an
+// optional one stopped) by timers whose expiry order fixes the outcome, however loaded
+// the machine is.
+describe('the grace of the optional agents starts after the last required answer', () => {
+  const ok = JSON.stringify({ result: 'r', session_id: 's', is_error: false })
+  const answersAfter = (ms: number, log: string[], what: string) =>
+    new Promise<string>((resolve) =>
+      setTimeout(() => {
+        log.push(what)
+        resolve(ok)
+      }, ms),
+    )
+  const hangsUntilStopped = (signal: AbortSignal | undefined, log: string[], what: string) =>
+    new Promise<string>((_, reject) =>
+      signal?.addEventListener('abort', () => {
+        log.push(what)
+        reject(new Error(String(signal.reason)))
+      }),
+    )
+
+  test('after a slow required agent, not after the failed one that answered first', { timeout: 5000 }, async () => {
+    const log: string[] = []
+    const spawn: Spawn = (inv, signal) =>
+      inv.stdin === 'fails'
+        ? Promise.reject(new Error('exited 1'))
+        : inv.stdin === 'slow'
+          ? answersAfter(40, log, 'slow answered')
+          : hangsUntilStopped(signal, log, 'optional stopped')
+    const results = await askAll(
+      [
+        { agent: { kind: 'claude' }, prompt: 'fails' },
+        { agent: { kind: 'claude' }, prompt: 'slow' },
+        { agent: { kind: 'claude', optional: true }, prompt: 'optional' },
+      ],
+      spawn,
+      () => {},
+      { optionalGraceMs: 10 },
+    )
+    assert.deepEqual(log, ['slow answered', 'optional stopped'])
+    assert.deepEqual(
+      results.map((a) => a.ok),
+      [false, true, false],
+    )
+  })
+
+  test('an optional agent that answered first does not count as a required answer', { timeout: 5000 }, async () => {
+    const log: string[] = []
+    const spawn: Spawn = (inv, signal) =>
+      inv.stdin === 'quick optional'
+        ? Promise.resolve(ok)
+        : inv.stdin === 'required'
+          ? answersAfter(40, log, 'required answered')
+          : hangsUntilStopped(signal, log, 'optional stopped')
+    const results = await askAll(
+      [
+        { agent: { kind: 'claude', optional: true }, prompt: 'quick optional' },
+        { agent: { kind: 'claude' }, prompt: 'required' },
+        { agent: { kind: 'claude', optional: true }, prompt: 'slow optional' },
+      ],
+      spawn,
+      () => {},
+      { optionalGraceMs: 10 },
+    )
+    assert.deepEqual(log, ['required answered', 'optional stopped'])
+    assert.deepEqual(
+      results.map((a) => a.ok),
+      [true, true, false],
+    )
   })
 })
