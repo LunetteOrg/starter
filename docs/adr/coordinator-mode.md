@@ -34,8 +34,8 @@ two.
   depends on a sibling, from the sibling's branch (`--base`). It follows the single-issue
   brief ([worktree tooling](./worktree-tooling.md)) and stops at a draft pull request.
 
-The mode is documented once, in the `coordinate` skill of the `lunette` plugin, which
-carries the coordinator's own instructions to the coordinator. The briefs are templates in
+The coordinator's instructions are the `coordinate` skill of the `lunette` plugin; the
+flags and files are in the `@lntt/lntt` README. The briefs are templates in
 `packages/lntt/agents/`: `coordinator.md` for the parent, `brief.md` for a child, with
 `reporting.md` and `workflow.md` added to it when the child belongs to a theme.
 
@@ -67,18 +67,17 @@ would nest git worktrees inside one the host does not track.
 
 `coordinator.gate` in `.agents/config.jsonc` is `propose` (default) or `free`. Under
 `propose`, `lntt worktree start --theme` sends one message to the orchestrator for the
-children not yet approved and creates nothing until an answer begins with `approve`, `yes`
-or `ok`. Approvals are kept per theme in the shared mailbox directory
+children not yet approved and creates nothing until the answer is `approve`, `yes`
+or `ok` and nothing else. Approvals are kept per theme in the shared mailbox directory
 (`approved-<theme>.txt`), written by `--approve` at the coordinator's start and by an
-approving answer. The coordinator's worktree holds no flag or file that approves a child.
+approving answer. No flag of `lntt` approves a child for the coordinator.
 
 ### The model per role
 
 `coordinator.models` names the agent (`kind`, `model`, `effort`) of the coordinator and of
 the children by the issue's Size. `--size` picks the child's entry; `--kind`, `--model` and
 `--effort` on the command line win, field by field. A role without an entry runs on the
-agent's own default. A change of a public interface, of infrastructure or of a shared
-contract is sized M or larger whatever its issue says. Reviews keep `delivery.review`.
+agent's own default. Reviews keep `delivery.review`.
 
 ### The mailbox
 
@@ -103,8 +102,9 @@ host, with no messaging command of Orca or Herdr:
 - Both directions work: a child asks its coordinator and reports to it; a coordinator asks
   the orchestrator, and the orchestrator can ask either.
 
-A mailbox kept by hand with the same file names is read and answered by these commands
-unchanged; a hand-written `to-coordinator` directory stays the unqualified coordinator's.
+The commands read and answer files written by hand with the same names, and a
+`to-coordinator` directory is the unqualified coordinator's. `LNTT_ROLE`, `LNTT_THEME` and
+`LNTT_ISSUE` default `inbox`'s role and address; `--interval` sets one call's poll.
 
 ### The scaffolding contract
 
@@ -127,8 +127,9 @@ that `@lntt/lntt` ships; no placeholder, dotfile, provenance field or rewrite of
 
 - Polling every 20 seconds means an answer takes up to 20 seconds to be seen, and a blocked
   `ask` holds its terminal.
-- The gate stops a coordinator that follows `lntt`; a coordinator that calls `orca` or `git`
-  directly bypasses it. The brief tells it not to.
+- The gate stops a coordinator that follows `lntt`. A coordinator that calls `orca` or `git`
+  directly, or writes into the mailbox directory (an answer to its own proposal, the approved
+  file), bypasses it. The brief tells it not to.
 - Herdr and git show no lineage; the theme's structure there is the mailbox and the briefs.
 - The opt-in keyword lives in `workflow.md`, one file a coordinator has no reason to read.
 

@@ -75,6 +75,7 @@ function lntt(args: string[], extra: Record<string, string> = {}) {
     cwd: repo,
     encoding: 'utf8',
     env: env(extra),
+    timeout: 30_000,
   })
 }
 
@@ -126,6 +127,7 @@ describe('lntt worktree start --coordinator', () => {
     assert.doesNotMatch(brief, /ultracode/i)
     assert.match(brief, new RegExp(`${join(tmp, 'bin', 'orca')} worktree set`))
     assert.equal(JSON.parse(r.stdout.trim()).issue, null)
+    assert.equal(readFileSync(join(mailbox(), 'approved-release-0-6-1.txt'), 'utf8'), '89\n')
   })
 
   test('refuses what is a child’s, before creating anything', () => {
@@ -216,7 +218,8 @@ describe('lntt worktree start --theme (a coordinator’s child)', () => {
     )
     assert.deepEqual(creates(), [], 'nothing is created while the answer is awaited')
 
-    spawnSync(process.execPath, [BIN, 'answer', message.id, 'approve'], { cwd: repo, env: env() })
+    const replied = spawnSync(process.execPath, [BIN, 'answer', message.id, 'approve'], { cwd: repo, env: env() })
+    assert.equal(replied.status, 0)
     assert.equal(await done, 0, stderr)
     assert.equal(creates().length, 1)
     // The approval is kept: the same child is not proposed twice.
@@ -239,9 +242,30 @@ describe('lntt worktree start --theme (a coordinator’s child)', () => {
       env: env(),
     })
     const message = JSON.parse(asked.stdout.trim().split('\n')[0] as string)
-    spawnSync(process.execPath, [BIN, 'answer', message.id, 'not yet: #84 merges first'], { cwd: repo, env: env() })
+    const replied = spawnSync(process.execPath, [BIN, 'answer', message.id, 'not yet: #84 merges first'], {
+      cwd: repo,
+      env: env(),
+    })
+    assert.equal(replied.status, 0)
     assert.equal(await done, 1)
     assert.match(stderr, /not approved by the orchestrator: not yet: #84 merges first/)
+    assert.deepEqual(creates(), [])
+  })
+
+  test('an answer that adds a condition does not approve', async () => {
+    const starting = spawn(process.execPath, [BIN, 'worktree', 'start', '--host', 'orca', ...child()], {
+      cwd: repo,
+      env: env(),
+    })
+    const done = new Promise<number | null>((ok) => starting.on('close', ok))
+    const asked = spawnSync(process.execPath, [BIN, 'inbox', '--as', 'orchestrator', '--wait', '--timeout', '20'], {
+      cwd: repo,
+      encoding: 'utf8',
+      env: env(),
+    })
+    const message = JSON.parse(asked.stdout.trim().split('\n')[0] as string)
+    spawnSync(process.execPath, [BIN, 'answer', message.id, 'yes, but not #89 yet'], { cwd: repo, env: env() })
+    assert.equal(await done, 1)
     assert.deepEqual(creates(), [])
   })
 

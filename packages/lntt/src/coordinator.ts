@@ -54,9 +54,10 @@ export function agentFor(
   return { kind, ...(model ? { model } : {}), ...(effort ? { effort } : {}) }
 }
 
-// A proposal is approved by an answer that begins with one of these words.
+// A proposal is approved by an answer that is one of these words: "yes, but not #84"
+// approves nothing.
 export function isApproval(answer: string): boolean {
-  return /^\s*(approve|approved|yes|ok)\b/i.test(answer)
+  return /^\s*(approve|approved|yes|ok)[\s.!]*$/i.test(answer)
 }
 
 // The children a person approved for a theme, kept next to the mailbox they were

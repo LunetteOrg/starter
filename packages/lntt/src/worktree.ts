@@ -52,6 +52,8 @@ export interface Started {
   // How to reach the agent: Orca's terminal handle or dispatch id, Herdr's agent name or
   // pane.
   agent: string | null
+  // The coordinator's worktree, for a child started under one.
+  parent?: string
 }
 
 type Env = Record<string, string | undefined>

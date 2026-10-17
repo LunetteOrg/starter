@@ -452,3 +452,50 @@ describe('running a tool', () => {
     assert.throws(() => startOrca({ ...START, agent: { kind: 'claude', model: 'sonnet' } }, runner), /could not tell/)
   })
 })
+
+describe('a coordinator’s worktree and its children', () => {
+  const COORDINATOR: Start = { ...START, issue: null, title: 'Theme t', branch: 'chore/no-issue/t' }
+  const CHILD: Start = { ...START, parent: 'current' }
+
+  test('Orca links no issue for the coordinator, and the lineage for a child', () => {
+    const { calls, runner } = recorder({
+      'orca worktree create': JSON.stringify({ result: { worktree: { path: '/p' } } }),
+    })
+    startOrca({ ...COORDINATOR, agent: null }, runner)
+    startOrca({ ...CHILD, agent: null }, runner)
+    assert.doesNotMatch(calls[0] as string, /--issue|--parent-worktree/)
+    assert.match(calls[1] as string, /--issue 78 .*--parent-worktree current|--parent-worktree current/)
+  })
+
+  test('Orca’s worker route carries the lineage and names a coordinator by its title', () => {
+    const { calls, runner } = recorder({
+      'orca worktree create --help': 'Usage: orca worktree create --name <n>',
+      'orca orchestration run-current': '{"result":{"run":{"id":"r"}}}',
+      'orca worktree create --name': JSON.stringify({ result: { worktree: { path: '/p' } } }),
+      'orca orchestration worker-start': JSON.stringify({ result: { dispatchId: 'd1' } }),
+    })
+    const started = startOrca({ ...CHILD, agent: { kind: 'claude', model: 'sonnet' } }, runner)
+    assert.ok(calls.some((c) => /^orca worktree create .*--parent-worktree current/.test(c)))
+    assert.equal(started.parent, 'current')
+    const { calls: more, runner: second } = recorder({
+      'orca worktree create --help': 'Usage: orca worktree create --name <n>',
+      'orca orchestration run-current': '{}',
+      'orca worktree create --name': JSON.stringify({ result: { worktree: { path: '/p' } } }),
+    })
+    startOrca({ ...COORDINATOR, agent: { kind: 'claude', model: 'sonnet' } }, second)
+    assert.ok(more.some((c) => c.includes('--objective lntt worktree start Theme t')))
+  })
+
+  test('Herdr and git report the parent they were given, and a coordinator has no issue', () => {
+    const { runner } = recorder({
+      'herdr worktree create': JSON.stringify({ result: { pane: { pane_id: 'w2:p1' } } }),
+    })
+    const herdr = startHerdr({ ...CHILD }, runner, () => null)
+    assert.equal(herdr.parent, 'current')
+    assert.equal(startHerdr({ ...COORDINATOR, agent: null }, runner, () => null).issue, null)
+    const git = startGit({ ...COORDINATOR, agent: null }, recorder().runner, () => null)
+    assert.equal(git.issue, null)
+    assert.ok(!('parent' in git))
+    assert.equal(startGit({ ...CHILD, agent: null }, recorder().runner, () => null).parent, 'current')
+  })
+})

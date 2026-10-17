@@ -8,6 +8,7 @@
 // The git common directory is shared by every worktree of the repository and is not
 // part of any of them: nothing here is ever committed.
 
+import { randomUUID } from 'node:crypto'
 import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { slugify } from './branch.ts'
@@ -70,7 +71,7 @@ function stamp(date: Date): string {
 // The text is written whole under a temporary name, then linked to its own: a poller
 // never reads half of it, and a name that is taken is never overwritten.
 function publish(path: string, text: string): boolean {
-  const temporary = join(dirname(path), `.${basename(path)}.tmp`)
+  const temporary = join(dirname(path), `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`)
   writeFileSync(temporary, text)
   try {
     linkSync(temporary, path)
@@ -88,9 +89,10 @@ export function send(box: Mailbox, to: string, question: string, options: { topi
   if (text === '') throw new Error('the question is empty')
   const topic =
     options.topic ??
-    slugify(text.split('\n')[0] ?? '')
+    (slugify(text.split('\n')[0] ?? '')
       .slice(0, 40)
-      .replace(/-+$/, '')
+      .replace(/-+$/, '') ||
+      'message')
   if (!SLUG.test(topic)) throw new Error(`the topic ${topic || '(none)'} is not a slug: a-z, 0-9, -`)
   const directory = messageDirectory(box.dir, to, options)
   mkdirSync(directory, { recursive: true })
@@ -105,7 +107,7 @@ export function send(box: Mailbox, to: string, question: string, options: { topi
 // Every message of every directory with this id, answered or not.
 function locate(root: string, raw: string): string[] {
   const id = raw.replace(/\.md$/, '')
-  if (!existsSync(root) || id.endsWith('.answer')) return []
+  if (!existsSync(root) || !MESSAGE.test(`${id}.md`)) return []
   return readdirSync(root, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && entry.name.startsWith('to-'))
     .map((entry) => join(root, entry.name, `${id}.md`))

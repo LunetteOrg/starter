@@ -78,6 +78,11 @@ describe('sending', () => {
     assert.deepEqual(readdirSync(join(dir, 'to-coordinator')), ['20261017-101500-t.md'])
   })
 
+  test('a question with nothing to slug still gets a topic', () => {
+    assert.equal(send(box(), 'coordinator', 'Is it?').id, '20261017-101500-message')
+    assert.equal(send(box(), 'coordinator', '？？？').id, '20261017-101500-message-2')
+  })
+
   test('an empty question is refused', () => {
     assert.throws(() => send(box(), 'coordinator', '  \n'), /empty/)
   })
@@ -120,6 +125,11 @@ describe('answering', () => {
       writeFileSync(join(dir, to, `${id}.md`), 'q\n')
     }
     assert.throws(() => answer(dir, id, 'x'), /more than one/)
+  })
+
+  test('an id that is not a message name, or that climbs out of the mailbox, is refused', () => {
+    assert.throws(() => answer(dir, '../../etc/passwd', 'x'), /no message/)
+    assert.throws(() => answer(dir, 'x/20261017-101500-t', 'x'), /no message/)
   })
 
   test('an empty answer is refused', () => {

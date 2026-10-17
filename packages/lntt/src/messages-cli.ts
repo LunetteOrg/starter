@@ -8,8 +8,8 @@ import { parseArgs } from 'node:util'
 import { answer, type Mailbox, type Message, POLL_MS, pending, send, waitForAnswer } from './messages.ts'
 
 const USAGE = [
-  'usage: lntt ask --to <orchestrator|coordinator|child> [--issue <n>] [--theme <slug>] [--topic <slug>] [--timeout <s>] <question | ->',
-  '       lntt inbox [--as <orchestrator|coordinator|child>] [--issue <n>] [--theme <slug>] [--wait] [--timeout <s>]',
+  'usage: lntt ask --to <orchestrator|coordinator|child> [--issue <n>] [--theme <slug>] [--topic <slug>] [--timeout <s>] [--interval <s>] <question | ->',
+  '       lntt inbox [--as <orchestrator|coordinator|child>] [--issue <n>] [--theme <slug>] [--wait] [--timeout <s>] [--interval <s>]',
   '       lntt answer <id> <text | ->',
 ].join('\n')
 
@@ -22,11 +22,18 @@ function usage(message?: string): never {
 // <git common dir>/lntt-messages: shared by every worktree of the repository.
 export function messagesRoot(directory = cwd()): string {
   if (env.LNTT_MESSAGES_DIR) return env.LNTT_MESSAGES_DIR
-  const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
-    cwd: directory,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }).trim()
+  let common: string
+  try {
+    common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      cwd: directory,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim()
+  } catch {
+    throw new Error(
+      'the mailbox lives in the git common directory: run this inside a git repository (git 2.31 or later)',
+    )
+  }
   return `${common}/lntt-messages`
 }
 

@@ -77,7 +77,7 @@ lntt worktree start --theme <slug> --parent current --issue <n> --context <file>
 ## 5. Following the children
 
 ```sh
-lntt inbox --as coordinator --theme <slug> --wait      # what they ask and report
+lntt inbox --as coordinator --theme <slug> --wait      # what they ask and report (returns at once while any message is unanswered: answer each one)
 lntt answer <id> "<answer>"
 lntt ask --to orchestrator "<questions>"               # waits for the person's answer
 ```
@@ -116,7 +116,7 @@ lntt ask --to orchestrator "<questions>"               # waits for the person's 
 The brief `lntt worktree start --coordinator` renders already says: write no code; the
 issues; the gate and who is approved; the model of each role; `--context`, `--size`,
 `--workflow` and `--base` for a child; the mailbox; `orca` by absolute path; never merge or
-mark ready; return the state of the theme and the friction. What the first runs add:
+mark ready; return the state of the theme and the friction. Also say:
 
 - A path in a brief is found by `grep`, not rebuilt.
 - An approval names what it covers.
@@ -126,6 +126,5 @@ mark ready; return the state of the theme and the friction. What the first runs 
 - A status comment names the ref its line numbers were read on.
 - A pipe on `git commit` hides a commitlint rejection: never filter a commit's output.
 
-<!-- FRICTION-LIST (marked place): the coordinator of the 0.6.1 run (#84, #89, #111, then #117)
-     sends its friction list to the child of #84 at the end of the run. It is pasted below as
-     bullets, replacing this comment, and the plugin version is raised with it. -->
+<!-- FRICTION-LIST: the friction list of the coordinator of release 0.6.1 (#84, #89, #111, #117)
+     is added here as bullets, replacing this comment, and the plugin version is raised with it. -->

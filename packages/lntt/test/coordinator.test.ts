@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -70,9 +70,10 @@ describe('the gate', () => {
     assert.equal(gateOf({ coordinator: { gate: 'free' } }), 'free')
   })
 
-  test('an answer approves with its first word', () => {
-    for (const yes of ['approve', 'Approved.', 'yes, go', 'OK', '  ok\n']) assert.ok(isApproval(yes), yes)
-    for (const no of ['no', 'not yet', 'wait: #89 first', '', 'okay but later']) assert.ok(!isApproval(no), no)
+  test('an answer approves only when it is the word', () => {
+    for (const yes of ['approve', 'Approved.', 'yes', 'OK', '  ok\n']) assert.ok(isApproval(yes), yes)
+    for (const no of ['no', 'not yet', 'wait: #89 first', '', 'okay but later', 'yes, but not #84', 'approve #89 only'])
+      assert.ok(!isApproval(no), no)
   })
 })
 
@@ -83,12 +84,20 @@ describe('the approved issues', () => {
   })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
+  test('skip lines that are not issue numbers', () => {
+    writeFileSync(join(dir, 'approved-alpha.txt'), '89\n\n0\n-3\nabc\n111\n')
+    assert.deepEqual([...approvals(dir, 'alpha')], [89, 111])
+  })
+
   test('are kept per theme, in the shared mailbox directory', () => {
     assert.deepEqual([...approvals(dir, 'alpha')], [])
     approve(dir, 'alpha', [89, 111])
     approve(dir, 'alpha', [111, 117])
     approve(dir, 'beta', [5])
-    assert.deepEqual([...approvals(dir, 'alpha')].sort(), [111, 117, 89])
+    assert.deepEqual(
+      [...approvals(dir, 'alpha')].sort((a, b) => a - b),
+      [89, 111, 117],
+    )
     assert.deepEqual([...approvals(dir, 'beta')], [5])
   })
 })
@@ -154,11 +163,31 @@ describe('the coordinator’s brief', () => {
   })
 })
 
+describe('the brief without a model or a gate', () => {
+  test('says no model is configured, and that every child is proposed first', () => {
+    const brief = coordinatorBrief({ ...VALUES, config: {}, approved: [] })
+    assert.match(brief, /none is configured/)
+    assert.match(brief, /No child is approved yet\. To propose first: #84, #89\./)
+  })
+
+  test('when every child is approved there is nothing to propose', () => {
+    assert.match(coordinatorBrief({ ...VALUES, approved: [84, 89] }), /Nothing is left to propose/)
+  })
+})
+
 describe('the child’s brief', () => {
   const base = { issue: 84, title: 'Coordinator mode', branch: 'feat/84/coordinator-mode', worktree: '/w' }
 
   test('without a theme it is the plain brief, byte for byte', () => {
+    const template = readFileSync(new URL('../agents/brief.md', import.meta.url), 'utf8')
+    const old = template
+      .replace(/\n\n\{\{theme\}\}[\s\S]*$/, '\n')
+      .replaceAll('{{issue}}', '84')
+      .replace('{{title}}', 'Coordinator mode')
+      .replace('{{branch}}', 'feat/84/coordinator-mode')
+      .replace('{{worktree}}', '/w')
     const plain = childBrief(base, {})
+    assert.equal(plain, old)
     assert.doesNotMatch(plain, /theme|mailbox|workflow|ultracode/i)
     assert.doesNotMatch(plain, /\{\{/)
     assert.ok(plain.endsWith('outside the change).\n'))
