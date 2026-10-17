@@ -144,7 +144,7 @@ let progressFile: string | null = null
 
 // A round starts its own file, before anything that can stop it, so an error is never
 // read as the end of the round before.
-function startProgress(): void {
+export function startProgress(): void {
   try {
     progressFile = progressPath()
     writeFileSync(progressFile, '')
@@ -168,7 +168,7 @@ function phaseOf(label: string): string {
 // person at the terminal; the same as JSON events in the progress file. A watcher that
 // should wake only when it matters (the review skill's) filters `failed`, `error:` and
 // `round N done`: every other line is routine.
-function reporter(orca: Subagents | null = null): {
+export function reporter(orca: Subagents | null = null): {
   progress: (event: Progress) => void
   phase: (labels: string[]) => void
   stop: () => void
