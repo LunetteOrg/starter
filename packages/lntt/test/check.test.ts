@@ -5,7 +5,9 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { cite, type Result } from '../src/check.ts'
+import { CannotRunError, cite, type Result } from '../src/check.ts'
+import { errorLine } from '../src/check-cli.ts'
+import { ConfigError } from '../src/index.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const BIN = resolve(HERE, '../bin/lntt.ts')
@@ -205,6 +207,9 @@ describe('lntt check decisions structure', () => {
     writeFileSync(join(repo, 'docs/adr/template.md'), '---\nstatus: proposed\n---\n\n# Subject\n')
     assert.deepEqual(fails(names()), [])
     assert.match((names()[0] as Result).message, /no template listing two statuses or more/)
+    // So does a template that lists a single status.
+    writeFileSync(join(repo, 'docs/adr/template.md'), '---\nstatus: proposed # proposed\n---\n\n# Subject\n')
+    assert.deepEqual(fails(names()), [])
     // So does a template that is not there.
     rmSync(join(repo, 'docs/adr/template.md'))
     assert.deepEqual(fails(names()), [])
@@ -217,7 +222,15 @@ describe('lntt check decisions structure', () => {
       return fails(results(['check', 'decisions', 'structure']).results).filter((f) => f.startsWith('names'))
     }
     assert.deepEqual(title('3 retries at most'), [])
-    for (const t of ['1. Record decisions', '7: Caching', '12 — API shape', '0003 Old thing']) {
+    assert.deepEqual(title('2.0 migration plan'), [])
+    for (const t of [
+      '1. Record decisions',
+      '7: Caching',
+      '7 — Caching',
+      '1) Storage',
+      '12 — API shape',
+      '0003 Old thing',
+    ]) {
       assert.deepEqual(title(t), ['names docs/adr/api-shape.md:5'], t)
     }
   })
@@ -339,12 +352,14 @@ describe('lntt check cite', () => {
     )
   })
 
-  test('an anchor that is not path:line is a usage error; a range names its first line', () => {
+  test('an anchor that is not path:line is a usage error; a range or a list names its first line', () => {
     project('clean')
     assert.equal(lntt(['check', 'cite', 'src/app.ts']).status, 2)
     assert.deepEqual(
-      results(['check', 'cite', 'src/app.ts:3-4']).results.map((x) => `${x.status} ${x.path}:${x.line}`),
-      ['PASS src/app.ts:3'],
+      results(['check', 'cite', 'src/app.ts:3-4', 'src/app.ts:3–4', 'src/app.ts:3,1']).results.map(
+        (x) => `${x.status} ${x.path}:${x.line}`,
+      ),
+      ['PASS src/app.ts:3', 'PASS src/app.ts:3', 'PASS src/app.ts:3'],
     )
   })
 
@@ -405,11 +420,26 @@ describe('lntt check', () => {
       ['check', 'decisions', 'structure', 'docs/adr/storage.md'],
       ['check', 'decisions', '--base=-x'],
       ['check', 'decisions', '--base='],
+      ['check', '--base='],
+      ['check', '--base=-x'],
     ]) {
       const r = lntt(args)
       assert.equal(r.status, 2, args.join(' '))
       assert.equal(r.stdout, '')
     }
+    assert.match(lntt(['check', '--base=']).stderr, /--base '' is not a ref/)
+  })
+
+  test('a usage error is one in a project with no configuration too', () => {
+    git('init', '-q')
+    assert.equal(lntt(['check', 'nope']).status, 2)
+    assert.equal(lntt(['check', '--base=']).status, 2)
+  })
+
+  test('a configuration error and a check that cannot run are one line; a defect keeps its stack', () => {
+    assert.equal(errorLine(new ConfigError('bad config')), 'lntt: bad config')
+    assert.equal(errorLine(new CannotRunError('no git')), 'lntt: error: no git')
+    assert.equal(errorLine(new TypeError('a bug')), null)
   })
 
   test('outside a git repository the check cannot run: one line on stderr, no stack trace', () => {
@@ -424,6 +454,6 @@ describe('lntt check', () => {
     git('init', '-q')
     const r = lntt(['check'])
     assert.equal(r.status, 1)
-    assert.match(r.stderr, /no \.agents\/config/)
+    assert.match(r.stderr, /^lntt: no \.agents\/config/)
   })
 })

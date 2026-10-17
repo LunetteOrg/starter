@@ -44,7 +44,7 @@ lntt ci local | candidate
   person who will start one; `lntt check --json`), or a report for a person (`lntt
   check` without `--json`); progress and child-process output go to stderr. Exit codes:
   0 ok, 1 a configuration error, a red result or a check that cannot run (one line on
-  stderr), 2 a usage error; a defect of `lntt` itself keeps its stack trace.
+  stderr), 2 a usage error; a defect of `lntt` itself exits 1 with its stack trace.
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
   `decisions`, whose results its review lens reads, and `agents-md`, which no lens
   needs; a lens's checks are the area named after it. Alone it runs every area, which is
@@ -57,8 +57,9 @@ lntt ci local | candidate
   names those files with the reason, and a glob that matches nothing fails. A new
   deterministic check is a check of an area, or a new area, never a script beside a
   skill.
-- **No aliases for old names.** A command is renamed in the same pull request as every
-  caller, and the plugin's version moves with its skills.
+- **No aliases for old names.** A renamed command answers only to its new name, so its
+  callers (workflows, skills, the README) change with it; a skill that changes raises
+  the plugin's version ([delivery](../process/delivery.md#the-lunette-plugin)).
 
 ## Consequences
 

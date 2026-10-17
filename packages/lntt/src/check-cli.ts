@@ -7,6 +7,7 @@ import { parseArgs } from 'node:util'
 import {
   ANCHOR_LINE,
   AREAS,
+  type Area,
   CannotRunError,
   citeAll,
   failed,
@@ -35,29 +36,39 @@ function run(args: string[]): Result[] {
     allowPositionals: true,
     options: { base: { type: 'string' }, json: { type: 'boolean', default: false } },
   })
+  // Every argument is checked before the configuration is read: a usage error is one
+  // in any project.
   const [area, check, ...rest] = positionals
-  // The root of the project whose configuration is read, as `lntt sync` writes it.
-  const loaded = loadConfig(cwd())
-  const root = dirname(dirname(loaded.path))
+  const { base } = values
+  if (base !== undefined && (base === '' || base.startsWith('-'))) usage(`--base ${base || "''"} is not a ref`)
   if (area === 'cite') {
     const anchors = positionals.slice(1)
     if (anchors.length === 0) usage('give at least one path:line')
     const bad = anchors.find((a) => !ANCHOR_LINE.test(a))
     if (bad) usage(`${bad} is not path:line`)
-    return citeAll(root, anchors)
+  } else if (area !== undefined) {
+    if (!isArea(area)) usage(`no area ${area}: ${[...AREAS, 'cite'].join(', ')}`)
+    if (check !== undefined && !(CHECKS[area] as string[]).includes(check)) {
+      usage(`no check ${check} in ${area}${CHECKS[area]?.length ? `: ${CHECKS[area]?.join(', ')}` : ''}`)
+    }
+    if (rest.length > 0 && check !== 'numbers') usage(`${check ?? area} takes no file`)
+    if (check === 'numbers' && rest.length === 0 && base === undefined) usage('numbers needs files or --base')
   }
-  const options = { root, data: loaded.data, ...(values.base === undefined ? {} : { base: values.base }) }
+  // The root of the project whose configuration is read, as `lntt sync` writes it.
+  const loaded = loadConfig(cwd())
+  const root = dirname(dirname(loaded.path))
+  if (area === 'cite') return citeAll(root, positionals.slice(1))
+  const options = { root, data: loaded.data, ...(base === undefined ? {} : { base }) }
   if (area === undefined) return AREAS.flatMap((a) => runArea(a, undefined, [], options))
-  if (!isArea(area)) usage(`no area ${area}: ${[...AREAS, 'cite'].join(', ')}`)
-  if (check !== undefined && !(CHECKS[area] as string[]).includes(check)) {
-    usage(`no check ${check} in ${area}${CHECKS[area]?.length ? `: ${CHECKS[area]?.join(', ')}` : ''}`)
-  }
-  if (rest.length > 0 && check !== 'numbers') usage(`${check ?? area} takes no file`)
-  if (check === 'numbers' && rest.length === 0 && values.base === undefined) usage('numbers needs files or --base')
-  if (values.base !== undefined && (values.base === '' || values.base.startsWith('-'))) {
-    usage(`--base ${values.base || "''"} is not a ref`)
-  }
-  return runArea(area, check, rest, options)
+  return runArea(area as Area, check, rest, options)
+}
+
+// The line an error is reported with: a configuration error, or a check that could not
+// run at all. null for anything else, a defect of lntt, which keeps its stack.
+export function errorLine(error: unknown): string | null {
+  if (error instanceof CannotRunError) return `lntt: error: ${error.message}`
+  if (error instanceof ConfigError) return `lntt: ${error.message}`
+  return null
 }
 
 export function main(args: string[]): void {
@@ -68,10 +79,9 @@ export function main(args: string[]): void {
     if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
       usage(error.message)
     }
-    // A configuration error, or a check that could not run at all: one line. Anything
-    // else is a defect of lntt and keeps its stack.
-    if (!(error instanceof ConfigError || error instanceof CannotRunError)) throw error
-    stderr.write(`lntt: ${error instanceof CannotRunError ? 'error: ' : ''}${error.message}\n`)
+    const line = errorLine(error)
+    if (line === null) throw error
+    stderr.write(`${line}\n`)
     exit(1)
   }
   stdout.write(args.includes('--json') ? formatJson(results) : formatText(results))
