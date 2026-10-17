@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-07-08
+date: 2026-10-17
 tags: [product, pdr, storybook, reference]
 ---
 
@@ -33,7 +33,10 @@ Ship three spaces in every scaffolded project:
 - **`reference/`** — a top-level **quarantine** for raw input. Committed (the
   reference travels with the code) but excluded from the toolchain: it is no
   workspace package (so Turbo/pnpm ignore it) and is added to Biome's ignore list,
-  so `pnpm lint`/`format` never touch it.
+  so `pnpm lint`/`format` never touch it. A prototype that goes on changing in its own
+  repository comes in as a squashed `git subtree` under `reference/prototypes/` and is
+  updated with `git subtree pull --squash`, so every clone and worktree has it with no
+  fetch and no access to its remote ([`reference/README.md`](../../reference/README.md)).
 - **A `Product/` section in the design-system Storybook** — the **review surface**.
   One MDX page per PDR imports the markdown `?raw` and renders it with the
   `Markdown` block (no duplication), embedding the interactive prototype and the
@@ -57,3 +60,12 @@ to fill in.
   `product-check` carry that weight.
 - − `reference/` is committed, so large dumps live in git history forever — the
   README calls this out and says to link out instead when a dump is huge.
+
+## Discarded directions
+
+- **A git submodule for a prototype kept as reference.** It is empty in every new clone
+  and worktree until fetched, which needs access to the prototype's remote; the
+  shortcut of pointing it at a path on disk is refused by git (`protocol.file.allow`),
+  and allowing that transport opens it to any submodule a repository declares.
+- **A plain copy of the prototype's files.** Fine for one that will not change again,
+  but it loses the link to the prototype's repository, so an update is a manual diff.

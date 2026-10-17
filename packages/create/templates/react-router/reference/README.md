@@ -29,6 +29,15 @@ supersedes it.
     prototypes/          # exported/interactive prototypes, design refs
   ```
 
+- **A prototype someone keeps working on elsewhere comes in as a squashed subtree.**
+  When the reference is a repository that goes on changing (a prototype a designer or
+  another team still updates), add it under `prototypes/` with
+  `git subtree add --prefix reference/prototypes/<name> <url> <ref> --squash`, and take
+  each update with `git subtree pull` and the same arguments: one commit per update,
+  naming the commit it comes from. Never a git submodule: a submodule is empty in every
+  new clone and worktree until fetched, needs access to its remote, and its usual
+  shortcut (pointing it at a path on disk) is refused by git's own protection. A subtree
+  is there for every person and agent, and still follows the prototype.
 - **Sunset it.** When a reference has been fully digested into decisions and code,
   it can be archived or removed — say so in the decision that closes it out.
 
