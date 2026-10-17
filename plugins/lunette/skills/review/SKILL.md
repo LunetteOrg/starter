@@ -29,8 +29,8 @@ In Claude Code the `lunette` plugin shows the round in a band above the prompt, 
 
 stdout is JSON: `findings` (`confirmed`, `undecided`, `unverified`; blockers and
 warnings block the round, notes do not),
-`refuted` (with the verifiers' proofs, or `lntt check cite`'s for a finding on a line
-that does not exist; nothing to do), `failed` (a reviewer that did not answer). Exit 0: a clean round. Exit 1: findings or a failure.
+`refuted` (with the verifiers' proofs, or `lntt check cite`'s for a finding on a line past
+the end of its file; nothing to do), `failed` (a reviewer that did not answer). Exit 0: a clean round. Exit 1: findings or a failure.
 
 A round reads the whole branch the first time, then only the commits after the last
 reviewed one; findings still open go back to the verifiers on the new head.

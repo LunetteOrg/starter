@@ -31,12 +31,15 @@ same way every time; the `review` skill keeps the judgement.
   `lntt check` (`decisions`) gets `lntt check <area> --base <first commit read> --json`
   in its prompt, run before the reviewers, and its brief keeps only what needs
   judgement: violations, unrecorded decisions, the prose and the figures of the records
-  the change touches. So the decisions lens runs on a cheap model, and a broken
-  reference or a residue is found the same way every round.
-- **Every finding is cited before it is verified:** `lntt check cite` reads its line on
-  the head. A finding on a line or a file that does not exist is refuted there, by
-  `lntt check cite`, and costs no verifier; the others take the line's text to their
-  verifiers.
+  the change touches. Each `FAIL` comes back as a warning at its line, since it breaks
+  a recording rule; a contradiction with an accepted record stays a blocker. So the
+  decisions lens runs on a cheap model, and a broken reference or a residue is found
+  the same way every round.
+- **Every finding is cited before it is verified:** `lntt check cite` reads its line in
+  the working tree, which a round keeps clean at the head. A finding on a line past the
+  end of its file is refuted there, by `lntt check cite`, and costs no verifier; the
+  others take the line's text to their verifiers. A file that is not there goes to the
+  verifiers: the change may be the one that deletes it.
 - **Every reviewer starts with no context but its prompt** (the brief, the range, the
   files, the diff, the decision logs, the results of `lntt check` for its lens, on
   stdin) and **can only read**: `claude -p` with Read, Grep and Glob and no MCP server,
@@ -54,12 +57,13 @@ same way every time; the `review` skill keeps the judgement.
   on the new head, notes excepted. The state stays in the worktree's git directory. A
   clean round (exit 0) has no blocker or warning left and no reviewer or verifier that
   failed; notes are reported, never blocking. A finding is a bullet with its severity,
-  an anchor and its text (the action after a last separator, when there is one), wrapped
-  over as many lines as the reviewer likes; a reply with a finding line that has no
-  anchor or no text, or with neither findings nor `no findings`, counts as a failed
-  reviewer, and a round with a failure does not move the reviewed commit. A fresh
-  finding at the anchor of an open one joins it. A round runs on a branch (a detached
-  HEAD is refused) whose head does not move until it ends.
+  an anchor (a line as `:12`, a range, a column or a list, each naming its first line,
+  and an optional parenthesis after it) and its text (the action after a last separator,
+  when there is one), wrapped over as many lines as the reviewer likes; a reply with a
+  finding line that has no anchor or no text, or with neither findings nor `no
+  findings`, counts as a failed reviewer, and a round with a failure does not move the
+  reviewed commit. A fresh finding at the anchor of an open one joins it. A round runs
+  on a branch (a detached HEAD is refused) whose head does not move until it ends.
 - **Load:** at most `perProvider` required agents of one provider run at once, and as
   many optional ones in a queue of their own, the others waiting their turn; a provider given dozens of sessions at once queues them until they time
   out. A slow optional agent never holds a required agent's turn.

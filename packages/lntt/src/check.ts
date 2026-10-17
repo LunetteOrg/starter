@@ -38,12 +38,17 @@ export interface CheckOptions {
 // those of a nested project (a folder with a configuration of its own, a template), whose
 // own check they are.
 export function projectFiles(root: string): string[] {
-  const files = execFileSync('git', ['-C', root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
-    encoding: 'utf8',
-    maxBuffer: 256 * 1024 * 1024,
-  })
-    .split('\0')
-    .filter(Boolean)
+  let listed: string
+  try {
+    listed = execFileSync('git', ['-C', root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      maxBuffer: 256 * 1024 * 1024,
+    })
+  } catch {
+    throw new Error(`git cannot list the files of ${root}: lntt check reads a git repository`)
+  }
+  const files = listed.split('\0').filter(Boolean)
   const nested = [
     ...new Set(
       files
@@ -79,26 +84,36 @@ export function runArea(area: Area, check: string | undefined, files: string[], 
   return checkDecisions(options, { figures: check === undefined })
 }
 
+export type Cited = { text: string | null } | { missing: string; what: 'file' | 'line' }
+
+// An anchor's line, written as models write it: `:12`, a range `:12-15` or `:12–15`, a
+// column `:12:5`, a list `:12,14`; each names its first line.
+export const ANCHOR_LINE = /^(.+?):(\d+)(?:[-–,:]\d+)*$/
+
 // What is on a line, so a finding is never built on a line that does not exist. The
-// anchor may carry a heading (`#decision`) or a range (`:12-15`), which name its first
-// line; a path alone only has to exist. The text is null for a path alone.
-export function cite(root: string, anchor: string, line: number | null): { text: string | null } | { missing: string } {
-  const m = /^(.*?):(\d+)(?:-\d+)?$/.exec(anchor)
+// anchor may carry a heading (`#decision`) or a line in any form ANCHOR_LINE reads; a
+// path alone only has to exist. The text is null for a path alone.
+export function cite(root: string, anchor: string, line: number | null): Cited {
+  const m = ANCHOR_LINE.exec(anchor)
   const path = (m ? (m[1] as string) : anchor).replace(/#.*$/, '')
   const at = line ?? (m ? Number(m[2]) : null)
   const rel = isAbsolute(path) ? relative(root, path) : path
   const abs = join(root, rel)
-  if (rel.startsWith('..') || !existsSync(abs) || !statSync(abs).isFile()) return { missing: 'no such file' }
+  if (rel.startsWith('..') || !existsSync(abs) || !statSync(abs).isFile())
+    return { missing: 'no such file', what: 'file' }
   if (at === null) return { text: null }
   const lines = readFileSync(abs, 'utf8').replace(/\n$/, '').split('\n')
   if (at < 1 || at > lines.length)
-    return { missing: `no line ${at}: the file has ${lines.length} line${lines.length === 1 ? '' : 's'}` }
+    return {
+      missing: `no line ${at}: the file has ${lines.length} line${lines.length === 1 ? '' : 's'}`,
+      what: 'line',
+    }
   return { text: (lines[at - 1] as string).trim() }
 }
 
 export function citeAll(root: string, anchors: string[]): Result[] {
   return anchors.map((anchor) => {
-    const [, path, line] = /^(.*):(\d+)$/.exec(anchor) as unknown as [string, string, string]
+    const [, path, line] = ANCHOR_LINE.exec(anchor) as unknown as [string, string, string]
     const found = cite(root, path, Number(line))
     return {
       area: 'cite',

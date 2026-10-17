@@ -44,16 +44,18 @@ lntt ci local | candidate
   person who will start one; `lntt check --json`), or a report for a person (`lntt
   check` without `--json`); progress and child-process output go to stderr. Exit codes:
   0 ok, 1 a configuration error or a red result, 2 a usage error.
-- **`lntt check` is the one verb for what is checked without judgement**, one area per
-  review lens (`agents-md`, `decisions`); alone it runs every area, which is what CI
-  runs. Every check reports `PASS`, `FAIL` or `NOT RUN` with its reason, so a check that
-  did not run is never read as one that passed, and `INFO` for what it prints without a
-  verdict; `--json` gives one line per result (`area`, `check`, `status`, `path`,
-  `line`, `message`), `--base <ref>` limits a check to what the diff touches where that
-  makes sense. What a project ships to others (a shared package, a skill) cites the
-  records of the project that installs it: `recording.externalReferences` names those
-  files with the reason, and a glob that matches nothing fails. A new deterministic
-  check is a check of an area, or a new area, never a script beside a skill.
+- **`lntt check` is the one verb for what is checked without judgement**, in areas:
+  `decisions`, whose results its review lens reads, and `agents-md`, which no lens
+  needs; a lens's checks are the area named after it. Alone it runs every area, which is
+  what CI runs. Every check reports `PASS`, `FAIL` or `NOT RUN` with its reason, so a
+  check that did not run is never read as one that passed, and `INFO` for what it prints
+  without a verdict; `--json` gives one line per result (`area`, `check`, `status`,
+  `path`, `line`, `message`), `--base <ref>` limits a check to what the diff touches
+  where that makes sense. What a project ships to others (a shared package, a skill)
+  cites the records of the project that installs it: `recording.externalReferences`
+  names those files with the reason, and a glob that matches nothing fails. A new
+  deterministic check is a check of an area, or a new area, never a script beside a
+  skill.
 - **No aliases for old names.** A command is renamed in the same pull request as every
   caller, and the plugin's version moves with its skills.
 

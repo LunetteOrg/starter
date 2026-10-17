@@ -205,9 +205,10 @@ A round, on a clean working tree:
    standalone server with an inline agent that denies every tool and allows read, grep,
    glob and list back. `--plan` and every round name where the diff goes: the provider
    of each configured agent.
-4. **Citations**: `lntt check cite` reads the line of every finding on the head. A
-   finding on a line or a file that does not exist is refuted there, with no verifier;
-   the others take the line's text to their verifiers.
+4. **Citations**: `lntt check cite` reads the line of every finding (the working tree,
+   clean at the head). A finding on a line past the end of its file is refuted there,
+   with no verifier; the others take the line's text to their verifiers. A file that is
+   not there goes to the verifiers: the change may delete it.
 5. **Verifiers**, all at once: each blocker and warning (`delivery.review.verify`) goes
    to every verifier but the agents that found it, briefed to refute it
    ([`agents/verify.md`](./agents/verify.md)). All confirm: confirmed. All refute:

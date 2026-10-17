@@ -98,7 +98,7 @@ function inLog(path: string, logs: Log[]): boolean {
   return logs.some((log) => path === log.path || path.startsWith(`${log.path}/`))
 }
 
-function indexCheck(root: string, logs: Log[], files: string[], only: Set<string> | null): Draft[] {
+function indexCheck(root: string, logs: Log[], files: string[]): Draft[] {
   const out: Draft[] = []
   const counts: string[] = []
   for (const log of logs) {
@@ -160,7 +160,7 @@ function indexCheck(root: string, logs: Log[], files: string[], only: Set<string
       }
     }
     for (const record of records) {
-      if (listed.has(record) || (only && !only.has(record))) continue
+      if (listed.has(record)) continue
       out.push({
         check: 'index',
         status: 'FAIL',
@@ -239,6 +239,9 @@ function referencesCheck(root: string, logs: Log[], files: string[], external: R
     // A path is checked in code spans too: that is where a document writes one.
     for (const re of foreign ? [] : mentions) {
       for (const m of text.matchAll(re)) {
+        // A break right after the folder is a wrapped path only when what follows is a
+        // file name: a sentence that ends on the folder goes on with a word.
+        if (!m[4] && /^[^/]*\/\s*\n/.test(m[0].slice(m[1].length))) continue
         const base = `${m[1]}/${m[2]}${m[3] ?? ''}`
         const ok = m[4] ? exists(`${base}${m[4]}`) : exists(base) || exists(`${base}.md`)
         if (!ok) fail(file, lineOf(text, m.index), `cites ${base}${m[4] ?? ''}, which does not exist`)
@@ -339,7 +342,9 @@ function namesCheck(root: string, logs: Log[], files: string[], only: Set<string
   for (const log of logs) {
     const allowed =
       log.template && existsSync(join(root, log.template)) ? frontmatter(read(root, log.template))?.allowed : undefined
-    const statuses = allowed && allowed.length > 0 ? allowed : null
+    // Only a template that lists them (`status: proposed # proposed | accepted`) says
+    // which statuses the log allows.
+    const statuses = allowed && allowed.length > 1 ? allowed : null
     const records = recordsOf(log, files).filter((r) => !only || only.has(r))
     for (const record of records) {
       const name = posix.basename(record)
@@ -353,7 +358,8 @@ function namesCheck(root: string, logs: Log[], files: string[], only: Set<string
         .split('\n')
         .findIndex((l) => /^# /.test(l))
       if (title === -1) fail(record, 1, 'no title: a record starts with `# <subject>`')
-      else if (/^#\s+(?:[AP]DR\b|\d+[\s.:)-])|[AP]DR[ -#]?\d/.test(lines[title] as string)) {
+      // `# ADR NN — …`, `# NNNN. …`; a title that opens on a count (`# 3 retries`) is words.
+      else if (/^#\s+(?:[AP]DR\b|\d{2,}[\s.:)-])|[AP]DR[ \-#]?\d/.test(lines[title] as string)) {
         fail(record, title + 1, `the title carries a number: ${(lines[title] as string).trim()}`)
       }
       if (!statuses) continue
@@ -365,7 +371,7 @@ function namesCheck(root: string, logs: Log[], files: string[], only: Set<string
       }
     }
     summary.push(
-      `${log.name}: ${records.length} records${only ? ' the diff touches' : ''}, file name, title${statuses ? `, status (${statuses.join('|')})` : ' (no template: no status)'}`,
+      `${log.name}: ${records.length} records${only ? ' the diff touches' : ''}, file name, title${statuses ? `, status (${statuses.join('|')})` : ' (no template listing statuses: no status)'}`,
     )
   }
   if (out.length === 0) {
@@ -444,7 +450,7 @@ function inventory(logs: Log[], diff: Touched[]): Draft[] {
 function figures(root: string, paths: string[]): Draft[] {
   const out: Draft[] = []
   for (const path of paths) {
-    if (!existsSync(join(root, path))) {
+    if (!existsSync(join(root, path)) || !statSync(join(root, path)).isFile()) {
       out.push({ check: 'figures', status: 'FAIL', path, line: null, message: 'no such file' })
       continue
     }
@@ -498,7 +504,7 @@ export function checkDecisions(options: CheckOptions, { figures: withFigures }: 
         status: 'NOT RUN',
         path: null,
         line: null,
-        message: `git diff ${options.base}...HEAD does not run: no such ref`,
+        message: `git diff ${options.base}...HEAD does not run: the ref does not resolve, or has no merge base with HEAD`,
       })
     } else {
       only = touchedRecords(logs, diff)
@@ -508,7 +514,7 @@ export function checkDecisions(options: CheckOptions, { figures: withFigures }: 
   }
   const records = logs.flatMap((log) => recordsOf(log, files)).filter((r) => !only || only.has(r))
   return withArea([
-    ...indexCheck(root, logs, files, null),
+    ...indexCheck(root, logs, files),
     ...referencesCheck(root, logs, files, externalOf(options.data)),
     ...residuesCheck(root, records, only),
     ...namesCheck(root, logs, files, only),
@@ -530,7 +536,7 @@ export function decisionFigures(options: CheckOptions, paths: string[]): Result[
         status: 'NOT RUN',
         path: null,
         line: null,
-        message: `git diff ${options.base}...HEAD does not run: no such ref`,
+        message: `git diff ${options.base}...HEAD does not run: the ref does not resolve, or has no merge base with HEAD`,
       },
     ])
   }

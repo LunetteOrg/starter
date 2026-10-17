@@ -162,8 +162,8 @@ export function parseFindings(text: string): Finding[] {
     const split = LAST_SEPARATOR.exec(rest)
     const what = split ? (split[1] as string) : rest
     const action = split ? (split[2] as string) : ''
-    // A range of lines (`a.ts:12-15`) names its first.
-    const at = anchor === '(no anchor)' ? null : /^(.+?)(?::(\d+)(?:-\d+)?)?$/.exec(anchor)
+    // A range, a column or a list of lines (`a.ts:12-15`, `:12:5`, `:12,14`) names its first.
+    const at = anchor === '(no anchor)' ? null : /^(.+?)(?::(\d+)(?:[-–,:]\d+)*)?$/.exec(anchor)
     findings.push({
       severity,
       path: at ? (at[1] as string) : null,
@@ -438,8 +438,9 @@ export interface RoundInput extends PromptValues {
   range: Range
   // The text of a project lens's brief, by its path in the repository.
   readBrief?: (path: string) => string
-  // What a finding's line reads on the head (lntt check cite), or why it does not exist.
-  cite?: (path: string, line: number | null) => { text: string | null } | { missing: string }
+  // What a finding's line reads in the working tree, clean at the head (lntt check cite),
+  // or what does not exist: the file, or the line.
+  cite?: (path: string, line: number | null) => { text: string | null } | { missing: string; what: 'file' | 'line' }
 }
 
 function addTokens(total: number | null, answer: Answer): number | null {
@@ -529,12 +530,14 @@ export async function runRound(
     if (same) same.foundBy = [...same.foundBy.filter((b) => !f.foundBy.some((n) => n.agent === b.agent)), ...f.foundBy]
     return !same
   })
-  // A finding on a line that does not exist is refuted before any verifier is asked; the
-  // others carry the line's text to them.
+  // A finding on a line past the end of its file is refuted before any verifier is
+  // asked; the others carry the line's text to them. A file that is not there may be one
+  // the change deletes: its verifiers decide.
   const found: Found[] = []
   for (const f of [...carried, ...fresh]) {
     const cited = f.path === null || !input.cite ? null : input.cite(f.path, f.line)
-    if (cited && 'missing' in cited) {
+    if (cited && 'missing' in cited && cited.what === 'file') found.push(f)
+    else if (cited && 'missing' in cited) {
       const proof = `${anchorOf(f)}: ${cited.missing}`
       result.refuted.push({ ...f, verdict: 'refuted', proofs: [{ by: 'lntt check cite', outcome: 'refuted', proof }] })
     } else found.push(cited ? { ...f, cited: cited.text } : f)

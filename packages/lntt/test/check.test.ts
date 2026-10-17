@@ -180,6 +180,37 @@ describe('lntt check decisions structure', () => {
     )
   })
 
+  test('a sentence that ends on a log folder and goes on with a word is not a wrapped path', () => {
+    project('clean')
+    writeFileSync(join(repo, 'src/notes.ts'), '// Records live in docs/adr/\n// and nowhere else.\nexport {}\n')
+    assert.deepEqual(fails(results(['check', 'decisions', 'structure']).results), [])
+    writeFileSync(join(repo, 'src/notes.ts'), '// The record is docs/adr/\n// gone-now.md.\nexport {}\n')
+    assert.deepEqual(fails(results(['check', 'decisions', 'structure']).results), ['references src/notes.ts:1'])
+  })
+
+  test('status: only a template that lists the statuses says which the log allows', () => {
+    project('clean')
+    const names = () => results(['check', 'decisions', 'structure']).results.filter((x) => x.check === 'names')
+    // A record with no status, against a template that lists them, fails.
+    writeFileSync(join(repo, 'docs/adr/api-shape.md'), '# API shape\n')
+    assert.deepEqual(fails(names()), ['names docs/adr/api-shape.md:1'])
+    assert.match((names()[0] as Result).message, /no status in the frontmatter: one of proposed, accepted/)
+    // A template with a status and no list allows any status: none is checked, and the
+    // report says so.
+    writeFileSync(join(repo, 'docs/adr/template.md'), '---\nstatus: proposed\n---\n\n# Subject\n')
+    assert.deepEqual(fails(names()), [])
+    assert.match((names()[0] as Result).message, /adr: 2 records, file name, title \(no template listing statuses/)
+    // So does a template that is not there.
+    rmSync(join(repo, 'docs/adr/template.md'))
+    assert.deepEqual(fails(names()), [])
+  })
+
+  test('a title that opens on a count is words, not a number', () => {
+    project('clean')
+    writeFileSync(join(repo, 'docs/adr/api-shape.md'), '---\nstatus: proposed\n---\n\n# 3 retries at most\n')
+    assert.deepEqual(fails(results(['check', 'decisions', 'structure']).results), [])
+  })
+
   test('an untracked record is seen: a new file left out of the index fails before it is added', () => {
     project('clean')
     writeFileSync(join(repo, 'docs/adr/caching.md'), '---\nstatus: accepted\n---\n\n# Caching\n')
@@ -250,12 +281,35 @@ describe('lntt check decisions numbers', () => {
     )
   })
 
-  test('a file that does not exist fails; no file and no base is a usage error', () => {
+  test('issue numbers and dates are identifiers; "N of M" is a figure', () => {
     project('clean')
-    assert.deepEqual(fails(results(['check', 'decisions', 'numbers', 'docs/adr/nope.md']).results), [
-      'figures docs/adr/nope.md:null',
-    ])
+    writeFileSync(
+      join(repo, 'docs/adr/api-shape.md'),
+      '# API shape\n\nSee #12, decided on 2026-10-01.\n\n3 of 4 calls read.\n',
+    )
+    assert.deepEqual(
+      results(['check', 'decisions', 'numbers', 'docs/adr/api-shape.md']).results.map((x) => x.line),
+      [5],
+    )
+  })
+
+  test('a file that does not exist, or a folder, fails; no file and no base is a usage error', () => {
+    project('clean')
+    assert.deepEqual(
+      fails(results(['check', 'decisions', 'numbers', 'docs/adr/nope.md', 'docs/adr']).results),
+      ['figures docs/adr/nope.md:null', 'figures docs/adr:null'].sort(),
+    )
     assert.equal(lntt(['check', 'decisions', 'numbers']).status, 2)
+  })
+
+  test('numbers with a base that does not resolve is NOT RUN', () => {
+    project('clean')
+    const r = results(['check', 'decisions', 'numbers', '--base', 'nowhere'])
+    assert.deepEqual(
+      r.results.map((x) => x.status),
+      ['NOT RUN'],
+    )
+    assert.match((r.results[0] as Result).message, /does not resolve, or has no merge base/)
   })
 })
 
@@ -274,20 +328,27 @@ describe('lntt check cite', () => {
     )
   })
 
-  test('an anchor that is not path:line is a usage error', () => {
+  test('an anchor that is not path:line is a usage error; a range names its first line', () => {
     project('clean')
     assert.equal(lntt(['check', 'cite', 'src/app.ts']).status, 2)
+    assert.deepEqual(
+      results(['check', 'cite', 'src/app.ts:3-4']).results.map((x) => `${x.status} ${x.path}:${x.line}`),
+      ['PASS src/app.ts:3'],
+    )
   })
 
   test('cite reads a heading anchor, a line range and a leading ./ as the line they name', () => {
     project('clean')
     assert.deepEqual(cite(repo, './src/app.ts', 3), { text: 'export const answer = 42' })
     assert.deepEqual(cite(repo, 'src/app.ts:3-4', null), { text: 'export const answer = 42' })
+    assert.deepEqual(cite(repo, 'src/app.ts:3:7', null), { text: 'export const answer = 42' })
     assert.deepEqual(cite(repo, 'docs/adr/storage.md#decision', null), { text: null })
     assert.deepEqual(cite(repo, join(repo, 'src/app.ts'), 1), {
       text: '// Where data lives: docs/adr/storage.md. How it answers: docs/adr/',
     })
-    assert.deepEqual(cite(repo, '../outside.ts', 1), { missing: 'no such file' })
+    assert.deepEqual(cite(repo, '../outside.ts', 1), { missing: 'no such file', what: 'file' })
+    assert.deepEqual(cite(repo, join(tmpdir(), 'outside.ts'), 1), { missing: 'no such file', what: 'file' })
+    assert.deepEqual(cite(repo, 'src/app.ts', 9), { missing: 'no line 9: the file has 3 lines', what: 'line' })
   })
 })
 
@@ -322,6 +383,27 @@ describe('lntt check', () => {
       assert.equal(r.status, 2, args.join(' '))
       assert.equal(r.stdout, '')
     }
+  })
+
+  test('an unknown flag, a file to a check that takes none, a base that looks like a flag: usage errors', () => {
+    project('clean')
+    for (const args of [
+      ['check', '--nope'],
+      ['check', 'decisions', 'structure', 'docs/adr/storage.md'],
+      ['check', 'decisions', '--base=-x'],
+    ]) {
+      const r = lntt(args)
+      assert.equal(r.status, 2, args.join(' '))
+      assert.equal(r.stdout, '')
+    }
+  })
+
+  test('outside a git repository the check cannot run: one line on stderr, no stack trace', () => {
+    cpSync(join(FIXTURES, 'clean'), repo, { recursive: true })
+    const r = lntt(['check', 'decisions'])
+    assert.equal(r.status, 1)
+    assert.match(r.stderr, /^lntt: error: /)
+    assert.doesNotMatch(r.stderr, /\n\s+at /)
   })
 
   test('no configuration file is a configuration error', () => {
