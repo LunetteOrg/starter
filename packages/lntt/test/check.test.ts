@@ -214,6 +214,7 @@ describe('lntt check decisions structure', () => {
     // So does a template that is not there.
     rmSync(join(repo, 'docs/adr/template.md'))
     assert.deepEqual(fails(names()), [])
+    assert.match((names()[0] as Result).message, /no template listing two statuses or more/)
   })
 
   test('a title that opens on a small count is words; a numbered title fails at any count', () => {
@@ -223,7 +224,8 @@ describe('lntt check decisions structure', () => {
       return fails(results(['check', 'decisions', 'structure']).results).filter((f) => f.startsWith('names'))
     }
     assert.deepEqual(title('3 retries at most'), [])
-    assert.deepEqual(title('2.0 migration plan'), [])
+    for (const t of ['2.0 migration plan', '2.x release', '3.js intro', '7:30 standup'])
+      assert.deepEqual(title(t), [], t)
     for (const t of [
       '1. Record decisions',
       '1.Record decisions',
@@ -438,7 +440,9 @@ describe('lntt check', () => {
     for (const args of [
       ['check', 'nope'],
       ['check', '--base='],
+      ['check', 'cite'],
       ['check', 'cite', 'src/app.ts'],
+      ['check', 'decisions', 'structure', 'docs/adr/storage.md'],
       ['check', 'cite', 'src/app.ts:1', '--base='],
       ['check', 'agents-md', 'AGENTS.md'],
       ['check', 'decisions', 'numbers'],
