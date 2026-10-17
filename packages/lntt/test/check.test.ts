@@ -217,7 +217,7 @@ describe('lntt check decisions structure', () => {
     assert.match((names()[0] as Result).message, /no template listing two statuses or more/)
   })
 
-  test('a number with a mark before the subject fails; a count, a version, a time are words', () => {
+  test('a number with a mark before the subject, or ADR and a number, fails; a count, a version, a time are words', () => {
     project('clean')
     const title = (t: string) => {
       writeFileSync(join(repo, 'docs/adr/api-shape.md'), `---\nstatus: proposed\n---\n\n# ${t}\n`)
@@ -236,6 +236,10 @@ describe('lntt check decisions structure', () => {
       '1.2.3 Plan',
       '0003 Old thing',
       '2–3 retries',
+      '3-way merge',
+      '2024-10 review',
+      'LADR 5 notes',
+      `Why \`ADR ${5}\` was dropped`,
       'ADR process',
       '1)storage',
       '1:word',
