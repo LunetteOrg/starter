@@ -44,20 +44,21 @@ describe('Orca subagents', () => {
     )
   })
 
-  test('a running subagent is announced again until it stops; close stops the rest', async () => {
+  // The clock is the test's: the interval fires when the test says so, however loaded the
+  // machine is.
+  test('a running subagent is announced again until it stops; close stops the rest', (t) => {
+    t.mock.timers.enable({ apis: ['setInterval'] })
     const sent: string[] = []
-    const s = subagents((e) => sent.push(`${e.hook_event_name} ${e.agent_id}`), 'sess', '/w', 10)
+    const s = subagents((e) => sent.push(`${e.hook_event_name} ${e.agent_id}`), 'sess', '/w', 2000)
     s.start('a1', 'one')
     s.start('a2', 'two')
-    await new Promise((r) => setTimeout(r, 35))
+    t.mock.timers.tick(2000)
+    t.mock.timers.tick(2000)
+    assert.equal(sent.filter((x) => x === 'SubagentStart a1').length, 3, 'a1 announced, then twice more')
     s.stop('a1', 'one', 'done')
     const afterStop = sent.length
-    await new Promise((r) => setTimeout(r, 25))
-    assert.ok(sent.filter((x) => x === 'SubagentStart a1').length >= 3, 'a1 re-announced while running')
-    assert.ok(
-      sent.slice(afterStop).every((x) => x !== 'SubagentStart a1'),
-      'a1 not announced after its stop',
-    )
+    t.mock.timers.tick(2000)
+    assert.deepEqual(sent.slice(afterStop), ['SubagentStart a2'], 'only a2 after a1 stopped')
     s.close()
     assert.equal(sent.at(-1), 'SubagentStop a2')
   })
