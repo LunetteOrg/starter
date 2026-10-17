@@ -763,3 +763,22 @@ describe('what the first real round taught', () => {
     })
   })
 })
+
+describe('what the third real round taught', () => {
+  const sonnet = { kind: 'claude', model: 'sonnet' }
+  const glm = { kind: 'opencode', model: 'opencode/glm', optional: true }
+  const found = (by: string): Found => ({
+    id: 'f1',
+    severity: 'warning',
+    path: 'a.ts',
+    line: 1,
+    what: 'w',
+    action: 'a',
+    foundBy: [{ lens: 'code', agent: by, session: 's' }],
+  })
+
+  test('a finding always has a required verifier: the finder itself when the others are optional', () => {
+    assert.deepEqual(verifiersFor(found('claude sonnet'), [sonnet, glm]), [glm, sonnet])
+    assert.deepEqual(verifiersFor(found('opencode opencode/deepseek'), [sonnet, glm]), [sonnet, glm])
+  })
+})

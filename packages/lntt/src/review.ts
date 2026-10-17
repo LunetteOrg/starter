@@ -188,12 +188,16 @@ export function mergeFindings(reviewed: Reviewed[], after = 0): Found[] {
     .map((f, i) => ({ id: `f${after + i + 1}`, ...f }))
 }
 
-// The verifiers other than the agents that found it; those same agents only when no
-// other is listed, since a finding left unverified would pass for checked.
+// The verifiers other than the agents that found it. Since an optional verifier may be
+// stopped before it answers, at least one required verifier always checks it: the
+// finders among them when no other required one is listed, and the whole pool when
+// nothing else is left, since a finding left unverified would pass for checked.
 export function verifiersFor(found: Found, pool: Agent[]): Agent[] {
   const finders = new Set(found.foundBy.map((b) => b.agent))
   const others = pool.filter((agent) => !finders.has(agentLabel(agent)))
-  return others.length > 0 ? others : pool
+  if (others.length === 0) return pool
+  if (others.some((agent) => !agent.optional)) return others
+  return [...others, ...pool.filter((agent) => !agent.optional && finders.has(agentLabel(agent)))]
 }
 
 export type Outcome = 'confirmed' | 'refuted' | 'undecided'
