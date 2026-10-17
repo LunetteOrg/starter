@@ -2,7 +2,7 @@
   "name": "@lntt/lntt",
   "version": "0.0.0",
   "private": true,
-  "description": "The lntt command: a Lunette project's configuration and operator profile, the managed block of AGENTS.md, and its CI run on the local machine with the candidate automation",
+  "description": "The lntt command: a Lunette project's configuration and operator profile, the managed block of AGENTS.md, the checks and reviews of a change, and its CI run on the local machine with the candidate automation",
   "type": "module",
   "license": "MIT",
   "exports": {

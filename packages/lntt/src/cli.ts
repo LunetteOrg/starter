@@ -4,7 +4,6 @@ import { execFileSync } from 'node:child_process'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import {
   ConfigError,
-  checkAgentsBlock,
   chooseViewer,
   commandExists,
   findConfig,
@@ -20,7 +19,8 @@ import {
 
 const USAGE = [
   'usage: lntt path | validate | get <key> | set <key> <json> | operator [get <key> | sources]',
-  '       lntt sync | check | local app <name> | viewer detect|open <url>',
+  '       lntt sync | local app <name> | viewer detect|open <url>',
+  '       lntt check [<area> [<check>]] [--base <ref>] [--json] | check cite <path:line>...',
   '       lntt branch name|check|rename [...]',
   '       lntt worktree start --issue <n> [...]',
   '       lntt ci local|candidate [...]',
@@ -77,12 +77,6 @@ function run(command: string | undefined, key: string | undefined, raw: string |
     }
     case 'sync':
       syncAgentsBlock(cwd())
-      break
-    case 'check':
-      if (!checkAgentsBlock(cwd())) {
-        stderr.write('lntt: the managed block of AGENTS.md is missing or edited; run lntt sync\n')
-        exit(1)
-      }
       break
     case 'local':
       if (key !== 'app' || !raw) usage()

@@ -29,6 +29,7 @@ process.stdin.on('data', (d) => (prompt += d)).on('end', () => {
   const session = resume >= 0 ? args[resume + 1] : 'sess-' + Math.random().toString(36).slice(2, 8)
   const kind = prompt.startsWith('You are reviewing') ? 'REVIEW' : prompt.startsWith('You are checking') ? 'VERIFY' : 'REPLY'
   fs.appendFileSync(process.env.FAKE_LOG, kind + ' ' + args.join(' ') + '\\n')
+  if (process.env.FAKE_PROMPTS) fs.appendFileSync(process.env.FAKE_PROMPTS, prompt + '\\n=====\\n')
   const model = args[args.indexOf('--model') + 1]
   // A test that needs another agent to be running first, or the rounds to overlap,
   // holds the answer: until a file has content, or for a fixed time.
@@ -125,6 +126,53 @@ afterEach(() => {
 })
 
 const state = () => JSON.parse(readFileSync(join(repo, '.git/lntt-review.json'), 'utf8'))
+
+describe('lntt review with lntt check', () => {
+  test('the decisions lens gets lntt check decisions; a finding on a line that does not exist never reaches a verifier', () => {
+    writeFileSync(
+      join(repo, '.agents/config.jsonc'),
+      JSON.stringify({
+        recording: { logs: { adr: { path: 'docs/adr', index: 'docs/adr/README.md' } } },
+        delivery: {
+          review: {
+            reviewers: {
+              decisions: { with: [{ kind: 'claude', model: 'haiku' }] },
+              tests: { with: [] },
+              code: { with: [{ kind: 'claude', model: 'sonnet' }] },
+            },
+            verify: { with: [{ kind: 'claude', model: 'opus' }] },
+          },
+        },
+      }),
+    )
+    mkdirSync(join(repo, 'docs/adr'), { recursive: true })
+    writeFileSync(join(repo, 'docs/adr/README.md'), '# Decisions\n')
+    writeFileSync(join(repo, 'docs/adr/storage.md'), '# Storage\n')
+    git('add', '-A')
+    git('commit', '-qm', 'a record left out of its index')
+    const prompts = join(repo, '.fakeprompts')
+    writeFileSync(join(repo, '.gitignore'), `${readFileSync(join(repo, '.gitignore'), 'utf8')}.fakeprompts\n`)
+    git('commit', '-qam', 'ignore the prompts')
+    const r = lntt(['--base', 'main'], {
+      FAKE_PROMPTS: prompts,
+      FAKE_REVIEW_sonnet: '- [blocker] a.ts:40 — an invented line — fix',
+    })
+    assert.match(r.err, /before the reviewers: lntt check decisions/)
+    const decisions = readFileSync(prompts, 'utf8')
+      .split('\n=====\n')
+      .find((p) => p.includes('Lens: decisions')) as string
+    assert.match(decisions, /"check":"index","status":"FAIL","path":"docs\/adr\/storage\.md"/)
+    assert.match(decisions, /"check":"inventory","status":"INFO","path":"docs\/adr\/storage\.md"/)
+    const result = JSON.parse(r.out)
+    assert.deepEqual(result.findings, [])
+    assert.deepEqual(
+      result.refuted.map((f: { proofs: { by: string; proof: string }[] }) => f.proofs),
+      [[{ by: 'lntt check cite', outcome: 'refuted', proof: 'a.ts:40: no line 40: the file has 1 line' }]],
+    )
+    assert.doesNotMatch(readFileSync(log, 'utf8'), /^VERIFY/m)
+    assert.equal(r.code, 0, r.err)
+  })
+})
 
 describe('lntt review, end to end with a fake agent', () => {
   test('a clean round: exit 0, the JSON on stdout, the head saved as reviewed', () => {

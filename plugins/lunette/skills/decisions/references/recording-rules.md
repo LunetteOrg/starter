@@ -8,7 +8,11 @@ where, which language, what each one is for) are in the `recording` section of
 ## A record is a subject, corrected in place
 
 - **One file per subject**, named after it in kebab-case (`scaffolding-contract.md`).
-  The file name is the id: no numbers, no dates in the name.
+  The file name is the id: no numbers, no dates in the name. The title is the subject
+  too: no `ADR NN` anywhere in it (a code span that quotes one is not a reference), and
+  no number with a mark (`1.`, `7:`, `0003 —`) before it. A title that opens on a count,
+  a version or a time (`# 12 retries`, `# 2.0 migration`) is words; a bare number
+  (`# 0003 Old`) cannot be told from a count, and is the reviewer's to judge.
 - **The file states what holds now.** When a decision changes, its file is rewritten
   and the change lands as a commit. The history of a subject is
   `git log --follow -- <file>`, not a chain of files.
@@ -29,8 +33,10 @@ where, which language, what each one is for) are in the `recording` section of
 
 ## The shape of a record
 
-Use the log's `template` when the configuration names one. The default, for ADRs and
-PDRs, is MADR with YAML frontmatter:
+Use the log's `template` when the configuration names one. The comment beside its
+`status:` lists the statuses the log allows (`proposed | accepted`), and
+`lntt check decisions` checks every record against it. The default, for ADRs and PDRs,
+is MADR with YAML frontmatter:
 
 ```markdown
 ---
@@ -72,7 +78,8 @@ example), each log's `scope` says which decisions it holds.
 - **No numbers:** a counter is a contended resource between concurrent pull requests,
   and the collision is silent (two different file names, no git conflict). A subject
   name collides only when two people record the same subject, which is the collision
-  worth seeing.
+  worth seeing. A numbered title (`ADR NN`, `1.`) is the same counter, read where the
+  subject should be.
 
 ## Discarded directions
 

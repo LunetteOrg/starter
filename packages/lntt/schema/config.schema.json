@@ -303,6 +303,14 @@
           "additionalProperties": {
             "$ref": "#/definitions/log"
           }
+        },
+        "externalReferences": {
+          "type": "object",
+          "description": "Files whose paths to records name another project's (a shared package or a skill citing the records of the project that installs it), by glob from the repository root. The value is the reason. lntt check decisions does not resolve their paths and links; a glob that matches no file fails the check.",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
@@ -456,7 +464,7 @@
         },
         "template": {
           "type": "string",
-          "description": "The file a new record is copied from, relative to the repository root."
+          "description": "The file a new record is copied from, relative to the repository root. The statuses its frontmatter lists (`status: proposed # proposed | accepted`) are the ones lntt check decisions accepts in the log's records."
         },
         "scope": {
           "type": "string",

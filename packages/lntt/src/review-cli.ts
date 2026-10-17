@@ -16,6 +16,7 @@ import {
 import { join } from 'node:path'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
+import { cite, formatJson, isArea, runArea } from './check.ts'
 import { NoConfigError } from './files.ts'
 import {
   type HeadlessAgent as Agent,
@@ -449,6 +450,9 @@ async function round(args: string[]): Promise<number> {
     `  verify ${config.verify ? `${config.verify.severities.join(', ')}: ${config.verify.with.map(agentLabel).join(', ')}` : 'off'}`,
   ]
   const agents = [...lenses.flatMap(([, lens]) => lens.with), ...(config.verify?.with ?? [])]
+  // A lens named after an area of lntt check reads its results instead of redoing them.
+  const areas = lenses.map(([name]) => name).filter(isArea)
+  if (areas.length > 0) plan.push(`  before the reviewers: ${areas.map((a) => `lntt check ${a}`).join(', ')}`)
   plan.push(`  the diff goes to: ${destinations(agents)}`)
   stderr.write(`lntt review: ${plan.join('\n')}\n`)
   const problems = agentProblems(agents)
@@ -469,6 +473,11 @@ async function round(args: string[]): Promise<number> {
     files: files.length,
     optionalGraceMs: config.optionalGraceMinutes * 60_000,
   })
+  const checks = Object.fromEntries(
+    files.length === 0
+      ? []
+      : areas.map((area) => [area, formatJson(runArea(area, undefined, [], { root, data, base: range.from }))]),
+  )
   const report = reporter(orcaSubagents(env, root))
   const began = Date.now()
   const result = await runRound(
@@ -481,6 +490,8 @@ async function round(args: string[]): Promise<number> {
       records: records(data),
       range,
       readBrief: (path) => readFileSync(join(root, path), 'utf8'),
+      checks,
+      cite: (path, line) => cite(root, path, line),
     },
     (questions) => {
       report.phase(questions.map((q) => q.label ?? ''))

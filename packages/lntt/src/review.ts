@@ -112,9 +112,9 @@ export interface Finding {
 
 // `- [severity] path:line — what — action`, an em dash or a spaced hyphen between the
 // fields; `(no anchor)` in place of the anchor. Backticks and bold around the severity
-// or the anchor, which models add, are dropped first. Other lines are the reviewer
-// talking.
-const FINDING = /^\s*[-*]\s*\[(blocker|warning|note)\]\s+(\(no anchor\)|\S+?)\s+(?:—|–|-)\s+(.+)$/
+// or the anchor, which models add, are dropped first, and so is a parenthesis after the
+// anchor (a section, a key). Other lines are the reviewer talking.
+const FINDING = /^\s*[-*]\s*\[(blocker|warning|note)\]\s+(\(no anchor\)|\S+?)(?:\s+\([^)]*\))?\s+(?:—|–|-)\s+(.+)$/
 // The action is what follows the last separator, when there is one more; otherwise the
 // whole text is the finding and the action stays empty.
 const LAST_SEPARATOR = /^(.+)\s+(?:—|–|-)\s+(.+)$/
@@ -162,7 +162,8 @@ export function parseFindings(text: string): Finding[] {
     const split = LAST_SEPARATOR.exec(rest)
     const what = split ? (split[1] as string) : rest
     const action = split ? (split[2] as string) : ''
-    const at = anchor === '(no anchor)' ? null : /^(.+?)(?::(\d+))?$/.exec(anchor)
+    // A range, a column or a list of lines (`a.ts:12-15`, `:12:5`, `:12,14`) names its first.
+    const at = anchor === '(no anchor)' ? null : /^(.+?)(?::(\d+)(?:[-–,:]\d+)*)?$/.exec(anchor)
     findings.push({
       severity,
       path: at ? (at[1] as string) : null,
@@ -183,6 +184,8 @@ export interface FoundBy {
 export interface Found extends Finding {
   id: string
   foundBy: FoundBy[]
+  // What its line reads on the head, from lntt check cite; null for a file without a line.
+  cited?: string | null
 }
 
 export interface Reviewed {
@@ -320,6 +323,24 @@ export interface PromptValues {
   diff: string
   records: string
   scope?: string
+  // The JSON lines of `lntt check <area> --base <base>`, by the lens of the same name.
+  checks?: Record<string, string>
+}
+
+// What lntt check found for a lens, before the reviewers: they judge, it counts.
+function checksSection(lens: string, values: PromptValues): string {
+  const lines = values.checks?.[lens]
+  if (lines === undefined) return ''
+  return [
+    `## What \`lntt check ${lens} --base ${values.base} --json\` found`,
+    '',
+    'One result per line: `area`, `check`, `status` (PASS, FAIL, NOT RUN, INFO), `path`, `line`, `message`.',
+    '',
+    '```jsonl',
+    lines.trimEnd(),
+    '```',
+    '',
+  ].join('\n')
 }
 
 // The lens brief (shipped, or the text of the project's) inside the common frame.
@@ -332,6 +353,7 @@ export function renderReviewPrompt(lens: string, values: PromptValues, brief?: s
     range: `${values.base}..${values.head}`,
     files: values.files.map((f) => `- ${f}`).join('\n') || '(none)',
     records: values.records || '(none configured)',
+    checks: checksSection(lens, values),
     diff: values.diff,
   })
 }
@@ -340,10 +362,16 @@ function anchorOf(f: Finding): string {
   return f.path === null ? '(no anchor)' : f.line === null ? f.path : `${f.path}:${f.line}`
 }
 
+function citedLine(found: Found): string {
+  if (typeof found.cited !== 'string') return ''
+  return `What that line reads on the head:\n\n\`\`\`\n${found.cited}\n\`\`\`\n`
+}
+
 export function renderVerifyPrompt(found: Found, values: PromptValues): string {
   return fill(readFileSync(join(AGENTS, 'verify.md'), 'utf8'), {
     severity: found.severity,
     anchor: anchorOf(found),
+    cited: citedLine(found),
     what: found.what,
     action: found.action,
     range: `${values.base}..${values.head}`,
@@ -410,6 +438,9 @@ export interface RoundInput extends PromptValues {
   range: Range
   // The text of a project lens's brief, by its path in the repository.
   readBrief?: (path: string) => string
+  // What a finding's line reads in the working tree, clean at the head (lntt check cite),
+  // or what does not exist: the file, or the line.
+  cite?: (path: string, line: number | null) => { text: string | null } | { missing: string; what: 'file' | 'line' }
 }
 
 function addTokens(total: number | null, answer: Answer): number | null {
@@ -499,9 +530,21 @@ export async function runRound(
     if (same) same.foundBy = [...same.foundBy.filter((b) => !f.foundBy.some((n) => n.agent === b.agent)), ...f.foundBy]
     return !same
   })
-  const found: Found[] = [...carried, ...fresh]
+  // A finding on a line past the end of its file is refuted before any verifier is
+  // asked; the others carry the line's text to them. A file that is not there may be one
+  // the change deletes: its verifiers decide.
+  const found: Found[] = []
+  for (const f of [...carried, ...fresh]) {
+    const cited = f.path === null || !input.cite ? null : input.cite(f.path, f.line)
+    if (cited && 'missing' in cited && cited.what === 'file') found.push(f)
+    else if (cited && 'missing' in cited) {
+      const proof = `${anchorOf(f)}: ${cited.missing}`
+      result.refuted.push({ ...f, verdict: 'refuted', proofs: [{ by: 'lntt check cite', outcome: 'refuted', proof }] })
+    } else found.push(cited ? { ...f, cited: cited.text } : f)
+  }
+  const kept = found.filter((f) => carried.some((c) => c.id === f.id)).length
   const verified = (i: number): boolean =>
-    config.verify !== null && (i < carried.length || config.verify.severities.includes((found[i] as Found).severity))
+    config.verify !== null && (i < kept || config.verify.severities.includes((found[i] as Found).severity))
 
   const checks: { finding: number; agent: Agent }[] = []
   found.forEach((f, i) => {
@@ -536,7 +579,7 @@ export async function runRound(
   })
   found.forEach((f, i) => {
     const mine = proofs[i] as Proof[]
-    const before = i < carried.length ? (f as Checked) : null
+    const before = i < kept ? (f as Checked) : null
     const checked: Checked = {
       ...f,
       // Only the verifiers that answered decide; none answering leaves it undecided.

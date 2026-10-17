@@ -15,7 +15,7 @@ packages/
   playwright-config/    # @lntt/playwright-config: definePlaywrightConfig
   test-utils/           # @lntt/test-utils: test Postgres per run, architecture guards
   lntt/                 # the lntt command: .agents/config.*, the operator profile,
-                        # the AGENTS.md block, the CI run locally (pnpm ci:local)
+                        # lntt check, lntt review, the CI run locally (pnpm ci:local)
 plugins/
   lunette/              # the Lunette plugin: skills installed unchanged in every project
 .claude-plugin/marketplace.json

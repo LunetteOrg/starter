@@ -27,6 +27,7 @@ Decision records of this project, to read when a finding depends on them:
 
 {{records}}
 
+{{checks}}
 The diff:
 
 ```diff
