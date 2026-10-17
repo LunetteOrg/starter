@@ -677,8 +677,8 @@ const NOT_PERMITTED = /resource not accessible|forbidden|insufficient|required s
 // Moves each issue to `status` on every Project it is on that has that status. An issue
 // not moved on any project is told in a `::notice` and returned in `skipped`; one moved
 // on some projects and refused on others is in `moved`, with a notice for the refusal;
-// only a failure
-// that is not a refusal of the token throws, after the other issues are done.
+// only a failure that is not a refusal of the token throws, after the other issues are
+// done.
 export function setBoardStatus(run: Run, issues: number[], status: string) {
   const moved: number[] = []
   const skipped: number[] = []
