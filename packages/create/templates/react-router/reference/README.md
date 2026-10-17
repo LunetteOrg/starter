@@ -29,6 +29,13 @@ supersedes it.
     prototypes/          # exported/interactive prototypes, design refs
   ```
 
+- **A prototype someone keeps working on elsewhere comes in as a squashed subtree.**
+  When the reference is a repository that goes on changing (a prototype a designer or
+  another team still updates), add it under `prototypes/` with
+  `git subtree add --prefix reference/prototypes/<name> <url> <ref> --squash`, and take
+  each update with `git subtree pull` and the same arguments: one commit per update,
+  naming the commit it comes from. Never a git submodule; why is in
+  [the reference-spaces ADR](../docs/adr/product-and-reference-spaces.md).
 - **Sunset it.** When a reference has been fully digested into decisions and code,
   it can be archived or removed — say so in the decision that closes it out.
 
