@@ -11,7 +11,8 @@ where, which language, what each one is for) are in the `recording` section of
   The file name is the id: no numbers, no dates in the name. The title is the subject
   too: no `ADR NN` and no number with a mark (`1.`, `7:`, `0003 —`) before it; a title
   that opens on a count, a version or a time (`# 12 retries`, `# 2.0 migration`) is
-  words.
+  words. A bare number (`# 0003 Old`) cannot be told from a count, so
+  `lntt check decisions` passes it and the reviewer judges it.
 - **The file states what holds now.** When a decision changes, its file is rewritten
   and the change lands as a commit. The history of a subject is
   `git log --follow -- <file>`, not a chain of files.

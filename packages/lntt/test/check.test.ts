@@ -234,6 +234,11 @@ describe('lntt check decisions structure', () => {
       '12 retries',
       '2024 review',
       '1.2.3 Plan',
+      '0003 Old thing',
+      '2–3 retries',
+      'ADR process',
+      '1)storage',
+      '1:word',
     ])
       assert.deepEqual(title(t), [], t)
     for (const t of [
@@ -245,8 +250,15 @@ describe('lntt check decisions structure', () => {
       '7 — Caching',
       '1) Storage',
       '12 — API shape',
+      '7 - Caching',
+      '7 – Caching',
+      '0003—Old thing',
       '0003 — Old thing',
       `ADR ${12} API shape`,
+      `PDR-${12} pricing`,
+      `ADR#${3} storage`,
+      `ADR${12} storage`,
+      `Why ADR ${5} matters`,
     ]) {
       assert.deepEqual(title(t), ['names docs/adr/api-shape.md:5'], t)
     }
