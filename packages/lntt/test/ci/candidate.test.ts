@@ -744,7 +744,7 @@ describe('setBoardStatus', () => {
     assert.throws(() => setBoardStatus({ ...run(fakeGh({})), board }, [69], 'In release'), /#69: API rate limit/)
   })
 
-  test('a refusal after a first project was written leaves the issue skipped, not moved', () => {
+  test('a refusal after a first project was written leaves the issue moved on that one', () => {
     let writes = 0
     const base = fakeGh(items(item('i1'), item('i2')))
     const board: Gh = {
@@ -755,8 +755,9 @@ describe('setBoardStatus', () => {
       },
     }
     const { moved, skipped } = setBoardStatus({ ...run(fakeGh({})), board }, [69], 'In release')
-    assert.deepEqual(moved, [])
-    assert.deepEqual(skipped, [69])
+    assert.deepEqual(moved, [69])
+    assert.deepEqual(skipped, [])
+    assert.equal(base.writes.length, 1)
   })
 
   test('the notice for a missing option lists the options the project has', () => {
@@ -893,6 +894,40 @@ describe('makeGh', () => {
         /Command failed: gh api graphql: Resource not accessible by personal access token/,
       )
     })
+  })
+
+  test('a failing gh with no stderr says only which command failed', () => {
+    withFakeGh('exit 3', () => {
+      assert.throws(
+        () => makeGh({ dryRun: false, log: silent }).read(['api', 'graphql']),
+        (error: Error) => error.message === 'Command failed: gh api graphql',
+      )
+    })
+  })
+
+  test('a gh that cannot start throws its own error', () => {
+    const before = process.env.PATH
+    process.env.PATH = '/nonexistent'
+    try {
+      assert.throws(() => makeGh({ dryRun: false, log: silent }).read(['x']), /ENOENT/)
+    } finally {
+      process.env.PATH = before
+    }
+  })
+
+  test('without a token the ambient GH_TOKEN is the one gh sees', () => {
+    const before = process.env.GH_TOKEN
+    process.env.GH_TOKEN = 'ambient'
+    try {
+      withFakeGh('echo "$GH_TOKEN"', () => {
+        assert.equal(makeGh({ dryRun: false, log: silent }).read(['x']), 'ambient')
+        assert.equal(makeGh({ dryRun: false, log: silent, token: 'tok' }).read(['x']), 'tok')
+        assert.equal(makeGh({ dryRun: false, log: silent }).read(['x']), 'ambient')
+      })
+    } finally {
+      if (before === undefined) delete process.env.GH_TOKEN
+      else process.env.GH_TOKEN = before
+    }
   })
 
   test('the token reaches gh as GH_TOKEN, and stdout comes back trimmed', () => {

@@ -3,13 +3,14 @@ name: Candidate
 # Moves every pull request into the default branch onto the open candidate (created
 # on the fly when none is open); when a pull request is merged into a candidate,
 # rebuilds from every pull request merged into it the list and the `Closes` lines of
-# the candidate's body, and tells each open issue they close, once, that the candidate
-# will close it, and moves it to the board status `delivery.candidate.status.inRelease`. When the candidate is
-# merged, closes the issues of its `Closes` lines
-# still open (keywords written by the automation link nothing) and moves the pull
-# requests still open on it onto the next candidate. Hotfixes stay on the default
-# branch. Prefix, base, hotfix markers and board statuses: delivery.candidate in .agents/config.jsonc;
-# the logic: `lntt ci candidate` (packages/lntt/src/ci/candidate.ts); the flow:
+# the candidate's body, tells each open issue they close, once, that the candidate will
+# close it, and moves it to the board status delivery.candidate.status.inRelease. When
+# the candidate is merged, closes the issues of its `Closes` lines still open (keywords
+# written by the automation link nothing), moves them to delivery.candidate.status.done
+# and moves the pull requests still open on it onto the next candidate. Hotfixes stay on
+# the default branch. Prefix, base, hotfix markers and board statuses:
+# delivery.candidate in .agents/config.jsonc; the logic: `lntt ci candidate`
+# (packages/lntt/src/ci/candidate.ts); the flow:
 # docs/process/delivery.md.
 #
 # It runs on drafts too, on these three events only, never on a push. It writes with

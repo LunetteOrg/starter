@@ -753,11 +753,11 @@ export function setBoardStatus(run: Run, issues: number[], status: string) {
       const message = (error as Error).message
       if (!NOT_PERMITTED.test(message)) throw error
       log(
-        `::notice title=Board not moved::the token lacks the Projects permission, #${number} stays on its status instead of "${status}": ${message.split('\n')[0]}`,
+        `::notice title=Board not moved::the token lacks the Projects permission, #${number} is not moved to "${status}" on every project it is on: ${message.split('\n')[0]}`,
       )
-      const at = moved.indexOf(number)
-      if (at !== -1) moved.splice(at, 1)
-      if (!skipped.includes(number)) skipped.push(number)
+      // A project written before the refusal stays moved: the issue is in `moved` and
+      // is not skipped.
+      if (!moved.includes(number) && !skipped.includes(number)) skipped.push(number)
     }
   })
   log(`candidate: board "${status}": moved ${list(moved)}; skipped ${list(skipped)}.`)
