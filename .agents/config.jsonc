@@ -37,6 +37,27 @@
       "prefix": "candidate/",
       "hotfix": { "prefix": "hotfix/", "label": "hotfix" }
     },
+    // Who reviews before a pull request is marked ready (lntt review): each lens on
+    // agents of more than one provider, so a blind spot of one model is not the
+    // review's; the verifiers try to refute every blocker and warning.
+    "review": {
+      "reviewers": {
+        "decisions": { "with": [{ "kind": "claude", "model": "haiku" }] },
+        "code": {
+          "with": [
+            { "kind": "claude", "model": "sonnet" },
+            { "kind": "opencode", "model": "opencode/deepseek-v4.1-flash-free" }
+          ]
+        },
+        "tests": { "with": [{ "kind": "claude", "model": "sonnet" }] }
+      },
+      "verify": {
+        "with": [
+          { "kind": "claude", "model": "sonnet" },
+          { "kind": "opencode", "model": "opencode/glm-5.3-flash-free" }
+        ]
+      }
+    },
     "commits": {
       "language": "en",
       "longTrailers": [
