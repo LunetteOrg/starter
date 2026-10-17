@@ -25,7 +25,8 @@ end. Run it in the background when your harness can, and wake only on the lines 
 need you: watch for `lntt review: (failed|round [0-9]+ done)`, not every line; the
 rest is for the person at the terminal.
 
-stdout is JSON: `findings` (what to act on: `confirmed`, `undecided`, `unverified`),
+stdout is JSON: `findings` (`confirmed`, `undecided`, `unverified`; blockers and
+warnings block the round, notes do not),
 `refuted` (with the verifiers' proofs; nothing to do), `failed` (a reviewer that did
 not answer). Exit 0: a clean round. Exit 1: findings or a failure.
 
@@ -43,7 +44,9 @@ reviewed one; findings still open go back to the verifiers on the new head.
   lntt review reply <id> "<the answer, with path:line>"
   ```
 
-  It resumes their sessions; `withdrawn: true` closes the finding.
+  It resumes their sessions; `withdrawn: true` closes the finding. A reviewer that
+  cannot be resumed makes it a question for the person.
+- **A note:** fix it if it is cheap, or list it in the pull request; it does not block.
 - **`failed`:** run the round again; a failure that repeats is reported to the person
   with its error.
 

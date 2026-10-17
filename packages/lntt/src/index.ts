@@ -42,6 +42,7 @@ export {
   type Checked,
   type Finding,
   type Found,
+  isNoFindings,
   type Lens,
   lensApplies,
   mergeFindings,

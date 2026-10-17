@@ -209,7 +209,7 @@
                   "with": {
                     "type": "array",
                     "items": {
-                      "$ref": "#/$defs/reviewAgent"
+                      "$ref": "#/definitions/reviewAgent"
                     },
                     "description": "The agents that review through this lens, all at once."
                   },
@@ -242,7 +242,7 @@
                     "with": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/$defs/reviewAgent"
+                        "$ref": "#/definitions/reviewAgent"
                       },
                       "minItems": 1,
                       "description": "The verifiers, each asked to refute every finding at once; an agent that found the finding verifies it only when no other is listed."
@@ -448,9 +448,7 @@
           "description": "What this log records, in one sentence, so a decision is filed in the right one."
         }
       }
-    }
-  },
-  "$defs": {
+    },
     "reviewAgent": {
       "type": "object",
       "additionalProperties": false,
@@ -459,12 +457,12 @@
         "kind": {
           "type": "string",
           "enum": ["claude", "opencode"],
-          "description": "The agent CLI, run headless and read-only."
+          "description": "The agent CLI, run headless and read-only. The diff and the files it reads go to the provider that serves its model: the project's choice, with that provider's terms on data; lntt review names the destinations in every round."
         },
         "model": {
           "type": "string",
           "minLength": 1,
-          "description": "The model, as the agent names it: an alias or id for claude, provider/model for opencode. Default: the agent's own."
+          "description": "The model, as the agent names it: an alias or id for claude, provider/model for opencode (the provider part says where the diff goes). Default: the agent's own."
         },
         "effort": {
           "type": "string",

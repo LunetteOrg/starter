@@ -93,12 +93,24 @@ export interface Finding {
 }
 
 // `- [severity] path:line — what — action`, an em dash or a spaced hyphen between the
-// fields; `(no anchor)` in place of the anchor. Other lines are the reviewer talking.
+// fields; `(no anchor)` in place of the anchor. Backticks and bold around the severity
+// or the anchor, which models add, are dropped first. Other lines are the reviewer
+// talking.
 const FINDING = /^\s*[-*]\s*\[(blocker|warning|note)\]\s+(\(no anchor\)|\S+?)\s+(?:—|–|-)\s+(.+?)\s+(?:—|–|-)\s+(.+)$/
+
+function unwrap(line: string): string {
+  return line.replace(/^(\s*[-*]\s*)\*\*(\[\w+\])\*\*/, '$1$2').replace(/(\]\s+)[`*]+([^\s`*]+)[`*]+(?=\s)/, '$1$2')
+}
+
+// The reply of a reviewer that found nothing, wrapped in whatever markdown it adds.
+export function isNoFindings(text: string): boolean {
+  return /^no findings\.?$/i.test(text.replace(/[`*_]/g, '').trim())
+}
 
 export function parseFindings(text: string): Finding[] {
   const findings: Finding[] = []
-  for (const line of text.split('\n')) {
+  for (const raw of text.split('\n')) {
+    const line = unwrap(raw)
     const m = FINDING.exec(line)
     if (!m) continue
     const [, severity, anchor, what, action] = m as unknown as [string, Severity, string, string, string]
@@ -173,10 +185,11 @@ export function verifiersFor(found: Found, pool: Agent[]): Agent[] {
 
 export type Outcome = 'confirmed' | 'refuted' | 'undecided'
 
-// The first word decides, whatever markdown wraps it; anything else is undecided.
+// The first word decides, whatever markdown wraps it, and the proof may follow it on the
+// same line (`refuted: a.ts:2 guards it`); anything else is undecided.
 function firstWord(text: string): { word: string; rest: string } {
-  const [first = '', ...rest] = text.trim().split('\n')
-  return { word: first.replace(/[^a-z]/gi, '').toLowerCase(), rest: rest.join('\n').trim() }
+  const m = /^[^a-z]*([a-z]+)\b[^a-z0-9`(]*([\s\S]*)$/i.exec(text.trim())
+  return m ? { word: (m[1] as string).toLowerCase(), rest: (m[2] as string).trim() } : { word: '', rest: '' }
 }
 
 export function parseOutcome(text: string): { outcome: Outcome; proof: string } {
@@ -200,7 +213,8 @@ export function parseWithdrawal(text: string): { withdrawn: boolean; reason: str
 export interface ReviewState {
   branch: string
   round: number
-  reviewed: string
+  // The last commit every reviewer read; null when no round has read the branch whole.
+  reviewed: string | null
   result: RoundResult
 }
 
@@ -222,6 +236,14 @@ export function roundRange(
   isAncestor: (commit: string, of: string) => boolean,
 ): Range {
   if (!state || state.branch !== branch) return { round: 1, from: mergeBase, whole: true, reason: 'first round' }
+  if (state.reviewed === null) {
+    return {
+      round: state.round + 1,
+      from: mergeBase,
+      whole: true,
+      reason: 'no round read the whole branch: the whole branch',
+    }
+  }
   if (!isAncestor(state.reviewed, head)) {
     return {
       round: state.round + 1,
@@ -311,8 +333,10 @@ export interface RoundResult {
   cost: number | null
 }
 
+// Notes are reported, never blocking: a round is clean when no blocker or warning is
+// left open and no reviewer or verifier failed.
 export function roundClean(result: RoundResult): boolean {
-  return result.findings.every((f) => f.verdict === 'withdrawn') && result.failed.length === 0
+  return result.findings.every((f) => f.severity === 'note' || f.verdict === 'withdrawn') && result.failed.length === 0
 }
 
 export type Ask = (questions: Question[]) => Promise<Answer[]>
@@ -364,18 +388,34 @@ export async function runRound(
     jobs.map(({ lens, agent, prompt }) => ({ agent, prompt, label: `${lens} · ${agentLabel(agent)}` })),
   )
   const reviewed: Reviewed[] = []
-  answers.forEach((answer, i) => {
+  for (const [i, answer] of answers.entries()) {
     const job = jobs[i] as (typeof jobs)[number]
     result.cost = addCost(result.cost, answer)
-    if (!answer.ok) result.failed.push({ lens: job.lens, agent: agentLabel(job.agent), error: answer.error })
-    else reviewed.push({ ...job, session: answer.reply.session, findings: parseFindings(answer.reply.text) })
-  })
+    const failed = (error: string) => result.failed.push({ lens: job.lens, agent: agentLabel(job.agent), error })
+    if (!answer.ok) {
+      failed(answer.error)
+      continue
+    }
+    const findings = parseFindings(answer.reply.text)
+    // A reply in another shape is a review that did not happen, not a clean one.
+    if (findings.length === 0 && !isNoFindings(answer.reply.text)) {
+      failed(`no finding line and not "no findings": ${answer.reply.text.trim().slice(0, 160)}`)
+      continue
+    }
+    reviewed.push({ ...job, session: answer.reply.session, findings })
+  }
   // Fresh reviewers read only the delta, so a finding still open from the last round
   // would go unseen: it goes back to the verifiers, at any severity, and stays while
   // they cannot refute it on the new head. Without verifiers it stays until withdrawn.
-  const carried = open.filter((f) => f.verdict !== 'withdrawn')
-  const last = Math.max(0, ...carried.map((f) => Number(f.id.slice(1)) || 0))
-  const fresh = mergeFindings(reviewed, last)
+  // Notes are reported once, in the round that found them, and not carried.
+  const carried = open.filter((f) => f.verdict !== 'withdrawn' && f.severity !== 'note').map((f) => ({ ...f }))
+  const last = Math.max(0, ...open.map((f) => Number(f.id.slice(1)) || 0))
+  // A fresh finding at the anchor of one still open is the same finding: it joins it.
+  const fresh = mergeFindings(reviewed, last).filter((f) => {
+    const same = f.path !== null && carried.find((c) => c.path === f.path && c.line === f.line)
+    if (same) same.foundBy = [...same.foundBy, ...f.foundBy]
+    return !same
+  })
   const found: Found[] = [...carried, ...fresh]
   const verified = (i: number): boolean =>
     config.verify !== null && (i < carried.length || config.verify.severities.includes((found[i] as Found).severity))
@@ -400,6 +440,8 @@ export async function runRound(
     const check = checks[i] as (typeof checks)[number]
     result.cost = addCost(result.cost, answer)
     const by = agentLabel(check.agent)
+    if (!answer.ok)
+      result.failed.push({ lens: `verify ${(found[check.finding] as Found).id}`, agent: by, error: answer.error })
     proofs[check.finding]?.push(
       answer.ok ? { by, ...parseOutcome(answer.reply.text) } : { by, outcome: 'undecided', proof: answer.error },
     )

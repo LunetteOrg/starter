@@ -9,8 +9,8 @@ export interface Invocation {
   command: string
   args: string[]
   env: Record<string, string>
-  // The prompt on stdin, or null when it is an argument.
-  stdin: string | null
+  // The prompt, written to stdin.
+  stdin: string
 }
 
 export interface Reply {
@@ -36,12 +36,13 @@ export type Answer = { ok: true; reply: Reply } | { ok: false; error: string }
 export type Spawn = (invocation: Invocation) => Promise<string>
 
 // claude: only the read tools, and no MCP server (the machine's servers can send mail
-// or write to other services). opencode: an inline agent with every tool that writes,
-// runs or asks denied (`question` would wait for an answer nobody gives), read by a
-// standalone server only.
+// or write to other services). opencode: an inline agent, read by a standalone server
+// only, that denies every tool and allows the read ones back, so a tool opencode adds
+// (or one this list would forget, as `write` or `question`) is denied too. Both take the
+// prompt on stdin: a diff does not fit an argument.
 const CLAUDE_READ_ONLY = ['--tools', 'Read,Grep,Glob', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}']
 const OPENCODE_AGENT = 'lntt-readonly'
-const OPENCODE_DENY = ['edit', 'bash', 'webfetch', 'websearch', 'task', 'execute', 'subagent', 'question']
+const OPENCODE_PERMISSION = { '*': 'deny', read: 'allow', grep: 'allow', glob: 'allow', list: 'allow' }
 
 export function headlessInvocation(agent: Agent, prompt: string, session?: string): Invocation {
   if (agent.kind === 'claude') {
@@ -56,40 +57,46 @@ export function headlessInvocation(agent: Agent, prompt: string, session?: strin
     if (agent.model && !/^[\w.:-]+\/[\w.:/#-]+$/.test(agent.model)) {
       throw new Error(`opencode model ${agent.model} is not provider/model`)
     }
-    const permission = Object.fromEntries(OPENCODE_DENY.map((tool) => [tool, 'deny']))
-    const config = { agent: { [OPENCODE_AGENT]: { mode: 'primary', permission } } }
+    const config = { agent: { [OPENCODE_AGENT]: { mode: 'primary', permission: OPENCODE_PERMISSION } } }
     const args = ['run', '--standalone', '--agent', OPENCODE_AGENT, '--format', 'json']
     if (agent.model) args.push('-m', agent.model)
     if (session) args.push('-s', session)
-    args.push(prompt)
-    return { command: 'opencode', args, env: { OPENCODE_CONFIG_CONTENT: JSON.stringify(config) }, stdin: null }
+    return { command: 'opencode', args, env: { OPENCODE_CONFIG_CONTENT: JSON.stringify(config) }, stdin: prompt }
   }
   throw new Error(`${agent.kind} has no read-only headless mode here; the agents are claude, opencode`)
 }
 
+function json<T>(kind: string, text: string, what: string): T {
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    throw new Error(`${kind} printed ${what}: ${text.trim().slice(0, 200)}`)
+  }
+}
+
 export function parseReply(kind: string, stdout: string): Reply {
   if (kind === 'claude') {
-    const out = JSON.parse(stdout) as {
+    const out = json<{
       result?: string
       session_id?: string
       is_error?: boolean
       total_cost_usd?: number
-    }
+    }>(kind, stdout, 'no JSON')
     if (out.is_error) throw new Error(out.result ?? 'claude failed')
-    return { text: out.result ?? '', session: out.session_id ?? null, cost: out.total_cost_usd ?? null }
+    if (typeof out.result !== 'string') throw new Error('claude gave no result')
+    return { text: out.result, session: out.session_id ?? null, cost: out.total_cost_usd ?? null }
   }
   // opencode: one JSON event per line; the answer is the text of the last message.
   const events = stdout
     .split('\n')
     .filter((line) => line.trim() !== '')
-    .map(
-      (line) =>
-        JSON.parse(line) as {
-          type: string
-          sessionID?: string
-          part?: { messageID?: string; type?: string; text?: string }
-          error?: { message?: string }
-        },
+    .map((line) =>
+      json<{
+        type: string
+        sessionID?: string
+        part?: { messageID?: string; type?: string; text?: string }
+        error?: { message?: string }
+      }>(kind, line, 'a line that is not JSON'),
     )
   const error = events.find((e) => e.type === 'error')
   if (error) throw new Error(error.error?.message ?? 'opencode failed')

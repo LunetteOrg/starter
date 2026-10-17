@@ -28,18 +28,21 @@ same way every time; the `review` skill keeps the judgement.
   Storybook check) brings its `brief`, a file of the repository. A lens may list
   agents of several providers, so the blind spots of one model are not the review's.
 - **Every reviewer starts with no context but its prompt** (the brief, the range, the
-  files, the diff, the decision logs) and **can only read**: `claude -p` with Read, Grep
-  and Glob and no MCP server, `opencode run` with an inline agent that denies editing,
-  the shell, the web, subagents and questions. The tools are what makes it read-only,
-  not the brief.
+  files, the diff, the decision logs, on stdin) and **can only read**: `claude -p` with
+  Read, Grep and Glob and no MCP server, `opencode run` with an inline agent that denies
+  every tool and allows the read ones back. The tools are what makes it read-only, not
+  the brief.
 - **Adversarial verification:** every finding at a severity in `verify.severities`
   goes, at once, to every verifier in `verify.with` other than the agents that found it,
   each briefed to refute it. All confirm: confirmed; all refute: refuted, kept out of
   the author's list with the proofs; otherwise undecided.
 - **Rounds:** the first reads the branch from the base, later ones the commits after the
   last reviewed one, with fresh reviewers; findings still open go back to the verifiers
-  on the new head. The state stays in the worktree's git directory. A clean round
-  (exit 0) has nothing left and no reviewer that failed.
+  on the new head, notes excepted. The state stays in the worktree's git directory. A
+  clean round (exit 0) has no blocker or warning left and no reviewer or verifier that
+  failed; notes are reported, never blocking. A reply in neither the findings' format nor
+  `no findings` counts as a failed reviewer, and a round with a failure does not move the
+  reviewed commit.
 - **A conversation inside a round:** `lntt review reply` resumes the sessions of the
   reviewers who found a finding with the author's answer; it closes when they all
   withdraw it. A disagreement that remains goes to the person.
@@ -64,6 +67,10 @@ same way every time; the `review` skill keeps the judgement.
 - The adapters follow `claude -p` and `opencode run`, whose flags change; the tests pin
   the calls, a trial round against the real tools confirms them.
 - opencode reports no cost: a round's `cost` covers only the agents that report it.
+- The diff and the files a reviewer reads go to the provider of each configured agent,
+  with that provider's terms on data (free models among them). Configuring an agent is
+  the project's choice; `lntt review` names the destinations in `--plan` and in every
+  round, and the schema says so where the agent is written.
 
 ### When to deviate (revisit triggers)
 

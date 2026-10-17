@@ -29,7 +29,7 @@ describe('a headless agent, read-only', () => {
     assert.deepEqual(inv.args.slice(-2), ['--resume', 'abc'])
   })
 
-  test('opencode: run on a standalone server, an inline agent that can only read, the prompt as the message', () => {
+  test('opencode: run on a standalone server, an inline agent allowed only to read, the prompt on stdin', () => {
     const inv = headlessInvocation({ kind: 'opencode', model: 'opencode/deepseek-v4.1-flash-free' }, 'PROMPT', 'ses_1')
     assert.equal(inv.command, 'opencode')
     assert.deepEqual(inv.args, [
@@ -43,14 +43,17 @@ describe('a headless agent, read-only', () => {
       'opencode/deepseek-v4.1-flash-free',
       '-s',
       'ses_1',
-      'PROMPT',
     ])
-    assert.equal(inv.stdin, null)
+    assert.equal(inv.stdin, 'PROMPT')
     const config = JSON.parse(inv.env.OPENCODE_CONFIG_CONTENT as string)
-    const permission = config.agent['lntt-readonly'].permission
-    for (const tool of ['edit', 'bash', 'webfetch', 'websearch', 'task', 'execute', 'subagent', 'question']) {
-      assert.equal(permission[tool], 'deny', tool)
-    }
+    // Everything denied, then the read tools allowed: a tool opencode adds is denied too.
+    assert.deepEqual(config.agent['lntt-readonly'].permission, {
+      '*': 'deny',
+      read: 'allow',
+      grep: 'allow',
+      glob: 'allow',
+      list: 'allow',
+    })
   })
 
   test('refused: an agent it has no read-only mode for, an effort opencode cannot take', () => {
@@ -96,6 +99,19 @@ describe('the reply', () => {
     })
     assert.throws(() => parseReply('opencode', error), /starting with "ses"/)
     assert.throws(() => parseReply('opencode', ''), /no reply/)
+  })
+
+  test('output that is not what the agent prints says which agent and what it printed', () => {
+    assert.throws(() => parseReply('claude', 'Error: not logged in'), /claude printed no JSON: Error: not logged in/)
+    assert.throws(() => parseReply('claude', ''), /claude printed no JSON/)
+    assert.throws(
+      () => parseReply('opencode', '{"type":"text"}\nboom'),
+      /opencode printed a line that is not JSON: boom/,
+    )
+  })
+
+  test('claude: a reply with no result is an error, not an empty review', () => {
+    assert.throws(() => parseReply('claude', JSON.stringify({ is_error: false, session_id: 's' })), /no result/)
   })
 })
 
@@ -146,5 +162,35 @@ describe('several agents at once', () => {
     )
     assert.deepEqual(events.slice(0, 2), ['code · claude start', 'tests · claude start'])
     assert.deepEqual(events.slice(2).sort(), ['code · claude end true number', 'tests · claude end false number'])
+  })
+
+  test('every agent is running before the first answers: the answers are held until all have started', async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    let started = 0
+    const spawn: Spawn = async () => {
+      started++
+      if (started === 3) release()
+      await gate
+      return JSON.stringify({ result: 'r', session_id: 's', is_error: false })
+    }
+    const questions = ['A', 'B', 'C'].map((prompt) => ({ agent: { kind: 'claude' }, prompt }))
+    const results = await askAll(questions, spawn)
+    assert.equal(results.filter((r) => r.ok).length, 3)
+  })
+
+  test('an agent that cannot be started is a failure in its place, not a crash of the batch', async () => {
+    const spawn: Spawn = async () => JSON.stringify({ result: 'r', session_id: 's', is_error: false })
+    const results = await askAll(
+      [
+        { agent: { kind: 'codex' }, prompt: 'A' },
+        { agent: { kind: 'claude' }, prompt: 'B' },
+      ],
+      spawn,
+    )
+    assert.equal(results[0]?.ok, false)
+    assert.equal(results[1]?.ok, true)
   })
 })

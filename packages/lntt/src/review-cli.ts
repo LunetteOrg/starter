@@ -8,7 +8,7 @@ import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { ConfigError } from './files.ts'
 import { askAll, headlessInvocation, type Invocation, type Progress, type Spawn } from './headless.ts'
-import { loadConfig } from './index.ts'
+import { findConfig, loadConfig } from './index.ts'
 import {
   agentLabel,
   type Checked,
@@ -44,13 +44,26 @@ function git(...args: string[]): string {
     .trimEnd()
 }
 
+// No configuration file: the defaults. A file that does not validate is an error: a
+// review on the defaults would pass for the one the project configured.
 function loaded(): Record<string, unknown> {
   try {
-    return loadConfig(cwd()).data
+    findConfig(cwd())
   } catch (error) {
     if (error instanceof ConfigError) return {}
     throw error
   }
+  return loadConfig(cwd()).data
+}
+
+// Where each agent sends the diff: the project's choice, shown every time.
+function destinations(agents: Agent[]): string {
+  const to = new Set(
+    agents.map((a) =>
+      a.kind === 'claude' ? 'anthropic (claude)' : `${a.model?.split('/')[0] ?? 'default'} (${a.kind})`,
+    ),
+  )
+  return [...to].join(', ')
 }
 
 // The decision logs, as the decisions lens needs to find them.
@@ -75,13 +88,19 @@ function readState(): ReviewState | null {
   return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as ReviewState) : null
 }
 
-// Refused before any agent starts: a CLI that is not installed, or a reviewer the
-// agent cannot be made read-only for (headlessInvocation throws).
-function checkAgents(agents: Agent[]): void {
+// What keeps an agent from starting: a CLI that is not installed, or one that cannot be
+// made read-only (headlessInvocation throws). A round refuses before any starts.
+function agentProblems(agents: Agent[]): string[] {
+  const problems: string[] = []
   for (const agent of agents) {
-    headlessInvocation(agent, '')
-    if (!commandExists(agent.kind)) throw new Error(`${agentLabel(agent)}: ${agent.kind} is not on the PATH`)
+    try {
+      headlessInvocation(agent, '')
+      if (!commandExists(agent.kind)) problems.push(`${agentLabel(agent)}: ${agent.kind} is not on the PATH`)
+    } catch (error) {
+      problems.push(`${agentLabel(agent)}: ${(error as Error).message}`)
+    }
   }
+  return problems
 }
 
 function duration(ms: number): string {
@@ -147,7 +166,9 @@ function spawner(timeoutMinutes: number): Spawn {
             new Error(`${inv.command} exited ${code}: ${(err.trim() || out.trim()).split('\n').slice(-3).join(' ')}`),
           )
       })
-      child.stdin.end(inv.stdin ?? '')
+      // An agent that exits before reading its prompt closes the pipe: `close` reports it.
+      child.stdin.on('error', () => {})
+      child.stdin.end(inv.stdin)
     })
 }
 
@@ -177,7 +198,9 @@ async function round(args: string[]): Promise<number> {
     return 1
   }
   const branch = git('rev-parse', '--abbrev-ref', 'HEAD')
+  if (branch === 'HEAD') throw new Error('HEAD is detached; the review keeps its rounds per branch: switch to one')
   const head = git('rev-parse', '--short', 'HEAD')
+  const root = git('rev-parse', '--show-toplevel')
   const state = readState()
   const range = roundRange(
     state,
@@ -199,10 +222,16 @@ async function round(args: string[]): Promise<number> {
     `round ${range.round}, ${range.reason}: ${range.from}..${head}, ${files.length} files`,
     ...lenses.map(([name, lens]) => `  ${name}: ${lens.with.map(agentLabel).join(', ')}`),
     `  verify ${config.verify ? `${config.verify.severities.join(', ')}: ${config.verify.with.map(agentLabel).join(', ')}` : 'off'}`,
-  ].join('\n')
-  stderr.write(`lntt review: ${plan}\n`)
-  checkAgents([...lenses.flatMap(([, lens]) => lens.with), ...(config.verify?.with ?? [])])
-  if (values.plan) return 0
+  ]
+  const agents = [...lenses.flatMap(([, lens]) => lens.with), ...(config.verify?.with ?? [])]
+  plan.push(`  the diff goes to: ${destinations(agents)}`)
+  stderr.write(`lntt review: ${plan.join('\n')}\n`)
+  const problems = agentProblems(agents)
+  if (values.plan) {
+    for (const problem of problems) stderr.write(`lntt review: cannot start ${problem}\n`)
+    return 0
+  }
+  if (problems.length > 0) throw new Error(`cannot start ${problems.join('; ')}`)
 
   const open = state?.branch === branch ? state.result.findings : []
   const report = reporter()
@@ -216,15 +245,23 @@ async function round(args: string[]): Promise<number> {
       diff: files.length > 0 ? git('diff', `${range.from}..${head}`) : '',
       records: records(data),
       range,
+      readBrief: (path) => readFileSync(join(root, path), 'utf8'),
     },
     (questions) => askAll(questions, spawner(config.timeoutMinutes), report.progress),
     open,
   )
-  // An empty delta keeps the last round's number: nothing new was read.
+  // The reviewers read the working tree: a commit or an edit during the round means they
+  // did not all read the head the diff names.
+  const moved = git('rev-parse', '--short', 'HEAD') !== head || git('status', '--porcelain') !== ''
+  if (moved)
+    result.failed.push({ lens: 'round', agent: 'lntt', error: `the branch moved from ${head} during the round` })
+  // An empty delta keeps the last round's number: nothing new was read. A round with a
+  // failure does not move the reviewed commit, so the next one reads this range again.
+  const previous = state?.branch === branch ? state.reviewed : null
   const saved: ReviewState = {
     branch,
     round: files.length > 0 ? range.round : (state?.round ?? 1),
-    reviewed: head,
+    reviewed: result.failed.length > 0 ? previous : head,
     result,
   }
   writeFileSync(statePath(), `${JSON.stringify(saved, null, 2)}\n`)
@@ -248,9 +285,15 @@ async function reply(args: string[]): Promise<number> {
   const config: ReviewConfig = reviewConfig(loaded())
   const known = new Map<string, Agent>()
   for (const lens of Object.values(config.reviewers)) for (const a of lens.with) known.set(agentLabel(a), a)
+  // Withdrawn only by every reviewer that found it: one that cannot be resumed (no
+  // session, or no longer in the configuration) is refused, not skipped.
+  const lost = finding.foundBy.filter((b) => !b.session || !known.has(b.agent))
+  if (lost.length > 0) {
+    throw new Error(`${id}: cannot resume ${lost.map((b) => b.agent).join(', ')}; the person decides on this finding`)
+  }
+  const finders = finding.foundBy
+  if (finders.length === 0) throw new Error(`${id}: no reviewer to answer`)
   const report = reporter()
-  const finders = finding.foundBy.filter((b) => b.session && known.has(b.agent))
-  if (finders.length === 0) throw new Error(`${id}: none of its reviewers can be resumed`)
   const answers = await askAll(
     finders.map((b) => ({
       agent: known.get(b.agent) as Agent,
