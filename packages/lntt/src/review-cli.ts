@@ -162,7 +162,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 }
 
 function spawner(timeoutMinutes: number): Spawn {
-  return (inv: Invocation) =>
+  return (inv: Invocation, signal?: AbortSignal) =>
     new Promise((resolve, reject) => {
       const child = spawn(inv.command, inv.args, {
         env: { ...env, ...inv.env },
@@ -170,6 +170,12 @@ function spawner(timeoutMinutes: number): Spawn {
         detached: true,
       })
       if (child.pid) groups.add(child.pid)
+      signal?.addEventListener('abort', () => {
+        try {
+          if (child.pid) process.kill(-child.pid, 'SIGTERM')
+        } catch {}
+        reject(new Error(String(signal.reason)))
+      })
       let out = ''
       let err = ''
       child.stdout.on('data', (chunk) => {
@@ -278,7 +284,10 @@ async function round(args: string[]): Promise<number> {
       readBrief: (path) => readFileSync(join(root, path), 'utf8'),
     },
     (questions) =>
-      askAll(questions, spawner(config.timeoutMinutes), report.progress, { perProvider: config.perProvider }),
+      askAll(questions, spawner(config.timeoutMinutes), report.progress, {
+        perProvider: config.perProvider,
+        optionalGraceMs: config.optionalGraceMinutes * 60_000,
+      }),
     open,
   )
   // The reviewers read the working tree: a commit or an edit during the round means they
@@ -334,7 +343,7 @@ async function reply(args: string[]): Promise<number> {
     })),
     spawner(config.timeoutMinutes),
     report.progress,
-    { perProvider: config.perProvider },
+    { perProvider: config.perProvider, optionalGraceMs: config.optionalGraceMinutes * 60_000 },
   )
   report.stop()
   const replies = answers.map((a, i) => ({

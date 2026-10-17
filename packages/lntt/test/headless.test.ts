@@ -240,4 +240,46 @@ describe('several agents at once', () => {
     )
     assert.deepEqual(events, ['start a', 'spawn', 'end a', 'start b', 'spawn', 'end b'])
   })
+
+  test('optional agents still running a grace after the others answered are stopped, as failures', {
+    timeout: 5000,
+  }, async () => {
+    const stopped: string[] = []
+    const spawn: Spawn = (inv, signal) =>
+      inv.stdin === 'fast'
+        ? Promise.resolve(JSON.stringify({ result: 'r', session_id: 's', is_error: false }))
+        : new Promise((_, reject) => {
+            signal?.addEventListener('abort', () => {
+              stopped.push(inv.stdin)
+              reject(new Error(String(signal.reason)))
+            })
+          })
+    const results = await askAll(
+      [
+        { agent: { kind: 'claude' }, prompt: 'fast' },
+        { agent: { kind: 'claude', optional: true }, prompt: 'slow' },
+        { agent: { kind: 'claude', optional: true }, prompt: 'queued' },
+      ],
+      spawn,
+      () => {},
+      { perProvider: 1, optionalGraceMs: 10 },
+    )
+    assert.equal(results[0]?.ok, true)
+    assert.deepEqual(
+      results.slice(1).map((a) => (a.ok ? 'ok' : a.error)),
+      ['stopped: the other agents answered 0s before', 'stopped: the other agents answered 0s before'],
+    )
+    assert.deepEqual(stopped, ['slow'], 'the queued one never started')
+  })
+
+  test('when every agent is optional, none is stopped early', { timeout: 5000 }, async () => {
+    const spawn: Spawn = () =>
+      new Promise((resolve) =>
+        setTimeout(() => resolve(JSON.stringify({ result: 'r', session_id: 's', is_error: false })), 20),
+      )
+    const results = await askAll([{ agent: { kind: 'claude', optional: true }, prompt: 'P' }], spawn, () => {}, {
+      optionalGraceMs: 1,
+    })
+    assert.equal(results[0]?.ok, true)
+  })
 })

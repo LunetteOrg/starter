@@ -44,8 +44,8 @@ export interface Question {
 export type Answer = { ok: true; reply: Reply } | { ok: false; error: string }
 
 // Starts one invocation in the working directory and resolves with its stdout; rejects
-// when the process fails or outlives the timeout.
-export type Spawn = (invocation: Invocation) => Promise<string>
+// when the process fails, outlives the timeout, or the signal stops it.
+export type Spawn = (invocation: Invocation, signal?: AbortSignal) => Promise<string>
 
 // claude: only the read tools, and no MCP server (the machine's servers can send mail
 // or write to other services). opencode: an inline agent, read by a standalone server
@@ -130,6 +130,9 @@ export interface AskOptions {
   // How many agents of one provider run at once; the rest wait their turn. A provider
   // given dozens of sessions at once queues or limits them until they time out.
   perProvider?: number
+  // How long optional agents may go on once every other agent has answered; then they
+  // are stopped, and those still waiting never start. Without it, they are awaited.
+  optionalGraceMs?: number
 }
 
 // Every question runs as soon as its provider has a free slot; each answer stays in its
@@ -152,23 +155,36 @@ export async function askAll(
       q.waiting.shift()?.()
     }
   }
-  return Promise.all(
-    questions.map(async (q, index): Promise<Answer> => {
-      const label = q.label ?? q.agent.kind
-      const optional = q.agent.optional === true
-      const release = await slot(providerOf(q.agent))
-      const started = Date.now()
-      progress({ type: 'start', index, label, optional })
-      let answer: Answer
-      try {
-        const stdout = await spawn(headlessInvocation(q.agent, q.prompt, q.session))
-        answer = { ok: true, reply: parseReply(q.agent.kind, stdout) }
-      } catch (error) {
-        answer = { ok: false, error: (error as Error).message }
-      }
+  const stop = new AbortController()
+  const required = questions.filter((q) => !q.agent.optional).length
+  let answered = 0
+  const grace = options.optionalGraceMs
+  const runs = questions.map(async (q, index): Promise<Answer> => {
+    const label = q.label ?? q.agent.kind
+    const optional = q.agent.optional === true
+    const release = await slot(providerOf(q.agent))
+    let answer: Answer
+    if (optional && stop.signal.aborted) {
       release()
-      progress({ type: 'end', index, label, optional, answer, ms: Date.now() - started })
+      answer = { ok: false, error: String(stop.signal.reason) }
+      progress({ type: 'end', index, label, optional, answer, ms: 0 })
       return answer
-    }),
-  )
+    }
+    const started = Date.now()
+    progress({ type: 'start', index, label, optional })
+    try {
+      const stdout = await spawn(headlessInvocation(q.agent, q.prompt, q.session), optional ? stop.signal : undefined)
+      answer = { ok: true, reply: parseReply(q.agent.kind, stdout) }
+    } catch (error) {
+      answer = { ok: false, error: (error as Error).message }
+    }
+    release()
+    progress({ type: 'end', index, label, optional, answer, ms: Date.now() - started })
+    if (!optional && ++answered === required && grace !== undefined) {
+      const reason = `stopped: the other agents answered ${Math.round(grace / 1000)}s before`
+      setTimeout(() => stop.abort(reason), grace).unref()
+    }
+    return answer
+  })
+  return Promise.all(runs)
 }

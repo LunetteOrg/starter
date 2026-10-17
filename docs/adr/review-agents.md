@@ -47,7 +47,9 @@ same way every time; the `review` skill keeps the judgement.
 - **Load:** at most `perProvider` agents of one provider run at once, the others waiting
   their turn; a provider given dozens of sessions at once queues them until they time
   out. A verdict counts the verifiers that answered. An agent marked `optional` (a free
-  model) that fails is reported in `skipped` and does not fail the round.
+  model) that fails is reported in `skipped` and does not fail the round; once the
+  others have answered it has `optionalGraceMinutes` more, then it is stopped, so a
+  round never waits on it.
 - **Progress is a contract:** stderr carries a line when each agent starts and ends,
   `failed` or `skipped` for one that did not answer, the agents still running every 30
   seconds, `round N done` at the end and `error:` for a round that could not start. The

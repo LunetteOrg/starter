@@ -26,6 +26,8 @@ export interface ReviewConfig {
   timeoutMinutes: number
   // Agents of one provider running at once.
   perProvider: number
+  // How long optional agents may go on once the others have answered.
+  optionalGraceMinutes: number
 }
 
 export const TEST_PATHS = ['**/*.test.*', '**/*.spec.*', '**/test/**', '**/tests/**', '**/__tests__/**']
@@ -39,6 +41,7 @@ const DEFAULT: ReviewConfig = {
   verify: { with: [{ kind: 'claude', model: 'sonnet' }], severities: ['blocker', 'warning'] },
   timeoutMinutes: 20,
   perProvider: 4,
+  optionalGraceMinutes: 2,
 }
 
 interface RawLens {
@@ -52,6 +55,7 @@ interface RawReview {
   verify?: false | { with?: Agent[]; severities?: Severity[] }
   timeoutMinutes?: number
   perProvider?: number
+  optionalGraceMinutes?: number
 }
 
 // delivery.review over the defaults, lens by lens. A lens with no agents is off.
@@ -81,6 +85,7 @@ export function reviewConfig(data: Record<string, unknown>): ReviewConfig {
     verify,
     timeoutMinutes: raw.timeoutMinutes ?? DEFAULT.timeoutMinutes,
     perProvider: raw.perProvider ?? DEFAULT.perProvider,
+    optionalGraceMinutes: raw.optionalGraceMinutes ?? DEFAULT.optionalGraceMinutes,
   }
 }
 

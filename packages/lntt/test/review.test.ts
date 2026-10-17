@@ -34,6 +34,7 @@ describe('the configuration', () => {
       verify: { with: [{ kind: 'claude', model: 'sonnet' }], severities: ['blocker', 'warning'] },
       timeoutMinutes: 20,
       perProvider: 4,
+      optionalGraceMinutes: 2,
     })
   })
 

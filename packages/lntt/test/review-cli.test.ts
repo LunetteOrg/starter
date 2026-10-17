@@ -30,6 +30,7 @@ process.stdin.on('data', (d) => (prompt += d)).on('end', () => {
   const kind = prompt.startsWith('You are reviewing') ? 'REVIEW' : prompt.startsWith('You are checking') ? 'VERIFY' : 'REPLY'
   fs.appendFileSync(process.env.FAKE_LOG, kind + ' ' + args.join(' ') + '\\n')
   const model = args[args.indexOf('--model') + 1]
+  if (process.env['FAKE_SLEEP_' + model]) { setTimeout(() => {}, 600000); return }
   if (process.env['FAKE_FAIL_' + kind] || process.env['FAKE_FAIL_' + kind + '_' + model]) { process.stderr.write('boom\\n'); process.exit(1) }
   const result = (process.env['FAKE_' + kind + '_' + model] || process.env['FAKE_' + kind] || 'no findings').replace(/\\\\n/g, '\\n')
   process.stdout.write(JSON.stringify({ result, session_id: session, is_error: false, total_cost_usd: 0.01 }))
@@ -253,5 +254,35 @@ describe('lntt review, end to end with a fake agent', () => {
   test("a refusal matches the skill's watch, as a failure does", () => {
     writeFileSync(join(repo, 'a.ts'), 'dirty\n')
     assert.match(lntt(['--base', 'main']).err, /^lntt review: error: /m)
+  })
+
+  test('an optional agent still running after the others answered is stopped, not awaited', { timeout: 30000 }, () => {
+    writeFileSync(
+      join(repo, '.agents/config.jsonc'),
+      JSON.stringify({
+        delivery: {
+          review: {
+            reviewers: {
+              decisions: { with: [] },
+              tests: { with: [] },
+              code: {
+                with: [
+                  { kind: 'claude', model: 'sonnet' },
+                  { kind: 'claude', model: 'opus', optional: true },
+                ],
+              },
+            },
+            verify: false,
+            optionalGraceMinutes: 0,
+          },
+        },
+      }),
+    )
+    git('commit', '-qam', 'slow optional')
+    const began = Date.now()
+    const r = lntt(['--base', 'main'], { FAKE_SLEEP_opus: '1' })
+    assert.equal(r.code, 0, r.err)
+    assert.ok(Date.now() - began < 20000, 'not awaited')
+    assert.match(JSON.parse(r.out).skipped[0].error, /stopped: the other agents answered/)
   })
 })

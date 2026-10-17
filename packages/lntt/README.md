@@ -166,7 +166,8 @@ finding lines nor `no findings` counts as a failed reviewer; after a failure the
 round reads the same range again. A reviewer is stopped after
 `delivery.review.timeoutMinutes` and counts as failed; at most
 `delivery.review.perProvider` agents of one provider run at once. An agent marked
-`optional` that fails is reported in `skipped` and does not fail the round. A round that
+`optional` that fails is reported in `skipped` and does not fail the round; it is stopped
+`delivery.review.optionalGraceMinutes` after the others have answered. A round that
 cannot start prints `lntt review: error: …`. Agents that are not installed, or
 that cannot be made read-only, are refused before any starts.
 
