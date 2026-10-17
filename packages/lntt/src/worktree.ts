@@ -116,17 +116,51 @@ function flat(branch: string): string {
 // Orca prefixes the worktree name with the user (`<user>/feat-78-slug`); its setup
 // (orca.yaml, `lntt branch rename`) reads the convention back. The agent starts after
 // the setup (setupAgentStartupPolicy: wait-for-setup).
+// Why a tool refused, for the person: the message Orca writes in its JSON reply, else the
+// last lines it printed.
+export function toolFailure(command: string, args: string[], stdout: string, stderr: string): string {
+  const what = [command, ...args.slice(0, 2)].join(' ')
+  try {
+    const message = (JSON.parse(stdout) as { error?: { message?: string } }).error?.message
+    if (message) return `${what}: ${message}`
+  } catch {}
+  const tail = `${stdout}\n${stderr}`.trim().split('\n').slice(-3).join(' ').trim()
+  return tail ? `${what}: ${tail}` : `${what} failed`
+}
+
+// Orca 1.4.229 and later take the agent's model and effort on `worktree create`; an
+// older Orca starts an agent on a model only as a supervised worker.
+function orcaTakesModel(runner: Runner): boolean {
+  try {
+    return /--model\b/.test(runner.run('orca', ['worktree', 'create', '--help']))
+  } catch {
+    return false
+  }
+}
+
 export function startOrca(start: Start, runner: Runner, setupFor: SetupFor = () => null): Started {
   const shell = start.agent ? shellLaunch(start.agent) : null
   if (shell) return startOrcaShell(start, shell, runner, setupFor)
-  if (start.agent?.model || start.agent?.effort) return startOrcaWorker(start, start.agent, runner, setupFor)
+  const tuned = Boolean(start.agent?.model || start.agent?.effort)
+  if (start.agent && tuned && !orcaTakesModel(runner)) return startOrcaWorker(start, start.agent, runner, setupFor)
   const args = ['worktree', 'create', '--name', flat(start.branch), '--issue', String(start.issue)]
   args.push('--base-branch', start.base, '--setup', 'run', '--json')
-  if (start.agent) args.push('--agent', start.agent.kind, '--prompt', start.brief)
-  const reply = JSON.parse(runner.run('orca', args) || '{}') as {
-    result?: { worktree?: { path?: string }; agentTerminalHandle?: string; startupTerminal?: { handle?: string } }
+  if (start.agent) {
+    args.push('--agent', start.agent.kind, '--prompt', start.brief)
+    if (start.agent.model) args.push('--model', start.agent.model)
+    if (start.agent.effort) args.push('--effort', start.agent.effort)
   }
-  const handle = reply.result?.agentTerminalHandle ?? reply.result?.startupTerminal?.handle ?? null
+  const reply = JSON.parse(runner.run('orca', args) || '{}') as {
+    result?: {
+      worktree?: { path?: string }
+      launch?: { outcome?: { handle?: string } }
+      agentTerminalHandle?: string
+      startupTerminal?: { handle?: string }
+    }
+  }
+  // Where the agent's handle is: launch.outcome on a current Orca, the older fields before.
+  const r = reply.result
+  const handle = r?.launch?.outcome?.handle ?? r?.agentTerminalHandle ?? r?.startupTerminal?.handle ?? null
   return {
     host: 'orca',
     issue: start.issue,

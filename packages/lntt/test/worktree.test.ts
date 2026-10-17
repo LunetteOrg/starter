@@ -14,6 +14,7 @@ import {
   startGit,
   startHerdr,
   startOrca,
+  toolFailure,
   worktreeHost,
 } from '../src/index.ts'
 
@@ -111,6 +112,15 @@ describe('Orca', () => {
     })
   })
 
+  test('a current Orca names the agent in launch.outcome.handle', () => {
+    const { runner } = recorder({
+      'orca worktree create': JSON.stringify({
+        result: { worktree: { path: '/p' }, launch: { outcome: { kind: 'terminal', handle: 'term_new' } } },
+      }),
+    })
+    assert.equal(startOrca(START, runner).agent, 'term_new')
+  })
+
   test('a reply without the agent handle does not crash, and still counts the agent as started', () => {
     const { runner } = recorder({ 'orca worktree create': '' })
     const started = startOrca(START, runner)
@@ -161,7 +171,23 @@ describe('the agent arguments', () => {
 })
 
 describe('Orca with a model or an effort', () => {
-  test('the worktree with its issue, the setup run here, then a supervised worker on it', () => {
+  test('a current Orca takes the model and the effort on worktree create: one call', () => {
+    const { calls, runner } = recorder({
+      'orca worktree create --help':
+        'Usage: orca worktree create --name <name> [--agent <id>] [--model <id>] [--effort <level>]',
+      'orca worktree create --name': JSON.stringify({
+        result: { worktree: { path: '/w' }, launch: { outcome: { kind: 'terminal', handle: 'term_7' } } },
+      }),
+    })
+    const started = startOrca({ ...START, agent: { kind: 'claude', model: 'sonnet', effort: 'high' } }, runner)
+    assert.deepEqual(calls, [
+      'orca worktree create --help',
+      'orca worktree create --name feat-78-start-agent --issue 78 --base-branch main --setup run --json --agent claude --prompt BRIEF --model sonnet --effort high',
+    ])
+    assert.equal(started.agent, 'term_7')
+  })
+
+  test('an older Orca: the worktree with its issue, the setup run here, then a supervised worker on it', () => {
     const { calls, runner } = recorder({
       'orca orchestration run-current': JSON.stringify({ ok: true, result: { run: { id: 'run_1' } } }),
       'orca worktree create': JSON.stringify({ result: { worktree: { path: '/w' } } }),
@@ -173,6 +199,7 @@ describe('Orca with a model or an effort', () => {
       () => 'pnpm install --frozen-lockfile\n',
     )
     assert.deepEqual(calls, [
+      'orca worktree create --help',
       'orca orchestration run-current --json',
       'orca worktree create --name feat-78-start-agent --issue 78 --base-branch main --setup skip --json',
       'setup in /w: pnpm install --frozen-lockfile',
@@ -214,7 +241,8 @@ describe('Orca with a model or an effort', () => {
       'orca worktree create': JSON.stringify({ result: { worktree: { path: '/w' } } }),
     })
     startOrca({ ...START, agent: { kind: 'claude', model: 'sonnet', effort: 'high' } }, runner)
-    assert.match(calls[1] as string, /^orca orchestration run-create --objective .+ --json$/)
+    assert.equal(calls[0], 'orca worktree create --help', 'an older Orca: the help says no --model')
+    assert.match(calls[2] as string, /^orca orchestration run-create --objective .+ --json$/)
     assert.match(calls.at(-1) as string, /--model sonnet --effort high$/)
   })
 })
@@ -320,5 +348,23 @@ describe('plain git', () => {
     assert.equal(readFileSync(join(path, 'setup-ran'), 'utf8').trim(), 'ready', "the new worktree's own orca.yaml")
     const upstream = spawnSync('git', ['rev-parse', '--abbrev-ref', '@{upstream}'], { cwd: path, encoding: 'utf8' })
     assert.notEqual(upstream.status, 0, `no upstream for a new branch, got ${upstream.stdout}`)
+  })
+})
+
+describe('a tool that refuses', () => {
+  test('the reason Orca writes in its JSON reply, not "Command failed"', () => {
+    const stdout = JSON.stringify({
+      ok: false,
+      error: { code: 'invalid_argument', message: 'Agent claude model haiku does not support effort low.' },
+    })
+    assert.equal(
+      toolFailure('orca', ['worktree', 'create', '--name', 'x'], stdout, ''),
+      'orca worktree create: Agent claude model haiku does not support effort low.',
+    )
+  })
+
+  test('otherwise the last lines of what it printed', () => {
+    assert.equal(toolFailure('herdr', ['pane', 'run'], '', 'boom\nno such pane\n'), 'herdr pane run: boom no such pane')
+    assert.equal(toolFailure('git', ['worktree', 'add'], '', ''), 'git worktree add failed')
   })
 })

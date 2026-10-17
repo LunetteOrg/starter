@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-10-16
+date: 2026-10-17
 tags: [worktrees, agents, orca, herdr, branches, setup]
 ---
 
@@ -40,10 +40,15 @@ small adapter that makes the calls it understands.
   report the friction met. `--prompt` replaces it for a coordinator's own instructions.
 - **The agent, its model and its effort** (`--kind`, `--model`, `--effort`) reach each
   tool in the form it accepts:
-  - Orca without a model: `worktree create --issue --agent --prompt`, the agent
-    starting after the setup (`wait-for-setup`).
-  - Orca with a model or an effort: the worktree with its issue, the setup, then
-    `orchestration worker-start` on it, in a Run created when none is bound.
+  - Orca: one `worktree create --issue --agent --prompt`, with `--model` and
+    `--effort` when the agent has them, the agent starting after the setup
+    (`wait-for-setup`); Orca refuses a model and effort the agent does not take, before
+    creating anything, and `lntt` reports its reason. The agent's handle is
+    `launch.outcome.handle` in the reply.
+  - An Orca whose `worktree create` takes no model (its help lists no `--model`; 1.4.224
+    did not, 1.4.229 does): the worktree
+    with its issue, the setup, then `orchestration worker-start` on it, in a Run
+    created when none is bound.
   - opencode with a model, on any host: its inline configuration
     (`OPENCODE_CONFIG_CONTENT`) on a standalone server, started as a shell command in a
     terminal or pane of its own, and prompted once the tool sees it ready.
@@ -85,8 +90,8 @@ small adapter that makes the calls it understands.
 
 ### When to deviate (revisit triggers)
 
-- Orca's `worktree create --agent` accepts a model, or opencode a model flag: the
-  special paths go.
+- No Orca whose `worktree create` lacks `--model` is in use: the worker path goes. opencode gains a model
+  flag: its standalone-server path goes.
 - A tool offers a setting for the branch name kept in the repository: the rename in
   setup can go for that tool.
 

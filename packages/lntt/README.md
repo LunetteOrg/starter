@@ -122,10 +122,13 @@ The host is the innermost one the session runs in, detected from the environment
 - **Orca** (`TERM_PROGRAM=Orca`): one `orca worktree create` with the issue linked, the
   setup run by Orca (its `lntt branch rename` turns `<user>/<name>` into the
   convention) and the agent started after it (`setupAgentStartupPolicy: wait-for-setup`).
-  With `--model` or `--effort`, which `worktree create` does not take: the worktree
-  with its issue and Orca's setup skipped, the setup run by `lntt`, then a supervised
-  worker on it (`orca orchestration worker-start`, in a Run created when none is bound
-  to the terminal); the agent reports `worker_done` to the Run. opencode with a model starts in a terminal of its own
+  `--model` and `--effort` go on the same `worktree create` when its help lists them
+  (1.4.229 does),
+  which refuses a combination the agent does not take before creating anything; the
+  reply's `launch.outcome.handle` is the agent's handle. On an Orca whose
+  `worktree create` takes no model (1.4.224): the worktree with its issue and Orca's setup
+  skipped, the setup run by `lntt`, then a supervised worker on it (`orca
+  orchestration worker-start`, in a Run created when none is bound to the terminal). opencode with a model starts in a terminal of its own
   instead (Orca refuses an opencode model to its worker), and gets the brief once idle.
 - **Plain git** otherwise, Wave and Claude desktop included: `git worktree add` under
   `<main checkout>/.worktrees/`, the setup, and the brief printed for the person.

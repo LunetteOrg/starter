@@ -19,6 +19,7 @@ import {
   startGit,
   startHerdr,
   startOrca,
+  toolFailure,
   type WorktreeHost,
   worktreeHost,
 } from './worktree.ts'
@@ -34,12 +35,18 @@ function usage(message?: string): never {
 }
 
 const runner: Runner = {
-  run: (command, args, opts) =>
-    execFileSync(command, args, {
-      cwd: opts?.cwd ?? cwd(),
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'inherit'],
-    }).trim(),
+  run: (command, args, opts) => {
+    try {
+      return execFileSync(command, args, {
+        cwd: opts?.cwd ?? cwd(),
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }).trim()
+    } catch (error) {
+      const e = error as { stdout?: string; stderr?: string }
+      throw new Error(toolFailure(command, args, e.stdout ?? '', e.stderr ?? ''))
+    }
+  },
   sleep: (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms),
   shell: (script, dir) => {
     // The setup's output goes to stderr: stdout carries one JSON line per worktree.
