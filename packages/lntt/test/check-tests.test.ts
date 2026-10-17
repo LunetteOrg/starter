@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import type { Result } from '../src/check.ts'
+import { recordMissing } from '../src/check-tests.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const BIN = resolve(HERE, '../bin/lntt.ts')
@@ -172,6 +173,14 @@ describe('lntt check tests with --base', () => {
   })
 })
 
+describe('recordMissing', () => {
+  test('a malformed escape in a fragment is a missing heading, never an exception', () => {
+    writeFileSync(join(repo, 'r.md'), '# R\n')
+    assert.equal(recordMissing(repo, 'r.md#R'), null)
+    assert.match(recordMissing(repo, 'r.md#100%') ?? '', /no heading #100%/)
+  })
+})
+
 describe('lntt check tests rules', () => {
   test('finds what a rule forbids, cites what the suite already asserts, fails a rule whose record is gone', () => {
     project('defects')
@@ -214,13 +223,17 @@ describe('lntt check tests rules', () => {
     project('defects')
     writeFileSync(
       join(repo, 'docs/adr/test.md'),
-      '# Tests\n\n## 3. No module mocks\n\n## Waits\n\n## Waits\n\n```\n# Not a heading\n```\n',
+      '# Tests\n\n## 3. No module mocks\n\n## Waits\n\n## Waits\n\n```\n# Not a heading\n```\n\n## After a fence\n\n~~~\n# Tilde\n~~~\n\n## no_module_mocks\n',
     )
     const anchors: Record<string, boolean> = {
       'docs/adr/test.md': true,
       'docs/adr/test.md#': true,
       'docs/adr/test.md#3-No-Module-Mocks': true,
       'docs/adr/test.md#waits-1': true,
+      'docs/adr/test.md#after-a-fence': true,
+      'docs/adr/test.md#no_module_mocks': true,
+      'docs/adr/test.md#tilde': false,
+      'docs/adr/test.md#x#y': false,
       'docs/adr/test.md#waits-2': false,
       'docs/adr/test.md#not-a-heading': false,
       'docs/adr/test.md#100%': false,

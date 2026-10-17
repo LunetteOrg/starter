@@ -319,13 +319,15 @@ function slug(heading: string): string {
   return heading
     .trim()
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s-]/gu, '')
+    .replace(/[^\p{L}\p{N}\s_-]/gu, '')
     .replace(/\s/g, '-')
 }
 
 // The record behind a rule: its file, and the heading its fragment names.
-function recordMissing(root: string, anchor: string): string | null {
-  const [path, fragment] = anchor.split('#') as [string, string | undefined]
+export function recordMissing(root: string, anchor: string): string | null {
+  const hash = anchor.indexOf('#')
+  const path = hash < 0 ? anchor : anchor.slice(0, hash)
+  const fragment = hash < 0 ? undefined : anchor.slice(hash + 1)
   const abs = join(root, path)
   if (!existsSync(abs) || !statSync(abs).isFile()) return 'the record behind the rule is not there'
   if (fragment === undefined || fragment === '') return null

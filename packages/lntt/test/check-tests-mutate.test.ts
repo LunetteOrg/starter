@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { cpSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -130,7 +130,7 @@ describe('lntt check tests mutate', () => {
     assert.match(result.message, /level unit fails without the mutation/)
   })
 
-  test("the line is read from what is run: a file only the working tree has, a line past the head's end", () => {
+  test('uncommitted work is run: a new file, and a line past the end of the committed one', () => {
     writeFileSync(join(repo, 'src/fresh.ts'), 'export const a = 1\nexport const b = 2\n')
     writeFileSync(
       join(repo, 'test/fresh.test.ts'),
@@ -138,15 +138,50 @@ describe('lntt check tests mutate', () => {
     )
     const fresh = mutate('src/fresh.ts:2', '= 2', '= 3').result
     assert.equal(fresh.status, 'PASS', fresh.message)
-    // price.ts grows past its committed length: the mutation is on a line HEAD does not have
-    const price = readFileSync(join(repo, 'src/price.ts'), 'utf8')
-    writeFileSync(join(repo, 'src/price.ts'), `${price}\nexport const late = 'x'\n`)
+    const price = `${readFileSync(join(repo, 'src/price.ts'), 'utf8')}\nexport const late = 'x'\n`
+    writeFileSync(join(repo, 'src/price.ts'), price)
     writeFileSync(
       join(repo, 'test/late.test.ts'),
       "import assert from 'node:assert/strict'\nimport { test } from 'node:test'\nimport { late } from '../src/price.ts'\ntest('late is x', () => {\n  assert.equal(late, 'x')\n})\n",
     )
-    const late = mutate('src/price.ts:18', "'x'", "'y'").result
+    const line = price.trimEnd().split('\n').length
+    const late = mutate(`src/price.ts:${line}`, "'x'", "'y'").result
     assert.equal(late.status, 'PASS', late.message)
+  })
+
+  test('a file git ignores is not in the scratch: NOT RUN, not a crash', () => {
+    writeFileSync(join(repo, '.gitignore'), 'src/ignored.ts\n')
+    git('add', '-A')
+    git('commit', '-qm', 'ignore')
+    writeFileSync(join(repo, 'src/ignored.ts'), 'export const z = 1\n')
+    const { status, result } = mutate('src/ignored.ts:1', '= 1', '= 2')
+    assert.equal(status, 0)
+    assert.equal(result.status, 'NOT RUN')
+    assert.match(result.message, /src\/ignored\.ts: no such file/)
+  })
+
+  test('SIGTERM stops a run at once and the scratch is removed after it', async () => {
+    const levels = [{ name: 'unit', files: ['test/*.test.ts'], run: 'sleep 30 && node --test {files}' }]
+    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify({ tests: { levels } }))
+    const child = spawn(
+      process.execPath,
+      [BIN, 'check', 'tests', 'mutate', 'src/price.ts:7', '--text=total > 100', '--to=total >= 100'],
+      { cwd: repo, stdio: 'ignore' },
+    )
+    const closed = new Promise<number | null>((done) => child.on('close', done))
+    // the scratch is registered as a worktree of the repository once the run is under way
+    for (let i = 0; i < 200 && git('worktree', 'list').split('\n').length < 2; i++) {
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    assert.equal(git('worktree', 'list').split('\n').length, 2)
+    await new Promise((r) => setTimeout(r, 500))
+    child.kill('SIGTERM')
+    assert.equal(await closed, null)
+    // the scratch is removed by the process that outlives lntt
+    for (let i = 0; i < 200 && git('worktree', 'list').split('\n').length > 1; i++) {
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    assert.equal(git('worktree', 'list').split('\n').length, 1)
   })
 
   test('a path that leaves the project is refused, not followed', () => {

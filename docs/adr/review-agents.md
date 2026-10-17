@@ -57,8 +57,9 @@ same way every time; the `review` skill keeps the judgement.
   the brief.
 - **Adversarial verification:** every finding at a severity in `verify.severities`
   goes, at once, to every verifier in `verify.with` other than the agents that found it,
-  each briefed to refute it (except a finding a mutation run decides, below); when those left are all optional, the required finders
-  verify too, so a finding always has a required verifier. The verdict counts the
+  each briefed to refute it (except a finding a mutation run decides, above); when those
+  left are all optional, the required finders verify too, so a finding always has a
+  required verifier. The verdict counts the
   verifiers that answered: all confirm, confirmed; all refute, refuted, kept out of the
   author's list with the proofs; otherwise undecided.
 - **Rounds:** the first reads the branch from the base, later ones the commits after the

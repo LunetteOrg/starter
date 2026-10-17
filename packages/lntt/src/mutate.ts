@@ -3,7 +3,7 @@
 // (survived). The mutation lives in a scratch git worktree; the working tree is never
 // written, whatever happens.
 
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import {
   cpSync,
   existsSync,
@@ -15,7 +15,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
-import os, { tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import { CannotRunError, type Result } from './check.ts'
 import { type Candidate, candidates, commandFor, ImportGraph, type Level, testsConfig } from './test-files.ts'
@@ -117,21 +117,26 @@ export function createScratch(root: string): Scratch {
     throw error
   }
   const onExit = () => dispose()
-  // An interrupt removes the worktree too; lntt leaves with the signal unless another
-  // handler (a review round stopping its agents) is there to do it.
-  const onSignal = (signal: NodeJS.Signals) => {
-    dispose()
-    if (process.listenerCount(signal) === 1) process.exit(128 + (os.constants.signals[signal] ?? 0))
-  }
   process.once('exit', onExit)
-  process.on('SIGINT', onSignal)
-  process.on('SIGTERM', onSignal)
+  // A run waits on its tests synchronously, so no signal handler would run until it
+  // ended: a signal ends lntt at once instead, and this process, which outlives it by
+  // a moment, removes the scratch worktree.
+  spawn(
+    'sh',
+    [
+      '-c',
+      'while kill -0 "$0" 2>/dev/null; do sleep 0.5; done; git -C "$1" worktree remove --force "$2" 2>/dev/null; rm -rf "$3"; git -C "$1" worktree prune',
+      String(process.pid),
+      top,
+      worktree,
+      dir,
+    ],
+    { detached: true, stdio: 'ignore' },
+  ).unref()
   return {
     root: join(worktree, prefix),
     dispose() {
       process.off('exit', onExit)
-      process.off('SIGINT', onSignal)
-      process.off('SIGTERM', onSignal)
       dispose()
     },
   }

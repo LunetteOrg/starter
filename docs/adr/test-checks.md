@@ -38,7 +38,8 @@ reason, and sits at the lowest level where its assertion can.
   - `focus`: `.only`, a new `.skip` or todo, a test with no assertion.
   - `rules`: the lines that match a rule; a rule asserted by the suite is cited. A rule
     whose `anchor` names a record that is not there, or a heading the record does not
-    have, fails.
+    have, fails; headings resolve as GitHub's slugs do (a repeated heading is numbered
+    `-1`, `-2`, fenced lines are no heading).
   - `touched` (needs `--base`): the lines the diff changes and the tests that run them,
     from the `coverage` of the test files that import the changed file, or from imports
     alone when a level has no `coverage`. Coverage says which tests to run and which
@@ -50,7 +51,8 @@ reason, and sits at the lowest level where its assertion can.
     tests fail without the mutation or they outlast `timeoutSeconds`.
 - **The mutation lives in a scratch git worktree** of the head, with the uncommitted
   files laid over it and the dependencies shared, and is removed when the run ends: the
-  working tree is never written. A failure counts as killed only when the same tests
+  working tree is never written. A process that outlives `lntt` removes the worktree
+  when `lntt` ends, an interrupt included. A failure counts as killed only when the same tests
   pass without the mutation.
 - **A review round runs the mutations the tests reviewer proposes.** The reviewer ends a
   finding line with ``mutate: `text` => `mutated` ``; between the reviewers and the
@@ -80,8 +82,8 @@ reason, and sits at the lowest level where its assertion can.
   tests of a line are found from imports, so a test that reaches code only through a
   package name or a spawned process path that is not a string in the test is missed
   and the mutant may survive for want of a test that does run it.
-- A mutation is proposed in a line whose text holds no backtick: the reviewer reports
-  other lines as notes.
+- A mutation is proposed in a line whose text and mutated text hold no
+  backtick: the reviewer reports other lines as notes.
 - A mutation run costs the tests of the files that import the changed file. A timeout
   stops the shell that runs the command; a process it started may outlive it.
 - Each scratch worktree copies the links of `node_modules`; a project whose tests need
