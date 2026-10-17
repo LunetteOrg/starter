@@ -113,9 +113,6 @@ function flat(branch: string): string {
   return branch.replace(/\//g, '-')
 }
 
-// Orca prefixes the worktree name with the user (`<user>/feat-78-slug`); its setup
-// (orca.yaml, `lntt branch rename`) reads the convention back. The agent starts after
-// the setup (setupAgentStartupPolicy: wait-for-setup).
 // Why a tool refused, for the person: the message Orca writes in its JSON reply, else the
 // last lines it printed.
 export function toolFailure(command: string, args: string[], stdout: string, stderr: string): string {
@@ -128,16 +125,16 @@ export function toolFailure(command: string, args: string[], stdout: string, std
   return tail ? `${what}: ${tail}` : `${what} failed`
 }
 
-// Orca 1.4.229 and later take the agent's model and effort on `worktree create`; an
-// older Orca starts an agent on a model only as a supervised worker.
+// Whether Orca's `worktree create` takes the agent's model and effort (1.4.229 does,
+// 1.4.224 did not). An Orca that cannot say is an error: guessing the older path would
+// fail later, for another reason.
 function orcaTakesModel(runner: Runner): boolean {
-  try {
-    return /--model\b/.test(runner.run('orca', ['worktree', 'create', '--help']))
-  } catch {
-    return false
-  }
+  return /--model\b/.test(runner.run('orca', ['worktree', 'create', '--help']))
 }
 
+// Orca prefixes the worktree name with the user (`<user>/feat-78-slug`); its setup
+// (orca.yaml, `lntt branch rename`) reads the convention back. The agent starts after
+// the setup (setupAgentStartupPolicy: wait-for-setup).
 export function startOrca(start: Start, runner: Runner, setupFor: SetupFor = () => null): Started {
   const shell = start.agent ? shellLaunch(start.agent) : null
   if (shell) return startOrcaShell(start, shell, runner, setupFor)
@@ -219,7 +216,8 @@ function startOrcaShell(start: Start, command: string, runner: Runner, setupFor:
   return { host: 'orca', issue: start.issue, branch: start.branch, path, agent: handle }
 }
 
-// `worktree create --agent` takes no model or effort; Orca's supervised worker does, on
+// On an Orca whose `worktree create --agent` takes no model or effort, Orca's
+// supervised worker does, on
 // a worktree that already exists (orcaWorktree). It needs a Run bound to the calling
 // terminal, created when there is none; Orca wraps the brief in its own preamble and
 // the agent reports `worker_done` to the Run.

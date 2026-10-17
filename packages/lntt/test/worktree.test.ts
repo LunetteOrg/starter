@@ -187,8 +187,45 @@ describe('Orca with a model or an effort', () => {
     assert.equal(started.agent, 'term_7')
   })
 
+  test('a model alone, or an effort alone, goes alone', () => {
+    const run = (agent: { kind: string; model?: string; effort?: string }) => {
+      const { calls, runner } = recorder({
+        'orca worktree create --help':
+          'Usage: orca worktree create --name <name> [--agent <id>] [--model <id>] [--effort <level>]',
+        'orca worktree create --name': JSON.stringify({ result: { worktree: { path: '/w' } } }),
+      })
+      startOrca({ ...START, agent }, runner)
+      return calls.at(-1) as string
+    }
+    assert.match(run({ kind: 'claude', model: 'sonnet' }), /--prompt BRIEF --model sonnet$/)
+    assert.match(run({ kind: 'claude', effort: 'high' }), /--prompt BRIEF --effort high$/)
+  })
+
+  test('Orca that cannot say what it takes stops the start, instead of guessing an older one', () => {
+    const runner: Runner = {
+      run(_command, args) {
+        if (args.includes('--help')) throw new Error('orca: command not found')
+        return ''
+      },
+      shell() {},
+      sleep() {},
+    }
+    assert.throws(
+      () => startOrca({ ...START, agent: { kind: 'claude', model: 'sonnet' } }, runner),
+      /orca: command not found/,
+    )
+  })
+
+  test('the handle in the oldest field still counts', () => {
+    const { runner } = recorder({
+      'orca worktree create': JSON.stringify({ result: { startupTerminal: { handle: 'term_old' } } }),
+    })
+    assert.equal(startOrca(START, runner).agent, 'term_old')
+  })
+
   test('an older Orca: the worktree with its issue, the setup run here, then a supervised worker on it', () => {
     const { calls, runner } = recorder({
+      'orca worktree create --help': 'Usage: orca worktree create --name <name> [--agent <id>] [--prompt <text>]',
       'orca orchestration run-current': JSON.stringify({ ok: true, result: { run: { id: 'run_1' } } }),
       'orca worktree create': JSON.stringify({ result: { worktree: { path: '/w' } } }),
       'orca orchestration worker-start': JSON.stringify({ ok: true, result: { dispatch: { dispatchId: 'ctx_9' } } }),
@@ -237,6 +274,7 @@ describe('Orca with a model or an effort', () => {
 
   test('creates the Run when none is bound', () => {
     const { calls, runner } = recorder({
+      'orca worktree create --help': 'Usage: orca worktree create --name <name> [--agent <id>] [--prompt <text>]',
       'orca orchestration run-current': JSON.stringify({ ok: true, result: { run: null } }),
       'orca worktree create': JSON.stringify({ result: { worktree: { path: '/w' } } }),
     })
@@ -363,7 +401,16 @@ describe('a tool that refuses', () => {
     )
   })
 
+  test('JSON with no message falls back to what was printed', () => {
+    assert.equal(
+      toolFailure('orca', ['a', 'b'], '{"ok":false}', 'stderr says why'),
+      'orca a b: {"ok":false} stderr says why',
+    )
+    assert.equal(toolFailure('orca', ['a', 'b'], 'null', ''), 'orca a b: null')
+  })
+
   test('otherwise the last lines of what it printed', () => {
+    assert.equal(toolFailure('git', ['x', 'y'], '', '1\n2\n3\n4\n5'), 'git x y: 3 4 5')
     assert.equal(toolFailure('herdr', ['pane', 'run'], '', 'boom\nno such pane\n'), 'herdr pane run: boom no such pane')
     assert.equal(toolFailure('git', ['worktree', 'add'], '', ''), 'git worktree add failed')
   })

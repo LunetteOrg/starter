@@ -1,7 +1,7 @@
 // `lntt worktree start`: an agent on an issue, in its own worktree, on the host the
 // session runs in (usage: bin/lntt.ts).
 
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { checkBranch } from './branch.ts'
@@ -35,17 +35,14 @@ function usage(message?: string): never {
 }
 
 const runner: Runner = {
+  // stdout is the result; what the tool says on stderr still reaches the person, and a
+  // refusal is reported with its reason.
   run: (command, args, opts) => {
-    try {
-      return execFileSync(command, args, {
-        cwd: opts?.cwd ?? cwd(),
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }).trim()
-    } catch (error) {
-      const e = error as { stdout?: string; stderr?: string }
-      throw new Error(toolFailure(command, args, e.stdout ?? '', e.stderr ?? ''))
-    }
+    const r = spawnSync(command, args, { cwd: opts?.cwd ?? cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+    if (r.stderr) stderr.write(r.stderr)
+    if (r.error) throw r.error
+    if (r.status !== 0) throw new Error(toolFailure(command, args, r.stdout ?? '', r.stderr ?? ''))
+    return (r.stdout ?? '').trim()
   },
   sleep: (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms),
   shell: (script, dir) => {

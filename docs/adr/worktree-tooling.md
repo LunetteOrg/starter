@@ -13,7 +13,8 @@ worktree is created by whatever tool the person uses: Orca, Herdr, `git worktree
 in a terminal, an agent harness. Each tool has its own idea of the branch name (Orca
 prepends the user and flattens the slashes: `<user>/<name>`), its own setup hook or
 none (Herdr has none), and its own way to start an agent with a model (Orca's
-`worktree create --agent` takes no model; opencode's interface takes no model flag).
+`worktree create --agent` took no model in 1.4.224, 1.4.229 takes one; opencode's
+interface takes no model flag).
 Left to the tools, the branch convention, the setup and the instructions handed to the
 agent would differ by tool and by machine, since the tools keep these settings per
 machine.
@@ -82,16 +83,17 @@ small adapter that makes the calls it understands.
   Herdr's create reply does not always carry the new pane, opencode reads its inline
   configuration only on a standalone server. A tool update can break an adapter; the
   tests pin the calls, and a trial run against the real tool confirms them.
-- On Orca, an agent started with a model is a supervised worker or a plain terminal,
-  not the agent tab `worktree create --agent` opens.
+- On an Orca whose `worktree create` takes no model, an agent started with a model is a
+  supervised worker; opencode with a model is a plain terminal on any Orca. Neither is
+  the agent tab `worktree create --agent` opens.
 - Orca runs `orca.yaml`'s setup only when the repository's *Command source* is
   "orca.yaml only" or "Run both"; a script once saved in its local field switches it to
   "Local only" without a warning.
 
 ### When to deviate (revisit triggers)
 
-- No Orca whose `worktree create` lacks `--model` is in use: the worker path goes. opencode gains a model
-  flag: its standalone-server path goes.
+- Every Orca in use takes `--model` on `worktree create`: the worker path goes. opencode
+  gains a model flag: its standalone-server path goes.
 - A tool offers a setting for the branch name kept in the repository: the rename in
   setup can go for that tool.
 
