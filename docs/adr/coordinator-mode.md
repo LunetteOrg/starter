@@ -68,7 +68,7 @@ would nest git worktrees inside one the host does not track.
 `coordinator.gate` in `.agents/config.jsonc` is `propose` (default) or `free`. Under
 `propose`, `lntt worktree start --theme` sends one message to the orchestrator for the
 children not yet approved and creates nothing until the answer is `approve`, `approved`,
-`yes` or `ok` and nothing else. Approvals are kept per theme in the shared mailbox directory
+`yes` or `ok`, with at most a final `.` or `!`. Approvals are kept per theme in the shared mailbox directory
 (`approved-<theme>.txt`), written by `--approve` at the coordinator's start and by an
 approving answer. No flag of `lntt` approves a child for the coordinator.
 

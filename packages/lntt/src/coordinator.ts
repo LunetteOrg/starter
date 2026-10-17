@@ -3,7 +3,7 @@
 // the gate on starting a child, and the two briefs. Starting the worktrees is
 // worktree.ts; the questions between the agents are messages.ts.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fill } from './template.ts'
@@ -57,7 +57,7 @@ export function agentFor(
 // A proposal is approved by an answer that is one of these words: "yes, but not #84"
 // approves nothing.
 export function isApproval(answer: string): boolean {
-  return /^\s*(approve|approved|yes|ok)[\s.!]*$/i.test(answer)
+  return /^\s*(approve|approved|yes|ok)[.!]?\s*$/i.test(answer)
 }
 
 // The children a person approved for a theme, kept next to the mailbox they were
@@ -83,8 +83,12 @@ export function approve(root: string, theme: string, issues: number[]): void {
   // Whole or not at all: a concurrent reader never sees half a list.
   const file = approvedFile(root, theme)
   const temporary = `${file}.${process.pid}.tmp`
-  writeFileSync(temporary, `${[...all].join('\n')}\n`)
-  renameSync(temporary, file)
+  try {
+    writeFileSync(temporary, `${[...all].join('\n')}\n`)
+    renameSync(temporary, file)
+  } finally {
+    rmSync(temporary, { force: true })
+  }
 }
 
 function describeAgent(agent: StartAgent): string {

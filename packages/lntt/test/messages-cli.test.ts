@@ -181,8 +181,14 @@ describe('lntt ask / inbox / answer', () => {
     const both = { LNTT_ISSUE: '84', LNTT_THEME: 'alpha' }
     assert.equal(JSON.parse(inbox('child', both).stdout).question, 'for the child')
     assert.equal(JSON.parse(inbox('coordinator', both).stdout).question, 'for the coordinator')
-    assert.equal(inbox('child', { LNTT_THEME: 'alpha' }).stdout, '')
-    assert.equal(inbox('coordinator', { LNTT_ISSUE: '84' }).stdout, '')
+    for (const [role, vars] of [
+      ['child', { LNTT_THEME: 'alpha' }],
+      ['coordinator', { LNTT_ISSUE: '84' }],
+    ] as const) {
+      const r = inbox(role, vars)
+      assert.equal(r.status, 0, r.stderr)
+      assert.equal(r.stdout, '')
+    }
   })
 
   test('outside a git repository the reason is said, not a stack', () => {

@@ -81,6 +81,9 @@ describe('the gate', () => {
       'yes, but not #84',
       'approve #89 only',
       'ok\nbut wait',
+      'approved #89 only',
+      'yes.!',
+      'ok!!!',
     ])
       assert.ok(!isApproval(no), no)
   })
@@ -161,7 +164,7 @@ describe('the coordinator’s brief', () => {
   test('under propose, names the approved children and the proposal flow', () => {
     const brief = coordinatorBrief(VALUES)
     assert.match(brief, /Approved to start now: #89/)
-    assert.match(brief, /asks the orchestrator/)
+    assert.match(brief, /`lntt worktree start --theme` asks the orchestrator/)
     assert.match(brief, /#84/)
   })
 
