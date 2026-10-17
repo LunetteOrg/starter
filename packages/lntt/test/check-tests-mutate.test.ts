@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { cpSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -158,30 +158,6 @@ describe('lntt check tests mutate', () => {
     assert.equal(status, 0)
     assert.equal(result.status, 'NOT RUN')
     assert.match(result.message, /src\/ignored\.ts: no such file/)
-  })
-
-  test('SIGTERM stops a run at once and the scratch is removed after it', async () => {
-    const levels = [{ name: 'unit', files: ['test/*.test.ts'], run: 'sleep 30 && node --test {files}' }]
-    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify({ tests: { levels } }))
-    const child = spawn(
-      process.execPath,
-      [BIN, 'check', 'tests', 'mutate', 'src/price.ts:7', '--text=total > 100', '--to=total >= 100'],
-      { cwd: repo, stdio: 'ignore' },
-    )
-    const closed = new Promise<number | null>((done) => child.on('close', done))
-    // the scratch is registered as a worktree of the repository once the run is under way
-    for (let i = 0; i < 200 && git('worktree', 'list').split('\n').length < 2; i++) {
-      await new Promise((r) => setTimeout(r, 50))
-    }
-    assert.equal(git('worktree', 'list').split('\n').length, 2)
-    await new Promise((r) => setTimeout(r, 500))
-    child.kill('SIGTERM')
-    assert.equal(await closed, null)
-    // the scratch is removed by the process that outlives lntt
-    for (let i = 0; i < 200 && git('worktree', 'list').split('\n').length > 1; i++) {
-      await new Promise((r) => setTimeout(r, 100))
-    }
-    assert.equal(git('worktree', 'list').split('\n').length, 1)
   })
 
   test('a path that leaves the project is refused, not followed', () => {

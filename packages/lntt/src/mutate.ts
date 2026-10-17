@@ -3,7 +3,7 @@
 // (survived). The mutation lives in a scratch git worktree; the working tree is never
 // written, whatever happens.
 
-import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import {
   cpSync,
   existsSync,
@@ -118,21 +118,6 @@ export function createScratch(root: string): Scratch {
   }
   const onExit = () => dispose()
   process.once('exit', onExit)
-  // A run waits on its tests synchronously, so no signal handler would run until it
-  // ended: a signal ends lntt at once instead, and this process, which outlives it by
-  // a moment, removes the scratch worktree.
-  spawn(
-    'sh',
-    [
-      '-c',
-      'while kill -0 "$0" 2>/dev/null; do sleep 0.5; done; git -C "$1" worktree remove --force "$2" 2>/dev/null; rm -rf "$3"; git -C "$1" worktree prune',
-      String(process.pid),
-      top,
-      worktree,
-      dir,
-    ],
-    { detached: true, stdio: 'ignore' },
-  ).unref()
   return {
     root: join(worktree, prefix),
     dispose() {

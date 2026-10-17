@@ -340,11 +340,24 @@ export function recordMissing(root: string, anchor: string): string | null {
   // Slugs as GitHub makes them: a repeated heading takes -1, -2; fenced lines are no heading.
   const seen = new Map<string, number>()
   const slugs = new Set<string>()
-  let fenced = false
+  let fence: string | null = null
   for (const line of readFileSync(abs, 'utf8').split('\n')) {
-    if (/^\s*(?:```|~~~)/.test(line)) fenced = !fenced
-    if (fenced || !/^#{1,6}\s/.test(line)) continue
-    const base = slug(line.replace(/^#{1,6}\s+/, ''))
+    const marker = /^\s*(```+|~~~+)/.exec(line)?.[1]
+    if (marker && fence === null) {
+      fence = marker[0] as string
+      continue
+    }
+    if (marker && fence !== null) {
+      if (marker[0] === fence) fence = null
+      continue
+    }
+    if (fence !== null || !/^#{1,6}\s/.test(line)) continue
+    const base = slug(
+      line
+        .replace(/^#{1,6}\s+/, '')
+        .replace(/\s+#+\s*$/, '')
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'),
+    )
     const n = seen.get(base) ?? 0
     seen.set(base, n + 1)
     slugs.add(n === 0 ? base : `${base}-${n}`)

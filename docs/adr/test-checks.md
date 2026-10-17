@@ -48,11 +48,11 @@ reason, and sits at the lowest level where its assertion can.
     runs the tests that import the file (a level's `repeat` times in a row), and
     reports killed (the failing test and its message, `PASS`), survived (`FAIL`), or
     `NOT RUN` when the path leaves the project, the text is not once on that line, the
-    tests fail without the mutation or they outlast `timeoutSeconds`.
+    tests fail without the mutation, they outlast `timeoutSeconds`, or the file is one
+    git ignores (the scratch does not have it).
 - **The mutation lives in a scratch git worktree** of the head, with the uncommitted
   files laid over it and the dependencies shared, and is removed when the run ends: the
-  working tree is never written. A process that outlives `lntt` removes the worktree
-  when `lntt` ends, an interrupt included. A failure counts as killed only when the same tests
+  working tree is never written. A failure counts as killed only when the same tests
   pass without the mutation.
 - **A review round runs the mutations the tests reviewer proposes.** The reviewer ends a
   finding line with ``mutate: `text` => `mutated` ``; between the reviewers and the
@@ -84,6 +84,9 @@ reason, and sits at the lowest level where its assertion can.
   and the mutant may survive for want of a test that does run it.
 - A mutation is proposed in a line whose text and mutated text hold no
   backtick: the reviewer reports other lines as notes.
+- An interrupted run (SIGINT, SIGTERM) leaves its scratch worktree registered under the
+  system's temp folder: `git worktree prune` after removing the `lntt-mutate-*` folder
+  cleans it. The working tree is untouched.
 - A mutation run costs the tests of the files that import the changed file. A timeout
   stops the shell that runs the command; a process it started may outlive it.
 - Each scratch worktree copies the links of `node_modules`; a project whose tests need
