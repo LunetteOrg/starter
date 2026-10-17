@@ -1,6 +1,6 @@
 {
   "name": "@lntt/typescript-config",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "The TypeScript configs every Lunette project extends",
   "type": "module",
   "license": "MIT",

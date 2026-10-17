@@ -1,6 +1,6 @@
 {
   "name": "@lntt/playwright-config",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "The Playwright base config every Lunette app's e2e suite is built on",
   "type": "module",
   "license": "MIT",
