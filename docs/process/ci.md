@@ -16,14 +16,17 @@ batch for what is expensive ([delivery](./delivery.md) has the flow):
 | Event | What runs |
 |---|---|
 | A draft, into any base | nothing in the cloud; `pnpm ci:local` on the machine |
-| A ready pull request into a candidate, or into any branch other than `main` (a stacked pull request) | the minimal CI: frozen install, lint, typecheck, the AGENTS.md block, the branch name, the plugin version |
-| The candidate's pull request into `main`, ready; a hotfix | the full CI: the minimal CI plus the tests and the scaffold smoke |
+| A ready pull request into a candidate, or into any branch other than `main` (a stacked pull request) | the minimal CI: frozen install, lint, typecheck, the AGENTS.md block, the branch name, the plugin version, the tests |
+| The candidate's pull request into `main`, ready; a hotfix | the full CI: the minimal CI plus the scaffold smoke |
 | A push to `main` | the full CI, which gates a release |
 | A merge into a candidate | nothing |
 
 `ci.yml` is one job, so each run is billed once. The job is skipped on a draft, and
-`ready_for_review` starts it when the draft leaves draft. The tests and the smoke run
-when the base is the default branch or the event is a push. The candidate automation
+`ready_for_review` starts it when the draft leaves draft. The tests run on every run:
+`pnpm ci:local` runs them on the author's machine, and a failure that shows only on the
+CI's Linux runner (a test that depends on timing, a path, a tool) would otherwise reach
+the candidate first. The scaffold smoke, which installs a generated project, runs when
+the base is the default branch or the event is a push. The candidate automation
 (`candidate.yml`) is not CI: it runs on its own three events, drafts included
 ([delivery](./delivery.md#the-candidate-automation)).
 
@@ -99,5 +102,9 @@ CircleCI configuration.
 - **`concurrency: cancel-in-progress` as the saving.** It cancels only runs still in
   progress, and review rounds are minutes apart; the saving comes from not pushing
   drafts.
-- **The full CI on every pull request into the candidate.** The candidate runs it on
-  the whole batch; on each pull request it would pay twice for the same checks.
+- **The full CI on every pull request into the candidate.** The candidate runs the
+  scaffold smoke on the whole batch; on each pull request it would install a generated
+  project twice for the same check.
+- **No tests on a pull request into the candidate.** They would run only on the
+  author's machine, which is not the CI's: a test that depends on timing can pass there
+  and fail on the Linux runner, and the candidate would be the first to see it.

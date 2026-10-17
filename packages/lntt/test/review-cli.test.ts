@@ -30,6 +30,14 @@ process.stdin.on('data', (d) => (prompt += d)).on('end', () => {
   const kind = prompt.startsWith('You are reviewing') ? 'REVIEW' : prompt.startsWith('You are checking') ? 'VERIFY' : 'REPLY'
   fs.appendFileSync(process.env.FAKE_LOG, kind + ' ' + args.join(' ') + '\\n')
   const model = args[args.indexOf('--model') + 1]
+  // A test that needs another agent to be running first, or the rounds to overlap,
+  // holds the answer: until a file has content, or for a fixed time.
+  const holdUntil = Date.now() + 15000
+  while (process.env['FAKE_WAIT_FILE_' + model] && Date.now() < holdUntil) {
+    try { if (fs.readFileSync(process.env['FAKE_WAIT_FILE_' + model], 'utf8').trim()) break } catch {}
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
+  }
+  if (process.env.FAKE_DELAY_MS) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.FAKE_DELAY_MS))
   if (process.env.FAKE_ENVLOG) fs.appendFileSync(process.env.FAKE_ENVLOG, (process.env.ORCA_AGENT_HOOK_PORT ? 'orca-hook-env' : 'clean') + '\\n')
   if (process.env.FAKE_DIRTY) fs.writeFileSync('a.ts', 'changed during the round\\n')
   if (process.env['FAKE_LOG_TERM_' + model]) {
@@ -412,7 +420,9 @@ describe('lntt review, end to end with a fake agent', () => {
     git('commit', '-qam', 'stubborn optional')
     const pids = join(repo, '.pids')
     writeFileSync(pids, '')
-    const r = lntt(['--base', 'main'], { FAKE_IGNORE_TERM_opus: '1', FAKE_PIDS: pids })
+    // The required agent answers only once the optional one has started and named its pid:
+    // otherwise a fast machine stops the optional one before it starts.
+    const r = lntt(['--base', 'main'], { FAKE_IGNORE_TERM_opus: '1', FAKE_PIDS: pids, FAKE_WAIT_FILE_sonnet: pids })
     assert.equal(r.code, 0, r.err)
     const pid = Number(readFileSync(pids, 'utf8').trim())
     assert.ok(pid > 0)
@@ -582,7 +592,13 @@ describe('lntt review, end to end with a fake agent', () => {
       new Promise<number>((resolve) => {
         const child = spawn(process.execPath, [BIN, 'review', '--base', 'main'], {
           cwd: repo,
-          env: { HOME: repo, PATH: [bin, dirname(process.execPath), '/usr/bin', '/bin'].join(':'), FAKE_LOG: log },
+          // Each round lasts two seconds: the three overlap, whatever the machine's speed.
+          env: {
+            HOME: repo,
+            PATH: [bin, dirname(process.execPath), '/usr/bin', '/bin'].join(':'),
+            FAKE_LOG: log,
+            FAKE_DELAY_MS: '2000',
+          },
           stdio: ['ignore', 'ignore', 'pipe'],
         })
         let err = ''
