@@ -123,6 +123,10 @@ same way every time; the `review` skill keeps the judgement.
 
 - Each reviewer is a process on the machine with the person's agent accounts; a round
   costs one call per agent and lens, plus one per verifier and finding.
+- A round executes the project's own test commands (`tests.levels[].run` for the
+  mutations a reviewer proposes, `coverage` for `touched`) on a scratch copy of the head,
+  with the environment of `lntt` less `NODE_TEST*` variables: a project's tests run on
+  the machine of the person who runs the round.
 - The diff travels in the prompt: a very large change may not fit an agent's context.
 - The adapters follow `claude -p` and `opencode run`, whose flags change; the tests pin
   the calls, a trial round against the real tools confirms them.
@@ -149,5 +153,6 @@ same way every time; the `review` skill keeps the judgement.
   way to start the same reviewers, which drifts from the one `lntt review` uses.
 - **Read-only by instruction in the brief.** A reviewer with a tool that writes can use
   it; only the tools it is given hold.
-- **One reviewer that also verifies.** It defends what it found; a refutation needs a
-  fresh agent, on another provider when one is listed.
+- **One reviewer that also verifies.** It defends what it found; a refutation by an
+  agent needs a fresh one, on another provider when one is listed (a mutation run is not
+  an agent and needs none).

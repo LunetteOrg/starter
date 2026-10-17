@@ -314,16 +314,34 @@ function rules(options: CheckOptions, s: Scope): Result[] {
   return out
 }
 
-function recordMissing(root: string, anchor: string): boolean {
-  const path = anchor.replace(/#.*$/, '')
-  return !existsSync(join(root, path))
+// How a heading becomes the fragment of a link to it.
+function slug(heading: string): string {
+  return heading
+    .trim()
+    .toLowerCase()
+    .replace(/`/g, '')
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
+    .replace(/\s/g, '-')
+}
+
+// The record behind a rule: its file, and the heading its fragment names.
+function recordMissing(root: string, anchor: string): string | null {
+  const [path, fragment] = anchor.split('#') as [string, string | undefined]
+  const abs = join(root, path)
+  if (!existsSync(abs)) return 'the record behind the rule is not there'
+  if (fragment === undefined || fragment === '') return null
+  const wanted = decodeURIComponent(fragment).toLowerCase()
+  const headings = readFileSync(abs, 'utf8')
+    .split('\n')
+    .filter((l) => /^#{1,6}\s/.test(l))
+    .map((l) => slug(l.replace(/^#{1,6}\s+/, '')))
+  return headings.includes(wanted) ? null : `the record has no heading #${fragment}`
 }
 
 function checkRule(options: CheckOptions, s: Scope, rule: Rule): Result[] {
   const where = `rule ${rule.name} (${rule.anchor})`
-  if (recordMissing(options.root, rule.anchor)) {
-    return [result('rules', 'FAIL', null, null, `${where}: the record behind the rule is not there`)]
-  }
+  const missing = recordMissing(options.root, rule.anchor)
+  if (missing) return [result('rules', 'FAIL', null, null, `${where}: ${missing}`)]
   if (rule.assertedBy !== null) {
     if (!existsSync(join(options.root, rule.assertedBy))) {
       return [result('rules', 'FAIL', rule.assertedBy, null, `${where}: the test that asserts it is not there`)]

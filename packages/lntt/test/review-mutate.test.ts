@@ -200,6 +200,31 @@ describe('lntt review with mutations', () => {
     rmSync(repo, { recursive: true, force: true })
   })
 
+  test('a mutation that cannot run leaves the finding to the verifiers, with the reason as an undecided proof', () => {
+    const r = spawnSync(process.execPath, [BIN, 'review'], {
+      cwd: repo,
+      encoding: 'utf8',
+      timeout: 120_000,
+      env: {
+        HOME: repo,
+        // no scratch folder to make: the run cannot happen
+        TMPDIR: join(repo, 'no-such-folder'),
+        PATH: [join(repo, '.fakebin'), dirname(process.execPath), '/usr/bin', '/bin'].join(':'),
+        FAKE_LOG: join(repo, '.fakelog'),
+        FAKE_REVIEW:
+          '- [warning] src/price.ts:7 — the boundary is untested — assert 100; mutate: `total > 100` => `total >= 100`',
+        FAKE_VERIFY: 'confirmed\\nsrc/price.ts:7 reads it',
+      },
+    })
+    assert.equal(r.status, 1, r.stderr)
+    const out = JSON.parse(r.stdout) as { findings: Checked[] }
+    const [finding] = out.findings
+    assert.equal(finding?.verdict, 'confirmed')
+    assert.match(finding?.proofs[0]?.proof ?? '', /^could not run: /)
+    assert.equal(finding?.proofs[0]?.outcome, 'undecided')
+    assert.ok(readFileSync(join(repo, '.fakelog'), 'utf8').includes('VERIFY'))
+  })
+
   test('a surviving mutant is a confirmed finding, a killed one is refuted, the working tree stays as it was', () => {
     const before = readFileSync(join(repo, 'src/price.ts'), 'utf8')
     const review = [

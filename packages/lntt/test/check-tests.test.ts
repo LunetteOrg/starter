@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { cpSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -158,6 +158,20 @@ describe('lntt check tests focus', () => {
   })
 })
 
+describe('lntt check tests with --base', () => {
+  test("a defect on a line the diff did not add is the diff's only when it is a .only", () => {
+    project('defects')
+    // touch focus.test.ts and mocks.test.ts without adding a defect
+    for (const f of ['test/unit/focus.test.ts', 'test/unit/mocks.test.ts']) {
+      writeFileSync(join(repo, f), `${readFileSync(join(repo, f), 'utf8')}// a comment\n`)
+    }
+    const focus = results(['check', 'tests', 'focus', '--base', 'HEAD'])
+    assert.deepEqual(fails(focus.results, 'focus'), ['test/unit/focus.test.ts:5'])
+    const rules = results(['check', 'tests', 'rules', '--base', 'HEAD'])
+    assert.ok(!rules.results.some((x) => x.path === 'test/unit/mocks.test.ts'))
+  })
+})
+
 describe('lntt check tests rules', () => {
   test('finds what a rule forbids, cites what the suite already asserts, fails a rule whose record is gone', () => {
     project('defects')
@@ -181,6 +195,16 @@ describe('lntt check tests rules', () => {
     // waiting.test.ts holds the pattern bare-wait forbids, and the rule is not run on it
     assert.ok(!r.results.some((x) => x.path === 'test/unit/waiting.test.ts'))
     assert.match(r.results.map((x) => x.message).join('\n'), /orphan-record .*the record behind the rule is not there/)
+  })
+
+  test('the heading of an anchor has to be in the record', () => {
+    project('defects')
+    writeFileSync(join(repo, 'docs/adr/test.md'), '# Tests\n\n## 4. Waits\n')
+    const r = results(['check', 'tests', 'rules'])
+    assert.match(
+      r.results.map((x) => x.message).join('\n'),
+      /module-mock .*the record has no heading #3-no-module-mocks/,
+    )
   })
 })
 

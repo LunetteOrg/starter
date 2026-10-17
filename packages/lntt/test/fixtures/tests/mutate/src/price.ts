@@ -10,3 +10,7 @@ export function label(total: number): string {
 export function next(n: number): number {
   return n + 1
 }
+
+export function tag(): string {
+  return 'a'
+}

@@ -77,7 +77,8 @@ reason, and sits at the lowest level where its assertion can.
   tests of a line are found from imports, so a test that reaches code only through a
   package name or a spawned process path that is not a string in the test is missed
   and the mutant may survive for want of a test that does run it.
-- A mutation run costs the tests of the files that import the changed file.
+- A mutation run costs the tests of the files that import the changed file. A timeout
+  stops the shell that runs the command; a process it started may outlive it.
 - Each scratch worktree copies the links of `node_modules`; a project whose tests need
   built output that is not committed fails without the mutation and is `NOT RUN`.
 

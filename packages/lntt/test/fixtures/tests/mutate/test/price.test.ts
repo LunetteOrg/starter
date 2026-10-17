@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { discount, label } from '../src/price.ts'
+import { discount, label, tag } from '../src/price.ts'
 
 test('a member gets ten percent off', () => {
   assert.equal(discount(200, true), 180)
@@ -16,4 +16,8 @@ test('nothing to pay is nothing', () => {
 
 test('a small basket is small', () => {
   assert.equal(label(50), 'small')
+})
+
+test('a tag is a or b', () => {
+  assert.match(tag(), /^[ab]$/)
 })

@@ -47,8 +47,8 @@ lntt ci local | candidate
   stderr), 2 a usage error; a defect of `lntt` itself exits 1 with its stack trace.
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
   `decisions` and `tests`, whose results their review lenses read, and `agents-md`,
-  which no lens needs; a lens's checks are the area named after it. Alone it runs every area, which is
-  what CI runs. Every check reports `PASS`, `FAIL` or `NOT RUN` with its reason, so a
+  which no lens needs; a lens's checks are the area named after it. Alone it runs every
+  area, which is what CI runs. Every check reports `PASS`, `FAIL` or `NOT RUN` with its reason, so a
   check that did not run is never read as one that passed, and `INFO` for what it prints
   without a verdict; `--json` gives one line per result (`area`, `check`, `status`,
   `path`, `line`, `message`), `--base <ref>` limits a check to what the diff touches

@@ -97,9 +97,13 @@ export function createScratch(root: string): Scratch {
   try {
     git(top, 'worktree', 'add', '--detach', '--quiet', worktree, 'HEAD')
     // Uncommitted work: modified and new files copied, deleted ones removed.
-    const changed = git(top, 'ls-files', '-z', '--modified', '--others', '--exclude-standard')
-      .split('\0')
-      .filter(Boolean)
+    const changed = [
+      ...new Set([
+        // tracked files against the head, staged or not, deletions included
+        ...git(top, 'diff', '-z', '--name-only', '--no-renames', 'HEAD').split('\0'),
+        ...git(top, 'ls-files', '-z', '--others', '--exclude-standard').split('\0'),
+      ]),
+    ].filter(Boolean)
     for (const file of changed) {
       const source = join(top, file)
       if (existsSync(source)) {
@@ -113,11 +117,21 @@ export function createScratch(root: string): Scratch {
     throw error
   }
   const onExit = () => dispose()
+  // An interrupt removes the worktree too; lntt leaves with the signal unless another
+  // handler (a review round stopping its agents) is there to do it.
+  const onSignal = (signal: NodeJS.Signals) => {
+    dispose()
+    if (process.listenerCount(signal) === 1) process.exit(130)
+  }
   process.once('exit', onExit)
+  process.on('SIGINT', onSignal)
+  process.on('SIGTERM', onSignal)
   return {
     root: join(worktree, prefix),
     dispose() {
       process.off('exit', onExit)
+      process.off('SIGINT', onSignal)
+      process.off('SIGTERM', onSignal)
       dispose()
     },
   }
@@ -150,7 +164,7 @@ export function runCommand(command: string, cwd: string, timeoutSeconds: number)
   return { code: timedOut ? null : r.status, output: `${r.stdout ?? ''}${r.stderr ?? ''}`, timedOut }
 }
 
-const FAILED_TEST = /^\s*(?:✖|✘|×|FAIL\b|not ok \d+ -?)\s*(.+?)(?:\s+\(\d[\d.]*m?s\))?\s*$/
+const FAILED_TEST = /^\s*(?:✖|✘|×|FAIL\b|not ok \d+ -?)\s*(.+?)(?:\s+\(?\d[\d.]*m?s\)?)?\s*$/
 const MESSAGE =
   /^\s*(?:AssertionError|Error|TypeError|ReferenceError|SyntaxError|expected|Expected|error:|message:|\+ actual)\b.*$/i
 
@@ -217,7 +231,7 @@ function runLevel(level: Level, files: string[], scratch: string, coverageOut?: 
 
 // Applies the mutation, runs the tests of each level that can run the line, restores.
 export function mutate(context: MutateContext, mutation: Mutation): Outcome {
-  const bad = problem(mutation, context.root)
+  const bad = problem(mutation, context.scratch.root)
   if (bad) return { outcome: 'not run', reason: bad }
   const config = testsConfig(context.data)
   if (config.levels.length === 0) return { outcome: 'not run', reason: 'tests.levels is not configured' }

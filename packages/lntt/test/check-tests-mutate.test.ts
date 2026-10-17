@@ -130,6 +130,59 @@ describe('lntt check tests mutate', () => {
     assert.match(result.message, /level unit fails without the mutation/)
   })
 
+  test('a path that leaves the project is refused, not followed', () => {
+    for (const anchor of ['../outside.ts:1', '/etc/hosts:1', 'src/../../outside.ts:1']) {
+      const { result } = mutate(anchor, 'x', 'y')
+      assert.equal(result.status, 'NOT RUN', anchor)
+      assert.match(result.message, /is not a path inside the project/)
+    }
+  })
+
+  test('the mutated text is written as it is: $& and $1 are not replacement patterns', () => {
+    const { result } = mutate('src/price.ts:15', "'a'", "'$&'")
+    assert.equal(result.status, 'PASS', result.message)
+    assert.match(result.message, /killed by a tag is a or b/)
+  })
+
+  test('a level repeats its run: a test that fails only the second time kills when repeat is 2', () => {
+    writeFileSync(
+      join(repo, 'test/flaky.test.ts'),
+      [
+        "import assert from 'node:assert/strict'",
+        "import { appendFileSync, readFileSync } from 'node:fs'",
+        "import { test } from 'node:test'",
+        "import { next } from '../src/price.ts'",
+        "test('fails on its second run only', () => {",
+        "  appendFileSync('.runs', 'x')",
+        "  assert.notEqual(readFileSync('.runs', 'utf8').length, 2)",
+        '  next(1)',
+        '})',
+        '',
+      ].join('\n'),
+    )
+    const level = (repeat: number) =>
+      JSON.stringify({
+        tests: { levels: [{ name: 'unit', files: ['test/*.test.ts'], run: 'node --test {files}', repeat }] },
+      })
+    git('add', '-A')
+    writeFileSync(join(repo, '.agents/config.jsonc'), level(1))
+    assert.match(mutate('src/price.ts:11', 'n + 1', 'n - 1').result.message, /survived/)
+    writeFileSync(join(repo, '.agents/config.jsonc'), level(2))
+    const killed = mutate('src/price.ts:11', 'n + 1', 'n - 1').result
+    assert.equal(killed.status, 'PASS', killed.message)
+    assert.match(killed.message, /killed by fails on its second run only/)
+  })
+
+  test('tests that outlast timeoutSeconds are NOT RUN, never killed or survived', () => {
+    const levels = [
+      { name: 'unit', files: ['test/*.test.ts'], run: 'sleep 3 && node --test {files}', timeoutSeconds: 1 },
+    ]
+    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify({ tests: { levels } }))
+    const { result } = mutate('src/price.ts:7', 'total > 100', 'total >= 100')
+    assert.equal(result.status, 'NOT RUN')
+    assert.match(result.message, /level unit did not finish in 1s/)
+  })
+
   test('a project with no tests.levels cannot run a mutation', () => {
     writeFileSync(join(repo, '.agents/config.jsonc'), '{}\n')
     assert.match(mutate('src/price.ts:7', 'total > 100', 'x').result.message, /tests\.levels is not configured/)
@@ -159,6 +212,11 @@ describe('failureOf', () => {
       test: 'adds up',
       message: 'error: boom',
     })
+  })
+
+  test('a duration after the test name, in or out of parentheses, is not part of it', () => {
+    assert.equal(failureOf(' × adds up 3ms\n AssertionError: expected 2 to be 3\n').test, 'adds up')
+    assert.equal(failureOf('  ✖ adds up (1.2ms)\n').test, 'adds up')
   })
 
   test('says so when the output names no test, with the last lines as the message', () => {
