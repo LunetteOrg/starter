@@ -36,9 +36,12 @@ stops at the draft pull request.
 1. **Draft.** A pull request opens as a draft. A draft runs no CI in the cloud
    ([CI](./ci.md)); a pull request opened ready into `main` runs the full CI once on
    its `opened` event, before the automation moves it onto the candidate.
-2. **Review on the machine.** The review runs on the local branch (the `decisions`
-   skill in check mode, then the line-by-line pass), and fixes are local commits. The
-   branch reaches GitHub when a review round finds nothing: every push is a full run.
+2. **Review on the machine.** The review runs on the local branch with `lntt review`
+   (the `review` skill), and fixes are local commits. Reviewers start with no context
+   of the conversation that wrote the change, each lens on the agents and models of
+   `delivery.review`; verifiers try to refute every blocker and warning; later rounds
+   read only the new commits. The branch reaches GitHub when a round finds nothing:
+   every push is a full run.
 3. **`pnpm ci:local` green** on the head about to be published, then one push, then
    `gh pr ready`. A red `ci:local` goes back into the review.
 4. **On the candidate.** When the pull request is opened or marked ready, the candidate

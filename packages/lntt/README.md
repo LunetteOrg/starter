@@ -130,6 +130,60 @@ The host is the innermost one the session runs in, detected from the environment
 - **Plain git** otherwise, Wave and Claude desktop included: `git worktree add` under
   `<main checkout>/.worktrees/`, the setup, and the brief printed for the person.
 
+## Reviewing a change
+
+```sh
+lntt review                       # one round on the current branch; JSON on stdout
+lntt review --base <branch>       # against another base (a stacked pull request)
+lntt review --plan                # the range, the lenses and their agents; runs nothing
+lntt review reply f2 "line 120 excludes it"   # answer the reviewers who found f2
+```
+
+A round, on a clean working tree:
+
+1. **What to read:** the branch from where it left the base the first time, then only
+   the commits after the last reviewed one (after a rebase, the whole branch again).
+   The state is `lntt-review.json` in the worktree's git directory.
+2. **Reviewers**, all at once: every agent of every lens in `delivery.review.reviewers`
+   whose `paths` the diff touches. `decisions`, `code` and `tests` ship their briefs in
+   [`agents/review/`](./agents/review/); another lens brings its own `brief`. Each agent
+   runs headless with no context but its prompt (on stdin) and no tool that writes:
+   `claude -p` with only Read, Grep and Glob and no MCP server; `opencode run` on a
+   standalone server with an inline agent that denies every tool and allows read, grep,
+   glob and list back. `--plan` and every round name where the diff goes: the provider
+   of each configured agent.
+3. **Verifiers**, all at once: each blocker and warning (`delivery.review.verify`) goes
+   to every verifier but the agents that found it, briefed to refute it
+   ([`agents/verify.md`](./agents/verify.md)). All confirm: confirmed. All refute:
+   refuted. Otherwise undecided. Findings still open from the last round go back to
+   them on the new head.
+
+Progress goes to stderr (tokens per agent, `round N done`) and, as JSON events with the
+pid of `lntt review` and a beat every 15 seconds, to `<git dir>/lntt-review.progress`
+for a band beside the agent. Under Claude Code in Orca each agent shows as a subagent
+of the session; agents never inherit the host's hook variables. On macOS `caffeinate`
+keeps the machine awake for the round.
+
+stdout is the round: `findings` to act on, `refuted` with their proofs, `failed`
+reviewers and verifiers, `cost` in USD when the agents report it (claude does). Exit 0
+when no blocker or warning is left and nothing failed, 1 otherwise; notes are reported
+and do not block, nor are they carried to the next round. A reply that is neither
+finding lines nor `no findings` counts as a failed reviewer; after a failure the next
+round reads the same range again. A reviewer is stopped after
+`delivery.review.timeoutMinutes` and counts as failed; at most
+`delivery.review.perProvider` required agents of one provider run at once, and as many
+optional ones in a queue of their own, the whole round (or a reply) stops at `delivery.review.roundTimeoutMinutes`, an
+agent that ignores SIGTERM is killed, and one round or reply runs at a time in a
+worktree. An agent marked
+`optional` that fails is reported in `skipped` and does not fail the round; it is stopped
+`delivery.review.optionalGraceMinutes` after the others have answered. A round that
+cannot start prints `lntt review: error: …`. Agents that are not installed, or
+that cannot be made read-only, are refused before any starts.
+
+`reply` resumes the sessions of the reviewers who found the finding with the author's
+answer ([`agents/reply.md`](./agents/reply.md)); the finding closes when all withdraw it.
+A finding whose reviewer cannot be resumed is refused: the person decides on it.
+
 ## Running the apps locally
 
 `local.apps.<name>` describes each app: base `port`, `url`, `commands` (with `start`),

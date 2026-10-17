@@ -18,6 +18,11 @@ export class ConfigError extends Error {
   override name = 'ConfigError'
 }
 
+// No configuration file at all: the one case a command may answer with its defaults.
+export class NoConfigError extends ConfigError {
+  override name = 'NoConfigError'
+}
+
 // `<dir>/<name>.jsonc` or `<dir>/<name>.yml`; both at once would be two sources of
 // the same values, so it is an error.
 export function locate(dir: string, name: string): Located | undefined {
