@@ -120,7 +120,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  rmSync(repo, { recursive: true, force: true })
+  // A hook script lntt started in the background may still be writing: retry the removal.
+  rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 const state = () => JSON.parse(readFileSync(join(repo, '.git/lntt-review.json'), 'utf8'))
@@ -373,6 +374,16 @@ describe('lntt review, end to end with a fake agent', () => {
       FAKE_ENVLOG: envlog,
     })
     assert.equal(r.code, 0, r.err)
+    // lntt sends the events through scripts it does not wait for: wait for the last one.
+    const until = Date.now() + 5000
+    while (
+      !/"SubagentStop"[^\n]*code · claude sonnet|code · claude sonnet[^\n]*"SubagentStop"/.test(
+        existsSync(events) ? readFileSync(events, 'utf8') : '',
+      ) &&
+      Date.now() < until
+    ) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
+    }
     const sent = readFileSync(events, 'utf8')
       .split('\n')
       .filter(Boolean)
@@ -574,12 +585,14 @@ describe('lntt review, end to end with a fake agent', () => {
   })
 
   test('a reply stops at the round deadline too', { timeout: 30000 }, () => {
+    // The round runs with the usual deadline: on a slow machine a short one would stop the
+    // round itself. Only the reply gets the short deadline.
+    const r = lntt(['--base', 'main'], { FAKE_REVIEW: '- [warning] a.ts:1 — w — a' })
+    assert.equal(JSON.parse(r.out).findings[0].id, 'f1', r.err)
     writeFileSync(
       join(repo, '.agents/config.jsonc'),
       JSON.stringify({ delivery: { review: { roundTimeoutMinutes: 0.02, verify: false } } }),
     )
-    git('commit', '-qam', 'short deadline')
-    lntt(['--base', 'main'], { FAKE_REVIEW: '- [warning] a.ts:1 — w — a' })
     const reply = lntt(['reply', 'f1', 'no'], { FAKE_SLEEP_sonnet: '1', FAKE_SLEEP_haiku: '1' })
     assert.equal(reply.code, 1)
     assert.match(reply.out, /took longer than/)

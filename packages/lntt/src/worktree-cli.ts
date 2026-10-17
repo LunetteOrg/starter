@@ -1,7 +1,7 @@
 // `lntt worktree start`: an agent on an issue, in its own worktree, on the host the
 // session runs in (usage: bin/lntt.ts).
 
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { checkBranch } from './branch.ts'
@@ -19,6 +19,7 @@ import {
   startGit,
   startHerdr,
   startOrca,
+  toolFailure,
   type WorktreeHost,
   worktreeHost,
 } from './worktree.ts'
@@ -33,13 +34,32 @@ function usage(message?: string): never {
   exit(2)
 }
 
+// One call to a tool. stdout, trimmed, is the result. When the call succeeds, what the
+// tool said on stderr reaches the person after it; when it fails, the error carries the
+// reason (Orca's JSON message, else what the tool printed, else its exit code), once,
+// and a failure the caller expects (removing an upstream that is not there) stays
+// silent. The setup goes through runner.shell, which shows its output as it runs; the
+// long calls here (Orca creating a worktree, waiting on a terminal) show their work in
+// Orca. stderr is never filtered by its words, which change with the tool's version: a
+// call whose stderr is noise would say so itself.
+export function runTool(
+  command: string,
+  args: string[],
+  dir: string,
+  say: (text: string) => void = (text) => stderr.write(text),
+): string {
+  const r = spawnSync(command, args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  if (r.error) throw r.error
+  if (r.status !== 0) {
+    const why = toolFailure(command, args, r.stdout ?? '', r.stderr ?? '')
+    throw new Error(why.endsWith(' failed') ? `${why} (exit ${r.status ?? r.signal})` : why)
+  }
+  if (r.stderr) say(r.stderr)
+  return (r.stdout ?? '').trim()
+}
+
 const runner: Runner = {
-  run: (command, args, opts) =>
-    execFileSync(command, args, {
-      cwd: opts?.cwd ?? cwd(),
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'inherit'],
-    }).trim(),
+  run: (command, args, opts) => runTool(command, args, opts?.cwd ?? cwd()),
   sleep: (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms),
   shell: (script, dir) => {
     // The setup's output goes to stderr: stdout carries one JSON line per worktree.

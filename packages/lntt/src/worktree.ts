@@ -113,20 +113,54 @@ function flat(branch: string): string {
   return branch.replace(/\//g, '-')
 }
 
+// Why a tool refused, for the person: the message Orca writes in its JSON reply, else the
+// last lines it printed.
+export function toolFailure(command: string, args: string[], stdout: string, stderr: string): string {
+  const what = [command, ...args.slice(0, 2)].join(' ')
+  try {
+    const message = (JSON.parse(stdout) as { error?: { message?: string } }).error?.message
+    if (message) return `${what}: ${message}`
+  } catch {}
+  const tail = `${stdout}\n${stderr}`.trim().split('\n').slice(-3).join(' ').trim()
+  return tail ? `${what}: ${tail}` : `${what} failed`
+}
+
+// Whether Orca's `worktree create` takes the agent's model and effort (1.4.229 does,
+// 1.4.224 did not). An Orca that cannot say is an error: guessing the older path would
+// fail later, for another reason.
+function orcaTakesModel(runner: Runner): boolean {
+  const help = runner.run('orca', ['worktree', 'create', '--help'])
+  if (!help.trim())
+    throw new Error('orca worktree create --help printed nothing: lntt could not tell whether it takes --model')
+  return /--model\b/.test(help)
+}
+
 // Orca prefixes the worktree name with the user (`<user>/feat-78-slug`); its setup
 // (orca.yaml, `lntt branch rename`) reads the convention back. The agent starts after
 // the setup (setupAgentStartupPolicy: wait-for-setup).
 export function startOrca(start: Start, runner: Runner, setupFor: SetupFor = () => null): Started {
   const shell = start.agent ? shellLaunch(start.agent) : null
   if (shell) return startOrcaShell(start, shell, runner, setupFor)
-  if (start.agent?.model || start.agent?.effort) return startOrcaWorker(start, start.agent, runner, setupFor)
+  const tuned = Boolean(start.agent?.model || start.agent?.effort)
+  if (start.agent && tuned && !orcaTakesModel(runner)) return startOrcaWorker(start, start.agent, runner, setupFor)
   const args = ['worktree', 'create', '--name', flat(start.branch), '--issue', String(start.issue)]
   args.push('--base-branch', start.base, '--setup', 'run', '--json')
-  if (start.agent) args.push('--agent', start.agent.kind, '--prompt', start.brief)
-  const reply = JSON.parse(runner.run('orca', args) || '{}') as {
-    result?: { worktree?: { path?: string }; agentTerminalHandle?: string; startupTerminal?: { handle?: string } }
+  if (start.agent) {
+    args.push('--agent', start.agent.kind, '--prompt', start.brief)
+    if (start.agent.model) args.push('--model', start.agent.model)
+    if (start.agent.effort) args.push('--effort', start.agent.effort)
   }
-  const handle = reply.result?.agentTerminalHandle ?? reply.result?.startupTerminal?.handle ?? null
+  const reply = JSON.parse(runner.run('orca', args) || '{}') as {
+    result?: {
+      worktree?: { path?: string }
+      launch?: { outcome?: { handle?: string } }
+      agentTerminalHandle?: string
+      startupTerminal?: { handle?: string }
+    }
+  }
+  // Where the agent's handle is: launch.outcome on a current Orca, the older fields before.
+  const r = reply.result
+  const handle = r?.launch?.outcome?.handle ?? r?.agentTerminalHandle ?? r?.startupTerminal?.handle ?? null
   return {
     host: 'orca',
     issue: start.issue,
@@ -185,7 +219,8 @@ function startOrcaShell(start: Start, command: string, runner: Runner, setupFor:
   return { host: 'orca', issue: start.issue, branch: start.branch, path, agent: handle }
 }
 
-// `worktree create --agent` takes no model or effort; Orca's supervised worker does, on
+// On an Orca whose `worktree create --agent` takes no model or effort, Orca's
+// supervised worker does, on
 // a worktree that already exists (orcaWorktree). It needs a Run bound to the calling
 // terminal, created when there is none; Orca wraps the brief in its own preamble and
 // the agent reports `worker_done` to the Run.

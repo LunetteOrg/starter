@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-10-16
+date: 2026-10-17
 tags: [worktrees, agents, orca, herdr, branches, setup]
 ---
 
@@ -13,7 +13,8 @@ worktree is created by whatever tool the person uses: Orca, Herdr, `git worktree
 in a terminal, an agent harness. Each tool has its own idea of the branch name (Orca
 prepends the user and flattens the slashes: `<user>/<name>`), its own setup hook or
 none (Herdr has none), and its own way to start an agent with a model (Orca's
-`worktree create --agent` takes no model; opencode's interface takes no model flag).
+`worktree create --agent` took no model in 1.4.224, 1.4.229 takes one; opencode's
+interface takes no model flag).
 Left to the tools, the branch convention, the setup and the instructions handed to the
 agent would differ by tool and by machine, since the tools keep these settings per
 machine.
@@ -40,10 +41,15 @@ small adapter that makes the calls it understands.
   report the friction met. `--prompt` replaces it for a coordinator's own instructions.
 - **The agent, its model and its effort** (`--kind`, `--model`, `--effort`) reach each
   tool in the form it accepts:
-  - Orca without a model: `worktree create --issue --agent --prompt`, the agent
-    starting after the setup (`wait-for-setup`).
-  - Orca with a model or an effort: the worktree with its issue, the setup, then
-    `orchestration worker-start` on it, in a Run created when none is bound.
+  - Orca: one `worktree create --issue --agent --prompt`, with `--model` and
+    `--effort` when the agent has them, the agent starting after the setup
+    (`wait-for-setup`); Orca refuses a model and effort the agent does not take, before
+    creating anything, and `lntt` reports its reason. The agent's handle is
+    `launch.outcome.handle` in the reply.
+  - An Orca whose `worktree create` takes no model (its help lists no `--model`; 1.4.224
+    did not, 1.4.229 does): the worktree
+    with its issue, the setup, then `orchestration worker-start` on it, in a Run
+    created when none is bound.
   - opencode with a model, on any host: its inline configuration
     (`OPENCODE_CONFIG_CONTENT`) on a standalone server, started as a shell command in a
     terminal or pane of its own, and prompted once the tool sees it ready.
@@ -77,16 +83,17 @@ small adapter that makes the calls it understands.
   Herdr's create reply does not always carry the new pane, opencode reads its inline
   configuration only on a standalone server. A tool update can break an adapter; the
   tests pin the calls, and a trial run against the real tool confirms them.
-- On Orca, an agent started with a model is a supervised worker or a plain terminal,
-  not the agent tab `worktree create --agent` opens.
+- On an Orca whose `worktree create` takes no model, an agent started with a model is a
+  supervised worker; opencode with a model is a plain terminal on any Orca. Neither is
+  the agent tab `worktree create --agent` opens.
 - Orca runs `orca.yaml`'s setup only when the repository's *Command source* is
   "orca.yaml only" or "Run both"; a script once saved in its local field switches it to
   "Local only" without a warning.
 
 ### When to deviate (revisit triggers)
 
-- Orca's `worktree create --agent` accepts a model, or opencode a model flag: the
-  special paths go.
+- Every Orca in use takes `--model` on `worktree create`: the worker path goes. opencode
+  gains a model flag: its standalone-server path goes.
 - A tool offers a setting for the branch name kept in the repository: the rename in
   setup can go for that tool.
 

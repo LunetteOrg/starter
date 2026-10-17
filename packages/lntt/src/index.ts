@@ -85,6 +85,7 @@ export {
   startGit,
   startHerdr,
   startOrca,
+  toolFailure,
   type WorktreeHost,
   worktreeHost,
 } from './worktree.ts'
