@@ -16,6 +16,7 @@ decisions) is in [`docs/process/`](../process/README.md).
 | [test-database](./test-database.md) | `@lntt/test-utils`: one Postgres per vitest run, owned by a globalSetup; required `databaseName`; cleanup by label | accepted |
 | [agent-layer](./agent-layer.md) | Installed skills are never edited; project values in `.agents/config.*`; operator context | accepted |
 | [lntt-command](./lntt-command.md) | One package, `@lntt/lntt`, with one command, `lntt`, for configuration, agent files, branches, worktrees and CI | accepted |
+| [review-agents](./review-agents.md) | Reviews by agents with no context, per-project lenses, agents and models; adversarial verification; `lntt review` | accepted |
 | [worktree-tooling](./worktree-tooling.md) | Branch names, setup, brief and agent launch decided in `lntt`; Orca, Herdr and git as adapters | accepted |
 
 A new subject gets its own file: copy [`template.md`](./template.md) to

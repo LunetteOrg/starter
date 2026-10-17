@@ -130,6 +130,42 @@ The host is the innermost one the session runs in, detected from the environment
 - **Plain git** otherwise, Wave and Claude desktop included: `git worktree add` under
   `<main checkout>/.worktrees/`, the setup, and the brief printed for the person.
 
+## Reviewing a change
+
+```sh
+lntt review                       # one round on the current branch; JSON on stdout
+lntt review --base <branch>       # against another base (a stacked pull request)
+lntt review --plan                # the range, the lenses and their agents; runs nothing
+lntt review reply f2 "line 120 excludes it"   # answer the reviewers who found f2
+```
+
+A round, on a clean working tree:
+
+1. **What to read:** the branch from where it left the base the first time, then only
+   the commits after the last reviewed one (after a rebase, the whole branch again).
+   The state is `lntt-review.json` in the worktree's git directory.
+2. **Reviewers**, all at once: every agent of every lens in `delivery.review.reviewers`
+   whose `paths` the diff touches. `decisions`, `code` and `tests` ship their briefs in
+   [`agents/review/`](./agents/review/); another lens brings its own `brief`. Each agent
+   runs headless with no context but its prompt and no tool that writes: `claude -p`
+   with only Read, Grep and Glob and no MCP server; `opencode run` on a standalone
+   server with an inline agent that denies editing, the shell, the web, subagents and
+   questions.
+3. **Verifiers**, all at once: each blocker and warning (`delivery.review.verify`) goes
+   to every verifier but the agents that found it, briefed to refute it
+   ([`agents/verify.md`](./agents/verify.md)). All confirm: confirmed. All refute:
+   refuted. Otherwise undecided. Findings still open from the last round go back to
+   them on the new head.
+
+stdout is the round: `findings` to act on, `refuted` with their proofs, `failed`
+reviewers, `cost` in USD when the agents report it (claude does). Exit 0 when nothing
+is left and no reviewer failed, 1 otherwise. A reviewer is stopped after
+`timeoutMinutes` (default 20) and counts as failed. Agents that are not installed, or
+that cannot be made read-only, are refused before any starts.
+
+`reply` resumes the sessions of the reviewers who found the finding with the author's
+answer ([`agents/reply.md`](./agents/reply.md)); the finding closes when all withdraw it.
+
 ## Running the apps locally
 
 `local.apps.<name>` describes each app: base `port`, `url`, `commands` (with `start`),

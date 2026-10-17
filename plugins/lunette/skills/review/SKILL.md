@@ -1,0 +1,57 @@
+---
+name: review
+description: Review a change before its pull request is marked ready, with lntt review. Reviewers with no context of the conversation (the decisions, code and tests lenses, and any lens the project adds) run on the agents and models the project configures, their blockers and warnings are checked by verifiers briefed to refute them, and the loop runs until a round finds nothing. Use for every code review and pull request review, on your own change or someone else's.
+---
+
+# Review
+
+`lntt review` does every mechanical step of a round: what to read, which reviewers,
+on which agents and models (`delivery.review`), the adversarial check, the merged
+list. This skill is the judgement around it. Never edit it to fit one project.
+
+## 1. A round
+
+From the worktree of the change, with every change committed:
+
+```sh
+lntt review                       # or: pnpm exec lntt review
+lntt review --base <branch>       # a pull request stacked on another branch
+lntt review --plan                # the range, the lenses and the agents; runs nothing
+```
+
+stdout is JSON: `findings` (what to act on: `confirmed`, `undecided`, `unverified`),
+`refuted` (with the verifiers' proofs; nothing to do), `failed` (a reviewer that did
+not answer). Exit 0: a clean round. Exit 1: findings or a failure.
+
+A round reads the whole branch the first time, then only the commits after the last
+reviewed one; findings still open go back to the verifiers on the new head.
+
+## 2. Each finding
+
+- **`confirmed`:** fix it with a local commit. No push.
+- **`undecided` or `unverified`:** read the proofs, then fix it, or answer it.
+- **Wrong, in your reading:** answer the reviewers who found it, with the `path:line`
+  that shows it:
+
+  ```sh
+  lntt review reply <id> "<the answer, with path:line>"
+  ```
+
+  It resumes their sessions; `withdrawn: true` closes the finding.
+- **`failed`:** run the round again; a failure that repeats is reported to the person
+  with its error.
+
+## 3. When to stop and ask the person
+
+- A finding needs a decision, not a fix: a record to change, a trade-off, a scope
+  question (that becomes an issue, by its title).
+- The same finding comes back in two rounds in a row, or a reviewer keeps it after
+  your answer: the person decides, not one more agent.
+- Rounds keep finding new problems after three rounds on the delta.
+
+## 4. A clean round
+
+Exit 0 on the head about to be published. Then `pnpm ci:local`, one push, and the
+pull request's Definition of Done says the review was done, with the rounds it took
+and their cost (`cost`, when the agents report it). The findings and their outcomes go
+in the pull request body or a comment, never in a file of the repository.

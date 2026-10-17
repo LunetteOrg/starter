@@ -26,6 +26,13 @@
 //   lntt branch rename        rename the current branch to the convention, from the name a
 //                             tool gave it or, in Orca, from the linked issue; never fails
 //
+//   lntt review [--base <branch>] [--plan]
+//                             one review round on the current branch: the lenses and agents of
+//                             delivery.review, headless and read-only, then verifiers that try to
+//                             refute each blocker and warning; JSON on stdout, exit 1 with findings
+//   lntt review reply <finding> <answer>
+//                             the author's answer, to the sessions of the reviewers who found it
+//
 //   lntt worktree start --issue <n> [--issue <n>]... [--host orca|herdr|git]
 //                       [--kind <agent>] [--model <id>] [--effort <level>] [--no-agent]
 //                       [--base <branch>] [--prompt <text>]
