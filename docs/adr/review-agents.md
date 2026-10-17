@@ -68,8 +68,10 @@ same way every time; the `review` skill keeps the judgement.
   not start. The `review` skill wakes on `failed`, `error:` and `round N done` only. The
   same goes as JSON events, one per line, to `<git dir>/lntt-review.progress`: the round
   with the pid of `lntt review`, each phase with its total, each agent's start and end,
-  a beat every 15 seconds, the end or the error; a band beside the agent reads it and
-  tells a dead or silent run from a working one.
+  a beat every 15 seconds, the end or the error. The `lunette` plugin's band reads it
+  and draws the round above the Claude Code prompt, with no Claude turn (a spinner, the
+  phase as a bar, the tokens, the agents running), and tells a dead or silent run from a
+  working one.
 - **Seen where the person works:** under a Claude Code session in Orca, each agent is
   announced as a subagent of that session (Claude Code's `SubagentStart` and
   `SubagentStop`, sent through Orca's hook script, the start repeated every two seconds

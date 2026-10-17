@@ -23,8 +23,9 @@ A round takes minutes. stderr says what runs: a line when each reviewer or verif
 starts and ends, the ones still running every 30 seconds, and `round N done` at the
 end. Run it in the background when your harness can, and wake only on the lines that
 need you: watch for `lntt review: (failed|error:|round [0-9]+ done)`, not every line;
-the rest (including `skipped`, an optional agent that did not answer) is for the person
-at the terminal.
+the rest (including `skipped`, an optional agent that did not answer) is for the person.
+In Claude Code the `lunette` plugin shows the round in a band above the prompt, and
+`/review-status` prints it.
 
 stdout is JSON: `findings` (`confirmed`, `undecided`, `unverified`; blockers and
 warnings block the round, notes do not),
