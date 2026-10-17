@@ -11,7 +11,19 @@ const LINGER_MS = 60_000
 // lntt review beats every 15 seconds: silence for longer says something is wrong.
 const STALE_MS = 45_000
 
-// The round as the events tell it, or null when there are none.
+// The events in the progress file; a line that is not JSON (one being written) is skipped.
+export function readEvents(text) {
+  const events = []
+  for (const line of text.split('\n')) {
+    try {
+      if (line.trim()) events.push(JSON.parse(line))
+    } catch {}
+  }
+  return events
+}
+
+// The round as the events tell it, or null when there are none. Agents running are
+// counted by label, since two agents can carry the same one.
 export function fold(events) {
   if (events.length === 0) return null
   const v = {
@@ -37,10 +49,12 @@ export function fold(events) {
     } else if (e.type === 'phase') {
       Object.assign(v, { phase: e.phase, total: e.total, ended: 0 })
     } else if (e.type === 'start') {
-      v.running.set(e.label, { t: e.t, optional: e.optional === true })
+      v.running.set(e.label, [...(v.running.get(e.label) ?? []), { t: e.t, optional: e.optional === true }])
     } else if (e.type === 'end') {
-      if (v.running.get(e.label)?.optional === false) v.lastRequiredEnd = e.t
-      v.running.delete(e.label)
+      const same = v.running.get(e.label) ?? []
+      if (same[0]?.optional === false) v.lastRequiredEnd = e.t
+      if (same.length > 1) v.running.set(e.label, same.slice(1))
+      else v.running.delete(e.label)
       if (e.phase === v.phase) v.ended += 1
       if (e.outcome === 'failed') v.failed += 1
       if (typeof e.tokens === 'number') v.tokens += e.tokens
@@ -52,7 +66,7 @@ export function fold(events) {
 
 export function tokens(n) {
   if (n < 1000) return `${n} tokens`
-  if (n < 1_000_000) return `${Number((n / 1000).toFixed(n < 10_000 ? 1 : 0))}k tokens`
+  if (Math.round(n / 1000) < 1000) return `${Number((n / 1000).toFixed(n < 10_000 ? 1 : 0))}k tokens`
   return `${Number((n / 1_000_000).toFixed(1))}M tokens`
 }
 
@@ -62,7 +76,8 @@ function seconds(ms) {
 }
 
 function bar(done, total) {
-  const full = total === 0 ? 0 : Math.round((done / total) * WIDTH)
+  // An end that arrives after its phase changed can push done past total.
+  const full = total <= 0 ? 0 : Math.min(WIDTH, Math.round((done / total) * WIDTH))
   return `▕${'█'.repeat(full)}${'░'.repeat(WIDTH - full)}▏`
 }
 
@@ -71,17 +86,20 @@ function bar(done, total) {
 export function bandLines(view, now, alive) {
   if (!view) return null
   if (view.error) {
-    return now - view.error.t < LINGER_MS ? [{ text: `lntt review · not started: ${view.error.message}`, tone: 'error' }] : null
+    if (now - view.error.t >= LINGER_MS) return null
+    const what = view.round === null ? 'not started' : `round ${view.round} stopped`
+    return [{ text: `lntt review · ${what}: ${view.error.message}`, tone: 'error' }]
   }
   if (view.done) {
     const d = view.done
     if (now - d.t > LINGER_MS) return null
-    const what = d.clean ? 'clean' : `${d.findings} findings, ${d.failed} failed`
+    const what = d.clean ? 'clean' : `${d.findings ?? 0} findings, ${d.failed ?? 0} failed`
     const tone = d.clean ? 'ok' : d.failed ? 'error' : 'strong'
-    return [{ text: `lntt review · round ${d.round} done · ${what} · ${d.refuted} refuted · ${tokens(d.tokens ?? 0)}`, tone }]
+    return [{ text: `lntt review · round ${d.round} done · ${what} · ${d.refuted ?? 0} refuted · ${tokens(d.tokens ?? 0)}`, tone }]
   }
   if (view.round === null) return null
   if (alive === false) {
+    if (now - view.last >= LINGER_MS) return null
     return [{ text: `lntt review · round ${view.round} stopped without finishing (process ${view.pid} is gone)`, tone: 'error' }]
   }
   if (view.phase === null) return null
@@ -95,7 +113,7 @@ export function bandLines(view, now, alive) {
   ]
   if (view.failed > 0) out.push({ text: `  ${view.failed} failed`, tone: 'error' })
   if (now - view.last > STALE_MS) out.push({ text: `  no news from lntt review for ${seconds(now - view.last)}`, tone: 'error' })
-  const entries = [...view.running.entries()]
+  const entries = [...view.running.entries()].flatMap(([label, all]) => all.map((r) => [label, r]))
   const shown = entries.slice(0, 3).map(([label, r]) => `${label} (${seconds(now - r.t)})`)
   const more = entries.length > 3 ? ` +${entries.length - 3}` : ''
   // Only optional agents left: the bar waits on them, and they stop after the grace.

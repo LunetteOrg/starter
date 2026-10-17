@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { bandLines, fold, SPIN_MS, tokens } from './review-band.mjs'
+import { bandLines, fold, readEvents, SPIN_MS, tokens } from './review-band.mjs'
 
 const T = 1_000_000
 const round = (extra = []) => [
@@ -86,5 +86,47 @@ describe('the band of a running round', () => {
 
   test('tokens read at a glance', () => {
     assert.deepEqual([tokens(999), tokens(1500), tokens(160_000), tokens(2_300_000)], ['999 tokens', '1.5k tokens', '160k tokens', '2.3M tokens'])
+  })
+
+  test('two agents with the same label are two agents: one ending leaves the other running', () => {
+    const view = fold([
+      ...round(),
+      { t: T + 6, type: 'start', phase: 'reviewers', label: 'code · claude sonnet', optional: false },
+      end(T + 9_000, 'code · claude sonnet'),
+    ])
+    assert.match(bandLines(view, T + 10_000, true)[1].text, /code · claude sonnet/)
+  })
+
+  test('an error after the round began is a stop, not a round that never started', () => {
+    const view = fold(round([{ t: T + 9_000, type: 'error', message: 'interrupted by SIGINT' }]))
+    assert.deepEqual(bandLines(view, T + 10_000, null), [{ text: 'lntt review · round 4 stopped: interrupted by SIGINT', tone: 'error' }])
+  })
+
+  test('a dead run stays in red for a minute after its last event, then the band clears', () => {
+    const view = fold(round())
+    assert.equal(bandLines(view, T + 30_000, false)[0].tone, 'error')
+    assert.equal(bandLines(view, T + 5 + 61_000, false), null)
+  })
+
+  test('an end from the phase before never breaks the bar', () => {
+    const view = fold([
+      ...round(),
+      { t: T + 10, type: 'phase', phase: 'verify', total: 1 },
+      end(T + 11, 'decisions · claude sonnet'),
+      { t: T + 12, type: 'end', phase: 'verify', label: 'x', outcome: 'done', tokens: 1 },
+      { t: T + 13, type: 'end', phase: 'verify', label: 'y', outcome: 'done', tokens: 1 },
+    ])
+    assert.doesNotThrow(() => bandLines(view, T + 1000, true))
+    assert.match(bandLines(view, T + 1000, true)[0].text, /verify ▕█{20}▏/)
+  })
+
+  test('numbers a done event leaves out read as zero, and tokens round up to the next unit', () => {
+    const view = fold(round([{ t: T + 9, type: 'done', round: 4, clean: true }]))
+    assert.equal(bandLines(view, T + 10, null)[0].text, 'lntt review · round 4 done · clean · 0 refuted · 0 tokens')
+    assert.equal(tokens(999_700), '1M tokens')
+  })
+
+  test('the progress file read line by line, a line that is not JSON skipped', () => {
+    assert.deepEqual(readEvents('{"type":"round","t":1}\nnot json\n\n{"type":"beat","t":2}\n').map((e) => e.type), ['round', 'beat'])
   })
 })

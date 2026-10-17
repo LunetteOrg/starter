@@ -32,3 +32,8 @@ yarn-error.log*
 # Worktrees made inside the checkout: lntt worktree start (git, Herdr), Orca, agent harnesses
 .worktrees/
 .claude/worktrees/
+
+# Written by Claude Code when it loads a plugin with --plugin-dir: type declarations and a
+# tsconfig for the mod, per machine and per Claude Code version.
+plugins/*/.claude-plugin/types/
+plugins/*/tsconfig.json

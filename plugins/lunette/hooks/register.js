@@ -4,7 +4,7 @@
 // progress events lntt review writes to <git dir>/lntt-review.progress and only shows
 // them: what to show is review-band.mjs, tested on its own.
 
-import { bandLines, fold, SPIN_MS } from './review-band.mjs'
+import { bandLines, fold, readEvents, SPIN_MS } from './review-band.mjs'
 
 let progressFile = null
 let view = null
@@ -23,13 +23,7 @@ async function refresh($) {
     if (!(await $.fs.exists(progressFile))) {
       view = null
     } else {
-      const events = []
-      for (const line of (await $.fs.read(progressFile)).split('\n')) {
-        try {
-          if (line.trim()) events.push(JSON.parse(line))
-        } catch {}
-      }
-      view = fold(events)
+      view = fold(readEvents(await $.fs.read(progressFile)))
     }
     alive = null
     if (view?.pid && !view.done && !view.error) {
@@ -80,7 +74,7 @@ export function register(on) {
   on('command.run', { command: 'review-status' }, async ($) => {
     const lines = bandLines(view, await $.clock.now(), alive)
     if (!lines || !view) return { text: 'No lntt review round in this worktree.' }
-    const all = [...view.running.entries()].map(([l, r]) => `  running ${l}${r.optional ? ' (optional)' : ''}`)
+    const all = [...view.running.entries()].flatMap(([l, rs]) => rs.map((r) => `  running ${l}${r.optional ? ' (optional)' : ''}`))
     return { text: [...lines.map((l) => l.text), ...all].join('\n') }
   })
 }
