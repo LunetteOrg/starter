@@ -22,8 +22,9 @@ lntt review --plan                # the range, the lenses and the agents; runs n
 A round takes minutes. stderr says what runs: a line when each reviewer or verifier
 starts and ends, the ones still running every 30 seconds, and `round N done` at the
 end. Run it in the background when your harness can, and wake only on the lines that
-need you: watch for `lntt review: (failed|round [0-9]+ done)`, not every line; the
-rest is for the person at the terminal.
+need you: watch for `lntt review: (failed|error:|round [0-9]+ done)`, not every line;
+the rest (including `skipped`, an optional agent that did not answer) is for the person
+at the terminal.
 
 stdout is JSON: `findings` (`confirmed`, `undecided`, `unverified`; blockers and
 warnings block the round, notes do not),

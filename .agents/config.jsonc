@@ -39,15 +39,18 @@
     },
     // Who reviews before a pull request is marked ready (lntt review): the code lens
     // and the verifiers on more than one provider, so a blind spot of one model is
-    // not the review's; the verifiers try to refute every blocker and warning.
+    // not the review's; the verifiers try to refute every blocker and warning. The
+    // free opencode models are optional: they time out under load, and a round does
+    // not wait on them.
     "review": {
       "reviewers": {
-        // sonnet until lntt check decisions does the structural checks (#110)
+        // sonnet until the issue "lntt check decisions runs the structural checks of the
+        // decision logs, so the decisions review can run on a cheap model" is done
         "decisions": { "with": [{ "kind": "claude", "model": "sonnet" }] },
         "code": {
           "with": [
             { "kind": "claude", "model": "sonnet" },
-            { "kind": "opencode", "model": "opencode/deepseek-v4.1-flash-free" }
+            { "kind": "opencode", "model": "opencode/deepseek-v4.1-flash-free", "optional": true }
           ]
         },
         "tests": { "with": [{ "kind": "claude", "model": "sonnet" }] }
@@ -55,7 +58,7 @@
       "verify": {
         "with": [
           { "kind": "claude", "model": "sonnet" },
-          { "kind": "opencode", "model": "opencode/glm-5.3-flash-free" }
+          { "kind": "opencode", "model": "opencode/glm-5.3-flash-free", "optional": true }
         ]
       }
     },

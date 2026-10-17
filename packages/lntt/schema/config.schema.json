@@ -262,7 +262,12 @@
             "timeoutMinutes": {
               "type": "integer",
               "minimum": 1,
-              "description": "How long one agent may take before it is stopped and the round fails. Default 20."
+              "description": "How long one agent may take, from when it starts, before it is stopped (with whatever it started) and counts as failed. Default 20."
+            },
+            "perProvider": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "How many agents of one provider run at once; the others wait their turn. A provider given dozens of sessions at once queues or limits them until they time out. Default 4."
             }
           }
         }
@@ -468,6 +473,10 @@
           "type": "string",
           "minLength": 1,
           "description": "The reasoning effort; claude only."
+        },
+        "optional": {
+          "type": "boolean",
+          "description": "A failure of this agent (a free model that times out) is reported in skipped and does not fail the round. Default false."
         }
       }
     }

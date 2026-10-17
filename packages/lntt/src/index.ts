@@ -9,7 +9,7 @@ import { Ajv } from 'ajv'
 import jsonc from 'jsonc-parser'
 import { isMap, parseDocument } from 'yaml'
 import schema from '../schema/config.schema.json' with { type: 'json' }
-import { ConfigError, check, type Located, locate, parse } from './files.ts'
+import { ConfigError, check, type Located, locate, NoConfigError, parse } from './files.ts'
 
 export { checkAgentsBlock, managedBlock, syncAgentsBlock } from './agents.ts'
 export {
@@ -23,13 +23,16 @@ export {
   typeFor,
 } from './branch.ts'
 export { commitlintConfig } from './commitlint.ts'
-export { ConfigError, type Format, type Located } from './files.ts'
+export { ConfigError, type Format, type Located, NoConfigError } from './files.ts'
 export {
   type Answer,
+  type AskOptions,
   askAll,
+  type HeadlessAgent,
   headlessInvocation,
   type Invocation,
   parseReply,
+  providerOf,
   type Question,
   type Reply,
   type Spawn,
@@ -96,7 +99,7 @@ export function findConfig(cwd: string): Located {
     const found = locate(join(dir, '.agents'), 'config')
     if (found) return found
     if (dirname(dir) === dir) {
-      throw new ConfigError(`no .agents/config.jsonc or .agents/config.yml in ${cwd} or above`)
+      throw new NoConfigError(`no .agents/config.jsonc or .agents/config.yml in ${cwd} or above`)
     }
   }
 }

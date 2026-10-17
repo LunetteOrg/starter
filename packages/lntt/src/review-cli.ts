@@ -6,8 +6,16 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
-import { ConfigError } from './files.ts'
-import { askAll, headlessInvocation, type Invocation, type Progress, type Spawn } from './headless.ts'
+import { NoConfigError } from './files.ts'
+import {
+  type HeadlessAgent as Agent,
+  askAll,
+  headlessInvocation,
+  type Invocation,
+  type Progress,
+  providerOf,
+  type Spawn,
+} from './headless.ts'
 import { findConfig, loadConfig } from './index.ts'
 import {
   agentLabel,
@@ -23,7 +31,6 @@ import {
   runRound,
 } from './review.ts'
 import { commandExists } from './viewer.ts'
-import type { Agent } from './worktree.ts'
 
 const USAGE = `usage: lntt review [--base <branch>] [--plan]
        lntt review reply <finding> <answer>`
@@ -50,7 +57,7 @@ function loaded(): Record<string, unknown> {
   try {
     findConfig(cwd())
   } catch (error) {
-    if (error instanceof ConfigError) return {}
+    if (error instanceof NoConfigError) return {}
     throw error
   }
   return loadConfig(cwd()).data
@@ -58,12 +65,7 @@ function loaded(): Record<string, unknown> {
 
 // Where each agent sends the diff: the project's choice, shown every time.
 function destinations(agents: Agent[]): string {
-  const to = new Set(
-    agents.map((a) =>
-      a.kind === 'claude' ? 'anthropic (claude)' : `${a.model?.split('/')[0] ?? 'default'} (${a.kind})`,
-    ),
-  )
-  return [...to].join(', ')
+  return [...new Set(agents.map((a) => `${providerOf(a)} (${a.kind})`))].join(', ')
 }
 
 // The decision logs, as the decisions lens needs to find them.
@@ -112,24 +114,28 @@ function duration(ms: number): string {
 // person at the terminal. A watcher that should wake only when it matters (the review
 // skill's) filters `failed` and `round N done`: every other line is routine.
 function reporter(): { progress: (event: Progress) => void; stop: () => void } {
-  const running = new Map<string, number>()
+  // By question, not by label: two agents can carry the same label.
+  const running = new Map<number, string>()
   const since = Date.now()
   const timer = setInterval(() => {
     if (running.size === 0) return
-    const labels = [...running.keys()].join(', ')
+    const labels = [...running.values()].join(', ')
     stderr.write(`lntt review: running ${running.size} (${duration(Date.now() - since)}): ${labels}\n`)
   }, 30_000)
   return {
     progress(event) {
       if (event.type === 'start') {
-        running.set(event.label, Date.now())
+        running.set(event.index, event.label)
         stderr.write(`lntt review: start ${event.label}\n`)
         return
       }
-      running.delete(event.label)
+      running.delete(event.index)
       const took = duration(event.ms)
-      if (!event.answer.ok) stderr.write(`lntt review: failed ${event.label} in ${took}: ${event.answer.error}\n`)
-      else {
+      if (!event.answer.ok) {
+        // An optional agent's failure does not need anyone: not a `failed` line.
+        const word = event.optional ? 'skipped' : 'failed'
+        stderr.write(`lntt review: ${word} ${event.label} in ${took}: ${event.answer.error}\n`)
+      } else {
         const cost = event.answer.reply.cost === null ? '' : ` (${event.answer.reply.cost.toFixed(3)} $)`
         stderr.write(`lntt review: done ${event.label} in ${took}${cost}\n`)
       }
@@ -138,10 +144,32 @@ function reporter(): { progress: (event: Progress) => void; stop: () => void } {
   }
 }
 
+// Each agent runs in a process group of its own, so a timeout stops it and whatever it
+// started; an interrupt of lntt review stops every group still running.
+const groups = new Set<number>()
+function stopGroups(): void {
+  for (const pid of groups) {
+    try {
+      process.kill(-pid, 'SIGTERM')
+    } catch {}
+  }
+}
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(signal, () => {
+    stopGroups()
+    exit(130)
+  })
+}
+
 function spawner(timeoutMinutes: number): Spawn {
   return (inv: Invocation) =>
     new Promise((resolve, reject) => {
-      const child = spawn(inv.command, inv.args, { env: { ...env, ...inv.env }, stdio: ['pipe', 'pipe', 'pipe'] })
+      const child = spawn(inv.command, inv.args, {
+        env: { ...env, ...inv.env },
+        stdio: ['pipe', 'pipe', 'pipe'],
+        detached: true,
+      })
+      if (child.pid) groups.add(child.pid)
       let out = ''
       let err = ''
       child.stdout.on('data', (chunk) => {
@@ -151,7 +179,9 @@ function spawner(timeoutMinutes: number): Spawn {
         err += chunk
       })
       const timer = setTimeout(() => {
-        child.kill('SIGTERM')
+        try {
+          if (child.pid) process.kill(-child.pid, 'SIGTERM')
+        } catch {}
         reject(new Error(`timed out after ${timeoutMinutes} minutes`))
       }, timeoutMinutes * 60_000)
       child.on('error', (error) => {
@@ -160,6 +190,7 @@ function spawner(timeoutMinutes: number): Spawn {
       })
       child.on('close', (code) => {
         clearTimeout(timer)
+        if (child.pid) groups.delete(child.pid)
         if (code === 0) resolve(out)
         else
           reject(
@@ -194,8 +225,7 @@ async function round(args: string[]): Promise<number> {
   const config = reviewConfig(data)
   const dirty = git('status', '--porcelain')
   if (dirty !== '') {
-    stderr.write(`lntt review: the working tree has uncommitted changes; the review reads commits:\n${dirty}\n`)
-    return 1
+    throw new Error(`the working tree has uncommitted changes; the review reads commits:\n${dirty}`)
   }
   const branch = git('rev-parse', '--abbrev-ref', 'HEAD')
   if (branch === 'HEAD') throw new Error('HEAD is detached; the review keeps its rounds per branch: switch to one')
@@ -247,7 +277,8 @@ async function round(args: string[]): Promise<number> {
       range,
       readBrief: (path) => readFileSync(join(root, path), 'utf8'),
     },
-    (questions) => askAll(questions, spawner(config.timeoutMinutes), report.progress),
+    (questions) =>
+      askAll(questions, spawner(config.timeoutMinutes), report.progress, { perProvider: config.perProvider }),
     open,
   )
   // The reviewers read the working tree: a commit or an edit during the round means they
@@ -268,7 +299,7 @@ async function round(args: string[]): Promise<number> {
   report.stop()
   const cost = result.cost === null ? '' : `, ${result.cost.toFixed(3)} $`
   stderr.write(
-    `lntt review: round ${saved.round} done in ${duration(Date.now() - began)}: ${result.findings.length} findings, ${result.refuted.length} refuted, ${result.failed.length} failed${cost}\n`,
+    `lntt review: round ${saved.round} done in ${duration(Date.now() - began)}: ${result.findings.length} findings, ${result.refuted.length} refuted, ${result.failed.length} failed, ${result.skipped.length} skipped${cost}\n`,
   )
   stdout.write(`${JSON.stringify(result, null, 2)}\n`)
   return roundClean(result) ? 0 : 1
@@ -303,6 +334,7 @@ async function reply(args: string[]): Promise<number> {
     })),
     spawner(config.timeoutMinutes),
     report.progress,
+    { perProvider: config.perProvider },
   )
   report.stop()
   const replies = answers.map((a, i) => ({
@@ -323,7 +355,8 @@ export async function main([command, ...args]: string[]): Promise<void> {
     if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
       usage(error.message)
     }
-    stderr.write(`lntt review: ${(error as Error).message}\n`)
+    // `error:` is what the review skill watches for, with `failed` and `round N done`.
+    stderr.write(`lntt review: error: ${(error as Error).message}\n`)
     exit(1)
   }
 }

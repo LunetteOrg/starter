@@ -33,6 +33,7 @@ describe('the configuration', () => {
       },
       verify: { with: [{ kind: 'claude', model: 'sonnet' }], severities: ['blocker', 'warning'] },
       timeoutMinutes: 20,
+      perProvider: 4,
     })
   })
 
@@ -631,5 +632,133 @@ describe('what the first real round taught', () => {
       merged.map((f) => [f.id, f.what, f.foundBy.length]),
       [['f5', 'first', 2]],
     )
+  })
+
+  describe('what the second real round taught', () => {
+    const sonnet = { kind: 'claude', model: 'sonnet' }
+    const glm = { kind: 'opencode', model: 'opencode/glm', optional: true }
+    const deepseek = { kind: 'opencode', model: 'opencode/deepseek', optional: true }
+    const config = reviewConfig({
+      delivery: {
+        review: {
+          reviewers: {
+            decisions: { with: [] },
+            tests: { with: [] },
+            code: { with: [{ kind: 'claude', model: 'haiku' }, deepseek] },
+          },
+          verify: { with: [sonnet, glm] },
+        },
+      },
+    })
+    const input = {
+      base: 'mb',
+      head: 'h',
+      files: ['a.ts'],
+      diff: 'D',
+      records: '',
+      range: roundRange(null, 'b', 'h', 'mb', () => true),
+    }
+    const first = (p: string) => p.split('\n')[0] as string
+    const ask =
+      (answer: (prompt: string, model?: string) => string | Error): Ask =>
+      async (qs) =>
+        qs.map((q) => {
+          const a = answer(q.prompt, q.agent.model)
+          return a instanceof Error
+            ? { ok: false as const, error: a.message }
+            : { ok: true as const, reply: { text: a, session: 's', cost: null } }
+        })
+
+    test('the verdict counts the verifiers that answered; one that failed does not split it', async () => {
+      const result = await runRound(
+        { ...config, verify: { with: [sonnet, { ...glm, optional: false }], severities: ['blocker', 'warning'] } },
+        input,
+        ask((p, model) => {
+          if (first(p).includes('Lens:')) return model === 'haiku' ? '- [blocker] a.ts:1 — b — a' : 'no findings'
+          return model === 'sonnet' ? 'refuted\na.ts:2 guards it' : new Error('timed out after 20 minutes')
+        }),
+      )
+      assert.deepEqual(
+        result.refuted.map((f) => f.id),
+        ['f1'],
+      )
+      assert.equal(result.failed.length, 1, 'the failed verifier is still a failure of the round')
+    })
+
+    test('when no verifier answered, the finding is undecided', async () => {
+      const result = await runRound(
+        { ...config, verify: { with: [{ ...glm, optional: false }], severities: ['blocker'] } },
+        input,
+        ask((p, model) =>
+          first(p).includes('Lens:')
+            ? model === 'haiku'
+              ? '- [blocker] a.ts:1 — b — a'
+              : 'no findings'
+            : new Error('down'),
+        ),
+      )
+      assert.equal(result.findings[0]?.verdict, 'undecided')
+    })
+
+    test('an optional agent that fails is reported in skipped and does not keep the round from being clean', async () => {
+      const result = await runRound(
+        config,
+        input,
+        ask((p, model) => {
+          if (first(p).includes('Lens:'))
+            return model === 'haiku' ? '- [warning] a.ts:1 — w — a' : new Error('timed out')
+          return model === 'sonnet' ? 'refuted\nno' : new Error('timed out')
+        }),
+      )
+      assert.deepEqual(result.failed, [])
+      assert.deepEqual(
+        result.skipped.map((s) => [s.lens, s.agent]),
+        [
+          ['code', 'opencode opencode/deepseek'],
+          ['verify f1', 'opencode opencode/glm'],
+        ],
+      )
+      assert.equal(roundClean(result), true)
+    })
+
+    test('an optional agent that answers counts like any other', async () => {
+      const result = await runRound(
+        config,
+        input,
+        ask((p, model) => {
+          if (first(p).includes('Lens:')) return model === 'haiku' ? '- [warning] a.ts:1 — w — a' : 'no findings'
+          return model === 'sonnet' ? 'refuted\nno' : 'confirmed\nyes'
+        }),
+      )
+      assert.equal(result.findings[0]?.verdict, 'undecided', 'sonnet refutes, glm confirms: split')
+    })
+
+    test('a fresh finding at another line of the same file is not joined to an open one', async () => {
+      const open: Checked[] = [
+        {
+          id: 'f1',
+          severity: 'warning',
+          path: 'a.ts',
+          line: 9,
+          what: 'o',
+          action: 'a',
+          foundBy: [],
+          verdict: 'confirmed',
+          proofs: [],
+        },
+      ]
+      const result = await runRound(
+        { ...config, verify: null },
+        input,
+        ask((p, model) =>
+          first(p).includes('Lens:') && model === 'haiku' ? '- [warning] a.ts:1 — new — a' : 'no findings',
+        ),
+        open,
+      )
+      assert.deepEqual(
+        result.findings.map((f) => f.id),
+        ['f1', 'f2'],
+      )
+    })
   })
 })

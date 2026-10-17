@@ -42,7 +42,16 @@ same way every time; the `review` skill keeps the judgement.
   clean round (exit 0) has no blocker or warning left and no reviewer or verifier that
   failed; notes are reported, never blocking. A reply in neither the findings' format nor
   `no findings` counts as a failed reviewer, and a round with a failure does not move the
-  reviewed commit.
+  reviewed commit. A fresh finding at the anchor of an open one joins it. A round runs
+  on a branch (a detached HEAD is refused) whose head does not move until it ends.
+- **Load:** at most `perProvider` agents of one provider run at once, the others waiting
+  their turn; a provider given dozens of sessions at once queues them until they time
+  out. A verdict counts the verifiers that answered. An agent marked `optional` (a free
+  model) that fails is reported in `skipped` and does not fail the round.
+- **Progress is a contract:** stderr carries a line when each agent starts and ends,
+  `failed` or `skipped` for one that did not answer, the agents still running every 30
+  seconds, `round N done` at the end and `error:` for a round that could not start. The
+  `review` skill wakes on `failed`, `error:` and `round N done` only.
 - **A conversation inside a round:** `lntt review reply` resumes the sessions of the
   reviewers who found a finding with the author's answer; it closes when they all
   withdraw it. A disagreement that remains goes to the person.

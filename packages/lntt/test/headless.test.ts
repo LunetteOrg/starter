@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { askAll, headlessInvocation, parseReply, type Spawn } from '../src/index.ts'
+import { askAll, headlessInvocation, parseReply, providerOf, type Spawn } from '../src/index.ts'
 
 describe('a headless agent, read-only', () => {
   test('claude: print mode, JSON, only the read tools and no MCP server, the prompt on stdin', () => {
@@ -192,5 +192,52 @@ describe('several agents at once', () => {
     )
     assert.equal(results[0]?.ok, false)
     assert.equal(results[1]?.ok, true)
+  })
+
+  test('at most `perProvider` agents of one provider at once; another provider is not held', async () => {
+    const running: Record<string, number> = {}
+    const peak: Record<string, number> = {}
+    const spawn: Spawn = async (inv) => {
+      const key = inv.command === 'claude' ? 'claude' : 'opencode'
+      running[key] = (running[key] ?? 0) + 1
+      peak[key] = Math.max(peak[key] ?? 0, running[key] as number)
+      await new Promise((r) => setTimeout(r, 5))
+      running[key] = (running[key] as number) - 1
+      return key === 'claude'
+        ? JSON.stringify({ result: 'r', session_id: 's', is_error: false })
+        : JSON.stringify({ type: 'text', sessionID: 'ses_1', part: { messageID: 'm', text: 'r' } })
+    }
+    const questions = [
+      ...Array.from({ length: 5 }, () => ({ agent: { kind: 'claude' }, prompt: 'P' })),
+      ...Array.from({ length: 3 }, () => ({ agent: { kind: 'opencode', model: 'x/y' }, prompt: 'P' })),
+    ]
+    const results = await askAll(questions, spawn, () => {}, { perProvider: 2 })
+    assert.equal(results.filter((a) => a.ok).length, 8)
+    assert.deepEqual(peak, { claude: 2, opencode: 2 })
+  })
+
+  test('the provider is the part of the model before the slash; claude is one provider', () => {
+    assert.equal(providerOf({ kind: 'claude', model: 'sonnet' }), 'anthropic')
+    assert.equal(providerOf({ kind: 'opencode', model: 'opencode/glm-5.3-flash-free' }), 'opencode')
+    assert.equal(providerOf({ kind: 'opencode', model: 'mistral/devstral' }), 'mistral')
+    assert.equal(providerOf({ kind: 'opencode' }), 'opencode')
+  })
+
+  test('a start is reported when the agent starts, not while it waits for its turn', async () => {
+    const events: string[] = []
+    const spawn: Spawn = async () => {
+      events.push('spawn')
+      return JSON.stringify({ result: 'r', session_id: 's', is_error: false })
+    }
+    await askAll(
+      [
+        { agent: { kind: 'claude' }, prompt: 'A', label: 'a' },
+        { agent: { kind: 'claude' }, prompt: 'B', label: 'b' },
+      ],
+      spawn,
+      (e) => events.push(`${e.type} ${e.label}`),
+      { perProvider: 1 },
+    )
+    assert.deepEqual(events, ['start a', 'spawn', 'end a', 'start b', 'spawn', 'end b'])
   })
 })

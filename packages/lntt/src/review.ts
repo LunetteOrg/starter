@@ -7,8 +7,7 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join, matchesGlob } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Answer, Question } from './headless.ts'
-import type { Agent } from './worktree.ts'
+import type { HeadlessAgent as Agent, Answer, Question } from './headless.ts'
 
 export type Severity = 'blocker' | 'warning' | 'note'
 const SEVERITIES: Severity[] = ['blocker', 'warning', 'note']
@@ -25,6 +24,8 @@ export interface ReviewConfig {
   reviewers: Record<string, Lens>
   verify: { with: Agent[]; severities: Severity[] } | null
   timeoutMinutes: number
+  // Agents of one provider running at once.
+  perProvider: number
 }
 
 export const TEST_PATHS = ['**/*.test.*', '**/*.spec.*', '**/test/**', '**/tests/**', '**/__tests__/**']
@@ -37,6 +38,7 @@ const DEFAULT: ReviewConfig = {
   },
   verify: { with: [{ kind: 'claude', model: 'sonnet' }], severities: ['blocker', 'warning'] },
   timeoutMinutes: 20,
+  perProvider: 4,
 }
 
 interface RawLens {
@@ -49,6 +51,7 @@ interface RawReview {
   reviewers?: Record<string, RawLens>
   verify?: false | { with?: Agent[]; severities?: Severity[] }
   timeoutMinutes?: number
+  perProvider?: number
 }
 
 // delivery.review over the defaults, lens by lens. A lens with no agents is off.
@@ -73,7 +76,12 @@ export function reviewConfig(data: Record<string, unknown>): ReviewConfig {
           with: raw.verify?.with ?? (DEFAULT.verify?.with as Agent[]),
           severities: raw.verify?.severities ?? (DEFAULT.verify?.severities as Severity[]),
         }
-  return { reviewers, verify, timeoutMinutes: raw.timeoutMinutes ?? DEFAULT.timeoutMinutes }
+  return {
+    reviewers,
+    verify,
+    timeoutMinutes: raw.timeoutMinutes ?? DEFAULT.timeoutMinutes,
+    perProvider: raw.perProvider ?? DEFAULT.perProvider,
+  }
 }
 
 export function lensApplies(lens: Lens, files: string[]): boolean {
@@ -311,6 +319,14 @@ export interface Proof {
   by: string
   outcome: Outcome
   proof: string
+  // The verifier did not answer: its proof is the error, and it has no say in the verdict.
+  failed?: true
+}
+
+export interface Failure {
+  lens: string
+  agent: string
+  error: string
 }
 
 export type Verdict = Outcome | 'unverified' | 'withdrawn'
@@ -329,7 +345,10 @@ export interface RoundResult {
   // Confirmed, undecided and unverified findings: what the author acts on.
   findings: Checked[]
   refuted: Checked[]
-  failed: { lens: string; agent: string; error: string }[]
+  // Agents that did not answer: a failure keeps the round from being clean.
+  failed: Failure[]
+  // Optional agents that did not answer: reported, never blocking.
+  skipped: Failure[]
   cost: number | null
 }
 
@@ -369,6 +388,7 @@ export async function runRound(
     findings: [],
     refuted: [],
     failed: [],
+    skipped: [],
     cost: null,
   }
   if (input.files.length === 0) {
@@ -391,7 +411,12 @@ export async function runRound(
   for (const [i, answer] of answers.entries()) {
     const job = jobs[i] as (typeof jobs)[number]
     result.cost = addCost(result.cost, answer)
-    const failed = (error: string) => result.failed.push({ lens: job.lens, agent: agentLabel(job.agent), error })
+    const failed = (error: string) =>
+      (job.agent.optional ? result.skipped : result.failed).push({
+        lens: job.lens,
+        agent: agentLabel(job.agent),
+        error,
+      })
     if (!answer.ok) {
       failed(answer.error)
       continue
@@ -440,10 +465,14 @@ export async function runRound(
     const check = checks[i] as (typeof checks)[number]
     result.cost = addCost(result.cost, answer)
     const by = agentLabel(check.agent)
-    if (!answer.ok)
-      result.failed.push({ lens: `verify ${(found[check.finding] as Found).id}`, agent: by, error: answer.error })
+    if (!answer.ok) {
+      const failure = { lens: `verify ${(found[check.finding] as Found).id}`, agent: by, error: answer.error }
+      ;(check.agent.optional ? result.skipped : result.failed).push(failure)
+    }
     proofs[check.finding]?.push(
-      answer.ok ? { by, ...parseOutcome(answer.reply.text) } : { by, outcome: 'undecided', proof: answer.error },
+      answer.ok
+        ? { by, ...parseOutcome(answer.reply.text) }
+        : { by, outcome: 'undecided', proof: answer.error, failed: true },
     )
   })
   found.forEach((f, i) => {
@@ -451,7 +480,10 @@ export async function runRound(
     const before = i < carried.length ? (f as Checked) : null
     const checked: Checked = {
       ...f,
-      verdict: verified(i) ? verdict(mine.map((p) => p.outcome)) : (before?.verdict ?? 'unverified'),
+      // Only the verifiers that answered decide; none answering leaves it undecided.
+      verdict: verified(i)
+        ? verdict(mine.filter((p) => !p.failed).map((p) => p.outcome))
+        : (before?.verdict ?? 'unverified'),
       proofs: mine,
     }
     if (checked.verdict === 'refuted') result.refuted.push(checked)

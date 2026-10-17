@@ -164,7 +164,10 @@ when no blocker or warning is left and nothing failed, 1 otherwise; notes are re
 and do not block, nor are they carried to the next round. A reply that is neither
 finding lines nor `no findings` counts as a failed reviewer; after a failure the next
 round reads the same range again. A reviewer is stopped after
-`timeoutMinutes` (default 20) and counts as failed. Agents that are not installed, or
+`delivery.review.timeoutMinutes` and counts as failed; at most
+`delivery.review.perProvider` agents of one provider run at once. An agent marked
+`optional` that fails is reported in `skipped` and does not fail the round. A round that
+cannot start prints `lntt review: error: …`. Agents that are not installed, or
 that cannot be made read-only, are refused before any starts.
 
 `reply` resumes the sessions of the reviewers who found the finding with the author's

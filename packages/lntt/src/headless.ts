@@ -20,8 +20,20 @@ export interface Reply {
   cost: number | null
 }
 
+// An agent as lntt review lists it: optional when its failure (a free model that times
+// out) is reported without failing the round.
+export interface HeadlessAgent extends Agent {
+  optional?: boolean
+}
+
+// Where the prompt goes: claude's provider, or the provider part of an opencode model.
+export function providerOf(agent: Agent): string {
+  if (agent.kind === 'claude') return 'anthropic'
+  return agent.model?.split('/')[0] ?? agent.kind
+}
+
 export interface Question {
-  agent: Agent
+  agent: HeadlessAgent
   prompt: string
   // A session to resume: the same reviewer, answering the author.
   session?: string
@@ -110,20 +122,43 @@ export function parseReply(kind: string, stdout: string): Reply {
   return { text, session: events.find((e) => e.sessionID)?.sessionID ?? null, cost: null }
 }
 
-export type Progress = { type: 'start'; label: string } | { type: 'end'; label: string; answer: Answer; ms: number }
+export type Progress =
+  | { type: 'start'; index: number; label: string; optional: boolean }
+  | { type: 'end'; index: number; label: string; optional: boolean; answer: Answer; ms: number }
 
-// Every question starts at once; each answer stays in its question's place. Progress
-// hears each start, then each end as it comes.
+export interface AskOptions {
+  // How many agents of one provider run at once; the rest wait their turn. A provider
+  // given dozens of sessions at once queues or limits them until they time out.
+  perProvider?: number
+}
+
+// Every question runs as soon as its provider has a free slot; each answer stays in its
+// question's place. Progress hears each start when the agent starts, and each end.
 export async function askAll(
   questions: Question[],
   spawn: Spawn,
   progress: (event: Progress) => void = () => {},
+  options: AskOptions = {},
 ): Promise<Answer[]> {
-  const runs = questions.map((q) => {
-    const label = q.label ?? q.agent.kind
-    const started = Date.now()
-    progress({ type: 'start', label })
-    return (async (): Promise<Answer> => {
+  const limit = options.perProvider ?? Number.POSITIVE_INFINITY
+  const queues = new Map<string, { running: number; waiting: (() => void)[] }>()
+  const slot = async (provider: string): Promise<() => void> => {
+    const q = queues.get(provider) ?? { running: 0, waiting: [] }
+    queues.set(provider, q)
+    if (q.running >= limit) await new Promise<void>((resolve) => q.waiting.push(resolve))
+    q.running++
+    return () => {
+      q.running--
+      q.waiting.shift()?.()
+    }
+  }
+  return Promise.all(
+    questions.map(async (q, index): Promise<Answer> => {
+      const label = q.label ?? q.agent.kind
+      const optional = q.agent.optional === true
+      const release = await slot(providerOf(q.agent))
+      const started = Date.now()
+      progress({ type: 'start', index, label, optional })
       let answer: Answer
       try {
         const stdout = await spawn(headlessInvocation(q.agent, q.prompt, q.session))
@@ -131,9 +166,9 @@ export async function askAll(
       } catch (error) {
         answer = { ok: false, error: (error as Error).message }
       }
-      progress({ type: 'end', label, answer, ms: Date.now() - started })
+      release()
+      progress({ type: 'end', index, label, optional, answer, ms: Date.now() - started })
       return answer
-    })()
-  })
-  return Promise.all(runs)
+    }),
+  )
 }
