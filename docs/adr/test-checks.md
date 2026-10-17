@@ -38,8 +38,10 @@ reason, and sits at the lowest level where its assertion can.
   - `focus`: `.only`, a new `.skip` or todo, a test with no assertion.
   - `rules`: the lines that match a rule; a rule asserted by the suite is cited. A rule
     whose `anchor` names a record that is not there, or a heading the record does not
-    have, fails; headings resolve as GitHub's slugs do over CommonMark's blocks (a repeated heading is numbered
-    `-1`, `-2`, fenced lines are no heading).
+    have, fails. Headings resolve as GitHub's slugs do, over CommonMark's blocks: a
+    heading is indented by up to three spaces, a repeated heading is numbered `-1`,
+    `-2`, and a fence closes on a bare run at least as long as its opening, so fenced
+    lines are no heading.
   - `touched` (needs `--base`): the lines the diff changes and the tests that run them,
     from the `coverage` of the test files that import the changed file, or from imports
     alone when a level has no `coverage`. Coverage says which tests to run and which

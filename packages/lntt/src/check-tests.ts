@@ -358,7 +358,7 @@ export function recordMissing(root: string, anchor: string): string | null {
     if (fence !== null || !/^ {0,3}#{1,6}(?:\s|$)/.test(line)) continue
     const base = slug(
       line
-        .replace(/^ {0,3}#{1,6}\s*/, '')
+        .replace(/^\s*#{1,6}\s*/, '')
         .replace(/\s+#+\s*$/, '')
         .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'),
     )
