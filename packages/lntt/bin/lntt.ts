@@ -27,6 +27,14 @@
 //     decisions numbers [<file>...]
 //                             every line carrying a figure, of the files or (--base) of the
 //                             records the diff touches
+//     tests [levels]          every test file at exactly one level of tests.levels, opening its
+//                             level's harness; the pyramid and what the diff adds are INFO
+//     tests focus             .only, a new .skip or todo, a test with no assertion
+//     tests rules             the patterns tests.rules forbids in tests
+//     tests touched           (needs --base) the changed lines and the tests that run them
+//     tests mutate <path:line> --text <on the line> --to <mutated>
+//                             applies the mutation in a scratch worktree, runs the tests that
+//                             import the file: PASS killed (failing test), FAIL survived
 //   lntt check cite <path:line>...
 //                             what is on those lines; FAIL for a line or file that does not exist
 //

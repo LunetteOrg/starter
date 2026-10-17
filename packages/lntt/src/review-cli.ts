@@ -16,7 +16,7 @@ import {
 import { join } from 'node:path'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
-import { cite, formatJson, isArea, runArea } from './check.ts'
+import { cite, formatJson, isArea, projectFiles, runArea } from './check.ts'
 import { NoConfigError } from './files.ts'
 import {
   type HeadlessAgent as Agent,
@@ -29,11 +29,13 @@ import {
   timerMs,
 } from './headless.ts'
 import { findConfig, loadConfig } from './index.ts'
+import { describeOutcome, mutateAll } from './mutate.ts'
 import { orcaSubagents, type Subagents } from './orca-subagents.ts'
 import {
   agentLabel,
   type Checked,
   lensApplies,
+  type MutationAnswer,
   parseWithdrawal,
   type ReviewConfig,
   type ReviewState,
@@ -408,6 +410,26 @@ function mergeBase(base: string): string {
   throw new Error(`no ${base} or origin/${base} to compare the branch with; give --base`)
 }
 
+// The mutations the reviewers proposed, run on a scratch copy of the head: the tree the
+// reviewers read is not touched. A run that cannot happen (a project without tests.levels,
+// no scratch worktree) leaves the finding to the verifiers.
+function runMutations(
+  root: string,
+  data: Record<string, unknown>,
+  mutations: { path: string; line: number; text: string; to: string }[],
+): MutationAnswer[] {
+  try {
+    const { outcomes } = mutateAll({ root, data, files: projectFiles(root) }, mutations)
+    return outcomes.map((outcome, i) => {
+      const { message } = describeOutcome(mutations[i] as (typeof mutations)[number], outcome)
+      const decided = outcome.outcome === 'killed' ? 'killed' : outcome.outcome === 'survived' ? 'survived' : null
+      return { decided, proof: message }
+    })
+  } catch (error) {
+    return mutations.map(() => ({ decided: null, proof: `could not run: ${(error as Error).message}` }))
+  }
+}
+
 async function round(args: string[]): Promise<number> {
   const { values } = parseArgs({
     args,
@@ -492,6 +514,7 @@ async function round(args: string[]): Promise<number> {
       readBrief: (path) => readFileSync(join(root, path), 'utf8'),
       checks,
       cite: (path, line) => cite(root, path, line),
+      mutate: async (mutations) => runMutations(root, data, mutations),
     },
     (questions) => {
       report.phase(questions.map((q) => q.label ?? ''))

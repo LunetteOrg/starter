@@ -84,6 +84,9 @@ lntt check agents-md                                    # the managed block of A
 lntt check decisions                                    # the decision logs of recording
 lntt check decisions --base main                        # … and what the diff from main touches
 lntt check decisions numbers docs/adr/review-agents.md  # every line carrying a figure
+lntt check tests                                        # levels, focus, rules (touched needs --base)
+lntt check tests touched --base main                    # the changed lines and the tests that run them
+lntt check tests mutate src/a.ts:12 --text='a > b' --to='a < b'   # does a test fail?
 lntt check cite docs/adr/review-agents.md:12 a.ts:40    # what is on those lines
 lntt check --json                                       # one JSON line per result
 ```
@@ -119,6 +122,27 @@ the records the diff touches only, and prints the **figures** of those records.
 number of two digits or more, the frontmatter, issue numbers and dates apart. Files of a
 nested project (a folder with a `.agents/config.*` of its own, a template) are that
 project's check.
+
+`lntt check tests` reads `tests` of the configuration (the
+[record](../../docs/adr/test-checks.md) says why and how):
+
+- **levels:** each test file (`*.test.*`, `*.spec.*` or a level's `files`) at exactly one
+  level of `tests.levels`, and a file at a level with a `harness` names one of its
+  identifiers. The pyramid per level, what the diff adds to each and the jsdom tests
+  that stub a Web API are `INFO`.
+- **focus:** `.only` (always), `.skip` and todo (the diff's, or all without `--base`),
+  a test with no assertion (`tests.assertions` adds functions that throw).
+- **rules:** `tests.rules`, a regular expression per line of the test files, each with
+  its `anchor`; a rule with `assertedBy` is cited, not checked.
+- **touched** (`--base`): per changed source file, the tests that run its changed lines
+  (from the `coverage` command of their level, an lcov file at `{out}/lcov.info`) and
+  the lines no test runs; without `coverage`, the tests that import the file.
+- **mutate** `path:line --text=<on that line> --to=<mutated>`: applied in a scratch git
+  worktree (the head and the uncommitted files, dependencies shared; the working tree is
+  never written), runs the tests that import the file with the `run` command of their
+  level, `repeat` times in a row. `PASS` is killed (the failing test and its message),
+  `FAIL` survived, `NOT RUN` when the text is not once on the line or the tests fail
+  without the mutation. Write `--text=...` with the `=` when the text starts with `-`.
 
 `cite` reads the working tree: the text of each line, or `FAIL` when the file or the
 line does not exist.
@@ -197,7 +221,7 @@ A round, on a clean working tree:
 1. **What to read:** the branch from where it left the base the first time, then only
    the commits after the last reviewed one (after a rebase, the whole branch again).
    The state is `lntt-review.json` in the worktree's git directory.
-2. **Checks**: a lens named after an area of `lntt check` (`decisions`) gets
+2. **Checks**: a lens named after an area of `lntt check` (`decisions`, `tests`) gets
    `lntt check <area> --base <first commit read> --json` in its prompt, and its brief
    keeps only what needs judgement.
 3. **Reviewers**, all at once: every agent of every lens in `delivery.review.reviewers`
@@ -212,6 +236,10 @@ A round, on a clean working tree:
    clean at the head). A finding on a line past the end of its file is refuted there,
    with no verifier; the others take the line's text to their verifiers. A file that is
    not there goes to the verifiers: the change may delete it.
+   **Mutations**: a `tests` finding that ends with ``mutate: `text` => `mutated` `` is
+   run between the reviewers and the verifiers (`lntt check tests mutate`, one scratch
+   copy for the round): survived confirms the finding and killed refutes it, the run
+   being the proof, with no verifier asked.
 5. **Verifiers**, all at once: each blocker and warning (`delivery.review.verify`) goes
    to every verifier but the agents that found it, briefed to refute it
    ([`agents/verify.md`](./agents/verify.md)). All confirm: confirmed. All refute:

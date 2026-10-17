@@ -314,6 +314,38 @@
         }
       }
     },
+    "tests": {
+      "type": "object",
+      "description": "How the project's tests are organised, read by lntt check tests and by the tests lens of lntt review.",
+      "additionalProperties": false,
+      "properties": {
+        "levels": {
+          "type": "array",
+          "description": "The test levels, lowest first: a test sits at the lowest level where its assertion can fail for the right reason. Every test file (a *.test.* or *.spec.* file, or one a level's files names) matches exactly one level; the pyramid per level is reported, never thresholded.",
+          "items": {
+            "$ref": "#/definitions/testLevel"
+          },
+          "minItems": 1
+        },
+        "rules": {
+          "type": "array",
+          "description": "Patterns the project forbids in tests, each with the record behind it.",
+          "items": {
+            "$ref": "#/definitions/testRule"
+          }
+        },
+        "ignore": {
+          "type": "array",
+          "description": "Globs of files named like tests that are not tests (fixtures a test reads).",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "assertions": {
+          "type": "array",
+          "description": "Functions that fail the test by throwing, which count as an assertion besides expect, assert and the names containing assert, expect, verify or check (run, runOrThrow).",
+          "items": { "type": "string", "pattern": "^[A-Za-z_$][\\w$]*$" }
+        }
+      }
+    },
     "local": {
       "type": "object",
       "description": "How the apps are started and reached locally, read by the run-local skill and lntt local.",
@@ -469,6 +501,101 @@
         "scope": {
           "type": "string",
           "description": "What this log records, in one sentence, so a decision is filed in the right one."
+        }
+      }
+    },
+    "testLevel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "files"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "The level's name (unit, component, integration, e2e)."
+        },
+        "files": {
+          "type": "array",
+          "description": "Globs from the project root of the test files at this level.",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        },
+        "exclude": {
+          "type": "array",
+          "description": "Globs of files the level's files do not take, so that each test file matches one level.",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "environment": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What the level runs in (node, jsdom, chromium, node and a real Postgres): reported, not checked."
+        },
+        "harness": {
+          "type": "array",
+          "description": "Identifiers a file at this level must open (tx, withTestDb, createTestDb): a file that names none of them does not integrate and fails the check.",
+          "items": { "type": "string", "pattern": "^[A-Za-z_$][\\w$]*$" },
+          "minItems": 1
+        },
+        "run": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The command that runs test files of this level, from `cwd`; {files} is replaced by the files, relative to `cwd`, shell-quoted. Exit 0 when they pass. Read by lntt check tests mutate."
+        },
+        "coverage": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Like run, plus coverage: it must write an lcov file at {out}/lcov.info. Read by lntt check tests touched; without it the tests of a line are found from imports."
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Folder, from the project root, where run and coverage start. Default the root."
+        },
+        "repeat": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How many times in a row a mutation run executes the tests (a browser test that is flaky once passes by luck). Default 1."
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How long one run of the command may take. Default 600."
+        }
+      }
+    },
+    "testRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "pattern", "anchor"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A JavaScript regular expression matched against each line of a test file; a match is a violation."
+        },
+        "files": {
+          "type": "array",
+          "description": "Globs of the files the rule applies to. Default every test file.",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What is wrong and what to write instead."
+        },
+        "anchor": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The record behind the rule: path#heading of a decision."
+        },
+        "assertedBy": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A test in the project's own suite that already fails on this pattern: the rule is cited with it and not checked again."
         }
       }
     },

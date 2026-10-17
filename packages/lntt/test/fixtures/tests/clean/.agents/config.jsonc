@@ -1,0 +1,15 @@
+{
+  "tests": {
+    "assertions": ["run"],
+    "levels": [
+      { "name": "unit", "files": ["test/unit/*.test.ts"], "environment": "node" },
+      { "name": "component", "files": ["test/ui/*.test.tsx"], "environment": "jsdom" },
+      {
+        "name": "integration",
+        "files": ["test/integration/*.test.ts"],
+        "environment": "node and a real Postgres",
+        "harness": ["tx", "withTestDb"]
+      }
+    ]
+  }
+}
