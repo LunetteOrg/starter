@@ -67,6 +67,23 @@
 //                             brief is printed for the person to start the agent;
 //                             --prompt replaces the brief (a coordinator's own, a trial)
 //
+//   lntt worktree start --coordinator --theme <slug> --issue <n>... [--approve <n>]...
+//                             a theme's coordinator: one worktree on no issue, the coordinator's
+//                             brief (agents/coordinator.md), on coordinator.models.coordinator
+//   lntt worktree start --theme <slug> --issue <n> [--parent <worktree>] [--context <file>]
+//                       [--size XS|S|M|L|XL] [--workflow]
+//                             a coordinator's child: the theme in its brief, the model of its
+//                             Size, the gate (coordinator.gate) passed before anything is created
+//
+//   lntt ask --to <orchestrator|coordinator|child> [--issue <n>] [--theme <slug>] [--topic <slug>]
+//            [--timeout <s>] <question | ->
+//                             write a message under <git common dir>/lntt-messages/ and wait for
+//                             its answer (polled every 20 s); stdout is the answer
+//   lntt inbox [--as <role>] [--issue <n>] [--theme <slug>] [--wait] [--timeout <s>]
+//                             the unanswered messages to a role, one JSON line each
+//   lntt answer <id> <text | ->
+//                             reply to a message: the same name ending in .answer.md
+//
 //   lntt ci local [--event pull_request|push] [--base <branch>] [--job <key>]...
 //                 [--list] [--strict] [--container]
 //
@@ -101,4 +118,6 @@ else if (args[0] === 'branch') (await import('../src/branch-cli.ts')).main(args.
 else if (args[0] === 'check') (await import('../src/check-cli.ts')).main(args.slice(1))
 else if (args[0] === 'review') await (await import('../src/review-cli.ts')).main(args.slice(1))
 else if (args[0] === 'worktree') (await import('../src/worktree-cli.ts')).main(args.slice(1))
-else (await import('../src/cli.ts')).main(args)
+else if (args[0] === 'ask' || args[0] === 'inbox' || args[0] === 'answer') {
+  ;(await import('../src/messages-cli.ts')).main(args[0], args.slice(1))
+} else (await import('../src/cli.ts')).main(args)

@@ -2,12 +2,25 @@
 // session runs in (usage: bin/lntt.ts).
 
 import { execFileSync, spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
-import { checkBranch } from './branch.ts'
+import { branchName, checkBranch } from './branch.ts'
 import { nameFromIssue, readIssue, rules } from './branch-cli.ts'
+import {
+  agentFor,
+  approvals,
+  approve,
+  type Config,
+  childBrief,
+  coordinatorBrief,
+  gateOf,
+  isApproval,
+} from './coordinator.ts'
 import { ConfigError } from './files.ts'
 import { loadConfig } from './index.ts'
+import { send, waitForAnswer } from './messages.ts'
+import { messagesRoot, pollInterval, systemMailbox } from './messages-cli.ts'
 import {
   type Agent,
   agentArgs,
@@ -24,8 +37,11 @@ import {
   worktreeHost,
 } from './worktree.ts'
 
-const USAGE =
-  'usage: lntt worktree start --issue <n> [--issue <n>]... [--host orca|herdr|git] [--kind <agent>] [--model <id>] [--effort <level>] [--no-agent] [--base <branch>] [--prompt <text>]'
+const USAGE = [
+  'usage: lntt worktree start --issue <n> [--issue <n>]... [--host orca|herdr|git] [--kind <agent>] [--model <id>] [--effort <level>] [--no-agent] [--base <branch>] [--prompt <text>]',
+  '                           [--theme <slug> [--parent <worktree>] [--context <file>] [--size XS|S|M|L|XL] [--workflow]]',
+  '       lntt worktree start --coordinator --theme <slug> --issue <n> [--issue <n>]... [--approve <n>]... [same options]',
+].join('\n')
 const HOSTS: WorktreeHost[] = ['orca', 'herdr', 'git']
 
 function usage(message?: string): never {
@@ -73,15 +89,19 @@ function mainCheckout(): string {
   return common.replace(/\/\.git$/, '')
 }
 
-// delivery.candidate.base, else main.
-function configuredBase(): string {
+// The project's configuration; a project without one has the defaults.
+function projectConfig(): Config & { delivery?: { candidate?: { base?: string } } } {
   try {
-    const delivery = loadConfig(cwd()).data.delivery as { candidate?: { base?: string } } | undefined
-    return delivery?.candidate?.base ?? 'main'
+    return loadConfig(cwd()).data as Config & { delivery?: { candidate?: { base?: string } } }
   } catch (error) {
-    if (error instanceof ConfigError) return 'main'
+    if (error instanceof ConfigError) return {}
     throw error
   }
+}
+
+// delivery.candidate.base, else main.
+function configuredBase(config = projectConfig()): string {
+  return config.delivery?.candidate?.base ?? 'main'
 }
 
 // git and Herdr branch from the remote's copy when there is one: the local base may be behind.
@@ -94,18 +114,64 @@ function gitBase(root: string, base: string): string {
   }
 }
 
+// The orca binary by absolute path, which every brief uses: a PATH that reaches it from
+// one session does not from another. Null when Orca is not the host.
+function orcaPath(host: WorktreeHost): string | null {
+  if (host !== 'orca') return null
+  try {
+    return runner.run('sh', ['-c', 'command -v orca']) || null
+  } catch {
+    return null
+  }
+}
+
+const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/
+
+// A coordinator's child waits for the person's go before anything is created, unless the
+// theme's approved list already has it: the gate is the project's setting
+// (coordinator.gate), not a sentence in a brief. The proposal is one message for the batch.
+function passTheGate(config: Config, theme: string, jobs: Start[], size: string | undefined): void {
+  if (gateOf(config) === 'free') return
+  const root = messagesRoot()
+  const approved = approvals(root, theme)
+  const proposed = jobs.filter((job) => job.issue !== null && !approved.has(job.issue))
+  if (proposed.length === 0) return
+  const list = proposed.map((job) => `- #${job.issue}: ${job.title} (on ${job.base})`).join('\n')
+  const box = systemMailbox()
+  const issues = proposed.map((job) => job.issue as number)
+  const sent = send(
+    box,
+    'orchestrator',
+    `Coordinator ${theme} proposes to start${size ? ` (size ${size})` : ''}:\n${list}\nAnswer "approve" (or "yes", "ok") alone to start; anything else declines.`,
+    {
+      topic: `start-${issues.join('-')}`,
+    },
+  )
+  stderr.write(`lntt worktree: ${sent.id} sent to the orchestrator; no child is created until it approves\n`)
+  const reply = waitForAnswer(box, sent, { intervalMs: pollInterval() })
+  if (!isApproval(reply)) throw new Error(`not approved by the orchestrator: ${reply.trim()}`)
+  approve(root, theme, issues)
+}
+
 function start(args: string[]): void {
   const { values } = parseArgs({
     args,
     options: {
       issue: { type: 'string', multiple: true },
       host: { type: 'string' },
-      kind: { type: 'string', default: 'claude' },
+      kind: { type: 'string' },
       model: { type: 'string' },
       effort: { type: 'string' },
       'no-agent': { type: 'boolean', default: false },
       base: { type: 'string' },
       prompt: { type: 'string' },
+      coordinator: { type: 'boolean', default: false },
+      theme: { type: 'string' },
+      approve: { type: 'string', multiple: true },
+      parent: { type: 'string' },
+      context: { type: 'string' },
+      size: { type: 'string' },
+      workflow: { type: 'boolean', default: false },
     },
   })
   const issues = values.issue ?? []
@@ -114,37 +180,103 @@ function start(args: string[]): void {
   const host = (values.host ?? worktreeHost(env)) as WorktreeHost
   if (!HOSTS.includes(host)) usage(`--host is ${HOSTS.join(', ')}, not ${values.host}`)
 
-  const agent: Agent = {
-    kind: values.kind,
+  const coordinator = values.coordinator
+  const theme = values.theme
+  if (theme !== undefined && !SLUG.test(theme)) usage(`--theme is a slug (a-z, 0-9, -), not ${theme}`)
+  if (coordinator && !theme) usage('--coordinator needs the theme: --theme <slug>')
+  for (const flag of ['parent', 'context', 'size', 'workflow'] as const) {
+    if (coordinator && values[flag]) usage(`--${flag} is a child’s: a coordinator has none`)
+  }
+  if (!coordinator && values.approve) usage('--approve is the coordinator’s: the children it may start at once')
+  for (const flag of ['parent', 'context', 'size', 'workflow'] as const) {
+    if (!coordinator && !theme && values[flag]) usage(`--${flag} needs the theme the child belongs to: --theme <slug>`)
+  }
+  if (values.prompt !== undefined && (values.context || values.workflow)) {
+    usage('--prompt replaces the whole brief, so --context and --workflow have nothing to add to')
+  }
+  const approved = (values.approve ?? []).map((raw) => {
+    if (!issues.includes(raw)) usage(`--approve ${raw} is not one of the --issue of the theme`)
+    return Number(raw)
+  })
+
+  const config = projectConfig()
+  const given: Partial<Agent> = {
+    ...(values.kind ? { kind: values.kind } : {}),
     ...(values.model ? { model: values.model } : {}),
     ...(values.effort ? { effort: values.effort } : {}),
   }
+  const agent: Agent = coordinator
+    ? agentFor(config, { role: 'coordinator' }, given)
+    : agentFor(config, { role: 'child', ...(values.size ? { size: values.size } : {}) }, given)
   // Refused before anything is created: what the agent cannot take.
   agentArgs(agent)
   shellLaunch(agent)
+  const context = values.context ? readFileSync(values.context, 'utf8') : undefined
+  if (values.context && !context?.trim()) usage(`--context ${values.context} is empty`)
   const root = mainCheckout()
-  const base = values.base ?? configuredBase()
+  const base = values.base ?? configuredBase(config)
   const ruleset = rules()
+  const orca = orcaPath(host)
+  const wherever = (branch: string) =>
+    host === 'orca' ? 'the worktree this session starts in' : `${root}/.worktrees/${branch.replace(/\//g, '-')}`
+  const launched = values['no-agent'] || host === 'git' ? null : agent
+
   // Every issue is read and named before anything is created: a batch either starts
   // whole or not at all.
-  const jobs: Start[] = issues.map((raw) => {
-    const issue = Number(raw)
-    const data = readIssue(issue)
-    const branch = nameFromIssue(issue, {}, data)
+  const jobs: Start[] = []
+  if (coordinator) {
+    const themeName = theme as string
+    const branch = branchName('chore', null, themeName)
     const check = checkBranch(branch, ruleset)
-    if (!check.ok) throw new Error(`#${issue}: ${branch} is not a valid name: ${check.reason}`)
-    const worktree =
-      host === 'orca' ? 'the worktree this session starts in' : `${root}/.worktrees/${branch.replace(/\//g, '-')}`
-    return {
-      issue,
-      title: data.title,
+    if (!check.ok) throw new Error(`${branch} is not a valid name: ${check.reason}`)
+    const listed = issues.map((raw) => ({ issue: Number(raw), title: readIssue(Number(raw)).title }))
+    jobs.push({
+      issue: null,
+      title: `Theme ${themeName}`,
       branch,
       base: host === 'orca' ? base : gitBase(root, base),
-      agent: values['no-agent'] || host === 'git' ? null : agent,
+      agent: launched,
       root,
-      brief: values.prompt ?? renderBrief(undefined, { issue, title: data.title, branch, worktree }),
+      brief:
+        values.prompt ??
+        coordinatorBrief({
+          theme: themeName,
+          worktree: wherever(branch),
+          branch,
+          issues: listed,
+          approved,
+          config,
+          orca,
+        }),
+    })
+  } else {
+    for (const raw of issues) {
+      const issue = Number(raw)
+      const data = readIssue(issue)
+      const branch = nameFromIssue(issue, {}, data)
+      const check = checkBranch(branch, ruleset)
+      if (!check.ok) throw new Error(`#${issue}: ${branch} is not a valid name: ${check.reason}`)
+      const worktree = wherever(branch)
+      const common = { issue, title: data.title, branch, worktree }
+      jobs.push({
+        issue,
+        title: data.title,
+        branch,
+        base: host === 'orca' ? base : gitBase(root, base),
+        agent: launched,
+        root,
+        ...(values.parent ? { parent: values.parent } : {}),
+        brief:
+          values.prompt ??
+          (theme
+            ? childBrief(common, { theme, ...(context ? { context } : {}), workflow: values.workflow, orca })
+            : renderBrief(undefined, common)),
+      })
     }
-  })
+  }
+  if (coordinator && approved.length > 0) approve(messagesRoot(), theme as string, approved)
+  if (!coordinator && theme) passTheGate(config, theme, jobs, values.size)
+
   for (const job of jobs) {
     const started =
       host === 'orca'

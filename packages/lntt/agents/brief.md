@@ -11,3 +11,9 @@ You are working on issue #{{issue}}: {{title}}.
 - **Return** a short summary of what changed, the pull request link, and any friction
   met along the way (a missing tool, an unclear rule, a check that failed for reasons
   outside the change).
+
+{{theme}}
+
+{{reporting}}
+
+{{workflow}}
