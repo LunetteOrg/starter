@@ -9,8 +9,9 @@ where, which language, what each one is for) are in the `recording` section of
 
 - **One file per subject**, named after it in kebab-case (`scaffolding-contract.md`).
   The file name is the id: no numbers, no dates in the name. The title is the subject
-  too: no `ADR NN`, no `1.` or `0003` before it; a title that opens on a count, a
-  version or a time (`# 3 retries`, `# 2.0 migration`) is words.
+  too: no `ADR NN` and no number with a mark (`1.`, `7:`, `0003 —`) before it; a title
+  that opens on a count, a version or a time (`# 12 retries`, `# 2.0 migration`) is
+  words.
 - **The file states what holds now.** When a decision changes, its file is rewritten
   and the change lands as a commit. The history of a subject is
   `git log --follow -- <file>`, not a chain of files.
@@ -76,7 +77,8 @@ example), each log's `scope` says which decisions it holds.
 - **No numbers:** a counter is a contended resource between concurrent pull requests,
   and the collision is silent (two different file names, no git conflict). A subject
   name collides only when two people record the same subject, which is the collision
-  worth seeing.
+  worth seeing. A number in the title is the same counter, read where the subject
+  should be.
 
 ## Discarded directions
 

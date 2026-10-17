@@ -217,7 +217,7 @@ describe('lntt check decisions structure', () => {
     assert.match((names()[0] as Result).message, /no template listing two statuses or more/)
   })
 
-  test('a numbered title fails; a small count, a version, a time or a number glued to a lowercase word are words', () => {
+  test('a number with a mark before the subject fails; a count, a version, a time are words', () => {
     project('clean')
     const title = (t: string) => {
       writeFileSync(join(repo, 'docs/adr/api-shape.md'), `---\nstatus: proposed\n---\n\n# ${t}\n`)
@@ -231,6 +231,9 @@ describe('lntt check decisions structure', () => {
       '7:30 standup',
       '1.2 Plan',
       '1.record decisions',
+      '12 retries',
+      '2024 review',
+      '1.2.3 Plan',
     ])
       assert.deepEqual(title(t), [], t)
     for (const t of [
@@ -242,7 +245,8 @@ describe('lntt check decisions structure', () => {
       '7 — Caching',
       '1) Storage',
       '12 — API shape',
-      '0003 Old thing',
+      '0003 — Old thing',
+      `ADR ${12} API shape`,
     ]) {
       assert.deepEqual(title(t), ['names docs/adr/api-shape.md:5'], t)
     }
@@ -448,6 +452,7 @@ describe('lntt check', () => {
     for (const [args, why] of [
       [['check', 'nope'], /no area nope/],
       [['check', '--base='], /--base '' is not a ref/],
+      [['check', '--base=-x'], /--base -x is not a ref/],
       [['check', 'cite'], /give at least one path:line/],
       [['check', 'cite', 'src/app.ts'], /src\/app\.ts is not path:line/],
       [['check', 'decisions', 'structure', 'docs/adr/storage.md'], /structure takes no file/],

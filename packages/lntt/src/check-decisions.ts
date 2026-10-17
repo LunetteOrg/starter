@@ -358,16 +358,12 @@ function namesCheck(root: string, logs: Log[], files: string[], only: Set<string
         .split('\n')
         .findIndex((l) => /^# /.test(l))
       if (title === -1) fail(record, 1, 'no title: a record starts with `# <subject>`')
-      // Numbered: `# ADR NN — …`, `# NNNN …`, and `# N. …`, `# N: …`, `# N) …` with a space,
-      // the end or a capital after the mark (`# 1.Record`). Words: a small count
-      // (`# 3 retries`), a version or a time (`# 2.0`, `# 1.2 Plan`, `# 2.x`, `# 7:30`), a
-      // number glued to a lowercase word (`# 3.js`, `# 1.record`). The decisions skill's
-      // recording rules state it.
-      else if (
-        /^#\s+(?:[AP]DR\b|\d+[.:)](?:\s|$|[A-Z])|\d+\s*[-–—]\s|\d{2,}[\s-])|[AP]DR[ \-#]?\d/.test(
-          lines[title] as string,
-        )
-      ) {
+      // Numbered: `ADR`/`PDR` and a number, or a number followed by a mark: a dash
+      // (`# 0003 — …`), or `.`, `:`, `)` with a space, the end or a capital after it
+      // (`# 1. …`, `# 1.Record`). Anything else is words: a count (`# 12 retries`), a
+      // version or a time (`# 2.0`, `# 1.2 Plan`, `# 7:30`), a number glued to a lowercase
+      // word (`# 3.js`). The decisions skill's recording rules state it.
+      else if (/^#\s+(?:[AP]DR\b|\d+[.:)](?:\s|$|[A-Z])|\d+\s*[-–—]\s)|[AP]DR[ \-#]?\d/.test(lines[title] as string)) {
         fail(record, title + 1, `the title carries a number: ${(lines[title] as string).trim()}`)
       }
       if (!statuses) continue
