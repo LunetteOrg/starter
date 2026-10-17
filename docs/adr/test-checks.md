@@ -30,7 +30,7 @@ reason, and sits at the lowest level where its assertion can.
   suite already asserts the pattern, `assertedBy`, which cites that test instead of
   checking again. `tests.ignore` takes out files named like tests that are not, and
   `tests.assertions` names functions that fail a test by throwing.
-- **Five checks.**
+- **The checks.**
   - `levels`: every test file (`*.test.*`, `*.spec.*`, or a level's `files`) matches
     exactly one level, and a file that does not open its level's harness fails. The
     pyramid per level, what the diff adds to each, and the jsdom tests that stub a Web
@@ -85,8 +85,7 @@ reason, and sits at the lowest level where its assertion can.
 - A mutation is proposed in a line whose text and mutated text hold no
   backtick: the reviewer reports other lines as notes.
 - An interrupted run (SIGINT, SIGTERM) leaves its scratch worktree registered under the
-  system's temp folder: `git worktree prune` after removing the `lntt-mutate-*` folder
-  cleans it. The working tree is untouched.
+  system's temp folder. The working tree is untouched.
 - A mutation run costs the tests of the files that import the changed file. A timeout
   stops the shell that runs the command; a process it started may outlive it.
 - Each scratch worktree copies the links of `node_modules`; a project whose tests need
@@ -106,5 +105,10 @@ reason, and sits at the lowest level where its assertion can.
   by whoever knows what the line guards.
 - **Mutating the working tree and restoring it.** An interrupt or a crash leaves the
   author's files mutated; the scratch worktree cannot.
+- **A process that removes the scratch when `lntt` is interrupted.** A run waits on its
+  tests synchronously, so a signal handler cannot run during it; a second process
+  watching for `lntt` to end adds a platform dependency (`kill -0`, a fractional
+  `sleep`), a race with the tests still writing, and its own tests, for a leftover
+  folder in the temp directory.
 - **Coverage as an acceptance criterion.** A line run is not a line checked; coverage
   only names the tests to run.

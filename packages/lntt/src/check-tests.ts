@@ -342,13 +342,17 @@ export function recordMissing(root: string, anchor: string): string | null {
   const slugs = new Set<string>()
   let fence: string | null = null
   for (const line of readFileSync(abs, 'utf8').split('\n')) {
-    const marker = /^\s*(```+|~~~+)/.exec(line)?.[1]
-    if (marker && fence === null) {
-      fence = marker[0] as string
-      continue
-    }
-    if (marker && fence !== null) {
-      if (marker[0] === fence) fence = null
+    // CommonMark: a fence opens on a run of three or more ` or ~ and closes on a bare
+    // run of the same character at least as long.
+    if (fence === null) {
+      const open = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1]
+      if (open) {
+        fence = open
+        continue
+      }
+    } else {
+      const close = /^ {0,3}(`+|~+)\s*$/.exec(line)?.[1]
+      if (close && close[0] === fence[0] && close.length >= fence.length) fence = null
       continue
     }
     if (fence !== null || !/^#{1,6}\s/.test(line)) continue

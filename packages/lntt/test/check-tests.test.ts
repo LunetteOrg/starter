@@ -223,7 +223,7 @@ describe('lntt check tests rules', () => {
     project('defects')
     writeFileSync(
       join(repo, 'docs/adr/test.md'),
-      '# Tests\n\n## 3. No module mocks\n\n## Waits\n\n## Waits\n\n```\n# Not a heading\n```\n\n## After a fence\n\n~~~\n# Tilde\n```\n# Mixed\n~~~\n\n## A [link heading](http://x) ##\n\n## no_module_mocks\n',
+      '# Tests\n\n## 3. No module mocks\n\n## Waits\n\n## Waits\n\n```\n# Not a heading\n```\n\n## After a fence\n\n~~~\n# Tilde\n```\n# Mixed\n~~~\n\n````\n```\n# Long\n```js\n# Info\n````\n\n## A [link heading](http://x) ##\n\n## no_module_mocks\n\n## Before an open fence\n\n```\n# Never closed\n',
     )
     const anchors: Record<string, boolean> = {
       'docs/adr/test.md': true,
@@ -234,6 +234,10 @@ describe('lntt check tests rules', () => {
       'docs/adr/test.md#no_module_mocks': true,
       'docs/adr/test.md#tilde': false,
       'docs/adr/test.md#mixed': false,
+      'docs/adr/test.md#long': false,
+      'docs/adr/test.md#info': false,
+      'docs/adr/test.md#before-an-open-fence': true,
+      'docs/adr/test.md#never-closed': false,
       'docs/adr/test.md#waits#1': false,
       'docs/adr/test.md#a-link-heading': true,
       'docs/adr/test.md#waits-2': false,
