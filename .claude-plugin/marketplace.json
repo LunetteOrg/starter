@@ -8,11 +8,12 @@
     {
       "name": "lunette",
       "source": "./plugins/lunette",
-      "description": "Decision records and process descriptions, commit messages, running the app locally; values from .agents/config.*",
+      "description": "Decision records and process descriptions, commit messages, running the app locally, reviews with lntt review; a band above the prompt that shows a running review; values from .agents/config.*",
       "skills": [
         "./skills/decisions",
         "./skills/commit-message",
-        "./skills/run-local"
+        "./skills/run-local",
+        "./skills/review"
       ]
     }
   ]

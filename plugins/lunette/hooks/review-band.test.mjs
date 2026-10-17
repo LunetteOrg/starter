@@ -124,6 +124,8 @@ describe('the band of a running round', () => {
     const view = fold(round([{ t: T + 9, type: 'done', round: 4, clean: true }]))
     assert.equal(bandLines(view, T + 10, null)[0].text, 'lntt review · round 4 done · clean · 0 refuted · 0 tokens')
     assert.equal(tokens(999_700), '1M tokens')
+    const unclean = fold(round([{ t: T + 9, type: 'done', round: 4, clean: false }]))
+    assert.equal(bandLines(unclean, T + 10, null)[0].text, 'lntt review · round 4 done · 0 findings, 0 failed · 0 refuted · 0 tokens')
   })
 
   test('the progress file read line by line, a line that is not JSON skipped', () => {
