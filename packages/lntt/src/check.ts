@@ -1,0 +1,134 @@
+// `lntt check`: what can be checked without judgement, one area per review lens, so a
+// reviewer reads the result instead of redoing it by eye. Every check says PASS, FAIL or
+// NOT RUN with its reason; INFO is what a check prints without passing or failing (the
+// diff inventory, the figures of a record).
+
+import { execFileSync } from 'node:child_process'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { isAbsolute, join, relative } from 'node:path'
+import { checkAgentsBlock } from './agents.ts'
+import { checkDecisions, decisionFigures } from './check-decisions.ts'
+
+export type Status = 'PASS' | 'FAIL' | 'NOT RUN' | 'INFO'
+
+export interface Result {
+  area: string
+  check: string
+  status: Status
+  path: string | null
+  line: number | null
+  message: string
+}
+
+export const AREAS = ['agents-md', 'decisions'] as const
+export type Area = (typeof AREAS)[number]
+
+export function isArea(name: string): name is Area {
+  return (AREAS as readonly string[]).includes(name)
+}
+
+export interface CheckOptions {
+  root: string
+  data: Record<string, unknown>
+  // Limits a check to what the diff from this ref touches, where that makes sense.
+  base?: string
+}
+
+// The files a check reads: tracked or new and not ignored, relative to the root, less
+// those of a nested project (a folder with a configuration of its own, a template), whose
+// own check they are.
+export function projectFiles(root: string): string[] {
+  const files = execFileSync('git', ['-C', root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
+    encoding: 'utf8',
+    maxBuffer: 256 * 1024 * 1024,
+  })
+    .split('\0')
+    .filter(Boolean)
+  const nested = [
+    ...new Set(
+      files
+        .map((f) => /^(.+)\/\.agents\/config\.(?:jsonc|yml)$/.exec(f)?.[1])
+        .filter((dir): dir is string => dir !== undefined),
+    ),
+  ]
+  return [...new Set(files)]
+    .filter((f) => !nested.some((dir) => f.startsWith(`${dir}/`)) && existsSync(join(root, f)))
+    .sort()
+}
+
+function agentsMd(root: string): Result[] {
+  const ok = checkAgentsBlock(root)
+  return [
+    {
+      area: 'agents-md',
+      check: 'block',
+      status: ok ? 'PASS' : 'FAIL',
+      path: 'AGENTS.md',
+      line: null,
+      message: ok
+        ? 'the managed block matches its source'
+        : 'the managed block is missing or edited; run lntt sync (edit agents/block.md of @lntt/lntt, not the block)',
+    },
+  ]
+}
+
+// One area, or one of its checks: `structure` and `numbers` for the decisions.
+export function runArea(area: Area, check: string | undefined, files: string[], options: CheckOptions): Result[] {
+  if (area === 'agents-md') return agentsMd(options.root)
+  if (check === 'numbers') return decisionFigures(options, files)
+  return checkDecisions(options, { figures: check === undefined })
+}
+
+// What is on a line, so a finding is never built on a line that does not exist. The
+// anchor may carry a heading (`#decision`) or a range (`:12-15`), which name its first
+// line; a path alone only has to exist. The text is null for a path alone.
+export function cite(root: string, anchor: string, line: number | null): { text: string | null } | { missing: string } {
+  const m = /^(.*?):(\d+)(?:-\d+)?$/.exec(anchor)
+  const path = (m ? (m[1] as string) : anchor).replace(/#.*$/, '')
+  const at = line ?? (m ? Number(m[2]) : null)
+  const rel = isAbsolute(path) ? relative(root, path) : path
+  const abs = join(root, rel)
+  if (rel.startsWith('..') || !existsSync(abs) || !statSync(abs).isFile()) return { missing: 'no such file' }
+  if (at === null) return { text: null }
+  const lines = readFileSync(abs, 'utf8').replace(/\n$/, '').split('\n')
+  if (at < 1 || at > lines.length)
+    return { missing: `no line ${at}: the file has ${lines.length} line${lines.length === 1 ? '' : 's'}` }
+  return { text: (lines[at - 1] as string).trim() }
+}
+
+export function citeAll(root: string, anchors: string[]): Result[] {
+  return anchors.map((anchor) => {
+    const [, path, line] = /^(.*):(\d+)$/.exec(anchor) as unknown as [string, string, string]
+    const found = cite(root, path, Number(line))
+    return {
+      area: 'cite',
+      check: 'line',
+      status: 'missing' in found ? 'FAIL' : 'PASS',
+      path,
+      line: Number(line),
+      message: 'missing' in found ? found.missing : (found.text ?? ''),
+    }
+  })
+}
+
+const ORDER: Status[] = ['FAIL', 'NOT RUN', 'INFO', 'PASS']
+
+// One line per result, the ones that need someone first, then the counts.
+export function formatText(results: Result[]): string {
+  const sorted = [...results].sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status))
+  const lines = sorted.map((r) => {
+    const where = r.path === null ? '' : `  ${r.path}${r.line === null ? '' : `:${r.line}`}`
+    return `${r.status.padEnd(9)}${r.area}/${r.check}${where} — ${r.message}`
+  })
+  const count = (s: Status) => results.filter((r) => r.status === s).length
+  lines.push(`lntt check: ${count('PASS')} PASS, ${count('FAIL')} FAIL, ${count('NOT RUN')} NOT RUN`)
+  return `${lines.join('\n')}\n`
+}
+
+export function formatJson(results: Result[]): string {
+  return results.map((r) => `${JSON.stringify(r)}\n`).join('')
+}
+
+export function failed(results: Result[]): boolean {
+  return results.some((r) => r.status === 'FAIL')
+}

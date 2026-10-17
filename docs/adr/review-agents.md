@@ -27,8 +27,18 @@ same way every time; the `review` skill keeps the judgement.
   `packages/lntt/agents/review/`; a project's own lens (a template's design or
   Storybook check) brings its `brief`, a file of the repository. A lens may list
   agents of several providers, so the blind spots of one model are not the review's.
+- **What a script can check, a script checks.** A lens named after an area of
+  `lntt check` (`decisions`) gets `lntt check <area> --base <first commit read> --json`
+  in its prompt, run before the reviewers, and its brief keeps only what needs
+  judgement: violations, unrecorded decisions, the prose and the figures of the records
+  the change touches. So the decisions lens runs on a cheap model, and a broken
+  reference or a residue is found the same way every round.
+- **Every finding is cited before it is verified:** `lntt check cite` reads its line on
+  the head. A finding on a line or a file that does not exist is refuted there, by
+  `lntt check cite`, and costs no verifier; the others take the line's text to their
+  verifiers.
 - **Every reviewer starts with no context but its prompt** (the brief, the range, the
-  files, the diff, the decision logs, on stdin) and **can only read**: `claude -p` with
+  files, the diff, the decision logs, the results of `lntt check`, on stdin) and **can only read**: `claude -p` with
   Read, Grep and Glob and no MCP server, `opencode run` with an inline agent that denies
   every tool and allows the read ones back. The tools are what makes it read-only, not
   the brief.
@@ -112,8 +122,8 @@ same way every time; the `review` skill keeps the judgement.
 
 - An agent gains a read-only headless mode of its own (an equivalent of `--tools`):
   it joins `kind`.
-- A lens needs a command's output it cannot run (a lint script, a mutation run): the
-  lens gains commands that `lntt` runs before the agents and puts in their prompt.
+- Another lens has checks that need no judgement (a lint script, a mutation run): they
+  become an area of `lntt check` named after the lens, and its brief drops them.
 
 ## Discarded directions
 

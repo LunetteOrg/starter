@@ -1,0 +1,10 @@
+{
+  // A project whose decision logs pass every structural check.
+  "recording": {
+    "language": "en",
+    "logs": {
+      "adr": { "path": "docs/adr", "index": "docs/adr/README.md", "template": "docs/adr/template.md" },
+      "process": { "path": "docs/process", "index": "docs/process/README.md" }
+    }
+  }
+}

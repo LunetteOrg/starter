@@ -4,6 +4,7 @@ look for what makes it wrong.
 
 The finding ({{severity}}): `{{anchor}}` — {{what}} — {{action}}
 
+{{cited}}
 You can only read, and you fix nothing. Answer with exactly one word on the first line,
 then the proof:
 

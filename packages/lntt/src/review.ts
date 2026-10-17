@@ -183,6 +183,8 @@ export interface FoundBy {
 export interface Found extends Finding {
   id: string
   foundBy: FoundBy[]
+  // What its line reads on the head, from lntt check cite; null for a file without a line.
+  cited?: string | null
 }
 
 export interface Reviewed {
@@ -320,6 +322,24 @@ export interface PromptValues {
   diff: string
   records: string
   scope?: string
+  // The JSON lines of `lntt check <area> --base <base>`, by the lens of the same name.
+  checks?: Record<string, string>
+}
+
+// What lntt check found for a lens, before the reviewers: they judge, it counts.
+function checksSection(lens: string, values: PromptValues): string {
+  const lines = values.checks?.[lens]
+  if (lines === undefined) return ''
+  return [
+    `## What \`lntt check ${lens} --base ${values.base} --json\` found`,
+    '',
+    'One result per line: `area`, `check`, `status` (PASS, FAIL, NOT RUN, INFO), `path`, `line`, `message`.',
+    '',
+    '```jsonl',
+    lines.trimEnd(),
+    '```',
+    '',
+  ].join('\n')
 }
 
 // The lens brief (shipped, or the text of the project's) inside the common frame.
@@ -332,6 +352,7 @@ export function renderReviewPrompt(lens: string, values: PromptValues, brief?: s
     range: `${values.base}..${values.head}`,
     files: values.files.map((f) => `- ${f}`).join('\n') || '(none)',
     records: values.records || '(none configured)',
+    checks: checksSection(lens, values),
     diff: values.diff,
   })
 }
@@ -340,10 +361,16 @@ function anchorOf(f: Finding): string {
   return f.path === null ? '(no anchor)' : f.line === null ? f.path : `${f.path}:${f.line}`
 }
 
+function citedLine(found: Found): string {
+  if (typeof found.cited !== 'string') return ''
+  return `What that line reads on the head:\n\n\`\`\`\n${found.cited}\n\`\`\`\n`
+}
+
 export function renderVerifyPrompt(found: Found, values: PromptValues): string {
   return fill(readFileSync(join(AGENTS, 'verify.md'), 'utf8'), {
     severity: found.severity,
     anchor: anchorOf(found),
+    cited: citedLine(found),
     what: found.what,
     action: found.action,
     range: `${values.base}..${values.head}`,
@@ -410,6 +437,8 @@ export interface RoundInput extends PromptValues {
   range: Range
   // The text of a project lens's brief, by its path in the repository.
   readBrief?: (path: string) => string
+  // What a finding's line reads on the head (lntt check cite), or why it does not exist.
+  cite?: (path: string, line: number | null) => { text: string | null } | { missing: string }
 }
 
 function addTokens(total: number | null, answer: Answer): number | null {
@@ -499,9 +528,19 @@ export async function runRound(
     if (same) same.foundBy = [...same.foundBy.filter((b) => !f.foundBy.some((n) => n.agent === b.agent)), ...f.foundBy]
     return !same
   })
-  const found: Found[] = [...carried, ...fresh]
+  // A finding on a line that does not exist is refuted before any verifier is asked; the
+  // others carry the line's text to them.
+  const found: Found[] = []
+  for (const f of [...carried, ...fresh]) {
+    const cited = f.path === null || !input.cite ? null : input.cite(f.path, f.line)
+    if (cited && 'missing' in cited) {
+      const proof = `${anchorOf(f)}: ${cited.missing}`
+      result.refuted.push({ ...f, verdict: 'refuted', proofs: [{ by: 'lntt check cite', outcome: 'refuted', proof }] })
+    } else found.push(cited ? { ...f, cited: cited.text } : f)
+  }
+  const kept = found.filter((f) => carried.some((c) => c.id === f.id)).length
   const verified = (i: number): boolean =>
-    config.verify !== null && (i < carried.length || config.verify.severities.includes((found[i] as Found).severity))
+    config.verify !== null && (i < kept || config.verify.severities.includes((found[i] as Found).severity))
 
   const checks: { finding: number; agent: Agent }[] = []
   found.forEach((f, i) => {
@@ -536,7 +575,7 @@ export async function runRound(
   })
   found.forEach((f, i) => {
     const mine = proofs[i] as Proof[]
-    const before = i < carried.length ? (f as Checked) : null
+    const before = i < kept ? (f as Checked) : null
     const checked: Checked = {
       ...f,
       // Only the verifiers that answered decide; none answering leaves it undecided.
