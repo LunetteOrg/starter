@@ -104,12 +104,29 @@
     },
     "delivery": {
       "type": "object",
-      "description": "How a change reaches the main branch: commit messages, the candidate branch; pull request body, review and merge rules as skills need them.",
+      "description": "How a change reaches the main branch: branch names, commit messages, the candidate branch; pull request body, review and merge rules as skills need them.",
       "additionalProperties": false,
       "properties": {
+        "branches": {
+          "type": "object",
+          "description": "Branch names: <type>/<issue>/<slug>, or <type>/no-issue/<slug>, computed, checked and fixed by lntt branch. The base, the candidates (candidate.base, candidate.prefix) and Dependabot's branches are exempt; the hotfix prefix counts as one more type.",
+          "additionalProperties": false,
+          "properties": {
+            "types": {
+              "type": "array",
+              "description": "The accepted types. Default feat, fix, chore, refactor, docs, test, ci, perf, build.",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$"
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          }
+        },
         "candidate": {
           "type": "object",
-          "description": "The candidate branch that collects pull requests before they reach the base together, read by the candidate automation (@lntt/ci). Without this section the automation does nothing.",
+          "description": "The candidate branch that collects pull requests before they reach the base together, read by the candidate automation (lntt ci candidate). Without this section the automation does nothing.",
           "additionalProperties": false,
           "required": ["prefix"],
           "properties": {

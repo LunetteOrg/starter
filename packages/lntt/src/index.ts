@@ -12,6 +12,16 @@ import schema from '../schema/config.schema.json' with { type: 'json' }
 import { ConfigError, check, type Located, locate, parse } from './files.ts'
 
 export { checkAgentsBlock, managedBlock, syncAgentsBlock } from './agents.ts'
+export {
+  type BranchRules,
+  branchName,
+  branchRules,
+  type Check,
+  checkBranch,
+  fromToolName,
+  slugify,
+  typeFor,
+} from './branch.ts'
 export { commitlintConfig } from './commitlint.ts'
 export { ConfigError, type Format, type Located } from './files.ts'
 export { type LocalApp, localApp } from './local.ts'

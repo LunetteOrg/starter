@@ -16,7 +16,7 @@ batch for what is expensive ([delivery](./delivery.md) has the flow):
 | Event | What runs |
 |---|---|
 | A draft, into any base | nothing in the cloud; `pnpm ci:local` on the machine |
-| A ready pull request into a candidate, or into any branch other than `main` (a stacked pull request) | the minimal CI: frozen install, lint, typecheck, the AGENTS.md block, the plugin version |
+| A ready pull request into a candidate, or into any branch other than `main` (a stacked pull request) | the minimal CI: frozen install, lint, typecheck, the AGENTS.md block, the branch name, the plugin version |
 | The candidate's pull request into `main`, ready; a hotfix | the full CI: the minimal CI plus the tests and the scaffold smoke |
 | A push to `main` | the full CI, which gates a release |
 | A merge into a candidate | nothing |
