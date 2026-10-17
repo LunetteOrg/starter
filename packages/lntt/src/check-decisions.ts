@@ -358,9 +358,11 @@ function namesCheck(root: string, logs: Log[], files: string[], only: Set<string
         .split('\n')
         .findIndex((l) => /^# /.test(l))
       if (title === -1) fail(record, 1, 'no title: a record starts with `# <subject>`')
-      // Numbered: `# ADR NN — …`, `# NNNN …`, and `# N. …`, `# N: …`, `# N) …` with a space
-      // or a capital after the mark (`# 1.Record`). Words: a small count (`# 3 retries`), a
-      // version or a time (`# 2.0`, `# 2.x`, `# 3.js`, `# 7:30`).
+      // Numbered: `# ADR NN — …`, `# NNNN …`, and `# N. …`, `# N: …`, `# N) …` with a space,
+      // the end or a capital after the mark (`# 1.Record`). Words: a small count
+      // (`# 3 retries`), a version or a time (`# 2.0`, `# 1.2 Plan`, `# 2.x`, `# 7:30`), a
+      // number glued to a lowercase word (`# 3.js`, `# 1.record`). The decisions skill's
+      // recording rules state it.
       else if (
         /^#\s+(?:[AP]DR\b|\d+[.:)](?:\s|$|[A-Z])|\d+\s*[-–—]\s|\d{2,}[\s-])|[AP]DR[ \-#]?\d/.test(
           lines[title] as string,

@@ -217,18 +217,26 @@ describe('lntt check decisions structure', () => {
     assert.match((names()[0] as Result).message, /no template listing two statuses or more/)
   })
 
-  test('a title that opens on a small count is words; a numbered title fails at any count', () => {
+  test('a numbered title fails; a small count, a version, a time or a number glued to a lowercase word are words', () => {
     project('clean')
     const title = (t: string) => {
       writeFileSync(join(repo, 'docs/adr/api-shape.md'), `---\nstatus: proposed\n---\n\n# ${t}\n`)
       return fails(results(['check', 'decisions', 'structure']).results).filter((f) => f.startsWith('names'))
     }
     assert.deepEqual(title('3 retries at most'), [])
-    for (const t of ['2.0 migration plan', '2.x release', '3.js intro', '7:30 standup'])
+    for (const t of [
+      '2.0 migration plan',
+      '2.x release',
+      '3.js intro',
+      '7:30 standup',
+      '1.2 Plan',
+      '1.record decisions',
+    ])
       assert.deepEqual(title(t), [], t)
     for (const t of [
       '1. Record decisions',
       '1.Record decisions',
+      '1.',
       '7: Caching',
       '7:Caching',
       '7 — Caching',
@@ -437,17 +445,19 @@ describe('lntt check', () => {
 
   test('a usage error is one in a project with no configuration too', () => {
     git('init', '-q')
-    for (const args of [
-      ['check', 'nope'],
-      ['check', '--base='],
-      ['check', 'cite'],
-      ['check', 'cite', 'src/app.ts'],
-      ['check', 'decisions', 'structure', 'docs/adr/storage.md'],
-      ['check', 'cite', 'src/app.ts:1', '--base='],
-      ['check', 'agents-md', 'AGENTS.md'],
-      ['check', 'decisions', 'numbers'],
-    ]) {
-      assert.equal(lntt(args).status, 2, args.join(' '))
+    for (const [args, why] of [
+      [['check', 'nope'], /no area nope/],
+      [['check', '--base='], /--base '' is not a ref/],
+      [['check', 'cite'], /give at least one path:line/],
+      [['check', 'cite', 'src/app.ts'], /src\/app\.ts is not path:line/],
+      [['check', 'decisions', 'structure', 'docs/adr/storage.md'], /structure takes no file/],
+      [['check', 'cite', 'src/app.ts:1', '--base='], /--base '' is not a ref/],
+      [['check', 'agents-md', 'AGENTS.md'], /no check AGENTS\.md in agents-md/],
+      [['check', 'decisions', 'numbers'], /numbers needs files or --base/],
+    ] as [string[], RegExp][]) {
+      const r = lntt(args)
+      assert.equal(r.status, 2, args.join(' '))
+      assert.match(r.stderr, why, args.join(' '))
     }
   })
 

@@ -8,7 +8,9 @@ where, which language, what each one is for) are in the `recording` section of
 ## A record is a subject, corrected in place
 
 - **One file per subject**, named after it in kebab-case (`scaffolding-contract.md`).
-  The file name is the id: no numbers, no dates in the name.
+  The file name is the id: no numbers, no dates in the name. The title is the subject
+  too: no `ADR NN`, no `1.` or `0003` before it; a title that opens on a count, a
+  version or a time (`# 3 retries`, `# 2.0 migration`) is words.
 - **The file states what holds now.** When a decision changes, its file is rewritten
   and the change lands as a commit. The history of a subject is
   `git log --follow -- <file>`, not a chain of files.
