@@ -77,6 +77,36 @@ describe('lntt branch name', () => {
   })
 })
 
+describe('lntt branch name, when the issue gives no usable name', () => {
+  test('a title with nothing to slug is a red result (exit 1), not a usage error', () => {
+    stub('gh', JSON.stringify({ number: 12, title: '🚀', labels: [], type: null }))
+    const r = lntt(['branch', 'name', '--issue', '12'])
+    assert.equal(r.status, 1)
+    assert.match(r.stderr, /slug/)
+    assert.doesNotMatch(r.stderr, /usage:/)
+  })
+})
+
+describe('lntt branch check --pre-push', () => {
+  const ZERO = '0000000000000000000000000000000000000000'
+  const SHA = '1111111111111111111111111111111111111111'
+  const push = (input: string) =>
+    spawnSync(process.execPath, [BIN, 'branch', 'check', '--pre-push'], { cwd: repo, encoding: 'utf8', input })
+
+  test('checks the branches being pushed, not the one checked out', () => {
+    const r = push(`refs/heads/main ${SHA} refs/heads/wip ${ZERO}\n`)
+    assert.equal(r.status, 1)
+    assert.match(r.stderr, /wip/)
+    assert.equal(push(`refs/heads/x ${SHA} refs/heads/feat/1/ok ${ZERO}\n`).status, 0)
+  })
+
+  test('lets tags and branch deletions through', () => {
+    git('switch', '-q', '-c', 'badly-named')
+    assert.equal(push(`refs/tags/v1 ${SHA} refs/tags/v1 ${ZERO}\n`).status, 0)
+    assert.equal(push(`(delete) ${ZERO} refs/heads/old-thing ${SHA}\n`).status, 0)
+  })
+})
+
 describe('lntt branch check', () => {
   test('passes on the convention, fails elsewhere with the expected name', () => {
     git('switch', '-q', '-c', 'feat/77/branch-names')
@@ -120,6 +150,23 @@ describe('lntt branch rename', () => {
     assert.equal(git('branch', '--show-current'), 'ilmeskio/probe-b')
   })
 
+  test('in Orca, an issue that gives no valid name leaves the branch and the setup alone', () => {
+    git('switch', '-q', '-c', 'ilmeskio/probe-c')
+    stub('gh', JSON.stringify({ number: 12, title: '🚀', labels: [], type: null }))
+    stub('orca', JSON.stringify({ ok: true, result: { worktree: { linkedIssue: 12 } } }))
+    const r = lntt(['branch', 'rename'], { TERM_PROGRAM: 'Orca', ORCA_WORKTREE_ID: 'r::/p' })
+    assert.equal(r.status, 0, r.stderr)
+    assert.match(r.stderr, /slug/)
+    assert.equal(git('branch', '--show-current'), 'ilmeskio/probe-c')
+  })
+
+  test('a detached HEAD is reported, not an error', () => {
+    git('switch', '-q', '--detach')
+    const r = lntt(['branch', 'rename'])
+    assert.equal(r.status, 0, r.stderr)
+    assert.match(r.stderr, /detached/)
+  })
+
   test('never overwrites an existing branch', () => {
     git('branch', 'chore/98/orca-yaml')
     git('switch', '-q', '-c', 'ilmeskio/chore-98-orca-yaml')
@@ -127,5 +174,47 @@ describe('lntt branch rename', () => {
     assert.equal(r.status, 0)
     assert.match(r.stderr, /already exists/)
     assert.equal(git('branch', '--show-current'), 'ilmeskio/chore-98-orca-yaml')
+  })
+})
+
+describe('lntt worktree start', () => {
+  test('in a plain terminal: a git worktree on the issue branch, setup run, the brief printed', () => {
+    stub('gh', ISSUE_77)
+    writeFileSync(join(repo, 'orca.yaml'), 'scripts:\n  setup: |\n    echo ready > setup-ran\n')
+    git('add', '.')
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'setup')
+    const r = lntt(['worktree', 'start', '--issue', '77'])
+    assert.equal(r.status, 0, r.stderr)
+    const path = join(repo, '.worktrees', 'feat-77-branch-names-follow-type')
+    assert.equal(
+      execFileSync('git', ['branch', '--show-current'], { cwd: path, encoding: 'utf8' }).trim(),
+      'feat/77/branch-names-follow-type',
+    )
+    assert.match(r.stdout, /"host":"git"/)
+    assert.match(r.stdout, /You are working on issue #77/)
+  })
+
+  test('--prompt replaces the brief', () => {
+    stub('gh', ISSUE_77)
+    const r = lntt(['worktree', 'start', '--issue', '77', '--prompt', 'Just say hello'])
+    assert.equal(r.status, 0, r.stderr)
+    assert.match(r.stdout, /Just say hello/)
+    assert.doesNotMatch(r.stdout, /You are working on issue/)
+  })
+
+  test('a batch reads every issue before creating anything', () => {
+    writeFileSync(
+      join(stubs, 'gh'),
+      `#!/bin/sh\ncase "$*" in *issues/99*) echo 'Not Found' >&2; exit 1;; esac\ncat <<'EOF'\n${ISSUE_77}\nEOF\n`,
+    )
+    chmodSync(join(stubs, 'gh'), 0o755)
+    const r = lntt(['worktree', 'start', '--issue', '77', '--issue', '99'])
+    assert.equal(r.status, 1)
+    assert.equal(git('worktree', 'list').split('\n').length, 1, 'no worktree for #77 either')
+  })
+
+  test('--host forces the adapter; an unknown one is a usage error', () => {
+    assert.equal(lntt(['worktree', 'start', '--issue', '77', '--host', 'wave']).status, 2)
+    assert.equal(lntt(['worktree', 'start']).status, 2)
   })
 })

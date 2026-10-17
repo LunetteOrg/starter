@@ -33,6 +33,16 @@ describe('slugify', () => {
     assert.equal(slugify('`lntt sync` installs the shared skills — già'), 'lntt-sync-installs-shared')
   })
 
+  test('apostrophes join their word instead of splitting it', () => {
+    assert.equal(slugify("Fix the user's login"), 'fix-users-login')
+    assert.equal(slugify('Don’t drop the effort'), 'dont-drop-effort')
+  })
+
+  test('a title with nothing to keep gives an empty slug', () => {
+    assert.equal(slugify('🚀'), '')
+    assert.equal(slugify('It is the'), '')
+  })
+
   test('the same title always gives the same slug', () => {
     const title = 'Board status for work merged into the release candidate'
     assert.equal(slugify(title), slugify(title))
