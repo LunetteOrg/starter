@@ -239,6 +239,7 @@ describe('lntt check decisions structure', () => {
       '3-way merge',
       '2024-10 review',
       'LADR 5 notes',
+      'adr 5 notes',
       `Why \`ADR ${5}\` was dropped`,
       'ADR process',
       '1)storage',
@@ -266,6 +267,11 @@ describe('lntt check decisions structure', () => {
     ]) {
       assert.deepEqual(title(t), ['names docs/adr/api-shape.md:5'], t)
     }
+    // A code span is not a reference; the rest of the title still is, and the message
+    // quotes the title as written.
+    assert.deepEqual(title(`Why \`ADR ${5}\` and ADR ${6}`), ['names docs/adr/api-shape.md:5'])
+    const names = results(['check', 'decisions', 'structure']).results.filter((x) => x.check === 'names')
+    assert.equal((names[0] as Result).message, `the title carries a number: # Why \`ADR ${5}\` and ADR ${6}`)
   })
 
   test('an untracked record is seen: a new file left out of the index fails before it is added', () => {
