@@ -420,18 +420,25 @@ describe('a tool that refuses', () => {
 describe('running a tool', () => {
   const node = (code: string) => [process.execPath, ['-e', code]] as const
 
-  test('stdout trimmed is the result', () => {
-    const [cmd, args] = node("process.stdout.write('  out  ')")
-    assert.equal(runTool(cmd, [...args], process.cwd()), 'out')
+  test('stdout trimmed is the result; what the tool says on stderr reaches the person', () => {
+    const said: string[] = []
+    const [cmd, args] = node("process.stdout.write('  out  '); process.stderr.write('note')")
+    assert.equal(
+      runTool(cmd, [...args], process.cwd(), (t) => said.push(t)),
+      'out',
+    )
+    assert.deepEqual(said, ['note'])
   })
 
-  test('a refusal carries the reason in the reply, or the exit code and a pointer to the output', () => {
+  test('a refusal is reported once, in the error, with what the tool said', () => {
+    const said: string[] = []
     const [a, aa] = node(
       "process.stdout.write(JSON.stringify({ ok: false, error: { message: 'no such pane' } })); process.exit(2)",
     )
-    assert.throws(() => runTool(a, [...aa], process.cwd()), /: no such pane$/)
-    const [b, bb] = node('process.exit(3)')
-    assert.throws(() => runTool(b, [...bb], process.cwd()), /failed \(exit 3; its output is above\)$/)
+    assert.throws(() => runTool(a, [...aa], process.cwd(), (t) => said.push(t)), /: no such pane$/)
+    const [b, bb] = node("process.stderr.write('error: branch has no upstream information'); process.exit(1)")
+    assert.throws(() => runTool(b, [...bb], process.cwd(), (t) => said.push(t)), /no upstream information$/)
+    assert.deepEqual(said, [], 'nothing reaches the person besides the error, which a caller may expect and drop')
   })
 
   test('a tool that is not installed is an error, not an empty result', () => {
