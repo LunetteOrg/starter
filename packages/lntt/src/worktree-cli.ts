@@ -34,12 +34,14 @@ function usage(message?: string): never {
   exit(2)
 }
 
-// One call to a tool, for a query or a short action (the long setup goes through
-// runner.shell, which shows its output as it runs). stdout, trimmed, is the result. When
-// the call succeeds, what the tool said on stderr reaches the person; when it fails, that
-// text is the reason in the error, once, and a failure the caller expects (removing an
-// upstream that is not there) stays silent. stderr is never filtered by its words, which
-// change with the tool's version: a call whose stderr is noise would say so itself.
+// One call to a tool. stdout, trimmed, is the result. When the call succeeds, what the
+// tool said on stderr reaches the person after it; when it fails, the error carries the
+// reason (Orca's JSON message, else what the tool printed, else its exit code), once,
+// and a failure the caller expects (removing an upstream that is not there) stays
+// silent. The setup goes through runner.shell, which shows its output as it runs; the
+// long calls here (Orca creating a worktree, waiting on a terminal) show their work in
+// Orca. stderr is never filtered by its words, which change with the tool's version: a
+// call whose stderr is noise would say so itself.
 export function runTool(
   command: string,
   args: string[],
@@ -48,7 +50,10 @@ export function runTool(
 ): string {
   const r = spawnSync(command, args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
   if (r.error) throw r.error
-  if (r.status !== 0) throw new Error(toolFailure(command, args, r.stdout ?? '', r.stderr ?? ''))
+  if (r.status !== 0) {
+    const why = toolFailure(command, args, r.stdout ?? '', r.stderr ?? '')
+    throw new Error(why.endsWith(' failed') ? `${why} (exit ${r.status ?? r.signal})` : why)
+  }
   if (r.stderr) say(r.stderr)
   return (r.stdout ?? '').trim()
 }

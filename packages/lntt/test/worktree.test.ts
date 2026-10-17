@@ -439,6 +439,8 @@ describe('running a tool', () => {
     const [b, bb] = node("process.stderr.write('error: branch has no upstream information'); process.exit(1)")
     assert.throws(() => runTool(b, [...bb], process.cwd(), (t) => said.push(t)), /no upstream information$/)
     assert.deepEqual(said, [], 'nothing reaches the person besides the error, which a caller may expect and drop')
+    const [d, dd] = node('process.exit(3)')
+    assert.throws(() => runTool(d, [...dd], process.cwd(), () => {}), /failed \(exit 3\)$/)
   })
 
   test('a tool that is not installed is an error, not an empty result', () => {
