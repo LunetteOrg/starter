@@ -87,7 +87,11 @@ candidate exists on a day without pull requests.
   The status is an option of the Project's Status field that the Project's owner adds
   (the `issues` skill, "Changing a field's options"); the automation never creates or
   renames one. A Project without it, an issue on no Project, or an app without the
-  Projects permission leave the board as it is, and the run says so in a `::notice`.
+  Projects permission leave the board as it is, and the run says so in a `::notice`; a
+  refusal on one of an issue's Projects after another was written leaves it moved on
+  the first. A status name that is not an option of the Project (a mistyped
+  `delivery.candidate.status`, or the option not added yet) gets the same notice, which
+  lists the options the Project has.
 - **Issues close on the candidate's merge.** GitHub ignores closing keywords in a pull
   request that targets a branch other than the default, and keywords the automation
   writes into the candidate's body link nothing. On the candidate's merge the

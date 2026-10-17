@@ -674,8 +674,10 @@ interface BoardItem {
 
 const NOT_PERMITTED = /resource not accessible|forbidden|insufficient|required scope|has not been granted/i
 
-// Moves each issue to `status` on every Project it is on that has that status. What
-// cannot be moved is told in a `::notice` and returned in `skipped`; only a failure
+// Moves each issue to `status` on every Project it is on that has that status. An issue
+// not moved on any project is told in a `::notice` and returned in `skipped`; one moved
+// on some projects and refused on others is in `moved`, with a notice for the refusal;
+// only a failure
 // that is not a refusal of the token throws, after the other issues are done.
 export function setBoardStatus(run: Run, issues: number[], status: string) {
   const moved: number[] = []
@@ -753,7 +755,7 @@ export function setBoardStatus(run: Run, issues: number[], status: string) {
       const message = (error as Error).message
       if (!NOT_PERMITTED.test(message)) throw error
       log(
-        `::notice title=Board not moved::the token lacks the Projects permission, #${number} is not moved to "${status}" on every project it is on: ${message.split('\n')[0]}`,
+        `::notice title=Board not moved::the token lacks the Projects permission on a project of #${number}, which is not moved to "${status}" there: ${message.split('\n')[0]}`,
       )
       // A project written before the refusal stays moved: the issue is in `moved` and
       // is not skipped.
