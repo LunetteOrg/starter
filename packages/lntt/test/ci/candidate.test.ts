@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import {
   announce,
@@ -18,19 +21,27 @@ import {
   isCandidateMerge,
   isHotfix,
   issueNumber,
+  makeGh,
   nextCandidateNumber,
   orphanCandidate,
   type PullRequest,
+  pickBoard,
   type Run,
   record,
   recordMerges,
   retarget,
   retargetDecision,
+  setBoardStatus,
   sweep,
   sweepDecision,
 } from '../../src/ci/candidate.ts'
 
-const config: CandidateConfig = { base: 'main', prefix: 'candidate/', hotfix: { prefix: 'hotfix/', label: 'hotfix' } }
+const config: CandidateConfig = {
+  base: 'main',
+  prefix: 'candidate/',
+  hotfix: { prefix: 'hotfix/', label: 'hotfix' },
+  status: { inRelease: 'In release', done: 'Done' },
+}
 // pelion's shape: release/<N>, same base and hotfix markers.
 const pelion: CandidateConfig = { ...config, prefix: 'release/' }
 
@@ -598,5 +609,354 @@ describe('sweep', () => {
       gh.writes.filter((w) => w.args.includes('--base')).map((w) => w.args),
       ['pr edit 12 --repo o/r --base candidate/5', 'pr edit 70 --repo o/r --base candidate/5'],
     )
+  })
+})
+
+// A board double: the issue's project items answered to the GraphQL read, the
+// mutations recorded.
+function item(
+  id: string,
+  { options = ['Todo', 'In Progress', 'In release', 'Done'], current = 'Todo', status = true } = {},
+) {
+  return {
+    id,
+    fieldValueByName: { optionId: `opt-${current}` },
+    project: {
+      id: `P-${id}`,
+      title: 'board',
+      field: status ? { id: `F-${id}`, options: options.map((name) => ({ id: `opt-${name}`, name })) } : {},
+    },
+  }
+}
+const items = (...nodes: unknown[]) => ({
+  'projectItems(': { data: { repository: { issue: { projectItems: { nodes } } } } },
+})
+const notices = () => {
+  const lines: string[] = []
+  return { lines, log: (line: string) => lines.push(line) }
+}
+
+describe('setBoardStatus', () => {
+  test('moves the issue to the status on each project that has it', () => {
+    const board = fakeGh(items(item('i1')))
+    const { moved, skipped } = setBoardStatus({ ...run(fakeGh({})), board }, [69], 'In release')
+    assert.deepEqual(moved, [69])
+    assert.deepEqual(skipped, [])
+    assert.equal(board.writes.length, 1)
+    assert.match(board.writes[0]?.args ?? '', /updateProjectV2ItemFieldValue/)
+    assert.match(board.writes[0]?.args ?? '', /project=P-i1 -f item=i1 -f field=F-i1 -f option=opt-In release/)
+  })
+
+  test('an issue already at the status is left alone', () => {
+    const board = fakeGh(items(item('i1', { current: 'In release' })))
+    const { moved } = setBoardStatus({ ...run(fakeGh({})), board }, [69], 'In release')
+    assert.deepEqual(moved, [])
+    assert.deepEqual(board.writes, [])
+  })
+
+  test('a project without the status skips it with a notice saying how to add it', () => {
+    const out = notices()
+    const board = fakeGh(items(item('i1', { options: ['Todo', 'In Progress', 'Done'] })))
+    const { moved, skipped } = setBoardStatus({ ...run(fakeGh({})), board, log: out.log }, [69], 'In release')
+    assert.deepEqual(moved, [])
+    assert.deepEqual(skipped, [69])
+    assert.deepEqual(board.writes, [])
+    assert.match(out.lines.join('\n'), /::notice .*In release.*not an option.*issues skill/s)
+  })
+
+  test('a project without a Status field is skipped with a notice', () => {
+    const out = notices()
+    const board = fakeGh(items(item('i1', { status: false })))
+    const { skipped } = setBoardStatus({ ...run(fakeGh({})), board, log: out.log }, [69], 'In release')
+    assert.deepEqual(skipped, [69])
+    assert.match(out.lines.join('\n'), /::notice .*no Status field/s)
+  })
+
+  test('an issue on no project is skipped with a notice', () => {
+    const out = notices()
+    const board = fakeGh(items())
+    const { skipped } = setBoardStatus({ ...run(fakeGh({})), board, log: out.log }, [69], 'In release')
+    assert.deepEqual(skipped, [69])
+    assert.match(out.lines.join('\n'), /::notice .*#69 is on no project/s)
+  })
+
+  test('without a Projects token the whole step is skipped with one notice', () => {
+    const out = notices()
+    const { moved, skipped } = setBoardStatus({ ...run(fakeGh({})), log: out.log }, [69, 70], 'In release')
+    assert.deepEqual(moved, [])
+    assert.deepEqual(skipped, [69, 70])
+    assert.equal(out.lines.filter((l) => l.startsWith('::notice')).length, 1)
+    assert.match(out.lines.join('\n'), /::notice .*no token with the Projects permission/)
+  })
+
+  test('a token refused by Projects is a notice, not an error', () => {
+    const out = notices()
+    const board: Gh = {
+      read: () => {
+        throw new Error('Resource not accessible by integration')
+      },
+      write: () => '',
+    }
+    const { skipped } = setBoardStatus({ ...run(fakeGh({})), board, log: out.log }, [69], 'In release')
+    assert.deepEqual(skipped, [69])
+    assert.match(out.lines.join('\n'), /::notice .*Projects permission.*Resource not accessible/s)
+  })
+
+  test('a token that reads but cannot write is a notice, and the next issue is still moved', () => {
+    const out = notices()
+    let writes = 0
+    const base = fakeGh(items(item('i1')))
+    const board: Gh = {
+      read: base.read,
+      write: (args) => {
+        if (++writes === 1) throw new Error('Command failed: gh api graphql: Resource not accessible by integration')
+        return base.write(args)
+      },
+    }
+    const { moved, skipped } = setBoardStatus({ ...run(fakeGh({})), board, log: out.log }, [69, 70], 'In release')
+    assert.deepEqual(skipped, [69])
+    assert.deepEqual(moved, [70])
+    assert.match(out.lines.join('\n'), /::notice .*Projects permission.*#69/s)
+  })
+
+  test('the option is found whatever its case, and an item with no status yet is moved', () => {
+    const board = fakeGh(items({ ...item('i1', { options: ['in release'] }), fieldValueByName: null }))
+    assert.deepEqual(setBoardStatus({ ...run(fakeGh({})), board }, [69], 'In release').moved, [69])
+  })
+
+  test('a project without the option does not stop the next one, and the issue counts as moved', () => {
+    const out = notices()
+    const board = fakeGh(items(item('i1', { options: ['Todo', 'Done'] }), item('i2')))
+    const { moved, skipped } = setBoardStatus({ ...run(fakeGh({})), board, log: out.log }, [69], 'In release')
+    assert.deepEqual(moved, [69])
+    assert.deepEqual(skipped, [])
+    assert.equal(board.writes.length, 1)
+    assert.match(board.writes[0]?.args ?? '', /item=i2/)
+  })
+
+  test('a failure that is not a refusal names the message, and a rate limit is one', () => {
+    const board: Gh = {
+      read: () => {
+        throw new Error('API rate limit exceeded')
+      },
+      write: () => '',
+    }
+    assert.throws(() => setBoardStatus({ ...run(fakeGh({})), board }, [69], 'In release'), /#69: API rate limit/)
+  })
+
+  test('a refusal after a first project was written leaves the issue moved on that one', () => {
+    let writes = 0
+    const base = fakeGh(items(item('i1'), item('i2')))
+    const board: Gh = {
+      read: base.read,
+      write: (args) => {
+        if (++writes === 2) throw new Error('Resource not accessible by personal access token')
+        return base.write(args)
+      },
+    }
+    const { moved, skipped } = setBoardStatus({ ...run(fakeGh({})), board }, [69], 'In release')
+    assert.deepEqual(moved, [69])
+    assert.deepEqual(skipped, [])
+    assert.equal(base.writes.length, 1)
+  })
+
+  test('the notice for a missing option lists the options the project has', () => {
+    const out = notices()
+    const board = fakeGh(items(item('i1', { options: ['Todo', 'Done'] })))
+    setBoardStatus({ ...run(fakeGh({})), board, log: out.log }, [69], 'Dne')
+    assert.match(out.lines.join('\n'), /\(Todo, Done\).*delivery\.candidate\.status/s)
+  })
+
+  test('any other failure fails the step', () => {
+    const board: Gh = {
+      read: () => {
+        throw new Error('socket hang up')
+      },
+      write: () => '',
+    }
+    assert.throws(() => setBoardStatus({ ...run(fakeGh({})), board }, [69], 'In release'), /#69: socket hang up/)
+  })
+})
+
+describe('the board follows the candidate', () => {
+  const merged = { ...pr, baseRef: 'candidate/4', merged: true }
+  const record1 = {
+    'pr list': [{ number: 40, body: candidateBody(config, 4) }],
+    '--state merged': [{ number: 70, title: 't', body: 'Closes #69', mergedAt: '2026-10-17T10:00:00Z' }],
+  }
+
+  test('a squash into the candidate moves the issues it closes to In release', () => {
+    const board = fakeGh(items(item('i1')))
+    record({ ...run(fakeGh({ ...record1, ...issue(69) })), board }, merged)
+    assert.match(board.writes.at(-1)?.args ?? '', /option=opt-In release/)
+  })
+
+  test('an issue already announced is still moved, so a second run finishes the first', () => {
+    const comment = announceComment(config, { candidateBranch: 'candidate/4', candidatePr: 40 })
+    const board = fakeGh(items(item('i1')))
+    record({ ...run(fakeGh({ ...record1, ...issue(69, { comments: [comment] }) })), board }, merged)
+    assert.match(board.writes.at(-1)?.args ?? '', /option=opt-In release/)
+  })
+
+  test('a comment that fails does not leave the board behind, and fails the run after it', () => {
+    const board = fakeGh(items(item('i1')))
+    assert.throws(() => record({ ...run(fakeGh({ ...record1 })), board }, merged), /issues without the announcement/)
+    assert.deepEqual(board.writes, [])
+    const failing = fakeGh({ ...record1, ...issue(69) })
+    const write = failing.write
+    failing.write = (args, input) => {
+      if (args[0] === 'issue') throw new Error('comment refused')
+      return write(args, input)
+    }
+    const second = fakeGh(items(item('i1')))
+    assert.throws(() => record({ ...run(failing), board: second }, merged), /comment refused/)
+    assert.match(second.writes.at(-1)?.args ?? '', /option=opt-In release/)
+  })
+
+  test('the statuses come from the configuration', () => {
+    const board = fakeGh(items(item('i1', { options: ['Todo', 'Shipping'] })))
+    const custom = { ...config, status: { inRelease: 'Shipping', done: 'Done' } }
+    record({ ...run(fakeGh({ ...record1, ...issue(69) }), custom), board }, merged)
+    assert.match(board.writes.at(-1)?.args ?? '', /option=opt-Shipping/)
+  })
+
+  test('an issue closed already is not moved', () => {
+    const board = fakeGh(items(item('i1')))
+    record({ ...run(fakeGh({ ...record1, ...issue(69, { state: 'closed' }) })), board }, merged)
+    assert.deepEqual(board.writes, [])
+  })
+
+  test('the candidate merge moves the issues it closes to Done', () => {
+    const candidate = { ...pr, number: 40, baseRef: 'main', headRef: 'candidate/4', merged: true, body: 'Closes #69' }
+    const board = fakeGh(items(item('i1', { current: 'In release' })))
+    closeCandidateIssues({ ...run(fakeGh({ ...issue(69) })), board }, candidate)
+    assert.match(board.writes.at(-1)?.args ?? '', /option=opt-Done/)
+  })
+
+  test('an issue closed by hand while In release ends at Done', () => {
+    const candidate = { ...pr, number: 40, baseRef: 'main', headRef: 'candidate/4', merged: true, body: 'Closes #69' }
+    const board = fakeGh(items(item('i1', { current: 'In release' })))
+    closeCandidateIssues({ ...run(fakeGh({ ...issue(69, { state: 'closed' }) })), board }, candidate)
+    assert.match(board.writes.at(-1)?.args ?? '', /option=opt-Done/)
+  })
+
+  test('a board that fails is reported apart from the close', () => {
+    const candidate = { ...pr, number: 40, baseRef: 'main', headRef: 'candidate/4', merged: true, body: 'Closes #69' }
+    const board: Gh = {
+      read: () => {
+        throw new Error('API rate limit exceeded')
+      },
+      write: () => '',
+    }
+    const gh = fakeGh({ ...issue(69) })
+    assert.throws(
+      () => closeCandidateIssues({ ...run(gh), board }, candidate),
+      (error: Error) => /issues not moved to "Done"/.test(error.message) && !/not closed/.test(error.message),
+    )
+    assert.deepEqual(
+      gh.writes.map((w) => w.args),
+      ['issue close 69 --repo o/r --reason completed'],
+    )
+  })
+
+  test('a board that cannot be moved does not stop the close', () => {
+    const candidate = { ...pr, number: 40, baseRef: 'main', headRef: 'candidate/4', merged: true, body: 'Closes #69' }
+    const gh = fakeGh({ ...issue(69) })
+    closeCandidateIssues(run(gh), candidate)
+    assert.deepEqual(
+      gh.writes.map((w) => w.args),
+      ['issue close 69 --repo o/r --reason completed'],
+    )
+  })
+})
+
+describe('makeGh', () => {
+  // A gh on the PATH that answers from the environment.
+  function withFakeGh(script: string, body: () => void) {
+    const dir = mkdtempSync(join(tmpdir(), 'fake-gh-'))
+    const bin = join(dir, 'gh')
+    writeFileSync(bin, `#!/bin/sh\n${script}\n`)
+    chmodSync(bin, 0o755)
+    const before = process.env.PATH
+    process.env.PATH = `${dir}:${before}`
+    try {
+      body()
+    } finally {
+      process.env.PATH = before
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+
+  test('a failing gh puts its stderr in the error, which is what NOT_PERMITTED reads', () => {
+    withFakeGh('echo "Resource not accessible by personal access token" >&2; exit 1', () => {
+      assert.throws(
+        () => makeGh({ dryRun: false, log: silent }).read(['api', 'graphql']),
+        /Command failed: gh api graphql: Resource not accessible by personal access token/,
+      )
+    })
+  })
+
+  test('a failing gh with no stderr says only which command failed', () => {
+    withFakeGh('exit 3', () => {
+      assert.throws(
+        () => makeGh({ dryRun: false, log: silent }).read(['api', 'graphql']),
+        (error: Error) => error.message === 'Command failed: gh api graphql',
+      )
+    })
+  })
+
+  test('a gh that cannot start throws its own error', () => {
+    const before = process.env.PATH
+    process.env.PATH = '/nonexistent'
+    try {
+      assert.throws(() => makeGh({ dryRun: false, log: silent }).read(['x']), /ENOENT/)
+    } finally {
+      process.env.PATH = before
+    }
+  })
+
+  test('without a token the ambient GH_TOKEN is the one gh sees', () => {
+    const before = process.env.GH_TOKEN
+    process.env.GH_TOKEN = 'ambient'
+    try {
+      withFakeGh('echo "$GH_TOKEN"', () => {
+        assert.equal(makeGh({ dryRun: false, log: silent }).read(['x']), 'ambient')
+        assert.equal(makeGh({ dryRun: false, log: silent, token: 'tok' }).read(['x']), 'tok')
+        assert.equal(makeGh({ dryRun: false, log: silent }).read(['x']), 'ambient')
+      })
+    } finally {
+      if (before === undefined) delete process.env.GH_TOKEN
+      else process.env.GH_TOKEN = before
+    }
+  })
+
+  test('the token reaches gh as GH_TOKEN, and stdout comes back trimmed', () => {
+    withFakeGh('echo "$GH_TOKEN"', () => {
+      assert.equal(makeGh({ dryRun: false, log: silent, token: 'tok' }).read(['x']), 'tok')
+    })
+  })
+
+  test('a dry run writes nothing', () => {
+    withFakeGh('exit 1', () => {
+      const lines: string[] = []
+      makeGh({ dryRun: true, log: (l) => lines.push(l) }).write(['issue', 'close', '1'])
+      assert.match(lines[0] ?? '', /\[dry-run\] gh issue close 1/)
+    })
+  })
+})
+
+describe('pickBoard', () => {
+  const own = { name: 'own' }
+  const withToken = (t: string) => ({ name: t })
+
+  test('the Projects token wins, in a workflow or not', () => {
+    assert.deepEqual(pickBoard('tok', true, own, withToken), { name: 'tok' })
+    assert.deepEqual(pickBoard('tok', false, own, withToken), { name: 'tok' })
+  })
+
+  test('a workflow without the token has no board, a terminal uses its own login', () => {
+    assert.equal(pickBoard(undefined, true, own, withToken), undefined)
+    assert.equal(pickBoard(undefined, false, own, withToken), own)
+    assert.equal(pickBoard('', true, own, withToken), undefined)
   })
 })

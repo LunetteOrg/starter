@@ -156,6 +156,23 @@
                   "description": "Default hotfix."
                 }
               }
+            },
+            "status": {
+              "type": "object",
+              "description": "The board Status options the automation sets on the issues a pull request closes. The options belong to the Project and are added from its web UI: the automation never creates one.",
+              "additionalProperties": false,
+              "properties": {
+                "inRelease": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Set when the pull request is squashed into a candidate. Default In release."
+                },
+                "done": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Set when the candidate merges. Default Done."
+                }
+              }
             }
           }
         },

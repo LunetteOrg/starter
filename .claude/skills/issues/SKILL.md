@@ -14,7 +14,12 @@ Organize GitHub issues with the `gh` CLI following the template's convention:
 - **Priority = `P0`–`P3`**, stored as a **single-select field on a GitHub
   Project (v2)** (`P0` = critical … `P3` = low).
 - **Status** lives on the Project board (Todo/In Progress/Done — the default
-  fields of a new Project v2).
+  fields of a new Project v2), plus **`In release`** between In Progress and Done:
+  the work is squashed into the open candidate and waits for the candidate's merge
+  (`docs/process/delivery.md`). The candidate automation moves an issue there when
+  its pull request is squashed into the candidate and to `Done` when the candidate
+  merges; nobody sets it by hand, and a hotfix never has it. To add the option to a
+  Project, use the web UI (see "Changing a field's options").
 
 ## Titles
 
@@ -79,6 +84,22 @@ REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
    Note: **Iteration fields cannot be created via `gh`** (GraphQL/web-UI only).
    Iterations are out of scope here; milestones cover release planning. If the
    user wants an Iteration field, point them to the web UI and then read it back.
+
+## Changing a field's options
+
+**Never run `updateProjectV2Field` on a Project that has items.** The mutation
+rewrites the whole option set and regenerates every option id, so every item loses its
+value in that field (Status, Priority) on every repository that shares the Project.
+Adding one option to an existing single-select field is exactly this case.
+
+- Add the option from the Project's web UI (field menu → Edit): it keeps the ids.
+- To use the mutation anyway, first inventory every item's value
+  (`gh project item-list <NUMBER> --owner "$OWNER" --format json`), run it on a
+  throwaway Project you create and delete to see what it does, and only then restore
+  the values in batch with `item-edit` against the new ids. Confirm with the person
+  before touching the real Project.
+- `gh project field-create` only creates a new field: it is safe, and it is not a way to
+  change an existing one.
 
 ## Triage workflow (per issue or batch)
 
