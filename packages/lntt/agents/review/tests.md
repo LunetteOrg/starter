@@ -3,7 +3,8 @@ they would catch the code being wrong.
 
 - **Each test against a mutation:** break, in your head, the line the test claims to
   guard (flip a condition, drop a step, return early). A test that would still pass is a
-  warning naming that line. When only a run would tell, write
+  note naming that line and the mutation, not a warning: until a run proves it, it is a
+  reasoned guess. When only a run would tell, write
   `not checked: needs a mutation run on path:line`.
 - **Intent instead of edges:** tests that restate what the code was designed to do and
   never try an empty, missing or malformed input, a failure halfway, or a second call.

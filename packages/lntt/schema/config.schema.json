@@ -267,7 +267,7 @@
             "perProvider": {
               "type": "integer",
               "minimum": 1,
-              "description": "How many agents of one provider run at once; the others wait their turn. A provider given dozens of sessions at once queues or limits them until they time out. Default 4."
+              "description": "How many required agents of one provider run at once, and as many optional ones in a queue of their own; the others wait their turn. A provider given dozens of sessions at once queues or limits them until they time out. Default 4."
             },
             "optionalGraceMinutes": {
               "type": "number",

@@ -2,7 +2,7 @@
 // (usage: bin/lntt.ts).
 
 import { execFileSync, spawn } from 'node:child_process'
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
@@ -253,10 +253,12 @@ export function agentEnv(
   for (const [name, value] of Object.entries(base)) if (value !== undefined && !HOST_HOOKS.test(name)) out[name] = value
   return { ...out, ...extra }
 }
-// An interrupt gives the agents SIGTERM and up to five seconds to go before exiting; the
-// exit handler kills what is left.
+// An interrupt keeps the agents still waiting from starting, gives the running ones
+// SIGTERM and up to five seconds to go before exiting; the exit handler kills what is left.
+const interrupted = new AbortController()
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
+    interrupted.abort(`interrupted by ${signal}`)
     stopGroups()
     const until = Date.now() + 5000
     const wait = setInterval(() => {
@@ -325,6 +327,37 @@ function keepAwake(): void {
   } catch {}
 }
 
+// What stops every agent of a round or a reply: its deadline, or an interrupt.
+function deadline(minutes: number): AbortSignal {
+  const timeout = new AbortController()
+  setTimeout(() => timeout.abort(`the round took longer than ${minutes} minutes`), timerMs(minutes * 60_000)).unref()
+  return AbortSignal.any([timeout.signal, interrupted.signal])
+}
+
+// One round (or reply) at a time per worktree: a second would overwrite the state and the
+// progress of the first. A lock whose process is gone is taken over.
+class LockedError extends Error {}
+function acquireLock(): void {
+  const lock = join(git('rev-parse', '--absolute-git-dir'), 'lntt-review.lock')
+  if (existsSync(lock)) {
+    const pid = Number(readFileSync(lock, 'utf8').trim())
+    let alive = false
+    try {
+      if (pid > 0 && pid !== process.pid) {
+        process.kill(pid, 0)
+        alive = true
+      }
+    } catch {}
+    if (alive) throw new LockedError(`a round is already running in this worktree (pid ${pid})`)
+  }
+  writeFileSync(lock, String(process.pid))
+  process.on('exit', () => {
+    try {
+      if (readFileSync(lock, 'utf8').trim() === String(process.pid)) unlinkSync(lock)
+    } catch {}
+  })
+}
+
 function configuredBase(data: Record<string, unknown>): string {
   return (data.delivery as { candidate?: { base?: string } } | undefined)?.candidate?.base ?? 'main'
 }
@@ -343,7 +376,10 @@ async function round(args: string[]): Promise<number> {
     args,
     options: { base: { type: 'string' }, plan: { type: 'boolean', default: false } },
   })
-  if (!values.plan) startProgress()
+  if (!values.plan) {
+    acquireLock()
+    startProgress()
+  }
   const data = loaded()
   const config = reviewConfig(data)
   const dirty = git('status', '--porcelain')
@@ -388,11 +424,7 @@ async function round(args: string[]): Promise<number> {
 
   const open = state?.branch === branch ? state.result.findings : []
   keepAwake()
-  const deadline = new AbortController()
-  setTimeout(
-    () => deadline.abort(`the round took longer than ${config.roundTimeoutMinutes} minutes`),
-    timerMs(config.roundTimeoutMinutes * 60_000),
-  ).unref()
+  const stop = deadline(config.roundTimeoutMinutes)
   emit({
     type: 'round',
     pid: process.pid,
@@ -419,7 +451,7 @@ async function round(args: string[]): Promise<number> {
       return askAll(questions, spawner(config.timeoutMinutes), report.progress, {
         perProvider: config.perProvider,
         optionalGraceMs: config.optionalGraceMinutes * 60_000,
-        signal: deadline.signal,
+        signal: stop,
       })
     },
     open,
@@ -463,6 +495,7 @@ async function round(args: string[]): Promise<number> {
 async function reply(args: string[]): Promise<number> {
   const [id, ...words] = args
   if (!id || words.length === 0) usage('give the finding and the answer')
+  acquireLock()
   const state = readState()
   const finding = state?.result.findings.find((f) => f.id === id)
   if (!state || !finding) throw new Error(`no open finding ${id} in the last round`)
@@ -487,7 +520,11 @@ async function reply(args: string[]): Promise<number> {
     })),
     spawner(config.timeoutMinutes),
     report.progress,
-    { perProvider: config.perProvider, optionalGraceMs: config.optionalGraceMinutes * 60_000 },
+    {
+      perProvider: config.perProvider,
+      optionalGraceMs: config.optionalGraceMinutes * 60_000,
+      signal: deadline(config.roundTimeoutMinutes),
+    },
   )
   report.stop()
   const replies = answers.map((a, i) => ({
@@ -510,7 +547,9 @@ export async function main([command, ...args]: string[]): Promise<void> {
     }
     // `error:` is what the review skill watches for, with `failed` and `round N done`.
     stderr.write(`lntt review: error: ${(error as Error).message}\n`)
-    if (command !== 'reply' && !progressFile && ![command, ...args].includes('--plan')) startProgress()
+    // A refused lock means another round owns the progress file: leave it alone.
+    const own = !(error instanceof LockedError)
+    if (own && command !== 'reply' && !progressFile && ![command, ...args].includes('--plan')) startProgress()
     emit({ type: 'error', message: (error as Error).message })
     exit(1)
   }

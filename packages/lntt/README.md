@@ -171,9 +171,10 @@ and do not block, nor are they carried to the next round. A reply that is neithe
 finding lines nor `no findings` counts as a failed reviewer; after a failure the next
 round reads the same range again. A reviewer is stopped after
 `delivery.review.timeoutMinutes` and counts as failed; at most
-`delivery.review.perProvider` agents of one provider run at once (optional ones queue
-apart), the whole round stops at `delivery.review.roundTimeoutMinutes`, and an agent
-that ignores SIGTERM is killed. An agent marked
+`delivery.review.perProvider` required agents of one provider run at once, and as many
+optional ones in a queue of their own, the whole round (or a reply) stops at `delivery.review.roundTimeoutMinutes`, an
+agent that ignores SIGTERM is killed, and one round or reply runs at a time in a
+worktree. An agent marked
 `optional` that fails is reported in `skipped` and does not fail the round; it is stopped
 `delivery.review.optionalGraceMinutes` after the others have answered. A round that
 cannot start prints `lntt review: error: …`. Agents that are not installed, or

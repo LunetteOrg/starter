@@ -505,4 +505,73 @@ describe('lntt review, end to end with a fake agent', () => {
     await new Promise((r) => child.on('exit', r))
     assert.match(readFileSync(pids, 'utf8'), /TERM/)
   })
+
+  test('Ctrl-C keeps the agents still waiting for a slot from starting', { timeout: 30000 }, async () => {
+    writeFileSync(
+      join(repo, '.agents/config.jsonc'),
+      JSON.stringify({
+        delivery: {
+          review: {
+            reviewers: {
+              decisions: { with: [] },
+              tests: { with: [] },
+              code: {
+                with: [
+                  { kind: 'claude', model: 'sonnet' },
+                  { kind: 'claude', model: 'opus' },
+                ],
+              },
+            },
+            verify: false,
+            perProvider: 1,
+          },
+        },
+      }),
+    )
+    git('commit', '-qam', 'two in one slot')
+    const pids = join(repo, '.pids')
+    writeFileSync(pids, '')
+    const child = spawn(process.execPath, [BIN, 'review', '--base', 'main'], {
+      cwd: repo,
+      env: {
+        HOME: repo,
+        PATH: [bin, dirname(process.execPath), '/usr/bin', '/bin'].join(':'),
+        FAKE_LOG: log,
+        FAKE_LOG_TERM_sonnet: '1',
+        FAKE_LOG_TERM_opus: '1',
+        FAKE_PIDS: pids,
+      },
+      stdio: 'ignore',
+    })
+    const until = Date.now() + 10_000
+    while (!readFileSync(pids, 'utf8').includes('started') && Date.now() < until)
+      await new Promise((r) => setTimeout(r, 50))
+    child.kill('SIGINT')
+    await new Promise((r) => child.on('exit', r))
+    await new Promise((r) => setTimeout(r, 300))
+    assert.equal(readFileSync(pids, 'utf8').match(/started/g)?.length, 1)
+  })
+
+  test('one round at a time in a worktree: a second is refused while the first runs', () => {
+    const lock = join(repo, '.git/lntt-review.lock')
+    writeFileSync(lock, String(process.pid))
+    const r = lntt(['--base', 'main'])
+    assert.equal(r.code, 1)
+    assert.match(r.err, /a round is already running in this worktree \(pid \d+\)/)
+    writeFileSync(lock, '999999')
+    assert.equal(lntt(['--base', 'main']).code, 0, 'a lock left by a process that is gone is taken over')
+    assert.equal(existsSync(lock), false, 'the lock goes with the round')
+  })
+
+  test('a reply stops at the round deadline too', { timeout: 30000 }, () => {
+    writeFileSync(
+      join(repo, '.agents/config.jsonc'),
+      JSON.stringify({ delivery: { review: { roundTimeoutMinutes: 0.02, verify: false } } }),
+    )
+    git('commit', '-qam', 'short deadline')
+    lntt(['--base', 'main'], { FAKE_REVIEW: '- [warning] a.ts:1 — w — a' })
+    const reply = lntt(['reply', 'f1', 'no'], { FAKE_SLEEP_sonnet: '1', FAKE_SLEEP_haiku: '1' })
+    assert.equal(reply.code, 1)
+    assert.match(reply.out, /took longer than/)
+  })
 })
