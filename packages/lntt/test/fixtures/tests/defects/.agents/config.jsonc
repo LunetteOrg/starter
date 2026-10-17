@@ -1,0 +1,37 @@
+{
+  "tests": {
+    "ignore": ["test/misc/helper.test.ts"],
+    "assertions": ["run"],
+    "levels": [
+      { "name": "unit", "files": ["test/unit/*.test.ts"], "environment": "node" },
+      { "name": "component", "files": ["test/ui/*.test.tsx"], "environment": "jsdom" },
+      { "name": "component-extra", "files": ["test/ui/shared.test.tsx"] },
+      {
+        "name": "integration",
+        "files": ["test/integration/*.test.ts"],
+        "environment": "node and a real Postgres",
+        "harness": ["tx", "withTestDb"]
+      }
+    ],
+    "rules": [
+      {
+        "name": "module-mock",
+        "pattern": "\\bvi\\.mock\\(",
+        "files": ["test/unit/*.test.ts", "test/ui/*.test.tsx"],
+        "message": "no module-level vi.mock: inject the dependency",
+        "anchor": "docs/adr/test.md#3-no-module-mocks"
+      },
+      {
+        "name": "bare-wait",
+        "pattern": "waitFor\\(",
+        "anchor": "docs/adr/test.md#4-waits",
+        "assertedBy": "test/unit/waits.arch.test.ts"
+      },
+      {
+        "name": "orphan-record",
+        "pattern": "never",
+        "anchor": "docs/adr/gone.md#1-nothing"
+      }
+    ]
+  }
+}

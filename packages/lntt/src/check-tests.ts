@@ -47,6 +47,18 @@ export function addedLines(root: string, base: string): Map<string, Set<number>>
     throw new CannotRunError(`git diff ${base} failed in ${root}: is ${base} a ref of this repository?`)
   }
   const out = new Map<string, Set<number>>()
+  // A file not yet tracked is added whole.
+  const untracked = execFileSync('git', ['-C', root, 'ls-files', '-z', '--others', '--exclude-standard'], {
+    encoding: 'utf8',
+  })
+    .split('\0')
+    .filter(Boolean)
+  for (const f of untracked) {
+    try {
+      const n = readFileSync(join(root, f), 'utf8').split('\n').length
+      out.set(f, new Set(Array.from({ length: n }, (_, i) => i + 1)))
+    } catch {}
+  }
   let file: string | null = null
   for (const line of diff.split('\n')) {
     const header = /^\+\+\+ (?:b\/(.+)|\/dev\/null)$/.exec(line)
@@ -475,6 +487,11 @@ function mutateCheck(options: CheckOptions, s: Scope, args: string[]): Result[] 
 }
 
 export function runTests(check: string | undefined, args: string[], options: CheckOptions): Result[] {
+  // A project that has not described its tests is not asked to: `lntt check` alone passes
+  // over it (an explicit check still runs).
+  if (check === undefined && options.data.tests === undefined) {
+    return [result('levels', 'NOT RUN', null, null, 'the configuration has no tests section')]
+  }
   const s = scope(options)
   if (check === 'mutate') return mutateCheck(options, s, args)
   const all: Record<string, () => Result[]> = {

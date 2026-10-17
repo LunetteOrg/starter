@@ -28,13 +28,22 @@ same way every time; the `review` skill keeps the judgement.
   Storybook check) brings its `brief`, a file of the repository. A lens may list
   agents of several providers, so the blind spots of one model are not the review's.
 - **What a script can check, a script checks.** A lens named after an area of
-  `lntt check` (`decisions`) gets `lntt check <area> --base <first commit read> --json`
+  `lntt check` (`decisions`, `tests`) gets `lntt check <area> --base <first commit read> --json`
   in its prompt, run before the reviewers, and its brief keeps only what needs
   judgement: violations, unrecorded decisions, the prose and the figures of the records
   the change touches. Each `FAIL` comes back as a warning at its line, since it breaks
   a recording rule; a contradiction with an accepted record stays a blocker. So the
   decisions lens runs on a cheap model, and a broken reference or a residue is found
-  the same way every round.
+  the same way every round. The `tests` lens gets `levels`, `focus`, `rules` and
+  `touched` the same way, and keeps the level of each test, the stubs, the expected
+  values and the choice of mutations
+  ([test checks](./test-checks.md)).
+- **A mutation a reviewer proposes is run, not argued.** The `tests` reviewer ends a
+  finding line with ``mutate: `text` => `mutated` ``; between the reviewers and the
+  verifiers `lntt review` runs each (`lntt check tests mutate`) on a scratch copy of
+  the head. A surviving mutant confirms the finding and a killed one refutes it, with
+  the run as the proof and no verifier asked; a run that could not happen leaves the
+  finding to the verifiers.
 - **Every finding is cited before it is verified:** `lntt check cite` reads its line in
   the working tree, which a round keeps clean at the head. A finding on a line past the
   end of its file is refuted there, by `lntt check cite`, and costs no verifier; the
@@ -127,8 +136,8 @@ same way every time; the `review` skill keeps the judgement.
 
 - An agent gains a read-only headless mode of its own (an equivalent of `--tools`):
   it joins `kind`.
-- Another lens has checks that need no judgement (a lint script, a mutation run): they
-  become an area of `lntt check` named after the lens, and its brief drops them.
+- Another lens has checks that need no judgement (a lint script): they become an area
+  of `lntt check` named after the lens, and its brief drops them.
 
 ## Discarded directions
 

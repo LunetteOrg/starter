@@ -1,0 +1,33 @@
+{
+  // wai's test layers (docs/adr/TESTING-testing.md): .spec.ts units, .spec.tsx components,
+  // .test.ts against a real Postgres, *.e2e.ts in Playwright.
+  "tests": {
+    "levels": [
+      { "name": "unit", "files": ["**/*.spec.ts"], "environment": "node" },
+      { "name": "component", "files": ["**/*.spec.tsx"], "environment": "jsdom, or Chromium in packages/ui" },
+      {
+        "name": "integration",
+        "files": ["**/*.test.ts"],
+        "environment": "node and a real Postgres",
+        "harness": ["withTestDb", "createTestDb"]
+      },
+      { "name": "e2e", "files": ["**/*.e2e.ts"], "environment": "Playwright against the built server" }
+    ],
+    "rules": [
+      {
+        "name": "no-db-mock",
+        "pattern": "vi\\.mock\\([^)]*(?:db|repo)",
+        "files": ["**/*.test.ts"],
+        "message": "never mock the database or a repository: use withTestDb",
+        "anchor": "docs/adr/TESTING-testing.md#testing-strategy"
+      },
+      {
+        "name": "no-wait-for-timeout",
+        "pattern": "waitForTimeout\\(",
+        "files": ["**/*.e2e.ts"],
+        "message": "no waitForTimeout(): wait for the thing itself",
+        "anchor": "docs/adr/TESTING-testing.md#testing-strategy"
+      }
+    ]
+  }
+}

@@ -1,0 +1,55 @@
+{
+  // pelion's test levels (docs/adr/test.md §1), lowest first.
+  "tests": {
+    "levels": [
+      { "name": "unit", "files": ["**/*.spec.ts"], "exclude": ["apps/*/e2e/**"], "environment": "node" },
+      { "name": "component", "files": ["**/*.spec.tsx"], "environment": "jsdom" },
+      {
+        "name": "component-browser",
+        "files": ["packages/ui/**/*.test.tsx", "packages/image-compress/**/*.test.ts"],
+        "environment": "chromium, vitest browser mode"
+      },
+      {
+        "name": "screenshot",
+        "files": ["apps/design-system/src/visual.test.tsx"],
+        "environment": "chromium, vitest browser mode"
+      },
+      {
+        "name": "integration",
+        "files": ["**/*.test.ts", "**/*.test.tsx"],
+        "exclude": [
+          "packages/ui/**",
+          "packages/image-compress/**",
+          "apps/design-system/src/visual.test.tsx",
+          "apps/*/built-server/*.test.ts",
+          "apps/*/vite-deps.test.ts"
+        ],
+        "environment": "node and a real Postgres or S3",
+        "harness": ["tx", "withTestDb", "withAdminDb", "adminConcurrentUrl", "createTestDb", "startEphemeralS3"]
+      },
+      {
+        "name": "server",
+        "files": ["apps/*/built-server/*.test.ts", "apps/*/vite-deps.test.ts"],
+        "environment": "node and the built server"
+      },
+      { "name": "e2e", "files": ["apps/*/e2e/*.spec.ts"], "environment": "Playwright against the server", "repeat": 1 }
+    ],
+    "rules": [
+      {
+        "name": "module-mock",
+        "pattern": "^\\s*vi\\.mock\\(",
+        "files": ["**/*.spec.ts", "**/*.spec.tsx", "**/*.test.ts", "**/*.test.tsx"],
+        "message": "no module-level vi.mock: inject the dependency",
+        "anchor": "docs/adr/test.md#3-un-test-che-deve-sostituire-una-dipendenza-non-usa-vimock-a-livello-di-modulo",
+        "assertedBy": "packages/test-utils/src/module-mocks.arch.spec.ts"
+      },
+      {
+        "name": "bare-wait",
+        "pattern": "\\b(?:waitFor|findBy\\w+)\\(",
+        "message": "a wait says what it waits for and for how long",
+        "anchor": "docs/adr/test.md#4-unasserzione-prima-o-poi-aspetta-solo-ciò-che-è-davvero-asincrono-e-dichiara-quanto",
+        "assertedBy": "packages/vitest-config/src/waits.arch.spec.ts"
+      }
+    ]
+  }
+}

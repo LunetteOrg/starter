@@ -23,7 +23,7 @@ command, so a reader who sees `lntt` in a script knows which package provides it
 
 ```
 lntt path | validate | get | set | operator | sync | local app | viewer
-lntt check [agents-md | decisions [structure | numbers]] | check cite
+lntt check [agents-md | decisions [structure | numbers] | tests [levels | focus | rules | touched | mutate]] | check cite
 lntt branch name | check | rename
 lntt review [reply]
 lntt worktree start
@@ -46,8 +46,8 @@ lntt ci local | candidate
   0 ok, 1 a configuration error, a red result or a check that cannot run (one line on
   stderr), 2 a usage error; a defect of `lntt` itself exits 1 with its stack trace.
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
-  `decisions`, whose results its review lens reads, and `agents-md`, which no lens
-  needs; a lens's checks are the area named after it. Alone it runs every area, which is
+  `decisions` and `tests`, whose results their review lenses read, and `agents-md`,
+  which no lens needs; a lens's checks are the area named after it. Alone it runs every area, which is
   what CI runs. Every check reports `PASS`, `FAIL` or `NOT RUN` with its reason, so a
   check that did not run is never read as one that passed, and `INFO` for what it prints
   without a verdict; `--json` gives one line per result (`area`, `check`, `status`,
