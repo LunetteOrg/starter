@@ -29,6 +29,49 @@
       "plugins/**": "skills installed unchanged in every project, citing that project's records"
     }
   },
+  // The test levels, lowest first (lntt check tests): every test file sits at exactly one.
+  "tests": {
+    // Named like tests, read by tests: not tests themselves.
+    "ignore": ["**/__fixtures__/**"],
+    // scaffold-smoke's run() throws when a command fails: that is its assertion.
+    "assertions": ["run"],
+    "levels": [
+      {
+        "name": "unit",
+        "files": ["packages/test-utils/src/**/*.spec.ts"],
+        "environment": "vitest, node",
+        "cwd": "packages/test-utils",
+        "run": "pnpm exec vitest run {files}"
+      },
+      {
+        "name": "cli",
+        "files": [
+          "packages/{biome-config,lntt,stylelint-config,typescript-config,playwright-config}/test/**/*.test.ts",
+          "scripts/*.test.mts",
+          "plugins/*/hooks/*.test.mjs"
+        ],
+        "exclude": ["**/fixtures/**"],
+        "environment": "node:test, the CLI against fixture repositories in a temp dir",
+        "run": "node --test {files}",
+        "coverage": "node --test --experimental-test-coverage --test-reporter=lcov --test-reporter-destination={out}/lcov.info {files}"
+      },
+      {
+        "name": "scaffold",
+        "files": ["packages/create/test/*.test.ts"],
+        "environment": "node:test, each template scaffolded into a temp dir",
+        "cwd": "packages/create",
+        "run": "node --test {files}"
+      },
+      {
+        "name": "integration",
+        "files": ["packages/test-utils/src/**/*.test.ts"],
+        "environment": "vitest, node and a Postgres in Docker",
+        "harness": ["hasTestDatabase"],
+        "cwd": "packages/test-utils",
+        "run": "pnpm exec vitest run {files}"
+      }
+    ]
+  },
   // What pnpm ci:local leaves to the cloud (docs/process/ci.md).
   "ci": {
     "local": {

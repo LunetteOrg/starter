@@ -1,0 +1,5 @@
+{
+  "tests": {
+    "levels": [{ "name": "unit", "files": ["test/*.test.ts"], "run": "node --test {files}" }]
+  }
+}

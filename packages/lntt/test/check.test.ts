@@ -420,11 +420,11 @@ describe('lntt check cite', () => {
 })
 
 describe('lntt check', () => {
-  test('alone runs every area: the AGENTS.md block and the decision logs', () => {
+  test('alone runs every area: the AGENTS.md block, the decision logs and the tests', () => {
     project('clean')
     const r = results(['check'])
     assert.equal(r.status, 0)
-    assert.deepEqual([...new Set(r.results.map((x) => x.area))], ['agents-md', 'decisions'])
+    assert.deepEqual([...new Set(r.results.map((x) => x.area))], ['agents-md', 'decisions', 'tests'])
   })
 
   test('agents-md fails on a hand edit of the managed block', () => {
