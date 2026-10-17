@@ -15,7 +15,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
+import os, { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import { CannotRunError, type Result } from './check.ts'
 import { type Candidate, candidates, commandFor, ImportGraph, type Level, testsConfig } from './test-files.ts'
@@ -121,7 +121,7 @@ export function createScratch(root: string): Scratch {
   // handler (a review round stopping its agents) is there to do it.
   const onSignal = (signal: NodeJS.Signals) => {
     dispose()
-    if (process.listenerCount(signal) === 1) process.exit(130)
+    if (process.listenerCount(signal) === 1) process.exit(128 + (os.constants.signals[signal] ?? 0))
   }
   process.once('exit', onExit)
   process.on('SIGINT', onSignal)

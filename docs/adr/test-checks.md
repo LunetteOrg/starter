@@ -36,7 +36,9 @@ reason, and sits at the lowest level where its assertion can.
     pyramid per level, what the diff adds to each, and the jsdom tests that stub a Web
     API are `INFO`: never a threshold.
   - `focus`: `.only`, a new `.skip` or todo, a test with no assertion.
-  - `rules`: the lines that match a rule; a rule asserted by the suite is cited.
+  - `rules`: the lines that match a rule; a rule asserted by the suite is cited. A rule
+    whose `anchor` names a record that is not there, or a heading the record does not
+    have, fails.
   - `touched` (needs `--base`): the lines the diff changes and the tests that run them,
     from the `coverage` of the test files that import the changed file, or from imports
     alone when a level has no `coverage`. Coverage says which tests to run and which
@@ -44,7 +46,8 @@ reason, and sits at the lowest level where its assertion can.
   - `mutate <path:line> --text <on the line> --to <mutated>`: applies the mutation,
     runs the tests that import the file (a level's `repeat` times in a row), and
     reports killed (the failing test and its message, `PASS`), survived (`FAIL`), or
-    `NOT RUN` when the text is not once on that line or the tests fail without it.
+    `NOT RUN` when the path leaves the project, the text is not once on that line, the
+    tests fail without the mutation or they outlast `timeoutSeconds`.
 - **The mutation lives in a scratch git worktree** of the head, with the uncommitted
   files laid over it and the dependencies shared, and is removed when the run ends: the
   working tree is never written. A failure counts as killed only when the same tests
@@ -77,6 +80,8 @@ reason, and sits at the lowest level where its assertion can.
   tests of a line are found from imports, so a test that reaches code only through a
   package name or a spawned process path that is not a string in the test is missed
   and the mutant may survive for want of a test that does run it.
+- A mutation is proposed in a line whose text holds no backtick: the reviewer reports
+  other lines as notes.
 - A mutation run costs the tests of the files that import the changed file. A timeout
   stops the shell that runs the command; a process it started may outlive it.
 - Each scratch worktree copies the links of `node_modules`; a project whose tests need

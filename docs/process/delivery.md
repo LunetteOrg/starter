@@ -39,7 +39,8 @@ stops at the draft pull request.
 2. **Review on the machine.** The review runs on the local branch with `lntt review`
    (the `review` skill), and fixes are local commits. Reviewers start with no context
    of the conversation that wrote the change, each lens on the agents and models of
-   `delivery.review`; verifiers try to refute every blocker and warning; later rounds
+   `delivery.review`; verifiers try to refute every blocker and warning (a mutation run decides the
+   findings it covers); later rounds
    read only the new commits. The branch reaches GitHub when a round finds nothing:
    every push is a full run.
 3. **`pnpm ci:local` green** on the head about to be published, then one push, then

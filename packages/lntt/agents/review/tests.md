@@ -17,7 +17,7 @@ not re-report a FAIL there; judge what it cannot.
   - [warning] path:line — no test fails when <what the mutation does> — <the test to add>; mutate: `text on the line` => `mutated text`
   ```
 
-  A line whose text holds a backtick cannot be proposed this way: report it as a note.
+  A line whose text, or its mutation, holds a backtick cannot be proposed this way: report it as a note.
   One mutation per line of the reply, at most a handful, the ones most likely to
   survive. A test that would still pass and that you cannot express as a mutation is a
   note with `not checked: needs a mutation run on path:line`.

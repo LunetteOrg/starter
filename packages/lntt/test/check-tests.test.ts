@@ -205,6 +205,38 @@ describe('lntt check tests rules', () => {
       r.results.map((x) => x.message).join('\n'),
       /module-mock .*the record has no heading #3-no-module-mocks/,
     )
+    writeFileSync(join(repo, 'docs/adr/test.md'), '# Tests\n\n## 3. No module mocks\n\n## 4. Waits\n')
+    const ok = results(['check', 'tests', 'rules'])
+    assert.ok(!ok.results.some((x) => /no heading/.test(x.message)))
+  })
+
+  test('an anchor is a file, or a file and a heading in any case, a repeat numbered, a fence no heading', () => {
+    project('defects')
+    writeFileSync(
+      join(repo, 'docs/adr/test.md'),
+      '# Tests\n\n## 3. No module mocks\n\n## Waits\n\n## Waits\n\n```\n# Not a heading\n```\n',
+    )
+    const anchors: Record<string, boolean> = {
+      'docs/adr/test.md': true,
+      'docs/adr/test.md#': true,
+      'docs/adr/test.md#3-No-Module-Mocks': true,
+      'docs/adr/test.md#waits-1': true,
+      'docs/adr/test.md#waits-2': false,
+      'docs/adr/test.md#not-a-heading': false,
+      'docs/adr/test.md#100%': false,
+      'docs/adr': false,
+    }
+    for (const [anchor, ok] of Object.entries(anchors)) {
+      const config = JSON.stringify({
+        tests: {
+          rules: [{ name: 'r', pattern: 'never matches here', anchor }],
+          levels: [{ name: 'unit', files: ['test/unit/*.test.ts'] }],
+        },
+      })
+      writeFileSync(join(repo, '.agents/config.jsonc'), config)
+      const r = results(['check', 'tests', 'rules'])
+      assert.equal(r.status, ok ? 0 : 1, `${anchor}: ${r.results.map((x) => x.message).join('; ')}`)
+    }
   })
 })
 

@@ -5,7 +5,7 @@
 // that run them) and `mutate` (does a mutation a reviewer proposes make a test fail).
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, matchesGlob } from 'node:path'
 import { ANCHOR_LINE, CannotRunError, type CheckOptions, projectFiles, type Result } from './check.ts'
@@ -319,7 +319,6 @@ function slug(heading: string): string {
   return heading
     .trim()
     .toLowerCase()
-    .replace(/`/g, '')
     .replace(/[^\p{L}\p{N}\s-]/gu, '')
     .replace(/\s/g, '-')
 }
@@ -328,14 +327,27 @@ function slug(heading: string): string {
 function recordMissing(root: string, anchor: string): string | null {
   const [path, fragment] = anchor.split('#') as [string, string | undefined]
   const abs = join(root, path)
-  if (!existsSync(abs)) return 'the record behind the rule is not there'
+  if (!existsSync(abs) || !statSync(abs).isFile()) return 'the record behind the rule is not there'
   if (fragment === undefined || fragment === '') return null
-  const wanted = decodeURIComponent(fragment).toLowerCase()
-  const headings = readFileSync(abs, 'utf8')
-    .split('\n')
-    .filter((l) => /^#{1,6}\s/.test(l))
-    .map((l) => slug(l.replace(/^#{1,6}\s+/, '')))
-  return headings.includes(wanted) ? null : `the record has no heading #${fragment}`
+  let wanted: string
+  try {
+    wanted = decodeURIComponent(fragment).toLowerCase()
+  } catch {
+    wanted = fragment.toLowerCase()
+  }
+  // Slugs as GitHub makes them: a repeated heading takes -1, -2; fenced lines are no heading.
+  const seen = new Map<string, number>()
+  const slugs = new Set<string>()
+  let fenced = false
+  for (const line of readFileSync(abs, 'utf8').split('\n')) {
+    if (/^\s*(?:```|~~~)/.test(line)) fenced = !fenced
+    if (fenced || !/^#{1,6}\s/.test(line)) continue
+    const base = slug(line.replace(/^#{1,6}\s+/, ''))
+    const n = seen.get(base) ?? 0
+    seen.set(base, n + 1)
+    slugs.add(n === 0 ? base : `${base}-${n}`)
+  }
+  return slugs.has(wanted) ? null : `the record has no heading #${fragment}`
 }
 
 function checkRule(options: CheckOptions, s: Scope, rule: Rule): Result[] {

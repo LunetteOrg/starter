@@ -130,6 +130,25 @@ describe('lntt check tests mutate', () => {
     assert.match(result.message, /level unit fails without the mutation/)
   })
 
+  test("the line is read from what is run: a file only the working tree has, a line past the head's end", () => {
+    writeFileSync(join(repo, 'src/fresh.ts'), 'export const a = 1\nexport const b = 2\n')
+    writeFileSync(
+      join(repo, 'test/fresh.test.ts'),
+      "import assert from 'node:assert/strict'\nimport { test } from 'node:test'\nimport { b } from '../src/fresh.ts'\ntest('b is two', () => {\n  assert.equal(b, 2)\n})\n",
+    )
+    const fresh = mutate('src/fresh.ts:2', '= 2', '= 3').result
+    assert.equal(fresh.status, 'PASS', fresh.message)
+    // price.ts grows past its committed length: the mutation is on a line HEAD does not have
+    const price = readFileSync(join(repo, 'src/price.ts'), 'utf8')
+    writeFileSync(join(repo, 'src/price.ts'), `${price}\nexport const late = 'x'\n`)
+    writeFileSync(
+      join(repo, 'test/late.test.ts'),
+      "import assert from 'node:assert/strict'\nimport { test } from 'node:test'\nimport { late } from '../src/price.ts'\ntest('late is x', () => {\n  assert.equal(late, 'x')\n})\n",
+    )
+    const late = mutate('src/price.ts:18', "'x'", "'y'").result
+    assert.equal(late.status, 'PASS', late.message)
+  })
+
   test('a path that leaves the project is refused, not followed', () => {
     for (const anchor of ['../outside.ts:1', '/etc/hosts:1', 'src/../../outside.ts:1']) {
       const { result } = mutate(anchor, 'x', 'y')
