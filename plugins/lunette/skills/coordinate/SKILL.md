@@ -126,5 +126,21 @@ mark ready; return the state of the theme and the friction. Also say:
 - A status comment names the ref its line numbers were read on.
 - A pipe on `git commit` hides a commitlint rejection: never filter a commit's output.
 
-<!-- FRICTION-LIST: the friction list of the coordinator of release 0.6.1 (#84, #89, #111, #117)
-     is added here as bullets, replacing this comment, and the plugin version is raised with it. -->
+- **Briefs and theme sections live in an untracked directory of the coordinator's worktree.**
+  Pass them with `--context <file>`, which needs no shell quoting of backticks or `$`. Do not
+  `cd` into that directory: the shell keeps the working directory.
+- **On Orca the child's worktree does not exist when its brief is written:** the brief says
+  "the worktree this session starts in", not a path.
+- **A stacked child's base must exist before the child starts.** The sibling pushes the base
+  with the interface the child needs and signals it with a message; the go for the first wave
+  does not cover the stacked child. The stacked child opens its draft pull request against
+  its base branch and retargets it after the base merges.
+- **Questions for the person go through the mailbox** (`lntt ask --to orchestrator`, polled
+  every 20 seconds), never to the tab. Every brief says so.
+- **A message that needs no answer still gets an `.answer.md`** (a line such as "noted"),
+  or the watcher on the inbox reports it again.
+- **Reading a child's terminal:** `orca terminal read --json` returns every screen cell, tens
+  of KB per read. Reduce it to the text or the last lines before it enters the context.
+- **A round cap for `lntt review` is set by the coordinator in the child's context.** A
+  review that keeps finding small notes after several rounds (one child ran 7) stops where the
+  coordinator said it stops; without a cap, the child's judgement is the only brake.
