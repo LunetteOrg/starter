@@ -72,7 +72,37 @@ describe('the reply', () => {
       session_id: 's1',
       total_cost_usd: 0.02,
     })
-    assert.deepEqual(parseReply('claude', out), { text: 'TEXT', session: 's1', cost: 0.02 })
+    assert.deepEqual(parseReply('claude', out), { text: 'TEXT', session: 's1', cost: 0.02, tokens: null })
+  })
+
+  test('the tokens an agent used: input, cache written and read, output, reasoning', () => {
+    const claude = JSON.stringify({
+      result: 'r',
+      session_id: 's',
+      is_error: false,
+      usage: {
+        input_tokens: 4,
+        cache_creation_input_tokens: 80374,
+        cache_read_input_tokens: 79820,
+        output_tokens: 1021,
+      },
+    })
+    assert.equal(parseReply('claude', claude).tokens, 161219)
+    const line = (o: object) => JSON.stringify(o)
+    const opencode = [
+      line({
+        type: 'step_finish',
+        sessionID: 'ses_1',
+        part: { tokens: { input: 1423, output: 166, reasoning: 101, cache: { read: 10, write: 0 } } },
+      }),
+      line({ type: 'text', sessionID: 'ses_1', part: { messageID: 'm', type: 'text', text: 'r' } }),
+      line({
+        type: 'step_finish',
+        sessionID: 'ses_1',
+        part: { tokens: { input: 200, output: 20, reasoning: 0, cache: { read: 0, write: 0 } } },
+      }),
+    ].join('\n')
+    assert.equal(parseReply('opencode', opencode).tokens, 1920)
   })
 
   test('claude: an error is an error', () => {
@@ -88,7 +118,7 @@ describe('the reply', () => {
       line({ type: 'text', sessionID: 'ses_1', part: { messageID: 'm2', type: 'text', text: 'first' } }),
       line({ type: 'text', sessionID: 'ses_1', part: { messageID: 'm2', type: 'text', text: 'second' } }),
     ].join('\n')
-    assert.deepEqual(parseReply('opencode', out), { text: 'first\nsecond', session: 'ses_1', cost: null })
+    assert.deepEqual(parseReply('opencode', out), { text: 'first\nsecond', session: 'ses_1', cost: null, tokens: null })
   })
 
   test('opencode: an error event, or no text at all, is an error', () => {
@@ -137,9 +167,9 @@ describe('several agents at once', () => {
     )
     assert.deepEqual(started, ['A', 'B', 'C'])
     assert.deepEqual(results, [
-      { ok: true, reply: { text: 're A', session: 'A', cost: null } },
+      { ok: true, reply: { text: 're A', session: 'A', cost: null, tokens: null } },
       { ok: false, error: 'timed out after 1 minutes' },
-      { ok: true, reply: { text: 're C', session: 'C', cost: null } },
+      { ok: true, reply: { text: 're C', session: 'C', cost: null, tokens: null } },
     ])
   })
 

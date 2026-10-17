@@ -305,7 +305,7 @@ describe('a round', () => {
         const answer = answers(job.prompt, job.agent.kind, job.agent.model)
         return answer instanceof Error
           ? { ok: false as const, error: answer.message }
-          : { ok: true as const, reply: { text: answer, session: `s-${job.agent.model}`, cost: 0.01 } }
+          : { ok: true as const, reply: { text: answer, session: `s-${job.agent.model}`, cost: 0.01, tokens: 1000 } }
       })
     return { ask, asked, labels }
   }
@@ -367,6 +367,7 @@ describe('a round', () => {
     )
     assert.deepEqual(result.refuted, [])
     assert.equal(result.cost, 0.04)
+    assert.equal(result.tokens, 4000)
     assert.equal(roundClean(result), false)
   })
 
@@ -507,7 +508,7 @@ describe('what the first real round taught', () => {
         const a = answer(q.prompt)
         return a instanceof Error
           ? { ok: false as const, error: a.message }
-          : { ok: true as const, reply: { text: a, session: 's', cost: null } }
+          : { ok: true as const, reply: { text: a, session: 's', cost: null, tokens: null } }
       })
   }
 
@@ -667,7 +668,7 @@ describe('what the first real round taught', () => {
           const a = answer(q.prompt, q.agent.model)
           return a instanceof Error
             ? { ok: false as const, error: a.message }
-            : { ok: true as const, reply: { text: a, session: 's', cost: null } }
+            : { ok: true as const, reply: { text: a, session: 's', cost: null, tokens: null } }
         })
 
     test('the verdict counts the verifiers that answered; one that failed does not split it', async () => {

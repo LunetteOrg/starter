@@ -33,7 +33,7 @@ process.stdin.on('data', (d) => (prompt += d)).on('end', () => {
   if (process.env['FAKE_SLEEP_' + model]) { setTimeout(() => {}, 600000); return }
   if (process.env['FAKE_FAIL_' + kind] || process.env['FAKE_FAIL_' + kind + '_' + model]) { process.stderr.write('boom\\n'); process.exit(1) }
   const result = (process.env['FAKE_' + kind + '_' + model] || process.env['FAKE_' + kind] || 'no findings').replace(/\\\\n/g, '\\n')
-  process.stdout.write(JSON.stringify({ result, session_id: session, is_error: false, total_cost_usd: 0.01 }))
+  process.stdout.write(JSON.stringify({ result, session_id: session, is_error: false, total_cost_usd: 0.01, usage: { input_tokens: 1000, output_tokens: 500 } }))
 })
 `
 
@@ -284,5 +284,41 @@ describe('lntt review, end to end with a fake agent', () => {
     assert.equal(r.code, 0, r.err)
     assert.ok(Date.now() - began < 20000, 'not awaited')
     assert.match(JSON.parse(r.out).skipped[0].error, /stopped: the other agents answered/)
+  })
+
+  test('the progress goes to stderr with tokens, and to a file of JSON events the band reads', () => {
+    const env = { FAKE_REVIEW: '- [blocker] a.ts:1 — wrong — fix', FAKE_VERIFY: 'confirmed\\nshown' }
+    const r = lntt(['--base', 'main'], env)
+    assert.match(r.err, /lntt review: done code · claude sonnet in \d+s \(1\.5k tokens\)/)
+    assert.match(r.err, /round 1 done in \d+s: 1 findings, 0 refuted, 0 failed, 0 skipped, 3k tokens/)
+    assert.doesNotMatch(r.err, /\$/)
+    const events = readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l))
+    assert.deepEqual(
+      events.map((e) => [e.type, e.phase ?? e.round ?? '', e.total ?? e.outcome ?? '']),
+      [
+        ['round', 1, ''],
+        ['phase', 'reviewers', 1],
+        ['start', 'reviewers', ''],
+        ['end', 'reviewers', 'done'],
+        ['phase', 'verify', 1],
+        ['start', 'verify', ''],
+        ['end', 'verify', 'done'],
+        ['done', 1, ''],
+      ],
+    )
+    assert.ok(events.every((e) => typeof e.t === 'number'))
+    assert.equal(events.at(-1).tokens, 3000)
+    assert.equal(events[3].label, 'code · claude sonnet')
+    assert.equal(events[3].tokens, 1500)
+  })
+
+  test('a round that cannot start leaves an error event for the band', () => {
+    writeFileSync(join(repo, 'a.ts'), 'dirty\n')
+    lntt(['--base', 'main'])
+    const last = readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8').trim().split('\n').at(-1) as string
+    assert.equal(JSON.parse(last).type, 'error')
   })
 })

@@ -2,7 +2,7 @@
 // (usage: bin/lntt.ts).
 
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
@@ -110,10 +110,35 @@ function duration(ms: number): string {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`
 }
 
+export function formatTokens(n: number | null): string {
+  if (n === null) return ''
+  if (n < 1000) return `${n} tokens`
+  if (n < 1_000_000) return `${Math.round(n / 100) / 10}k tokens`.replace('.0k', 'k')
+  return `${Math.round(n / 100_000) / 10}M tokens`.replace('.0M', 'M')
+}
+
+// Where a round's progress goes as JSON events, one per line, for whatever shows it
+// beside the agent (the lunette band): <git dir>/lntt-review.progress, emptied when a
+// round starts.
+function progressPath(): string {
+  return join(git('rev-parse', '--absolute-git-dir'), 'lntt-review.progress')
+}
+
+function emit(event: Record<string, unknown>): void {
+  try {
+    appendFileSync(progressPath(), `${JSON.stringify({ t: Date.now(), ...event })}\n`)
+  } catch {}
+}
+
+function phaseOf(label: string): string {
+  return label.startsWith('verify ') ? 'verify' : label.startsWith('reply ') ? 'reply' : 'reviewers'
+}
+
 // One stderr line per start and end, and every 30 seconds the ones still running, for a
-// person at the terminal. A watcher that should wake only when it matters (the review
-// skill's) filters `failed` and `round N done`: every other line is routine.
-function reporter(): { progress: (event: Progress) => void; stop: () => void } {
+// person at the terminal; the same as JSON events in the progress file. A watcher that
+// should wake only when it matters (the review skill's) filters `failed`, `error:` and
+// `round N done`: every other line is routine.
+function reporter(): { progress: (event: Progress) => void; phase: (labels: string[]) => void; stop: () => void } {
   // By question, not by label: two agents can carry the same label.
   const running = new Map<number, string>()
   const since = Date.now()
@@ -123,10 +148,15 @@ function reporter(): { progress: (event: Progress) => void; stop: () => void } {
     stderr.write(`lntt review: running ${running.size} (${duration(Date.now() - since)}): ${labels}\n`)
   }, 30_000)
   return {
+    phase(labels) {
+      if (labels.length > 0) emit({ type: 'phase', phase: phaseOf(labels[0] as string), total: labels.length })
+    },
     progress(event) {
+      const phase = phaseOf(event.label)
       if (event.type === 'start') {
         running.set(event.index, event.label)
         stderr.write(`lntt review: start ${event.label}\n`)
+        emit({ type: 'start', phase, label: event.label })
         return
       }
       running.delete(event.index)
@@ -135,9 +165,13 @@ function reporter(): { progress: (event: Progress) => void; stop: () => void } {
         // An optional agent's failure does not need anyone: not a `failed` line.
         const word = event.optional ? 'skipped' : 'failed'
         stderr.write(`lntt review: ${word} ${event.label} in ${took}: ${event.answer.error}\n`)
+        emit({ type: 'end', phase, label: event.label, outcome: word, error: event.answer.error, ms: event.ms })
       } else {
-        const cost = event.answer.reply.cost === null ? '' : ` (${event.answer.reply.cost.toFixed(3)} $)`
-        stderr.write(`lntt review: done ${event.label} in ${took}${cost}\n`)
+        const tokens = event.answer.reply.tokens
+        stderr.write(
+          `lntt review: done ${event.label} in ${took}${tokens === null ? '' : ` (${formatTokens(tokens)})`}\n`,
+        )
+        emit({ type: 'end', phase, label: event.label, outcome: 'done', tokens, ms: event.ms })
       }
     },
     stop: () => clearInterval(timer),
@@ -270,6 +304,8 @@ async function round(args: string[]): Promise<number> {
   if (problems.length > 0) throw new Error(`cannot start ${problems.join('; ')}`)
 
   const open = state?.branch === branch ? state.result.findings : []
+  writeFileSync(progressPath(), '')
+  emit({ type: 'round', round: range.round, range: `${range.from}..${head}`, files: files.length })
   const report = reporter()
   const began = Date.now()
   const result = await runRound(
@@ -283,11 +319,13 @@ async function round(args: string[]): Promise<number> {
       range,
       readBrief: (path) => readFileSync(join(root, path), 'utf8'),
     },
-    (questions) =>
-      askAll(questions, spawner(config.timeoutMinutes), report.progress, {
+    (questions) => {
+      report.phase(questions.map((q) => q.label ?? ''))
+      return askAll(questions, spawner(config.timeoutMinutes), report.progress, {
         perProvider: config.perProvider,
         optionalGraceMs: config.optionalGraceMinutes * 60_000,
-      }),
+      })
+    },
     open,
   )
   // The reviewers read the working tree: a commit or an edit during the round means they
@@ -306,10 +344,20 @@ async function round(args: string[]): Promise<number> {
   }
   writeFileSync(statePath(), `${JSON.stringify(saved, null, 2)}\n`)
   report.stop()
-  const cost = result.cost === null ? '' : `, ${result.cost.toFixed(3)} $`
+  const tokens = result.tokens === null ? '' : `, ${formatTokens(result.tokens)}`
   stderr.write(
-    `lntt review: round ${saved.round} done in ${duration(Date.now() - began)}: ${result.findings.length} findings, ${result.refuted.length} refuted, ${result.failed.length} failed, ${result.skipped.length} skipped${cost}\n`,
+    `lntt review: round ${saved.round} done in ${duration(Date.now() - began)}: ${result.findings.length} findings, ${result.refuted.length} refuted, ${result.failed.length} failed, ${result.skipped.length} skipped${tokens}\n`,
   )
+  emit({
+    type: 'done',
+    round: saved.round,
+    findings: result.findings.length,
+    refuted: result.refuted.length,
+    failed: result.failed.length,
+    skipped: result.skipped.length,
+    tokens: result.tokens,
+    clean: roundClean(result),
+  })
   stdout.write(`${JSON.stringify(result, null, 2)}\n`)
   return roundClean(result) ? 0 : 1
 }
@@ -366,6 +414,9 @@ export async function main([command, ...args]: string[]): Promise<void> {
     }
     // `error:` is what the review skill watches for, with `failed` and `round N done`.
     stderr.write(`lntt review: error: ${(error as Error).message}\n`)
+    try {
+      emit({ type: 'error', message: (error as Error).message })
+    } catch {}
     exit(1)
   }
 }

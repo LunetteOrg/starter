@@ -18,6 +18,8 @@ export interface Reply {
   session: string | null
   // In USD, when the agent reports it (claude does, opencode does not).
   cost: number | null
+  // Every token the answer took: input, cache written and read, output, reasoning.
+  tokens: number | null
 }
 
 // An agent as lntt review lists it: optional when its failure (a free model that times
@@ -93,10 +95,17 @@ export function parseReply(kind: string, stdout: string): Reply {
       session_id?: string
       is_error?: boolean
       total_cost_usd?: number
+      usage?: Record<string, unknown>
     }>(kind, stdout, 'no JSON')
     if (out.is_error) throw new Error(out.result ?? 'claude failed')
     if (typeof out.result !== 'string') throw new Error('claude gave no result')
-    return { text: out.result, session: out.session_id ?? null, cost: out.total_cost_usd ?? null }
+    const u = out.usage
+    const tokens = u
+      ? ['input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens', 'output_tokens']
+          .map((k) => (typeof u[k] === 'number' ? (u[k] as number) : 0))
+          .reduce((a, b) => a + b, 0)
+      : null
+    return { text: out.result, session: out.session_id ?? null, cost: out.total_cost_usd ?? null, tokens }
   }
   // opencode: one JSON event per line; the answer is the text of the last message.
   const events = stdout
@@ -106,7 +115,12 @@ export function parseReply(kind: string, stdout: string): Reply {
       json<{
         type: string
         sessionID?: string
-        part?: { messageID?: string; type?: string; text?: string }
+        part?: {
+          messageID?: string
+          type?: string
+          text?: string
+          tokens?: { input?: number; output?: number; reasoning?: number; cache?: { read?: number; write?: number } }
+        }
         error?: { message?: string }
       }>(kind, line, 'a line that is not JSON'),
     )
@@ -119,7 +133,18 @@ export function parseReply(kind: string, stdout: string): Reply {
     .filter((e) => e.part?.messageID === last)
     .map((e) => e.part?.text)
     .join('\n')
-  return { text, session: events.find((e) => e.sessionID)?.sessionID ?? null, cost: null }
+  // opencode reports each step's tokens; the answer took their sum.
+  const steps = events.filter((e) => e.type === 'step_finish' && e.part?.tokens)
+  const tokens =
+    steps.length === 0
+      ? null
+      : steps
+          .map(({ part }) => {
+            const t = part?.tokens ?? {}
+            return (t.input ?? 0) + (t.output ?? 0) + (t.reasoning ?? 0) + (t.cache?.read ?? 0) + (t.cache?.write ?? 0)
+          })
+          .reduce((a, b) => a + b, 0)
+  return { text, session: events.find((e) => e.sessionID)?.sessionID ?? null, cost: null, tokens }
 }
 
 export type Progress =

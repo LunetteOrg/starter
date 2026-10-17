@@ -359,6 +359,8 @@ export interface RoundResult {
   // Optional agents that did not answer: reported, never blocking.
   skipped: Failure[]
   cost: number | null
+  // Every token the round's agents took, where they report it.
+  tokens: number | null
 }
 
 // Notes are reported, never blocking: a round is clean when no blocker or warning is
@@ -373,6 +375,10 @@ export interface RoundInput extends PromptValues {
   range: Range
   // The text of a project lens's brief, by its path in the repository.
   readBrief?: (path: string) => string
+}
+
+function addTokens(total: number | null, answer: Answer): number | null {
+  return answer.ok && answer.reply.tokens !== null ? (total ?? 0) + answer.reply.tokens : total
 }
 
 function addCost(total: number | null, answer: Answer): number | null {
@@ -399,6 +405,7 @@ export async function runRound(
     failed: [],
     skipped: [],
     cost: null,
+    tokens: null,
   }
   if (input.files.length === 0) {
     result.findings = open.filter((f) => f.verdict !== 'withdrawn')
@@ -420,6 +427,7 @@ export async function runRound(
   for (const [i, answer] of answers.entries()) {
     const job = jobs[i] as (typeof jobs)[number]
     result.cost = addCost(result.cost, answer)
+    result.tokens = addTokens(result.tokens, answer)
     const failed = (error: string) =>
       (job.agent.optional ? result.skipped : result.failed).push({
         lens: job.lens,
@@ -473,6 +481,7 @@ export async function runRound(
   verdicts.forEach((answer, i) => {
     const check = checks[i] as (typeof checks)[number]
     result.cost = addCost(result.cost, answer)
+    result.tokens = addTokens(result.tokens, answer)
     const by = agentLabel(check.agent)
     if (!answer.ok) {
       const failure = { lens: `verify ${(found[check.finding] as Found).id}`, agent: by, error: answer.error }
