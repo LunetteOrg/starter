@@ -40,7 +40,8 @@ reason, and sits at the lowest level where its assertion can.
     whose `anchor` names a record that is not there, or a heading the record does not
     have, fails. Headings resolve as GitHub's slugs do, over CommonMark's blocks: a
     heading is indented by up to three spaces, a repeated heading is numbered `-1`,
-    `-2`, and a fence closes on a bare run at least as long as its opening, so fenced
+    `-2`, and a fence closes on a bare run of the same character at least as long as its
+    opening, so fenced
     lines are no heading.
   - `touched` (needs `--base`): the lines the diff changes and the tests that run them,
     from the `coverage` of the test files that import the changed file, or from imports
