@@ -55,5 +55,6 @@ export function candidateConfig(cwd: string): CandidateConfig | null {
     base: section.base ?? 'main',
     prefix: section.prefix,
     hotfix: { prefix: section.hotfix?.prefix ?? 'hotfix/', label: section.hotfix?.label ?? 'hotfix' },
+    status: { inRelease: section.status?.inRelease ?? 'In release', done: section.status?.done ?? 'Done' },
   }
 }

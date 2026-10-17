@@ -3,12 +3,14 @@ name: Candidate
 # Moves every pull request into the default branch onto the open candidate (created
 # on the fly when none is open); when a pull request is merged into a candidate,
 # rebuilds from every pull request merged into it the list and the `Closes` lines of
-# the candidate's body, and tells each open issue they close, once, that the candidate
-# will close it. When the candidate is merged, closes the issues of its `Closes` lines
-# still open (keywords written by the automation link nothing) and moves the pull
-# requests still open on it onto the next candidate. Hotfixes stay on the default
-# branch. Prefix, base and hotfix markers: delivery.candidate in .agents/config.jsonc;
-# the logic: `lntt ci candidate` (packages/lntt/src/ci/candidate.ts); the flow:
+# the candidate's body, tells each open issue they close, once, that the candidate will
+# close it, and moves it to the board status delivery.candidate.status.inRelease. When
+# the candidate is merged, closes the issues of its `Closes` lines still open (keywords
+# written by the automation link nothing), moves them to delivery.candidate.status.done
+# and moves the pull requests still open on it onto the next candidate. Hotfixes stay on
+# the default branch. Prefix, base, hotfix markers and board statuses:
+# delivery.candidate in .agents/config.jsonc; the logic: `lntt ci candidate`
+# (packages/lntt/src/ci/candidate.ts); the flow:
 # docs/process/delivery.md.
 #
 # It runs on drafts too, on these three events only, never on a push. It writes with
@@ -77,6 +79,18 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
           permission-issues: write
+      # The Projects permission is an organization permission of the app, asked in a
+      # step of its own: a token request for a permission the app has not been granted
+      # fails, and that must not stop the candidate. Without this token the script
+      # leaves the board where it is, with a notice (docs/process/delivery.md).
+      - id: projects-token
+        if: steps.credentials.outputs.ready == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.CANDIDATE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CANDIDATE_APP_PRIVATE_KEY }}
+          permission-organization-projects: write
       # The script and the configuration come from the default branch; the workflow
       # file is the pull request's own, as for every pull_request run. A pull request
       # from this repo gets nothing its author lacks, and a fork's gets no secrets.
@@ -99,4 +113,5 @@ jobs:
         if: steps.credentials.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PROJECTS_GH_TOKEN: ${{ steps.projects-token.outputs.token }}
         run: node packages/lntt/bin/lntt.ts ci candidate
