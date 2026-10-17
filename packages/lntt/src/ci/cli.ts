@@ -119,6 +119,13 @@ function candidateRun(args: string[]): number {
     return 0
   }
   const gh = candidate.makeGh({ dryRun: values['dry-run'], log })
+  // The Projects permission is another token in the workflow (PROJECTS_GH_TOKEN); from
+  // a terminal the operator's own gh login is the one in use.
+  const board = env.PROJECTS_GH_TOKEN
+    ? candidate.makeGh({ dryRun: values['dry-run'], log, token: env.PROJECTS_GH_TOKEN })
+    : env.GITHUB_ACTIONS
+      ? undefined
+      : gh
   const repo = env.GITHUB_REPOSITORY ?? gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])
   let action: string
   let pr: candidate.PullRequest
@@ -136,7 +143,7 @@ function candidateRun(args: string[]): number {
   if (values['head-ref'] !== undefined) pr.headRef = values['head-ref']
   if (values.labels !== undefined) pr.labels = values.labels.split(',').filter((l) => l !== '')
   if (values.merged) pr.merged = true
-  candidate.handle({ gh, repo, config, log }, action, pr)
+  candidate.handle({ gh, ...(board ? { board } : {}), repo, config, log }, action, pr)
   return 0
 }
 

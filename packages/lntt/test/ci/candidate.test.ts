@@ -26,6 +26,7 @@ import {
   recordMerges,
   retarget,
   retargetDecision,
+  setBoardStatus,
   sweep,
   sweepDecision,
 } from '../../src/ci/candidate.ts'
@@ -597,6 +598,144 @@ describe('sweep', () => {
     assert.deepEqual(
       gh.writes.filter((w) => w.args.includes('--base')).map((w) => w.args),
       ['pr edit 12 --repo o/r --base candidate/5', 'pr edit 70 --repo o/r --base candidate/5'],
+    )
+  })
+})
+
+// A board double: the issue's project items answered to the GraphQL read, the
+// mutations recorded.
+function item(
+  id: string,
+  { options = ['Todo', 'In Progress', 'In release', 'Done'], current = 'Todo', status = true } = {},
+) {
+  return {
+    id,
+    fieldValueByName: { optionId: `opt-${current}` },
+    project: {
+      id: `P-${id}`,
+      title: 'board',
+      field: status ? { id: `F-${id}`, options: options.map((name) => ({ id: `opt-${name}`, name })) } : {},
+    },
+  }
+}
+const items = (...nodes: unknown[]) => ({
+  'projectItems(': { data: { repository: { issue: { projectItems: { nodes } } } } },
+})
+const notices = () => {
+  const lines: string[] = []
+  return { lines, log: (line: string) => lines.push(line) }
+}
+
+describe('setBoardStatus', () => {
+  test('moves the issue to the status on each project that has it', () => {
+    const board = fakeGh(items(item('i1')))
+    const { moved, skipped } = setBoardStatus({ ...run(fakeGh({})), board }, [69], 'In release')
+    assert.deepEqual(moved, [69])
+    assert.deepEqual(skipped, [])
+    assert.equal(board.writes.length, 1)
+    assert.match(board.writes[0]?.args ?? '', /updateProjectV2ItemFieldValue/)
+    assert.match(board.writes[0]?.args ?? '', /project=P-i1 -f item=i1 -f field=F-i1 -f option=opt-In release/)
+  })
+
+  test('an issue already at the status is left alone', () => {
+    const board = fakeGh(items(item('i1', { current: 'In release' })))
+    const { moved } = setBoardStatus({ ...run(fakeGh({})), board }, [69], 'In release')
+    assert.deepEqual(moved, [])
+    assert.deepEqual(board.writes, [])
+  })
+
+  test('a project without the status skips it with a notice saying how to add it', () => {
+    const out = notices()
+    const board = fakeGh(items(item('i1', { options: ['Todo', 'In Progress', 'Done'] })))
+    const { moved, skipped } = setBoardStatus({ ...run(fakeGh({})), board, log: out.log }, [69], 'In release')
+    assert.deepEqual(moved, [])
+    assert.deepEqual(skipped, [69])
+    assert.deepEqual(board.writes, [])
+    assert.match(out.lines.join('\n'), /::notice .*In release.*not an option.*issues skill/s)
+  })
+
+  test('a project without a Status field is skipped with a notice', () => {
+    const out = notices()
+    const board = fakeGh(items(item('i1', { status: false })))
+    const { skipped } = setBoardStatus({ ...run(fakeGh({})), board, log: out.log }, [69], 'In release')
+    assert.deepEqual(skipped, [69])
+    assert.match(out.lines.join('\n'), /::notice .*no Status field/s)
+  })
+
+  test('an issue on no project is skipped with a notice', () => {
+    const out = notices()
+    const board = fakeGh(items())
+    const { skipped } = setBoardStatus({ ...run(fakeGh({})), board, log: out.log }, [69], 'In release')
+    assert.deepEqual(skipped, [69])
+    assert.match(out.lines.join('\n'), /::notice .*#69 is on no project/s)
+  })
+
+  test('without a Projects token the whole step is skipped with one notice', () => {
+    const out = notices()
+    const { moved, skipped } = setBoardStatus({ ...run(fakeGh({})), log: out.log }, [69, 70], 'In release')
+    assert.deepEqual(moved, [])
+    assert.deepEqual(skipped, [69, 70])
+    assert.equal(out.lines.filter((l) => l.startsWith('::notice')).length, 1)
+    assert.match(out.lines.join('\n'), /::notice .*no token with the Projects permission/)
+  })
+
+  test('a token refused by Projects is a notice, not an error', () => {
+    const out = notices()
+    const board: Gh = {
+      read: () => {
+        throw new Error('Resource not accessible by integration')
+      },
+      write: () => '',
+    }
+    const { skipped } = setBoardStatus({ ...run(fakeGh({})), board, log: out.log }, [69], 'In release')
+    assert.deepEqual(skipped, [69])
+    assert.match(out.lines.join('\n'), /::notice .*Projects permission.*Resource not accessible/s)
+  })
+
+  test('any other failure fails the step', () => {
+    const board: Gh = {
+      read: () => {
+        throw new Error('socket hang up')
+      },
+      write: () => '',
+    }
+    assert.throws(() => setBoardStatus({ ...run(fakeGh({})), board }, [69], 'In release'), /#69: socket hang up/)
+  })
+})
+
+describe('the board follows the candidate', () => {
+  const merged = { ...pr, baseRef: 'candidate/4', merged: true }
+  const record1 = {
+    'pr list': [{ number: 40, body: candidateBody(config, 4) }],
+    '--state merged': [{ number: 70, title: 't', body: 'Closes #69', mergedAt: '2026-10-17T10:00:00Z' }],
+  }
+
+  test('a squash into the candidate moves the issues it closes to In release', () => {
+    const board = fakeGh(items(item('i1')))
+    record({ ...run(fakeGh({ ...record1, ...issue(69) })), board }, merged)
+    assert.match(board.writes.at(-1)?.args ?? '', /option=opt-In release/)
+  })
+
+  test('an issue closed already is not moved', () => {
+    const board = fakeGh(items(item('i1')))
+    record({ ...run(fakeGh({ ...record1, ...issue(69, { state: 'closed' }) })), board }, merged)
+    assert.deepEqual(board.writes, [])
+  })
+
+  test('the candidate merge moves the issues it closes to Done', () => {
+    const candidate = { ...pr, number: 40, baseRef: 'main', headRef: 'candidate/4', merged: true, body: 'Closes #69' }
+    const board = fakeGh(items(item('i1', { current: 'In release' })))
+    closeCandidateIssues({ ...run(fakeGh({ ...issue(69) })), board }, candidate)
+    assert.match(board.writes.at(-1)?.args ?? '', /option=opt-Done/)
+  })
+
+  test('a board that cannot be moved does not stop the close', () => {
+    const candidate = { ...pr, number: 40, baseRef: 'main', headRef: 'candidate/4', merged: true, body: 'Closes #69' }
+    const gh = fakeGh({ ...issue(69) })
+    closeCandidateIssues(run(gh), candidate)
+    assert.deepEqual(
+      gh.writes.map((w) => w.args),
+      ['issue close 69 --repo o/r --reason completed'],
     )
   })
 })

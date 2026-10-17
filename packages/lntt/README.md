@@ -379,7 +379,11 @@ and Docker are on the PATH before starting.
 ### Requirements
 
 The candidate automation needs `gh`, authenticated with a token that has
-contents, pull requests and issues on the repository. CircleCI projects need the `circleci` CLI; container mode needs Docker and `act`
+contents, pull requests and issues on the repository. To move an issue on the board
+(`In release` on the squash into a candidate, `Done` on the candidate's merge) it also
+needs the Projects permission, as `PROJECTS_GH_TOKEN` in the workflow or the login of
+`gh` in a terminal (`gh auth refresh -s project`); without it the board is left as it is,
+with a `::notice`. CircleCI projects need the `circleci` CLI; container mode needs Docker and `act`
 or the `circleci` CLI.
 
 ## Requirements
