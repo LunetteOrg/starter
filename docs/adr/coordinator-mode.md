@@ -70,7 +70,7 @@ would nest git worktrees inside one the host does not track.
 children not yet approved and creates nothing until the answer is `approve`, `approved`,
 `yes` or `ok`, with at most a final `.` or `!`. Approvals are kept per theme in the shared mailbox directory
 (`approved-<theme>.txt`), written by `--approve` at the coordinator's start and by an
-approving answer; the file may be edited by hand, one issue number per line. No flag of `lntt` approves a child for the coordinator.
+approving answer; the person may edit it, one issue number per line. No flag of `lntt` approves a child for the coordinator.
 
 ### The model per role
 
@@ -134,7 +134,7 @@ that `@lntt/lntt` ships; no placeholder, dotfile, provenance field or rewrite of
   directly, or writes into the mailbox directory (an answer to its own proposal, the approved
   file), bypasses it. The brief tells it not to.
 - Two approvals of one theme written at the same moment can drop one: the file is renamed
-  into place whole but not locked. The orchestrator answers one proposal at a time.
+  into place whole but not locked.
 - Herdr and git show no lineage; the theme's structure there is the mailbox and the briefs.
 - The opt-in keyword lives in `workflow.md`, one file a coordinator has no reason to read.
 
@@ -142,8 +142,8 @@ that `@lntt/lntt` ships; no placeholder, dotfile, provenance field or rewrite of
 
 - A host offers a messaging command every host shares: `ask` moves onto it and the files
   stay as the fallback.
-- Two coordinators work one repository and collide in the mailbox's approvals: the file
-  moves to a lock.
+- Approvals of one theme are written at the same moment and one is lost: the file moves to a
+  lock.
 - The harness's multi-agent mode gets a setting of its own: `--workflow` sets it and the
   keyword goes.
 
