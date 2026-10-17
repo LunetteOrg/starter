@@ -41,6 +41,8 @@ flags and files are in the `@lntt/lntt` README. The briefs are templates in
 
 ### The entry point
 
+A `<slug>` is lower-case letters and digits in groups joined by single hyphens; a theme is one.
+
 `lntt worktree start` starts both, with a real switch for each choice:
 
 - `--coordinator --theme <slug> --issue <n>...` starts the theme's coordinator: one
@@ -70,7 +72,7 @@ would nest git worktrees inside one the host does not track.
 children not yet approved and creates nothing until the answer is `approve`, `approved`,
 `yes` or `ok`, with at most a final `.` or `!`. Approvals are kept per theme in the shared mailbox directory
 (`approved-<theme>.txt`), written by `--approve` at the coordinator's start and by an
-approving answer; the person may edit it, one issue number per line. No flag of `lntt` approves a child for the coordinator.
+approving answer; the person may edit the file, one issue number per line. No flag of `lntt` approves a child for the coordinator.
 
 ### The model per role
 
