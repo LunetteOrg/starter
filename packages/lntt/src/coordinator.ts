@@ -3,7 +3,7 @@
 // the gate on starting a child, and the two briefs. Starting the worktrees is
 // worktree.ts; the questions between the agents are messages.ts.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fill } from './template.ts'
@@ -61,8 +61,8 @@ export function isApproval(answer: string): boolean {
 }
 
 // The children a person approved for a theme, kept next to the mailbox they were
-// approved through: a coordinator cannot approve its own children, since the file is not
-// in its worktree and no flag writes it.
+// approved through. No lntt command lets a coordinator add to it; one that writes the
+// file itself is outside what the gate can stop (docs/adr/coordinator-mode.md).
 const approvedFile = (root: string, theme: string) => join(root, `approved-${theme}.txt`)
 
 export function approvals(root: string, theme: string): Set<number> {
@@ -79,7 +79,11 @@ export function approvals(root: string, theme: string): Set<number> {
 export function approve(root: string, theme: string, issues: number[]): void {
   mkdirSync(root, { recursive: true })
   const all = new Set([...approvals(root, theme), ...issues])
-  writeFileSync(approvedFile(root, theme), `${[...all].join('\n')}\n`)
+  // Whole or not at all: a concurrent reader never sees half a list.
+  const file = approvedFile(root, theme)
+  const temporary = `${file}.${process.pid}.tmp`
+  writeFileSync(temporary, `${[...all].join('\n')}\n`)
+  renameSync(temporary, file)
 }
 
 function describeAgent(agent: StartAgent): string {

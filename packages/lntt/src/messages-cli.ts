@@ -124,8 +124,10 @@ function inbox(args: string[]): void {
   })
   const role = values.as ?? env.LNTT_ROLE
   if (!role) usage('give --as, or set LNTT_ROLE')
-  const issue = issueNumber(values.issue ?? env.LNTT_ISSUE)
-  const theme = values.theme ?? env.LNTT_THEME
+  // The environment's address applies to the role it fits: a session that exports both
+  // can read as a child and as a coordinator.
+  const issue = issueNumber(values.issue ?? (role === 'child' ? env.LNTT_ISSUE : undefined))
+  const theme = values.theme ?? (role === 'coordinator' ? env.LNTT_THEME : undefined)
   const address = { ...(issue === undefined ? {} : { issue }), ...(theme === undefined ? {} : { theme }) }
   const box = systemMailbox()
   const interval = seconds(values.interval, '--interval') ?? pollInterval()

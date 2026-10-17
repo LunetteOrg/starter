@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -170,6 +170,20 @@ describe('the brief without a model or a gate', () => {
     assert.match(brief, /No child is approved yet\. To propose first: #84, #89\./)
   })
 
+  test('under free, and with only part of the models configured', () => {
+    const free = coordinatorBrief({
+      ...VALUES,
+      config: { coordinator: { gate: 'free', models: { children: { S: { model: 'sonnet' } } } } },
+    })
+    assert.match(free, /as soon as their order allows/)
+    assert.match(free, /you run on default; `--size` picks a child’s by the issue’s Size \(S sonnet\)/)
+    const own = coordinatorBrief({
+      ...VALUES,
+      config: { coordinator: { models: { coordinator: { model: 'haiku' } } } },
+    })
+    assert.match(own, /you run on haiku;.*\(none configured\)/)
+  })
+
   test('when every child is approved there is nothing to propose', () => {
     assert.match(coordinatorBrief({ ...VALUES, approved: [84, 89] }), /Nothing is left to propose/)
   })
@@ -179,15 +193,26 @@ describe('the child’s brief', () => {
   const base = { issue: 84, title: 'Coordinator mode', branch: 'feat/84/coordinator-mode', worktree: '/w' }
 
   test('without a theme it is the plain brief, byte for byte', () => {
-    const template = readFileSync(new URL('../agents/brief.md', import.meta.url), 'utf8')
-    const old = template
-      .replace(/\n\n\{\{theme\}\}[\s\S]*$/, '\n')
-      .replaceAll('{{issue}}', '84')
-      .replace('{{title}}', 'Coordinator mode')
-      .replace('{{branch}}', 'feat/84/coordinator-mode')
-      .replace('{{worktree}}', '/w')
     const plain = childBrief(base, {})
-    assert.equal(plain, old)
+    assert.equal(
+      plain,
+      [
+        'You are working on issue #84: Coordinator mode.',
+        '',
+        '- **The issue is the mandate.** Read it with `gh issue view 84` before anything',
+        '  else; its Definition of Done is what finishes the work. `AGENTS.md` applies.',
+        '- **Work only in this worktree:** `/w`, on branch `feat/84/coordinator-mode`. Run every',
+        '  command from it, never from the main checkout or another worktree.',
+        '- **Before publishing:** the review (`lntt review`, with the `review` skill) until a',
+        '  round finds nothing, and `pnpm ci:local` green on the commit you push.',
+        '- **Then open a draft pull request** with `Closes #84` and the Definition of Done',
+        '  filled in, and **stop**: no merge, no `gh pr ready`. A person takes it from there.',
+        '- **Return** a short summary of what changed, the pull request link, and any friction',
+        '  met along the way (a missing tool, an unclear rule, a check that failed for reasons',
+        '  outside the change).',
+        '',
+      ].join('\n'),
+    )
     assert.doesNotMatch(plain, /theme|mailbox|workflow|ultracode/i)
     assert.doesNotMatch(plain, /\{\{/)
     assert.ok(plain.endsWith('outside the change).\n'))

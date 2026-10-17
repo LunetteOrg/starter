@@ -79,8 +79,8 @@ describe('sending', () => {
   })
 
   test('a question with nothing to slug still gets a topic', () => {
-    assert.equal(send(box(), 'coordinator', 'Is it?').id, '20261017-101500-message')
-    assert.equal(send(box(), 'coordinator', '？？？').id, '20261017-101500-message-2')
+    assert.equal(send(box(), 'coordinator', '？？？').id, '20261017-101500-message')
+    assert.equal(send(box(), 'coordinator', '??? !!!').id, '20261017-101500-message-2')
   })
 
   test('an empty question is refused', () => {
@@ -115,6 +115,7 @@ describe('answering', () => {
     const sent = send(box(), 'coordinator', 'q', { topic: 't' })
     answer(dir, sent.id, 'first')
     assert.throws(() => answer(dir, sent.id, 'second'), /already answered/)
+    assert.deepEqual(readdirSync(join(dir, 'to-coordinator')).sort(), [`${sent.id}.answer.md`, `${sent.id}.md`])
     assert.equal(readFileSync(join(dir, 'to-coordinator', `${sent.id}.answer.md`), 'utf8'), 'first\n')
   })
 
@@ -128,8 +129,15 @@ describe('answering', () => {
   })
 
   test('an id that is not a message name, or that climbs out of the mailbox, is refused', () => {
-    assert.throws(() => answer(dir, '../../etc/passwd', 'x'), /no message/)
-    assert.throws(() => answer(dir, 'x/20261017-101500-t', 'x'), /no message/)
+    // A real file outside to-*/ that the id would reach.
+    mkdirSync(join(dir, 'to-coordinator'))
+    writeFileSync(join(dir, 'outside.md'), 'q\n')
+    mkdirSync(join(dir, 'x'))
+    writeFileSync(join(dir, 'x', '20261017-101500-t.md'), 'q\n')
+    assert.throws(() => answer(dir, '../outside', 'x'), /no message/)
+    assert.throws(() => answer(dir, '../x/20261017-101500-t', 'x'), /no message/)
+    assert.ok(!existsSync(join(dir, 'outside.answer.md')))
+    assert.ok(!existsSync(join(dir, 'x', '20261017-101500-t.answer.md')))
   })
 
   test('an empty answer is refused', () => {

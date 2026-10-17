@@ -155,6 +155,18 @@ describe('lntt ask / inbox / answer', () => {
     assert.equal(lntt(['inbox']).status, 2)
   })
 
+  test('the environment’s address applies only to the role it fits', () => {
+    mkdirSync(join(box(), 'to-orchestrator'), { recursive: true })
+    writeFileSync(join(box(), 'to-orchestrator', '20261015-090000-q.md'), 'Q\n')
+    const r = spawnSync(process.execPath, [BIN, 'inbox', '--as', 'orchestrator'], {
+      cwd: repo,
+      encoding: 'utf8',
+      env: { ...clean(), LNTT_ISSUE: '84', LNTT_THEME: 'alpha' },
+    })
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(JSON.parse(r.stdout).id, '20261015-090000-q')
+  })
+
   test('usage errors exit 2, others exit 1 with one line', () => {
     assert.equal(lntt(['ask', 'Question without --to']).status, 2)
     assert.equal(lntt(['ask', '--to', 'coordinator', '--timeout', 'soon', 'q']).status, 2)

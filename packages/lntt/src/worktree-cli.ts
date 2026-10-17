@@ -195,7 +195,7 @@ function start(args: string[]): void {
     usage('--prompt replaces the whole brief, so --context and --workflow have nothing to add to')
   }
   const approved = (values.approve ?? []).map((raw) => {
-    if (!issues.some((i) => Number(i) === Number(raw))) usage(`--approve ${raw} is not one of the --issue of the theme`)
+    if (!issues.includes(raw)) usage(`--approve ${raw} is not one of the --issue of the theme`)
     return Number(raw)
   })
 

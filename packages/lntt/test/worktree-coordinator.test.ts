@@ -141,7 +141,9 @@ describe('lntt worktree start --coordinator', () => {
       assert.equal(r.status, 2, extra.join(' '))
     }
     assert.equal(lntt(['--coordinator', '--issue', '84']).status, 2)
-    assert.equal(lntt(['--coordinator', '--theme', 'x', '--issue', '84', '--approve', '99']).status, 2)
+    for (const approve of ['99', '084', 'abc']) {
+      assert.equal(lntt(['--coordinator', '--theme', 'x', '--issue', '84', '--approve', approve]).status, 2, approve)
+    }
     assert.deepEqual(creates(), [])
   })
 })
@@ -257,6 +259,10 @@ describe('lntt worktree start --theme (a coordinator’s child)', () => {
       cwd: repo,
       env: env(),
     })
+    let stderr = ''
+    starting.stderr.on('data', (d) => {
+      stderr += d
+    })
     const done = new Promise<number | null>((ok) => starting.on('close', ok))
     const asked = spawnSync(process.execPath, [BIN, 'inbox', '--as', 'orchestrator', '--wait', '--timeout', '20'], {
       cwd: repo,
@@ -266,6 +272,7 @@ describe('lntt worktree start --theme (a coordinator’s child)', () => {
     const message = JSON.parse(asked.stdout.trim().split('\n')[0] as string)
     spawnSync(process.execPath, [BIN, 'answer', message.id, 'yes, but not #89 yet'], { cwd: repo, env: env() })
     assert.equal(await done, 1)
+    assert.match(stderr, /not approved by the orchestrator: yes, but not #89 yet/)
     assert.deepEqual(creates(), [])
   })
 

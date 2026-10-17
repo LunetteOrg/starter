@@ -464,7 +464,8 @@ describe('a coordinator’s worktree and its children', () => {
     startOrca({ ...COORDINATOR, agent: null }, runner)
     startOrca({ ...CHILD, agent: null }, runner)
     assert.doesNotMatch(calls[0] as string, /--issue|--parent-worktree/)
-    assert.match(calls[1] as string, /--issue 78 .*--parent-worktree current|--parent-worktree current/)
+    assert.match(calls[1] as string, /--issue 78 /)
+    assert.match(calls[1] as string, /--parent-worktree current /)
   })
 
   test('Orca’s worker route carries the lineage and names a coordinator by its title', () => {

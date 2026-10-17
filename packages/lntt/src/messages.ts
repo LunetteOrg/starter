@@ -9,7 +9,7 @@
 // part of any of them: nothing here is ever committed.
 
 import { randomUUID } from 'node:crypto'
-import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { slugify } from './branch.ts'
 
@@ -72,15 +72,15 @@ function stamp(date: Date): string {
 // never reads half of it, and a name that is taken is never overwritten.
 function publish(path: string, text: string): boolean {
   const temporary = join(dirname(path), `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`)
-  writeFileSync(temporary, text)
   try {
+    writeFileSync(temporary, text)
     linkSync(temporary, path)
     return true
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
     throw error
   } finally {
-    unlinkSync(temporary)
+    rmSync(temporary, { force: true })
   }
 }
 
