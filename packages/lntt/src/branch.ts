@@ -40,8 +40,9 @@ export function branchRules(config: { delivery?: Delivery }): BranchRules {
 // the same slug.
 export function slugify(title: string): string {
   return title
+    .replace(/['’]/g, '')
     .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter((word) => word !== '' && !STOP_WORDS.has(word))

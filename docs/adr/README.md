@@ -15,6 +15,8 @@ decisions) is in [`docs/process/`](../process/README.md).
 | [cli-runtime-and-publishing](./cli-runtime-and-publishing.md) | The CLI and the `@lntt/*` packages run as TypeScript in-repo and ship compiled; one shared version and release; explicit `.ts` imports | accepted |
 | [test-database](./test-database.md) | `@lntt/test-utils`: one Postgres per vitest run, owned by a globalSetup; required `databaseName`; cleanup by label | accepted |
 | [agent-layer](./agent-layer.md) | Installed skills are never edited; project values in `.agents/config.*`; operator context | accepted |
+| [lntt-command](./lntt-command.md) | One package, `@lntt/lntt`, with one command, `lntt`, for configuration, agent files, branches, worktrees and CI | accepted |
+| [worktree-tooling](./worktree-tooling.md) | Branch names, setup, brief and agent launch decided in `lntt`; Orca, Herdr and git as adapters | accepted |
 
 A new subject gets its own file: copy [`template.md`](./template.md) to
 `<subject>.md` and add a row above. A changed decision is rewritten in its file.

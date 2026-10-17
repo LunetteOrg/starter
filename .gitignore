@@ -28,3 +28,7 @@ yarn-error.log*
 
 # Personal agent context (operator profile, notes): never tracked
 .agents/local/
+
+# Worktrees made inside the checkout: lntt worktree start (git, Herdr), Orca, agent harnesses
+.worktrees/
+.claude/worktrees/

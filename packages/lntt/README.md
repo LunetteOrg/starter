@@ -80,6 +80,7 @@ lntt branch name --issue 77          # feat/77/branch-names-follow-type: type, i
 lntt branch name --issue 77 --slug worktree-names   # --type and --slug override
 lntt branch name --type docs --slug version-numbering   # docs/no-issue/version-numbering
 lntt branch check                    # exit 1 off the convention, with the expected name
+lntt branch check --pre-push         # the branches a push creates or updates (git's hook input)
 lntt branch rename                   # fix the name a tool gave the current branch; never fails
 ```
 
@@ -90,6 +91,44 @@ else the labels `bug` and `documentation`, else `feat`). `rename` reads the conv
 back from a flattened name (Orca's `<user>/<type>-<issue>-<slug>`, the agent harness's
 `worktree-<type>+<issue>+<slug>`) or, inside Orca, builds it from the issue linked to the
 worktree (`orca worktree current`); it leaves an existing branch alone.
+
+## Starting work on an issue
+
+```sh
+lntt worktree start --issue 78                 # a worktree, its setup, an agent with the brief
+lntt worktree start --issue 78 --issue 85      # one each
+lntt worktree start --issue 78 --no-agent      # the worktree only; the brief is printed
+lntt worktree start --issue 78 --host git      # force the host
+lntt worktree start --issue 78 --prompt '…'    # a prompt of your own instead of the brief
+lntt worktree start --issue 78 --kind codex --model gpt-6 --effort high
+```
+
+Per issue: the branch name from `lntt branch name`, a worktree on it, the setup
+`orca.yaml` declares, and an agent (`--kind`: claude by default, codex, opencode, …;
+`--model` and `--effort` as that agent takes them, an effort it has no flag for is
+refused; opencode gets its model through its inline configuration,
+`OPENCODE_CONFIG_CONTENT`, on a standalone server) handed the brief in
+[`agents/brief.md`](./agents/brief.md): the issue is the mandate, work only in this
+worktree, review and `pnpm ci:local` green, a **draft** pull request, then stop (no
+merge, no `gh pr ready`) and return a summary and the friction met. One JSON line per
+issue: host, branch, path, and the agent's handle.
+
+The host is the innermost one the session runs in, detected from the environment:
+
+- **Herdr** (`HERDR_ENV=1`, also inside an Orca terminal): `herdr worktree create` on the
+  branch, the setup run here (Herdr has no hook), `herdr agent start` in the new pane
+  (model and effort after `--`), `herdr agent prompt` with the brief. opencode with a
+  model is typed into the pane instead and prompted through the pane once Herdr detects it.
+- **Orca** (`TERM_PROGRAM=Orca`): one `orca worktree create` with the issue linked, the
+  setup run by Orca (its `lntt branch rename` turns `<user>/<name>` into the
+  convention) and the agent started after it (`setupAgentStartupPolicy: wait-for-setup`).
+  With `--model` or `--effort`, which `worktree create` does not take: the worktree
+  with its issue and Orca's setup skipped, the setup run by `lntt`, then a supervised
+  worker on it (`orca orchestration worker-start`, in a Run created when none is bound
+  to the terminal); the agent reports `worker_done` to the Run. opencode with a model starts in a terminal of its own
+  instead (Orca refuses an opencode model to its worker), and gets the brief once idle.
+- **Plain git** otherwise, Wave and Claude desktop included: `git worktree add` under
+  `<main checkout>/.worktrees/`, the setup, and the brief printed for the person.
 
 ## Running the apps locally
 

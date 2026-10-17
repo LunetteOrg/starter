@@ -18,10 +18,11 @@ pre-commit:
 
 pre-push:
   commands:
-    # The branch name follows type/issue/slug whatever created it (lntt branch); CI
-    # checks it again on the pull request.
+    # The branches being pushed follow type/issue/slug whatever created them (lntt
+    # branch); CI checks the pull request's again. git gives the pushed refs on stdin.
     branch-name:
-      run: pnpm exec lntt branch check
+      run: pnpm exec lntt branch check --pre-push
+      use_stdin: true
 
 commit-msg:
   commands:
