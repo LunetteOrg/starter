@@ -55,7 +55,7 @@ stops at the draft pull request.
 (`refs/heads/candidate/*`) take squash merges only, `main` takes rebase merges only, and
 both take changes through pull requests only, with no required approval. The
 repository admin role bypasses both: the release bump is a direct commit on `main`,
-and rewriting a candidate (a red candidate, a rebase on `main`) is a force push an
+and rewriting a candidate (a rebase on `main`) is a force push an
 admin makes.
 
 ## The candidate
@@ -88,7 +88,8 @@ candidate exists on a day without pull requests.
 - **A red candidate is fixed forward.** The fix comes in a pull request of its own into
   the candidate, with its CI and its squash, and the candidate's full CI runs again on
   the new head. The candidate may be what a preview or pre-production environment runs:
-  it only ever moves forward, and the pull requests already merged keep their `Closes`.
+  no merged commit is taken out of it, and the pull requests already merged keep their
+  `Closes`.
 - **When `main` moves** (a hotfix), the candidate rebases on `main` and `ci:local` runs
   again.
 - **Stranded pull requests.** A pull request left on a candidate that is no longer open
@@ -226,8 +227,7 @@ because npm configures a trusted publisher only on a package that exists:
   could not be tested for them.
 - **Taking the culprit's commits out of a red candidate.** It rewrites a branch that a
   preview or pre-production environment may be running, removing from it what people
-  are looking at, and turns the merged pull request's `Closes` into `Refs` by hand; a
-  fix moved forward keeps both.
+  are looking at, and turns the merged pull request's `Closes` into `Refs` by hand.
 - **A fixed `candidate` branch, or one created every day by a cron.** A cron opens
   candidates on days without work, and a pull request opened before it has nowhere to
   go; a fixed branch has to be reset after every merge. A numbered candidate created
