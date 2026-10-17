@@ -24,8 +24,46 @@ export {
 } from './branch.ts'
 export { commitlintConfig } from './commitlint.ts'
 export { ConfigError, type Format, type Located } from './files.ts'
+export {
+  type Answer,
+  askAll,
+  headlessInvocation,
+  type Invocation,
+  parseReply,
+  type Question,
+  type Reply,
+  type Spawn,
+} from './headless.ts'
 export { type LocalApp, localApp } from './local.ts'
 export { loadOperator, type Operator } from './operator.ts'
+export {
+  type Ask,
+  agentLabel,
+  type Checked,
+  type Finding,
+  type Found,
+  type Lens,
+  lensApplies,
+  mergeFindings,
+  parseFindings,
+  parseOutcome,
+  parseWithdrawal,
+  type Range,
+  type ReviewConfig,
+  type ReviewState,
+  type RoundResult,
+  renderReplyPrompt,
+  renderReviewPrompt,
+  renderVerifyPrompt,
+  reviewConfig,
+  roundClean,
+  roundRange,
+  runRound,
+  type Severity,
+  TEST_PATHS,
+  verdict,
+  verifiersFor,
+} from './review.ts'
 export { type Choice, chooseViewer, commandExists, detectHost, type Host, openWith, type Viewer } from './viewer.ts'
 export {
   type Agent,

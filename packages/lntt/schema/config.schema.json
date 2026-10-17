@@ -193,6 +193,78 @@
               "uniqueItems": true
             }
           }
+        },
+        "review": {
+          "type": "object",
+          "description": "Who reviews a change before its pull request is marked ready, read by lntt review: each lens runs on its agents at once, with no context and no tool that writes; blockers and warnings go to verifiers briefed to refute them (docs/process/delivery.md).",
+          "additionalProperties": false,
+          "properties": {
+            "reviewers": {
+              "type": "object",
+              "description": "The lenses, by name. decisions, code and tests ship with the package (defaults: decisions on claude haiku, code and tests on claude sonnet, tests only when the diff touches test files); any other lens needs its brief. A lens given no agents is off.",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "with": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/reviewAgent"
+                    },
+                    "description": "The agents that review through this lens, all at once."
+                  },
+                  "brief": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "A file in the repository with the lens's instructions, for a lens the package does not ship."
+                  },
+                  "paths": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "description": "Globs: the lens runs only when the diff touches one of them. Default: always (tests: test files)."
+                  }
+                }
+              }
+            },
+            "verify": {
+              "description": "The adversarial check, or false for none. Default: claude sonnet, for blockers and warnings.",
+              "oneOf": [
+                {
+                  "const": false
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "with": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/reviewAgent"
+                      },
+                      "minItems": 1,
+                      "description": "The verifiers, each asked to refute every finding at once; an agent that found the finding verifies it only when no other is listed."
+                    },
+                    "severities": {
+                      "type": "array",
+                      "items": {
+                        "enum": ["blocker", "warning", "note"]
+                      },
+                      "uniqueItems": true,
+                      "description": "The severities verified. Default blocker, warning."
+                    }
+                  }
+                }
+              ]
+            },
+            "timeoutMinutes": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "How long one agent may take before it is stopped and the round fails. Default 20."
+            }
+          }
         }
       }
     },
@@ -374,6 +446,30 @@
         "scope": {
           "type": "string",
           "description": "What this log records, in one sentence, so a decision is filed in the right one."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "reviewAgent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["claude", "opencode"],
+          "description": "The agent CLI, run headless and read-only."
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The model, as the agent names it: an alias or id for claude, provider/model for opencode. Default: the agent's own."
+        },
+        "effort": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The reasoning effort; claude only."
         }
       }
     }

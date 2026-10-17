@@ -1,0 +1,425 @@
+import assert from 'node:assert/strict'
+import { describe, test } from 'node:test'
+import {
+  type Ask,
+  agentLabel,
+  type Checked,
+  type Found,
+  lensApplies,
+  mergeFindings,
+  parseFindings,
+  parseOutcome,
+  parseWithdrawal,
+  type ReviewState,
+  renderReviewPrompt,
+  reviewConfig,
+  roundClean,
+  roundRange,
+  runRound,
+  TEST_PATHS,
+  verdict,
+  verifiersFor,
+} from '../src/index.ts'
+
+describe('the configuration', () => {
+  test('default: decisions on haiku, code and tests on sonnet, verified on sonnet for blockers and warnings', () => {
+    assert.deepEqual(reviewConfig({}), {
+      reviewers: {
+        decisions: { with: [{ kind: 'claude', model: 'haiku' }], brief: null, paths: [] },
+        code: { with: [{ kind: 'claude', model: 'sonnet' }], brief: null, paths: [] },
+        tests: { with: [{ kind: 'claude', model: 'sonnet' }], brief: null, paths: TEST_PATHS },
+      },
+      verify: { with: [{ kind: 'claude', model: 'sonnet' }], severities: ['blocker', 'warning'] },
+      timeoutMinutes: 20,
+    })
+  })
+
+  test('read from delivery.review; a lens left out keeps its default, verify false turns it off', () => {
+    const config = reviewConfig({
+      delivery: {
+        review: {
+          reviewers: {
+            code: {
+              with: [
+                { kind: 'claude', model: 'opus' },
+                { kind: 'opencode', model: 'opencode/deepseek-v4.1-flash-free' },
+              ],
+            },
+            story: {
+              brief: '.claude/skills/story-check/SKILL.md',
+              paths: ['packages/ui/**'],
+              with: [{ kind: 'claude' }],
+            },
+          },
+          verify: false,
+          timeoutMinutes: 5,
+        },
+      },
+    })
+    assert.deepEqual(config.reviewers.decisions?.with, [{ kind: 'claude', model: 'haiku' }])
+    assert.equal(config.reviewers.code?.with.length, 2)
+    assert.deepEqual(config.reviewers.story, {
+      with: [{ kind: 'claude' }],
+      brief: '.claude/skills/story-check/SKILL.md',
+      paths: ['packages/ui/**'],
+    })
+    assert.equal(config.verify, null)
+    assert.equal(config.timeoutMinutes, 5)
+  })
+
+  test('a lens of the project needs its brief; a lens with no agents is off', () => {
+    assert.throws(
+      () => reviewConfig({ delivery: { review: { reviewers: { story: { with: [{ kind: 'claude' }] } } } } }),
+      /story.*brief/,
+    )
+    const off = reviewConfig({ delivery: { review: { reviewers: { tests: { with: [] } } } } })
+    assert.equal(off.reviewers.tests, undefined)
+  })
+
+  test('a lens runs only when the diff touches its paths', () => {
+    assert.equal(lensApplies({ with: [], brief: null, paths: [] }, ['a.md']), true)
+    assert.equal(lensApplies({ with: [], brief: null, paths: TEST_PATHS }, ['src/a.ts']), false)
+    assert.equal(lensApplies({ with: [], brief: null, paths: TEST_PATHS }, ['src/a.ts', 'test/a.test.ts']), true)
+    assert.equal(lensApplies({ with: [], brief: null, paths: ['packages/ui/**'] }, ['packages/ui/src/b.tsx']), true)
+  })
+
+  test('an agent label names the agent and its model', () => {
+    assert.equal(agentLabel({ kind: 'claude', model: 'sonnet', effort: 'high' }), 'claude sonnet (high)')
+    assert.equal(agentLabel({ kind: 'opencode', model: 'mistral/devstral' }), 'opencode mistral/devstral')
+    assert.equal(agentLabel({ kind: 'claude' }), 'claude')
+  })
+})
+
+describe('the findings a reviewer writes', () => {
+  test('one line each: severity, anchor, what, action; anything else is ignored', () => {
+    const text = [
+      'I read the diff.',
+      '- [blocker] src/a.ts:12 — the batch stops halfway — read every issue first',
+      '- [note] (no anchor) — no ADR for the runner — write one',
+      '- [warning] docs/x.md — a heading without a line — cite the anchor',
+      '- [nit] src/a.ts:3 — not a severity — ignored',
+    ].join('\n')
+    assert.deepEqual(parseFindings(text), [
+      {
+        severity: 'blocker',
+        path: 'src/a.ts',
+        line: 12,
+        what: 'the batch stops halfway',
+        action: 'read every issue first',
+      },
+      { severity: 'note', path: null, line: null, what: 'no ADR for the runner', action: 'write one' },
+      {
+        severity: 'warning',
+        path: 'docs/x.md',
+        line: null,
+        what: 'a heading without a line',
+        action: 'cite the anchor',
+      },
+    ])
+  })
+
+  test('a plain hyphen also separates the fields; "no findings" is none', () => {
+    assert.deepEqual(parseFindings('- [warning] a.ts:1 - x - y'), [
+      { severity: 'warning', path: 'a.ts', line: 1, what: 'x', action: 'y' },
+    ])
+    assert.deepEqual(parseFindings('no findings'), [])
+  })
+})
+
+describe('merging what several reviewers found', () => {
+  const sonnet = { kind: 'claude', model: 'sonnet' }
+  const deepseek = { kind: 'opencode', model: 'opencode/deepseek' }
+
+  test('one finding per anchor, the higher severity, every reviewer that found it; by severity, then place', () => {
+    const merged = mergeFindings([
+      {
+        lens: 'code',
+        agent: sonnet,
+        session: 's1',
+        findings: [
+          { severity: 'warning', path: 'b.ts', line: 4, what: 'w', action: 'a' },
+          { severity: 'note', path: 'a.ts', line: 9, what: 'n', action: 'a' },
+        ],
+      },
+      {
+        lens: 'code',
+        agent: deepseek,
+        session: 'ses_2',
+        findings: [{ severity: 'blocker', path: 'b.ts', line: 4, what: 'w, worse', action: 'a2' }],
+      },
+    ])
+    assert.deepEqual(
+      merged.map((f) => [f.id, f.severity, f.path, f.line, f.foundBy.map((b) => b.agent)]),
+      [
+        ['f1', 'blocker', 'b.ts', 4, ['claude sonnet', 'opencode opencode/deepseek']],
+        ['f2', 'note', 'a.ts', 9, ['claude sonnet']],
+      ],
+    )
+    assert.equal(merged[0]?.what, 'w, worse')
+    assert.deepEqual(merged[0]?.foundBy[1], { lens: 'code', agent: 'opencode opencode/deepseek', session: 'ses_2' })
+  })
+
+  test('findings without an anchor are kept apart, never merged with each other', () => {
+    const none = { severity: 'note' as const, path: null, line: null, action: 'a' }
+    const merged = mergeFindings([
+      {
+        lens: 'decisions',
+        agent: sonnet,
+        session: 's',
+        findings: [
+          { ...none, what: 'x' },
+          { ...none, what: 'y' },
+        ],
+      },
+    ])
+    assert.equal(merged.length, 2)
+  })
+})
+
+describe('the adversarial check', () => {
+  const sonnet = { kind: 'claude', model: 'sonnet' }
+  const mistral = { kind: 'opencode', model: 'mistral/devstral' }
+  const found = (by: string[]): Found => ({
+    id: 'f1',
+    severity: 'blocker',
+    path: 'a.ts',
+    line: 1,
+    what: 'w',
+    action: 'a',
+    foundBy: by.map((agent) => ({ lens: 'code', agent, session: 's' })),
+  })
+
+  test('every verifier but the agents that found it; the same agent only when no other is listed', () => {
+    assert.deepEqual(verifiersFor(found(['claude sonnet']), [sonnet, mistral]), [mistral])
+    assert.deepEqual(verifiersFor(found(['opencode x/y']), [sonnet, mistral]), [sonnet, mistral])
+    assert.deepEqual(verifiersFor(found(['claude sonnet']), [sonnet]), [sonnet])
+  })
+
+  test('a verifier answers confirmed, refuted or undecided on its first line, then the proof', () => {
+    assert.deepEqual(parseOutcome('confirmed\nsrc/a.ts:3 reads the base first'), {
+      outcome: 'confirmed',
+      proof: 'src/a.ts:3 reads the base first',
+    })
+    assert.deepEqual(parseOutcome('**Refuted.**\nline 9 guards it'), { outcome: 'refuted', proof: 'line 9 guards it' })
+    assert.deepEqual(parseOutcome('I think it is fine'), { outcome: 'undecided', proof: 'I think it is fine' })
+  })
+
+  test('all confirm: confirmed; all refute: refuted; split, failed or none: undecided', () => {
+    assert.equal(verdict(['confirmed', 'confirmed']), 'confirmed')
+    assert.equal(verdict(['refuted', 'refuted']), 'refuted')
+    assert.equal(verdict(['confirmed', 'refuted']), 'undecided')
+    assert.equal(verdict(['confirmed', 'undecided']), 'undecided')
+    assert.equal(verdict([]), 'undecided')
+  })
+
+  test('a reviewer answering the author: withdrawn or kept on the first line', () => {
+    assert.deepEqual(parseWithdrawal('Withdrawn\nline 120 excludes it'), {
+      withdrawn: true,
+      reason: 'line 120 excludes it',
+    })
+    assert.deepEqual(parseWithdrawal('kept\nthe guard is after the call'), {
+      withdrawn: false,
+      reason: 'the guard is after the call',
+    })
+  })
+})
+
+describe('what a round reads', () => {
+  const ancestor = (yes: boolean) => () => yes
+
+  test('the first round: the whole branch from where it left the base', () => {
+    assert.deepEqual(roundRange(null, 'feat/1/x', 'h2', 'mb', ancestor(true)), {
+      round: 1,
+      from: 'mb',
+      whole: true,
+      reason: 'first round',
+    })
+  })
+
+  test('a later round: only what came after the last reviewed commit', () => {
+    const state = { branch: 'feat/1/x', round: 2, reviewed: 'h1' } as ReviewState
+    assert.deepEqual(roundRange(state, 'feat/1/x', 'h2', 'mb', ancestor(true)), {
+      round: 3,
+      from: 'h1',
+      whole: false,
+      reason: 'the delta since h1',
+    })
+  })
+
+  test('after a rebase, or on another branch, the whole branch again', () => {
+    const state = { branch: 'feat/1/x', round: 2, reviewed: 'h1' } as ReviewState
+    assert.equal(roundRange(state, 'feat/1/x', 'h2', 'mb', ancestor(false)).whole, true)
+    assert.match(roundRange(state, 'feat/1/x', 'h2', 'mb', ancestor(false)).reason, /h1 is no longer in the branch/)
+    assert.equal(roundRange(state, 'feat/2/y', 'h2', 'mb', ancestor(true)).round, 1)
+  })
+})
+
+describe('the prompt', () => {
+  test('the lens brief with the range, the files and the diff filled in', () => {
+    const prompt = renderReviewPrompt('code', {
+      base: 'mb',
+      head: 'h2',
+      files: ['a.ts', 'b.ts'],
+      diff: 'DIFF',
+      records: 'RECORDS',
+    })
+    assert.match(prompt, /mb\.\.h2/)
+    assert.match(prompt, /a\.ts\nb\.ts|- a\.ts\n- b\.ts/)
+    assert.match(prompt, /DIFF/)
+    assert.match(prompt, /\[blocker\|warning\|note\]/)
+    assert.match(prompt, /read-only|only read/i)
+    assert.doesNotMatch(prompt, /\{\{/)
+  })
+
+  test('the decisions lens gets the records to check against', () => {
+    const prompt = renderReviewPrompt('decisions', { base: 'mb', head: 'h', files: [], diff: '', records: 'RECORDS' })
+    assert.match(prompt, /RECORDS/)
+  })
+})
+
+describe('a round', () => {
+  // Answers by who is asked: the lens brief names its lens, the verify brief its finding.
+  function asker(answers: (prompt: string, kind: string, model?: string) => string | Error): {
+    ask: Ask
+    asked: string[]
+  } {
+    const asked: string[] = []
+    const ask: Ask = async (jobs) =>
+      jobs.map((job) => {
+        asked.push(`${agentLabel(job.agent)}${job.session ? ` resumes ${job.session}` : ''}`)
+        const answer = answers(job.prompt, job.agent.kind, job.agent.model)
+        return answer instanceof Error
+          ? { ok: false as const, error: answer.message }
+          : { ok: true as const, reply: { text: answer, session: `s-${job.agent.model}`, cost: 0.01 } }
+      })
+    return { ask, asked }
+  }
+
+  const config = reviewConfig({
+    delivery: {
+      review: {
+        reviewers: {
+          decisions: { with: [{ kind: 'claude', model: 'haiku' }] },
+          code: {
+            with: [
+              { kind: 'claude', model: 'sonnet' },
+              { kind: 'claude', model: 'opus' },
+            ],
+          },
+          tests: { with: [{ kind: 'claude', model: 'haiku' }] },
+        },
+        verify: {
+          with: [
+            { kind: 'claude', model: 'sonnet' },
+            { kind: 'claude', model: 'opus' },
+          ],
+        },
+      },
+    },
+  })
+  const input = {
+    base: 'mb',
+    head: 'h2',
+    files: ['a.ts'],
+    diff: 'DIFF',
+    records: 'R',
+    range: roundRange(null, 'b', 'h2', 'mb', () => true),
+  }
+
+  test('reviewers in parallel, then each blocker or warning verified by the others, notes left unverified', async () => {
+    const { ask, asked } = asker((prompt, _kind, model) => {
+      if (prompt.includes('Lens: decisions')) return 'no findings'
+      if (prompt.includes('Lens: code') && model === 'sonnet')
+        return '- [blocker] a.ts:1 — breaks — fix\n- [note] a.ts:5 — wording — reword'
+      if (prompt.includes('Lens: code')) return 'no findings'
+      return 'confirmed\na.ts:1 throws on an empty title'
+    })
+    const result = await runRound(config, input, ask)
+    assert.deepEqual(asked.slice(0, 3), ['claude haiku', 'claude sonnet', 'claude opus'])
+    assert.deepEqual(asked.slice(3), ['claude opus'], 'the finder does not verify its own finding')
+    assert.deepEqual(
+      result.findings.map((f) => [f.id, f.severity, f.verdict]),
+      [
+        ['f1', 'blocker', 'confirmed'],
+        ['f2', 'note', 'unverified'],
+      ],
+    )
+    assert.deepEqual(result.refuted, [])
+    assert.equal(result.cost, 0.04)
+    assert.equal(roundClean(result), false)
+  })
+
+  test('refuted findings leave the list; a clean round is one with nothing left and no failure', async () => {
+    const { ask } = asker((prompt, _kind, model) => {
+      if (prompt.includes('Lens: code') && model === 'sonnet') return '- [warning] a.ts:1 — maybe — check'
+      if (prompt.includes('Lens:')) return 'no findings'
+      return 'refuted\na.ts:2 guards it'
+    })
+    const result = await runRound(config, input, ask)
+    assert.deepEqual(result.findings, [])
+    assert.equal(result.refuted.length, 1)
+    assert.deepEqual(result.refuted[0]?.proofs, [{ by: 'claude opus', outcome: 'refuted', proof: 'a.ts:2 guards it' }])
+    assert.equal(roundClean(result), true)
+  })
+
+  test('a reviewer that fails makes the round not clean, never "no findings"', async () => {
+    const { ask } = asker((prompt, _kind, model) => {
+      if (prompt.includes('Lens: code') && model === 'opus') return new Error('timed out after 20 minutes')
+      return 'no findings'
+    })
+    const result = await runRound(config, input, ask)
+    assert.deepEqual(result.findings, [])
+    assert.deepEqual(result.failed, [{ lens: 'code', agent: 'claude opus', error: 'timed out after 20 minutes' }])
+    assert.equal(roundClean(result), false)
+  })
+
+  test('a finding still open goes back to the verifiers on the new head; new ones are numbered after it', async () => {
+    const open: Checked[] = [
+      {
+        id: 'f3',
+        severity: 'note',
+        path: 'a.ts',
+        line: 9,
+        what: 'stale-x',
+        action: 'a',
+        foundBy: [{ lens: 'code', agent: 'claude sonnet', session: 's' }],
+        verdict: 'unverified',
+        proofs: [],
+      },
+    ]
+    const { ask } = asker((prompt, _kind, model) => {
+      if (prompt.includes('Lens: code') && model === 'sonnet') return '- [warning] a.ts:1 — new — fix'
+      if (prompt.includes('Lens:')) return 'no findings'
+      if (prompt.includes('stale-x')) return 'refuted\na.ts:9 was rewritten'
+      return 'confirmed\na.ts:1 proves it'
+    })
+    const result = await runRound(config, input, ask, open)
+    assert.deepEqual(
+      result.refuted.map((f) => f.id),
+      ['f3'],
+    )
+    assert.deepEqual(
+      result.findings.map((f) => [f.id, f.verdict]),
+      [['f4', 'confirmed']],
+    )
+  })
+
+  test('without verifiers, a finding still open stays open', async () => {
+    const { ask } = asker(() => 'no findings')
+    const open = [{ id: 'f1', severity: 'warning', foundBy: [], verdict: 'confirmed', proofs: [] }] as never
+    const result = await runRound({ ...config, verify: null }, input, ask, open)
+    assert.deepEqual(
+      result.findings.map((f) => [f.id, f.verdict]),
+      [['f1', 'confirmed']],
+    )
+  })
+
+  test('an empty delta asks nobody and carries the open findings of the last round', async () => {
+    const { ask, asked } = asker(() => 'no findings')
+    const open = [{ id: 'f1', verdict: 'confirmed' }] as never
+    const result = await runRound(config, { ...input, files: [], diff: '' }, ask, open)
+    assert.deepEqual(asked, [])
+    assert.deepEqual(result.findings, open)
+    assert.equal(roundClean(result), false)
+  })
+})

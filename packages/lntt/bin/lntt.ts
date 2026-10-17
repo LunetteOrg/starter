@@ -68,5 +68,6 @@ import { argv } from 'node:process'
 const args = argv.slice(2)
 if (args[0] === 'ci') await (await import('../src/ci/cli.ts')).main(args.slice(1))
 else if (args[0] === 'branch') (await import('../src/branch-cli.ts')).main(args.slice(1))
+else if (args[0] === 'review') await (await import('../src/review-cli.ts')).main(args.slice(1))
 else if (args[0] === 'worktree') (await import('../src/worktree-cli.ts')).main(args.slice(1))
 else (await import('../src/cli.ts')).main(args)
