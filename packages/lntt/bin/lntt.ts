@@ -26,6 +26,13 @@
 //   lntt branch rename        rename the current branch to the convention, from the name a
 //                             tool gave it or, in Orca, from the linked issue; never fails
 //
+//   lntt review [--base <branch>] [--plan]
+//                             one review round on the current branch: the lenses and agents of
+//                             delivery.review, headless and read-only, then verifiers that try to
+//                             refute each blocker and warning; JSON on stdout, exit 1 with findings
+//   lntt review reply <finding> <answer>
+//                             the author's answer, to the sessions of the reviewers who found it
+//
 //   lntt worktree start --issue <n> [--issue <n>]... [--host orca|herdr|git]
 //                       [--kind <agent>] [--model <id>] [--effort <level>] [--no-agent]
 //                       [--base <branch>] [--prompt <text>]
@@ -68,5 +75,6 @@ import { argv } from 'node:process'
 const args = argv.slice(2)
 if (args[0] === 'ci') await (await import('../src/ci/cli.ts')).main(args.slice(1))
 else if (args[0] === 'branch') (await import('../src/branch-cli.ts')).main(args.slice(1))
+else if (args[0] === 'review') await (await import('../src/review-cli.ts')).main(args.slice(1))
 else if (args[0] === 'worktree') (await import('../src/worktree-cli.ts')).main(args.slice(1))
 else (await import('../src/cli.ts')).main(args)

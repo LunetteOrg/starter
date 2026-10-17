@@ -9,7 +9,7 @@ import { Ajv } from 'ajv'
 import jsonc from 'jsonc-parser'
 import { isMap, parseDocument } from 'yaml'
 import schema from '../schema/config.schema.json' with { type: 'json' }
-import { ConfigError, check, type Located, locate, parse } from './files.ts'
+import { ConfigError, check, type Located, locate, NoConfigError, parse } from './files.ts'
 
 export { checkAgentsBlock, managedBlock, syncAgentsBlock } from './agents.ts'
 export {
@@ -23,9 +23,53 @@ export {
   typeFor,
 } from './branch.ts'
 export { commitlintConfig } from './commitlint.ts'
-export { ConfigError, type Format, type Located } from './files.ts'
+export { ConfigError, type Format, type Located, NoConfigError } from './files.ts'
+export {
+  type Answer,
+  type AskOptions,
+  askAll,
+  type HeadlessAgent,
+  headlessInvocation,
+  type Invocation,
+  parseReply,
+  providerOf,
+  type Question,
+  type Reply,
+  type Spawn,
+  timerMs,
+} from './headless.ts'
 export { type LocalApp, localApp } from './local.ts'
 export { loadOperator, type Operator } from './operator.ts'
+export {
+  type Ask,
+  agentLabel,
+  type Checked,
+  type Finding,
+  type Found,
+  isNoFindings,
+  type Lens,
+  lensApplies,
+  mergeFindings,
+  parseFindings,
+  parseOutcome,
+  parseWithdrawal,
+  type Range,
+  type ReviewConfig,
+  type ReviewState,
+  type RoundResult,
+  renderReplyPrompt,
+  renderReviewPrompt,
+  renderVerifyPrompt,
+  reviewConfig,
+  roundClean,
+  roundRange,
+  runRound,
+  type Severity,
+  TEST_PATHS,
+  unreadableFindings,
+  verdict,
+  verifiersFor,
+} from './review.ts'
 export { type Choice, chooseViewer, commandExists, detectHost, type Host, openWith, type Viewer } from './viewer.ts'
 export {
   type Agent,
@@ -57,7 +101,7 @@ export function findConfig(cwd: string): Located {
     const found = locate(join(dir, '.agents'), 'config')
     if (found) return found
     if (dirname(dir) === dir) {
-      throw new ConfigError(`no .agents/config.jsonc or .agents/config.yml in ${cwd} or above`)
+      throw new NoConfigError(`no .agents/config.jsonc or .agents/config.yml in ${cwd} or above`)
     }
   }
 }

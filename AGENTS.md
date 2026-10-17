@@ -21,8 +21,9 @@
   How a title is written: the `issues` skill.
 - **An agent never merges on its own.** A merge needs an explicit go from a person.
 - **Before a commit, follow the `commit-message` skill.**
-- **Every review runs the `decisions` skill in check mode**, before the line-by-line
-  pass, and reports its findings with the review.
+- **A review is `lntt review`, with the `review` skill:** reviewers with no context
+  of the conversation, the decision records among their lenses, on the agents the
+  project configures; a round is repeated until it finds nothing.
 <!-- lunette:end -->
 
 # The Lunette starter
