@@ -38,9 +38,10 @@ same way every time; the `review` skill keeps the judgement.
   `lntt check cite`, and costs no verifier; the others take the line's text to their
   verifiers.
 - **Every reviewer starts with no context but its prompt** (the brief, the range, the
-  files, the diff, the decision logs, the results of `lntt check`, on stdin) and **can only read**: `claude -p` with
-  Read, Grep and Glob and no MCP server, `opencode run` with an inline agent that denies
-  every tool and allows the read ones back. The tools are what makes it read-only, not
+  files, the diff, the decision logs, the results of `lntt check` for its lens, on
+  stdin) and **can only read**: `claude -p` with Read, Grep and Glob and no MCP server,
+  `opencode run` with an inline agent that denies every tool and allows the read ones
+  back. The tools are what makes it read-only, not
   the brief.
 - **Adversarial verification:** every finding at a severity in `verify.severities`
   goes, at once, to every verifier in `verify.with` other than the agents that found it,

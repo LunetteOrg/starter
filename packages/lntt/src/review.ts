@@ -112,9 +112,9 @@ export interface Finding {
 
 // `- [severity] path:line — what — action`, an em dash or a spaced hyphen between the
 // fields; `(no anchor)` in place of the anchor. Backticks and bold around the severity
-// or the anchor, which models add, are dropped first. Other lines are the reviewer
-// talking.
-const FINDING = /^\s*[-*]\s*\[(blocker|warning|note)\]\s+(\(no anchor\)|\S+?)\s+(?:—|–|-)\s+(.+)$/
+// or the anchor, which models add, are dropped first, and so is a parenthesis after the
+// anchor (a section, a key). Other lines are the reviewer talking.
+const FINDING = /^\s*[-*]\s*\[(blocker|warning|note)\]\s+(\(no anchor\)|\S+?)(?:\s+\([^)]*\))?\s+(?:—|–|-)\s+(.+)$/
 // The action is what follows the last separator, when there is one more; otherwise the
 // whole text is the finding and the action stays empty.
 const LAST_SEPARATOR = /^(.+)\s+(?:—|–|-)\s+(.+)$/
@@ -162,7 +162,8 @@ export function parseFindings(text: string): Finding[] {
     const split = LAST_SEPARATOR.exec(rest)
     const what = split ? (split[1] as string) : rest
     const action = split ? (split[2] as string) : ''
-    const at = anchor === '(no anchor)' ? null : /^(.+?)(?::(\d+))?$/.exec(anchor)
+    // A range of lines (`a.ts:12-15`) names its first.
+    const at = anchor === '(no anchor)' ? null : /^(.+?)(?::(\d+)(?:-\d+)?)?$/.exec(anchor)
     findings.push({
       severity,
       path: at ? (at[1] as string) : null,

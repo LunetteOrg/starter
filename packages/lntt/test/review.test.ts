@@ -489,6 +489,15 @@ describe('a round', () => {
 })
 
 describe('what the first real round taught', () => {
+  test('a range of lines names its first; a parenthesis after the anchor is not the finding', () => {
+    const text = '- [blocker] `.agents/config.jsonc:54-72` (`delivery.review`) — off — restore'
+    assert.equal(unreadableFindings(text), 0)
+    assert.deepEqual(
+      parseFindings(text).map((f) => [f.path, f.line, f.what, f.action]),
+      [['.agents/config.jsonc', 54, 'off', 'restore']],
+    )
+  })
+
   test('an anchor in backticks or bold is read as the anchor', () => {
     assert.deepEqual(
       parseFindings('- [warning] `src/a.ts:12` — x — y\n- **[blocker]** **b.ts:3** — z — w').map((f) => [

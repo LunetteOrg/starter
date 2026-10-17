@@ -32,8 +32,8 @@ lntt ci local | candidate
 
 - **One entry point, one module per command group.** `bin/lntt.ts` dispatches to
   `src/cli.ts` (configuration, operator, `AGENTS.md`, local apps, viewer),
-  `src/check-cli.ts`, `src/branch-cli.ts`, `src/review-cli.ts`, `src/worktree-cli.ts` and `src/ci/cli.ts`. A
-  group loads only when it runs.
+  `src/check-cli.ts`, `src/branch-cli.ts`, `src/review-cli.ts`, `src/worktree-cli.ts`
+  and `src/ci/cli.ts`. A group loads only when it runs.
 - **What a person types is what an agent runs.** Skills, workflows, git hooks and
   `orca.yaml` call `lntt`, never a package's files by path, with one exception: the
   candidate workflow runs `node packages/lntt/bin/lntt.ts`, because it installs only
@@ -41,7 +41,8 @@ lntt ci local | candidate
 - **Output for scripts.** stdout carries only the result: a bare value (`lntt path`,
   `lntt branch name`), JSON (`lntt get`, `lntt operator`), or one JSON line per item
   (`lntt worktree start`, followed by the brief when no agent was started, for the
-  person who will start one); progress and child-process output go to stderr. Exit codes:
+  person who will start one; `lntt check --json`), or a report for a person (`lntt
+  check` without `--json`); progress and child-process output go to stderr. Exit codes:
   0 ok, 1 a configuration error or a red result, 2 a usage error.
 - **`lntt check` is the one verb for what is checked without judgement**, one area per
   review lens (`agents-md`, `decisions`); alone it runs every area, which is what CI
@@ -49,8 +50,10 @@ lntt ci local | candidate
   did not run is never read as one that passed, and `INFO` for what it prints without a
   verdict; `--json` gives one line per result (`area`, `check`, `status`, `path`,
   `line`, `message`), `--base <ref>` limits a check to what the diff touches where that
-  makes sense. A new deterministic check is a check of an area, or a new area, never a
-  script beside a skill.
+  makes sense. What a project ships to others (a shared package, a skill) cites the
+  records of the project that installs it: `recording.externalReferences` names those
+  files with the reason, and a glob that matches nothing fails. A new deterministic
+  check is a check of an area, or a new area, never a script beside a skill.
 - **No aliases for old names.** A command is renamed in the same pull request as every
   caller, and the plugin's version moves with its skills.
 
