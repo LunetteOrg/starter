@@ -42,10 +42,9 @@ jobs:
       # Every published package carries the CLI's version (docs/adr/cli-runtime-and-publishing.md).
       - run: node scripts/packages-version.mts check
       - run: pnpm typecheck
-      # Full CI only. Scaffolds each template into a temp dir and asserts the result;
-      # SCAFFOLD_SMOKE additionally installs + lints + typechecks a generated project,
-      # so template-tooling breakage fails here, not post-push.
-      - if: github.event_name == 'push' || github.base_ref == github.event.repository.default_branch
-        run: pnpm test
+      # The tests run on every ready pull request: a failure that shows only on Linux is
+      # caught before the candidate. The scaffold smoke (SCAFFOLD_SMOKE: install, lint and
+      # typecheck a generated project) is the heavy part and runs on the full CI only.
+      - run: pnpm test
         env:
-          SCAFFOLD_SMOKE: '1'
+          SCAFFOLD_SMOKE: ${{ (github.event_name == 'push' || github.base_ref == github.event.repository.default_branch) && '1' || '' }}
