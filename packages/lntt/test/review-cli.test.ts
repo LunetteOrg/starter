@@ -30,6 +30,13 @@ process.stdin.on('data', (d) => (prompt += d)).on('end', () => {
   const kind = prompt.startsWith('You are reviewing') ? 'REVIEW' : prompt.startsWith('You are checking') ? 'VERIFY' : 'REPLY'
   fs.appendFileSync(process.env.FAKE_LOG, kind + ' ' + args.join(' ') + '\\n')
   const model = args[args.indexOf('--model') + 1]
+  if (process.env.FAKE_ENVLOG) fs.appendFileSync(process.env.FAKE_ENVLOG, (process.env.ORCA_AGENT_HOOK_PORT ? 'orca-hook-env' : 'clean') + '\\n')
+  if (process.env['FAKE_IGNORE_TERM_' + model]) {
+    process.on('SIGTERM', () => {})
+    fs.appendFileSync(process.env.FAKE_PIDS, process.pid + '\\n')
+    setInterval(() => {}, 1000)
+    return
+  }
   if (process.env['FAKE_SLEEP_' + model]) { setTimeout(() => {}, 600000); return }
   if (process.env['FAKE_FAIL_' + kind] || process.env['FAKE_FAIL_' + kind + '_' + model]) { process.stderr.write('boom\\n'); process.exit(1) }
   const result = (process.env['FAKE_' + kind + '_' + model] || process.env['FAKE_' + kind] || 'no findings').replace(/\\\\n/g, '\\n')
@@ -49,6 +56,9 @@ function lntt(args: string[], env: Record<string, string> = {}) {
   const r = spawnSync(process.execPath, [BIN, 'review', ...args], {
     cwd: repo,
     encoding: 'utf8',
+    // A run that hangs fails its test instead of blocking the suite.
+    timeout: 20_000,
+    killSignal: 'SIGKILL',
     env: {
       HOME: repo,
       PATH: [bin, dirname(process.execPath), '/usr/bin', '/bin'].join(':'),
@@ -83,7 +93,7 @@ beforeEach(() => {
   git('init', '-q', '-b', 'main')
   git('config', 'user.email', 't@t')
   git('config', 'user.name', 't')
-  writeFileSync(join(repo, '.gitignore'), '.fakebin\n.fakelog\n')
+  writeFileSync(join(repo, '.gitignore'), '.fakebin\n.fakelog\n.orca/\n.orca-events\n.envlog\n.pids\n.caffeinate\n')
   mkdirSync(join(repo, '.agents'))
   writeFileSync(join(repo, '.agents/config.jsonc'), CONFIG)
   writeFileSync(join(repo, 'a.ts'), 'export const a = 1\n')
@@ -248,6 +258,18 @@ describe('lntt review, end to end with a fake agent', () => {
     assert.equal(r.code, 0, r.err)
     assert.equal(JSON.parse(r.out).skipped[0].agent, 'claude opus')
     assert.match(r.err, /lntt review: skipped code · claude opus/)
+    const starts = readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l))
+      .filter((e) => e.type === 'start')
+    assert.deepEqual(
+      starts.map((e) => [e.label, e.optional]),
+      [
+        ['code · claude sonnet', false],
+        ['code · claude opus', true],
+      ],
+    )
     assert.doesNotMatch(r.err, /lntt review: failed/)
   })
 
@@ -320,5 +342,98 @@ describe('lntt review, end to end with a fake agent', () => {
     lntt(['--base', 'main'])
     const last = readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8').trim().split('\n').at(-1) as string
     assert.equal(JSON.parse(last).type, 'error')
+  })
+
+  test('under Claude Code in Orca: each agent is a subagent of the session, and the agents get no hook variables', () => {
+    const hooks = join(repo, '.orca/agent-hooks')
+    mkdirSync(hooks, { recursive: true })
+    const events = join(repo, '.orca-events')
+    writeFileSync(join(hooks, 'claude-hook.sh'), `#!/bin/sh\ncat >> ${events}; echo >> ${events}\n`)
+    const envlog = join(repo, '.envlog')
+    const r = lntt(['--base', 'main'], {
+      ORCA_AGENT_HOOK_PORT: '1',
+      ORCA_AGENT_HOOK_TOKEN: 't',
+      ORCA_PANE_KEY: 'tab:pane',
+      CLAUDE_CODE_SESSION_ID: 'sess',
+      FAKE_ENVLOG: envlog,
+    })
+    assert.equal(r.code, 0, r.err)
+    const sent = readFileSync(events, 'utf8')
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l))
+    const mine = sent.filter((e) => e.agent_type === 'code · claude sonnet')
+    assert.equal(mine[0].hook_event_name, 'SubagentStart')
+    assert.equal(mine[0].session_id, 'sess')
+    assert.equal(mine.at(-1).hook_event_name, 'SubagentStop')
+    assert.deepEqual([...new Set(readFileSync(envlog, 'utf8').split('\n').filter(Boolean))], ['clean'])
+  })
+
+  test('the Mac is kept awake for the length of the round', { skip: process.platform !== 'darwin' }, () => {
+    const calls = join(repo, '.caffeinate')
+    writeFileSync(join(bin, 'caffeinate'), `#!/bin/sh\necho "$@" >> ${calls}\n`)
+    chmodSync(join(bin, 'caffeinate'), 0o755)
+    lntt(['--base', 'main'])
+    // caffeinate starts on its own: give it a moment to write.
+    const until = Date.now() + 3000
+    while (!existsSync(calls) && Date.now() < until) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
+    assert.match(readFileSync(calls, 'utf8'), /^-i -w \d+$/m)
+  })
+
+  test('an agent that ignores SIGTERM is killed', { timeout: 30000 }, () => {
+    writeFileSync(
+      join(repo, '.agents/config.jsonc'),
+      JSON.stringify({
+        delivery: {
+          review: {
+            reviewers: {
+              decisions: { with: [] },
+              tests: { with: [] },
+              code: {
+                with: [
+                  { kind: 'claude', model: 'sonnet' },
+                  { kind: 'claude', model: 'opus', optional: true },
+                ],
+              },
+            },
+            verify: false,
+            optionalGraceMinutes: 0,
+          },
+        },
+      }),
+    )
+    git('commit', '-qam', 'stubborn optional')
+    const pids = join(repo, '.pids')
+    writeFileSync(pids, '')
+    const r = lntt(['--base', 'main'], { FAKE_IGNORE_TERM_opus: '1', FAKE_PIDS: pids })
+    assert.equal(r.code, 0, r.err)
+    const pid = Number(readFileSync(pids, 'utf8').trim())
+    assert.ok(pid > 0)
+    assert.throws(() => process.kill(pid, 0), 'the stubborn agent is gone')
+  })
+
+  test('a round past roundTimeoutMinutes stops its agents and fails', { timeout: 30000 }, () => {
+    writeFileSync(
+      join(repo, '.agents/config.jsonc'),
+      JSON.stringify({ delivery: { review: { roundTimeoutMinutes: 0.02, verify: false } } }),
+    )
+    git('commit', '-qam', 'short round')
+    const r = lntt(['--base', 'main'], { FAKE_SLEEP_sonnet: '1', FAKE_SLEEP_haiku: '1' })
+    assert.equal(r.code, 1)
+    assert.match(JSON.parse(r.out).failed[0].error, /the round took longer than/)
+  })
+
+  test("the progress names lntt review's pid and beats while agents run; an error starts a new file", () => {
+    lntt(['--base', 'main'])
+    const first = JSON.parse(readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8').split('\n')[0] as string)
+    assert.equal(first.type, 'round')
+    assert.ok(Number.isInteger(first.pid))
+    writeFileSync(join(repo, 'a.ts'), 'dirty\n')
+    lntt(['--base', 'main'])
+    const lines = readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8').trim().split('\n')
+    assert.deepEqual(
+      lines.map((l) => JSON.parse(l).type),
+      ['error'],
+    )
   })
 })

@@ -46,14 +46,30 @@ same way every time; the `review` skill keeps the judgement.
   on a branch (a detached HEAD is refused) whose head does not move until it ends.
 - **Load:** at most `perProvider` agents of one provider run at once, the others waiting
   their turn; a provider given dozens of sessions at once queues them until they time
-  out. A verdict counts the verifiers that answered. An agent marked `optional` (a free
+  out. Optional agents queue apart, so a slow one never holds a required agent's turn.
+  A verdict counts the verifiers that answered. An agent marked `optional` (a free
   model) that fails is reported in `skipped` and does not fail the round; once the
   others have answered it has `optionalGraceMinutes` more, then it is stopped, so a
   round never waits on it.
-- **Progress is a contract:** stderr carries a line when each agent starts and ends,
-  `failed` or `skipped` for one that did not answer, the agents still running every 30
-  seconds, `round N done` at the end and `error:` for a round that could not start. The
-  `review` skill wakes on `failed`, `error:` and `round N done` only.
+- **Nothing runs forever:** each agent stops at `timeoutMinutes`, the whole round at
+  `roundTimeoutMinutes` (the round fails and keeps what it gathered), and an agent that
+  ignores SIGTERM gets SIGKILL five seconds later, or when `lntt review` exits. On macOS
+  `caffeinate` keeps the machine awake while the round runs.
+- **Progress is a contract:** stderr carries a line when each agent starts and ends
+  (with its tokens), `failed` or `skipped` for one that did not answer, the agents still
+  running every 30 seconds, `round N done` at the end and `error:` for a round that could
+  not start. The `review` skill wakes on `failed`, `error:` and `round N done` only. The
+  same goes as JSON events, one per line, to `<git dir>/lntt-review.progress`: the round
+  with the pid of `lntt review`, each phase with its total, each agent's start and end,
+  a beat every 15 seconds, the end or the error; a band beside the agent reads it and
+  tells a dead or silent run from a working one.
+- **Seen where the person works:** under a Claude Code session in Orca, each agent is
+  announced as a subagent of that session (Claude Code's `SubagentStart` and
+  `SubagentStop`, sent through Orca's hook script, the start repeated every two seconds
+  while the agent works, since Orca drops subagents when the parent's turn stops). This
+  follows an internal Orca protocol: one small adapter, silent when any piece is
+  missing. The agents themselves get none of the host's hook variables, so they never
+  report as the session that started them.
 - **A conversation inside a round:** `lntt review reply` resumes the sessions of the
   reviewers who found a finding with the author's answer; it closes when they all
   withdraw it. A disagreement that remains goes to the person.

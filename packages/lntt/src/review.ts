@@ -28,6 +28,8 @@ export interface ReviewConfig {
   perProvider: number
   // How long optional agents may go on once the others have answered.
   optionalGraceMinutes: number
+  // How long a whole round may take before every agent still running is stopped.
+  roundTimeoutMinutes: number
 }
 
 export const TEST_PATHS = ['**/*.test.*', '**/*.spec.*', '**/test/**', '**/tests/**', '**/__tests__/**']
@@ -42,6 +44,7 @@ const DEFAULT: ReviewConfig = {
   timeoutMinutes: 20,
   perProvider: 4,
   optionalGraceMinutes: 2,
+  roundTimeoutMinutes: 60,
 }
 
 interface RawLens {
@@ -56,6 +59,7 @@ interface RawReview {
   timeoutMinutes?: number
   perProvider?: number
   optionalGraceMinutes?: number
+  roundTimeoutMinutes?: number
 }
 
 // delivery.review over the defaults, lens by lens. A lens with no agents is off.
@@ -86,6 +90,7 @@ export function reviewConfig(data: Record<string, unknown>): ReviewConfig {
     timeoutMinutes: raw.timeoutMinutes ?? DEFAULT.timeoutMinutes,
     perProvider: raw.perProvider ?? DEFAULT.perProvider,
     optionalGraceMinutes: raw.optionalGraceMinutes ?? DEFAULT.optionalGraceMinutes,
+    roundTimeoutMinutes: raw.roundTimeoutMinutes ?? DEFAULT.roundTimeoutMinutes,
   }
 }
 
@@ -120,9 +125,33 @@ export function isNoFindings(text: string): boolean {
   return /^no findings\.?$/i.test(text.replace(/[`*_]/g, '').trim())
 }
 
+// A finding line starts with a bullet and a severity in brackets; models wrap long ones,
+// so the lines after it, up to the next bullet or a blank line, belong to it.
+const FINDING_START = /^\s*[-*]\s*(\*\*)?\[(blocker|warning|note)\]/
+
+function findingLines(text: string): string[] {
+  const out: string[] = []
+  let open = false
+  for (const raw of text.split('\n')) {
+    if (FINDING_START.test(raw)) {
+      out.push(raw.trim())
+      open = true
+    } else if (open && raw.trim() !== '' && !/^\s*[-*#]/.test(raw)) {
+      out[out.length - 1] = `${out[out.length - 1]} ${raw.trim()}`
+    } else open = false
+  }
+  return out
+}
+
+// Finding lines that do not read as `[severity] anchor — what — action`: a reply with
+// any of them is not a review that can be trusted whole.
+export function unreadableFindings(text: string): number {
+  return findingLines(text).filter((line) => !FINDING.exec(unwrap(line))).length
+}
+
 export function parseFindings(text: string): Finding[] {
   const findings: Finding[] = []
-  for (const raw of text.split('\n')) {
+  for (const raw of findingLines(text)) {
     const line = unwrap(raw)
     const m = FINDING.exec(line)
     if (!m) continue
@@ -439,9 +468,13 @@ export async function runRound(
       continue
     }
     const findings = parseFindings(answer.reply.text)
-    // A reply in another shape is a review that did not happen, not a clean one.
-    if (findings.length === 0 && !isNoFindings(answer.reply.text)) {
-      failed(`no finding line and not "no findings": ${answer.reply.text.trim().slice(0, 160)}`)
+    // A reply in another shape is a review that did not happen, not a clean one; one
+    // finding line that cannot be read makes the whole reply unreadable.
+    const unreadable = unreadableFindings(answer.reply.text)
+    if (unreadable > 0 || (findings.length === 0 && !isNoFindings(answer.reply.text))) {
+      const why =
+        unreadable > 0 ? `${unreadable} finding lines that cannot be read` : 'no finding line and not "no findings"'
+      failed(`${why}: ${answer.reply.text.trim().slice(0, 160)}`)
       continue
     }
     reviewed.push({ ...job, session: answer.reply.session, findings })
@@ -455,7 +488,9 @@ export async function runRound(
   // A fresh finding at the anchor of one still open is the same finding: it joins it.
   const fresh = mergeFindings(reviewed, last).filter((f) => {
     const same = f.path !== null && carried.find((c) => c.path === f.path && c.line === f.line)
-    if (same) same.foundBy = [...same.foundBy, ...f.foundBy]
+    // The same agent finding it again replaces its own entry: its new session is the one
+    // a reply resumes.
+    if (same) same.foundBy = [...same.foundBy.filter((b) => !f.foundBy.some((n) => n.agent === b.agent)), ...f.foundBy]
     return !same
   })
   const found: Found[] = [...carried, ...fresh]

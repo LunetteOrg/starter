@@ -65,6 +65,7 @@ export {
   runRound,
   type Severity,
   TEST_PATHS,
+  unreadableFindings,
   verdict,
   verifiersFor,
 } from './review.ts'

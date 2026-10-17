@@ -273,6 +273,11 @@
               "type": "number",
               "minimum": 0,
               "description": "How long optional agents may go on once every other agent of the step has answered; then they are stopped and reported in skipped, and those still waiting never start. Default 2."
+            },
+            "roundTimeoutMinutes": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "How long a whole round may take; then every agent still running is stopped, the round fails and keeps what it gathered. Default 60."
             }
           }
         }

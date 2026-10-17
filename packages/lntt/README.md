@@ -158,6 +158,12 @@ A round, on a clean working tree:
    refuted. Otherwise undecided. Findings still open from the last round go back to
    them on the new head.
 
+Progress goes to stderr (tokens per agent, `round N done`) and, as JSON events with the
+pid of `lntt review` and a beat every 15 seconds, to `<git dir>/lntt-review.progress`
+for a band beside the agent. Under Claude Code in Orca each agent shows as a subagent
+of the session; agents never inherit the host's hook variables. On macOS `caffeinate`
+keeps the machine awake for the round.
+
 stdout is the round: `findings` to act on, `refuted` with their proofs, `failed`
 reviewers and verifiers, `cost` in USD when the agents report it (claude does). Exit 0
 when no blocker or warning is left and nothing failed, 1 otherwise; notes are reported
@@ -165,7 +171,9 @@ and do not block, nor are they carried to the next round. A reply that is neithe
 finding lines nor `no findings` counts as a failed reviewer; after a failure the next
 round reads the same range again. A reviewer is stopped after
 `delivery.review.timeoutMinutes` and counts as failed; at most
-`delivery.review.perProvider` agents of one provider run at once. An agent marked
+`delivery.review.perProvider` agents of one provider run at once (optional ones queue
+apart), the whole round stops at `delivery.review.roundTimeoutMinutes`, and an agent
+that ignores SIGTERM is killed. An agent marked
 `optional` that fails is reported in `skipped` and does not fail the round; it is stopped
 `delivery.review.optionalGraceMinutes` after the others have answered. A round that
 cannot start prints `lntt review: error: …`. Agents that are not installed, or

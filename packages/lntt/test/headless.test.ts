@@ -312,4 +312,56 @@ describe('several agents at once', () => {
     })
     assert.equal(results[0]?.ok, true)
   })
+
+  test('optional agents have slots of their own: a required one of the same provider never waits behind them', {
+    timeout: 5000,
+  }, async () => {
+    const order: string[] = []
+    const spawn: Spawn = (inv, signal) => {
+      if (inv.stdin === 'slow optional') {
+        return new Promise((_, reject) => signal?.addEventListener('abort', () => reject(new Error('stopped'))))
+      }
+      order.push(inv.stdin)
+      return Promise.resolve(JSON.stringify({ result: 'r', session_id: 's', is_error: false }))
+    }
+    await askAll(
+      [
+        { agent: { kind: 'claude', optional: true }, prompt: 'slow optional' },
+        { agent: { kind: 'claude' }, prompt: 'required' },
+      ],
+      spawn,
+      () => {},
+      { perProvider: 1, optionalGraceMs: 0 },
+    )
+    assert.deepEqual(order, ['required'])
+  })
+
+  test('a round signal stops every agent, required ones too, and those waiting never start', {
+    timeout: 5000,
+  }, async () => {
+    const round = new AbortController()
+    let started = 0
+    const spawn: Spawn = (_inv, signal) => {
+      started++
+      return new Promise((_, reject) =>
+        signal?.addEventListener('abort', () => reject(new Error(String(signal.reason)))),
+      )
+    }
+    const pending = askAll(
+      [
+        { agent: { kind: 'claude' }, prompt: 'A' },
+        { agent: { kind: 'claude' }, prompt: 'B' },
+      ],
+      spawn,
+      () => {},
+      { perProvider: 1, signal: round.signal },
+    )
+    setTimeout(() => round.abort('the round took longer than 60 minutes'), 10)
+    const results = await pending
+    assert.deepEqual(
+      results.map((a) => (a.ok ? 'ok' : a.error)),
+      ['the round took longer than 60 minutes', 'the round took longer than 60 minutes'],
+    )
+    assert.equal(started, 1)
+  })
 })

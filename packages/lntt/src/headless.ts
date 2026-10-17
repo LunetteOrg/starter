@@ -158,6 +158,9 @@ export interface AskOptions {
   // How long optional agents may go on once every other agent has answered; then they
   // are stopped, and those still waiting never start. Without it, they are awaited.
   optionalGraceMs?: number
+  // Stops every agent, required ones too, and keeps the waiting ones from starting: the
+  // round's own deadline.
+  signal?: AbortSignal
 }
 
 // Every question runs as soon as its provider has a free slot; each answer stays in its
@@ -187,18 +190,23 @@ export async function askAll(
   const runs = questions.map(async (q, index): Promise<Answer> => {
     const label = q.label ?? q.agent.kind
     const optional = q.agent.optional === true
-    const release = await slot(providerOf(q.agent))
+    // Optional agents queue apart: a slow one never holds a required agent's turn.
+    const release = await slot(`${providerOf(q.agent)}${optional ? ' (optional)' : ''}`)
+    const signals = [options.signal, optional ? stop.signal : undefined].filter(
+      (s): s is AbortSignal => s !== undefined,
+    )
+    const signal = signals.length > 0 ? AbortSignal.any(signals) : undefined
     let answer: Answer
-    if (optional && stop.signal.aborted) {
+    if (signal?.aborted) {
       release()
-      answer = { ok: false, error: String(stop.signal.reason) }
+      answer = { ok: false, error: String(signal.reason) }
       progress({ type: 'end', index, label, optional, answer, ms: 0 })
       return answer
     }
     const started = Date.now()
     progress({ type: 'start', index, label, optional })
     try {
-      const stdout = await spawn(headlessInvocation(q.agent, q.prompt, q.session), optional ? stop.signal : undefined)
+      const stdout = await spawn(headlessInvocation(q.agent, q.prompt, q.session), signal)
       answer = { ok: true, reply: parseReply(q.agent.kind, stdout) }
     } catch (error) {
       answer = { ok: false, error: (error as Error).message }

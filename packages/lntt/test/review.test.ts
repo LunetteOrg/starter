@@ -19,6 +19,7 @@ import {
   runRound,
   type Severity,
   TEST_PATHS,
+  unreadableFindings,
   verdict,
   verifiersFor,
 } from '../src/index.ts'
@@ -35,6 +36,7 @@ describe('the configuration', () => {
       timeoutMinutes: 20,
       perProvider: 4,
       optionalGraceMinutes: 2,
+      roundTimeoutMinutes: 60,
     })
   })
 
@@ -781,5 +783,79 @@ describe('what the third real round taught', () => {
   test('a finding always has a required verifier: the finder itself when the others are optional', () => {
     assert.deepEqual(verifiersFor(found('claude sonnet'), [sonnet, glm]), [glm, sonnet])
     assert.deepEqual(verifiersFor(found('opencode opencode/deepseek'), [sonnet, glm]), [sonnet, glm])
+  })
+})
+
+describe('what the fourth real round taught', () => {
+  test('a finding wrapped over several lines is one finding', () => {
+    const text = [
+      '- [warning] packages/lntt/src/review.ts:195 — `verifiersFor` returns the finders',
+      '  when every other verifier is optional, which the comment',
+      '  does not say — say it in the comment',
+      '- [note] a.ts:1 — short — fix',
+    ].join('\n')
+    assert.deepEqual(
+      parseFindings(text).map((f) => [f.path, f.line, f.what, f.action]),
+      [
+        [
+          'packages/lntt/src/review.ts',
+          195,
+          '`verifiersFor` returns the finders when every other verifier is optional, which the comment does not say',
+          'say it in the comment',
+        ],
+        ['a.ts', 1, 'short', 'fix'],
+      ],
+    )
+  })
+
+  test('a finding line that cannot be read makes the reply unreadable, even beside readable ones', () => {
+    assert.equal(unreadableFindings('- [warning] a.ts:1 — x — y\n- [blocker] something went wrong'), 1)
+    assert.equal(unreadableFindings('- [warning] a.ts:1 — x — y\nSome closing words.'), 0)
+  })
+
+  test('the same agent finding an open finding again is not counted twice', async () => {
+    const config = reviewConfig({
+      delivery: {
+        review: {
+          reviewers: {
+            decisions: { with: [] },
+            tests: { with: [] },
+            code: { with: [{ kind: 'claude', model: 'sonnet' }] },
+          },
+          verify: false,
+        },
+      },
+    })
+    const open: Checked[] = [
+      {
+        id: 'f1',
+        severity: 'warning',
+        path: 'a.ts',
+        line: 1,
+        what: 'w',
+        action: 'a',
+        foundBy: [{ lens: 'code', agent: 'claude sonnet', session: 's' }],
+        verdict: 'confirmed',
+        proofs: [],
+      },
+    ]
+    const input = {
+      base: 'mb',
+      head: 'h',
+      files: ['a.ts'],
+      diff: 'D',
+      records: '',
+      range: roundRange(null, 'b', 'h', 'mb', () => true),
+    }
+    const ask: Ask = async (qs) =>
+      qs.map(() => ({
+        ok: true as const,
+        reply: { text: '- [warning] a.ts:1 — w — a', session: 's2', cost: null, tokens: null },
+      }))
+    const result = await runRound(config, input, ask, open)
+    assert.deepEqual(
+      result.findings[0]?.foundBy.map((b) => [b.agent, b.session]),
+      [['claude sonnet', 's2']],
+    )
   })
 })

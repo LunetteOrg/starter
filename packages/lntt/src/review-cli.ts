@@ -17,6 +17,7 @@ import {
   type Spawn,
 } from './headless.ts'
 import { findConfig, loadConfig } from './index.ts'
+import { orcaSubagents, type Subagents } from './orca-subagents.ts'
 import {
   agentLabel,
   type Checked,
@@ -124,9 +125,24 @@ function progressPath(): string {
   return join(git('rev-parse', '--absolute-git-dir'), 'lntt-review.progress')
 }
 
-function emit(event: Record<string, unknown>): void {
+// Found once per run: an event is written while agents run, without a git call each.
+let progressFile: string | null = null
+
+// A round starts its own file, before anything that can stop it, so an error is never
+// read as the end of the round before.
+function startProgress(): void {
   try {
-    appendFileSync(progressPath(), `${JSON.stringify({ t: Date.now(), ...event })}\n`)
+    progressFile = progressPath()
+    writeFileSync(progressFile, '')
+  } catch {
+    progressFile = null
+  }
+}
+
+function emit(event: Record<string, unknown>): void {
+  if (!progressFile) return
+  try {
+    appendFileSync(progressFile, `${JSON.stringify({ t: Date.now(), ...event })}\n`)
   } catch {}
 }
 
@@ -138,15 +154,23 @@ function phaseOf(label: string): string {
 // person at the terminal; the same as JSON events in the progress file. A watcher that
 // should wake only when it matters (the review skill's) filters `failed`, `error:` and
 // `round N done`: every other line is routine.
-function reporter(): { progress: (event: Progress) => void; phase: (labels: string[]) => void; stop: () => void } {
+function reporter(orca: Subagents | null = null): {
+  progress: (event: Progress) => void
+  phase: (labels: string[]) => void
+  stop: () => void
+} {
   // By question, not by label: two agents can carry the same label.
   const running = new Map<number, string>()
   const since = Date.now()
+  let beats = 0
+  // A beat every 15 seconds says lntt review is alive; stderr hears every second one.
   const timer = setInterval(() => {
-    if (running.size === 0) return
+    emit({ type: 'beat', running: running.size })
+    if (++beats % 2 === 1 || running.size === 0) return
     const labels = [...running.values()].join(', ')
     stderr.write(`lntt review: running ${running.size} (${duration(Date.now() - since)}): ${labels}\n`)
-  }, 30_000)
+  }, 15_000)
+  const id = (phase: string, index: number) => `lntt-review-${process.pid}-${phase}-${index}`
   return {
     phase(labels) {
       if (labels.length > 0) emit({ type: 'phase', phase: phaseOf(labels[0] as string), total: labels.length })
@@ -155,11 +179,13 @@ function reporter(): { progress: (event: Progress) => void; phase: (labels: stri
       const phase = phaseOf(event.label)
       if (event.type === 'start') {
         running.set(event.index, event.label)
+        orca?.start(id(phase, event.index), event.label)
         stderr.write(`lntt review: start ${event.label}\n`)
-        emit({ type: 'start', phase, label: event.label })
+        emit({ type: 'start', phase, label: event.label, optional: event.optional })
         return
       }
       running.delete(event.index)
+      orca?.stop(id(phase, event.index), event.label, event.answer.ok ? 'answered' : event.answer.error)
       const took = duration(event.ms)
       if (!event.answer.ok) {
         // An optional agent's failure does not need anyone: not a `failed` line.
@@ -174,19 +200,55 @@ function reporter(): { progress: (event: Progress) => void; phase: (labels: stri
         emit({ type: 'end', phase, label: event.label, outcome: 'done', tokens, ms: event.ms })
       }
     },
-    stop: () => clearInterval(timer),
+    stop: () => {
+      clearInterval(timer)
+      orca?.close()
+    },
   }
 }
 
 // Each agent runs in a process group of its own, so a timeout stops it and whatever it
 // started; an interrupt of lntt review stops every group still running.
 const groups = new Set<number>()
+
+// SIGTERM to the group, then SIGKILL to what is still there five seconds later.
+function terminate(pid: number): void {
+  try {
+    process.kill(-pid, 'SIGTERM')
+  } catch {}
+  setTimeout(() => {
+    if (!groups.has(pid)) return
+    try {
+      process.kill(-pid, 'SIGKILL')
+    } catch {}
+    groups.delete(pid)
+  }, 5000).unref()
+}
+
 function stopGroups(): void {
+  for (const pid of groups) terminate(pid)
+}
+
+// Whatever ignored SIGTERM and is still running when lntt review exits goes with it.
+process.on('exit', () => {
   for (const pid of groups) {
     try {
-      process.kill(-pid, 'SIGTERM')
+      process.kill(-pid, 'SIGKILL')
     } catch {}
   }
+})
+
+// The host's hook variables stay with the session that owns them: an agent of the round
+// would otherwise report to Orca (or Herdr) as that session.
+const HOST_HOOKS = /^(ORCA_AGENT_HOOK_|ORCA_PANE_KEY$|ORCA_TAB_ID$|ORCA_AGENT_LAUNCH_TOKEN$|HERDR_)/
+
+export function agentEnv(
+  base: Record<string, string | undefined>,
+  extra: Record<string, string>,
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [name, value] of Object.entries(base)) if (value !== undefined && !HOST_HOOKS.test(name)) out[name] = value
+  return { ...out, ...extra }
 }
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
@@ -199,15 +261,13 @@ function spawner(timeoutMinutes: number): Spawn {
   return (inv: Invocation, signal?: AbortSignal) =>
     new Promise((resolve, reject) => {
       const child = spawn(inv.command, inv.args, {
-        env: { ...env, ...inv.env },
+        env: agentEnv(env, inv.env),
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: true,
       })
       if (child.pid) groups.add(child.pid)
       signal?.addEventListener('abort', () => {
-        try {
-          if (child.pid) process.kill(-child.pid, 'SIGTERM')
-        } catch {}
+        if (child.pid) terminate(child.pid)
         reject(new Error(String(signal.reason)))
       })
       let out = ''
@@ -219,9 +279,7 @@ function spawner(timeoutMinutes: number): Spawn {
         err += chunk
       })
       const timer = setTimeout(() => {
-        try {
-          if (child.pid) process.kill(-child.pid, 'SIGTERM')
-        } catch {}
+        if (child.pid) terminate(child.pid)
         reject(new Error(`timed out after ${timeoutMinutes} minutes`))
       }, timeoutMinutes * 60_000)
       child.on('error', (error) => {
@@ -243,6 +301,15 @@ function spawner(timeoutMinutes: number): Spawn {
     })
 }
 
+// macOS sleeps on its own schedule, and a sleeping machine stops the round's agents: keep
+// it awake while this process runs.
+function keepAwake(): void {
+  if (process.platform !== 'darwin' || !commandExists('caffeinate')) return
+  try {
+    spawn('caffeinate', ['-i', '-w', String(process.pid)], { stdio: 'ignore', detached: true }).unref()
+  } catch {}
+}
+
 function configuredBase(data: Record<string, unknown>): string {
   return (data.delivery as { candidate?: { base?: string } } | undefined)?.candidate?.base ?? 'main'
 }
@@ -261,6 +328,7 @@ async function round(args: string[]): Promise<number> {
     args,
     options: { base: { type: 'string' }, plan: { type: 'boolean', default: false } },
   })
+  if (!values.plan) startProgress()
   const data = loaded()
   const config = reviewConfig(data)
   const dirty = git('status', '--porcelain')
@@ -304,9 +372,21 @@ async function round(args: string[]): Promise<number> {
   if (problems.length > 0) throw new Error(`cannot start ${problems.join('; ')}`)
 
   const open = state?.branch === branch ? state.result.findings : []
-  writeFileSync(progressPath(), '')
-  emit({ type: 'round', round: range.round, range: `${range.from}..${head}`, files: files.length })
-  const report = reporter()
+  keepAwake()
+  const deadline = new AbortController()
+  setTimeout(
+    () => deadline.abort(`the round took longer than ${config.roundTimeoutMinutes} minutes`),
+    config.roundTimeoutMinutes * 60_000,
+  ).unref()
+  emit({
+    type: 'round',
+    pid: process.pid,
+    round: range.round,
+    range: `${range.from}..${head}`,
+    files: files.length,
+    optionalGraceMs: config.optionalGraceMinutes * 60_000,
+  })
+  const report = reporter(orcaSubagents(env, root))
   const began = Date.now()
   const result = await runRound(
     config,
@@ -324,6 +404,7 @@ async function round(args: string[]): Promise<number> {
       return askAll(questions, spawner(config.timeoutMinutes), report.progress, {
         perProvider: config.perProvider,
         optionalGraceMs: config.optionalGraceMinutes * 60_000,
+        signal: deadline.signal,
       })
     },
     open,
@@ -414,9 +495,8 @@ export async function main([command, ...args]: string[]): Promise<void> {
     }
     // `error:` is what the review skill watches for, with `failed` and `round N done`.
     stderr.write(`lntt review: error: ${(error as Error).message}\n`)
-    try {
-      emit({ type: 'error', message: (error as Error).message })
-    } catch {}
+    if (command !== 'reply' && !progressFile && !args.includes('--plan')) startProgress()
+    emit({ type: 'error', message: (error as Error).message })
     exit(1)
   }
 }
