@@ -17,6 +17,7 @@ import {
   toolFailure,
   worktreeHost,
 } from '../src/index.ts'
+import { runTool } from '../src/worktree-cli.ts'
 
 describe('the host that creates the worktree', () => {
   test('Orca, Herdr, or plain git', () => {
@@ -413,5 +414,35 @@ describe('a tool that refuses', () => {
     assert.equal(toolFailure('git', ['x', 'y'], '', '1\n2\n3\n4\n5'), 'git x y: 3 4 5')
     assert.equal(toolFailure('herdr', ['pane', 'run'], '', 'boom\nno such pane\n'), 'herdr pane run: boom no such pane')
     assert.equal(toolFailure('git', ['worktree', 'add'], '', ''), 'git worktree add failed')
+  })
+})
+
+describe('running a tool', () => {
+  const node = (code: string) => [process.execPath, ['-e', code]] as const
+
+  test('stdout trimmed is the result; what the tool says on stderr reaches the person', () => {
+    const said: string[] = []
+    const [cmd, args] = node("process.stdout.write('  out  '); process.stderr.write('note')")
+    assert.equal(
+      runTool(cmd, [...args], process.cwd(), (t) => said.push(t)),
+      'out',
+    )
+    assert.deepEqual(said, ['note'])
+  })
+
+  test('a refusal is reported once, in the error, not also on stderr', () => {
+    const said: string[] = []
+    const [cmd, args] = node("process.stderr.write('no such pane'); process.exit(2)")
+    assert.throws(() => runTool(cmd, [...args], process.cwd(), (t) => said.push(t)), /no such pane/)
+    assert.deepEqual(said, [])
+  })
+
+  test('a tool that is not installed is an error, not an empty result', () => {
+    assert.throws(() => runTool('lntt-no-such-tool', [], process.cwd(), () => {}), /ENOENT/)
+  })
+
+  test('Orca whose help says nothing on stdout cannot say what it takes', () => {
+    const { runner } = recorder({ 'orca worktree create --help': '' })
+    assert.throws(() => startOrca({ ...START, agent: { kind: 'claude', model: 'sonnet' } }, runner), /could not tell/)
   })
 })

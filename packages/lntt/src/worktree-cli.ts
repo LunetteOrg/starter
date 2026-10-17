@@ -34,16 +34,24 @@ function usage(message?: string): never {
   exit(2)
 }
 
+// One call to a tool: its stdout, trimmed, is the result. What it says on stderr reaches
+// the person when it succeeds; when it refuses, the reason is in the error, once. A tool
+// that is not installed is an error.
+export function runTool(
+  command: string,
+  args: string[],
+  dir: string,
+  say: (text: string) => void = (text) => stderr.write(text),
+): string {
+  const r = spawnSync(command, args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  if (r.error) throw r.error
+  if (r.status !== 0) throw new Error(toolFailure(command, args, r.stdout ?? '', r.stderr ?? ''))
+  if (r.stderr) say(r.stderr)
+  return (r.stdout ?? '').trim()
+}
+
 const runner: Runner = {
-  // stdout is the result; what the tool says on stderr still reaches the person, and a
-  // refusal is reported with its reason.
-  run: (command, args, opts) => {
-    const r = spawnSync(command, args, { cwd: opts?.cwd ?? cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-    if (r.stderr) stderr.write(r.stderr)
-    if (r.error) throw r.error
-    if (r.status !== 0) throw new Error(toolFailure(command, args, r.stdout ?? '', r.stderr ?? ''))
-    return (r.stdout ?? '').trim()
-  },
+  run: (command, args, opts) => runTool(command, args, opts?.cwd ?? cwd()),
   sleep: (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms),
   shell: (script, dir) => {
     // The setup's output goes to stderr: stdout carries one JSON line per worktree.

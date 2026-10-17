@@ -129,7 +129,10 @@ export function toolFailure(command: string, args: string[], stdout: string, std
 // 1.4.224 did not). An Orca that cannot say is an error: guessing the older path would
 // fail later, for another reason.
 function orcaTakesModel(runner: Runner): boolean {
-  return /--model\b/.test(runner.run('orca', ['worktree', 'create', '--help']))
+  const help = runner.run('orca', ['worktree', 'create', '--help'])
+  if (!help.trim())
+    throw new Error('orca worktree create --help printed nothing: lntt could not tell whether it takes --model')
+  return /--model\b/.test(help)
 }
 
 // Orca prefixes the worktree name with the user (`<user>/feat-78-slug`); its setup
