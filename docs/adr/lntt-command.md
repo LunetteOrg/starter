@@ -69,7 +69,7 @@ lntt ci local | candidate
 ### Negative / accepted risks
 
 - A project that only reads its configuration still installs the CI's dependencies
-  (`@actions/expressions`, `@actions/workflow-parser`, about 2 MB): accepted, since every
+  (`@actions/expressions`, `@actions/workflow-parser`): accepted, since every
   Lunette project runs `ci:local` too.
 - `@lntt/lntt` repeats the scope in the name; it is seen in `package.json` and
   `npx @lntt/lntt`, never in daily use.

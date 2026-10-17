@@ -27,6 +27,16 @@ Both levels keep their logs the same way: one file per subject, corrected in pla
 That a template ships its logs in this shape is part of the shared base
 ([template model](../adr/template-model.md#the-shared-base)).
 
+## What ships cites the records of the project it ships to
+
+`lntt check` (CI runs it) checks that every path to a record resolves in this repo.
+The shared packages and the plugin's skills are installed in other projects, and a
+path they name (a lint rule's `docs/adr/<subject>.md`) is that project's record. Such
+a folder goes in `recording.externalReferences` with the reason, when it is added to
+the repo; nothing else does: a file of this repo that cites a record that does not
+exist is a broken reference, fixed where it is. A template is a project of its own (it
+has its configuration) and is never listed.
+
 ## Discarded directions
 
 - **One log for both levels.** Every template decision would sit next to the CLI's,

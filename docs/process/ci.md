@@ -78,11 +78,11 @@ No real secret runs locally, and ci:local never reads one from a password manage
 default stays native: it needs Docker and gigabytes of images, and its runner images
 are not the cloud's.
 
-Tried, on macOS with Docker Desktop: a one-step job in each executor, with a fake
-secret; and this repository's `ci.yml` in `act` with `node:24-bookworm-slim`, green up
-to `pnpm test`, which failed because that image has no `git`. **Not tried:** a full
-job green in either executor, the larger `act` images, a job with services, a dynamic
-CircleCI configuration.
+Known to work, on macOS with Docker Desktop: a one-step job in each executor, with a
+fake secret. A full job needs a runner image that has what its steps call (`git` for
+`pnpm test` here), which the slim images lack. **Unproven:** a full job green in either
+executor, the larger `act` images, a job with services, a dynamic CircleCI
+configuration.
 
 ## Discarded directions
 

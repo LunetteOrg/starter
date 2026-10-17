@@ -53,9 +53,8 @@
     // not wait on them.
     "review": {
       "reviewers": {
-        // sonnet until the issue "lntt check decisions runs the structural checks of the
-        // decision logs, so the decisions review can run on a cheap model" is done
-        "decisions": { "with": [{ "kind": "claude", "model": "sonnet" }] },
+        // haiku: lntt check decisions does the structural checks, the lens only judges
+        "decisions": { "with": [{ "kind": "claude", "model": "haiku" }] },
         "code": {
           "with": [
             { "kind": "claude", "model": "sonnet" },
