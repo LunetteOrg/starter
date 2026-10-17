@@ -8,6 +8,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -757,12 +758,14 @@ describe('an agent that ignores SIGTERM, while the round goes on', () => {
       while (!readFileSync(pids, 'utf8').trim() && Date.now() < until) await sleep(50)
       const pid = Number(readFileSync(pids, 'utf8').trim())
       assert.ok(pid > 0, `the stubborn agent named its pid: ${err}`)
-      const stopped = Date.now()
-      await sleep(2000)
+      // SIGTERM follows the pid being named (the required reviewer answers after it), so
+      // the timer's 5 seconds start no earlier than the file's last write.
+      const stopped = statSync(pids).mtimeMs
+      await sleep(Math.max(0, stopped + 2000 - Date.now()))
       assert.ok(alive(pid), 'SIGTERM did not stop it, and the timer has not fired yet')
       while (alive(pid) && Date.now() < stopped + 12_000) await sleep(100)
       assert.ok(!alive(pid), 'the timer killed it while the round was still open')
-      assert.ok(Date.now() - stopped >= 4900, 'not before the 5 seconds')
+      assert.ok(Date.now() - stopped >= 5000, 'not before the 5 seconds')
     } finally {
       writeFileSync(release, 'go\n')
       await exited
