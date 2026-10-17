@@ -760,9 +760,9 @@ describe('an agent that ignores SIGTERM, while the round goes on', () => {
       const stopped = Date.now()
       await sleep(2000)
       assert.ok(alive(pid), 'SIGTERM did not stop it, and the timer has not fired yet')
-      while (alive(pid) && Date.now() < stopped + 20_000) await sleep(100)
+      while (alive(pid) && Date.now() < stopped + 12_000) await sleep(100)
       assert.ok(!alive(pid), 'the timer killed it while the round was still open')
-      assert.ok(Date.now() - stopped >= 4000, 'not before the 5 seconds')
+      assert.ok(Date.now() - stopped >= 4900, 'not before the 5 seconds')
     } finally {
       writeFileSync(release, 'go\n')
       await exited
