@@ -2,7 +2,17 @@
 // (usage: bin/lntt.ts).
 
 import { execFileSync, spawn } from 'node:child_process'
-import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+  writeSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
@@ -337,25 +347,51 @@ function deadline(minutes: number): AbortSignal {
 // One round (or reply) at a time per worktree: a second would overwrite the state and the
 // progress of the first. A lock whose process is gone is taken over.
 class LockedError extends Error {}
+
+// The pid a lock names, or null when it names none: a file just created by another run
+// is empty for an instant, so a fresh empty one counts as held.
+function lockHolder(lock: string): number | 'held' | null {
+  try {
+    const text = readFileSync(lock, 'utf8').trim()
+    if (text === '') return Date.now() - statSync(lock).mtimeMs < 2000 ? 'held' : null
+    const pid = Number(text)
+    if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return null
+    process.kill(pid, 0)
+    return pid
+  } catch {
+    return null
+  }
+}
+
+// Created atomically (`wx`): of two runs started together, one gets it. A lock whose
+// process is gone, or that names none, is removed and tried once more.
 function acquireLock(): void {
   const lock = join(git('rev-parse', '--absolute-git-dir'), 'lntt-review.lock')
-  if (existsSync(lock)) {
-    const pid = Number(readFileSync(lock, 'utf8').trim())
-    let alive = false
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      if (pid > 0 && pid !== process.pid) {
-        process.kill(pid, 0)
-        alive = true
+      const fd = openSync(lock, 'wx')
+      writeSync(fd, String(process.pid))
+      closeSync(fd)
+      process.on('exit', () => {
+        try {
+          if (readFileSync(lock, 'utf8').trim() === String(process.pid)) unlinkSync(lock)
+        } catch {}
+      })
+      return
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      const holder = lockHolder(lock)
+      if (holder !== null) {
+        throw new LockedError(
+          `a round is already running in this worktree (pid ${holder === 'held' ? 'starting' : holder})`,
+        )
       }
-    } catch {}
-    if (alive) throw new LockedError(`a round is already running in this worktree (pid ${pid})`)
+      try {
+        unlinkSync(lock)
+      } catch {}
+    }
   }
-  writeFileSync(lock, String(process.pid))
-  process.on('exit', () => {
-    try {
-      if (readFileSync(lock, 'utf8').trim() === String(process.pid)) unlinkSync(lock)
-    } catch {}
-  })
+  throw new LockedError('a round is already running in this worktree (pid unknown)')
 }
 
 function configuredBase(data: Record<string, unknown>): string {
@@ -495,10 +531,10 @@ async function round(args: string[]): Promise<number> {
 async function reply(args: string[]): Promise<number> {
   const [id, ...words] = args
   if (!id || words.length === 0) usage('give the finding and the answer')
-  acquireLock()
   const state = readState()
   const finding = state?.result.findings.find((f) => f.id === id)
   if (!state || !finding) throw new Error(`no open finding ${id} in the last round`)
+  acquireLock()
   const config: ReviewConfig = reviewConfig(loaded())
   const known = new Map<string, Agent>()
   for (const lens of Object.values(config.reviewers)) for (const a of lens.with) known.set(agentLabel(a), a)

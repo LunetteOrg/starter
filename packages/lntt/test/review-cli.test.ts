@@ -574,4 +574,31 @@ describe('lntt review, end to end with a fake agent', () => {
     assert.equal(reply.code, 1)
     assert.match(reply.out, /took longer than/)
   })
+
+  test('the lock is taken atomically: of two rounds started together, one runs and one is refused', {
+    timeout: 30000,
+  }, async () => {
+    const run = () =>
+      new Promise<number>((resolve) => {
+        const child = spawn(process.execPath, [BIN, 'review', '--base', 'main'], {
+          cwd: repo,
+          env: { HOME: repo, PATH: [bin, dirname(process.execPath), '/usr/bin', '/bin'].join(':'), FAKE_LOG: log },
+          stdio: ['ignore', 'ignore', 'pipe'],
+        })
+        let err = ''
+        child.stderr.on('data', (d) => {
+          err += d
+        })
+        child.on('exit', () => resolve(/already running/.test(err) ? 1 : 0))
+      })
+    const refused = (await Promise.all([run(), run(), run()])).reduce((a, b) => a + b, 0)
+    assert.equal(refused, 2)
+  })
+
+  test('a lock file with no valid pid is taken over; a reply with an unknown finding says so first', () => {
+    writeFileSync(join(repo, '.git/lntt-review.lock'), 'garbage')
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    writeFileSync(join(repo, '.git/lntt-review.lock'), String(process.pid))
+    assert.match(lntt(['reply', 'f99', 'x']).err, /no open finding f99/)
+  })
 })
