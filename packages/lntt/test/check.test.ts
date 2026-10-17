@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { CannotRunError, cite, type Result } from '../src/check.ts'
-import { errorLine } from '../src/check-cli.ts'
+import { errorLine, main } from '../src/check-cli.ts'
 import { ConfigError } from '../src/index.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -210,6 +210,7 @@ describe('lntt check decisions structure', () => {
     // So does a template that lists a single status.
     writeFileSync(join(repo, 'docs/adr/template.md'), '---\nstatus: proposed # proposed\n---\n\n# Subject\n')
     assert.deepEqual(fails(names()), [])
+    assert.match((names()[0] as Result).message, /no template listing two statuses or more/)
     // So does a template that is not there.
     rmSync(join(repo, 'docs/adr/template.md'))
     assert.deepEqual(fails(names()), [])
@@ -225,7 +226,9 @@ describe('lntt check decisions structure', () => {
     assert.deepEqual(title('2.0 migration plan'), [])
     for (const t of [
       '1. Record decisions',
+      '1.Record decisions',
       '7: Caching',
+      '7:Caching',
       '7 — Caching',
       '1) Storage',
       '12 — API shape',
@@ -432,14 +435,29 @@ describe('lntt check', () => {
 
   test('a usage error is one in a project with no configuration too', () => {
     git('init', '-q')
-    assert.equal(lntt(['check', 'nope']).status, 2)
-    assert.equal(lntt(['check', '--base=']).status, 2)
+    for (const args of [
+      ['check', 'nope'],
+      ['check', '--base='],
+      ['check', 'cite', 'src/app.ts'],
+      ['check', 'cite', 'src/app.ts:1', '--base='],
+      ['check', 'agents-md', 'AGENTS.md'],
+      ['check', 'decisions', 'numbers'],
+    ]) {
+      assert.equal(lntt(args).status, 2, args.join(' '))
+    }
   })
 
   test('a configuration error and a check that cannot run are one line; a defect keeps its stack', () => {
     assert.equal(errorLine(new ConfigError('bad config')), 'lntt: bad config')
     assert.equal(errorLine(new CannotRunError('no git')), 'lntt: error: no git')
     assert.equal(errorLine(new TypeError('a bug')), null)
+    assert.throws(
+      () =>
+        main([], () => {
+          throw new TypeError('a bug')
+        }),
+      /a bug/,
+    )
   })
 
   test('outside a git repository the check cannot run: one line on stderr, no stack trace', () => {

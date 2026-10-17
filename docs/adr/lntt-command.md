@@ -58,8 +58,8 @@ lntt ci local | candidate
   deterministic check is a check of an area, or a new area, never a script beside a
   skill.
 - **No aliases for old names.** A renamed command answers only to its new name, so its
-  callers (workflows, skills, the README) change with it; a skill that changes raises
-  the plugin's version ([delivery](../process/delivery.md#the-lunette-plugin)).
+  callers (workflows, skills, the README) change with it, and the plugin's version
+  follows the [delivery](../process/delivery.md#the-lunette-plugin) rule.
 
 ## Consequences
 

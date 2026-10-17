@@ -71,10 +71,11 @@ export function errorLine(error: unknown): string | null {
   return null
 }
 
-export function main(args: string[]): void {
+// `checks` is the run itself; a test gives another.
+export function main(args: string[], checks: (args: string[]) => Result[] = run): void {
   let results: Result[]
   try {
-    results = run(args)
+    results = checks(args)
   } catch (error) {
     if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
       usage(error.message)

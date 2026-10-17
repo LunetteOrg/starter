@@ -361,7 +361,7 @@ function namesCheck(root: string, logs: Log[], files: string[], only: Set<string
       // `# ADR NN — …`, `# N. …`, `# N: …`, `# NNNN …`; a title that opens on a small count
       // (`# 3 retries`) or a decimal (`# 2.0 migration`) is words.
       else if (
-        /^#\s+(?:[AP]DR\b|\d+[.:)](?:\s|$)|\d+\s*[-–—]\s|\d{2,}[\s-])|[AP]DR[ \-#]?\d/.test(lines[title] as string)
+        /^#\s+(?:[AP]DR\b|\d+[.:)](?!\d)|\d+\s*[-–—]\s|\d{2,}[\s-])|[AP]DR[ \-#]?\d/.test(lines[title] as string)
       ) {
         fail(record, title + 1, `the title carries a number: ${(lines[title] as string).trim()}`)
       }
