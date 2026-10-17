@@ -92,23 +92,11 @@ jobs:
         with:
           node-version-file: '.nvmrc'
           cache: 'pnpm'
-      # Only the package that holds the automation, and what it depends on. A default
-      # branch from before @lntt/lntt (0.6.0) still has it as @lntt/ci: this file can
-      # be newer than the code it runs.
+      # Only @lntt/lntt and what it depends on.
       - if: steps.credentials.outputs.ready == 'true'
-        run: |
-          if [ -f packages/lntt/bin/lntt.ts ]; then
-            pnpm install --frozen-lockfile --filter '@lntt/lntt...'
-          else
-            pnpm install --frozen-lockfile --filter '@lntt/ci...'
-          fi
+        run: pnpm install --frozen-lockfile --filter '@lntt/lntt...'
       - name: Move or record the pull request, close or tell its issues
         if: steps.credentials.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          if [ -f packages/lntt/bin/lntt.ts ]; then
-            node packages/lntt/bin/lntt.ts ci candidate
-          else
-            node packages/ci/bin/lntt-ci.ts candidate
-          fi
+        run: node packages/lntt/bin/lntt.ts ci candidate

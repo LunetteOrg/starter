@@ -15,6 +15,17 @@
 //   lntt viewer detect        where the session runs and which viewer shows pages, with why
 //   lntt viewer open <url>    open it there; exit 3 with the agent call when only the agent can
 //
+//   lntt branch name --issue <n> [--type <type>] [--slug <slug>]
+//                             the branch name for an issue: type/issue/slug, from its type
+//                             or labels and its title (gh); --type and --slug override
+//   lntt branch name --type <type> --slug <slug>
+//                             the name for work without an issue: type/no-issue/slug
+//   lntt branch check [--branch <name>]
+//                             exit 1 when the branch (default: the current one) does not
+//                             follow the convention, with the name it should have
+//   lntt branch rename        rename the current branch to the convention, from the name a
+//                             tool gave it or, in Orca, from the linked issue; never fails
+//
 //   lntt ci local [--event pull_request|push] [--base <branch>] [--job <key>]...
 //                 [--list] [--strict] [--container]
 //
@@ -45,4 +56,5 @@ import { argv } from 'node:process'
 
 const args = argv.slice(2)
 if (args[0] === 'ci') await (await import('../src/ci/cli.ts')).main(args.slice(1))
+else if (args[0] === 'branch') (await import('../src/branch-cli.ts')).main(args.slice(1))
 else (await import('../src/cli.ts')).main(args)

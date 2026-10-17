@@ -7,6 +7,25 @@ the hotfix markers are `delivery.candidate` in
 [`.agents/config.jsonc`](../../.agents/config.jsonc). Every merge, into the candidate or
 into `main`, has a person's go: an agent never merges on its own.
 
+## Branch names
+
+`<type>/<issue>/<slug>`, or `<type>/no-issue/<slug>` for work without an issue:
+`feat/77/worktree-branch-names`, `docs/no-issue/version-numbering`. The types are
+`delivery.branches.types`, plus the hotfix prefix; the slug is one to four lower-case
+words joined by `-`. The base, the candidates and Dependabot's branches are exempt.
+
+The rules live in `lntt branch`, so the tool that creates a branch does not decide its
+name:
+
+- `lntt branch name --issue <n>` prints the name for an issue: the type from its issue
+  type or labels, a slug from its title.
+- A new Orca worktree renames its branch in setup (`orca.yaml`, `lntt branch rename`):
+  Orca's `<user>/<name>` becomes the convention, read from the name or from the issue
+  linked to the worktree. Orca keeps the worktree, its issue and its terminals on the
+  renamed branch.
+- `lntt branch check` stops a branch outside the convention before push (lefthook) and
+  on the pull request (CI), with the name it should have.
+
 ## One pull request
 
 1. **Draft.** A pull request opens as a draft. A draft runs no CI in the cloud
