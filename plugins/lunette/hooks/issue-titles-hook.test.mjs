@@ -6,14 +6,17 @@ import { register } from './register.js'
 const GIT = '/repo/.git'
 const CACHE = `${GIT}/lntt-issue-titles.json`
 const NOW = 10 * DAY
-const ok = (title, n) => ({ exitCode: 0, stdout: `${title}\thttps://github.com/o/r/issues/${n}\n`, stderr: '' })
+const ok = (title, n, repo = 'o/r') => ({ exitCode: 0, stdout: `${title}\thttps://github.com/${repo}/issues/${n}\n`, stderr: '' })
 const notFound = { exitCode: 1, stdout: '', stderr: 'gh: Not Found (HTTP 404)' }
 
 // A fake engine: `gh` answers from `gh` (a result, an Error to throw, or a function
 // returning a promise), the files are `files`, and each gh call is recorded. The
 // clock's sleep never ends, so a delta waits for its lookups, unless `late` makes it
 // end after a turn of the event loop: then a lookup still running is past its wait.
-function engine({ gh = {}, files = {}, git = 0, late = false, ghVersion = 0, write = null } = {}) {
+// `gh` answers by `N` for the session repository `o/r`, by `owner/repo#N` otherwise.
+// `home` is what `gh repo view` answers: a repository, an exit code, an Error to throw
+// or a function returning a promise.
+function engine({ gh = {}, files = {}, git = 0, late = false, home = 'o/r', write = null } = {}) {
   const calls = []
   const waits = []
   const runs = [] // every command run, with its options
@@ -22,14 +25,15 @@ function engine({ gh = {}, files = {}, git = 0, late = false, ghVersion = 0, wri
       run: async (argv, init) => {
         runs.push({ argv, init })
         if (argv[0] === 'git') return { exitCode: git, stdout: git ? '' : `${GIT}\n`, stderr: '' }
-        if (argv[1] === '--version') {
-          if (ghVersion instanceof Error) throw ghVersion
-          if (typeof ghVersion === 'function') return ghVersion()
-          return { exitCode: ghVersion, stdout: 'gh version 2.99.0\n', stderr: '' }
+        if (argv[1] === 'repo') {
+          if (home instanceof Error) throw home
+          if (typeof home === 'function') return home()
+          if (typeof home === 'number') return { exitCode: home, stdout: '', stderr: 'no git remotes found' }
+          return { exitCode: 0, stdout: `${home}\n`, stderr: '' }
         }
-        const n = argv[2].split('/').pop()
-        calls.push(Number(n))
-        const answer = gh[n] ?? notFound
+        const [, repo, n] = argv[2].match(/^repos\/(.+)\/issues\/(\d+)$/)
+        calls.push(repo === 'o/r' ? Number(n) : `${repo}#${n}`)
+        const answer = (repo === 'o/r' ? gh[n] : gh[`${repo}#${n}`]) ?? notFound
         if (answer instanceof Error) throw answer
         return typeof answer === 'function' ? answer() : answer
       },
@@ -91,7 +95,7 @@ describe('the issue titles hook', () => {
   test('a resolved title is written to the cache, with the time it was asked', async () => {
     const { flush, files } = engine({ gh: { 138: ok('Publish lntt', 138) } })
     await flush('m1', '#138\n')
-    const cached = JSON.parse(files[CACHE])[138]
+    const cached = JSON.parse(files[CACHE])['o/r#138']
     assert.equal(cached.title, 'Publish lntt')
     assert.equal(cached.at, NOW)
   })
@@ -127,7 +131,7 @@ describe('the issue titles hook', () => {
   ]) {
     test(`gh not logged in (${label}) stops the lookups, and a cached title still shows`, async () => {
       const answer = { exitCode: 4, stdout: '', stderr }
-      const files = { [CACHE]: JSON.stringify({ 5: { title: 'Cached', url: 'https://github.com/o/r/issues/5', at: NOW } }) }
+      const files = { [CACHE]: JSON.stringify({ 'o/r#5': { title: 'Cached', url: 'https://github.com/o/r/issues/5', at: NOW } }) }
       const { flush, calls } = engine({ gh: { 1: answer, 2: answer }, files })
       await flush('m1', '#1\n')
       const shown = await flush('m2', '#2 and #5\n')
@@ -136,22 +140,27 @@ describe('the issue titles hook', () => {
     })
   }
 
-  for (const [what, ghVersion] of [['missing', new Error('spawn gh ENOENT')], ['broken', 127]]) {
-    test(`gh ${what} stops the lookups before any, and a cached title still shows`, async () => {
-      const files = { [CACHE]: JSON.stringify({ 5: { title: 'Cached', url: 'https://github.com/o/r/issues/5', at: NOW } }) }
-      const { flush, calls } = engine({ gh: { 1: ok('One', 1) }, ghVersion, files })
-      const shown = await flush('m1', '#1 and #5\n')
+  for (const [what, home] of [['missing', new Error('spawn gh ENOENT')], ['without a GitHub remote', 1]]) {
+    test(`gh ${what}: the session's repository is unknown, so nothing is looked up or shown`, async () => {
+      const files = { [CACHE]: JSON.stringify({ 'o/r#5': { title: 'Cached', url: 'https://github.com/o/r/issues/5', at: NOW } }) }
+      const { flush, calls } = engine({ gh: { 1: ok('One', 1) }, home, files })
+      assert.deepEqual(await flush('m1', '#1 and #5\n'), {})
       assert.deepEqual(calls, [])
-      assert.match(shown.displayContent, /· Cached/)
-      assert.doesNotMatch(shown.displayContent, /One/)
     })
   }
+
+  test('a reference to another repository is looked up there; a bare #N after it is not looked up', async () => {
+    const { flush, calls } = engine({ gh: { 'x/pelion#3': ok('Pelion three', 3, 'x/pelion'), 65: ok('Ours', 65) } })
+    const shown = await flush('m1', 'see x/pelion#3, and then #65\n')
+    assert.deepEqual(calls, ['x/pelion#3'])
+    assert.match(shown.displayContent, /x\/pelion#3 .*· Pelion three.*and then #65\n$/)
+  })
 
   test('every gh call has a timeout', async () => {
     const { flush, runs } = engine({ gh: { 1: ok('One', 1) } })
     await flush('m1', '#1\n')
     const gh = runs.filter((r) => r.argv[0] === 'gh')
-    assert.deepEqual(gh.map((r) => r.argv[1]), ['--version', 'api'])
+    assert.deepEqual(gh.map((r) => r.argv[1]), ['repo', 'api'])
     for (const r of gh) assert.equal(r.init?.timeoutMs, 3000)
   })
 
@@ -159,16 +168,16 @@ describe('the issue titles hook', () => {
     const quiet = engine()
     await quiet.flush('m1', 'no numbers here\n', true)
     assert.deepEqual(quiet.runs, [])
-    const slow = engine({ gh: { 1: ok('One', 1) }, ghVersion: () => new Promise(() => {}), late: true })
+    const slow = engine({ gh: { 1: ok('One', 1) }, home: () => new Promise(() => {}), late: true })
     assert.deepEqual(await slow.flush('m1', '#1\n'), {})
   })
 
   test('a later delta does not start the look for the cache again while gh --version is slow', async () => {
-    const { flush, runs } = engine({ gh: { 1: ok('One', 1) }, ghVersion: () => new Promise(() => {}), late: true })
+    const { flush, runs } = engine({ gh: { 1: ok('One', 1) }, home: () => new Promise(() => {}), late: true })
     await flush('m1', '#1\n')
     await flush('m1', '#2\n')
     await flush('m2', '#3\n')
-    assert.equal(runs.filter((r) => r.argv[1] === '--version').length, 1)
+    assert.equal(runs.filter((r) => r.argv[1] === 'repo').length, 1)
     assert.equal(runs.filter((r) => r.argv[0] === 'git').length, 1)
   })
 
@@ -190,14 +199,6 @@ describe('the issue titles hook', () => {
     assert.deepEqual(calls, [7, 7])
   })
 
-  test('a repository with no GitHub remote stops the lookups for the session', async () => {
-    const answer = { exitCode: 1, stdout: '', stderr: 'unable to expand placeholder in path: no git remotes found' }
-    const { flush, calls } = engine({ gh: { 1: answer, 2: answer } })
-    await flush('m1', '#1\n')
-    await flush('m2', '#2\n')
-    assert.deepEqual(calls, [1])
-  })
-
   test('two titles found together are both in the cache, however slow the writes', async () => {
     const releases = []
     const write = () => new Promise((r) => releases.push(r))
@@ -208,7 +209,7 @@ describe('the issue titles hook', () => {
       await new Promise((r) => setImmediate(r))
     }
     const cached = JSON.parse(files[CACHE])
-    assert.deepEqual([cached[1]?.title, cached[2]?.title], ['One', 'Two'])
+    assert.deepEqual([cached['o/r#1']?.title, cached['o/r#2']?.title], ['One', 'Two'])
   })
 
   test('a cache write that fails still shows the title, and later writes go on', async () => {
@@ -224,7 +225,7 @@ describe('the issue titles hook', () => {
     await flush('m2', '#2\n')
     await new Promise((r) => setImmediate(r))
     assert.ok(failed)
-    assert.equal(JSON.parse(files[CACHE])[2].title, 'Two')
+    assert.equal(JSON.parse(files[CACHE])['o/r#2'].title, 'Two')
   })
 
   test('one timer per delta for the cache and the titles together, and none when nothing waits', async () => {
@@ -294,8 +295,8 @@ describe('the issue titles hook', () => {
   test('a cached title younger than a day is used; an older one is asked again', async () => {
     const files = {
       [CACHE]: JSON.stringify({
-        1: { title: 'Fresh', url: 'https://github.com/o/r/issues/1', at: NOW - DAY + 1 },
-        2: { title: 'Stale', url: 'https://github.com/o/r/issues/2', at: NOW - DAY },
+        'o/r#1': { title: 'Fresh', url: 'https://github.com/o/r/issues/1', at: NOW - DAY + 1 },
+        'o/r#2': { title: 'Stale', url: 'https://github.com/o/r/issues/2', at: NOW - DAY },
       }),
     }
     const { flush, calls } = engine({ gh: { 2: ok('Renamed', 2) }, files })
@@ -304,16 +305,16 @@ describe('the issue titles hook', () => {
     assert.match(shown.displayContent, /· Fresh.*· Renamed/)
   })
 
-  test('a cache entry of the wrong shape, a key that is no number or a time in the future is skipped', async () => {
+  test('a cache entry of the wrong shape, a key that is no reference or a time in the future is skipped', async () => {
     const files = {
       [CACHE]: JSON.stringify({
-        1: null,
-        abc: { title: 'Bad key', url: 'https://github.com/o/r/issues/1', at: NOW },
-        '1e1': { title: 'Ten', url: 'https://github.com/o/r/issues/10', at: NOW },
-        '0x10': { title: 'Sixteen', url: 'https://github.com/o/r/issues/16', at: NOW },
-        '': { title: 'Zero', url: 'https://github.com/o/r/issues/0', at: NOW },
-        3: { title: 'Future', url: 'https://github.com/o/r/issues/3', at: NOW + 1 },
-        2: { title: 'Kept', url: 'https://github.com/o/r/issues/2', at: NOW },
+        'o/r#1': null,
+        '10': { title: 'Ten', url: 'https://github.com/o/r/issues/10', at: NOW },
+        'o/r#1e1': { title: 'Ten', url: 'https://github.com/o/r/issues/10', at: NOW },
+        'o/r#0x10': { title: 'Sixteen', url: 'https://github.com/o/r/issues/16', at: NOW },
+        'o/r#0': { title: 'Zero', url: 'https://github.com/o/r/issues/0', at: NOW },
+        'o/r#3': { title: 'Future', url: 'https://github.com/o/r/issues/3', at: NOW + 1 },
+        'o/r#2': { title: 'Kept', url: 'https://github.com/o/r/issues/2', at: NOW },
       }),
     }
     const { flush, calls } = engine({ files })
@@ -324,7 +325,7 @@ describe('the issue titles hook', () => {
   })
 
   test('a corrupt cache, or an entry in it that is not safe to show, is ignored', async () => {
-    const bad = { [CACHE]: JSON.stringify({ 1: { title: 'Evil', url: 'https://x.org/1\u001b[2m', at: NOW } }) }
+    const bad = { [CACHE]: JSON.stringify({ 'o/r#1': { title: 'Evil', url: 'https://x.org/1\u001b[2m', at: NOW } }) }
     const a = engine({ gh: { 1: ok('Good', 1) }, files: bad })
     assert.match((await a.flush('m1', '#1\n')).displayContent, /· Good/)
     const b = engine({ gh: { 1: ok('Good', 1) }, files: { [CACHE]: '{not json' } })
