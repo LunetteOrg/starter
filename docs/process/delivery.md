@@ -183,7 +183,9 @@ app, replace `CANDIDATE_APP_PRIVATE_KEY`, and delete the old key.
 
 A change under `plugins/lunette/` raises the version in its
 `.claude-plugin/plugin.json`: installed copies update only when the version changes.
-CI checks it on every pull request (`scripts/check-plugin-version.sh`).
+CI checks it on every pull request (`scripts/check-plugin-version.sh`), and validates each
+plugin with `claude plugin validate`, which refuses a hooks module the engine would not
+load.
 
 ## Releasing
 
