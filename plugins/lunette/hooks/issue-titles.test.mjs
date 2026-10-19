@@ -166,8 +166,8 @@ describe('references to other repositories', () => {
     [k(65), { title: 'Home sixty-five', url: url(65) }],
   ])
 
-  test('owner/repo#N is that repository; repo#N is the same owner', () => {
-    assert.deepEqual(refsIn('see x/pelion#3, starter#94 and #65\n', message(), HOME), [k(3, 'x/pelion'), k(94, 'o/starter')])
+  test('owner/repo#N is that repository; repo#N is a reference only for the session repository', () => {
+    assert.deepEqual(refsIn('r#5, x/pelion#3, starter#94 and #65\n', message(), HOME), [k(5), k(3, 'x/pelion')])
   })
 
   test('after a reference to another repository, a bare #N is left as it is: it may mean either', () => {
@@ -196,13 +196,17 @@ describe('references to other repositories', () => {
 })
 
 describe('what is not a reference to another repository', () => {
-  test('a word that cannot be a repository makes no reference: C#5, issue#4, v1.2#3', () => {
-    assert.deepEqual(refsIn('C#5, F#1, issue#4, PR#2, v1.2#3 and #7\n', message(), HOME), [k(7)])
+  test('a short word before # makes no reference, and leaves the message as it was: C#5, F#1, PR#2', () => {
+    assert.deepEqual(refsIn('C#5, F#1, PR#2, ui#4, 3d-engine#6 and #7\n', message(), HOME), [k(7)])
   })
 
-  for (const word of ['bug', 'bugs', 'task', 'step', 'item', 'ticket', 'case', 'number', 'version', 'pull', 'issues', 'ui', 'next.js', 'my.repo', '3d-engine', 'v8']) {
-    test(`${word}#3 makes no reference`, () => {
-      assert.deepEqual(refsIn(`${word}#3 and #7\n`, message(), HOME), [k(7)])
+  test('a word that may be another repository makes no reference, and keeps later bare numbers bare', () => {
+    assert.deepEqual(refsIn('starter#94 and #7\n', message(), HOME), [])
+  })
+
+  for (const word of ['issue', 'fix', 'jira', 'v1.2', 'next.js', 'café', 'naïve']) {
+    test(`${word}#3 makes no reference, and the #7 after it stays bare`, () => {
+      assert.deepEqual(refsIn(`${word}#3 and #7\n`, message(), HOME), [])
     })
   }
 
@@ -225,8 +229,8 @@ describe('what is not a reference to another repository', () => {
     assert.deepEqual(refsIn('x/..#5 and ../r#6 then #7\n', message(), HOME), [k(7)])
   })
 
-  test('names are not case-sensitive: O/R#7 is the session repository, Starter#9 the same owner', () => {
-    assert.deepEqual(refsIn('O/R#7, Starter#9\n', message(), HOME), [k(7), k(9, 'o/starter')])
+  test('names are not case-sensitive: O/R#7 and R#9 are the session repository', () => {
+    assert.deepEqual(refsIn('O/R#7, R#9\n', message(), HOME), [k(7), k(9)])
   })
 
   test('a reference to the session repository written in full leaves the next #N titled', () => {

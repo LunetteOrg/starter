@@ -63,31 +63,29 @@ guidance use `.agents/skills/` and `~/.agents/skills/` across clients.
 
 ### What a number means is shown on screen, not asked of the agent
 
-In Claude Code the `lunette` plugin shows, beside the first `#N`, `repo#N` or
-`owner/repo#N` of each message, the title of that issue or pull request, dimmed, and
-ends the message with a box of what it cited and their URLs
-(`plugins/lunette/hooks/issue-titles.mjs`). It is a `MessageDisplay` hook: it changes
-the screen only, and what the agent wrote and reads stays as it was. The titles come
-from `gh`, cached for a day in the git directory: `#N` from the session's repository
-(as `gh repo view` names it), `repo#N` from the same owner, `owner/repo#N` from that
-repository. A delta waits for the cache and the titles at most `WAIT_MS`
-(`issue-titles-hook.js`); a slower title shows in a later delta, in the box or beside
-the number in the next message.
+In Claude Code the `lunette` plugin shows, beside the first `#N` or `owner/repo#N` of
+each message, the title of that issue or pull request, dimmed, and ends the message
+with a box of what it cited and their URLs (`plugins/lunette/hooks/issue-titles.mjs`).
+It is a `MessageDisplay` hook: it changes the screen only, and what the agent wrote and
+reads stays as it was. The titles come from `gh`, cached for a day in the git
+directory: `#N` (and `repo#N` naming the same repository) from the session's
+repository as `gh repo view` names it, `owner/repo#N` from that repository. A delta
+waits for the cache and the titles at most `WAIT_MS` (`issue-titles-hook.js`); a slower
+title shows in a later delta, in the box or beside the number in the next message.
 
-- **Never a title from the wrong repository:** once a message cites another
-  repository, or cites anything before the session's repository is known, a bare `#N`
-  after it may mean either, and is shown as written. `repo#N` alone is read only when
-  the word is likely a repository (three characters or more, a letter first, no dot,
-  not a word like `issue`): `C#5` and `v1.2#3` make no reference, and neither does a
-  short or dotted name (`ui#5`, `next.js#5`), cited as `owner/repo#N` instead. Names
-  are compared in lower case.
+- **Never a title from the wrong repository:** a message that cites another
+  repository, or any reference before the session's repository is known (a bare `#N`
+  too), shows every bare `#N` after that as written. Any other `word#N` is no
+  reference (`C#5`, `fix#12`, `starter#94` written in another repository's session);
+  when the word could be a repository name (three characters or more, a letter
+  first) it counts as another repository. Names are compared in lower case.
 - **Shown as written:** code, a link's URL (a title goes after the link), `#0` (GitHub
   numbers from 1), and a reference `gh` answers with HTTP 404 or 410 (a missing issue,
   or a repository the token cannot see).
-- **Nothing for the session** when `gh repo view` fails or does not answer in 3 s
-  (`gh` missing, not logged in, no GitHub remote): without the session's repository no
-  reference is shown, not even a cached one. A lookup that fails otherwise (past its 3 s
-  timeout, the network, a rate limit) is tried again.
+- **Nothing for the session** when `gh repo view` fails or does not answer within
+  `GH_TIMEOUT_MS` (`gh` missing, not logged in, no GitHub remote): without the
+  session's repository no reference is shown, not even a cached one. A lookup that
+  fails otherwise (past `GH_TIMEOUT_MS`, the network, a rate limit) is tried again.
 - **A title is anyone's text:** control, format and other invisible characters (line
   separators, variation selectors, the grapheme joiner) are dropped, and a URL is
   shown only when it is a plain `https` address, from `gh` or from the cache.
@@ -107,8 +105,10 @@ How a title is written is the `issues` skill's.
 
 ### Negative / accepted risks
 
-- A `gh repo view` slower than 3 s at the start of a session (a slow network) turns
-  the titles off until the next session.
+- A `gh repo view` slower than `GH_TIMEOUT_MS` at the start of a session (a slow
+  network) turns the titles off until the next session.
+- Another repository's issue gets a title only when cited as `owner/repo#N`; a short
+  `repo#N` from a session in another repository is shown as written.
 - The titles on screen are Claude Code's and the plugin's alone: another agent, a
   session without `gh`, or one where an organization manages Claude Code (plugin
   hooks on `MessageDisplay` run only for plugins it lists) shows numbers as written.
@@ -148,6 +148,6 @@ How a title is written is the `issues` skill's.
 - **A `Stop` hook that blocks a message with a bare number until the agent fixes it.**
   The message is already on screen when `Stop` runs, so the correction arrives as a
   second message, and a turn is spent on it.
-- **The number as a terminal hyperlink (OSC 8).** Claude Code strips the escape in a
-  hook's display text, so the sequence shows as written; a plain URL in the box is
-  opened by the terminal.
+- **The number as a terminal hyperlink (OSC 8).** Claude Code (as seen in October
+  2026) strips the escape in a hook's display text, so the sequence shows as written;
+  a plain URL in the box is opened by the terminal.

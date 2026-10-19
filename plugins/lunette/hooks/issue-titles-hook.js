@@ -16,6 +16,8 @@ export const DAY = 24 * 60 * 60 * 1000
 export const WAIT_MS = 800
 // Messages kept at once: one interrupted before its last delta is never closed.
 export const KEPT = 20
+// How long each gh call may take: past it, the call counts as failed.
+export const GH_TIMEOUT_MS = 3000
 
 // A repository and a reference as the hook keys them: lower case, each name starting
 // with a letter or digit.
@@ -40,10 +42,11 @@ async function readCache($, s) {
   const r = await $.process.run(['git', 'rev-parse', '--absolute-git-dir'])
   if (r.exitCode !== 0) return null
   // The session's repository, as gh resolves `#N`: a gh that is missing, not logged in
-  // or finds no GitHub remote (or does not answer in 3 s) turns the lookups off.
+  // or finds no GitHub remote (or does not answer within GH_TIMEOUT_MS) turns the
+  // lookups off, and no cached title is read.
   try {
     const v = await $.process.run(['gh', 'repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
-      timeoutMs: 3000,
+      timeoutMs: GH_TIMEOUT_MS,
     })
     const home = v.stdout.trim().toLowerCase()
     if (v.exitCode === 0 && KEY_REPO.test(home)) s.home = home
@@ -52,6 +55,7 @@ async function readCache($, s) {
     s.off = true
   }
   const file = `${r.stdout.trim()}/lntt-issue-titles.json`
+  if (!s.home) return file
   try {
     if (await $.fs.exists(file)) {
       const now = await $.clock.now()
@@ -73,7 +77,7 @@ async function lookUpOne($, s, key) {
   try {
     const [, repo, n] = key.match(/^(.+)#(\d+)$/)
     const r = await $.process.run(['gh', 'api', `repos/${repo}/issues/${n}`, '--jq', '[.title, .html_url] | @tsv'], {
-      timeoutMs: 3000,
+      timeoutMs: GH_TIMEOUT_MS,
     })
     if (r.exitCode !== 0) {
       if (/HTTP (404|410)\b/.test(r.stderr)) s.unknown.add(key)

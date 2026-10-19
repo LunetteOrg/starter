@@ -12,15 +12,13 @@ const FENCE = /^\s*(```|~~~)/
 // A reference: `#N`, `repo#N` or `owner/repo#N`, N from 1 as GitHub numbers them; not
 // part of a word, a path or a URL (`/9#13`), nor an entity (`&#39;`). A name starts with
 // a letter or digit, so `.` and `..` are never one.
-const NAME = '[A-Za-z0-9][\\w.-]*'
-const REF = new RegExp(`(^|[^\\w&/#.-])(?:(?:(${NAME})\\/)?(${NAME}))?#([1-9]\\d*)\\b`, 'g')
-// `repo#N` alone is read as a repository only when the word is likely one: three
-// characters or more, starting with a letter, with no dot, and not a word often put
-// before a number. Otherwise it makes no reference at all: not `C#5`, `issue#4` or
-// `v1.2#3`, and not a real but short or dotted name either (`ui#5`, `next.js#5`), which
-// is cited as `owner/repo#N` to get its title.
-const NOT_REPO = /^(issues?|prs?|pull|pulls|bug|bugs|task|tasks|step|steps|item|items|ticket|tickets|case|no|nr|num|number|version|v\d.*|[^a-z].*)$/i
-const repoWord = (r) => r.length >= 3 && !r.includes('.') && !NOT_REPO.test(r)
+const NAME = '[\\p{L}\\p{N}][\\p{L}\\p{N}_.-]*'
+const REF = new RegExp(`(^|[^\\p{L}\\p{N}_&/#.-])(?:(?:(${NAME})\\/)?(${NAME}))?#([1-9]\\d*)\\b`, 'gu')
+// `repo#N` alone is a reference only when `repo` is the session's repository; another
+// repository is cited as `owner/repo#N`. Any other `word#N` is no reference (`C#5`,
+// `fix#12`, `starter#94` from another repository's session), and a word that could be a
+// repository name (three characters or more, a letter first) makes the message foreign.
+const mayBeRepo = (r) => r.length >= 3 && /^\p{L}/u.test(r)
 // A Markdown link: its text is read, its URL is not, and a title goes after it.
 const LINK = /\[([^\]\n]*)\]\(([^)\s]*)\)/g
 
@@ -41,9 +39,12 @@ function refOf(match, home, foreign) {
   const [owner, repo] = parts(home)
   const [, , o, r, n] = match
   if (!r) return { key: home && !foreign ? `${owner}/${repo}#${n}` : null, other: !home }
-  if (!o && !repoWord(r)) return { key: null, other: false }
-  const full = o ? `${o}/${r}`.toLowerCase() : owner ? `${owner}/${r.toLowerCase()}` : null
-  return { key: full && `${full}#${n}`, other: !home || full !== home }
+  if (!o) {
+    if (home && r.toLowerCase() === repo) return { key: `${home}#${n}`, other: false }
+    return { key: null, other: mayBeRepo(r) }
+  }
+  const full = `${o}/${r}`.toLowerCase()
+  return { key: `${full}#${n}`, other: !home || full !== home }
 }
 
 // The label a key shows in the box: as short as stays unambiguous in this session.

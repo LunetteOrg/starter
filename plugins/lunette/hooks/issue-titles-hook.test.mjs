@@ -164,6 +164,12 @@ describe('the issue titles hook', () => {
     })
   }
 
+  test('when gh repo view fails at the first message, a cached title is not shown either', async () => {
+    const files = { [CACHE]: JSON.stringify({ 'o/r#5': { title: 'Cached', url: 'https://github.com/o/r/issues/5', at: NOW } }) }
+    const { flush } = engine({ home: 1, files })
+    assert.deepEqual(await flush('m1', 'see o/r#5 and #5\n'), {})
+  })
+
   test('without the session repository, even a cached reference written in full is shown as written', async () => {
     const files = { [CACHE]: JSON.stringify({ 'o/r#5': { title: 'Cached', url: 'https://github.com/o/r/issues/5', at: NOW } }) }
     const { flush } = engine({ home: 1, files })
