@@ -14,7 +14,8 @@ const mktmp = (): string => {
   return d
 }
 // A process the scaffold started may still be writing in its folder for a moment
-// (ENOTEMPTY on macOS): the removal tries again before it fails.
+// (ENOTEMPTY on macOS): the removal tries again before it fails, as in every test of
+// this package that scaffolds.
 after(() => {
   for (const d of tmps) rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
