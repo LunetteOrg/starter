@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { annotate, footer, message, refsIn, TITLE_MAX } from './issue-titles.mjs'
+import { annotate, entry, footer, message, refsIn, TITLE_MAX } from './issue-titles.mjs'
 
 const dim = (text) => `\u001b[2m${text}\u001b[22m`
 const url = (n) => `https://github.com/o/r/issues/${n}`
@@ -77,10 +77,9 @@ describe('the title beside the number', () => {
     assert.equal(show(['#5 first.\n'], short).lines[0], `#5 ${dim('· Fix CI')} first.\n`)
   })
 
-  test('control characters in a title are dropped, so it cannot write to the terminal', () => {
-    const evil = new Map([[6, { title: 'ok\u001b]0;pwned\u0007 title', url: url(6) }]])
-    const [line] = show(['#6 here\n'], evil).lines
-    assert.equal(line, `#6 ${dim('· ok]0;pwned title')} here\n`)
+  test('a title given in the message is matched once cleaned of control characters', () => {
+    const info = new Map([[6, entry('Fix\u0007 the CI', url(6))]])
+    assert.equal(show(['#6, "Fix the CI", first.\n'], info).lines[0], '#6, "Fix the CI", first.\n')
   })
 
   test('a number with no title found is left as it is', () => {
@@ -106,10 +105,11 @@ describe('the box of what the message cited', () => {
     )
   })
 
-  test('the URLs line up under the widest number', () => {
+  test('titles and URLs line up under the widest number', () => {
     const info = new Map([...known, [7, { title: 'Seven', url: url(7) }]])
     const { m } = show(['#7 then #138.\n'], info)
     const box = footer(m, info).split('\n')
+    assert.equal(box[2], `${dim('│')} #7   ${dim('Seven')}`)
     assert.equal(box[3], `${dim('│')}      ${url(7)}`)
     assert.equal(box[5], `${dim('│')}      ${url(138)}`)
   })
@@ -117,5 +117,19 @@ describe('the box of what the message cited', () => {
   test('no box when the message cites nothing found', () => {
     const { m } = show(['Nothing here, and #999.\n'])
     assert.equal(footer(m, known), '')
+  })
+})
+
+describe('what a lookup gave, made safe to show', () => {
+  test('control characters in a title are dropped, so it cannot write to the terminal', () => {
+    assert.deepEqual(entry('ok\u001b]0;pwned\u0007 title', url(6)), { title: 'ok]0;pwned title', url: url(6) })
+  })
+
+  test('a title of control characters only, or a URL that is not plain https, gives nothing', () => {
+    assert.equal(entry('\u001b\u0007', url(6)), null)
+    assert.equal(entry('ok', 'http://x.org/1'), null)
+    assert.equal(entry('ok', 'https://x.org/1\u001b[2m'), null)
+    assert.equal(entry('ok', 'https://x.org/a b'), null)
+    assert.equal(entry('ok', undefined), null)
   })
 })

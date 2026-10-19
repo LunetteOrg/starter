@@ -1,7 +1,7 @@
 // What a number means, on screen: the first `#N` of a message gets its issue's or pull
 // request's title beside it, dimmed, unless the message already gives that title, and
 // the message ends with a box of what it cited, each with its URL. Pure: the lookup and
-// the hook are register.js's. A message is read on its own, delta by delta as it
+// the hook are issue-titles-hook.js's. A message is read on its own, delta by delta as it
 // streams: `message()` holds what one message has shown so far.
 
 export const TITLE_MAX = 60
@@ -17,10 +17,15 @@ export function message() {
 }
 
 // A title is anyone's text: control characters (a terminal sequence) are dropped.
-const clean = (title) => title.replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
-const cut = (title) => {
-  const t = clean(title)
-  return t.length > TITLE_MAX ? `${t.slice(0, TITLE_MAX - 1)}…` : t
+const clean = (title) => title.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim()
+const cut = (title) => (title.length > TITLE_MAX ? `${title.slice(0, TITLE_MAX - 1)}…` : title)
+
+// What a lookup or the cache gave, made safe to show: the title cleaned and not empty,
+// the URL an https address with no spaces or control characters. Null otherwise.
+export function entry(title, url) {
+  const t = typeof title === 'string' ? clean(title) : ''
+  if (!t || typeof url !== 'string' || !/^https:\/\/[^\s\u0000-\u001f\u007f-\u009f]+$/.test(url)) return null
+  return { title: t, url }
 }
 
 // The line with its code spans blanked, so a match's index is still the line's.
@@ -65,7 +70,7 @@ export function annotate(delta, m, info) {
       if (m.cited.includes(n)) continue
       m.cited.push(n)
       const title = info.get(n)?.title
-      if (!title || seenText.includes(clean(title).toLowerCase().slice(0, 30))) continue
+      if (!title || seenText.includes(title.toLowerCase().slice(0, 30))) continue
       inserts.push({ at: match.index + match[0].length, text: ` ${dim(`· ${cut(title)}`)}` })
     }
     return inserts.reduceRight((l, { at, text }) => l.slice(0, at) + text + l.slice(at), line)
@@ -80,11 +85,14 @@ export function annotate(delta, m, info) {
 export function footer(m, info) {
   const rows = m.cited.filter((n) => info.get(n)?.title)
   if (!rows.length) return ''
-  const pad = ' '.repeat(`#${Math.max(...rows)}`.length)
+  const width = `#${Math.max(...rows)}`.length
   return [
     '',
     dim('╭─ cited'),
-    ...rows.flatMap((n) => [`${dim('│')} #${n} ${dim(cut(info.get(n).title))}`, `${dim('│')}  ${pad}${info.get(n).url}`]),
+    ...rows.flatMap((n) => [
+      `${dim('│')} ${`#${n}`.padEnd(width)} ${dim(cut(info.get(n).title))}`,
+      `${dim('│')} ${' '.repeat(width)} ${info.get(n).url}`,
+    ]),
     dim('╰─'),
   ].join('\n')
 }

@@ -4,15 +4,19 @@
 // session, cached in <git dir>/lntt-issue-titles.json for a day; what to show is
 // issue-titles.mjs, tested on its own.
 
-import { annotate, footer, message, refsIn } from './issue-titles.mjs'
+import { annotate, entry, footer, message, refsIn } from './issue-titles.mjs'
 
 export const DAY = 24 * 60 * 60 * 1000
+// How long a delta waits for titles: a slower lookup goes on, and its title shows
+// from the next delta, or in the box.
+export const WAIT_MS = 800
 // Messages kept at once: one interrupted before its last delta is never closed.
-const KEPT = 20
+export const KEPT = 20
 
 export function issueTitles(on) {
   const info = new Map() // number -> { title, url, at }
-  const unknown = new Set() // numbers gh did not resolve in this session
+  const unknown = new Set() // numbers gh answered it does not know, for the session
+  const pending = new Map() // number -> its lookup, while it runs
   const messages = new Map() // message_id -> what that message has shown so far
   let cache = null // the cache file's path, once looked for (null outside a repository)
 
@@ -24,39 +28,46 @@ export function issueTitles(on) {
       if (await $.fs.exists(file)) {
         const now = await $.clock.now()
         for (const [n, v] of Object.entries(JSON.parse(await $.fs.read(file)))) {
-          if (now - v.at < DAY) info.set(Number(n), v)
+          const e = entry(v.title, v.url)
+          if (e && now - v.at < DAY) info.set(Number(n), { ...e, at: v.at })
         }
       }
     } catch {}
     return file
   }
 
-  // The title and URL of each number; one gh cannot resolve stays unknown for the
-  // session, and its text is shown as written.
+  // One number's title and URL. A number gh answers it does not know stays unknown for
+  // the session; a timeout or an error is tried again in a later message.
+  async function fetch($, file, n) {
+    try {
+      const r = await $.process.run(['gh', 'api', `repos/{owner}/{repo}/issues/${n}`, '--jq', '[.title, .html_url] | @tsv'], {
+        timeoutMs: 3000,
+      })
+      const [title, url] = r.stdout.trim().split('\t')
+      const e = r.exitCode === 0 ? entry(title, url) : null
+      if (!e) {
+        unknown.add(n)
+        return
+      }
+      info.set(n, { ...e, at: await $.clock.now() })
+      await $.fs.write(file, JSON.stringify(Object.fromEntries(info)))
+    } catch {}
+  }
+
+  // The lookups of these numbers, waited for at most WAIT_MS.
   async function lookUp($, numbers) {
     cache ??= readCache($).catch(() => null)
     const file = await cache
     if (!file) return
-    const missing = numbers.filter((n) => !info.has(n) && !unknown.has(n))
-    if (!missing.length) return
-    const now = await $.clock.now()
-    await Promise.all(
-      missing.map(async (n) => {
-        try {
-          const r = await $.process.run(['gh', 'api', `repos/{owner}/{repo}/issues/${n}`, '--jq', '[.title, .html_url] | @tsv'], {
-            timeoutMs: 3000,
-          })
-          const [title, url] = r.stdout.trim().split('\t')
-          if (r.exitCode === 0 && title && url?.startsWith('https://')) info.set(n, { title, url, at: now })
-          else unknown.add(n)
-        } catch {
-          unknown.add(n)
-        }
-      }),
-    )
-    try {
-      await $.fs.write(file, JSON.stringify(Object.fromEntries(info)))
-    } catch {}
+    for (const n of numbers) {
+      if (info.has(n) || unknown.has(n) || pending.has(n)) continue
+      pending.set(
+        n,
+        fetch($, file, n).finally(() => pending.delete(n)),
+      )
+    }
+    const waiting = numbers.map((n) => pending.get(n)).filter(Boolean)
+    if (waiting.length) await Promise.race([Promise.all(waiting), $.clock.sleep(WAIT_MS)])
   }
 
   on('classic.MessageDisplay', async ($, e, next) => {
@@ -72,6 +83,7 @@ export function issueTitles(on) {
       await lookUp($, refsIn(delta, m))
       let shown = annotate(delta, m, info)
       if (e.final) {
+        await lookUp($, m.cited)
         shown += footer(m, info)
         messages.delete(e.message_id)
       }
