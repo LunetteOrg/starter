@@ -132,9 +132,16 @@ describe('what a lookup gave, made safe to show', () => {
     assert.deepEqual(entry('ok\u001b]0;pwned\u0007 title', url(6)), { title: 'ok]0;pwned title', url: url(6) })
   })
 
-  test('characters that reorder or hide text are dropped too', () => {
-    assert.deepEqual(entry('a\u202eb\u2066c\u200bd\u2028e\ufeff', url(6)), { title: 'abcde', url: url(6) })
-    assert.equal(entry('ok', 'https://x.org/1\u202e'), null)
+  test('characters that reorder or hide text are dropped too, at both ends of each range', () => {
+    const hidden = [0x0, 0x1f, 0x7f, 0x9f, 0xad, 0x34f, 0x200b, 0x200f, 0x2028, 0x2029, 0x202a, 0x202e, 0x2060, 0x2066,
+      0x2069, 0xfe00, 0xfe0f, 0xfeff, 0xe0001, 0xe0041, 0xe007f, 0xe0100, 0xe01ef]
+    for (const cp of hidden) {
+      assert.deepEqual(entry(`a${String.fromCodePoint(cp)}b`, url(6)), { title: 'ab', url: url(6) }, cp.toString(16))
+      assert.equal(entry('ok', `https://x.org/1${String.fromCodePoint(cp)}`), null, cp.toString(16))
+    }
+    for (const cp of [0x20, 0xa0, 0x200a, 0x2030, 0xfdff, 0xfe10, 0xe0200]) {
+      assert.equal(entry(`a${String.fromCodePoint(cp)}b`, url(6))?.title, `a${String.fromCodePoint(cp)}b`, cp.toString(16))
+    }
   })
 
   test('a title of control characters only, or a URL that is not plain https, gives nothing', () => {

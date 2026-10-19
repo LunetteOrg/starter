@@ -31,6 +31,7 @@ function engine({ gh = {}, files = {}, git = 0, late = false } = {}) {
       exists: async (p) => p in files,
       read: async (p) => files[p],
       write: async (p, t) => {
+        files.__failOnce?.()
         files[p] = t
       },
     },
@@ -103,7 +104,7 @@ describe('the issue titles hook', () => {
     assert.deepEqual(calls, [4])
   })
 
-  for (const stderr of ['Not Found', 'gh: HTTP 404', 'gh: This issue was deleted (HTTP 410)']) {
+  for (const stderr of ['gh: Not Found (HTTP 404)', 'gh: This issue was deleted (HTTP 410)']) {
     test(`"${stderr}" means the number is not there: asked once`, async () => {
       const { flush, calls } = engine({ gh: { 7: { exitCode: 1, stdout: '', stderr } } })
       await flush('m1', '#7\n')
@@ -112,12 +113,32 @@ describe('the issue titles hook', () => {
     })
   }
 
-  test('gh not logged in stops the lookups for the session', async () => {
-    const answer = { exitCode: 4, stdout: '', stderr: 'To get started with GitHub CLI, please run:  gh auth login' }
-    const { flush, calls } = engine({ gh: { 1: answer, 2: answer } })
-    await flush('m1', '#1\n')
+  for (const stderr of ['To get started with GitHub CLI, please run:  gh auth login', 'gh: Bad credentials (HTTP 401)']) {
+    test(`gh not logged in ("${stderr.slice(-20)}") stops the lookups, and a cached title still shows`, async () => {
+      const answer = { exitCode: 4, stdout: '', stderr }
+      const files = { [CACHE]: JSON.stringify({ 5: { title: 'Cached', url: 'https://github.com/o/r/issues/5', at: NOW } }) }
+      const { flush, calls } = engine({ gh: { 1: answer, 2: answer }, files })
+      await flush('m1', '#1\n')
+      const shown = await flush('m2', '#2 and #5\n')
+      assert.deepEqual(calls, [1])
+      assert.match(shown.displayContent, /· Cached/)
+    })
+  }
+
+  test('a cache write that fails still shows the title, and later writes go on', async () => {
+    const { flush, files } = engine({ gh: { 1: ok('One', 1), 2: ok('Two', 2) } })
+    let failed = false
+    files.__failOnce = () => {
+      if (!failed) {
+        failed = true
+        throw new Error('disk full')
+      }
+    }
+    assert.match((await flush('m1', '#1\n')).displayContent, /· One/)
     await flush('m2', '#2\n')
-    assert.deepEqual(calls, [1])
+    await new Promise((r) => setImmediate(r))
+    assert.ok(failed)
+    assert.equal(JSON.parse(files[CACHE])[2].title, 'Two')
   })
 
   test(`a delta waits for its lookups at most WAIT_MS (${WAIT_MS} ms)`, async () => {

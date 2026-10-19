@@ -7,8 +7,9 @@
 import { annotate, entry, footer, message, refsIn } from './issue-titles.mjs'
 
 export const DAY = 24 * 60 * 60 * 1000
-// How long a delta waits for titles: a slower lookup goes on, and its title shows from
-// the next message on.
+// How long a delta waits for titles: a slower lookup goes on, and its title shows in a
+// later delta: beside the number from the next message, and in the box of this one
+// when it arrives before the last delta.
 export const WAIT_MS = 800
 // Messages kept at once: one interrupted before its last delta is never closed.
 export const KEPT = 20
@@ -32,7 +33,7 @@ export function issueTitles(on) {
         for (const [n, v] of Object.entries(JSON.parse(await $.fs.read(file)) ?? {})) {
           const e = entry(v?.title, v?.url)
           const fresh = typeof v?.at === 'number' && v.at <= now && now - v.at < DAY
-          if (e && fresh && Number.isInteger(Number(n))) info.set(Number(n), { ...e, at: v.at })
+          if (e && fresh && /^\d+$/.test(n)) info.set(Number(n), { ...e, at: v.at })
         }
       }
     } catch {}
@@ -49,7 +50,7 @@ export function issueTitles(on) {
         timeoutMs: 3000,
       })
       if (r.exitCode !== 0) {
-        if (/Not Found|HTTP 404|HTTP 410/i.test(r.stderr)) unknown.add(n)
+        if (/HTTP (404|410)\b/.test(r.stderr)) unknown.add(n)
         else if (/gh auth login|HTTP 401/i.test(r.stderr)) off = true
         return
       }
@@ -61,7 +62,6 @@ export function issueTitles(on) {
       }
       info.set(n, { ...e, at: await $.clock.now() })
       writing = writing.then(() => $.fs.write(file, JSON.stringify(Object.fromEntries(info)))).catch(() => {})
-      await writing
     } catch {}
   }
 
