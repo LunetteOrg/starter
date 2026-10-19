@@ -22,7 +22,8 @@ export function issueTitles(on) {
   let off = false // gh cannot answer here (missing, not logged in, no GitHub remote): no lookup for the session
   let writing = Promise.resolve() // cache writes, one after the other
   const messages = new Map() // message_id -> what that message has shown so far
-  let cache = null // the cache file's path, once looked for (null outside a repository)
+  let cache = null // the look for the cache file, started at the first number
+  let file // its path once found (null outside a repository), undefined until then
 
   async function readCache($) {
     const r = await $.process.run(['git', 'rev-parse', '--absolute-git-dir'])
@@ -75,9 +76,17 @@ export function issueTitles(on) {
   // are looked for at the first number of the session, not before.
   async function lookUp($, numbers) {
     if (!numbers.length) return
-    cache ??= readCache($).catch(() => null)
-    const deadline = $.clock.sleep(WAIT_MS)
-    const file = await Promise.race([cache, deadline.then(() => null)])
+    // One timer for the whole wait, started only when something is waited for.
+    let deadline = null
+    const wait = () => (deadline ??= $.clock.sleep(WAIT_MS))
+    if (file === undefined) {
+      cache ??= readCache($)
+        .catch(() => null)
+        .then((f) => (file = f))
+      // gh --version may take its whole timeout (3 s): the lookups wait for it in a
+      // later delta, this one goes on.
+      await Promise.race([cache, wait()])
+    }
     if (!file || off) return
     for (const n of numbers) {
       if (info.has(n) || unknown.has(n) || pending.has(n)) continue
@@ -87,7 +96,7 @@ export function issueTitles(on) {
       )
     }
     const waiting = numbers.map((n) => pending.get(n)).filter(Boolean)
-    if (waiting.length) await Promise.race([Promise.all(waiting), deadline])
+    if (waiting.length) await Promise.race([Promise.all(waiting), wait()])
   }
 
   on('classic.MessageDisplay', async ($, e, next) => {

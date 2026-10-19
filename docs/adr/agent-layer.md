@@ -75,9 +75,10 @@ the number in the next message.
 - **Shown as written:** code, and a number `gh` answers with HTTP 404 or 410 (a
   missing issue, or a repository the token cannot see).
 - **No lookup for the session** when `gh` is missing, not logged in, or the
-  repository has no GitHub remote; any other failure is tried again.
-- **A title is anyone's text:** control and format characters, line separators and
-  variation selectors are dropped, and a URL is shown only when it is a plain `https`
+  repository has no GitHub remote; any other failure (a `gh` call past its 3 s
+  timeout, the network, a rate limit) is tried again.
+- **A title is anyone's text:** control, format and other invisible characters (line
+  separators, variation selectors, the grapheme joiner) are dropped, and a URL is shown only when it is a plain `https`
   address, from `gh` or from the cache.
 
 How a title is written is the `issues` skill's.

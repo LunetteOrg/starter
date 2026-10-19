@@ -18,6 +18,10 @@ describe('the numbers a message cites', () => {
     assert.deepEqual(refsIn('do #138, then #134 and #138 again\n', message()), [138, 134])
   })
 
+  test('#0 is not a reference: GitHub numbers from 1', () => {
+    assert.deepEqual(refsIn('#0 and #01 and #10\n', message()), [10])
+  })
+
   test('not inside a code span, a fence, a URL or an HTML entity', () => {
     const text = 'see `#12` and https://x.org/issues/9#13 and &#39;\n```\n#14\n```\n'
     assert.deepEqual(refsIn(text, message()), [])

@@ -12,7 +12,7 @@ const notFound = { exitCode: 1, stdout: '', stderr: 'gh: Not Found (HTTP 404)' }
 // A fake engine: `gh` answers from `gh` (a result, an Error to throw, or a function
 // returning a promise), the files are `files`, and each gh call is recorded. The
 // clock's sleep never ends, so a delta waits for its lookups, unless `late` makes it
-// end at once: then a lookup still running is past its wait.
+// end after a turn of the event loop: then a lookup still running is past its wait.
 function engine({ gh = {}, files = {}, git = 0, late = false, ghVersion = 0, write = null } = {}) {
   const calls = []
   const waits = []
@@ -47,7 +47,7 @@ function engine({ gh = {}, files = {}, git = 0, late = false, ghVersion = 0, wri
       now: async () => NOW,
       sleep: (ms) => {
         waits.push(ms)
-        return late ? Promise.resolve() : new Promise(() => {})
+        return late ? new Promise((r) => setImmediate(r)) : new Promise(() => {})
       },
     },
   }
@@ -218,6 +218,19 @@ describe('the issue titles hook', () => {
     assert.equal(JSON.parse(files[CACHE])[2].title, 'Two')
   })
 
+  test('one timer per delta for the cache and the titles together, and none when nothing waits', async () => {
+    const { flush, waits } = engine({ gh: { 9: ok('Nine', 9), 1: () => new Promise(() => {}) }, late: true })
+    await flush('m1', '#9\n')
+    await new Promise((r) => setImmediate(r))
+    await flush('m2', '#9 known\n')
+    await new Promise((r) => setImmediate(r))
+    const before = waits.length
+    await flush('m3', '#9 known\n')
+    assert.equal(waits.length, before, 'a known title starts no timer')
+    await flush('m4', '#1 slow\n')
+    assert.equal(waits.length, before + 1, 'a slow lookup waits on one timer')
+  })
+
   test(`a delta waits for its lookups at most WAIT_MS (${WAIT_MS} ms)`, async () => {
     const { flush, waits } = engine({ gh: { 1: () => new Promise(() => {}) }, late: true })
     await flush('m1', '#1\n')
@@ -298,7 +311,7 @@ describe('the issue titles hook', () => {
     const shown = (await flush('m1', '#2, #10, #16, #0 and #3\n')).displayContent
     assert.match(shown, /· Kept/)
     assert.doesNotMatch(shown, /Ten|Sixteen|Zero|Future/)
-    assert.deepEqual(calls, [10, 16, 0, 3])
+    assert.deepEqual(calls, [10, 16, 3])
   })
 
   test('a corrupt cache, or an entry in it that is not safe to show, is ignored', async () => {

@@ -9,8 +9,9 @@ export const TITLE_MAX = 60
 const ESC = '\u001b'
 const dim = (text) => `${ESC}[2m${text}${ESC}[22m`
 const FENCE = /^\s*(```|~~~)/
-// `#N` as a reference: not part of a word, a URL fragment (`/9#13`) or an entity (`&#39;`).
-const REF = /(^|[^\w&/#])#(\d+)\b/g
+// `#N` as a reference (N from 1, as GitHub numbers them): not part of a word, a URL
+// fragment (`/9#13`) or an entity (`&#39;`).
+const REF = /(^|[^\w&/#])#([1-9]\d*)\b/g
 
 export function message() {
   return { text: '', fence: false, cited: [] }
