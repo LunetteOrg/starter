@@ -103,7 +103,7 @@ async function ready($, s, wait) {
   s.cache ??= readCache($, s)
     .catch(() => null)
     .then((f) => (s.file = f))
-  // gh repo view may take its whole timeout (3 s): the lookups wait for it in a later
+  // gh repo view may take all of GH_TIMEOUT_MS: the lookups wait for it in a later
   // delta, this one goes on.
   await Promise.race([s.cache, wait()])
 }

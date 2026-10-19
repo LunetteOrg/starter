@@ -22,9 +22,9 @@ const mayBeRepo = (r) => r.length >= 3 && /^\p{L}/u.test(r)
 // A Markdown link: its text is read, its URL is not, and a title goes after it.
 const LINK = /\[([^\]\n]*)\]\(([^)\s]*)\)/g
 
-// What one message has shown so far. `foreign`: it cited another repository, or a
-// reference came before the session's repository was known, so a bare `#N` after that
-// may mean either, and is left as it is.
+// What one message has shown so far. `foreign`: it cited another repository, or a word
+// before `#` that could be one, or a reference came before the session's repository was
+// known; a bare `#N` after that may mean either, and is left as it is.
 export function message() {
   return { text: '', fence: false, cited: [], foreign: false }
 }
