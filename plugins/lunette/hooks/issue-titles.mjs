@@ -1,8 +1,8 @@
-// What a number means, on screen: the first `#N`, `repo#N` or `owner/repo#N` of a message
-// gets its issue's or pull request's title beside it, dimmed, unless the message already
-// gives that title, and the message ends with a box of what it cited, each with its URL. Pure: the lookup and
-// the hook are issue-titles-hook.js's. A message is read on its own, delta by delta as it
-// streams: `message()` holds what one message has shown so far.
+// What a number means, on screen: the first `#N`, `repo#N` or `owner/repo#N` of a
+// message gets its issue's or pull request's title beside it, dimmed, unless the message
+// already gives that title, and the message ends with a box of what it cited, each with
+// its URL. Pure: the lookup and the hook are issue-titles-hook.js's. A message is read on
+// its own, delta by delta as it streams: `message()` holds what one message has shown.
 
 export const TITLE_MAX = 60
 
@@ -10,27 +10,38 @@ const ESC = '\u001b'
 const dim = (text) => `${ESC}[2m${text}${ESC}[22m`
 const FENCE = /^\s*(```|~~~)/
 // A reference: `#N`, `repo#N` or `owner/repo#N`, N from 1 as GitHub numbers them; not
-// part of a word, a path or a URL (`/9#13`), nor an entity (`&#39;`).
-const REF = /(^|[^\w&/#.-])(?:(?:([\w.-]+)\/)?([\w.-]+))?#([1-9]\d*)\b/g
+// part of a word, a path or a URL (`/9#13`), nor an entity (`&#39;`). A name starts with
+// a letter or digit, so `.` and `..` are never one.
+const NAME = '[A-Za-z0-9][\\w.-]*'
+const REF = new RegExp(`(^|[^\\w&/#.-])(?:(?:(${NAME})\\/)?(${NAME}))?#([1-9]\\d*)\\b`, 'g')
+// `repo#N` alone is read as a repository only when the word could be one: three
+// characters or more, and not a word that is often put before a number. A word that
+// cannot be one (`C#5`, `issue#4`, `v1.2#3`) makes no reference at all.
+const NOT_REPO = /^(issues?|prs?|pull|pulls|bug|bugs|task|tasks|step|steps|item|items|ticket|tickets|case|no|nr|num|number|version|v\d.*|[^a-z].*)$/i
+const repoWord = (r) => r.length >= 3 && !r.includes('.') && !NOT_REPO.test(r)
 // A Markdown link: its text is read, its URL is not, and a title goes after it.
 const LINK = /\[([^\]\n]*)\]\(([^)\s]*)\)/g
 
-// What one message has shown so far. `foreign`: it cited another repository, so a bare
-// `#N` after that may mean either, and is left as it is.
+// What one message has shown so far. `foreign`: it cited another repository, or a
+// reference came before the session's repository was known, so a bare `#N` after that
+// may mean either, and is left as it is.
 export function message() {
   return { text: '', fence: false, cited: [], foreign: false }
 }
 
-// `home` is the session's repository as `owner/repo`, or null while unknown.
+// `home` is the session's repository as `owner/repo`, lower case, or null while unknown.
+// GitHub names are not case-sensitive: keys are lower case.
 const parts = (home) => (home ? home.split('/') : [null, null])
 
-// The key of a match (`owner/repo#N`), or null when it cannot be told for certain.
-function keyOf(match, home, foreign) {
+// What a match refers to: its key (`owner/repo#N`, lower case) or null when it cannot be
+// told for certain, and whether it names a repository other than the session's.
+function refOf(match, home, foreign) {
   const [owner, repo] = parts(home)
   const [, , o, r, n] = match
-  if (o) return `${o}/${r}#${n}`
-  if (r) return owner ? `${owner}/${r}#${n}` : null
-  return home && !foreign ? `${owner}/${repo}#${n}` : null
+  if (!r) return { key: home && !foreign ? `${owner}/${repo}#${n}` : null, other: false }
+  if (!o && !repoWord(r)) return { key: null, other: false }
+  const full = o ? `${o}/${r}`.toLowerCase() : owner ? `${owner}/${r.toLowerCase()}` : null
+  return { key: full && `${full}#${n}`, other: !home || full !== home }
 }
 
 // The label a key shows in the box: as short as stays unambiguous in this session.
@@ -64,12 +75,10 @@ export function entry(title, url) {
   return { title: t, url }
 }
 
-// The line with its code spans and its links' URLs blanked, so a match's index is
+// The line with its code spans blanked, then its links' URLs, so a match's index is
 // still the line's.
-const prose = (line) =>
-  line
-    .replace(/`[^`]*`/g, (span) => ' '.repeat(span.length))
-    .replace(LINK, (link, text) => `[${text}]${' '.repeat(link.length - text.length - 2)}`)
+const noCode = (line) => line.replace(/`[^`]*`/g, (span) => ' '.repeat(span.length))
+const prose = (line) => noCode(line).replace(LINK, (link, text) => `[${text}]${' '.repeat(link.length - text.length - 2)}`)
 
 // Each line of a delta with whether it is prose (outside a fence), the fence state
 // carried from the message so far.
@@ -92,12 +101,11 @@ export const hasRefs = (delta) => /#[1-9]/.test(delta)
 export function refsIn(delta, m, home) {
   const found = []
   let foreign = m.foreign
-  const [owner, repo] = parts(home)
   for (const { line, prose: isProse } of lines(delta, m.fence).out) {
     if (!isProse) continue
     for (const match of prose(line).matchAll(REF)) {
-      const key = keyOf(match, home, foreign)
-      if (match[3] && home && key && key !== `${owner}/${repo}#${match[4]}`) foreign = true
+      const { key, other } = refOf(match, home, foreign)
+      if (other || !home) foreign = true
       if (key && !m.cited.includes(key) && !found.includes(key)) found.push(key)
     }
   }
@@ -109,21 +117,21 @@ export function refsIn(delta, m, home) {
 // is a link's text. Records what the message cited.
 export function annotate(delta, m, info, home) {
   const seenText = (m.text + delta).toLowerCase()
-  const [owner, repo] = parts(home)
   const { out, fence } = lines(delta, m.fence)
   const shown = out.map(({ line, prose: isProse }) => {
     if (!isProse) return line
-    const links = [...line.matchAll(LINK)].map((l) => ({ from: l.index, to: l.index + l[0].length }))
+    const links = [...noCode(line).matchAll(LINK)].map((l) => ({ from: l.index, to: l.index + l[0].length }))
     const inserts = []
     for (const match of prose(line).matchAll(REF)) {
-      const key = keyOf(match, home, m.foreign)
-      if (match[3] && home && key && key !== `${owner}/${repo}#${match[4]}`) m.foreign = true
+      const { key, other } = refOf(match, home, m.foreign)
+      if (other || !home) m.foreign = true
       if (!key || m.cited.includes(key)) continue
       m.cited.push(key)
       const title = info.get(key)?.title
       if (!title || seenText.includes(title.toLowerCase().slice(0, 30))) continue
       const end = match.index + match[0].length
-      const link = links.find((l) => l.from <= end && end <= l.to)
+      const start = match.index + match[1].length
+      const link = links.find((l) => l.from <= start && end <= l.to)
       inserts.push({ at: link ? link.to : end, text: ` ${dim(`· ${cut(title)}`)}` })
     }
     return inserts.sort((a, b) => a.at - b.at).reduceRight((l, { at, text }) => l.slice(0, at) + text + l.slice(at), line)

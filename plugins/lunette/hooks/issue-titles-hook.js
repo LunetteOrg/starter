@@ -1,9 +1,9 @@
 // Issue titles on screen: each message Claude writes shows the title beside the first
-// `#N`, `repo#N` or `owner/repo#N` and ends with a box of what it cited, with their URLs.
-// Display-only: what Claude wrote and reads is unchanged. The titles come from `gh`, a
-// bare `#N` from the session's repository, cached in <git dir>/lntt-issue-titles.json
-// for a day; what to show is
-// issue-titles.mjs, tested on its own. The functions that take `$` are declared at the
+// `#N`, `repo#N` or `owner/repo#N` and ends with a box of what it cited, with their
+// URLs. Display-only: what Claude wrote and reads is unchanged. The titles come from
+// `gh`, a bare `#N` from the session's repository, cached in
+// <git dir>/lntt-issue-titles.json for a day; what to show is issue-titles.mjs, tested
+// on its own. The functions that take `$` are declared at the
 // top of the file, as the engine requires; the session's state is passed to them.
 
 import { annotate, entry, footer, hasRefs, message, refsIn } from './issue-titles.mjs'
@@ -16,6 +16,11 @@ export const DAY = 24 * 60 * 60 * 1000
 export const WAIT_MS = 800
 // Messages kept at once: one interrupted before its last delta is never closed.
 export const KEPT = 20
+
+// A repository and a reference as the hook keys them: lower case, each name starting
+// with a letter or digit.
+const KEY_REPO = /^[a-z0-9][\w.-]*\/[a-z0-9][\w.-]*$/
+const KEY = /^[a-z0-9][\w.-]*\/[a-z0-9][\w.-]*#[1-9]\d*$/
 
 function session() {
   return {
@@ -40,8 +45,8 @@ async function readCache($, s) {
     const v = await $.process.run(['gh', 'repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
       timeoutMs: 3000,
     })
-    const home = v.stdout.trim()
-    if (v.exitCode === 0 && /^[\w.-]+\/[\w.-]+$/.test(home)) s.home = home
+    const home = v.stdout.trim().toLowerCase()
+    if (v.exitCode === 0 && KEY_REPO.test(home)) s.home = home
     else s.off = true
   } catch {
     s.off = true
@@ -53,7 +58,7 @@ async function readCache($, s) {
       for (const [n, v] of Object.entries(JSON.parse(await $.fs.read(file)) ?? {})) {
         const e = entry(v?.title, v?.url)
         const fresh = typeof v?.at === 'number' && v.at <= now && now - v.at < DAY
-        if (e && fresh && /^[\w.-]+\/[\w.-]+#[1-9]\d*$/.test(n)) s.info.set(n, { ...e, at: v.at })
+        if (e && fresh && KEY.test(n)) s.info.set(n, { ...e, at: v.at })
       }
     }
   } catch {}
@@ -114,6 +119,8 @@ async function lookUp($, s, keys, wait) {
 }
 
 async function show($, s, e, base) {
+  // Without the session's repository nothing can be told for certain: shown as written.
+  if (s.file === null || (s.file && !s.home)) return base
   const delta = base?.displayContent ?? e.delta
   let m = s.messages.get(e.message_id)
   if (!m) {

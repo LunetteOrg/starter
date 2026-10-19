@@ -195,7 +195,44 @@ describe('references to other repositories', () => {
   })
 })
 
+describe('what is not a reference to another repository', () => {
+  test('a word that cannot be a repository makes no reference: C#5, issue#4, v1.2#3', () => {
+    assert.deepEqual(refsIn('C#5, F#1, issue#4, PR#2, v1.2#3 and #7\n', message(), HOME), [k(7)])
+  })
+
+  test('. and .. are never a name', () => {
+    assert.deepEqual(refsIn('x/..#5 and ../r#6 then #7\n', message(), HOME), [k(7)])
+  })
+
+  test('names are not case-sensitive: O/R#7 is the session repository, Starter#9 the same owner', () => {
+    assert.deepEqual(refsIn('O/R#7, Starter#9\n', message(), HOME), [k(7), k(9, 'o/starter')])
+  })
+
+  test('a reference to the session repository written in full leaves the next #N titled', () => {
+    const info = new Map([[k(8), { title: 'Eight', url: url(8) }]])
+    const [line] = show(['o/r#7 then #8\n'], info).lines
+    assert.equal(line, `o/r#7 then #8 ${dim('· Eight')}\n`)
+  })
+
+  test('before the session repository is known, any reference makes the message foreign', () => {
+    const m = message()
+    annotate('see x/pelion#3\n', m, new Map(), null)
+    assert.equal(m.foreign, true)
+    assert.deepEqual(refsIn('then #8\n', m, HOME), [])
+  })
+})
+
 describe('references in Markdown links', () => {
+  test('a reference just before a link keeps its title beside it', () => {
+    const [line] = show(['#138[a](u) end\n']).lines
+    assert.equal(line, `#138 ${dim(`· ${known.get(k(138)).title}`)}[a](u) end\n`)
+  })
+
+  test('a link whose text holds code is still found', () => {
+    const [line] = show(['[`x` #138](https://x.org/1) end\n']).lines
+    assert.equal(line, `[\`x\` #138](https://x.org/1) ${dim(`· ${known.get(k(138)).title}`)} end\n`)
+  })
+
   test('the title goes after the link, not inside its text', () => {
     const [line] = show(['see [#138](https://github.com/o/r/pull/138) now\n']).lines
     assert.equal(line, `see [#138](https://github.com/o/r/pull/138) ${dim(`· ${known.get(k(138)).title}`)} now\n`)

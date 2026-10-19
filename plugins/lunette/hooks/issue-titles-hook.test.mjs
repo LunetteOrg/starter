@@ -156,6 +156,46 @@ describe('the issue titles hook', () => {
     assert.match(shown.displayContent, /x\/pelion#3 .*· Pelion three.*and then #65\n$/)
   })
 
+  for (const home of ['', 'garbage', '../x']) {
+    test(`gh repo view answering "${home}" is no repository: nothing is looked up`, async () => {
+      const { flush, calls } = engine({ gh: { 1: ok('One', 1) }, home })
+      assert.deepEqual(await flush('m1', '#1 and o/r#1\n'), {})
+      assert.deepEqual(calls, [])
+    })
+  }
+
+  test('without the session repository, even a cached reference written in full is shown as written', async () => {
+    const files = { [CACHE]: JSON.stringify({ 'o/r#5': { title: 'Cached', url: 'https://github.com/o/r/issues/5', at: NOW } }) }
+    const { flush } = engine({ home: 1, files })
+    await flush('m1', 'warm up #9\n')
+    assert.deepEqual(await flush('m2', 'see o/r#5\n'), {})
+  })
+
+  test('a reference to another repository in one delta keeps the next deltas bare', async () => {
+    const { flush, calls } = engine({ gh: { 'x/pelion#3': ok('Pelion three', 3, 'x/pelion'), 7: ok('Seven', 7) } })
+    await flush('m1', 'see x/pelion#3\n')
+    assert.deepEqual(await flush('m1', 'then #7\n'), {})
+    assert.deepEqual(calls, ['x/pelion#3'])
+  })
+
+  test('a reference that comes before the session repository is known keeps the rest of the message bare', async () => {
+    let answer
+    const home = () => new Promise((r) => (answer = () => r({ exitCode: 0, stdout: 'o/r\n', stderr: '' })))
+    const { flush, calls } = engine({ gh: { 'x/pelion#3': ok('Pelion three', 3, 'x/pelion'), 7: ok('Seven', 7) }, home, late: true })
+    await flush('m1', 'see x/pelion#3\n')
+    answer()
+    await new Promise((r) => setImmediate(r))
+    await flush('m1', 'then #7\n')
+    assert.ok(!calls.includes(7))
+  })
+
+  test('the box labels a reference to the session repository as #N', async () => {
+    const { flush } = engine({ gh: { 4: ok('Four', 4) } })
+    await flush('m1', '#4 here\n')
+    const end = await flush('m1', 'end', true)
+    assert.match(end.displayContent, /│\u001b\[22m #4 \u001b\[2mFour/)
+  })
+
   test('every gh call has a timeout', async () => {
     const { flush, runs } = engine({ gh: { 1: ok('One', 1) } })
     await flush('m1', '#1\n')
@@ -172,7 +212,7 @@ describe('the issue titles hook', () => {
     assert.deepEqual(await slow.flush('m1', '#1\n'), {})
   })
 
-  test('a later delta does not start the look for the cache again while gh --version is slow', async () => {
+  test('a later delta does not start the look for the cache again while gh repo view is slow', async () => {
     const { flush, runs } = engine({ gh: { 1: ok('One', 1) }, home: () => new Promise(() => {}), late: true })
     await flush('m1', '#1\n')
     await flush('m1', '#2\n')
