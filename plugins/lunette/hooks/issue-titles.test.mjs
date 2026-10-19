@@ -59,10 +59,11 @@ describe('the title beside the number', () => {
     assert.equal(lines[2], `Now #134 ${dim(`· ${known.get(134).title}`)}.\n`)
   })
 
-  test('a long title is cut by characters, never inside an emoji', () => {
-    const title = `${'x'.repeat(TITLE_MAX - 2)}🚀🚀🚀`
+  test('a long title is cut by what a reader sees as one character, never inside an emoji', () => {
+    const family = '👨‍👩‍👧'
+    const title = `${'x'.repeat(TITLE_MAX - 2)}${family}${family}${family}`
     const { lines } = show(['#8 here\n'], new Map([[8, { title, url: url(8) }]]))
-    assert.ok(lines[0].includes(`${'x'.repeat(TITLE_MAX - 2)}🚀…`))
+    assert.ok(lines[0].includes(`${'x'.repeat(TITLE_MAX - 2)}${family}…`))
   })
 
   test('a long title is cut', () => {
@@ -129,6 +130,11 @@ describe('the box of what the message cited', () => {
 describe('what a lookup gave, made safe to show', () => {
   test('control characters in a title are dropped, so it cannot write to the terminal', () => {
     assert.deepEqual(entry('ok\u001b]0;pwned\u0007 title', url(6)), { title: 'ok]0;pwned title', url: url(6) })
+  })
+
+  test('characters that reorder or hide text are dropped too', () => {
+    assert.deepEqual(entry('a\u202eb\u2066c\u200bd\u2028e\ufeff', url(6)), { title: 'abcde', url: url(6) })
+    assert.equal(entry('ok', 'https://x.org/1\u202e'), null)
   })
 
   test('a title of control characters only, or a URL that is not plain https, gives nothing', () => {

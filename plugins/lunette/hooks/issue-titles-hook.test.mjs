@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { DAY, issueTitles, KEPT } from './issue-titles-hook.js'
+import { DAY, issueTitles, KEPT, WAIT_MS } from './issue-titles-hook.js'
 import { register } from './register.js'
 
 const GIT = '/repo/.git'
@@ -15,6 +15,7 @@ const notFound = { exitCode: 1, stdout: '', stderr: 'gh: Not Found (HTTP 404)' }
 // end at once: then a lookup still running is past its wait.
 function engine({ gh = {}, files = {}, git = 0, late = false } = {}) {
   const calls = []
+  const waits = []
   const $ = {
     process: {
       run: async (argv) => {
@@ -33,7 +34,13 @@ function engine({ gh = {}, files = {}, git = 0, late = false } = {}) {
         files[p] = t
       },
     },
-    clock: { now: async () => NOW, sleep: () => (late ? Promise.resolve() : new Promise(() => {})) },
+    clock: {
+      now: async () => NOW,
+      sleep: (ms) => {
+        waits.push(ms)
+        return late ? Promise.resolve() : new Promise(() => {})
+      },
+    },
   }
   const hooks = {}
   issueTitles((event, hook) => {
@@ -42,7 +49,7 @@ function engine({ gh = {}, files = {}, git = 0, late = false } = {}) {
   })
   const flush = (id, delta, final = false, below = {}) =>
     hooks['classic.MessageDisplay']($, { message_id: id, delta, final }, async () => below)
-  return { flush, calls, files }
+  return { flush, calls, files, waits }
 }
 
 describe('the issue titles hook', () => {
@@ -89,9 +96,34 @@ describe('the issue titles hook', () => {
     assert.equal(files[CACHE], undefined)
   })
 
-  test('an answer whose URL is not plain https is not shown', async () => {
-    const { flush } = engine({ gh: { 4: { exitCode: 0, stdout: 'Title\thttp://x.org/4\n', stderr: '' } } })
+  test('an answer whose URL is not plain https is not shown, and not asked again', async () => {
+    const { flush, calls } = engine({ gh: { 4: { exitCode: 0, stdout: 'Title\thttp://x.org/4\n', stderr: '' } } })
     assert.deepEqual(await flush('m1', '#4 here\n'), {})
+    await flush('m2', '#4 again\n')
+    assert.deepEqual(calls, [4])
+  })
+
+  for (const stderr of ['Not Found', 'gh: HTTP 404', 'gh: This issue was deleted (HTTP 410)']) {
+    test(`"${stderr}" means the number is not there: asked once`, async () => {
+      const { flush, calls } = engine({ gh: { 7: { exitCode: 1, stdout: '', stderr } } })
+      await flush('m1', '#7\n')
+      await flush('m2', '#7\n')
+      assert.deepEqual(calls, [7])
+    })
+  }
+
+  test('gh not logged in stops the lookups for the session', async () => {
+    const answer = { exitCode: 4, stdout: '', stderr: 'To get started with GitHub CLI, please run:  gh auth login' }
+    const { flush, calls } = engine({ gh: { 1: answer, 2: answer } })
+    await flush('m1', '#1\n')
+    await flush('m2', '#2\n')
+    assert.deepEqual(calls, [1])
+  })
+
+  test(`a delta waits for its lookups at most WAIT_MS (${WAIT_MS} ms)`, async () => {
+    const { flush, waits } = engine({ gh: { 1: () => new Promise(() => {}) }, late: true })
+    await flush('m1', '#1\n')
+    assert.deepEqual(waits, [WAIT_MS])
   })
 
   test('any other failure of gh (a rate limit) is not shown, and is tried again', async () => {
@@ -152,8 +184,15 @@ describe('the issue titles hook', () => {
     assert.match(shown.displayContent, /· Fresh.*· Renamed/)
   })
 
-  test('a cache entry of the wrong shape is skipped, and the others still read', async () => {
-    const files = { [CACHE]: JSON.stringify({ 1: null, 2: { title: 'Kept', url: 'https://github.com/o/r/issues/2', at: NOW } }) }
+  test('a cache entry of the wrong shape, a key that is no number or a time in the future is skipped', async () => {
+    const files = {
+      [CACHE]: JSON.stringify({
+        1: null,
+        abc: { title: 'Bad key', url: 'https://github.com/o/r/issues/1', at: NOW },
+        3: { title: 'Future', url: 'https://github.com/o/r/issues/3', at: NOW + 1 },
+        2: { title: 'Kept', url: 'https://github.com/o/r/issues/2', at: NOW },
+      }),
+    }
     const { flush, calls } = engine({ files })
     assert.match((await flush('m1', '#2\n')).displayContent, /· Kept/)
     assert.deepEqual(calls, [])

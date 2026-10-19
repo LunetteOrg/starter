@@ -69,10 +69,10 @@ cited and their URLs (`plugins/lunette/hooks/issue-titles.mjs`). It is a
 `MessageDisplay` hook: it changes the screen only, and what the agent wrote and reads
 stays as it was. The titles come from `gh` for the session's repository, cached for a
 day in the git directory. A delta waits for them at most `WAIT_MS`
-(`issue-titles-hook.js`): a slower title shows in the box, and beside the number from
-the next message. Code, and a number `gh` does not know, are shown as written. A title
-is anyone's text: its control characters are dropped, and a URL is shown only when it
-is a plain `https` address, from `gh` or from the cache.
+(`issue-titles-hook.js`): a slower title shows from the next message on. Code, and a
+number `gh` answers is not there, are shown as written. A title is anyone's text: its
+control and invisible characters are dropped, and a URL is shown only when it is a
+plain `https` address, from `gh` or from the cache.
 How a title is written is the `issues` skill's.
 
 ## Consequences

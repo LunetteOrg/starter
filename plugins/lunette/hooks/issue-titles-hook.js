@@ -7,8 +7,8 @@
 import { annotate, entry, footer, message, refsIn } from './issue-titles.mjs'
 
 export const DAY = 24 * 60 * 60 * 1000
-// How long a delta waits for titles: a slower lookup goes on, and its title shows in
-// the message's box, and beside the number from the next message.
+// How long a delta waits for titles: a slower lookup goes on, and its title shows from
+// the next message on.
 export const WAIT_MS = 800
 // Messages kept at once: one interrupted before its last delta is never closed.
 export const KEPT = 20
@@ -17,6 +17,8 @@ export function issueTitles(on) {
   const info = new Map() // number -> { title, url, at }
   const unknown = new Set() // numbers gh answered it does not know, for the session
   const pending = new Map() // number -> its lookup, while it runs
+  let off = false // gh is not logged in: no lookup for the rest of the session
+  let writing = Promise.resolve() // cache writes, one after the other
   const messages = new Map() // message_id -> what that message has shown so far
   let cache = null // the cache file's path, once looked for (null outside a repository)
 
@@ -29,23 +31,26 @@ export function issueTitles(on) {
         const now = await $.clock.now()
         for (const [n, v] of Object.entries(JSON.parse(await $.fs.read(file)) ?? {})) {
           const e = entry(v?.title, v?.url)
-          if (e && typeof v.at === 'number' && now - v.at < DAY) info.set(Number(n), { ...e, at: v.at })
+          const fresh = typeof v?.at === 'number' && v.at <= now && now - v.at < DAY
+          if (e && fresh && Number.isInteger(Number(n))) info.set(Number(n), { ...e, at: v.at })
         }
       }
     } catch {}
     return file
   }
 
-  // One number's title and URL. A number gh answers it does not know (not found) stays
-  // unknown for the session; any other failure (a timeout, the network, auth, a rate
-  // limit) is tried again at the next lookup.
+  // One number's title and URL. A number gh answers is not there (not found, gone)
+  // stays unknown for the session; gh not logged in stops the lookups for the session;
+  // any other failure (a timeout, the network, a rate limit) is tried again at the next
+  // lookup.
   async function lookUpOne($, file, n) {
     try {
       const r = await $.process.run(['gh', 'api', `repos/{owner}/{repo}/issues/${n}`, '--jq', '[.title, .html_url] | @tsv'], {
         timeoutMs: 3000,
       })
       if (r.exitCode !== 0) {
-        if (/Not Found|HTTP 404/i.test(r.stderr)) unknown.add(n)
+        if (/Not Found|HTTP 404|HTTP 410/i.test(r.stderr)) unknown.add(n)
+        else if (/gh auth login|HTTP 401/i.test(r.stderr)) off = true
         return
       }
       const [title, url] = r.stdout.trim().split('\t')
@@ -55,7 +60,8 @@ export function issueTitles(on) {
         return
       }
       info.set(n, { ...e, at: await $.clock.now() })
-      await $.fs.write(file, JSON.stringify(Object.fromEntries(info)))
+      writing = writing.then(() => $.fs.write(file, JSON.stringify(Object.fromEntries(info)))).catch(() => {})
+      await writing
     } catch {}
   }
 
@@ -63,7 +69,7 @@ export function issueTitles(on) {
   async function lookUp($, numbers) {
     cache ??= readCache($).catch(() => null)
     const file = await cache
-    if (!file) return
+    if (!file || off) return
     for (const n of numbers) {
       if (info.has(n) || unknown.has(n) || pending.has(n)) continue
       pending.set(

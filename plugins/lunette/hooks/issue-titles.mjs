@@ -16,11 +16,19 @@ export function message() {
   return { text: '', fence: false, cited: [] }
 }
 
-// A title is anyone's text: control characters (a terminal sequence) are dropped.
-const clean = (title) => title.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim()
-// Cut by characters, not UTF-16 units, so an emoji is never split.
+// A title is anyone's text: control characters (a terminal sequence), and the
+// invisible ones that reorder or hide text (bidi controls, zero-width, line
+// separators), are dropped.
+const HIDDEN = '\\u0000-\\u001f\\u007f-\\u009f\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u2069\\ufeff'
+const clean = (title) => title.replace(new RegExp(`[${HIDDEN}]`, 'g'), '').trim()
+// Cut by what a reader sees as one character (a grapheme: an emoji with its modifiers,
+// a letter with its accents), never inside one.
+const graphemes = (text) =>
+  typeof Intl?.Segmenter === 'function'
+    ? Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text), (g) => g.segment)
+    : Array.from(text)
 const cut = (title) => {
-  const chars = Array.from(title)
+  const chars = graphemes(title)
   return chars.length > TITLE_MAX ? `${chars.slice(0, TITLE_MAX - 1).join('')}…` : title
 }
 
@@ -28,7 +36,7 @@ const cut = (title) => {
 // the URL an https address with no spaces or control characters. Null otherwise.
 export function entry(title, url) {
   const t = typeof title === 'string' ? clean(title) : ''
-  if (!t || typeof url !== 'string' || !/^https:\/\/[^\s\u0000-\u001f\u007f-\u009f]+$/.test(url)) return null
+  if (!t || typeof url !== 'string' || !new RegExp(`^https://[^\\s${HIDDEN}]+$`).test(url)) return null
   return { title: t, url }
 }
 
