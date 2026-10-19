@@ -163,6 +163,15 @@ describe('the issue titles hook', () => {
     assert.deepEqual(await slow.flush('m1', '#1\n'), {})
   })
 
+  test('a later delta does not start the look for the cache again while gh --version is slow', async () => {
+    const { flush, runs } = engine({ gh: { 1: ok('One', 1) }, ghVersion: () => new Promise(() => {}), late: true })
+    await flush('m1', '#1\n')
+    await flush('m1', '#2\n')
+    await flush('m2', '#3\n')
+    assert.equal(runs.filter((r) => r.argv[1] === '--version').length, 1)
+    assert.equal(runs.filter((r) => r.argv[0] === 'git').length, 1)
+  })
+
   test('a title found after its delta has moved on shows in the box of the same message', async () => {
     let release
     const slow = () => new Promise((r) => (release = () => r(ok('Late one', 4))))

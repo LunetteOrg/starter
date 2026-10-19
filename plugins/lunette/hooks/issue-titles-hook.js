@@ -19,7 +19,7 @@ export const KEPT = 20
 function session() {
   return {
     info: new Map(), // number -> { title, url, at }
-    unknown: new Set(), // numbers gh answered are missing, for the session
+    unknown: new Set(), // numbers gh answered it does not know (404, 410), for the session
     pending: new Map(), // number -> its lookup, while it runs
     off: false, // gh cannot answer here (missing, not logged in, no GitHub remote)
     writing: Promise.resolve(), // cache writes, one after the other
@@ -72,7 +72,7 @@ async function lookUpOne($, s, n) {
       return
     }
     s.info.set(n, { ...e, at: await $.clock.now() })
-    const file = s.file
+    const file = s.file // set before any lookup starts (lookUp), and never unset
     s.writing = s.writing.then(() => $.fs.write(file, JSON.stringify(Object.fromEntries(s.info)))).catch(() => {})
   } catch {}
 }

@@ -72,14 +72,15 @@ day in the git directory. A delta waits for the cache and the titles at most `WA
 (`issue-titles-hook.js`); a slower title shows in a later delta, in the box or beside
 the number in the next message.
 
-- **Shown as written:** code, and a number `gh` answers with HTTP 404 or 410 (a
-  missing issue, or a repository the token cannot see).
-- **No lookup for the session** when `gh` is missing, not logged in, or the
-  repository has no GitHub remote; any other failure (a `gh` call past its 3 s
-  timeout, the network, a rate limit) is tried again.
+- **Shown as written:** code, `#0` (GitHub numbers from 1), and a number `gh` answers
+  with HTTP 404 or 410 (a missing issue, or a repository the token cannot see).
+- **No lookup for the session** when `gh` is missing (`gh --version` fails or does not
+  answer in 3 s), not logged in, or the repository has no GitHub remote. A lookup
+  that fails otherwise (past its 3 s timeout, the network, a rate limit) is tried
+  again.
 - **A title is anyone's text:** control, format and other invisible characters (line
-  separators, variation selectors, the grapheme joiner) are dropped, and a URL is shown only when it is a plain `https`
-  address, from `gh` or from the cache.
+  separators, variation selectors, the grapheme joiner) are dropped, and a URL is
+  shown only when it is a plain `https` address, from `gh` or from the cache.
 
 How a title is written is the `issues` skill's.
 
@@ -132,9 +133,9 @@ How a title is written is the `issues` skill's.
   Agents given it broke it in three samples of four, always the same way: an opening
   line repeating the numbers the person used, before any title. The reader needs to see
   what a number is, whoever wrote it.
-- **A `Stop` hook that blocks a message with a bare number until the agent corrects it.**
+- **A `Stop` hook that blocks a message with a bare number until the agent fixes it.**
   The message is already on screen when `Stop` runs, so the correction arrives as a
   second message, and a turn is spent on it.
 - **The number as a terminal hyperlink (OSC 8).** Claude Code (2.1.303, October 2026)
-  strips the escape in a hook's display text, so the sequence shows as written; a plain URL in the box is
-  opened by the terminal.
+  strips the escape in a hook's display text, so the sequence shows as written; a
+  plain URL in the box is opened by the terminal.
