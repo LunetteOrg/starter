@@ -7,9 +7,10 @@
 import { annotate, entry, footer, message, refsIn } from './issue-titles.mjs'
 
 export const DAY = 24 * 60 * 60 * 1000
-// How long a delta waits for titles: a slower lookup goes on, and its title shows in a
-// later delta: beside the number from the next message, and in the box of this one
-// when it arrives before the last delta.
+// How long a delta waits, for the cache and the titles together: what is slower goes
+// on, and its title shows in a later delta (in the box of this message when it arrives
+// before the last delta, beside the number from the next message). A cache write still
+// running when the session ends is lost, and that title is asked again next time.
 export const WAIT_MS = 800
 // Messages kept at once: one interrupted before its last delta is never closed.
 export const KEPT = 20
@@ -70,10 +71,13 @@ export function issueTitles(on) {
     } catch {}
   }
 
-  // The lookups of these numbers, waited for at most WAIT_MS.
+  // The lookups of these numbers, waited for at most WAIT_MS in all. The cache and gh
+  // are looked for at the first number of the session, not before.
   async function lookUp($, numbers) {
+    if (!numbers.length) return
     cache ??= readCache($).catch(() => null)
-    const file = await cache
+    const deadline = $.clock.sleep(WAIT_MS)
+    const file = await Promise.race([cache, deadline.then(() => null)])
     if (!file || off) return
     for (const n of numbers) {
       if (info.has(n) || unknown.has(n) || pending.has(n)) continue
@@ -83,7 +87,7 @@ export function issueTitles(on) {
       )
     }
     const waiting = numbers.map((n) => pending.get(n)).filter(Boolean)
-    if (waiting.length) await Promise.race([Promise.all(waiting), $.clock.sleep(WAIT_MS)])
+    if (waiting.length) await Promise.race([Promise.all(waiting), deadline])
   }
 
   on('classic.MessageDisplay', async ($, e, next) => {
