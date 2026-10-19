@@ -16,7 +16,12 @@ export function message() {
   return { text: '', fence: false, cited: [] }
 }
 
-const cut = (title) => (title.length > TITLE_MAX ? `${title.slice(0, TITLE_MAX - 1)}…` : title)
+// A title is anyone's text: control characters (a terminal sequence) are dropped.
+const clean = (title) => title.replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
+const cut = (title) => {
+  const t = clean(title)
+  return t.length > TITLE_MAX ? `${t.slice(0, TITLE_MAX - 1)}…` : t
+}
 
 // The line with its code spans blanked, so a match's index is still the line's.
 const prose = (line) => line.replace(/`[^`]*`/g, (span) => ' '.repeat(span.length))
@@ -60,7 +65,7 @@ export function annotate(delta, m, info) {
       if (m.cited.includes(n)) continue
       m.cited.push(n)
       const title = info.get(n)?.title
-      if (!title || seenText.includes(title.toLowerCase().slice(0, 30))) continue
+      if (!title || seenText.includes(clean(title).toLowerCase().slice(0, 30))) continue
       inserts.push({ at: match.index + match[0].length, text: ` ${dim(`· ${cut(title)}`)}` })
     }
     return inserts.reduceRight((l, { at, text }) => l.slice(0, at) + text + l.slice(at), line)

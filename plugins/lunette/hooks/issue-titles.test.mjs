@@ -66,6 +66,23 @@ describe('the title beside the number', () => {
     assert.ok(!lines[0].includes('x'.repeat(TITLE_MAX + 1)))
   })
 
+  test('two numbers on one line each get their title, in place', () => {
+    const { lines } = show(['#138 and #134.\n'])
+    assert.equal(lines[0], `#138 ${dim(`· ${known.get(138).title}`)} and #134 ${dim(`· ${known.get(134).title}`)}.\n`)
+  })
+
+  test('a short title: given in the message it is left alone, not given it is shown', () => {
+    const short = new Map([[5, { title: 'Fix CI', url: url(5) }]])
+    assert.equal(show(['#5, "Fix CI", first.\n'], short).lines[0], '#5, "Fix CI", first.\n')
+    assert.equal(show(['#5 first.\n'], short).lines[0], `#5 ${dim('· Fix CI')} first.\n`)
+  })
+
+  test('control characters in a title are dropped, so it cannot write to the terminal', () => {
+    const evil = new Map([[6, { title: 'ok\u001b]0;pwned\u0007 title', url: url(6) }]])
+    const [line] = show(['#6 here\n'], evil).lines
+    assert.equal(line, `#6 ${dim('· ok]0;pwned title')} here\n`)
+  })
+
   test('a number with no title found is left as it is', () => {
     assert.deepEqual(show(['#999 is unknown.\n']).lines, ['#999 is unknown.\n'])
   })
@@ -87,6 +104,14 @@ describe('the box of what the message cited', () => {
         dim('╰─'),
       ].join('\n'),
     )
+  })
+
+  test('the URLs line up under the widest number', () => {
+    const info = new Map([...known, [7, { title: 'Seven', url: url(7) }]])
+    const { m } = show(['#7 then #138.\n'], info)
+    const box = footer(m, info).split('\n')
+    assert.equal(box[3], `${dim('│')}      ${url(7)}`)
+    assert.equal(box[5], `${dim('│')}      ${url(138)}`)
   })
 
   test('no box when the message cites nothing found', () => {

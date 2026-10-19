@@ -69,8 +69,7 @@ cited and their URLs (`plugins/lunette/hooks/issue-titles.mjs`). It is a
 `MessageDisplay` hook: it changes the screen only, and what the agent wrote and reads
 stays as it was. The titles come from `gh` for the session's repository, cached for a
 day in the git directory; a number `gh` cannot resolve, and code, are shown as written.
-AGENTS.md has no rule on how an agent cites an issue; the `issues` skill keeps how a
-title is written.
+How a title is written is the `issues` skill's.
 
 ## Consequences
 
@@ -85,6 +84,10 @@ title is written.
 
 ### Negative / accepted risks
 
+- The titles on screen are Claude Code's and the plugin's alone: another agent, a
+  session without `gh`, or one where an organization manages Claude Code (plugin
+  hooks on `MessageDisplay` run only for plugins it lists) shows numbers as written.
+  A renamed issue shows its old title for up to a day, from the cache.
 - Skills depend on `lntt`; a generated project needs it installed, which ties the
   template to a published `@lntt/lntt`.
 - Reading the profile from the main checkout fails over to the home directory when the
@@ -120,6 +123,6 @@ title is written.
 - **A `Stop` hook that blocks a message with a bare number until the agent corrects it.**
   The message is already on screen when `Stop` runs, so the correction arrives as a
   second message, and a turn is spent on it.
-- **The number as a terminal hyperlink (OSC 8).** Claude Code strips the escape in a
-  hook's display text, so the sequence shows as written; a plain URL in the box is
+- **The number as a terminal hyperlink (OSC 8).** Claude Code (2.1.303, October 2026)
+  strips the escape in a hook's display text, so the sequence shows as written; a plain URL in the box is
   opened by the terminal.
