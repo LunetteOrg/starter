@@ -18,7 +18,11 @@ export function message() {
 
 // A title is anyone's text: control characters (a terminal sequence) are dropped.
 const clean = (title) => title.replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim()
-const cut = (title) => (title.length > TITLE_MAX ? `${title.slice(0, TITLE_MAX - 1)}…` : title)
+// Cut by characters, not UTF-16 units, so an emoji is never split.
+const cut = (title) => {
+  const chars = Array.from(title)
+  return chars.length > TITLE_MAX ? `${chars.slice(0, TITLE_MAX - 1).join('')}…` : title
+}
 
 // What a lookup or the cache gave, made safe to show: the title cleaned and not empty,
 // the URL an https address with no spaces or control characters. Null otherwise.

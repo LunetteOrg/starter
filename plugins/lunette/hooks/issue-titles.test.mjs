@@ -59,6 +59,12 @@ describe('the title beside the number', () => {
     assert.equal(lines[2], `Now #134 ${dim(`· ${known.get(134).title}`)}.\n`)
   })
 
+  test('a long title is cut by characters, never inside an emoji', () => {
+    const title = `${'x'.repeat(TITLE_MAX - 2)}🚀🚀🚀`
+    const { lines } = show(['#8 here\n'], new Map([[8, { title, url: url(8) }]]))
+    assert.ok(lines[0].includes(`${'x'.repeat(TITLE_MAX - 2)}🚀…`))
+  })
+
   test('a long title is cut', () => {
     const long = 'x'.repeat(TITLE_MAX + 20)
     const { lines } = show(['#7 here\n'], new Map([[7, { title: long, url: url(7) }]]))

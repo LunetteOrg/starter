@@ -7,8 +7,8 @@
 import { annotate, entry, footer, message, refsIn } from './issue-titles.mjs'
 
 export const DAY = 24 * 60 * 60 * 1000
-// How long a delta waits for titles: a slower lookup goes on, and its title shows
-// from the next delta, or in the box.
+// How long a delta waits for titles: a slower lookup goes on, and its title shows in
+// the message's box, and beside the number from the next message.
 export const WAIT_MS = 800
 // Messages kept at once: one interrupted before its last delta is never closed.
 export const KEPT = 20
@@ -27,24 +27,29 @@ export function issueTitles(on) {
     try {
       if (await $.fs.exists(file)) {
         const now = await $.clock.now()
-        for (const [n, v] of Object.entries(JSON.parse(await $.fs.read(file)))) {
-          const e = entry(v.title, v.url)
-          if (e && now - v.at < DAY) info.set(Number(n), { ...e, at: v.at })
+        for (const [n, v] of Object.entries(JSON.parse(await $.fs.read(file)) ?? {})) {
+          const e = entry(v?.title, v?.url)
+          if (e && typeof v.at === 'number' && now - v.at < DAY) info.set(Number(n), { ...e, at: v.at })
         }
       }
     } catch {}
     return file
   }
 
-  // One number's title and URL. A number gh answers it does not know stays unknown for
-  // the session; a timeout or an error is tried again in a later message.
-  async function fetch($, file, n) {
+  // One number's title and URL. A number gh answers it does not know (not found) stays
+  // unknown for the session; any other failure (a timeout, the network, auth, a rate
+  // limit) is tried again at the next lookup.
+  async function lookUpOne($, file, n) {
     try {
       const r = await $.process.run(['gh', 'api', `repos/{owner}/{repo}/issues/${n}`, '--jq', '[.title, .html_url] | @tsv'], {
         timeoutMs: 3000,
       })
+      if (r.exitCode !== 0) {
+        if (/Not Found|HTTP 404/i.test(r.stderr)) unknown.add(n)
+        return
+      }
       const [title, url] = r.stdout.trim().split('\t')
-      const e = r.exitCode === 0 ? entry(title, url) : null
+      const e = entry(title, url)
       if (!e) {
         unknown.add(n)
         return
@@ -63,7 +68,7 @@ export function issueTitles(on) {
       if (info.has(n) || unknown.has(n) || pending.has(n)) continue
       pending.set(
         n,
-        fetch($, file, n).finally(() => pending.delete(n)),
+        lookUpOne($, file, n).finally(() => pending.delete(n)),
       )
     }
     const waiting = numbers.map((n) => pending.get(n)).filter(Boolean)
@@ -80,10 +85,10 @@ export function issueTitles(on) {
         messages.set(e.message_id, m)
         if (messages.size > KEPT) messages.delete(messages.keys().next().value)
       }
-      await lookUp($, refsIn(delta, m))
+      // The last delta waits once, for its own numbers and the message's still missing.
+      await lookUp($, e.final ? [...m.cited, ...refsIn(delta, m)] : refsIn(delta, m))
       let shown = annotate(delta, m, info)
       if (e.final) {
-        await lookUp($, m.cited)
         shown += footer(m, info)
         messages.delete(e.message_id)
       }
