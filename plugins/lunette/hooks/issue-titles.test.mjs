@@ -200,6 +200,27 @@ describe('what is not a reference to another repository', () => {
     assert.deepEqual(refsIn('C#5, F#1, issue#4, PR#2, v1.2#3 and #7\n', message(), HOME), [k(7)])
   })
 
+  for (const word of ['bug', 'bugs', 'task', 'step', 'item', 'ticket', 'case', 'number', 'version', 'pull', 'issues', 'ui', 'next.js', 'my.repo', '3d-engine', 'v8']) {
+    test(`${word}#3 makes no reference`, () => {
+      assert.deepEqual(refsIn(`${word}#3 and #7\n`, message(), HOME), [k(7)])
+    })
+  }
+
+  test('a non-reference before the session repository is known does not make the message foreign', () => {
+    const m = message()
+    annotate('C#5 here\n', m, new Map(), null)
+    assert.equal(m.foreign, false)
+  })
+
+  test('a bare #N before the session repository is known makes the message foreign', () => {
+    const m = message()
+    assert.deepEqual(refsIn('#5\n', m, null), [])
+    annotate('#5\n', m, new Map(), null)
+    assert.deepEqual(refsIn('then #8\n', m, HOME), [])
+    const [line] = [annotate('then #8\n', m, new Map([[k(8), { title: 'Eight', url: url(8) }]]), HOME)]
+    assert.equal(line, 'then #8\n')
+  })
+
   test('. and .. are never a name', () => {
     assert.deepEqual(refsIn('x/..#5 and ../r#6 then #7\n', message(), HOME), [k(7)])
   })

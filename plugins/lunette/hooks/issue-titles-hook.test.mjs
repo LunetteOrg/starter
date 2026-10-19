@@ -185,8 +185,29 @@ describe('the issue titles hook', () => {
     await flush('m1', 'see x/pelion#3\n')
     answer()
     await new Promise((r) => setImmediate(r))
-    await flush('m1', 'then #7\n')
-    assert.ok(!calls.includes(7))
+    assert.deepEqual(await flush('m1', 'then #7\n'), {})
+    assert.deepEqual(calls, [])
+  })
+
+  test('the session repository is read in lower case', async () => {
+    const { flush, calls } = engine({ gh: { 1: ok('One', 1) }, home: 'O/R' })
+    assert.match((await flush('m1', '#1\n')).displayContent, /· One/)
+    assert.deepEqual(calls, [1])
+  })
+
+  test('gh repo view exiting non-zero is no repository, whatever it prints', async () => {
+    const home = () => Promise.resolve({ exitCode: 1, stdout: 'o/r\n', stderr: 'error' })
+    const { flush, calls } = engine({ gh: { 1: ok('One', 1) }, home })
+    assert.deepEqual(await flush('m1', '#1\n'), {})
+    assert.deepEqual(calls, [])
+  })
+
+  test('a cache key that is not a lower-case owner/repo#N is skipped', async () => {
+    const entry = (n) => ({ title: `Cached ${n}`, url: `https://github.com/o/r/issues/${n}`, at: NOW })
+    const files = { [CACHE]: JSON.stringify({ 'O/R#5': entry(5), './x#6': entry(6), '../r#7': entry(7), 'r#8': entry(8) }) }
+    const { flush } = engine({ files })
+    const shown = await flush('m1', '#5 #6 #7 #8\n')
+    assert.doesNotMatch(shown?.displayContent ?? '', /Cached/)
   })
 
   test('the box labels a reference to the session repository as #N', async () => {

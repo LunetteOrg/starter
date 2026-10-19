@@ -76,9 +76,11 @@ the number in the next message.
 
 - **Never a title from the wrong repository:** once a message cites another
   repository, or cites anything before the session's repository is known, a bare `#N`
-  after it may mean either, and is shown as written. A word that cannot be a
-  repository name (`C#5`, `issue#4`, `v1.2#3`) makes no reference; names are compared
-  in lower case.
+  after it may mean either, and is shown as written. `repo#N` alone is read only when
+  the word is likely a repository (three characters or more, a letter first, no dot,
+  not a word like `issue`): `C#5` and `v1.2#3` make no reference, and neither does a
+  short or dotted name (`ui#5`, `next.js#5`), cited as `owner/repo#N` instead. Names
+  are compared in lower case.
 - **Shown as written:** code, a link's URL (a title goes after the link), `#0` (GitHub
   numbers from 1), and a reference `gh` answers with HTTP 404 or 410 (a missing issue,
   or a repository the token cannot see).

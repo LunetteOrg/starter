@@ -14,9 +14,11 @@ const FENCE = /^\s*(```|~~~)/
 // a letter or digit, so `.` and `..` are never one.
 const NAME = '[A-Za-z0-9][\\w.-]*'
 const REF = new RegExp(`(^|[^\\w&/#.-])(?:(?:(${NAME})\\/)?(${NAME}))?#([1-9]\\d*)\\b`, 'g')
-// `repo#N` alone is read as a repository only when the word could be one: three
-// characters or more, and not a word that is often put before a number. A word that
-// cannot be one (`C#5`, `issue#4`, `v1.2#3`) makes no reference at all.
+// `repo#N` alone is read as a repository only when the word is likely one: three
+// characters or more, starting with a letter, with no dot, and not a word often put
+// before a number. Otherwise it makes no reference at all: not `C#5`, `issue#4` or
+// `v1.2#3`, and not a real but short or dotted name either (`ui#5`, `next.js#5`), which
+// is cited as `owner/repo#N` to get its title.
 const NOT_REPO = /^(issues?|prs?|pull|pulls|bug|bugs|task|tasks|step|steps|item|items|ticket|tickets|case|no|nr|num|number|version|v\d.*|[^a-z].*)$/i
 const repoWord = (r) => r.length >= 3 && !r.includes('.') && !NOT_REPO.test(r)
 // A Markdown link: its text is read, its URL is not, and a title goes after it.
@@ -38,7 +40,7 @@ const parts = (home) => (home ? home.split('/') : [null, null])
 function refOf(match, home, foreign) {
   const [owner, repo] = parts(home)
   const [, , o, r, n] = match
-  if (!r) return { key: home && !foreign ? `${owner}/${repo}#${n}` : null, other: false }
+  if (!r) return { key: home && !foreign ? `${owner}/${repo}#${n}` : null, other: !home }
   if (!o && !repoWord(r)) return { key: null, other: false }
   const full = o ? `${o}/${r}`.toLowerCase() : owner ? `${owner}/${r.toLowerCase()}` : null
   return { key: full && `${full}#${n}`, other: !home || full !== home }
@@ -105,7 +107,7 @@ export function refsIn(delta, m, home) {
     if (!isProse) continue
     for (const match of prose(line).matchAll(REF)) {
       const { key, other } = refOf(match, home, foreign)
-      if (other || !home) foreign = true
+      if (other) foreign = true
       if (key && !m.cited.includes(key) && !found.includes(key)) found.push(key)
     }
   }
@@ -124,7 +126,7 @@ export function annotate(delta, m, info, home) {
     const inserts = []
     for (const match of prose(line).matchAll(REF)) {
       const { key, other } = refOf(match, home, m.foreign)
-      if (other || !home) m.foreign = true
+      if (other) m.foreign = true
       if (!key || m.cited.includes(key)) continue
       m.cited.push(key)
       const title = info.get(key)?.title
