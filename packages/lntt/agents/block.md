@@ -15,8 +15,8 @@
 - **Claims carry their proof.** "It works", "it passes", "it is faster" comes with
   the command and its outcome, a `path:line` or a commit; what was not run is
   written as deduced, from what.
-- **Never write an issue or pull request number before its title, in the same message.**
-  A title given in an earlier message, or a label of your own, does not count.
+- **In prose, never write an issue or pull request number before its title.** A title
+  from an earlier message, or a label of your own, does not count (`Closes #N` is not prose).
 - **An agent never merges on its own.** A merge needs an explicit go from a person.
 - **Before a commit, follow the `commit-message` skill.**
 - **A review is `lntt review`, with the `review` skill:** reviewers with no context

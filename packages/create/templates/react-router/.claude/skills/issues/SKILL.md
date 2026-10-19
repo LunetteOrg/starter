@@ -29,8 +29,8 @@ so that the list is enough.
   that closes the issue: "Turn Ryuk back on, so a killed run cleans up after
   itself". A user story ("As a …, I want …") helps while it stays short; it is not
   required.
-- **Never write an issue or pull request number before its title, in the same message.**
-  A title given in an earlier message, or a label of your own, does not count.
+- **In prose, never write an issue or pull request number before its title.** A title
+  from an earlier message, or a label of your own, does not count (`Closes #N` is not prose).
 
 This skill mutates GitHub (creates milestones/projects/fields, edits issues), so
 it works against a PR/board the user owns. **Always show the plan and confirm
