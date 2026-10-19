@@ -13,13 +13,17 @@ const notFound = { exitCode: 1, stdout: '', stderr: 'gh: Not Found (HTTP 404)' }
 // returning a promise), the files are `files`, and each gh call is recorded. The
 // clock's sleep never ends, so a delta waits for its lookups, unless `late` makes it
 // end at once: then a lookup still running is past its wait.
-function engine({ gh = {}, files = {}, git = 0, late = false } = {}) {
+function engine({ gh = {}, files = {}, git = 0, late = false, ghVersion = 0, write = null } = {}) {
   const calls = []
   const waits = []
   const $ = {
     process: {
       run: async (argv) => {
         if (argv[0] === 'git') return { exitCode: git, stdout: git ? '' : `${GIT}\n`, stderr: '' }
+        if (argv[1] === '--version') {
+          if (ghVersion instanceof Error) throw ghVersion
+          return { exitCode: ghVersion, stdout: 'gh version 2.99.0\n', stderr: '' }
+        }
         const n = argv[2].split('/').pop()
         calls.push(Number(n))
         const answer = gh[n] ?? notFound
@@ -32,6 +36,7 @@ function engine({ gh = {}, files = {}, git = 0, late = false } = {}) {
       read: async (p) => files[p],
       write: async (p, t) => {
         files.__failOnce?.()
+        if (write) await write()
         files[p] = t
       },
     },
@@ -124,6 +129,35 @@ describe('the issue titles hook', () => {
       assert.match(shown.displayContent, /· Cached/)
     })
   }
+
+  for (const [what, ghVersion] of [['missing', new Error('spawn gh ENOENT')], ['broken', 127]]) {
+    test(`gh ${what} stops the lookups before any`, async () => {
+      const { flush, calls } = engine({ gh: { 1: ok('One', 1) }, ghVersion })
+      assert.deepEqual(await flush('m1', '#1\n'), {})
+      assert.deepEqual(calls, [])
+    })
+  }
+
+  test('a repository with no GitHub remote stops the lookups for the session', async () => {
+    const answer = { exitCode: 1, stdout: '', stderr: 'unable to expand placeholder in path: no git remotes found' }
+    const { flush, calls } = engine({ gh: { 1: answer, 2: answer } })
+    await flush('m1', '#1\n')
+    await flush('m2', '#2\n')
+    assert.deepEqual(calls, [1])
+  })
+
+  test('two titles found together are both in the cache, however slow the writes', async () => {
+    const releases = []
+    const write = () => new Promise((r) => releases.push(r))
+    const { flush, files } = engine({ gh: { 1: ok('One', 1), 2: ok('Two', 2) }, write })
+    await flush('m1', '#1 and #2\n')
+    while (releases.length) {
+      releases.pop()()
+      await new Promise((r) => setImmediate(r))
+    }
+    const cached = JSON.parse(files[CACHE])
+    assert.deepEqual([cached[1]?.title, cached[2]?.title], ['One', 'Two'])
+  })
 
   test('a cache write that fails still shows the title, and later writes go on', async () => {
     const { flush, files } = engine({ gh: { 1: ok('One', 1), 2: ok('Two', 2) } })

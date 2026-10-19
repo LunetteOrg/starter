@@ -71,8 +71,8 @@ stays as it was. The titles come from `gh` for the session's repository, cached 
 day in the git directory. A delta waits for them at most `WAIT_MS`
 (`issue-titles-hook.js`): a slower title shows in a later delta, beside the number from
 the next message. Code is shown as written, and so is a number `gh` answers is missing
-(HTTP 404 or 410); when `gh` is not logged in the lookups stop for the session, and any
-other failure is tried again. A title is anyone's text: its control and format
+(HTTP 404 or 410); when `gh` cannot answer here (missing, not logged in, no GitHub
+remote) the lookups stop for the session, and any other failure is tried again. A title is anyone's text: its control and format
 characters are dropped, and a URL is shown only when it is a plain `https` address,
 from `gh` or from the cache.
 How a title is written is the `issues` skill's.

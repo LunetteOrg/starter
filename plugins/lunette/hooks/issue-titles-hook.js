@@ -18,7 +18,7 @@ export function issueTitles(on) {
   const info = new Map() // number -> { title, url, at }
   const unknown = new Set() // numbers gh answered it does not know, for the session
   const pending = new Map() // number -> its lookup, while it runs
-  let off = false // gh is not logged in: no lookup for the rest of the session
+  let off = false // gh cannot answer here (missing, not logged in, no GitHub remote): no lookup for the session
   let writing = Promise.resolve() // cache writes, one after the other
   const messages = new Map() // message_id -> what that message has shown so far
   let cache = null // the cache file's path, once looked for (null outside a repository)
@@ -26,6 +26,11 @@ export function issueTitles(on) {
   async function readCache($) {
     const r = await $.process.run(['git', 'rev-parse', '--absolute-git-dir'])
     if (r.exitCode !== 0) return null
+    try {
+      off = (await $.process.run(['gh', '--version'], { timeoutMs: 3000 })).exitCode !== 0
+    } catch {
+      off = true
+    }
     const file = `${r.stdout.trim()}/lntt-issue-titles.json`
     try {
       if (await $.fs.exists(file)) {
@@ -41,9 +46,9 @@ export function issueTitles(on) {
   }
 
   // One number's title and URL. A number gh answers is not there (not found, gone)
-  // stays unknown for the session; gh not logged in stops the lookups for the session;
-  // any other failure (a timeout, the network, a rate limit) is tried again at the next
-  // lookup.
+  // stays unknown for the session; gh not logged in, or a repository with no GitHub
+  // remote, stops the lookups for the session; any other failure (a timeout, the
+  // network, a rate limit) is tried again at the next lookup.
   async function lookUpOne($, file, n) {
     try {
       const r = await $.process.run(['gh', 'api', `repos/{owner}/{repo}/issues/${n}`, '--jq', '[.title, .html_url] | @tsv'], {
@@ -51,7 +56,7 @@ export function issueTitles(on) {
       })
       if (r.exitCode !== 0) {
         if (/HTTP (404|410)\b/.test(r.stderr)) unknown.add(n)
-        else if (/gh auth login|HTTP 401/i.test(r.stderr)) off = true
+        else if (/gh auth login|HTTP 401|unable to expand placeholder/i.test(r.stderr)) off = true
         return
       }
       const [title, url] = r.stdout.trim().split('\t')
