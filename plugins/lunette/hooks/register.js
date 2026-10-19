@@ -2,8 +2,10 @@
 // above the prompt shows it (its phase as a bar, the tokens, the agents running, a
 // failure in red), with no Claude turn; `/review-status` prints the same. It reads the
 // progress events lntt review writes to <git dir>/lntt-review.progress and only shows
-// them: what to show is review-band.mjs, tested on its own.
+// them: what to show is review-band.mjs, tested on its own. The issue titles on screen
+// are issue-titles-hook.js.
 
+import { issueTitles } from './issue-titles-hook.js'
 import { bandLines, fold, readEvents, SPIN_MS } from './review-band.mjs'
 
 let progressFile = null
@@ -38,6 +40,7 @@ async function refresh($) {
 const running = () => view && view.round !== null && !view.done && !view.error
 
 export function register(on) {
+  issueTitles(on)
   on('session.start', async ($, e, next) => {
     await locate($)
     $.clock.every(1000, () => refresh($))

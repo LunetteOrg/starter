@@ -61,6 +61,17 @@ people need (handle, role, ownership) goes in the tracked `team` section instead
 `.agents/` is the directory agents already share: `npx skills` and the Agent Skills
 guidance use `.agents/skills/` and `~/.agents/skills/` across clients.
 
+### What a number means is shown on screen, not asked of the agent
+
+In Claude Code the `lunette` plugin shows, beside the first `#N` of each message, the
+title of that issue or pull request, dimmed, and ends the message with a box of what it
+cited and their URLs (`plugins/lunette/hooks/issue-titles.mjs`). It is a
+`MessageDisplay` hook: it changes the screen only, and what the agent wrote and reads
+stays as it was. The titles come from `gh` for the session's repository, cached for a
+day in the git directory; a number `gh` cannot resolve, and code, are shown as written.
+AGENTS.md has no rule on how an agent cites an issue; the `issues` skill keeps how a
+title is written.
+
 ## Consequences
 
 ### Positive
@@ -102,3 +113,13 @@ guidance use `.agents/skills/` and `~/.agents/skills/` across clients.
   Code from reading `AGENTS.md`.
 - **A directory named after Lunette** (`.lunette/`). `.agents/` is the name agents
   already share.
+- **A rule in AGENTS.md that an agent writes each issue's title beside its number.**
+  Agents given it broke it in three samples of four, always the same way: an opening
+  line repeating the numbers the person used, before any title. The reader needs to see
+  what a number is, whoever wrote it.
+- **A `Stop` hook that blocks a message with a bare number until the agent corrects it.**
+  The message is already on screen when `Stop` runs, so the correction arrives as a
+  second message, and a turn is spent on it.
+- **The number as a terminal hyperlink (OSC 8).** Claude Code strips the escape in a
+  hook's display text, so the sequence shows as written; a plain URL in the box is
+  opened by the terminal.
