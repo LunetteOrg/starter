@@ -5,7 +5,7 @@ name: CI
 #   when it leaves draft. The author has `pnpm ci:local` green before that;
 # - a pull request into a candidate runs the minimal CI: what a clean machine catches
 #   and the author's machine may not (frozen install, lint, typecheck, lntt check, the
-#   branch name, the plugin version);
+#   branch name, the plugin version and its validation);
 # - a pull request into the default branch (the candidate itself, a hotfix) and a push
 #   to it run the full CI, tests and scaffold smoke included. The push gates a release.
 on:
@@ -40,6 +40,11 @@ jobs:
       # An installed plugin updates only when its version changes.
       - if: github.event_name == 'pull_request'
         run: sh scripts/check-plugin-version.sh origin/${{ github.base_ref }}
+      # The engine refuses a hooks module its own checker refuses, and no test sees that
+      # (a function given `$` must be declared at the top of its file): validate each
+      # plugin with the Claude Code that loads it. It needs no login. The pinned version
+      # is the one the plugin was last checked with; raise it with the plugin.
+      - run: for p in plugins/*/; do pnpm dlx @anthropic-ai/claude-code@2.1.303 plugin validate "$p" || exit 1; done
       # Every published package carries the CLI's version (docs/adr/cli-runtime-and-publishing.md).
       - run: node scripts/packages-version.mts check
       - run: pnpm typecheck
