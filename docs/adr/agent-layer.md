@@ -61,6 +61,37 @@ people need (handle, role, ownership) goes in the tracked `team` section instead
 `.agents/` is the directory agents already share: `npx skills` and the Agent Skills
 guidance use `.agents/skills/` and `~/.agents/skills/` across clients.
 
+### What a number means is shown on screen, not asked of the agent
+
+In Claude Code the `lunette` plugin shows, beside the first `#N` or `owner/repo#N` of
+each message, the title of that issue or pull request, dimmed, and ends the message
+with a box of what it cited and their URLs (`plugins/lunette/hooks/issue-titles.mjs`).
+It is a `MessageDisplay` hook: it changes the screen only, and what the agent wrote and
+reads stays as it was. The titles come from `gh`, cached for a day in the git
+directory: `#N` (and `repo#N` naming the same repository) from the session's
+repository as `gh repo view` names it, `owner/repo#N` from that repository. A delta
+waits for the cache and the titles at most `WAIT_MS` (`issue-titles-hook.js`); a slower
+title shows in a later delta, in the box or beside the number in the next message.
+
+- **Never a title from the wrong repository:** a message that cites another
+  repository, or any reference before the session's repository is known (a bare `#N`
+  too), shows every bare `#N` after that as written. Any other `word#N` is no
+  reference (`C#5`, `fix#12`, `starter#94` written in another repository's session);
+  when the word could be a repository name (three characters or more, a letter
+  first) it counts as another repository. Names are compared in lower case.
+- **Shown as written:** code, a link's URL (a title goes after the link), `#0` (GitHub
+  numbers from 1), and a reference `gh` answers with HTTP 404 or 410 (a missing issue,
+  or a repository the token cannot see).
+- **Nothing for the session** when `gh repo view` fails or does not answer within
+  `GH_TIMEOUT_MS` (`gh` missing, not logged in, no GitHub remote): without the
+  session's repository no reference is shown, not even a cached one. A lookup that
+  fails otherwise (past `GH_TIMEOUT_MS`, the network, a rate limit) is tried again.
+- **A title is anyone's text:** control, format and other invisible characters (line
+  separators, variation selectors, the grapheme joiner) are dropped, and a URL is
+  shown only when it is a plain `https` address, from `gh` or from the cache.
+
+How a title is written is the `issues` skill's.
+
 ## Consequences
 
 ### Positive
@@ -74,6 +105,17 @@ guidance use `.agents/skills/` and `~/.agents/skills/` across clients.
 
 ### Negative / accepted risks
 
+- A `gh repo view` slower than `GH_TIMEOUT_MS` at the start of a session (a slow
+  network) turns the titles off until the next session.
+- Another repository's issue gets a title only when cited as `owner/repo#N`; a short
+  `repo#N` from a session in another repository is shown as written.
+- Prose with a word before `#` that could be a repository name (`issue#4`, `fix#12`)
+  leaves every bare `#N` after it in that message as written: titles are lost where
+  they would have been right, so that none is ever wrong.
+- The titles on screen are Claude Code's and the plugin's alone: another agent, a
+  session without `gh`, or one where an organization manages Claude Code (plugin
+  hooks on `MessageDisplay` run only for plugins it lists) shows numbers as written.
+  A renamed issue shows its old title for up to a day, from the cache.
 - Skills depend on `lntt`; a generated project needs it installed, which ties the
   template to a published `@lntt/lntt`.
 - Reading the profile from the main checkout fails over to the home directory when the
@@ -87,6 +129,8 @@ guidance use `.agents/skills/` and `~/.agents/skills/` across clients.
   personal context: move the profile there.
 - A process area's values stop fitting a schema (every project needs free text): that
   area's content belongs in its process description.
+- Claude Code draws terminal hyperlinks (OSC 8) in a hook's display text: the number
+  itself can link to its issue.
 
 ## Discarded directions
 
@@ -102,3 +146,19 @@ guidance use `.agents/skills/` and `~/.agents/skills/` across clients.
   Code from reading `AGENTS.md`.
 - **A directory named after Lunette** (`.lunette/`). `.agents/` is the name agents
   already share.
+- **A rule in AGENTS.md that an agent writes each issue's title beside its number.**
+  Agents given it broke it in three samples of four, always the same way: an opening
+  line repeating the numbers the person used, before any title. The reader needs to see
+  what a number is, whoever wrote it.
+- **A `Stop` hook that blocks a message with a bare number until the agent fixes it.**
+  The message is already on screen when `Stop` runs, so the correction arrives as a
+  second message, and a turn is spent on it.
+- **The number as a terminal hyperlink (OSC 8).** The sequence showed as written in a
+  hook's display text when it was tried; a plain URL in the box is opened by the
+  terminal (see the revisit triggers).
+- **`repo#N` read as a repository of the session's owner.** A word before `#` is often
+  no repository (`fix#12`, `jira#9`): each cost a lookup that failed, and a wrong owner
+  gave a wrong title or none.
+- **A list of words that are not repositories** (`issue`, `bug`, `task`). A closed list
+  lets every other word through; a word that could be a name is treated as another
+  repository instead.

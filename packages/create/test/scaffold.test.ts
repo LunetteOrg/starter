@@ -55,14 +55,14 @@ test('default template scaffolds a complete, renamed starter', () => {
     assert.deepEqual(filesContaining(app, '@starter'), [], 'no @starter residue')
     assert.deepEqual(filesContaining(app, '__LNTT_'), [], 'no provenance placeholder residue')
   } finally {
-    rmSync(dirname(app), { recursive: true, force: true })
+    rmSync(dirname(app), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 })
 
 test('unknown template is rejected', () => {
   const dir = mkdtempSync(join(tmpdir(), 'lntt-create-'))
   assert.throws(() => execFileSync('node', [BIN, 'x', '--template', 'nope'], { cwd: dir, stdio: 'ignore' }))
-  rmSync(dir, { recursive: true, force: true })
+  rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 test('a scaffolded project records the template and the CLI version it came from', () => {
@@ -75,7 +75,7 @@ test('a scaffolded project records the template and the CLI version it came from
     const subject = execFileSync('git', ['log', '-1', '--format=%s'], { cwd: app, encoding: 'utf8' }).trim()
     assert.equal(subject, `chore: scaffold my-app from @lntt/create ${version} (template react-router)`)
   } finally {
-    rmSync(dirname(app), { recursive: true, force: true })
+    rmSync(dirname(app), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 })
 
@@ -125,6 +125,6 @@ test('the react-router template keeps naming @lntt/create after scaffolding', ()
     assert.match(readFileSync(join(app, 'README.md'), 'utf8'), /@lntt\/create/)
     assert.deepEqual(filesContaining(app, '@my-app/create'), [], 'no @lntt rewritten to the project scope')
   } finally {
-    rmSync(dirname(app), { recursive: true, force: true })
+    rmSync(dirname(app), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 })

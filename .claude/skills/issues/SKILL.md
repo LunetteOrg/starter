@@ -36,8 +36,6 @@ so that the list is enough.
   that closes the issue: "Turn Ryuk back on, so a killed run cleans up after
   itself". A user story ("As a …, I want …") helps while it stays short; it is not
   required.
-- **In conversation, never the number alone.** Name an issue by its title, or after
-  describing it in the same message: a bare `#81` says nothing to whoever reads it.
 
 This skill mutates GitHub (creates milestones/projects/fields, edits issues), so
 it works against a PR/board the user owns. **Always show the plan and confirm

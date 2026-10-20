@@ -14,7 +14,7 @@ const mktmp = (): string => {
   return d
 }
 after(() => {
-  for (const d of tmps) rmSync(d, { recursive: true, force: true })
+  for (const d of tmps) rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 // The bin runs from INSIDE node_modules once installed — exactly what `npm create`

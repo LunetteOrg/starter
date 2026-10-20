@@ -37,7 +37,7 @@ before(() => {
 })
 
 after(() => {
-  if (root) rmSync(root, { recursive: true, force: true })
+  if (root) rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
 test('scaffolded project installs, lints and typechecks clean', { skip }, () => {
