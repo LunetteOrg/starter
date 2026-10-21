@@ -167,6 +167,12 @@ describe('the command line', () => {
   test('a usage error exits 2', () => {
     assert.equal(spawnSync('node', [BIN, 'frobnicate'], { cwd: root }).status, 2)
   })
+
+  test('--help prints the usage on stdout and exits 0, with no configuration', () => {
+    const run = spawnSync('node', [BIN, '--help'], { cwd: root, encoding: 'utf8' })
+    assert.equal(run.status, 0)
+    assert.match(run.stdout, /^usage: lntt /)
+  })
 })
 
 describe('the local section', () => {
