@@ -164,7 +164,24 @@ function halted(options: RunOptions, state: RunState): string | null {
   return null
 }
 
-const readLoad = (options: RunOptions) => Promise.resolve().then(() => (options.load ?? machineLoad)())
+// A load that cannot be read does not hold the step's outcome back.
+const readLoad = (options: RunOptions) =>
+  Promise.resolve()
+    .then(() => (options.load ?? machineLoad)())
+    .catch(() => 'load unavailable')
+
+// Once the run has passed its deadline, the step about to start is where it stopped,
+// whatever its kind: it fails with the reason and the load, and what is left is skipped.
+function pastDeadline(options: RunOptions, state: RunState): Promise<Outcome> | null {
+  const deadline = options.deadline
+  if (!deadline || Date.now() < deadline.at) return null
+  state.overrun = true
+  return readLoad(options).then((load) => ({
+    status: 'failed',
+    reason: `${deadline.reason} — ${load}`,
+    timedOut: true,
+  }))
+}
 
 function exec(
   argv: string[],
@@ -174,16 +191,9 @@ function exec(
   state: RunState,
 ): Promise<Outcome> {
   if (options.signal?.aborted) return Promise.resolve(INTERRUPTED)
+  const past = pastDeadline(options, state)
+  if (past) return past
   const deadline = options.deadline
-  if (deadline && Date.now() >= deadline.at) {
-    // The run passed its deadline between two commands: this one is where it stopped.
-    state.overrun = true
-    return readLoad(options).then((load) => ({
-      status: 'failed',
-      reason: `${deadline.reason} — ${load}`,
-      timedOut: true,
-    }))
-  }
   return new Promise((resolve) => {
     const child = spawn(argv[0], argv.slice(1), {
       cwd,
@@ -234,6 +244,8 @@ function exec(
 }
 
 async function runLocal(local: Local, options: RunOptions, state: RunState): Promise<Outcome> {
+  const past = pastDeadline(options, state)
+  if (past) return past
   switch (local.kind) {
     case 'noop':
       return { status: 'noop', reason: local.note }

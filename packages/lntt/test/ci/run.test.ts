@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, test } from 'node:test'
+import { afterEach, beforeEach, describe, mock, test } from 'node:test'
 import { SHELLS } from '../../src/ci/actions.ts'
 import type { Event } from '../../src/ci/event.ts'
 import type { Job, Local, Step } from '../../src/ci/plan.ts'
@@ -445,6 +445,48 @@ describe('timeouts', () => {
     assert.equal(existsSync(join(dir, 'out')), false)
   })
 
+  test('a deadline passed during a check stops the run at the next step, whatever its kind', async () => {
+    const reason = 'past the deadline'
+    const slow: Local = {
+      kind: 'check',
+      note: 'slow',
+      check: () => {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200)
+        return null
+      },
+    }
+    const results = await runJobs(
+      [
+        job('ci.yml/a', [
+          { label: 'one', local: slow },
+          { label: 'two', local: { kind: 'noop', note: 'nothing to do' } },
+          { label: 'three', local: { kind: 'noop', note: 'nothing to do' } },
+        ]),
+        job('ci.yml/b', [{ label: 'b', local: { kind: 'noop', note: 'nothing to do' } }]),
+      ],
+      { ...quiet, deadline: { at: Date.now() + 100, reason }, load: () => 'load 2.0' },
+    )
+    assert.deepEqual(
+      results[0].steps.map((s) => [s.status, s.reason]),
+      [
+        ['passed', 'slow'],
+        ['failed', `${reason} — load 2.0`],
+        ['skipped', reason],
+      ],
+    )
+    assert.deepEqual([results[1].status, results[1].reason], ['skipped', reason])
+    assert.equal(exitCode(results, { strict: false }), 1)
+  })
+
+  test('a load that cannot be read does not hold the step back', async () => {
+    const results = await runJobs([job('ci.yml/a', [{ label: 'hang', local: run('sleep 30') }])], {
+      ...quiet,
+      timeoutMs: 100,
+      load: () => Promise.reject(new Error('no load')),
+    })
+    assert.equal(results[0].steps[0].reason, 'timed out after 0.1s — load unavailable')
+  })
+
   test('the report prints the timeout next to the step and says it is not a verdict', async () => {
     const event: Event = {
       name: 'pull_request',
@@ -537,5 +579,52 @@ describe('stopping', () => {
       },
     })
     assert.equal(terminate(group), false)
+  })
+
+  test('terminate leaves alone the group of a closed command, even while a member still runs', async () => {
+    let group = 0
+    // The command closes at once; the sleep it started stays in its group.
+    await runJobs([job('ci.yml/a', [{ label: 'quick', local: run('sleep 30 & echo started') }])], {
+      ...quiet,
+      onGroup: (g) => {
+        if (g) group = g
+      },
+    })
+    try {
+      assert.doesNotThrow(() => process.kill(-group, 0), 'a member of the group still runs')
+      assert.equal(terminate(group), false)
+      assert.doesNotThrow(() => process.kill(-group, 0), 'terminate signalled the group')
+    } finally {
+      process.kill(-group, 'SIGKILL')
+    }
+    await gone(-group)
+  })
+
+  test('terminate on a running group that is gone when signalled: false, and no SIGKILL follows', async () => {
+    let group = 0
+    const running = runJobs([job('ci.yml/a', [{ label: 'long', local: run('sleep 30') }])], {
+      ...quiet,
+      onGroup: (g) => {
+        if (g) group = g
+      },
+    })
+    await until(() => group !== 0)
+    const kill = process.kill.bind(process)
+    const signals: (string | number | undefined)[] = []
+    // The group was killed outside: the SIGTERM finds no process.
+    mock.method(process, 'kill', (pid: number, signal?: string | number) => {
+      if (pid !== -group) return kill(pid, signal)
+      signals.push(signal)
+      throw Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' })
+    })
+    try {
+      assert.equal(terminate(group, 20), false)
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      assert.deepEqual(signals, ['SIGTERM'])
+    } finally {
+      mock.restoreAll()
+    }
+    kill(-group, 'SIGKILL')
+    await running
   })
 })

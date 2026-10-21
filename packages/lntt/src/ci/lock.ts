@@ -45,11 +45,26 @@ export interface Owner extends Identity {
 export const MAX_HOLD_MINUTES = 120
 export const TAKEOVER_GRACE_MINUTES = 2
 
+// The run's own limit (run.ts, `deadline`): the maximum hold time, from when `owner` took
+// the lock.
+export function holdDeadline(owner: Owner): { at: number; reason: string } {
+  return {
+    at: Date.parse(owner.started) + MAX_HOLD_MINUTES * 60_000,
+    reason: `the run passed the lock's maximum hold time of ${MAX_HOLD_MINUTES} minutes`,
+  }
+}
+
 // A record is written whole under another name and linked in, so an unreadable one is a
 // crash between the two or a file put there by hand; after this long it is stale. The
 // takeover guard is held for a few file operations, so one this old was left by a crash.
 const UNREADABLE_STALE_MS = 10_000
 const GUARD_STALE_MS = 10_000
+
+// How long a change waits for the takeover guard before it gives up: a step's process
+// group briefly, at each start and close of a step; a release longer, after which the
+// record goes stale by its owner's dead pid.
+export const GROUP_WAIT_MS = 200
+export const RELEASE_WAIT_MS = 2000
 
 // How long a waiter pauses before looking again at a lock that vanished as it read it,
 // or whose takeover guard another run holds.
@@ -160,7 +175,8 @@ function takeGuard(path: string): (() => void) | null {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
     try {
-      if (Date.now() - statSync(guard).mtimeMs > GUARD_STALE_MS) unlinkSync(guard)
+      const seen = readFileSync(guard, 'utf8')
+      if (Date.now() - statSync(guard).mtimeMs > GUARD_STALE_MS) removeStaleGuard(guard, seen)
     } catch {}
     return null
   }
@@ -174,11 +190,37 @@ function takeGuard(path: string): (() => void) | null {
   }
 }
 
-// The guard for a synchronous change: waits for it in short steps.
-function withGuardSync(path: string, change: () => void): void {
+// Removes the guard left by a crash, `seen` its content, if it is still that guard and
+// still old; whether it did. Renamed aside first, so that of two waiters that judged it
+// stale only one gets it; a fresh guard renamed aside by the other is linked back.
+export function removeStaleGuard(guard: string, seen: string, now: () => number = Date.now): boolean {
+  const aside = temporaryName(guard)
+  try {
+    renameSync(guard, aside)
+  } catch {
+    return false
+  }
+  try {
+    const stale = readFileSync(aside, 'utf8') === seen && now() - statSync(aside).mtimeMs > GUARD_STALE_MS
+    if (!stale) {
+      try {
+        linkSync(aside, guard)
+      } catch {}
+    }
+    return stale
+  } finally {
+    rmSync(aside, { force: true })
+  }
+}
+
+// The guard for a synchronous change: waits for it in short steps, up to `waitMs`, then
+// gives up without making the change.
+function withGuardSync(path: string, waitMs: number, change: () => void): void {
   const pause = new Int32Array(new SharedArrayBuffer(4))
+  const until = Date.now() + waitMs
   let free = takeGuard(path)
   while (!free) {
+    if (Date.now() >= until) return
     Atomics.wait(pause, 0, 0, 10)
     free = takeGuard(path)
   }
@@ -263,16 +305,16 @@ function current(path: string): Owner | null {
 }
 
 // Removes the lock if its record is still the one `owner` published.
-export function release(path: string, owner: Owner): void {
-  withGuardSync(path, () => {
+export function release(path: string, owner: Owner, waitMs = RELEASE_WAIT_MS): void {
+  withGuardSync(path, waitMs, () => {
     if (ours(current(path), owner)) rmSync(path, { force: true })
   })
 }
 
 // Rewrites the record with the step's process group, while it is still the one `owner`
 // published: written whole under another name, then renamed over the lock.
-export function recordGroup(path: string, owner: Owner, group: number | null): void {
-  withGuardSync(path, () => {
+export function recordGroup(path: string, owner: Owner, group: number | null, waitMs = GROUP_WAIT_MS): void {
+  withGuardSync(path, waitMs, () => {
     if (!ours(current(path), owner)) return
     const { group: _, ...rest } = owner
     const temporary = temporaryName(path)
@@ -356,10 +398,11 @@ export function groupAlive(group: number): boolean {
 // Why the lock could not be taken, in one line; `ci local` exits 1 on it.
 export class LockError extends Error {}
 
-function lockError(error: unknown, path: string): LockError {
-  const reason = ((error as { stderr?: string }).stderr || (error as Error).message || String(error))
-    .trim()
-    .split('\n')[0]
+// The reason is the first line of the error's stderr or message, else its code or name.
+export function lockError(error: unknown, path: string): LockError {
+  const failure = error as { stderr?: string; message?: string; code?: string; name?: string }
+  const reason =
+    (failure?.stderr || failure?.message || '').trim().split('\n')[0] || failure?.code || failure?.name || String(error)
   return new LockError(`cannot take the ci:local lock (${reason}) — ${path}; --no-lock runs without it`)
 }
 

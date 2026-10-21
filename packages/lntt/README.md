@@ -434,8 +434,9 @@ configuration error, 2 a usage error.
   <N>m ago) — <lock file>`, looks again every 5 seconds, and says how long it waited
   once it has the lock.
 - **The maximum hold time.** A holder's run stops 120 minutes after it took the lock:
-  the running step is stopped as on a timeout and fails with the machine's load, the
-  rest is skipped with `the run passed the lock's maximum hold time of 120 minutes`,
+  the running step is stopped as on a timeout and fails with the machine's load (past
+  it between two steps, the next step to start fails so, whatever its kind), the rest
+  is skipped with `the run passed the lock's maximum hold time of 120 minutes`,
   and the run exits 1.
 - **A stale lock is taken over:** its owner is no longer running and neither is the
   step it recorded, its record is unreadable for more than 10 seconds, or it has been
@@ -446,7 +447,10 @@ configuration error, 2 a usage error.
   Removals happen under a short guard file, `<lock>.takeover`, held by one run at a
   time: its holder removes the lock only if it is still the record judged stale, so a
   lock another run has just taken stays. A guard older than 10 seconds was left by a
-  crash and is removed.
+  crash and is removed, only while it is still that guard. The owner waits for the
+  guard at most 200 ms to record a step's process group, and 2 seconds to give the lock
+  back; past that, the lock is left to go stale by its dead pid. A lock that cannot be
+  given back is one line on stderr, and the run keeps its exit code.
 - **The timeout.** Each step runs in a process group and a session of its own, with no
   controlling terminal, as on a CI runner: a step that prompts on `/dev/tty` (an ssh
   passphrase, a credential prompt, sudo) fails. One that outlasts
@@ -456,7 +460,7 @@ configuration error, 2 a usage error.
   go on as after any failure. The report prints next to the step the machine's load,
   read once the step was signalled, `timed out after 30m — load 48.2 / 31.0 / 20.5 on
   15 cores, 9 containers running (7 Testcontainers)` (the containers when Docker
-  answers within 3 seconds), and the job line names the step. Nothing is retried: a
+  answers within 3 seconds; `load unavailable` when it cannot be read), and the job line names the step. Nothing is retried: a
   green means every step passed once.
 - **An interrupt** (SIGINT, SIGTERM, SIGHUP, SIGQUIT) starts no further step or job,
   stops the running step's group the same way, prints `lntt ci: interrupted (<signal>)`,

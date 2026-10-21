@@ -17,9 +17,9 @@ import {
   formatList,
   formatReport,
   githubJobs,
+  holdDeadline,
   type Lock,
   localEvent,
-  MAX_HOLD_MINUTES,
   missingTools,
   runJobs,
   stopRunning,
@@ -46,6 +46,16 @@ function guard<T>(parse: () => T): T {
     return parse()
   } catch (error) {
     usage((error as Error).message)
+  }
+}
+
+// Gives the lock back; one that cannot be is one line, and the run's exit code stands: its
+// record goes stale by the dead pid.
+function giveBack(lock: Lock | null): void {
+  try {
+    lock?.release()
+  } catch (error) {
+    stderr.write(`lntt ci: cannot give the ci:local lock back (${(error as Error).message}) — ${lock?.path}\n`)
   }
 }
 
@@ -111,7 +121,7 @@ async function local(args: string[]): Promise<number> {
       stderr.write(`lntt ci: interrupted (${signal}): stopping the running step\n`)
       interrupt.abort()
       interrupted = stopRunning().then(() => {
-        lock?.release()
+        giveBack(lock)
         exit(code)
       })
     })
@@ -127,11 +137,7 @@ async function local(args: string[]): Promise<number> {
       signal: interrupt.signal,
       ...(held
         ? {
-            // The lock's maximum hold time is the run's own limit too.
-            deadline: {
-              at: Date.parse(held.owner.started) + MAX_HOLD_MINUTES * 60_000,
-              reason: `the run passed the lock's maximum hold time of ${MAX_HOLD_MINUTES} minutes`,
-            },
+            deadline: holdDeadline(held.owner),
             onGroup: held.setGroup,
           }
         : {}),
@@ -140,7 +146,7 @@ async function local(args: string[]): Promise<number> {
     stdout.write(`${formatReport(localEv, results, { strict })}\n`)
     return exitCode(results, { strict })
   } finally {
-    lock?.release()
+    giveBack(lock)
   }
 }
 

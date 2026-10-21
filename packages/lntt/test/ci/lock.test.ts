@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import {
+import fs, {
   chmodSync,
   existsSync,
   mkdirSync,
@@ -13,24 +13,30 @@ import {
   utimesSync,
   writeFileSync,
 } from 'node:fs'
+import { syncBuiltinESMExports } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { afterEach, beforeEach, describe, test } from 'node:test'
+import { afterEach, beforeEach, describe, mock, test } from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   acquire,
   acquireLock,
   alive,
+  GROUP_WAIT_MS,
   gitCommonDir,
   groupAlive,
+  holdDeadline,
   type Identity,
   type LockDeps,
   LockError,
   lockDir,
+  lockError,
   lockPath,
   type Owner,
   pollInterval,
+  RELEASE_WAIT_MS,
   release,
+  removeStaleGuard,
 } from '../../src/ci/lock.ts'
 import { git, repo } from './helpers.ts'
 
@@ -141,6 +147,21 @@ describe('acquire', () => {
       /waiting for the ci:local lock held by \/w\/other .*, which is no longer running, but its step \(process group 4242\) still is — /,
     )
     assert.match(d.lines[1], /which is no longer running: taking it over/)
+    assert.match(d.lines[2], /took the ci:local lock after/)
+  })
+
+  test('a holder that becomes an orphan with its step still running is announced again', async () => {
+    let looks = 0
+    const d = deps({ alive: (pid) => pid !== 2000 || ++looks < 3, groupAlive: (group) => group === 4242 })
+    writeFileSync(d.path, JSON.stringify(other({ group: 4242 })))
+    d.sleep = async () => {
+      if (looks >= 5) rmSync(d.path)
+    }
+    await acquire(d)
+    assert.equal(d.lines.length, 3)
+    assert.match(d.lines[0], /^lntt ci: waiting for the ci:local lock held by \/w\/other \(pid 2000 .*\) — /)
+    assert.doesNotMatch(d.lines[0], /still is/)
+    assert.match(d.lines[1], /which is no longer running, but its step \(process group 4242\) still is — /)
     assert.match(d.lines[2], /took the ci:local lock after/)
   })
 
@@ -346,6 +367,48 @@ describe('release', () => {
   })
 })
 
+describe('the takeover guard', () => {
+  const guard = () => join(dir, 'ci-local.lock.takeover')
+
+  test('a stale guard is removed only while it is still the one seen, and still old', () => {
+    writeFileSync(guard(), 'crashed')
+    age(guard(), 11)
+    // Another waiter removed it, and a third run took a fresh one: it stays.
+    writeFileSync(guard(), 'fresh')
+    assert.equal(removeStaleGuard(guard(), 'crashed'), false)
+    assert.equal(readFileSync(guard(), 'utf8'), 'fresh')
+    // The same content, seen through a clock that finds it only 5 s old.
+    age(guard(), 11)
+    assert.equal(
+      removeStaleGuard(guard(), 'fresh', () => Date.now() - 6000),
+      false,
+    )
+    assert.equal(readFileSync(guard(), 'utf8'), 'fresh')
+    assert.equal(removeStaleGuard(guard(), 'fresh'), true)
+    assert.equal(existsSync(guard()), false)
+    // Gone already: nothing to do.
+    assert.equal(removeStaleGuard(guard(), 'fresh'), false)
+    assert.deepEqual(readdirSync(dir), [])
+  })
+
+  test('a fresh guard held by another run bounds the wait: setGroup gives up, release too', async () => {
+    const d = deps()
+    const lock = await acquire(d)
+    writeFileSync(guard(), 'another run')
+    let started = Date.now()
+    lock.setGroup(77)
+    const grouped = Date.now() - started
+    assert.ok(grouped >= GROUP_WAIT_MS && grouped < GROUP_WAIT_MS + 500, `setGroup waited ${grouped} ms`)
+    assert.deepEqual(holder(d.path), lock.owner)
+    started = Date.now()
+    lock.release()
+    const released = Date.now() - started
+    assert.ok(released >= RELEASE_WAIT_MS && released < RELEASE_WAIT_MS + 1000, `release waited ${released} ms`)
+    // Left to go stale by its owner's dead pid.
+    assert.deepEqual(holder(d.path), lock.owner)
+  })
+})
+
 describe('acquireLock', () => {
   test('a lock folder that cannot be made is one line naming the lock and --no-lock', async () => {
     writeFileSync(join(dir, 'file'), '')
@@ -396,11 +459,61 @@ describe('acquireLock', () => {
     )
   })
 
+  test('a stale lock that cannot be removed is one line too', async () => {
+    const path = join(dir, 'ci-local.lock')
+    writeFileSync(path, JSON.stringify(other({ started: new Date(Date.now() - 200 * 60_000).toISOString() })))
+    const unlink = fs.unlinkSync
+    let attempts = 0
+    // Only the first removal fails: an error swallowed would let the next one take the lock.
+    mock.method(fs, 'unlinkSync', (target: fs.PathLike) => {
+      if (target === path && ++attempts === 1)
+        throw Object.assign(new Error('EBUSY: resource busy or locked, unlink'), { code: 'EBUSY' })
+      unlink(target)
+    })
+    syncBuiltinESMExports()
+    try {
+      await assert.rejects(
+        acquireLock(dir, 'machine', () => {}, { LNTT_CI_LOCK_DIR: dir }),
+        (error: Error) => {
+          assert.ok(error instanceof LockError)
+          assert.match(error.message, /^cannot take the ci:local lock \(EBUSY: .*\) — .*ci-local\.lock; --no-lock runs/)
+          return true
+        },
+      )
+    } finally {
+      mock.restoreAll()
+      syncBuiltinESMExports()
+    }
+    assert.equal(existsSync(path), true)
+  })
+
+  test('an error with no message is named by its code, else its name', () => {
+    const coded = Object.assign(new Error(''), { code: 'EACCES' })
+    assert.equal(
+      lockError(coded, '/l').message,
+      'cannot take the ci:local lock (EACCES) — /l; --no-lock runs without it',
+    )
+    assert.match(lockError(Object.assign(new Error(' '), { stderr: '' }), '/l').message, /lock \(Error\) — /)
+    assert.match(
+      lockError({ stderr: 'fatal: not a git repository\nmore' }, '/l').message,
+      /lock \(fatal: not a git repository\) — /,
+    )
+  })
+
   test('a poll interval that is not a positive number is ignored', () => {
     assert.equal(pollInterval({ LNTT_CI_LOCK_POLL_MS: '100' }), 100)
     for (const poll of [undefined, '', 'abc', '0', '-5', 'Infinity']) {
       assert.equal(pollInterval({ LNTT_CI_LOCK_POLL_MS: poll }), undefined, String(poll))
     }
+  })
+})
+
+describe('holdDeadline', () => {
+  test('the maximum hold time from when the lock was taken, with its reason', () => {
+    assert.deepEqual(holdDeadline(other({ started: '2026-10-21T10:00:00.000Z' })), {
+      at: Date.parse('2026-10-21T12:00:00.000Z'),
+      reason: "the run passed the lock's maximum hold time of 120 minutes",
+    })
   })
 })
 

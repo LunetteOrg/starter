@@ -58,10 +58,12 @@ Runs from parallel worktrees queue on the ci:local lock: by default one at a tim
 the machine, whoever started them, a coordinator's children and a run started by hand
 alike. A project that queues only its own runs sets `ci.local.lock`
 ([`lntt ci`](../../packages/lntt/README.md#parallel-runs-and-timeouts)).
-`--no-lock` is the one exception, for a run that must not wait. A step that outlasts
-its timeout fails with the machine's load printed next to it. A timeout red with a high
-load is rerun once the machine is idle, and the pull request waits for that green: a
-red run is never explained away in its body.
+`--no-lock` is the one exception, for a run that must not wait. A run stops 120
+minutes after it took the lock, and a step at `ci.local.timeoutMinutes` (at most 1440)
+([`lntt ci`](../../packages/lntt/README.md#parallel-runs-and-timeouts)). A step
+that outlasts its timeout fails with the machine's load printed next to it. A timeout
+red with a high load is rerun once the machine is idle, and the pull request waits for
+that green: a red run is never explained away in its body.
 
 ## Secrets
 
@@ -86,6 +88,8 @@ No real secret runs locally, and ci:local never reads one from a password manage
   its job is declared cloud-only.
 - **Steps that only make sense on a cloud runner** (installing system packages, `sudo`)
   test `GITHUB_ACTIONS` or `CIRCLECI`: ci:local sets `CI=true` and neither of those.
+- **Steps run with no controlling terminal**, as on a CI runner: a step that prompts on
+  `/dev/tty` fails ([`lntt ci`](../../packages/lntt/README.md#parallel-runs-and-timeouts)).
 - A job's `services:` are not started locally: tests that need a database start their
   own (Testcontainers).
 
@@ -94,7 +98,9 @@ No real secret runs locally, and ci:local never reads one from a password manage
 `pnpm ci:local --container` runs each job whole in `act` (GitHub Actions) or
 `circleci local execute` (CircleCI) instead of on the host. It is optional, and the
 default stays native: it needs Docker and gigabytes of images, and its runner images
-are not the cloud's.
+are not the cloud's. A timeout or an interrupt stops the executor, not the containers
+it started: they keep running until removed
+([`lntt ci`](../../packages/lntt/README.md#parallel-runs-and-timeouts)).
 
 Known to work, on macOS with Docker Desktop: a one-step job in each executor, with a
 fake secret. A full job needs a runner image that has what its steps call (`git` for
