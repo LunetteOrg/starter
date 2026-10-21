@@ -74,6 +74,12 @@ same way every time; the `review` skill keeps the judgement.
   findings`, counts as a failed reviewer, and a round with a failure does not move the
   reviewed commit. A fresh finding at the anchor of an open one joins it. A round runs
   on a branch (a detached HEAD is refused) whose head does not move until it ends.
+- **A branch takes at most `maxRounds` rounds** (default 4): later rounds find ever
+  smaller things, and most of a pull request's time and cost went into them. The round
+  past it does not start; `lntt review` exits 3 with what is still open, and the person
+  decides: the pull request as it is, more rounds for that branch (`lntt review allow
+  <rounds>`, kept in its state, the configuration unchanged), or an issue for what is
+  open. A run with no new commit to read is not a round and is never stopped.
 - **Load:** at most `perProvider` required agents of one provider run at once, and as
   many optional ones in a queue of their own, the others waiting their turn; a provider
   given dozens of sessions at once queues them until they time out. A slow optional
@@ -89,11 +95,12 @@ same way every time; the `review` skill keeps the judgement.
   a time in a worktree, under a lock that names its pid.
 - **Progress is a contract:** stderr carries a line when each agent starts and ends
   (with its tokens), `failed` or `skipped` for one that did not answer, the agents still
-  running every 30 seconds, `round N done` at the end and `error:` for a round that could
-  not start. The `review` skill wakes on `failed`, `error:` and `round N done` only. The
+  running every 30 seconds, `round N done` at the end, `error:` for a round that could
+  not start and `limit:` for one past `maxRounds`. The `review` skill wakes on `failed`,
+  `error:`, `limit:` and `round N done` only. The
   same goes as JSON events, one per line, to `<git dir>/lntt-review.progress`: the round
   with the pid of `lntt review`, each phase with its total, each agent's start and end,
-  a beat every 15 seconds, the end or the error. The `lunette` plugin's band reads it
+  a beat every 15 seconds, the end, the error or the limit. The `lunette` plugin's band reads it
   and draws the round above the Claude Code prompt, with no Claude turn (a spinner, the
   phase as a bar, the tokens, the agents running), and tells a dead or silent run from a
   working one.

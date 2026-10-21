@@ -22,7 +22,7 @@ lntt review --plan                # the range, the lenses and the agents; runs n
 A round takes minutes. stderr says what runs: a line when each reviewer or verifier
 starts and ends, the ones still running every 30 seconds, and `round N done` at the
 end. Run it in the background when your harness can, and wake only on the lines that
-need you: watch for `lntt review: (failed|error:|round [0-9]+ done)`, not every line;
+need you: watch for `lntt review: (failed|error:|limit:|round [0-9]+ done)`, not every line;
 the rest (including `skipped`, an optional agent that did not answer) is for the person.
 In Claude Code the `lunette` plugin shows the round in a band above the prompt, and
 `/review-status` prints it.
@@ -30,7 +30,7 @@ In Claude Code the `lunette` plugin shows the round in a band above the prompt, 
 stdout is JSON: `findings` (`confirmed`, `undecided`, `unverified`; blockers and
 warnings block the round, notes do not),
 `refuted` (with the verifiers' proofs, or `lntt check cite`'s for a finding on a line past
-the end of its file; nothing to do), `failed` (a reviewer that did not answer). Exit 0: a clean round. Exit 1: findings or a failure.
+the end of its file; nothing to do), `failed` (a reviewer that did not answer). Exit 0: a clean round. Exit 1: findings or a failure. Exit 3: the limit (section 3).
 
 A round reads the whole branch the first time, then only the commits after the last
 reviewed one; findings still open go back to the verifiers on the new head.
@@ -58,7 +58,13 @@ reviewed one; findings still open go back to the verifiers on the new head.
   question (that becomes an issue, by its title).
 - The same finding comes back in two rounds in a row, or a reviewer keeps it after
   your answer: the person decides, not one more agent.
-- Rounds keep finding new problems after three rounds on the delta.
+- At the limit: a branch takes at most `delivery.review.maxRounds` rounds (default 4).
+  The round past it does not start: `lntt review: limit: …` names what is still open,
+  exit 3, and stdout lists those findings. Stop there and bring them to the person (or,
+  in a child worktree, to the coordinator), with your recommendation. They decide: the
+  pull request as it is, with what is open listed in it; more rounds for this branch,
+  which the person grants with `lntt review allow <rounds>` (never run it on your own);
+  or an issue for what is open, named in the pull request.
 
 ## 4. A clean round
 

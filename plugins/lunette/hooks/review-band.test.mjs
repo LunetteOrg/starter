@@ -84,6 +84,16 @@ describe('the band of a running round', () => {
     assert.equal(bandLines(view, T + 61_000, null), null)
   })
 
+  test('a round past delivery.review.maxRounds says it did not start, and that the person decides, for a minute', () => {
+    const view = fold([{ t: T, type: 'limit', round: 5, maxRounds: 4, allowed: 0, open: 2 }])
+    assert.deepEqual(bandLines(view, T + 10_000, null), [
+      { text: 'lntt review · round 5 not started: limit of 4 rounds · 2 open · the person decides', tone: 'strong' },
+    ])
+    const allowed = fold([{ t: T, type: 'limit', round: 7, maxRounds: 4, allowed: 2, open: 1 }])
+    assert.match(bandLines(allowed, T, null)[0].text, /limit of 6 rounds/)
+    assert.equal(bandLines(view, T + 61_000, null), null)
+  })
+
   test('tokens read at a glance', () => {
     assert.deepEqual([tokens(999), tokens(1500), tokens(160_000), tokens(2_300_000)], ['999 tokens', '1.5k tokens', '160k tokens', '2.3M tokens'])
   })

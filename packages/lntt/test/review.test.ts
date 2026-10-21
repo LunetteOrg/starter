@@ -18,6 +18,7 @@ import {
   renderReviewPrompt,
   reviewConfig,
   roundClean,
+  roundLimit,
   roundRange,
   runRound,
   type Severity,
@@ -40,6 +41,7 @@ describe('the configuration', () => {
       perProvider: 4,
       optionalGraceMinutes: 2,
       roundTimeoutMinutes: 60,
+      maxRounds: 4,
     })
   })
 
@@ -62,6 +64,7 @@ describe('the configuration', () => {
           },
           verify: false,
           timeoutMinutes: 5,
+          maxRounds: 7,
         },
       },
     })
@@ -74,6 +77,7 @@ describe('the configuration', () => {
     })
     assert.equal(config.verify, null)
     assert.equal(config.timeoutMinutes, 5)
+    assert.equal(config.maxRounds, 7)
   })
 
   test('a lens of the project needs its brief; a lens with no agents is off', () => {
@@ -1004,5 +1008,20 @@ describe('what the fifth real round taught', () => {
     )
     assert.equal(unreadableFindings(reply), 0)
     assert.equal(parseFindings(reply).length, 11)
+  })
+})
+
+describe('how many rounds a branch may take', () => {
+  const state = { branch: 'feat/1/x', round: 4, reviewed: 'h1' } as ReviewState
+
+  test('delivery.review.maxRounds, with no rounds allowed on the branch', () => {
+    assert.equal(roundLimit(null, 'feat/1/x', 4), 4)
+    assert.equal(roundLimit(state, 'feat/1/x', 4), 4)
+  })
+
+  test('plus the rounds a person allowed on this branch, and only on it', () => {
+    const allowed = { ...state, allowed: 2 }
+    assert.equal(roundLimit(allowed, 'feat/1/x', 4), 6)
+    assert.equal(roundLimit(allowed, 'feat/2/y', 4), 4)
   })
 })

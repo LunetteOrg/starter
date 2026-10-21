@@ -52,9 +52,12 @@
 //   lntt review [--base <branch>] [--plan]
 //                             one review round on the current branch: the lenses and agents of
 //                             delivery.review, headless and read-only, then verifiers that try to
-//                             refute each blocker and warning; JSON on stdout, exit 1 with findings
+//                             refute each blocker and warning; JSON on stdout, exit 1 with findings,
+//                             exit 3 past delivery.review.maxRounds (the round does not start)
 //   lntt review reply <finding> <answer>
 //                             the author's answer, to the sessions of the reviewers who found it
+//   lntt review allow <rounds>
+//                             more rounds for the current branch, past delivery.review.maxRounds
 //
 //   lntt worktree start --issue <n> [--issue <n>]... [--host orca|herdr|git]
 //                       [--kind <agent>] [--model <id>] [--effort <level>] [--no-agent]
