@@ -1,0 +1,251 @@
+import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
+import { afterEach, beforeEach, describe, test } from 'node:test'
+import { fileURLToPath } from 'node:url'
+import {
+  checkSkills,
+  guide,
+  SKILL_DIRS,
+  sharedSkills,
+  skillFolder,
+  stub,
+  stubFolders,
+  syncSkills,
+} from '../src/index.ts'
+
+const HERE = dirname(fileURLToPath(import.meta.url))
+const BIN = resolve(HERE, '../bin/lntt.ts')
+const SKILLS = resolve(HERE, '../skills')
+
+let root: string
+
+beforeEach(() => {
+  root = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-skills-')))
+  mkdirSync(join(root, '.agents'))
+  writeFileSync(join(root, '.agents/config.jsonc'), '{}')
+})
+
+afterEach(() => {
+  rmSync(root, { recursive: true, force: true })
+})
+
+function lntt(args: string[]) {
+  return spawnSync(process.execPath, [BIN, ...args], { cwd: root, encoding: 'utf8' })
+}
+
+function off(): string[] {
+  return checkSkills(root)
+    .filter((s) => s.state !== 'ok')
+    .map((s) => `${s.state} ${s.path}`)
+}
+
+// A stub as an older lntt sync wrote it, for a skill the package dropped.
+function staleStub(dir: string, name: string): void {
+  mkdirSync(join(root, dir, name), { recursive: true })
+  writeFileSync(join(root, dir, name, 'SKILL.md'), stub('decisions').replaceAll('decisions', name))
+}
+
+describe('the shared skills', () => {
+  test('are the folders of skills/ holding a SKILL.md, guides included', () => {
+    const names = sharedSkills()
+    assert.ok(names.includes('commit-message') && names.includes('decisions'), names.join(', '))
+    assert.deepEqual(names, readdirSync(SKILLS).sort())
+    assert.equal(skillFolder('decisions'), join(SKILLS, 'decisions'))
+    assert.equal(skillFolder('nope'), null)
+  })
+
+  test('a guide is the SKILL.md of the package, after the folder its links start from', () => {
+    const text = guide('decisions') as string
+    const source = readFileSync(join(SKILLS, 'decisions/SKILL.md'), 'utf8')
+    assert.equal(
+      text,
+      `<!-- lntt guide decisions: relative links start from ${join(SKILLS, 'decisions')} -->\n\n${source}`,
+    )
+    assert.ok(existsSync(join(SKILLS, 'decisions/references/recording-rules.md')), 'the folder holds what it links')
+    assert.equal(guide('nope'), null)
+  })
+
+  test("a stub keeps the skill's frontmatter and only says to load the guide", () => {
+    const source = readFileSync(join(SKILLS, 'review/SKILL.md'), 'utf8')
+    const frontmatter = /^---\n[\s\S]*?\n---\n/.exec(source)?.[0] as string
+    const text = stub('review')
+    assert.ok(text.startsWith(frontmatter), text)
+    assert.match(text, /installed by lntt sync from @lntt\/lntt/)
+    assert.match(text, /\npnpm exec lntt guide review\n/)
+    assert.ok(text.length < frontmatter.length + 400, 'a stub, not the guide')
+  })
+
+  test('sync writes a stub for every skill in .agents/skills and .claude/skills', () => {
+    syncSkills(root)
+    assert.deepEqual(SKILL_DIRS, ['.agents/skills', '.claude/skills'])
+    for (const dir of SKILL_DIRS) {
+      assert.deepEqual(readdirSync(join(root, dir)).sort(), sharedSkills())
+      for (const name of sharedSkills()) {
+        assert.deepEqual(readdirSync(join(root, dir, name)), ['SKILL.md'])
+        assert.equal(readFileSync(join(root, dir, name, 'SKILL.md'), 'utf8'), stub(name))
+      }
+    }
+  })
+
+  test('sync puts back an edited stub, removes the stubs of skills gone, and leaves the project skills alone', () => {
+    syncSkills(root)
+    writeFileSync(join(root, '.claude/skills/decisions/SKILL.md'), `${stub('decisions')}One more rule.\n`)
+    writeFileSync(join(root, '.agents/skills/decisions/extra.md'), 'extra\n')
+    writeFileSync(join(root, '.agents/skills/decisions/.DS_Store'), '')
+    mkdirSync(join(root, '.claude/skills/review/references/deep'), { recursive: true })
+    writeFileSync(join(root, '.claude/skills/review/references/deep/notes.md'), 'nested\n')
+    staleStub('.claude/skills', 'gone')
+    mkdirSync(join(root, '.claude/skills/issues'))
+    writeFileSync(join(root, '.claude/skills/issues/SKILL.md'), 'our own skill\n')
+    syncSkills(root)
+    assert.equal(readFileSync(join(root, '.claude/skills/decisions/SKILL.md'), 'utf8'), stub('decisions'))
+    assert.deepEqual(readdirSync(join(root, '.agents/skills/decisions')), ['SKILL.md'], 'extra and hidden files go')
+    assert.deepEqual(readdirSync(join(root, '.claude/skills/review')), ['SKILL.md'], 'nested folders go')
+    assert.equal(existsSync(join(root, '.claude/skills/gone')), false)
+    assert.equal(readFileSync(join(root, '.claude/skills/issues/SKILL.md'), 'utf8'), 'our own skill\n')
+    const tree = () =>
+      stubFolders(root).map(
+        (f) => `${f}:${readdirSync(join(root, f)).join(',')}:${readFileSync(join(root, f, 'SKILL.md'), 'utf8')}`,
+      )
+    const once = tree()
+    syncSkills(root)
+    assert.deepEqual(tree(), once, 'a second sync changes nothing')
+  })
+
+  test('check names every stub missing from either directory', () => {
+    const expected = SKILL_DIRS.flatMap((dir) => sharedSkills().map((name) => `missing ${dir}/${name}`))
+    assert.deepEqual(off(), expected)
+  })
+
+  test('check passes after sync, ignoring the project skills beside the stubs', () => {
+    syncSkills(root)
+    mkdirSync(join(root, '.agents/skills/ours'))
+    writeFileSync(join(root, '.agents/skills/ours/SKILL.md'), 'ours\n')
+    assert.deepEqual(off(), [])
+    assert.equal(checkSkills(root).length, SKILL_DIRS.length * sharedSkills().length)
+  })
+
+  test('check names an edited stub, a file added beside one, and a stub of a skill the package does not have', () => {
+    syncSkills(root)
+    writeFileSync(join(root, '.claude/skills/commit-message/SKILL.md'), `${stub('commit-message')}One more rule.\n`)
+    writeFileSync(join(root, '.agents/skills/decisions/notes.md'), 'added\n')
+    staleStub('.agents/skills', 'gone')
+    assert.deepEqual(off(), [
+      'edited .agents/skills/decisions',
+      'edited .claude/skills/commit-message',
+      'unknown .agents/skills/gone',
+    ])
+  })
+
+  test('check reads a stub checked out with CRLF line endings, or next to a hidden file, as unedited', () => {
+    syncSkills(root)
+    const file = join(root, '.claude/skills/review/SKILL.md')
+    writeFileSync(file, readFileSync(file, 'utf8').replaceAll('\n', '\r\n'))
+    writeFileSync(join(root, '.agents/skills/review/.DS_Store'), '')
+    assert.deepEqual(off(), [])
+  })
+
+  test('a project skill that quotes the marker below its frontmatter is not a stub: sync and check leave it alone', () => {
+    mkdirSync(join(root, '.agents/skills/mine'), { recursive: true })
+    const text = `---\nname: mine\ndescription: ours\n---\n# Mine\n\n${stub('review').split('\n')[4]}\n`
+    writeFileSync(join(root, '.agents/skills/mine/SKILL.md'), text)
+    syncSkills(root)
+    assert.deepEqual(off(), [])
+    assert.equal(readFileSync(join(root, '.agents/skills/mine/SKILL.md'), 'utf8'), text)
+  })
+
+  test('the stub folders on disk are told apart from the project skills beside them', () => {
+    syncSkills(root)
+    staleStub('.agents/skills', 'gone')
+    mkdirSync(join(root, '.claude/skills/issues'))
+    writeFileSync(join(root, '.claude/skills/issues/SKILL.md'), 'our own skill\n')
+    assert.deepEqual(stubFolders(root), [
+      ...[...sharedSkills(), 'gone'].sort().map((n) => `.agents/skills/${n}`),
+      ...sharedSkills().map((n) => `.claude/skills/${n}`),
+    ])
+  })
+
+  test('a project skill with a shared name is a clash: sync writes nothing and check names it', () => {
+    mkdirSync(join(root, '.claude/skills/review'), { recursive: true })
+    writeFileSync(join(root, '.claude/skills/review/SKILL.md'), 'our own review\n')
+    assert.throws(
+      () => syncSkills(root),
+      /\.claude\/skills\/review: a skill of the project's own with the name of a shared skill/,
+    )
+    assert.equal(existsSync(join(root, '.agents/skills/review')), false, 'nothing written')
+    assert.equal(readFileSync(join(root, '.claude/skills/review/SKILL.md'), 'utf8'), 'our own review\n')
+    assert.ok(off().includes('clash .claude/skills/review'), off().join(', '))
+    mkdirSync(join(root, '.agents/skills/decisions'), { recursive: true })
+    writeFileSync(join(root, '.agents/skills/decisions/notes.md'), 'no SKILL.md, still ours\n')
+    assert.ok(off().includes('clash .agents/skills/decisions'), off().join(', '))
+    assert.throws(() => syncSkills(root), /\.agents\/skills\/decisions, \.claude\/skills\/review: /)
+    assert.equal(readFileSync(join(root, '.agents/skills/decisions/notes.md'), 'utf8'), 'no SKILL.md, still ours\n')
+    const r = lntt(['sync'])
+    assert.equal(r.status, 1)
+    assert.match(r.stderr, /^lntt: \.agents\/skills\/decisions, \.claude\/skills\/review: a skill of the project's own/)
+    assert.equal(existsSync(join(root, 'AGENTS.md')), false, 'nor the managed block')
+  })
+
+  test('lntt sync and lntt check work from a subfolder of the project, on its root', () => {
+    mkdirSync(join(root, 'packages/x'), { recursive: true })
+    const sub = (args: string[]) =>
+      spawnSync(process.execPath, [BIN, ...args], { cwd: join(root, 'packages/x'), encoding: 'utf8' })
+    assert.equal(sub(['sync']).status, 0)
+    assert.equal(existsSync(join(root, '.agents/skills/decisions/SKILL.md')), true)
+    assert.equal(existsSync(join(root, 'packages/x/.agents')), false)
+    assert.equal(sub(['check', 'skills']).status, 0)
+  })
+
+  test('lntt check skills says what to do for an edited stub, a stub of a skill gone and a clash', () => {
+    assert.equal(lntt(['sync']).status, 0)
+    writeFileSync(join(root, '.claude/skills/decisions/SKILL.md'), `${stub('decisions')}One more rule.\n`)
+    staleStub('.agents/skills', 'gone')
+    writeFileSync(join(root, '.agents/skills/review/SKILL.md'), 'our own review\n')
+    const out = lntt(['check', 'skills']).stdout
+    assert.match(out, /\.claude\/skills\/decisions — differs from the stub lntt sync writes; run lntt sync/)
+    assert.match(out, /\.agents\/skills\/gone — a stub of a skill @lntt\/lntt does not have; run lntt sync/)
+    assert.match(
+      out,
+      /\.agents\/skills\/review — a skill of the project's own with the name of a shared skill; rename it/,
+    )
+  })
+
+  test('lntt sync writes the stubs and lntt check skills fails until it has', () => {
+    const before = lntt(['check', 'skills'])
+    assert.equal(before.status, 1)
+    assert.match(before.stdout, /FAIL {5}skills\/installed {2}\.agents\/skills\/decisions — .*run lntt sync/)
+    assert.equal(lntt(['sync']).status, 0)
+    assert.ok(existsSync(join(root, 'AGENTS.md')), 'sync still writes the managed block')
+    const after = lntt(['check', 'skills'])
+    assert.equal(after.status, 0, after.stdout)
+    assert.match(after.stdout, /^PASS {5}skills\/installed — /)
+  })
+
+  test('lntt guide prints a guide, lists the skills alone, and fails on a skill it does not have', () => {
+    const r = lntt(['guide', 'commit-message'])
+    assert.equal(r.status, 0)
+    assert.equal(r.stdout, guide('commit-message'))
+    assert.equal(
+      lntt(['guide']).stdout,
+      sharedSkills()
+        .map((s) => `${s}\n`)
+        .join(''),
+    )
+    const missing = lntt(['guide', 'nope'])
+    assert.equal(missing.status, 1)
+    assert.equal(missing.stdout, '')
+    assert.match(missing.stderr, /^lntt guide: no skill nope; the skills are commit-message, /)
+  })
+})

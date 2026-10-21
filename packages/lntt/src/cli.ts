@@ -8,18 +8,21 @@ import {
   commandExists,
   findConfig,
   getValue,
+  guide,
   loadConfig,
   loadOperator,
   localApp,
   openWith,
   setValue,
+  sharedSkills,
   syncAgentsBlock,
+  syncSkills,
   type Viewer,
 } from './index.ts'
 
 const USAGE = [
   'usage: lntt path | validate | get <key> | set <key> <json> | operator [get <key> | sources]',
-  '       lntt sync | local app <name> | viewer detect|open <url>',
+  '       lntt sync | guide [<skill>] | local app <name> | viewer detect|open <url>',
   '       lntt check [<area> [<check>]] [--base <ref>] [--json] | check cite <path:line>...',
   '       lntt branch name|check|rename [...]',
   '       lntt worktree start --issue <n> [...]',
@@ -82,8 +85,27 @@ function run(command: string | undefined, key: string | undefined, raw: string |
       break
     }
     case 'sync':
+      // The skills first: a clash with a project skill stops the command before any write.
+      syncSkills(cwd())
       syncAgentsBlock(cwd())
       break
+    case 'guide': {
+      if (key === undefined) {
+        stdout.write(
+          sharedSkills()
+            .map((s) => `${s}\n`)
+            .join(''),
+        )
+        break
+      }
+      const text = guide(key)
+      if (text === null) {
+        stderr.write(`lntt guide: no skill ${key}; the skills are ${sharedSkills().join(', ')}\n`)
+        exit(1)
+      }
+      stdout.write(text)
+      break
+    }
     case 'local':
       if (key !== 'app' || !raw) usage()
       stdout.write(`${JSON.stringify(localApp(cwd(), raw))}\n`)

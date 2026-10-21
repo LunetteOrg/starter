@@ -9,7 +9,9 @@
 //   lntt operator             the operator profile, merged, as plain JSON
 //   lntt operator get <key>   one key of it
 //   lntt operator sources     the files it was read from, in merge order
-//   lntt sync                 write the managed block of AGENTS.md
+//   lntt sync                 write the managed block of AGENTS.md and the stubs of the shared
+//                             skills in .agents/skills/ and .claude/skills/
+//   lntt guide [<skill>]      a shared skill's guide, from this package; alone, the skills
 //   lntt local app <name>     an app of local.apps, resolved for this worktree (port, url, commands)
 //   lntt viewer detect        where the session runs and which viewer shows pages, with why
 //   lntt viewer open <url>    open it there; exit 3 with the agent call when only the agent can
@@ -21,6 +23,8 @@
 //                             --json: one line per result (area, check, status, path, line,
 //                             message); --base: what the diff from the ref touches
 //     agents-md               the managed block of AGENTS.md matches its source
+//     skills                  every shared skill has its stub in .agents/skills/ and
+//                             .claude/skills/, unedited, and no stub names a skill gone
 //     decisions [structure]   the logs of recording: index and files both ways, references
 //                             to records, append-only residues, file name, title, status;
 //                             with --base, the diff inventory and the touched records' figures

@@ -26,7 +26,7 @@
       "packages/test-utils/**": "test helpers every project installs, citing that project's ADRs",
       "packages/lntt/schema/**": "the schema of every project's configuration, citing that project's process pages",
       "packages/lntt/test/**": "tests that name the records of their fixtures",
-      "plugins/**": "skills installed unchanged in every project, citing that project's records"
+      "packages/lntt/skills/**": "the shared skills' guides, printed in every project by lntt guide, citing that project's records"
     }
   },
   // The test levels, lowest first (lntt check tests): every test file sits at exactly one.

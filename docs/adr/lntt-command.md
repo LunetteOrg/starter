@@ -22,8 +22,8 @@ One package, `@lntt/lntt`, with one command, `lntt`. The package is named after 
 command, so a reader who sees `lntt` in a script knows which package provides it.
 
 ```
-lntt path | validate | get | set | operator | sync | local app | viewer
-lntt check [agents-md | decisions [structure | numbers] | tests [levels | focus | rules | touched | mutate]] | check cite
+lntt path | validate | get | set | operator | sync | guide | local app | viewer
+lntt check [agents-md | skills | decisions [structure | numbers] | tests [levels | focus | rules | touched | mutate]] | check cite
 lntt branch name | check | rename
 lntt review [reply | allow]
 lntt worktree start
@@ -43,14 +43,15 @@ lntt ci local | candidate
   `lntt branch name`), JSON (`lntt get`, `lntt operator`), or one JSON line per item
   (`lntt worktree start`, whose `issue` is null for a coordinator and which names the `parent`
   of a child, followed by the brief when no agent was started, for the
-  person who will start one; `lntt check --json`), or a report for a person (`lntt
-  check` without `--json`); progress and child-process output go to stderr. Exit codes:
+  person who will start one; `lntt check --json`), a document for an agent (`lntt guide
+  <skill>`: a comment naming the folder its relative links start from, then the guide),
+  or a report for a person (`lntt check` without `--json`); progress and child-process output go to stderr. Exit codes:
   0 ok, 1 a configuration error, a red result or a check that cannot run (one line on
   stderr), 2 a usage error, 3 a stop that a person decides on (`lntt review` past
   `delivery.review.maxRounds`); a defect of `lntt` itself exits 1 with its stack trace.
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
-  `decisions` and `tests`, whose results their review lenses read, and `agents-md`,
-  which no lens needs; a lens's checks are the area named after it. Alone it runs every
+  `decisions` and `tests`, whose results their review lenses read, and `agents-md` and
+  `skills`, which no lens needs; a lens's checks are the area named after it. Alone it runs every
   area, which is what CI runs. Every check reports `PASS`, `FAIL` or `NOT RUN` with its
   reason, so a check that did not run is never read as one that passed, and `INFO` for
   what it prints
@@ -62,8 +63,8 @@ lntt ci local | candidate
   deterministic check is a check of an area, or a new area, never a script beside a
   skill.
 - **No aliases for old names.** A renamed command answers only to its new name, so its
-  callers (workflows, skills, the README) change with it, and the plugin's version
-  follows the [delivery](../process/delivery.md#the-lunette-plugin) rule.
+  callers (workflows, skills, the README) change with it, in the same release: the
+  shared skills ship in `@lntt/lntt` with the command they call.
 
 ## Consequences
 

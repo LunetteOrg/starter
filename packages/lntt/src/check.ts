@@ -9,6 +9,7 @@ import { isAbsolute, join, relative } from 'node:path'
 import { checkAgentsBlock } from './agents.ts'
 import { checkDecisions, decisionFigures } from './check-decisions.ts'
 import { runTests } from './check-tests.ts'
+import { checkSkills, stubFolders } from './skills.ts'
 
 export type Status = 'PASS' | 'FAIL' | 'NOT RUN' | 'INFO'
 
@@ -21,7 +22,7 @@ export interface Result {
   message: string
 }
 
-export const AREAS = ['agents-md', 'decisions', 'tests'] as const
+export const AREAS = ['agents-md', 'skills', 'decisions', 'tests'] as const
 export type Area = (typeof AREAS)[number]
 
 export function isArea(name: string): name is Area {
@@ -43,8 +44,8 @@ export interface CheckOptions {
 }
 
 // The files a check reads: tracked or new and not ignored, relative to the root, less
-// those of a nested project (a folder with a configuration of its own, a template), whose
-// own check they are.
+// those of a nested project (a folder with a configuration of its own, a template) and of
+// the stubs of the shared skills (checked by the skills area), whose own check they are.
 export function projectFiles(root: string): string[] {
   let listed: string
   try {
@@ -64,8 +65,9 @@ export function projectFiles(root: string): string[] {
         .filter((dir): dir is string => dir !== undefined),
     ),
   ]
+  const skip = [...nested, ...stubFolders(root)]
   return [...new Set(files)]
-    .filter((f) => !nested.some((dir) => f.startsWith(`${dir}/`)) && existsSync(join(root, f)))
+    .filter((f) => !skip.some((dir) => f.startsWith(`${dir}/`)) && existsSync(join(root, f)))
     .sort()
 }
 
@@ -85,10 +87,41 @@ function agentsMd(root: string): Result[] {
   ]
 }
 
+function skills(root: string): Result[] {
+  const off = checkSkills(root).filter((s) => s.state !== 'ok')
+  if (off.length === 0) {
+    return [
+      {
+        area: 'skills',
+        check: 'installed',
+        status: 'PASS',
+        path: null,
+        line: null,
+        message: 'every shared skill has its stub in .agents/skills/ and .claude/skills/',
+      },
+    ]
+  }
+  return off.map((s) => ({
+    area: 'skills',
+    check: 'installed',
+    status: 'FAIL',
+    path: s.path,
+    line: null,
+    message: {
+      missing: 'not installed; run lntt sync',
+      edited:
+        'differs from the stub lntt sync writes; run lntt sync (an installed skill is never edited: change it in @lntt/lntt)',
+      unknown: 'a stub of a skill @lntt/lntt does not have; run lntt sync',
+      clash: "a skill of the project's own with the name of a shared skill; rename it, then run lntt sync",
+    }[s.state as 'missing' | 'edited' | 'unknown' | 'clash'],
+  }))
+}
+
 // One area, or one of its checks: `structure` and `numbers` for the decisions, `levels`,
 // `focus`, `rules`, `touched` and `mutate` for the tests.
 export function runArea(area: Area, check: string | undefined, files: string[], options: CheckOptions): Result[] {
   if (area === 'agents-md') return agentsMd(options.root)
+  if (area === 'skills') return skills(options.root)
   if (area === 'tests') return runTests(check, files, options)
   if (check === 'numbers') return decisionFigures(options, files)
   return checkDecisions(options, { figures: check === undefined })

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { CannotRunError, cite, type Result } from '../src/check.ts'
+import { CannotRunError, cite, projectFiles, type Result } from '../src/check.ts'
 import { errorLine, main } from '../src/check-cli.ts'
 import { ConfigError } from '../src/index.ts'
 
@@ -420,11 +420,22 @@ describe('lntt check cite', () => {
 })
 
 describe('lntt check', () => {
-  test('alone runs every area: the AGENTS.md block, the decision logs and the tests', () => {
+  test('alone runs every area: the AGENTS.md block, the installed skills, the decision logs and the tests', () => {
     project('clean')
     const r = results(['check'])
     assert.equal(r.status, 0)
-    assert.deepEqual([...new Set(r.results.map((x) => x.area))], ['agents-md', 'decisions', 'tests'])
+    assert.deepEqual([...new Set(r.results.map((x) => x.area))], ['agents-md', 'skills', 'decisions', 'tests'])
+  })
+
+  test('the files every area reads leave out the stubs of the shared skills, not the project skills beside them', () => {
+    project('clean')
+    mkdirSync(join(repo, '.claude/skills/issues'), { recursive: true })
+    writeFileSync(join(repo, '.claude/skills/issues/SKILL.md'), 'our own skill\n')
+    const files = projectFiles(repo)
+    assert.deepEqual(
+      files.filter((f) => f.startsWith('.agents/skills/') || f.startsWith('.claude/skills/')),
+      ['.claude/skills/issues/SKILL.md'],
+    )
   })
 
   test('agents-md fails on a hand edit of the managed block', () => {
