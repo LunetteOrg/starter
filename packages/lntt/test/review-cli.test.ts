@@ -532,6 +532,10 @@ describe('lntt review, end to end with a fake agent', () => {
     lntt(['--base', 'main'])
     const none = JSON.parse(readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8').split('\n')[0] as string)
     assert.equal(none.session, null)
+    git('commit', '-q', '--allow-empty', '-m', 'empty id')
+    lntt(['--base', 'main'], { CLAUDE_CODE_SESSION_ID: '' })
+    const empty = JSON.parse(readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8').split('\n')[0] as string)
+    assert.equal(empty.session, null)
   })
 
   test("the progress names lntt review's pid; an error starts a new file", () => {

@@ -9,7 +9,7 @@ import { issueTitles } from './issue-titles-hook.js'
 import { bandLines, fold, ownedBy, readEvents, SPIN_MS } from './review-band.mjs'
 
 let progressFile = null
-let session = null // this Claude Code session's id, from its classic events
+let session = null // this Claude Code session's id, which lntt review records with its round
 let view = null
 let alive = null // whether the round's lntt review process still runs, null when unknown
 
@@ -42,17 +42,10 @@ const running = () => view && view.round !== null && !view.done && !view.error
 
 export function register(on) {
   issueTitles(on)
-  // The session's id, read from the events that carry it: the band shows the round only
-  // in the session that started it (lntt review records CLAUDE_CODE_SESSION_ID).
-  on('classic.SessionStart', async ($, e, next) => {
-    if (typeof e.session_id === 'string') session = e.session_id
-    return next(e)
-  })
-  on('classic.UserPromptSubmit', async ($, e, next) => {
-    if (typeof e.session_id === 'string') session = e.session_id
-    return next(e)
-  })
   on('session.start', async ($, e, next) => {
+    try {
+      session = await $.session.id()
+    } catch {}
     await locate($)
     $.clock.every(1000, () => refresh($))
     // Only the spinner needs the faster redraw, and only while a round runs.
@@ -89,6 +82,7 @@ export function register(on) {
   on('command.run', { command: 'review-status' }, async ($) => {
     const lines = bandLines(view, await $.clock.now(), alive)
     if (!lines || !view) return { text: 'No lntt review round in this worktree.' }
+    if (!ownedBy(view, session)) return { text: 'An lntt review round runs in another session of this worktree.' }
     const all = [...view.running.entries()].flatMap(([l, rs]) => rs.map((r) => `  running ${l}${r.optional ? ' (optional)' : ''}`))
     return { text: [...lines.map((l) => l.text), ...all].join('\n') }
   })

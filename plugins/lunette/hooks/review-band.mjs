@@ -23,11 +23,12 @@ export function readEvents(text) {
 }
 
 // Whether the band of this round belongs in a session: the one that started it. A round
-// started outside a session (a terminal, an older lntt), or a session that does not know
-// its id yet, shows it in every session of the checkout.
+// started outside a session (a terminal, an older lntt) shows in every session of the
+// checkout; a session that cannot tell its own id shows only such rounds.
 export function ownedBy(view, session) {
   if (!view) return false
-  return !view.session || !session || view.session === session
+  if (!view.session) return true
+  return Boolean(session) && view.session === session
 }
 
 // The round as the events tell it, or null when there are none. Agents running are

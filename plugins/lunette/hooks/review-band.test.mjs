@@ -154,12 +154,14 @@ describe('which session shows the band', () => {
   })
 
   test('a round started outside a session (a terminal, an older lntt) shows in every session of the checkout', () => {
-    assert.equal(ownedBy(started(null), 's1'), true)
-    assert.equal(ownedBy(started(undefined), 's1'), true)
+    for (const none of [null, undefined, '']) assert.equal(ownedBy(started(none), 's1'), true)
   })
 
-  test('a session that does not know its id yet shows it, as before', () => {
-    assert.equal(ownedBy(started('s1'), null), true)
+  test('a session that cannot tell its own id shows only rounds started outside a session', () => {
+    for (const unknown of [null, undefined, '']) {
+      assert.equal(ownedBy(started('s1'), unknown), false)
+      assert.equal(ownedBy(started(null), unknown), true)
+    }
   })
 
   test("nothing running is nobody's", () => {
