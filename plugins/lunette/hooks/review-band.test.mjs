@@ -91,6 +91,8 @@ describe('the band of a running round', () => {
     ])
     const allowed = fold([{ t: T, type: 'limit', round: 7, maxRounds: 4, allowed: 2, open: 1 }])
     assert.match(bandLines(allowed, T, null)[0].text, /limit of 6 rounds/)
+    const failed = fold([{ t: T, type: 'limit', round: 5, maxRounds: 4, allowed: 0, open: 0, failed: 1 }])
+    assert.match(bandLines(failed, T, null)[0].text, /· 0 open · 1 failed · the person decides$/)
     assert.equal(bandLines(view, T + 61_000, null), null)
   })
 

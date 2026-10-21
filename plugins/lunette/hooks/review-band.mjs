@@ -97,7 +97,13 @@ export function bandLines(view, now, alive) {
     const l = view.limit
     if (now - l.t >= LINGER_MS) return null
     const rounds = (l.maxRounds ?? 0) + (l.allowed ?? 0)
-    return [{ text: `lntt review · round ${l.round} not started: limit of ${rounds} rounds · ${l.open ?? 0} open · the person decides`, tone: 'strong' }]
+    const failed = l.failed ? ` · ${l.failed} failed` : ''
+    return [
+      {
+        text: `lntt review · round ${l.round} not started: limit of ${rounds} rounds · ${l.open ?? 0} open${failed} · the person decides`,
+        tone: 'strong',
+      },
+    ]
   }
   if (view.done) {
     const d = view.done
