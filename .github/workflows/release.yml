@@ -4,7 +4,8 @@ name: Release the @lntt packages
 #   gh release create vX.Y.Z --generate-notes
 # Every published package under packages/ shares one version, and the tag must match
 # it (docs/process/delivery.md). A release marked as pre-release is a dry run: every
-# check runs and `npm publish --dry-run` packs each package, nothing reaches npm.
+# check runs, pnpm packs each package and `npm publish --dry-run` reads the
+# tarball, nothing reaches npm.
 on:
   release:
     types: [published]
@@ -46,13 +47,16 @@ jobs:
           SCAFFOLD_SMOKE: '1'
 
       # Auth is OIDC via the trusted publisher configured on npmjs.com for each
-      # package, this repo and this workflow: no NPM_TOKEN secret. `prepack` builds
-      # what ships compiled (docs/adr/cli-runtime-and-publishing.md); --provenance is
-      # automatic under trusted publishing. A version already on npm is skipped, so a
-      # run that failed half-way can be re-run.
+      # package, this repo and this workflow: no NPM_TOKEN secret. Each package is
+      # packed by pnpm, which runs `prepack` (it builds what ships compiled) and applies
+      # publishConfig's `bin` and `exports`, pointing a package the repo runs from
+      # source at dist/ (docs/adr/cli-runtime-and-publishing.md); npm publishes the
+      # tarball. --provenance is automatic under trusted publishing. A version already
+      # on npm is skipped, so a run that failed half-way can be re-run.
       - name: Publish
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          tarballs="$RUNNER_TEMP/tarballs"
           # On its own line: a failing list inside `for … in $(…)` would publish
           # nothing and leave the step green.
           dirs="$(node scripts/packages-version.mts list)"
@@ -62,6 +66,9 @@ jobs:
               echo "$name@$VERSION is already on npm: skipped"
               continue
             fi
+            rm -rf "$tarballs" && mkdir -p "$tarballs"
+            (cd "$dir" && pnpm pack --pack-destination "$tarballs")
+            # An absolute path: npm reads a bare file name as a git spec.
             # shellcheck disable=SC2086 # DRY_RUN holds several flags, or none
-            (cd "$dir" && npm publish --provenance --access public $DRY_RUN)
+            npm publish "$(ls "$tarballs"/*.tgz)" --provenance --access public $DRY_RUN
           done

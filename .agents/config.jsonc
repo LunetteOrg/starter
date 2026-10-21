@@ -76,7 +76,7 @@
   "ci": {
     "local": {
       "cloudOnly": {
-        "release.yml": "publishes @lntt/create to npm with the OIDC token of a published GitHub Release",
+        "release.yml": "publishes the @lntt packages to npm with the OIDC token of a published GitHub Release",
         "candidate.yml": "moves pull requests and edits the candidate with the GitHub App's token"
       }
     }

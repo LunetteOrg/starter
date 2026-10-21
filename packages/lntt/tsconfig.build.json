@@ -1,0 +1,17 @@
+{
+  // Emit config for the PUBLISHED artifact (docs/adr/cli-runtime-and-publishing.md).
+  // Node refuses to strip TypeScript types under node_modules, so the package ships
+  // bin/ and src/ compiled to dist/ with declarations; the schemas the sources import
+  // are copied to dist/schema by tsc. In this repo the sources run directly.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "rewriteRelativeImportExtensions": true,
+    "declaration": true,
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts", "bin/**/*.ts"],
+  "exclude": []
+}

@@ -47,16 +47,24 @@ it ships:
 
 The packages published from `packages/` besides the CLI follow the same rule.
 
-- **A package whose code Node runs** (`@lntt/playwright-config`, `@lntt/test-utils`)
-  is authored in TypeScript and published compiled: `tsconfig.build.json` emits
-  `src/` to `dist/` with declarations, `exports` and `bin` point at `dist/`,
-  `prepack` builds, `files` ships `dist`. Its tests import the sources, and at least
-  one imports it by name from a `node_modules`, built.
+- **A package whose code Node runs** (`@lntt/playwright-config`, `@lntt/test-utils`,
+  `@lntt/lntt`) is authored in TypeScript and published compiled: `tsconfig.build.json`
+  emits its sources to `dist/` with declarations, the published `exports` and `bin`
+  point at `dist/`, `prepack` builds, `files` ships `dist`. Files its code reads at run
+  time ship next to it (`@lntt/lntt` copies `agents/` to `dist/agents`). Its tests
+  import the sources, and at least one imports it by name from a `node_modules`, built.
+- **A package this repo runs from source through the workspace** (`@lntt/lntt`: the
+  root's `lntt`, the git hooks, `commitlint.config.mjs`, the CI workflows) keeps
+  `bin` and `exports` on its `.ts` sources and declares the published ones, on
+  `dist/`, in `publishConfig`. pnpm applies those overrides when it packs; npm does
+  not, so the release packs every package with `pnpm pack` and publishes the tarball
+  with `npm publish`.
 - **A config package** (`@lntt/biome-config`, `@lntt/typescript-config`,
   `@lntt/stylelint-config`) ships its files as they are, listed in `files` and
   `exports`.
 - **The tool a package configures is a peer dependency** (`@biomejs/biome`,
-  `typescript`, `stylelint`, `@playwright/test`): the project installs it once, at
+  `typescript`, `stylelint`, `@playwright/test`, `@commitlint/config-conventional`
+  for `@lntt/lntt`'s commitlint configuration): the project installs it once, at
   the version it chooses within the range.
 - **Tests consume a package by its published name** from a `node_modules`, the way a
   project does. The scaffold smoke installs every published package from its
@@ -76,8 +84,8 @@ the whole set, which the template depends on as one.
 - **Publishing is CI only**, from `.github/workflows/release.yml`, through npm OIDC
   trusted publishing (`--provenance`, no npm token). A version already on npm is
   skipped, so a failed run can be re-run.
-- **A release marked as pre-release is a dry run**: every check, then
-  `npm publish --dry-run`; nothing reaches npm.
+- **A release marked as pre-release is a dry run**: every check runs and nothing
+  reaches npm.
 - **The one exception: a new package's first publish is by hand**, once, as a
   `0.0.0` placeholder. npm configures a trusted publisher only on a package that
   already exists (npm/cli#8544); the placeholder exists so the first CI release can
@@ -149,6 +157,13 @@ written for the projects; the divergence is intentional.
   tool too, to run it; two declared copies at different versions mean two runners
   (Playwright refuses a second `@playwright/test`) or a config validated against a
   tool the project does not run.
+- **`bin` and `exports` on `dist/` in the manifest itself**, for a package the repo
+  runs from source. Every in-repo use (the git hooks, commitlint, `pnpm exec lntt`
+  in CI) would need a build first, and a stale `dist/` would run instead of the code
+  under review.
+- **`npm publish` of the package directory.** npm ignores `publishConfig.bin` and
+  `publishConfig.exports`, so it would publish the source entries, which fail under
+  `node_modules`.
 - **A token for the first publish of a new package** (an npm automation token as a
   repository secret, used once by the workflow). It puts a long-lived publish token
   in the repository for a step that happens once per package, and npm still needs
