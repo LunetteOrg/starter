@@ -76,9 +76,29 @@ describe('the installed package', () => {
     assert.ok(existsSync(bin))
   })
 
-  test('lntt --help runs from inside node_modules', () => {
-    assert.match(execFileSync('node', [bin, '--help'], { cwd: project, encoding: 'utf8' }), /^usage: lntt /)
+  test('every bin and exports target of the packed manifest is in the package', () => {
+    const targets = (entry: unknown): string[] =>
+      typeof entry === 'string' ? [entry] : Object.values(entry as object).flatMap(targets)
+    const manifest = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8'))
+    const all = [...targets(manifest.bin), ...targets(manifest.exports)]
+    assert.ok(
+      all.some((t) => t.endsWith('.d.ts')),
+      'the types conditions are among the targets',
+    )
+    for (const target of all) assert.ok(existsSync(join(pkgRoot, target)), `${target} is packed`)
   })
+
+  test('the commitlint peer is optional: lntt alone needs nothing more', () => {
+    const manifest = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8'))
+    assert.ok(manifest.peerDependencies['@commitlint/config-conventional'])
+    assert.equal(manifest.peerDependenciesMeta['@commitlint/config-conventional'].optional, true)
+  })
+
+  for (const ask of ['--help', '-h', 'help']) {
+    test(`lntt ${ask} runs from inside node_modules`, () => {
+      assert.match(execFileSync('node', [bin, ask], { cwd: project, encoding: 'utf8' }), /^usage: lntt /)
+    })
+  }
 
   test('lntt get reads the project configuration', () => {
     const out = execFileSync('node', [bin, 'get', 'recording.language'], { cwd: project, encoding: 'utf8' })
