@@ -81,10 +81,9 @@ describe('the installed package', () => {
       typeof entry === 'string' ? [entry] : Object.values(entry as object).flatMap(targets)
     const manifest = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8'))
     const all = [...targets(manifest.bin), ...targets(manifest.exports)]
-    assert.ok(
-      all.some((t) => t.endsWith('.d.ts')),
-      'the types conditions are among the targets',
-    )
+    for (const entry of ['.', './ci']) {
+      assert.match(manifest.exports[entry].types, /\.d\.ts$/, `${entry} has its types condition`)
+    }
     for (const target of all) assert.ok(existsSync(join(pkgRoot, target)), `${target} is packed`)
   })
 
