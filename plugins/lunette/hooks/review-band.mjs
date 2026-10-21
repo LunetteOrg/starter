@@ -41,6 +41,7 @@ export function fold(events) {
     running: new Map(),
     done: null,
     error: null,
+    limit: null,
   }
   for (const e of events) {
     if (typeof e.t === 'number') v.last = e.t
@@ -60,6 +61,7 @@ export function fold(events) {
       if (typeof e.tokens === 'number') v.tokens += e.tokens
     } else if (e.type === 'done') v.done = e
     else if (e.type === 'error') v.error = e
+    else if (e.type === 'limit') v.limit = e
   }
   return v
 }
@@ -89,6 +91,19 @@ export function bandLines(view, now, alive) {
     if (now - view.error.t >= LINGER_MS) return null
     const what = view.round === null ? 'not started' : `round ${view.round} stopped`
     return [{ text: `lntt review · ${what}: ${view.error.message}`, tone: 'error' }]
+  }
+  // The round past delivery.review.maxRounds: nothing ran, the person decides.
+  if (view.limit) {
+    const l = view.limit
+    if (now - l.t >= LINGER_MS) return null
+    const rounds = (l.maxRounds ?? 0) + (l.allowed ?? 0)
+    const failed = l.failed ? ` · ${l.failed} failed` : ''
+    return [
+      {
+        text: `lntt review · round ${l.round} not started: limit of ${rounds} rounds · ${l.open ?? 0} open${failed} · the person decides`,
+        tone: 'strong',
+      },
+    ]
   }
   if (view.done) {
     const d = view.done

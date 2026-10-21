@@ -295,6 +295,11 @@
               "type": "number",
               "exclusiveMinimum": 0,
               "description": "How long a whole round may take; then every agent still running is stopped, the round fails and keeps what it gathered. Default 60."
+            },
+            "maxRounds": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "How many rounds a branch may take: the round past it does not start, and lntt review exits 3 with what is still open for the person to decide. lntt review allow gives one branch more. Default 4."
             }
           }
         }

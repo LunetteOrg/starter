@@ -705,6 +705,152 @@ describe('lntt review, end to end with a fake agent', () => {
   })
 })
 
+describe('lntt review at delivery.review.maxRounds', () => {
+  const withMaxRounds = (n: number) => {
+    const config = JSON.parse(CONFIG)
+    config.delivery.review.maxRounds = n
+    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify(config))
+    git('commit', '-qam', `maxRounds ${n}`)
+  }
+  const commit = (value: number) => {
+    writeFileSync(join(repo, 'a.ts'), `export const a = ${value}\n`)
+    git('commit', '-qam', `a = ${value}`)
+  }
+  const progress = () => readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8')
+  const events = () =>
+    progress()
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l))
+  const open = { FAKE_REVIEW: '- [warning] a.ts:1 — w — a', FAKE_VERIFY: 'confirmed\\np' }
+
+  test('the round past it does not start: exit 3, a limit line, what is still open', () => {
+    withMaxRounds(1)
+    assert.equal(lntt(['--base', 'main'], open).code, 1)
+    const calls = readFileSync(log, 'utf8')
+    commit(3)
+
+    const r = lntt(['--base', 'main'], open)
+    assert.equal(r.code, 3, r.err)
+    assert.match(
+      r.err,
+      /^lntt review: limit: round 2 would pass delivery\.review\.maxRounds \(1\) on feat\/1\/x; still open: f1 \(warning, confirmed\)$/m,
+    )
+    assert.match(r.err, /lntt review allow <rounds>/)
+    const out = JSON.parse(r.out)
+    assert.deepEqual(
+      out.findings.map((f: { id: string }) => f.id),
+      ['f1'],
+    )
+    assert.deepEqual(out.limit, { round: 2, maxRounds: 1, allowed: 0 })
+    assert.equal(readFileSync(log, 'utf8'), calls, 'no agent started')
+    assert.equal(state().round, 1)
+    assert.deepEqual(events().at(-1), { ...events().at(-1), type: 'limit', round: 2, maxRounds: 1, open: 1, failed: 0 })
+  })
+
+  test('what is open at the limit: a withdrawn finding is not, a failed reviewer is', () => {
+    withMaxRounds(1)
+    lntt(['--base', 'main'], open)
+    lntt(['reply', 'f1', 'no'], { FAKE_REPLY: 'withdrawn\\nfair' })
+    commit(3)
+    const r = lntt(['--base', 'main'])
+    assert.equal(r.code, 3, r.err)
+    assert.match(r.err, /still open: nothing$/m)
+    assert.deepEqual(JSON.parse(r.out).findings, [])
+    assert.equal(events().at(-1).open, 0)
+
+    git('switch', '-qc', 'feat/2/y')
+    commit(4)
+    assert.equal(lntt(['--base', 'main'], { FAKE_FAIL_REVIEW: '1' }).code, 1)
+    commit(5)
+    const calls = readFileSync(log, 'utf8')
+    const failed = lntt(['--base', 'main'])
+    assert.equal(failed.code, 3, failed.err)
+    assert.match(failed.err, /still open: code · claude sonnet failed$/m)
+    assert.equal(JSON.parse(failed.out).failed[0].agent, 'claude sonnet')
+    assert.equal(events().at(-1).failed, 1)
+    assert.equal(readFileSync(log, 'utf8'), calls, 'no agent started')
+  })
+
+  test('a person allows more rounds for the branch, and the next round runs', () => {
+    withMaxRounds(1)
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    commit(3)
+    assert.equal(lntt(['--base', 'main']).code, 3)
+
+    const allow = lntt(['allow', '2'])
+    assert.equal(allow.code, 0, allow.err)
+    assert.match(allow.err, /feat\/1\/x may take 3 rounds: delivery\.review\.maxRounds \(1\) and 2 allowed/)
+    assert.equal(state().allowed, 2)
+    assert.deepEqual(
+      events().map((e) => [e.type, e.allowed]),
+      [['allow', 2]],
+      'the band no longer shows the limit',
+    )
+
+    const r = lntt(['--base', 'main'])
+    assert.equal(r.code, 0, r.err)
+    assert.match(r.err, /round 2 done/)
+    assert.equal(state().allowed, 2, 'kept by the round')
+    assert.equal(lntt(['allow', '1']).code, 0)
+    assert.equal(state().allowed, 3, 'added to what was allowed')
+    assert.deepEqual(
+      events().map((e) => [e.type, e.allowed]),
+      [['allow', 3]],
+    )
+  })
+
+  test('the rounds allowed count in the limit, and stay with their branch', () => {
+    withMaxRounds(1)
+    lntt(['--base', 'main'])
+    lntt(['allow', '1'])
+    commit(3)
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    commit(4)
+    const r = lntt(['--base', 'main'])
+    assert.equal(r.code, 3, r.err)
+    assert.match(r.err, /delivery\.review\.maxRounds \(1\) and 1 allowed on feat\/1\/x/)
+    assert.deepEqual(JSON.parse(r.out).limit, { round: 3, maxRounds: 1, allowed: 1 })
+    assert.equal(events().at(-1).allowed, 1)
+
+    git('switch', '-qc', 'feat/2/y')
+    commit(5)
+    assert.match(lntt(['allow', '1']).err, /no round on feat\/2\/y yet/)
+    assert.equal(state().branch, 'feat/1/x', "the other branch's state untouched")
+    assert.equal(state().allowed, 1)
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    assert.equal(state().allowed, undefined, 'a new branch starts with nothing allowed')
+  })
+
+  test('--plan names the limit; a run with no new commit is not a round and is not stopped', () => {
+    withMaxRounds(1)
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    assert.equal(lntt(['--base', 'main']).code, 0, 'nothing new to read')
+    commit(3)
+    const plan = lntt(['--base', 'main', '--plan'])
+    assert.equal(plan.code, 0, plan.err)
+    assert.match(plan.err, /limit: round 2 would pass delivery\.review\.maxRounds \(1\): it will not start/)
+  })
+
+  test('allow is refused before any round on the branch, and with a count that is not a whole number from 1', () => {
+    assert.match(lntt(['allow', '1']).err, /no round on feat\/1\/x yet/)
+    assert.equal(existsSync(join(repo, '.git/lntt-review.progress')), false, 'a refused allow starts no progress')
+    lntt(['--base', 'main'])
+    const before = readFileSync(join(repo, '.git/lntt-review.json'), 'utf8')
+    for (const count of [['0'], [], ['abc'], ['1.5'], ['-1'], ['1', '2']]) {
+      assert.equal(lntt(['allow', ...count]).code, 2, `allow ${count.join(' ')}`)
+    }
+    assert.equal(readFileSync(join(repo, '.git/lntt-review.json'), 'utf8'), before)
+  })
+
+  test('a maxRounds below 1 does not validate', () => {
+    withMaxRounds(0)
+    const r = lntt(['--base', 'main'])
+    assert.equal(r.code, 1)
+    assert.match(r.err, /maxRounds must be >= 1/)
+  })
+})
+
 // The 5-second SIGKILL timer of `terminate` is the only thing that can kill the stubborn
 // agent while the round is open: the exit handler kills what is left only when lntt
 // review exits, and a verifier holds the round open past the timer.

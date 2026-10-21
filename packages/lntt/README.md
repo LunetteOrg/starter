@@ -250,6 +250,7 @@ lntt review                       # one round on the current branch; JSON on std
 lntt review --base <branch>       # against another base (a stacked pull request)
 lntt review --plan                # the range, the lenses and their agents; runs nothing
 lntt review reply f2 "line 120 excludes it"   # answer the reviewers who found f2
+lntt review allow 2               # two rounds more for this branch, past maxRounds
 ```
 
 A round, on a clean working tree:
@@ -307,6 +308,13 @@ that cannot be made read-only, are refused before any starts.
 `reply` resumes the sessions of the reviewers who found the finding with the author's
 answer ([`agents/reply.md`](./agents/reply.md)); the finding closes when all withdraw it.
 A finding whose reviewer cannot be resumed is refused: the person decides on it.
+
+A branch takes at most `delivery.review.maxRounds` rounds, one with a failure among
+them. The round past the limit does not start: `lntt review: limit: …` on stderr with the findings still open, the
+same findings as JSON on stdout, a `limit` event in the progress file, exit 3. `allow`
+gives the current branch more rounds, kept in its state; the configuration and the
+other branches stay as they are. A run with no new commit is not a round and is never
+stopped.
 
 ## Running the apps locally
 

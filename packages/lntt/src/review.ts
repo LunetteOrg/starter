@@ -30,6 +30,8 @@ export interface ReviewConfig {
   optionalGraceMinutes: number
   // How long a whole round may take before every agent still running is stopped.
   roundTimeoutMinutes: number
+  // The rounds a branch may take before lntt review stops and the person decides.
+  maxRounds: number
 }
 
 export const TEST_PATHS = ['**/*.test.*', '**/*.spec.*', '**/test/**', '**/tests/**', '**/__tests__/**']
@@ -45,6 +47,7 @@ const DEFAULT: ReviewConfig = {
   perProvider: 4,
   optionalGraceMinutes: 2,
   roundTimeoutMinutes: 60,
+  maxRounds: 4,
 }
 
 interface RawLens {
@@ -60,6 +63,7 @@ interface RawReview {
   perProvider?: number
   optionalGraceMinutes?: number
   roundTimeoutMinutes?: number
+  maxRounds?: number
 }
 
 // delivery.review over the defaults, lens by lens. A lens with no agents is off.
@@ -91,6 +95,7 @@ export function reviewConfig(data: Record<string, unknown>): ReviewConfig {
     perProvider: raw.perProvider ?? DEFAULT.perProvider,
     optionalGraceMinutes: raw.optionalGraceMinutes ?? DEFAULT.optionalGraceMinutes,
     roundTimeoutMinutes: raw.roundTimeoutMinutes ?? DEFAULT.roundTimeoutMinutes,
+    maxRounds: raw.maxRounds ?? DEFAULT.maxRounds,
   }
 }
 
@@ -284,6 +289,14 @@ export interface ReviewState {
   // The last commit every reviewer read; null when no round has read the branch whole.
   reviewed: string | null
   result: RoundResult
+  // Rounds a person allowed on this branch past delivery.review.maxRounds.
+  allowed?: number
+}
+
+// The rounds a branch may take: delivery.review.maxRounds, and what a person allowed
+// on it with `lntt review allow`.
+export function roundLimit(state: ReviewState | null, branch: string, maxRounds: number): number {
+  return maxRounds + (state?.branch === branch ? (state.allowed ?? 0) : 0)
 }
 
 export interface Range {

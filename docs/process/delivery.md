@@ -41,7 +41,10 @@ stops at the draft pull request.
    of the conversation that wrote the change, each lens on the agents and models of
    `delivery.review`; verifiers try to refute every blocker and warning; later rounds
    read only the new commits. The branch reaches GitHub when a round finds nothing:
-   every push is a full run.
+   every push is a full run. A branch takes at most `delivery.review.maxRounds` rounds;
+   at the limit the person decides on what is still open: the pull request as it is,
+   more rounds for that branch, or an issue
+   ([review agents](../adr/review-agents.md)).
 3. **`pnpm ci:local` green** on the head about to be published, then one push, then
    `gh pr ready`. A red `ci:local` goes back into the review.
 4. **On the candidate.** When the pull request is opened or marked ready, the candidate
