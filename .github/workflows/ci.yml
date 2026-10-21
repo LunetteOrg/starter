@@ -49,8 +49,13 @@ jobs:
       - run: node scripts/packages-version.mts check
       - run: pnpm typecheck
       # The tests run on every ready pull request: a failure that shows only on Linux is
-      # caught before the candidate. The scaffold smoke (SCAFFOLD_SMOKE: install, lint and
-      # typecheck a generated project) is the heavy part and runs on the full CI only.
-      - run: pnpm test
+      # caught before the candidate. The scaffold level (`packages/create`: a project
+      # generated and committed with git, the package packed with npm, and the smoke that
+      # installs, lints and typechecks a generated project) is slow and depends on the
+      # machine: it runs on the full CI only.
+      - if: ${{ !(github.event_name == 'push' || github.base_ref == github.event.repository.default_branch) }}
+        run: pnpm test:minimal
+      - if: github.event_name == 'push' || github.base_ref == github.event.repository.default_branch
+        run: pnpm test
         env:
-          SCAFFOLD_SMOKE: ${{ (github.event_name == 'push' || github.base_ref == github.event.repository.default_branch) && '1' || '' }}
+          SCAFFOLD_SMOKE: '1'

@@ -7,6 +7,7 @@
   "scripts": {
     "prepare": "sh scripts/install-hooks.sh || true",
     "test": "pnpm -r test && node --test scripts/*.test.mts plugins/*/hooks/*.test.mjs",
+    "test:minimal": "pnpm -r --filter '!@lntt/create' test && node --test scripts/*.test.mts plugins/*/hooks/*.test.mjs",
     "ci:local": "lntt ci local",
     "typecheck": "pnpm -r typecheck",
     "lint": "biome check",
