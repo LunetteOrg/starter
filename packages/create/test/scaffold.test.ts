@@ -27,11 +27,16 @@ function scaffold(name: string, template: string): string {
   return join(dir, name)
 }
 
-// Files under `dir` containing `needle`. `grep -rl` exits 1 (no throw here) when
-// nothing matches, which we treat as "clean".
+// Files under `dir` containing `needle`, outside `.git`: the scaffold's commit is not
+// template residue, and a git process it leaves behind may still rewrite .git/objects
+// while grep reads them. `grep -rl` exits 1 (no throw here) when nothing matches, which
+// we treat as "clean".
 function filesContaining(dir: string, needle: string): string[] {
   try {
-    return execFileSync('grep', ['-rl', needle, dir], { encoding: 'utf8' }).trim().split('\n').filter(Boolean)
+    return execFileSync('grep', ['-rl', '--exclude-dir=.git', needle, dir], { encoding: 'utf8' })
+      .trim()
+      .split('\n')
+      .filter(Boolean)
   } catch (e) {
     if ((e as { status?: number }).status === 1) return []
     throw e

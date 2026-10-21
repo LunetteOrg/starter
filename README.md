@@ -59,7 +59,8 @@ Each package's README says how a project installs and uses it.
 ## Develop
 
 Node ≥ 24 and pnpm. `pnpm lint`, `pnpm typecheck` and `pnpm test` run every package;
-`SCAFFOLD_SMOKE=1 pnpm test` also installs, lints and typechecks a generated project.
+`SCAFFOLD_SMOKE=1 pnpm test` also installs, lints and typechecks a generated project;
+`pnpm test:minimal` leaves out the scaffold level (`packages/create`), as the minimal CI does.
 The database tests of `@lntt/test-utils` need Docker: without it they skip locally and
 fail in CI.
 `pnpm ci:local` runs the CI workflows on the working tree before a push
