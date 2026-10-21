@@ -34,7 +34,10 @@ jobs:
 `
 
 let root: string
-afterEach(() => rmSync(root, { recursive: true, force: true }))
+// The ci:local run under test may still be writing its lock or its guard when a test
+// removes a folder: the removal tries again before it fails.
+const RETRY = { maxRetries: 10, retryDelay: 50 } as const
+afterEach(() => rmSync(root, { recursive: true, force: true, ...RETRY }))
 
 // The lock lives in the test repository, never in the machine's cache.
 const env = () => ({
@@ -268,7 +271,7 @@ jobs:
     root = repo({ '.github/workflows/ci.yml': SLOW })
     const first = backgroundWith({ HOLD: '1' }, 'local')
     await until(() => existsSync(lock()))
-    rmSync(join(root, '.git', 'locks'), { recursive: true, force: true })
+    rmSync(join(root, '.git', 'locks'), { recursive: true, force: true, ...RETRY })
     go()
     const a = await first.done
     assert.equal(a.status, 0, a.stdout + a.stderr)
@@ -281,7 +284,7 @@ jobs:
     root = repo({ '.github/workflows/ci.yml': SLOW })
     const first = backgroundWith({ HOLD: '1' }, 'local')
     await until(() => existsSync(lock()))
-    rmSync(join(root, '.git', 'locks'), { recursive: true, force: true })
+    rmSync(join(root, '.git', 'locks'), { recursive: true, force: true, ...RETRY })
     first.child.kill('SIGINT')
     const a = await first.done
     assert.equal(a.status, 130, a.stdout + a.stderr)
