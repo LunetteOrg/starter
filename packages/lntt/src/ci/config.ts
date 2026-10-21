@@ -1,9 +1,11 @@
 // The sections of .agents/config.* that `lntt ci` reads, with `loadConfig`:
 // `ci.local` (without it: nothing cloud-only, no fake values, the built-in actions
-// only) and `delivery.candidate` (without it: no candidate).
+// only, a machine-wide lock, 30 minutes per step) and `delivery.candidate` (without
+// it: no candidate).
 
 import { ConfigError, loadConfig } from '../index.ts'
 import type { CandidateConfig } from './candidate.ts'
+import type { LockScope } from './lock.ts'
 
 export type ActionMapping = { run: string } | { skip: string }
 
@@ -11,6 +13,10 @@ export interface CiConfig {
   cloudOnly: Record<string, string>
   fake: { secrets: Record<string, string>; vars: Record<string, string> }
   actions: Record<string, ActionMapping>
+  // Who a run queues behind: every run on the machine, or the runs of this repository.
+  lock: LockScope
+  // How long one step (in container mode, one job) may run before it is stopped.
+  timeoutMinutes: number
 }
 
 interface Section {
@@ -18,11 +24,13 @@ interface Section {
     cloudOnly?: Record<string, string>
     fake?: { secrets?: Record<string, string>; vars?: Record<string, string> }
     actions?: Record<string, ActionMapping>
+    lock?: LockScope
+    timeoutMinutes?: number
   }
 }
 
 export function emptyConfig(): CiConfig {
-  return { cloudOnly: {}, fake: { secrets: {}, vars: {} }, actions: {} }
+  return { cloudOnly: {}, fake: { secrets: {}, vars: {} }, actions: {}, lock: 'machine', timeoutMinutes: 30 }
 }
 
 // The configuration's data; none at all is a project that has not adopted it yet,
@@ -43,6 +51,8 @@ export function ciConfig(cwd: string): CiConfig {
     cloudOnly: local.cloudOnly ?? {},
     fake: { secrets: local.fake?.secrets ?? {}, vars: local.fake?.vars ?? {} },
     actions: local.actions ?? {},
+    lock: local.lock ?? 'machine',
+    timeoutMinutes: local.timeoutMinutes ?? 30,
   }
 }
 

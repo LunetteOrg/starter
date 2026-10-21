@@ -2,8 +2,11 @@
 // Jobs follow `needs`; a job whose need failed is skipped, the others go on, so one
 // run lists every red job. Within a job, a failed step skips the following ones
 // unless their condition asks for a failure (`if: failure()`, `when: on_fail`).
+// Each command runs in a process group of its own, stopped whole when it outlasts the
+// timeout or when ci:local is interrupted.
 
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
+import { availableParallelism, loadavg } from 'node:os'
 import type { Job, Local, Step } from './plan.ts'
 
 export type StepStatus = 'passed' | 'failed' | 'skipped' | 'noop' | 'blocked'
@@ -14,6 +17,7 @@ export interface StepResult {
   status: StepStatus
   reason?: string
   ms?: number
+  timedOut?: boolean
 }
 
 export interface JobResult {
@@ -22,6 +26,7 @@ export interface JobResult {
   reason?: string
   steps: StepResult[]
   ms: number
+  timedOut?: boolean
 }
 
 export interface RunOptions {
@@ -33,21 +38,126 @@ export interface RunOptions {
   onJob?: (key: string) => void
   // Container mode: the job runs whole through this command instead of step by step.
   container?: (job: Job) => string[] | null
+  // How long one step (in container mode, one job) may run; none without it.
+  timeoutMs?: number
+  // What the machine is doing when a command times out (default: machineLoad).
+  load?: () => string
 }
 
-function exec(argv: string[], cwd: string, env: Record<string, string>, output: 'inherit' | 'ignore'): Promise<number> {
+// The groups still running, and those SIGTERM was sent to, until their SIGKILL: a closed
+// leader says nothing of its group, where a child that ignored SIGTERM may still run.
+const groups = new Set<number>()
+const terminated = new Set<number>()
+
+// SIGTERM to the group, then SIGKILL to the group five seconds later, whatever the leader
+// did meanwhile: a process group id is not reused while a member lives, so the SIGKILL can
+// only reach what ignored SIGTERM (an empty group fails with ESRCH). Only a group still
+// running is signalled at first: a closed command's pid may already belong to another process.
+function terminate(pid: number): void {
+  if (!groups.has(pid)) return
+  try {
+    process.kill(-pid, 'SIGTERM')
+  } catch {}
+  terminated.add(pid)
+  setTimeout(() => {
+    try {
+      process.kill(-pid, 'SIGKILL')
+    } catch {}
+    terminated.delete(pid)
+  }, 5000).unref()
+}
+
+// Stops the commands still running (an interrupt of ci:local: a detached group does not
+// get the terminal's Ctrl-C), and resolves once they have closed, or after five seconds.
+export function stopRunning(): Promise<void> {
+  for (const pid of groups) terminate(pid)
+  const until = Date.now() + 5000
+  return new Promise((resolve) => {
+    const wait = setInterval(() => {
+      if (groups.size > 0 && Date.now() < until) return
+      clearInterval(wait)
+      resolve()
+    }, 50)
+  })
+}
+
+// Whatever ignored SIGTERM and is still running when ci:local exits goes with it.
+process.on('exit', () => {
+  for (const pid of [...groups, ...terminated]) {
+    try {
+      process.kill(-pid, 'SIGKILL')
+    } catch {}
+  }
+})
+
+// The load average, the cores, and the containers running (Testcontainers' among them):
+// what tells a slow machine from a hung test. Without Docker, no containers are named.
+export function machineLoad(): string {
+  const load = loadavg()
+    .map((n) => n.toFixed(1))
+    .join(' / ')
+  const count = (...filter: string[]) => {
+    const ps = spawnSync('docker', ['ps', '-q', ...filter], { encoding: 'utf8', timeout: 5000 })
+    return ps.status === 0 ? ps.stdout.split('\n').filter((l) => l !== '').length : null
+  }
+  const containers = count()
+  const testcontainers = containers === null ? null : count('--filter', 'label=org.testcontainers=true')
+  const running =
+    containers === null
+      ? ''
+      : `, ${containers} containers running${testcontainers === null ? '' : ` (${testcontainers} Testcontainers)`}`
+  return `load ${load} on ${availableParallelism()} cores${running}`
+}
+
+function timeoutText(ms: number): string {
+  return ms < 60_000 ? `${Number((ms / 1000).toFixed(1))}s` : `${Number((ms / 60_000).toFixed(1))}m`
+}
+
+interface Outcome {
+  status: StepStatus
+  reason?: string
+  timedOut?: boolean
+}
+
+function exec(argv: string[], cwd: string, env: Record<string, string>, options: RunOptions): Promise<Outcome> {
   return new Promise((resolve) => {
     const child = spawn(argv[0], argv.slice(1), {
       cwd,
       env: { ...process.env, CI: 'true', ...env },
-      stdio: ['ignore', output, output],
+      stdio: ['ignore', options.output ?? 'inherit', options.output ?? 'inherit'],
+      detached: true,
     })
-    child.on('error', () => resolve(127))
-    child.on('close', (code, signal) => resolve(code ?? (signal ? 128 : 1)))
+    const pid = child.pid
+    if (pid) groups.add(pid)
+    let load: string | null = null
+    // A delay past setTimeout's 32-bit range would fire at once.
+    const timer =
+      options.timeoutMs === undefined
+        ? undefined
+        : setTimeout(
+            () => {
+              load = (options.load ?? machineLoad)()
+              if (pid) terminate(pid)
+            },
+            Math.min(options.timeoutMs, 2 ** 31 - 1),
+          )
+    const done = (code: number) => {
+      clearTimeout(timer)
+      if (pid) groups.delete(pid)
+      if (load !== null) {
+        resolve({
+          status: 'failed',
+          reason: `timed out after ${timeoutText(options.timeoutMs ?? 0)} — ${load}`,
+          timedOut: true,
+        })
+      } else resolve(code === 0 ? { status: 'passed' } : { status: 'failed', reason: `exit ${code}` })
+    }
+    child.on('error', () => done(127))
+    child.on('close', (code, signal) => done(code ?? (signal ? 128 : 1)))
   })
 }
 
-async function runLocal(local: Local, output: 'inherit' | 'ignore'): Promise<{ status: StepStatus; reason?: string }> {
+async function runLocal(local: Local, options: RunOptions): Promise<Outcome> {
   switch (local.kind) {
     case 'noop':
       return { status: 'noop', reason: local.note }
@@ -59,10 +169,8 @@ async function runLocal(local: Local, output: 'inherit' | 'ignore'): Promise<{ s
       const problem = local.check()
       return problem ? { status: 'failed', reason: problem } : { status: 'passed', reason: local.note }
     }
-    case 'run': {
-      const code = await exec([...local.shell, local.command], local.cwd, local.env, output)
-      return code === 0 ? { status: 'passed' } : { status: 'failed', reason: `exit ${code}` }
-    }
+    case 'run':
+      return exec([...local.shell, local.command], local.cwd, local.env, options)
   }
 }
 
@@ -89,7 +197,7 @@ async function runSteps(steps: Step[], options: RunOptions): Promise<StepResult[
     }
     if (step.local.kind === 'run') options.log(`  ▶ ${step.label}`)
     const started = Date.now()
-    const result = await runLocal(step.local, options.output ?? 'inherit')
+    const result = await runLocal(step.local, options)
     if (result.status === 'failed') failed = true
     results.push({ label: step.label, ...result, ms: Date.now() - started })
   }
@@ -118,8 +226,15 @@ export async function runJobs(jobs: Job[], options: RunOptions): Promise<JobResu
   const results = new Map<string, JobResult>()
   for (const job of ordered(jobs)) {
     const started = Date.now()
-    const record = (status: JobStatus, reason?: string, steps: StepResult[] = []) =>
-      results.set(job.key, { key: job.key, status, ...(reason ? { reason } : {}), steps, ms: Date.now() - started })
+    const record = (status: JobStatus, reason?: string, steps: StepResult[] = [], timedOut = false) =>
+      results.set(job.key, {
+        key: job.key,
+        status,
+        ...(reason ? { reason } : {}),
+        steps,
+        ms: Date.now() - started,
+        ...(timedOut ? { timedOut } : {}),
+      })
 
     if (options.only && !options.only.includes(job.key)) {
       record('not-selected', 'not selected with --job')
@@ -154,12 +269,17 @@ export async function runJobs(jobs: Job[], options: RunOptions): Promise<JobResu
     const container = options.container?.(job)
     if (container) {
       options.log(`  ▶ ${container.join(' ')}`)
-      const code = await exec(container, process.cwd(), {}, options.output ?? 'inherit')
-      record(code === 0 ? 'passed' : 'failed', code === 0 ? undefined : `exit ${code}`)
+      const outcome = await exec(container, process.cwd(), {}, options)
+      record(outcome.status === 'passed' ? 'passed' : 'failed', outcome.reason, [], outcome.timedOut)
       continue
     }
     const steps = await runSteps(job.steps, options)
-    record(steps.some((s) => s.status === 'failed') ? 'failed' : 'passed', undefined, steps)
+    const timedOut = steps.filter((s) => s.timedOut).map((s) => s.label)
+    record(
+      steps.some((s) => s.status === 'failed') ? 'failed' : 'passed',
+      timedOut.length > 0 ? `${timedOut.join(', ')} timed out` : undefined,
+      steps,
+    )
   }
   // Report in the configuration's order.
   return jobs.map((job) => results.get(job.key) as JobResult)

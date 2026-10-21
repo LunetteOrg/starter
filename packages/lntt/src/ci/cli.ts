@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import {
+  acquireLock,
   candidate,
   candidateConfig,
   ciConfig,
@@ -19,10 +20,11 @@ import {
   localEvent,
   missingTools,
   runJobs,
+  stopRunning,
 } from './index.ts'
 
 const USAGE = [
-  'usage: lntt ci local [--event pull_request|push] [--base <branch>] [--job <key>]... [--list] [--strict] [--container]',
+  'usage: lntt ci local [--event pull_request|push] [--base <branch>] [--job <key>]... [--list] [--strict] [--container] [--no-lock]',
   '       lntt ci candidate [--pr <n>] [--event <action>] [--head-ref <ref>] [--labels a,b] [--merged] [--dry-run]',
 ].join('\n')
 
@@ -56,7 +58,9 @@ async function local(args: string[]): Promise<number> {
         list: { type: 'boolean', default: false },
         strict: { type: 'boolean', default: false },
         container: { type: 'boolean', default: false },
+        lock: { type: 'boolean', default: true },
       },
+      allowNegative: true,
     }),
   )
   const event = values.event
@@ -89,13 +93,35 @@ async function local(args: string[]): Promise<number> {
       return 1
     }
   }
-  const results = await runJobs(jobs, {
-    log: (line) => stdout.write(`${line}\n`),
-    ...(only ? { only } : {}),
-    ...(values.container ? { container: containerCommand(localEv, config) } : {}),
-  })
-  stdout.write(`${formatReport(localEv, results, { strict })}\n`)
-  return exitCode(results, { strict })
+  // An interrupt stops the running command's process group, which does not get the
+  // terminal's Ctrl-C, gives the lock back and exits: no report of a run cut short.
+  let lock: { release: () => void } | null = null
+  let interrupted: Promise<never> | null = null
+  for (const [signal, code] of [
+    ['SIGINT', 130],
+    ['SIGTERM', 143],
+  ] as const) {
+    process.on(signal, () => {
+      interrupted ??= stopRunning().then(() => {
+        lock?.release()
+        exit(code)
+      })
+    })
+  }
+  if (values.lock) lock = await acquireLock(root, config.lock, (line) => stderr.write(`${line}\n`))
+  try {
+    const results = await runJobs(jobs, {
+      log: (line) => stdout.write(`${line}\n`),
+      ...(only ? { only } : {}),
+      ...(values.container ? { container: containerCommand(localEv, config) } : {}),
+      timeoutMs: config.timeoutMinutes * 60_000,
+    })
+    if (interrupted) await interrupted
+    stdout.write(`${formatReport(localEv, results, { strict })}\n`)
+    return exitCode(results, { strict })
+  } finally {
+    lock?.release()
+  }
 }
 
 function candidateRun(args: string[]): number {

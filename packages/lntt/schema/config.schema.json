@@ -34,7 +34,7 @@
       "properties": {
         "local": {
           "type": "object",
-          "description": "What ci:local does where the cloud configuration alone cannot say: the jobs it leaves to the cloud, the fake values it stands in for secrets with, and the actions it maps.",
+          "description": "What ci:local does where the cloud configuration alone cannot say: the jobs it leaves to the cloud, the fake values it stands in for secrets with, the actions it maps; and how runs share the machine: the lock they queue on and how long a step may run.",
           "additionalProperties": false,
           "properties": {
             "cloudOnly": {
@@ -97,6 +97,15 @@
                   }
                 ]
               }
+            },
+            "lock": {
+              "enum": ["machine", "project"],
+              "description": "What a run queues behind: `machine`, every ci:local run on the machine, of any project; `project`, the runs of this repository, from any of its worktrees. `--no-lock` runs without it. Default machine."
+            },
+            "timeoutMinutes": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "How long one step (in container mode, one job) may run before it is stopped, with whatever it started, and fails with the machine's load printed next to it. Default 30."
             }
           }
         }

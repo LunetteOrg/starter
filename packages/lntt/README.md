@@ -371,6 +371,7 @@ lntt ci local --event push         # a push to the base
 lntt ci local --job ci.yml/ci      # one job (repeatable)
 lntt ci local --strict             # fail on anything the cloud runs and the run did not
 lntt ci local --container          # each job in act / circleci local execute
+lntt ci local --no-lock            # without waiting for the ci:local lock
 ```
 
 ```sh
@@ -414,6 +415,34 @@ configuration error, 2 a usage error.
 - **Not run, reported:** a step whose env or inputs read an undeclared secret,
   matrices, reusable workflows, `services:` (not started), CircleCI background steps.
 
+### Parallel runs and timeouts
+
+- **The lock.** A run (not `--list`, and not a run refused for a dirty tree) takes the
+  ci:local lock before its first job and gives it back when it ends, on Ctrl-C or
+  SIGTERM too, so runs from parallel worktrees go one at a time instead of starving
+  each other's tests. It is a file in `$XDG_CACHE_HOME/lntt` (else `~/.cache/lntt`;
+  `$LNTT_CI_LOCK_DIR` names another folder). `ci.local.lock` sets its scope: `machine`
+  (the default), one `ci-local.lock` for every run on the machine, of any project;
+  `project`, one file per repository, shared by its worktrees. `--no-lock` runs
+  without it.
+- **Who holds it.** The file holds the owner's record: pid, host, worktree, start
+  time. A run that finds the lock taken prints, once per holder, `lntt ci: waiting for
+  the ci:local lock held by <worktree> (pid <pid> on <host>, since <HH:MM>, <N>m ago) —
+  <lock file>`, looks again every 5 seconds, and says how long it waited once it has
+  the lock.
+- **A stale lock is taken over:** its owner is no longer running on this host, its
+  record is unreadable for more than 10 seconds, or it has been held past the maximum
+  hold time of 120 minutes, which the waiter reports naming the holder. A run that
+  takes a lock over removes only the record it judged stale.
+- **The timeout.** Each step runs in a process group of its own; one that outlasts
+  `ci.local.timeoutMinutes` (default 30; in container mode, the whole job) is stopped
+  with whatever it started (SIGTERM, then SIGKILL five seconds later) and fails. The
+  following steps go on as after any failure. The report prints next to the step the
+  machine's load at that moment, `timed out after 30m — load 48.2 / 31.0 / 20.5 on 15
+  cores, 9 containers running (7 Testcontainers)` (the containers when Docker
+  answers), and the job line names the step. Nothing is retried: a green means every
+  step passed once.
+
 ### CircleCI
 
 `circleci config process` expands `.circleci/config.yml` (orbs, commands, parameters).
@@ -452,7 +481,11 @@ and Docker are on the PATH before starting.
     // Values a check only needs to be present. Tracked: never a real secret.
     "fake": { "secrets": { "CANARY_TOKEN": "not-a-secret" } },
     // Actions ci:local does not know: a command instead, or a skip with its reason.
-    "actions": { "actions/upload-artifact": { "skip": "reports stay in the working tree" } }
+    "actions": { "actions/upload-artifact": { "skip": "reports stay in the working tree" } },
+    // What a run queues behind: every run on the machine, or this repository's (project).
+    "lock": "machine",
+    // How long one step may run before it is stopped and fails with the machine's load.
+    "timeoutMinutes": 30
   }
 }
 ```

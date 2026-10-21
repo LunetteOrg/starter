@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { SHELLS } from '../../src/ci/actions.ts'
+import type { Event } from '../../src/ci/event.ts'
 import type { Job, Local, Step } from '../../src/ci/plan.ts'
-import { exitCode, ordered, runJobs } from '../../src/ci/run.ts'
+import { formatReport } from '../../src/ci/report.ts'
+import { exitCode, machineLoad, ordered, runJobs } from '../../src/ci/run.ts'
 
 let dir: string
 beforeEach(() => {
@@ -238,4 +240,92 @@ test('the default shell does not fail a pipeline on its first command, as on Git
     quiet,
   )
   assert.equal(results[0].status, 'passed')
+})
+
+describe('timeouts', () => {
+  const failure = { text: 'failure()', decide: (failed: boolean) => ({ known: true as const, value: failed }) }
+
+  test('a step that outlasts the timeout is stopped with its process group, and fails naming the load', async () => {
+    const started = Date.now()
+    const results = await runJobs(
+      [
+        job('ci.yml/a', [
+          // A child of the shell that would write after the timeout, unless its group is stopped.
+          { label: 'hang', local: run('(sleep 1; echo late > late) & sleep 30') },
+          { label: 'next', local: run('echo next >> out') },
+          { label: 'report', condition: failure, local: run('echo report >> out') },
+        ]),
+      ],
+      { ...quiet, timeoutMs: 300, load: () => 'load 9.0 / 8.0 / 7.0 on 4 cores' },
+    )
+    assert.ok(Date.now() - started < 3000)
+    assert.deepEqual(
+      results[0].steps.map((s) => [s.status, s.reason, s.timedOut]),
+      [
+        ['failed', 'timed out after 0.3s — load 9.0 / 8.0 / 7.0 on 4 cores', true],
+        ['skipped', 'an earlier step failed', undefined],
+        ['passed', undefined, undefined],
+      ],
+    )
+    assert.equal(results[0].status, 'failed')
+    assert.equal(results[0].reason, 'hang timed out')
+    assert.equal(readFileSync(join(dir, 'out'), 'utf8'), 'report\n')
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+    assert.equal(existsSync(join(dir, 'late')), false)
+  })
+
+  test('in container mode the timeout is the whole job', async () => {
+    const results = await runJobs([job('ci.yml/a', [{ label: 'x', local: run('true') }])], {
+      ...quiet,
+      container: () => ['sh', '-c', 'sleep 30'],
+      timeoutMs: 200,
+      load: () => 'load 1.0 / 1.0 / 1.0 on 2 cores',
+    })
+    assert.deepEqual(
+      [results[0].status, results[0].reason, results[0].timedOut],
+      ['failed', 'timed out after 0.2s — load 1.0 / 1.0 / 1.0 on 2 cores', true],
+    )
+  })
+
+  test('a step within the timeout passes', async () => {
+    const results = await runJobs([job('ci.yml/a', [{ label: 'quick', local: run('true') }])], {
+      ...quiet,
+      timeoutMs: 5000,
+      load: () => assert.fail('no load is read without a timeout'),
+    })
+    assert.equal(results[0].status, 'passed')
+  })
+
+  test('the machine load names the load average and the cores', () => {
+    assert.match(machineLoad(), /^load \d+\.\d \/ \d+\.\d \/ \d+\.\d on \d+ cores/)
+  })
+
+  test('the report prints the timeout next to the step and says it is not a verdict', async () => {
+    const event: Event = {
+      name: 'pull_request',
+      base: 'main',
+      head: 'feat/x',
+      sha: '0123456789abcdef',
+      baseRef: 'main',
+      changed: [],
+      repository: null,
+      defaultBranch: 'main',
+    }
+    const results = await runJobs([job('ci.yml/a', [{ label: 'hang', local: run('sleep 30') }])], {
+      ...quiet,
+      timeoutMs: 100,
+      load: () => 'load 48.2 / 31.0 / 20.5 on 15 cores, 9 containers running (7 Testcontainers)',
+    })
+    const report = formatReport(event, results, { strict: false })
+    assert.match(report, /✖ ci\.yml\/a .* failed: hang timed out/)
+    assert.match(
+      report,
+      /✖ hang .*\(timed out after 0\.1s — load 48\.2 \/ 31\.0 \/ 20\.5 on 15 cores, 9 containers running \(7 Testcontainers\)\)/,
+    )
+    assert.match(report, /A timeout is not a verdict on the code/)
+    const green = formatReport(event, await runJobs([job('ci.yml/a', [{ label: 'q', local: run('true') }])], quiet), {
+      strict: false,
+    })
+    assert.doesNotMatch(green, /timeout/)
+  })
 })

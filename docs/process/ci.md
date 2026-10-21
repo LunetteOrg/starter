@@ -52,6 +52,14 @@ not see is caught on the candidate, and fixed forward there. The candidate autom
 
 A red run is fixed before the push, like a red CI.
 
+## Parallel worktrees
+
+Runs from parallel worktrees queue on the ci:local lock, one at a time on the machine,
+whoever started them: a coordinator's children and a run started by hand alike. A
+step that outlasts its timeout fails with the machine's load printed next to it. A
+timeout red with a high load is rerun once the machine is idle, and the pull request
+waits for that green: a red run is never explained away in its body.
+
 ## Secrets
 
 No real secret runs locally, and ci:local never reads one from a password manager.
@@ -112,6 +120,12 @@ configuration.
 - **The full CI on every pull request into the candidate.** The candidate runs the
   scaffold smoke on the whole batch; on each pull request it would install a generated
   project twice for the same check.
+- **A lock held by the orchestration layer** (the coordinator's brief). It misses the
+  runs started by hand, and the load it guards against crosses projects, which no
+  project's coordinator sees.
+- **A retry of a failed step inside ci:local**, even for a known infrastructure flake.
+  A gate's green must mean the commit passed; a flaky test is the test runner's to
+  report.
 - **No tests on a pull request into the candidate.** They would run only on the
   author's machine, which is not the CI's: a test that depends on timing can pass there
   and fail on the Linux runner, and the candidate would be the first to see it.
