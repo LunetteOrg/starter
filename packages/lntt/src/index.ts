@@ -62,6 +62,7 @@ export {
   renderVerifyPrompt,
   reviewConfig,
   roundClean,
+  roundLimit,
   roundRange,
   runRound,
   type Severity,

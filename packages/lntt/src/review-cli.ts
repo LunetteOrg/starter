@@ -42,13 +42,15 @@ import {
   renderReplyPrompt,
   reviewConfig,
   roundClean,
+  roundLimit,
   roundRange,
   runRound,
 } from './review.ts'
 import { commandExists } from './viewer.ts'
 
 const USAGE = `usage: lntt review [--base <branch>] [--plan]
-       lntt review reply <finding> <answer>`
+       lntt review reply <finding> <answer>
+       lntt review allow <rounds>`
 
 function usage(message?: string): never {
   if (message) stderr.write(`lntt review: ${message}\n`)
@@ -103,6 +105,29 @@ function statePath(): string {
 function readState(): ReviewState | null {
   const path = statePath()
   return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as ReviewState) : null
+}
+
+// The round past the limit does not start: the person decides on what the last round
+// left, its findings not withdrawn and its failures. Exit 3, with a `limit:` line the
+// review skill watches for.
+function stopAtLimit(state: ReviewState | null, branch: string, round: number, config: ReviewConfig): number {
+  const own = state?.branch === branch ? state : null
+  const allowed = own?.allowed ?? 0
+  const open = (own?.result.findings ?? []).filter((f) => f.verdict !== 'withdrawn')
+  const failed = own?.result.failed ?? []
+  const listed = [
+    ...open.map((f) => `${f.id} (${f.severity}, ${f.verdict})`),
+    ...failed.map((f) => `${f.lens} · ${f.agent} failed`),
+  ]
+  stderr.write(
+    `lntt review: limit: round ${round} would pass delivery.review.maxRounds (${config.maxRounds})${allowed > 0 ? ` and ${allowed} allowed` : ''} on ${branch}; still open: ${listed.length === 0 ? 'nothing' : listed.join(', ')}\n` +
+      'lntt review: the person decides: the pull request as it is, more rounds for this branch (lntt review allow <rounds>), or an issue for what is open\n',
+  )
+  emit({ type: 'limit', round, maxRounds: config.maxRounds, allowed, open: open.length, failed: failed.length })
+  stdout.write(
+    `${JSON.stringify({ limit: { round, maxRounds: config.maxRounds, allowed }, findings: open, failed }, null, 2)}\n`,
+  )
+  return 3
 }
 
 // What keeps an agent from starting: a CLI that is not installed, or one that cannot be
@@ -166,8 +191,8 @@ function phaseOf(label: string): string {
 
 // One stderr line per start and end, and every 30 seconds the ones still running, for a
 // person at the terminal; the same as JSON events in the progress file. A watcher that
-// should wake only when it matters (the review skill's) filters `failed`, `error:` and
-// `round N done`: every other line is routine.
+// should wake only when it matters (the review skill's) filters `failed`, `error:`,
+// `limit:` and `round N done`: every other line is routine.
 export function reporter(orca: Subagents | null = null): {
   progress: (event: Progress) => void
   phase: (labels: string[]) => void
@@ -472,6 +497,9 @@ async function round(args: string[]): Promise<number> {
     },
   )
   const files = git('diff', '--name-only', `${range.from}..${head}`).split('\n').filter(Boolean)
+  // A run with nothing new to read keeps the round's number: it is not a round more.
+  const pastLimit = files.length > 0 && range.round > roundLimit(state, branch, config.maxRounds)
+  if (pastLimit && !values.plan) return stopAtLimit(state, branch, range.round, config)
   const lenses = Object.entries(config.reviewers).filter(([, lens]) => lensApplies(lens, files))
   const plan = [
     `round ${range.round}, ${range.reason}: ${range.from}..${head}, ${files.length} files`,
@@ -482,6 +510,11 @@ async function round(args: string[]): Promise<number> {
   // A lens named after an area of lntt check reads its results instead of redoing them.
   const areas = lenses.map(([name]) => name).filter(isArea)
   if (areas.length > 0) plan.push(`  before the reviewers: ${areas.map((a) => `lntt check ${a}`).join(', ')}`)
+  if (pastLimit) {
+    plan.push(
+      `  limit: round ${range.round} would pass delivery.review.maxRounds (${config.maxRounds}): it will not start`,
+    )
+  }
   plan.push(`  the diff goes to: ${destinations(agents)}`)
   stderr.write(`lntt review: ${plan.join('\n')}\n`)
   const problems = agentProblems(agents)
@@ -546,6 +579,7 @@ async function round(args: string[]): Promise<number> {
     round: files.length > 0 ? range.round : (state?.round ?? 1),
     reviewed: result.failed.length > 0 ? previous : head,
     result,
+    ...(state?.branch === branch && state.allowed ? { allowed: state.allowed } : {}),
   }
   writeFileSync(statePath(), `${JSON.stringify(saved, null, 2)}\n`)
   report.stop()
@@ -615,18 +649,43 @@ async function reply(args: string[]): Promise<number> {
   return withdrawn ? 0 : 1
 }
 
+// A person allows the branch more rounds past delivery.review.maxRounds, kept in its
+// state: the configuration, and every other branch, stay as they are.
+function allow(args: string[]): number {
+  const [count, ...rest] = args
+  const rounds = Number(count)
+  if (rest.length > 0 || !count || !/^\d+$/.test(count) || rounds < 1)
+    usage('give the rounds to allow, a whole number from 1')
+  acquireLock()
+  const branch = git('rev-parse', '--abbrev-ref', 'HEAD')
+  const state = readState()
+  if (!state || state.branch !== branch) throw new Error(`no round on ${branch} yet: nothing to allow more rounds to`)
+  const { maxRounds } = reviewConfig(loaded())
+  state.allowed = (state.allowed ?? 0) + rounds
+  writeFileSync(statePath(), `${JSON.stringify(state, null, 2)}\n`)
+  // The band stops showing the limit: the next round may run.
+  startProgress()
+  emit({ type: 'allow', allowed: state.allowed })
+  stderr.write(
+    `lntt review: ${branch} may take ${maxRounds + state.allowed} rounds: delivery.review.maxRounds (${maxRounds}) and ${state.allowed} allowed\n`,
+  )
+  return 0
+}
+
 export async function main([command, ...args]: string[]): Promise<void> {
   try {
+    if (command === 'allow') exit(allow(args))
     exit(command === 'reply' ? await reply(args) : await round(command === undefined ? [] : [command, ...args]))
   } catch (error) {
     if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
       usage(error.message)
     }
-    // `error:` is what the review skill watches for, with `failed` and `round N done`.
+    // `error:` is what the review skill watches for, with `failed`, `limit:` and `round N done`.
     stderr.write(`lntt review: error: ${(error as Error).message}\n`)
     // A refused lock means another round owns the progress file: leave it alone.
     const own = !(error instanceof LockedError)
-    if (own && command !== 'reply' && !progressFile && ![command, ...args].includes('--plan')) startProgress()
+    if (own && command !== 'reply' && command !== 'allow' && !progressFile && ![command, ...args].includes('--plan'))
+      startProgress()
     emit({ type: 'error', message: (error as Error).message })
     exit(1)
   }
