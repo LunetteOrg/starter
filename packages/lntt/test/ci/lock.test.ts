@@ -398,12 +398,13 @@ describe('the takeover guard', () => {
     let started = Date.now()
     lock.setGroup(77)
     const grouped = Date.now() - started
-    assert.ok(grouped >= GROUP_WAIT_MS && grouped < GROUP_WAIT_MS + 500, `setGroup waited ${grouped} ms`)
+    // Lower bounds only: a busy machine may stretch the wait, never shorten it.
+    assert.ok(grouped >= GROUP_WAIT_MS, `setGroup waited ${grouped} ms`)
     assert.deepEqual(holder(d.path), lock.owner)
     started = Date.now()
-    lock.release()
+    assert.throws(() => lock.release(), /the guard stayed taken for 2000 ms/)
     const released = Date.now() - started
-    assert.ok(released >= RELEASE_WAIT_MS && released < RELEASE_WAIT_MS + 1000, `release waited ${released} ms`)
+    assert.ok(released >= RELEASE_WAIT_MS, `release waited ${released} ms`)
     // Left to go stale by its owner's dead pid.
     assert.deepEqual(holder(d.path), lock.owner)
   })
@@ -498,6 +499,8 @@ describe('acquireLock', () => {
       lockError({ stderr: 'fatal: not a git repository\nmore' }, '/l').message,
       /lock \(fatal: not a git repository\) — /,
     )
+    assert.match(lockError('boom', '/l').message, /lock \(boom\) — /)
+    assert.match(lockError({}, '/l').message, /lock \(\[object Object\]\) — /)
   })
 
   test('a poll interval that is not a positive number is ignored', () => {

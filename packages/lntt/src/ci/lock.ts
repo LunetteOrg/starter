@@ -192,10 +192,13 @@ function takeGuard(path: string): (() => void) | null {
 
 // Removes the guard left by a crash, `seen` its content, if it is still that guard and
 // still old; whether it did. Renamed aside first, so that of two waiters that judged it
-// stale only one gets it; a fresh guard renamed aside by the other is linked back.
+// stale only one gets it; a fresh guard renamed aside by the other is linked back. While
+// it is aside a third run can take the guard: no rename is conditional, so that instant
+// stays open, and the age is checked again right before it to keep it rare.
 export function removeStaleGuard(guard: string, seen: string, now: () => number = Date.now): boolean {
   const aside = temporaryName(guard)
   try {
+    if (now() - statSync(guard).mtimeMs <= GUARD_STALE_MS) return false
     renameSync(guard, aside)
   } catch {
     return false
@@ -214,13 +217,13 @@ export function removeStaleGuard(guard: string, seen: string, now: () => number 
 }
 
 // The guard for a synchronous change: waits for it in short steps, up to `waitMs`, then
-// gives up without making the change.
-function withGuardSync(path: string, waitMs: number, change: () => void): void {
+// gives up without making the change; whether it made it.
+function withGuardSync(path: string, waitMs: number, change: () => void): boolean {
   const pause = new Int32Array(new SharedArrayBuffer(4))
   const until = Date.now() + waitMs
   let free = takeGuard(path)
   while (!free) {
-    if (Date.now() >= until) return
+    if (Date.now() >= until) return false
     Atomics.wait(pause, 0, 0, 10)
     free = takeGuard(path)
   }
@@ -229,6 +232,7 @@ function withGuardSync(path: string, waitMs: number, change: () => void): void {
   } finally {
     free()
   }
+  return true
 }
 
 function duration(ms: number): string {
@@ -306,9 +310,10 @@ function current(path: string): Owner | null {
 
 // Removes the lock if its record is still the one `owner` published.
 export function release(path: string, owner: Owner, waitMs = RELEASE_WAIT_MS): void {
-  withGuardSync(path, waitMs, () => {
+  const done = withGuardSync(path, waitMs, () => {
     if (ours(current(path), owner)) rmSync(path, { force: true })
   })
+  if (!done) throw new Error(`the guard stayed taken for ${waitMs} ms`)
 }
 
 // Rewrites the record with the step's process group, while it is still the one `owner`

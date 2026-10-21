@@ -460,8 +460,8 @@ configuration error, 2 a usage error.
   go on as after any failure. The report prints next to the step the machine's load,
   read once the step was signalled, `timed out after 30m — load 48.2 / 31.0 / 20.5 on
   15 cores, 9 containers running (7 Testcontainers)` (the containers when Docker
-  answers within 3 seconds; `load unavailable` when it cannot be read), and the job line names the step. Nothing is retried: a
-  green means every step passed once.
+  answers within 3 seconds; `load unavailable` when it cannot be read), and the job
+  line names the step. Nothing is retried: a green means every step passed once.
 - **An interrupt** (SIGINT, SIGTERM, SIGHUP, SIGQUIT) starts no further step or job,
   stops the running step's group the same way, prints `lntt ci: interrupted (<signal>)`,
   gives the lock back and exits 128 + the signal's number (130, 143, 129, 131), with no

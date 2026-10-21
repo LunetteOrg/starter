@@ -65,7 +65,7 @@ function backgroundWith(extra: Record<string, string>, ...args: string[]) {
   const done = new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) =>
     child.on('close', (status) => resolve({ status, ...out })),
   )
-  return { out, done }
+  return { child, out, done }
 }
 
 async function until(condition: () => boolean, ms = 20_000): Promise<void> {
@@ -275,6 +275,17 @@ jobs:
     assert.match(a.stderr, /^lntt ci: cannot give the ci:local lock back \(ENOENT: .*\) — .*ci-local\.lock$/m)
     assert.equal(a.stderr.match(/cannot give/g)?.length, 1, a.stderr)
     assert.match(a.stdout, /✔ ci\.yml\/ci/)
+  })
+
+  test('an interrupt that cannot give the lock back still exits 128 plus the signal', async () => {
+    root = repo({ '.github/workflows/ci.yml': SLOW })
+    const first = backgroundWith({ HOLD: '1' }, 'local')
+    await until(() => existsSync(lock()))
+    rmSync(join(root, '.git', 'locks'), { recursive: true, force: true })
+    first.child.kill('SIGINT')
+    const a = await first.done
+    assert.equal(a.status, 130, a.stdout + a.stderr)
+    assert.equal(a.stderr.match(/cannot give the ci:local lock back/g)?.length, 1, a.stderr)
   })
 
   test('the run stops at the lock’s maximum hold time, counted from when it took the lock', async () => {
