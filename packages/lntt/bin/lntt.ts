@@ -92,7 +92,7 @@
 //                             reply to a message: the same name ending in .answer.md
 //
 //   lntt ci local [--event pull_request|push] [--base <branch>] [--job <key>]...
-//                 [--list] [--strict] [--container]
+//                 [--list] [--strict] [--container] [--no-lock]
 //
 //     --event      what the cloud would see: a ready pull request into the base
 //                  (default), or a push to it
@@ -103,8 +103,11 @@
 //     --strict     fail when a step or job the cloud runs was not run locally
 //     --container  run each job in the provider's local executor (act, circleci local
 //                  execute) instead of on the host
+//     --no-lock    run without waiting for the ci:local lock
 //
 //   The run starts only on a clean working tree: it checks the commit about to be pushed.
+//   It queues on the ci:local lock (ci.local.lock), and a step that outlasts
+//   ci.local.timeoutMinutes is stopped and fails with the machine's load.
 //
 //   lntt ci candidate [--pr <n>] [--event opened|ready_for_review|closed]
 //                     [--head-ref <ref>] [--labels a,b] [--merged] [--dry-run]

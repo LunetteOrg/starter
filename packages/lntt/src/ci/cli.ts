@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import {
+  acquireLock,
   candidate,
   candidateConfig,
   ciConfig,
@@ -16,13 +17,16 @@ import {
   formatList,
   formatReport,
   githubJobs,
+  holdDeadline,
+  type Lock,
   localEvent,
   missingTools,
   runJobs,
+  stopRunning,
 } from './index.ts'
 
 const USAGE = [
-  'usage: lntt ci local [--event pull_request|push] [--base <branch>] [--job <key>]... [--list] [--strict] [--container]',
+  'usage: lntt ci local [--event pull_request|push] [--base <branch>] [--job <key>]... [--list] [--strict] [--container] [--no-lock]',
   '       lntt ci candidate [--pr <n>] [--event <action>] [--head-ref <ref>] [--labels a,b] [--merged] [--dry-run]',
 ].join('\n')
 
@@ -45,6 +49,16 @@ function guard<T>(parse: () => T): T {
   }
 }
 
+// Gives the lock back; one that cannot be is one line, and the run's exit code stands: its
+// record goes stale by the dead pid.
+function giveBack(lock: Lock | null): void {
+  try {
+    lock?.release()
+  } catch (error) {
+    stderr.write(`lntt ci: cannot give the ci:local lock back (${(error as Error).message}) — ${lock?.path}\n`)
+  }
+}
+
 async function local(args: string[]): Promise<number> {
   const { values } = guard(() =>
     parseArgs({
@@ -56,6 +70,7 @@ async function local(args: string[]): Promise<number> {
         list: { type: 'boolean', default: false },
         strict: { type: 'boolean', default: false },
         container: { type: 'boolean', default: false },
+        'no-lock': { type: 'boolean', default: false },
       },
     }),
   )
@@ -89,13 +104,50 @@ async function local(args: string[]): Promise<number> {
       return 1
     }
   }
-  const results = await runJobs(jobs, {
-    log: (line) => stdout.write(`${line}\n`),
-    ...(only ? { only } : {}),
-    ...(values.container ? { container: containerCommand(localEv, config) } : {}),
-  })
-  stdout.write(`${formatReport(localEv, results, { strict })}\n`)
-  return exitCode(results, { strict })
+  // An interrupt starts nothing more, stops the running command's process group, which
+  // does not get the terminal's signals, gives the lock back and exits 128 + the signal's
+  // number: no report of a run cut short.
+  const interrupt = new AbortController()
+  let lock: Lock | null = null
+  let interrupted: Promise<never> | null = null
+  for (const [signal, code] of [
+    ['SIGINT', 130],
+    ['SIGTERM', 143],
+    ['SIGHUP', 129],
+    ['SIGQUIT', 131],
+  ] as const) {
+    process.on(signal, () => {
+      if (interrupted) return
+      stderr.write(`lntt ci: interrupted (${signal}): stopping the running step\n`)
+      interrupt.abort()
+      interrupted = stopRunning().then(() => {
+        giveBack(lock)
+        exit(code)
+      })
+    })
+  }
+  if (!values['no-lock']) lock = await acquireLock(root, config.lock, (line) => stderr.write(`${line}\n`))
+  const held = lock
+  try {
+    const results = await runJobs(jobs, {
+      log: (line) => stdout.write(`${line}\n`),
+      ...(only ? { only } : {}),
+      ...(values.container ? { container: containerCommand(localEv, config) } : {}),
+      timeoutMs: config.timeoutMinutes * 60_000,
+      signal: interrupt.signal,
+      ...(held
+        ? {
+            deadline: holdDeadline(held.owner),
+            onGroup: held.setGroup,
+          }
+        : {}),
+    })
+    if (interrupted) await interrupted
+    stdout.write(`${formatReport(localEv, results, { strict })}\n`)
+    return exitCode(results, { strict })
+  } finally {
+    giveBack(lock)
+  }
 }
 
 function candidateRun(args: string[]): number {

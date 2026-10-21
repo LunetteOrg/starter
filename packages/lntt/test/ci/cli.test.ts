@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
-import { execFileSync, spawnSync } from 'node:child_process'
-import { rmSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join, resolve } from 'node:path'
 import { afterEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { ciConfig } from '../../src/ci/config.ts'
 import { git, repo, write } from './helpers.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../../bin/lntt.ts')
@@ -35,12 +36,44 @@ jobs:
 let root: string
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
+// The lock lives in the test repository, never in the machine's cache.
+const env = () => ({
+  ...process.env,
+  RUNNER_LOG: join(root, '.git', 'runner.log'),
+  LNTT_CI_LOCK_DIR: join(root, '.git', 'locks'),
+  LNTT_CI_LOCK_POLL_MS: '100',
+})
+
 function ci(...args: string[]) {
-  return spawnSync(process.execPath, [BIN, 'ci', ...args], {
-    cwd: root,
-    encoding: 'utf8',
-    env: { ...process.env, RUNNER_LOG: join(root, '.git', 'runner.log') },
+  return spawnSync(process.execPath, [BIN, 'ci', ...args], { cwd: root, encoding: 'utf8', env: env() })
+}
+
+// A run in the background: its output so far, and its exit code and output once it ends.
+function background(...args: string[]) {
+  return backgroundWith({}, ...args)
+}
+
+function backgroundWith(extra: Record<string, string>, ...args: string[]) {
+  const child = spawn(process.execPath, [BIN, 'ci', ...args], { cwd: root, env: { ...env(), ...extra } })
+  const out = { stdout: '', stderr: '' }
+  child.stdout.on('data', (chunk) => {
+    out.stdout += chunk
   })
+  child.stderr.on('data', (chunk) => {
+    out.stderr += chunk
+  })
+  const done = new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) =>
+    child.on('close', (status) => resolve({ status, ...out })),
+  )
+  return { child, out, done }
+}
+
+async function until(condition: () => boolean, ms = 20_000): Promise<void> {
+  const end = Date.now() + ms
+  while (!condition()) {
+    if (Date.now() > end) assert.fail('condition not met in time')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
 }
 
 describe('lntt ci local', () => {
@@ -98,6 +131,266 @@ describe('lntt ci local', () => {
     root = repo({})
     assert.equal(ci('nothing').status, 2)
     assert.equal(ci('local', '--event', 'release').status, 2)
+  })
+})
+
+describe('the ci:local lock', () => {
+  // With HOLD set, the step holds until the test creates the go file (30 s at most).
+  const SLOW = `
+on: pull_request
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo start >> "$RUNNER_LOG"
+          i=0; while [ -n "$HOLD" ] && [ ! -f "$RUNNER_LOG.go" ] && [ $i -lt 600 ]; do sleep 0.05; i=$((i+1)); done
+          echo end >> "$RUNNER_LOG"
+`
+  const lock = () => join(root, '.git', 'locks', 'ci-local.lock')
+  const go = () => writeFileSync(join(root, '.git', 'runner.log.go'), '')
+
+  test('two runs at once queue: the second says whom it waits for, then runs', async () => {
+    root = repo({ '.github/workflows/ci.yml': SLOW })
+    const first = backgroundWith({ HOLD: '1' }, 'local')
+    await until(() => existsSync(lock()))
+    const holder = JSON.parse(readFileSync(lock(), 'utf8'))
+    assert.equal(holder.worktree, root)
+    const second = background('local')
+    await until(() => /waiting/.test(second.out.stderr))
+    go()
+    const [a, b] = await Promise.all([first.done, second.done])
+    assert.equal(a.status, 0, a.stdout + a.stderr)
+    assert.equal(b.status, 0, b.stdout + b.stderr)
+    assert.match(b.stderr, new RegExp(`waiting for the ci:local lock held by ${root} \\(pid ${holder.pid} on `))
+    assert.match(b.stderr, /took the ci:local lock after/)
+    assert.equal(readFileSync(join(root, '.git', 'runner.log'), 'utf8'), 'start\nend\nstart\nend\n')
+    assert.deepEqual(readdirSync(join(root, '.git', 'locks')), [])
+  })
+
+  test('--no-lock runs without it; --list does not take it', async () => {
+    root = repo({ '.github/workflows/ci.yml': SLOW })
+    const first = backgroundWith({ HOLD: '1' }, 'local')
+    await until(() => existsSync(lock()))
+    const list = ci('local', '--list')
+    assert.equal(list.status, 0, list.stderr)
+    assert.doesNotMatch(list.stderr, /waiting/)
+    const unlocked = ci('local', '--no-lock')
+    assert.equal(unlocked.status, 0, unlocked.stdout + unlocked.stderr)
+    assert.doesNotMatch(unlocked.stderr, /waiting/)
+    // The unlocked run went through while the first one still held the lock.
+    assert.equal(readFileSync(join(root, '.git', 'runner.log'), 'utf8'), 'start\nstart\nend\n')
+    go()
+    assert.equal((await first.done).status, 0)
+  })
+
+  // A step that records its background child and holds; then a step and a job that must
+  // not start once the run is interrupted.
+  const INTERRUPTIBLE = `
+on: pull_request
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - run: (sleep 30; echo late >> "$RUNNER_LOG") & echo $! > "$RUNNER_LOG.child"; sleep 30
+      - if: failure()
+        run: echo after >> "$RUNNER_LOG"
+  b:
+    runs-on: ubuntu-latest
+    needs: a
+    if: always()
+    steps:
+      - run: echo b >> "$RUNNER_LOG"
+`
+
+  for (const [signal, code] of [
+    ['SIGINT', 130],
+    ['SIGTERM', 143],
+    ['SIGHUP', 129],
+    ['SIGQUIT', 131],
+  ] as const) {
+    test(`${signal} stops the running step with its children, starts nothing more, gives the lock back and exits ${code}`, async () => {
+      root = repo({ '.github/workflows/ci.yml': INTERRUPTIBLE })
+      const child = spawn(process.execPath, [BIN, 'ci', 'local'], { cwd: root, env: env() })
+      let stderr = ''
+      child.stderr.on('data', (chunk) => {
+        stderr += chunk
+      })
+      const closed = new Promise<number | null>((resolve) => child.on('close', resolve))
+      const pidFile = join(root, '.git', 'runner.log.child')
+      await until(() => existsSync(pidFile) && readFileSync(pidFile, 'utf8').endsWith('\n'))
+      // The running step's group is in the lock's record.
+      await until(() => typeof JSON.parse(readFileSync(lock(), 'utf8')).group === 'number')
+      child.kill(signal)
+      assert.equal(await closed, code)
+      assert.match(stderr, new RegExp(`lntt ci: interrupted \\(${signal}\\)`))
+      assert.equal(existsSync(lock()), false)
+      const background = Number(readFileSync(pidFile, 'utf8'))
+      await until(() => {
+        try {
+          process.kill(background, 0)
+          return false
+        } catch {
+          return true
+        }
+      })
+      assert.equal(existsSync(join(root, '.git', 'runner.log')), false)
+    })
+  }
+
+  test('a second signal changes nothing: one line, the first one’s exit code', async () => {
+    // A step that ignores SIGTERM keeps the run stopping long enough for a second signal.
+    root = repo({
+      '.github/workflows/ci.yml': `
+on: pull_request
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+      - run: trap '' TERM; while true; do sleep 0.1; done
+`,
+    })
+    const child = spawn(process.execPath, [BIN, 'ci', 'local'], { cwd: root, env: env() })
+    let stderr = ''
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk
+    })
+    const closed = new Promise<number | null>((resolve) => child.on('close', resolve))
+    await until(() => existsSync(lock()) && typeof JSON.parse(readFileSync(lock(), 'utf8')).group === 'number')
+    child.kill('SIGINT')
+    await until(() => /interrupted/.test(stderr))
+    child.kill('SIGINT')
+    assert.equal(await closed, 130)
+    assert.equal(stderr.match(/lntt ci: interrupted \(SIGINT\)/g)?.length, 1, stderr)
+  })
+
+  test('a lock that cannot be given back is one line, and the run keeps its exit code', async () => {
+    root = repo({ '.github/workflows/ci.yml': SLOW })
+    const first = backgroundWith({ HOLD: '1' }, 'local')
+    await until(() => existsSync(lock()))
+    rmSync(join(root, '.git', 'locks'), { recursive: true, force: true })
+    go()
+    const a = await first.done
+    assert.equal(a.status, 0, a.stdout + a.stderr)
+    assert.match(a.stderr, /^lntt ci: cannot give the ci:local lock back \(ENOENT: .*\) — .*ci-local\.lock$/m)
+    assert.equal(a.stderr.match(/cannot give/g)?.length, 1, a.stderr)
+    assert.match(a.stdout, /✔ ci\.yml\/ci/)
+  })
+
+  test('an interrupt that cannot give the lock back still exits 128 plus the signal', async () => {
+    root = repo({ '.github/workflows/ci.yml': SLOW })
+    const first = backgroundWith({ HOLD: '1' }, 'local')
+    await until(() => existsSync(lock()))
+    rmSync(join(root, '.git', 'locks'), { recursive: true, force: true })
+    first.child.kill('SIGINT')
+    const a = await first.done
+    assert.equal(a.status, 130, a.stdout + a.stderr)
+    assert.equal(a.stderr.match(/cannot give the ci:local lock back/g)?.length, 1, a.stderr)
+  })
+
+  test('the run stops at the lock’s maximum hold time, counted from when it took the lock', async () => {
+    root = repo({ '.github/workflows/ci.yml': `${SLOW}      - run: echo after >> "$RUNNER_LOG"\n` })
+    // Once the jump file exists, the run's clock reads 121 minutes later.
+    const jump = join(root, '.git', 'jump')
+    const clock = `import { existsSync } from 'node:fs'
+const now = Date.now
+Date.now = () => now() + (existsSync(${JSON.stringify(jump)}) ? 121 * 60_000 : 0)`
+    const child = spawn(
+      process.execPath,
+      ['--import', `data:text/javascript,${encodeURIComponent(clock)}`, BIN, 'ci', 'local'],
+      { cwd: root, env: { ...env(), HOLD: '1' } },
+    )
+    let stdout = ''
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk
+    })
+    const closed = new Promise<number | null>((resolve) => child.on('close', resolve))
+    // The first step is running: its group is in the lock's record.
+    await until(() => existsSync(lock()) && typeof JSON.parse(readFileSync(lock(), 'utf8')).group === 'number')
+    writeFileSync(jump, '')
+    go()
+    assert.equal(await closed, 1, stdout)
+    assert.match(stdout, /after .*\(the run passed the lock's maximum hold time of 120 minutes — load /)
+    assert.equal(readFileSync(join(root, '.git', 'runner.log'), 'utf8'), 'start\nend\n')
+  })
+
+  test('a holder killed while its step runs is waited for until the step ends', async () => {
+    root = repo({ '.github/workflows/ci.yml': SLOW })
+    const holder = spawn(process.execPath, [BIN, 'ci', 'local'], { cwd: root, env: { ...env(), HOLD: '1' } })
+    // 'exit', not 'close': the orphaned step keeps the holder's output pipes open.
+    const killed = new Promise((resolve) => holder.on('exit', resolve))
+    await until(() => existsSync(lock()) && typeof JSON.parse(readFileSync(lock(), 'utf8')).group === 'number')
+    const { group } = JSON.parse(readFileSync(lock(), 'utf8'))
+    holder.kill('SIGKILL')
+    await killed
+    const second = background('local')
+    await until(() => /still is/.test(second.out.stderr))
+    assert.match(
+      second.out.stderr,
+      new RegExp(`which is no longer running, but its step \\(process group ${group}\\) still is`),
+    )
+    assert.equal(readFileSync(join(root, '.git', 'runner.log'), 'utf8'), 'start\n')
+    go()
+    const b = await second.done
+    assert.equal(b.status, 0, b.stdout + b.stderr)
+    assert.equal(readFileSync(join(root, '.git', 'runner.log'), 'utf8'), 'start\nend\nstart\nend\n')
+  })
+
+  test('the project scope uses a lock file per repository', async () => {
+    root = repo({
+      '.github/workflows/ci.yml': SLOW,
+      '.agents/config.jsonc': JSON.stringify({ ci: { local: { lock: 'project' } } }),
+    })
+    const first = backgroundWith({ HOLD: '1' }, 'local')
+    const locks = join(root, '.git', 'locks')
+    const name = new RegExp(`^ci-local-${basename(root)}-[0-9a-f]{12}\\.lock$`)
+    await until(() => existsSync(locks) && readdirSync(locks).some((f) => name.test(f)))
+    assert.equal(existsSync(lock()), false)
+    go()
+    assert.equal((await first.done).status, 0)
+    assert.deepEqual(readdirSync(locks), [])
+  })
+
+  test('a lock that cannot be taken is one line, exit 1', () => {
+    root = repo({ '.github/workflows/ci.yml': SLOW })
+    writeFileSync(join(root, '.git', 'file'), '')
+    const out = spawnSync(process.execPath, [BIN, 'ci', 'local'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...env(), LNTT_CI_LOCK_DIR: join(root, '.git', 'file', 'locks') },
+    })
+    assert.equal(out.status, 1)
+    assert.match(
+      out.stderr,
+      /^lntt ci: cannot take the ci:local lock \(ENOTDIR: .*\) — .*; --no-lock runs without it\n$/,
+    )
+  })
+
+  test('--no-lock is the one negated option', () => {
+    root = repo({ '.github/workflows/ci.yml': SLOW })
+    assert.equal(ci('local', '--no-list').status, 2)
+    assert.equal(ci('local', '--no-strict').status, 2)
+  })
+
+  test('without ci.local: a machine lock and 30 minutes per step, so a quick step passes', () => {
+    root = repo({ '.github/workflows/ci.yml': SLOW })
+    const config = ciConfig(root)
+    assert.deepEqual([config.lock, config.timeoutMinutes], ['machine', 30])
+    const out = ci('local')
+    assert.equal(out.status, 0, out.stdout + out.stderr)
+    assert.equal(readFileSync(join(root, '.git', 'runner.log'), 'utf8'), 'start\nend\n')
+  })
+
+  test('a timeout from the configuration stops the step and prints the load', () => {
+    root = repo({
+      '.github/workflows/ci.yml': SLOW.replace('[ -n "$HOLD" ]', 'true'),
+      '.agents/config.jsonc': JSON.stringify({ ci: { local: { timeoutMinutes: 0.005 } } }),
+    })
+    const out = ci('local')
+    assert.equal(out.status, 1)
+    assert.match(out.stdout, /✖ ci\.yml\/ci .* failed: run: .* timed out/)
+    assert.match(out.stdout, /\(timed out after 0\.3s — load [\d.]+ \/ [\d.]+ \/ [\d.]+ on \d+ cores/)
+    assert.match(out.stdout, /A timeout is not a verdict on the code/)
   })
 })
 
