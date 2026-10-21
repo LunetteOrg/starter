@@ -236,7 +236,7 @@ because npm configures a trusted publisher only on a package that exists:
    publish rights on the `@lntt` scope:
    `npm version 0.0.0 --no-git-tag-version && npm publish --access public && git checkout package.json`.
    The placeholder only reserves the name and is never installed: published from the
-   directory, npm ignores `publishConfig`, so a package that points its published
+   directory, npm ignores `publishConfig.bin` and `publishConfig.exports`, so a package that points its published
    `bin` and `exports` at `dist/` there ships its source entries in the placeholder.
    It is the only publish ever made from a machine
    ([CLI runtime and publishing](../adr/cli-runtime-and-publishing.md)); the version

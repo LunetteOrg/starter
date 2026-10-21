@@ -28,20 +28,27 @@ let project: string
 let pkgRoot: string
 let bin: string
 
+const tmps: string[] = []
+const mktmp = (prefix: string): string => {
+  const d = realpathSync(mkdtempSync(join(tmpdir(), prefix)))
+  tmps.push(d)
+  return d
+}
+
 before(() => {
-  const packDir = mkdtempSync(join(tmpdir(), 'lntt-pack-'))
-  execFileSync('pnpm', ['pack', '--pack-destination', packDir], { cwd: PKG_DIR, stdio: 'ignore' })
+  const packDir = mktmp('lntt-pack-')
+  // Piped, not ignored: a failing build shows its output in the thrown error.
+  execFileSync('pnpm', ['pack', '--pack-destination', packDir], { cwd: PKG_DIR, stdio: 'pipe' })
   tarball = join(packDir, `lntt-lntt-${JSON.parse(readFileSync(join(PKG_DIR, 'package.json'), 'utf8')).version}.tgz`)
   files = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8' }).trim().split('\n')
 
-  project = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-installed-')))
+  project = mktmp('lntt-installed-')
   pkgRoot = join(project, 'node_modules', '@lntt', 'lntt')
   mkdirSync(pkgRoot, { recursive: true })
   // tar strips the leading `package/` dir so the tarball lands directly in pkgRoot.
   execFileSync('tar', ['-xzf', tarball, '-C', pkgRoot, '--strip-components=1'])
   // The run-time dependencies, from this package's own install: no network.
   symlinkSync(join(PKG_DIR, 'node_modules'), join(pkgRoot, 'node_modules'), 'dir')
-  rmSync(packDir, { recursive: true, force: true })
 
   mkdirSync(join(project, '.agents'))
   writeFileSync(
@@ -52,7 +59,7 @@ before(() => {
 })
 
 after(() => {
-  rmSync(project, { recursive: true, force: true })
+  for (const d of tmps) rmSync(d, { recursive: true, force: true })
 })
 
 describe('the installed package', () => {
@@ -60,6 +67,8 @@ describe('the installed package', () => {
     const sources = files.filter((f) => f.endsWith('.ts') && !f.endsWith('.d.ts'))
     assert.deepEqual(sources, [])
     assert.ok(files.includes('package/schema/config.schema.json'), 'the schema a project points $schema at')
+    assert.ok(files.includes('package/schema/operator.schema.json'), 'the operator schema')
+    assert.ok(files.includes('package/dist/agents/block.md'), 'the agents/ files the code reads from dist/')
   })
 
   test('its bin points into dist and exists', () => {
@@ -83,15 +92,26 @@ describe('the installed package', () => {
     assert.ok(agents.includes(source), 'AGENTS.md holds agents/block.md')
   })
 
-  test('a project imports the package and its schema by name', () => {
+  test('a project imports the package, its ci entry and its schemas by name', () => {
     const script = [
       "import { commitlintConfig } from '@lntt/lntt'",
+      "import { localAction } from '@lntt/lntt/ci'",
       "import { createRequire } from 'node:module'",
-      'const config = commitlintConfig(process.cwd())',
-      "const schema = createRequire(import.meta.url)('@lntt/lntt/schema.json')",
-      'console.log(JSON.stringify({ extends: config.extends, title: typeof schema.properties }))',
+      'const require = createRequire(import.meta.url)',
+      'console.log(JSON.stringify({',
+      '  extends: commitlintConfig(process.cwd()).extends,',
+      '  ci: typeof localAction,',
+      "  config: require('@lntt/lntt/schema.json').$id,",
+      "  operator: require('@lntt/lntt/operator-schema.json').$id,",
+      '}))',
     ].join('\n')
     const out = execFileSync('node', ['--input-type=module', '-e', script], { cwd: project, encoding: 'utf8' })
-    assert.deepEqual(JSON.parse(out), { extends: ['@commitlint/config-conventional'], title: 'object' })
+    const id = (name: string): string => JSON.parse(readFileSync(join(PKG_DIR, 'schema', name), 'utf8')).$id
+    assert.deepEqual(JSON.parse(out), {
+      extends: ['@commitlint/config-conventional'],
+      ci: 'function',
+      config: id('config.schema.json'),
+      operator: id('operator.schema.json'),
+    })
   })
 })

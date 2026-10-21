@@ -84,8 +84,8 @@ the whole set, which the template depends on as one.
 - **Publishing is CI only**, from `.github/workflows/release.yml`, through npm OIDC
   trusted publishing (`--provenance`, no npm token). A version already on npm is
   skipped, so a failed run can be re-run.
-- **A release marked as pre-release is a dry run**: every check, then each package
-  packed and passed to `npm publish --dry-run`; nothing reaches npm.
+- **A release marked as pre-release is a dry run**: every check runs and nothing
+  reaches npm.
 - **The one exception: a new package's first publish is by hand**, once, as a
   `0.0.0` placeholder. npm configures a trusted publisher only on a package that
   already exists (npm/cli#8544); the placeholder exists so the first CI release can

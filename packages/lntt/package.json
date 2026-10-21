@@ -61,6 +61,11 @@
   "peerDependencies": {
     "@commitlint/config-conventional": "^21.2.0"
   },
+  "peerDependenciesMeta": {
+    "@commitlint/config-conventional": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@commitlint/config-conventional": "^21.2.0",
     "@commitlint/lint": "^21.2.0",
