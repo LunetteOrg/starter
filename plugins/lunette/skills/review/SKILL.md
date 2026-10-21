@@ -58,7 +58,7 @@ reviewed one; findings still open go back to the verifiers on the new head.
   question (that becomes an issue, by its title).
 - The same finding comes back in two rounds in a row, or a reviewer keeps it after
   your answer: the person decides, not one more agent.
-- At the limit: a branch takes at most `delivery.review.maxRounds` rounds (default 4).
+- At the limit: a branch takes at most `delivery.review.maxRounds` rounds.
   The round past it does not start: `lntt review: limit: …` names what is still open,
   exit 3, and stdout lists those findings. Stop there and bring them to the person (or,
   in a child worktree, to the coordinator), with your recommendation. They decide: the

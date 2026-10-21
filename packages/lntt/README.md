@@ -309,8 +309,8 @@ that cannot be made read-only, are refused before any starts.
 answer ([`agents/reply.md`](./agents/reply.md)); the finding closes when all withdraw it.
 A finding whose reviewer cannot be resumed is refused: the person decides on it.
 
-A branch takes at most `delivery.review.maxRounds` rounds (default 4). The round past
-it does not start: `lntt review: limit: …` on stderr with the findings still open, the
+A branch takes at most `delivery.review.maxRounds` rounds, one with a failure among
+them. The round past the limit does not start: `lntt review: limit: …` on stderr with the findings still open, the
 same findings as JSON on stdout, a `limit` event in the progress file, exit 3. `allow`
 gives the current branch more rounds, kept in its state; the configuration and the
 other branches stay as they are. A run with no new commit is not a round and is never

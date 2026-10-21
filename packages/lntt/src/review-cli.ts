@@ -107,24 +107,25 @@ function readState(): ReviewState | null {
   return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as ReviewState) : null
 }
 
-// What a round past the limit leaves open, one finding to a clause.
-function openFindings(state: ReviewState | null, branch: string): Checked[] {
-  return state?.branch === branch ? state.result.findings : []
-}
-
-// The round past the limit does not start: the person decides what happens to what is
-// open. Exit 3, with a `limit:` line the review skill watches for.
+// The round past the limit does not start: the person decides on what the last round
+// left, its findings not withdrawn and its failures. Exit 3, with a `limit:` line the
+// review skill watches for.
 function stopAtLimit(state: ReviewState | null, branch: string, round: number, config: ReviewConfig): number {
-  const allowed = state?.branch === branch ? (state.allowed ?? 0) : 0
-  const open = openFindings(state, branch)
-  const listed = open.length === 0 ? 'nothing' : open.map((f) => `${f.id} (${f.severity}, ${f.verdict})`).join(', ')
+  const own = state?.branch === branch ? state : null
+  const allowed = own?.allowed ?? 0
+  const open = (own?.result.findings ?? []).filter((f) => f.verdict !== 'withdrawn')
+  const failed = own?.result.failed ?? []
+  const listed = [
+    ...open.map((f) => `${f.id} (${f.severity}, ${f.verdict})`),
+    ...failed.map((f) => `${f.lens} · ${f.agent} failed`),
+  ]
   stderr.write(
-    `lntt review: limit: round ${round} would pass delivery.review.maxRounds (${config.maxRounds})${allowed > 0 ? ` and ${allowed} allowed` : ''} on ${branch}; still open: ${listed}\n` +
+    `lntt review: limit: round ${round} would pass delivery.review.maxRounds (${config.maxRounds})${allowed > 0 ? ` and ${allowed} allowed` : ''} on ${branch}; still open: ${listed.length === 0 ? 'nothing' : listed.join(', ')}\n` +
       'lntt review: the person decides: the pull request as it is, more rounds for this branch (lntt review allow <rounds>), or an issue for what is open\n',
   )
-  emit({ type: 'limit', round, maxRounds: config.maxRounds, allowed, open: open.length })
+  emit({ type: 'limit', round, maxRounds: config.maxRounds, allowed, open: open.length, failed: failed.length })
   stdout.write(
-    `${JSON.stringify({ limit: { round, maxRounds: config.maxRounds, allowed }, findings: open }, null, 2)}\n`,
+    `${JSON.stringify({ limit: { round, maxRounds: config.maxRounds, allowed }, findings: open, failed }, null, 2)}\n`,
   )
   return 3
 }
@@ -523,7 +524,7 @@ async function round(args: string[]): Promise<number> {
   }
   if (problems.length > 0) throw new Error(`cannot start ${problems.join('; ')}`)
 
-  const open = openFindings(state, branch)
+  const open = state?.branch === branch ? state.result.findings : []
   keepAwake()
   const stop = deadline(config.roundTimeoutMinutes)
   emit({
@@ -659,9 +660,12 @@ function allow(args: string[]): number {
   const branch = git('rev-parse', '--abbrev-ref', 'HEAD')
   const state = readState()
   if (!state || state.branch !== branch) throw new Error(`no round on ${branch} yet: nothing to allow more rounds to`)
+  const { maxRounds } = reviewConfig(loaded())
   state.allowed = (state.allowed ?? 0) + rounds
   writeFileSync(statePath(), `${JSON.stringify(state, null, 2)}\n`)
-  const { maxRounds } = reviewConfig(loaded())
+  // The band stops showing the limit: the next round may run.
+  startProgress()
+  emit({ type: 'allow', allowed: state.allowed })
   stderr.write(
     `lntt review: ${branch} may take ${maxRounds + state.allowed} rounds: delivery.review.maxRounds (${maxRounds}) and ${state.allowed} allowed\n`,
   )

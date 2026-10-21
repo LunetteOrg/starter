@@ -716,8 +716,9 @@ describe('lntt review at delivery.review.maxRounds', () => {
     writeFileSync(join(repo, 'a.ts'), `export const a = ${value}\n`)
     git('commit', '-qam', `a = ${value}`)
   }
+  const progress = () => readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8')
   const events = () =>
-    readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8')
+    progress()
       .trim()
       .split('\n')
       .map((l) => JSON.parse(l))
@@ -733,16 +734,39 @@ describe('lntt review at delivery.review.maxRounds', () => {
     assert.equal(r.code, 3, r.err)
     assert.match(
       r.err,
-      /^lntt review: limit: round 2 would pass delivery\.review\.maxRounds \(1\) on feat\/1\/x; still open: f1 \(warning, confirmed\)/m,
+      /^lntt review: limit: round 2 would pass delivery\.review\.maxRounds \(1\) on feat\/1\/x; still open: f1 \(warning, confirmed\)$/m,
     )
     assert.match(r.err, /lntt review allow <rounds>/)
+    const out = JSON.parse(r.out)
     assert.deepEqual(
-      JSON.parse(r.out).findings.map((f: { id: string }) => f.id),
+      out.findings.map((f: { id: string }) => f.id),
       ['f1'],
     )
+    assert.deepEqual(out.limit, { round: 2, maxRounds: 1, allowed: 0 })
     assert.equal(readFileSync(log, 'utf8'), calls, 'no agent started')
     assert.equal(state().round, 1)
-    assert.deepEqual(events().at(-1), { ...events().at(-1), type: 'limit', round: 2, maxRounds: 1, open: 1 })
+    assert.deepEqual(events().at(-1), { ...events().at(-1), type: 'limit', round: 2, maxRounds: 1, open: 1, failed: 0 })
+  })
+
+  test('what is open at the limit: a withdrawn finding is not, a failed reviewer is', () => {
+    withMaxRounds(1)
+    lntt(['--base', 'main'], open)
+    lntt(['reply', 'f1', 'no'], { FAKE_REPLY: 'withdrawn\\nfair' })
+    commit(3)
+    const r = lntt(['--base', 'main'])
+    assert.equal(r.code, 3, r.err)
+    assert.match(r.err, /still open: nothing$/m)
+    assert.deepEqual(JSON.parse(r.out).findings, [])
+    assert.equal(events().at(-1).open, 0)
+
+    git('switch', '-qc', 'feat/2/y')
+    commit(4)
+    assert.equal(lntt(['--base', 'main'], { FAKE_FAIL_REVIEW: '1' }).code, 1)
+    commit(5)
+    const failed = lntt(['--base', 'main'])
+    assert.equal(failed.code, 3, failed.err)
+    assert.match(failed.err, /still open: code · claude sonnet failed$/m)
+    assert.equal(JSON.parse(failed.out).failed[0].agent, 'claude sonnet')
   })
 
   test('a person allows more rounds for the branch, and the next round runs', () => {
@@ -755,6 +779,11 @@ describe('lntt review at delivery.review.maxRounds', () => {
     assert.equal(allow.code, 0, allow.err)
     assert.match(allow.err, /feat\/1\/x may take 3 rounds: delivery\.review\.maxRounds \(1\) and 2 allowed/)
     assert.equal(state().allowed, 2)
+    assert.deepEqual(
+      events().map((e) => e.type),
+      ['allow'],
+      'the band no longer shows the limit',
+    )
 
     const r = lntt(['--base', 'main'])
     assert.equal(r.code, 0, r.err)
@@ -762,6 +791,28 @@ describe('lntt review at delivery.review.maxRounds', () => {
     assert.equal(state().allowed, 2, 'kept by the round')
     assert.equal(lntt(['allow', '1']).code, 0)
     assert.equal(state().allowed, 3, 'added to what was allowed')
+  })
+
+  test('the rounds allowed count in the limit, and stay with their branch', () => {
+    withMaxRounds(1)
+    lntt(['--base', 'main'])
+    lntt(['allow', '1'])
+    commit(3)
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    commit(4)
+    const r = lntt(['--base', 'main'])
+    assert.equal(r.code, 3, r.err)
+    assert.match(r.err, /delivery\.review\.maxRounds \(1\) and 1 allowed on feat\/1\/x/)
+    assert.deepEqual(JSON.parse(r.out).limit, { round: 3, maxRounds: 1, allowed: 1 })
+    assert.equal(events().at(-1).allowed, 1)
+
+    git('switch', '-qc', 'feat/2/y')
+    commit(5)
+    assert.match(lntt(['allow', '1']).err, /no round on feat\/2\/y yet/)
+    assert.equal(state().branch, 'feat/1/x', "the other branch's state untouched")
+    assert.equal(state().allowed, 1)
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    assert.equal(state().allowed, undefined, 'a new branch starts with nothing allowed')
   })
 
   test('--plan names the limit; a run with no new commit is not a round and is not stopped', () => {
@@ -774,10 +825,22 @@ describe('lntt review at delivery.review.maxRounds', () => {
     assert.match(plan.err, /limit: round 2 would pass delivery\.review\.maxRounds \(1\): it will not start/)
   })
 
-  test('allow is refused before any round on the branch, and with a count that is not a positive integer', () => {
+  test('allow is refused before any round on the branch, and with a count that is not a whole number from 1', () => {
     assert.match(lntt(['allow', '1']).err, /no round on feat\/1\/x yet/)
-    assert.equal(lntt(['allow', '0']).code, 2)
-    assert.equal(lntt(['allow']).code, 2)
+    assert.equal(existsSync(join(repo, '.git/lntt-review.progress')), false, 'a refused allow starts no progress')
+    lntt(['--base', 'main'])
+    const before = readFileSync(join(repo, '.git/lntt-review.json'), 'utf8')
+    for (const count of [['0'], [], ['abc'], ['1.5'], ['-1'], ['1', '2']]) {
+      assert.equal(lntt(['allow', ...count]).code, 2, `allow ${count.join(' ')}`)
+    }
+    assert.equal(readFileSync(join(repo, '.git/lntt-review.json'), 'utf8'), before)
+  })
+
+  test('a maxRounds below 1 does not validate', () => {
+    withMaxRounds(0)
+    const r = lntt(['--base', 'main'])
+    assert.equal(r.code, 1)
+    assert.match(r.err, /maxRounds must be >= 1/)
   })
 })
 

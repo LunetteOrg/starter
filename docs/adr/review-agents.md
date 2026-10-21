@@ -74,9 +74,9 @@ same way every time; the `review` skill keeps the judgement.
   findings`, counts as a failed reviewer, and a round with a failure does not move the
   reviewed commit. A fresh finding at the anchor of an open one joins it. A round runs
   on a branch (a detached HEAD is refused) whose head does not move until it ends.
-- **A branch takes at most `maxRounds` rounds** (default 4): later rounds find ever
-  smaller things, and most of a pull request's time and cost went into them. The round
-  past it does not start; `lntt review` exits 3 with what is still open, and the person
+- **A branch takes at most `maxRounds` rounds:** later rounds find ever smaller things,
+  and most of a pull request's time and cost went into them. Every round counts, one
+  with a failure too. The round past the limit does not start; `lntt review` exits 3 with what is still open, and the person
   decides: the pull request as it is, more rounds for that branch (`lntt review allow
   <rounds>`, kept in its state, the configuration unchanged), or an issue for what is
   open. A run with no new commit to read is not a round and is never stopped.

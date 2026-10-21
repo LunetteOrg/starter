@@ -25,7 +25,7 @@ command, so a reader who sees `lntt` in a script knows which package provides it
 lntt path | validate | get | set | operator | sync | local app | viewer
 lntt check [agents-md | decisions [structure | numbers] | tests [levels | focus | rules | touched | mutate]] | check cite
 lntt branch name | check | rename
-lntt review [reply]
+lntt review [reply | allow]
 lntt worktree start
 lntt ask | inbox | answer
 lntt ci local | candidate
@@ -46,7 +46,8 @@ lntt ci local | candidate
   person who will start one; `lntt check --json`), or a report for a person (`lntt
   check` without `--json`); progress and child-process output go to stderr. Exit codes:
   0 ok, 1 a configuration error, a red result or a check that cannot run (one line on
-  stderr), 2 a usage error; a defect of `lntt` itself exits 1 with its stack trace.
+  stderr), 2 a usage error, 3 a stop that a person decides on (`lntt review` past
+  `delivery.review.maxRounds`); a defect of `lntt` itself exits 1 with its stack trace.
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
   `decisions` and `tests`, whose results their review lenses read, and `agents-md`,
   which no lens needs; a lens's checks are the area named after it. Alone it runs every
