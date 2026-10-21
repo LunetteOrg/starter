@@ -16,8 +16,8 @@ batch for what is expensive ([delivery](./delivery.md) has the flow):
 | Event | What runs |
 |---|---|
 | A draft, into any base | nothing in the cloud; `pnpm ci:local` on the machine |
-| A ready pull request into a candidate, or into any branch other than `main` (a stacked pull request) | the minimal CI: frozen install, lint, typecheck, `lntt check` (the AGENTS.md block, the decision logs), the branch name, the plugin version and `claude plugin validate`, the tests |
-| The candidate's pull request into `main`, ready; a hotfix | the full CI: the minimal CI plus the scaffold smoke |
+| A ready pull request into a candidate, or into any branch other than `main` (a stacked pull request) | the minimal CI: frozen install, lint, typecheck, `lntt check` (the AGENTS.md block, the decision logs), the branch name, the plugin version and `claude plugin validate`, the tests but the scaffold level, unless the change touches `packages/create` |
+| The candidate's pull request into `main`, ready; a hotfix | the full CI: the minimal CI plus the scaffold level (`packages/create`) and its smoke |
 | A push to `main` | the full CI, which gates a release |
 | A merge into a candidate | nothing |
 
@@ -25,8 +25,14 @@ batch for what is expensive ([delivery](./delivery.md) has the flow):
 `ready_for_review` starts it when the draft leaves draft. The tests run on every run:
 `pnpm ci:local` runs them on the author's machine, and a failure that shows only on the
 CI's Linux runner (a test that depends on timing, a path, a tool) would otherwise reach
-the candidate first. The scaffold smoke, which installs a generated project, runs when
-the base is the default branch or the event is a push. The candidate automation
+the candidate first. The scaffold level is the exception (`packages/create`: a project
+generated and committed with git, the package packed with npm, and the smoke that
+installs, lints and typechecks a generated project). It is slow and depends on the
+machine (a git process the scaffold leaves behind, a loaded laptop), so a red there says
+little about a change elsewhere: on a pull request into a candidate it runs only when
+the change touches `packages/create`, and the full CI runs it always, when the base is
+the default branch or the event is a push. A scaffold failure that a pull request does
+not see is caught on the candidate, and fixed forward there. The candidate automation
 (`candidate.yml`) is not CI: it runs on its own three events, drafts included
 ([delivery](./delivery.md#the-candidate-automation)).
 
@@ -35,7 +41,8 @@ the base is the default branch or the event is a push. The candidate automation
 - **Before a push leaves the machine for review**: `pnpm ci:local` green on the head
   about to be pushed. It refuses uncommitted changes, so the run is about that head.
   Its default base is `main`, so it runs the full CI, a superset of the minimal one;
-  `--base <candidate> --list` shows what the minimal CI runs.
+  `--base <candidate> --list` shows what the minimal CI runs (the test step's choice,
+  scaffold level or not, is made when it runs, from the diff against the base).
 - **On the candidate, before it is marked ready** ([delivery](./delivery.md#the-candidate)).
 - **`pnpm ci:local --list`** before changing a workflow: it shows, per job, what the
   cloud runs and what the local run does instead.
@@ -108,3 +115,7 @@ configuration.
 - **No tests on a pull request into the candidate.** They would run only on the
   author's machine, which is not the CI's: a test that depends on timing can pass there
   and fail on the Linux runner, and the candidate would be the first to see it.
+- **The scaffold level on every pull request into the candidate.** On a loaded machine
+  it fails for reasons outside the change (a git process the scaffold leaves behind),
+  and `ci:local` runs the same step: one such red blocks every pull request at once,
+  most of which do not touch `packages/create`.
