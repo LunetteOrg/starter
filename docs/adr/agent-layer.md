@@ -40,6 +40,33 @@ Scripts and skills read the configuration through `@lntt/lntt` (`lntt get <key>`
 never with `jq` or `JSON.parse`: the file has comments, and writes must keep them. A skill that finds its section missing stops and proposes it;
 it never guesses.
 
+### The shared skills come with `lntt`; a project holds their stubs
+
+The shared skills (`commit-message`, `coordinate`, `decisions`, `review`, `run-local`)
+ship inside `@lntt/lntt`, in `packages/lntt/skills/`. `lntt guide <skill>` prints a
+skill's guide from the installed package, with the folder its relative links start
+from, so a skill and the `lntt` it calls are always one version: the project's
+lockfile.
+
+`lntt sync` writes a stub of each skill into the two directories the clients read at
+the project root, as their documentation states it in October 2026:
+
+- `.agents/skills/`, read by Codex, OpenCode, Gemini CLI and Cursor;
+- `.claude/skills/`, read by Claude Code, which reads no other project directory.
+
+A stub folder holds its `SKILL.md` only, and `lntt sync` removes anything else from it.
+The stub holds the skill's frontmatter, for discovery, a marker line, and one instruction:
+load the guide with `pnpm exec lntt guide <skill>` before acting (a Lunette project
+uses pnpm). The stubs are committed, so a fresh clone or a cloud session knows every
+skill before an install. A bump of `@lntt/lntt` updates every guide with no other step;
+the stubs change only when a skill is added, removed or redescribed. `lntt check
+skills` fails on a stub that is missing or edited, or that names a skill the package
+does not have; when to run `lntt sync` is in [delivery](../process/delivery.md#the-shared-skills).
+The project's own skills sit beside the stubs and are left alone: `lntt sync` writes
+nothing while a folder of the project's own has a shared skill's name, and `lntt check
+skills` names it.
+The other check areas skip the stubs.
+
 ### Operator context is personal and found from any worktree
 
 The operator profile has its own schema (`packages/lntt/schema/operator.schema.json`:
@@ -98,6 +125,8 @@ How a title is written is the `issues` skill's.
 
 - One skill serves every project, and an upstream fix reaches every project that
   updates it.
+- One install path and one version for every agent: a bump of `@lntt/lntt` updates the
+  skills of Claude Code and of every other client, and the `lntt` they call with them.
 - A project's process is readable in one file of values and a few pages of prose, not
   scattered through skills, ADRs and instruction files.
 - The operator profile follows its owner into every worktree and every agent that
@@ -122,6 +151,10 @@ How a title is written is the `issues` skill's.
   main checkout is gone; a profile kept only in a deleted clone is lost with it.
 - The fixed list of areas is a contract between skills and projects: renaming an area
   means a coordinated change.
+- OpenCode and Cursor read both skill directories, so each stub reaches them twice.
+- A stub's guide needs the install: in a fresh clone the agent finds the skill, and
+  `lntt guide` fails until `pnpm install` has run.
+- Every skill load costs one command, the guide's, before the agent acts.
 
 ### When to deviate (revisit triggers)
 
@@ -131,6 +164,7 @@ How a title is written is the `issues` skill's.
   area's content belongs in its process description.
 - Claude Code draws terminal hyperlinks (OSC 8) in a hook's display text: the number
   itself can link to its issue.
+- Claude Code reads `.agents/skills/`: `lntt sync` stops writing `.claude/skills/`.
 
 ## Discarded directions
 
@@ -162,3 +196,21 @@ How a title is written is the `issues` skill's.
 - **A list of words that are not repositories** (`issue`, `bug`, `task`). A closed list
   lets every other word through; a word that could be a name is treated as another
   repository instead.
+- **The skills from the Claude Code plugin, and `npx skills add` for other agents.** Two
+  install paths, and a plugin version beside the packages' one; the plugin keeps only
+  the hooks, which a skill directory cannot carry (the `lntt review` band, the issue
+  titles on screen).
+- **Full copies of the skills, resynced at each bump.** Every bump of `@lntt/lntt` is
+  also a diff of every guide, and a project that skips `lntt sync` runs skills of one
+  version against an `lntt` of another.
+- **`npx skills add` pinned to a git hash.** A second version to keep in step with the
+  package's, outside the lockfile.
+- **Stubs generated and git-ignored.** No diff ever, but a fresh clone or a cloud
+  session does not know the skills exist until `pnpm install` runs.
+- **Symlinks into `node_modules/@lntt/lntt`.** They dangle in a fresh clone until an
+  install, and a checkout without `core.symlinks` (Windows) turns them into text files.
+- **`npx skills experimental_sync` writing the stubs.** It installs the skills a
+  dependency ships at `skills/` or `dist/skills/`: the guides, not stubs, unless the
+  package shipped the stubs there and the guides elsewhere. It is marked experimental,
+  keeps a lock file of its own, and the check that a stub is unedited would still be
+  `lntt`'s.

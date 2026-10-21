@@ -32,7 +32,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       # Every area of lntt check: AGENTS.md's managed block matches its source, the
-      # decision logs follow the recording rules.
+      # stubs of the shared skills are installed, the decision logs follow the recording
+      # rules, the tests sit at their levels.
       - run: pnpm exec lntt check
       # The branch follows type/issue/slug, whatever tool created it (lntt branch).
       - if: github.event_name == 'pull_request'

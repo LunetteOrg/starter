@@ -17,7 +17,7 @@ packages/
   lntt/                 # the lntt command: .agents/config.*, the operator profile,
                         # lntt check, lntt review, the CI run locally (pnpm ci:local)
 plugins/
-  lunette/              # the Lunette plugin: skills installed unchanged in every project
+  lunette/              # the Lunette plugin for Claude Code: the review band, issue titles
 .claude-plugin/marketplace.json
 docs/
   adr/                  # decisions about the templates system
@@ -32,19 +32,27 @@ pnpm create @lntt my-app                 # interactive template pick
 pnpm create @lntt my-app --template react-router
 ```
 
+## The shared skills
+
+The skills every Lunette project uses (`commit-message`, `coordinate`, `decisions`,
+`review`, `run-local`) ship inside `@lntt/lntt`, in
+[`packages/lntt/skills/`](./packages/lntt/skills/), one version with the `lntt` they
+call. In a project, `pnpm exec lntt sync` writes a stub of each into `.agents/skills/`
+(Codex, OpenCode, Gemini CLI, Cursor) and `.claude/skills/` (Claude Code), committed;
+the stub tells the agent to load the guide with `pnpm exec lntt guide <skill>`, which
+prints it from the installed package. A bump of `@lntt/lntt` updates the skills with no
+other step; `lntt check skills` says when the stubs need `lntt sync` again (a skill
+added, removed or redescribed). The skills read the project's values from
+`.agents/config.*` and are never edited to fit a project
+([agent layer](./docs/adr/agent-layer.md)).
+
 ## The Lunette plugin
 
-The skills every Lunette project uses (`decisions`, `commit-message`) ship as a plugin
-from this repository's marketplace:
-
-```
-/plugin install lunette --marketplace LunetteOrg/starter      # Claude Code
-npx skills add LunetteOrg/starter                             # any other agent
-```
-
-They read the project's values from `.agents/config.*` and are never edited to fit a
-project. This repo uses its own plugin the same way: `.claude/settings.json` declares
-the marketplace and enables the plugin, and each machine installs it once with
+The plugin, from this repository's marketplace, adds to Claude Code the band above the
+prompt that shows a running `lntt review` round, `/review-status`, and each issue or pull
+request number on screen with its title. It is enabled per
+project: `.claude/settings.json` declares the marketplace and enables the plugin, and
+each machine installs it once with
 `claude plugin install lunette@lunette --scope project`. Claude Code does not install
 it by itself in a folder it already trusts.
 

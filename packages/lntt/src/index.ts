@@ -71,6 +71,17 @@ export {
   verdict,
   verifiersFor,
 } from './review.ts'
+export {
+  checkSkills,
+  guide,
+  type InstalledSkill,
+  SKILL_DIRS,
+  sharedSkills,
+  skillFolder,
+  stub,
+  stubFolders,
+  syncSkills,
+} from './skills.ts'
 export { type Choice, chooseViewer, commandExists, detectHost, type Host, openWith, type Viewer } from './viewer.ts'
 export {
   type Agent,

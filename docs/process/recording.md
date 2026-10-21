@@ -1,7 +1,7 @@
 # Recording: how the starter keeps its decisions
 
 The rules for writing a record are the decisions skill's
-([`plugins/lunette/skills/decisions/references/recording-rules.md`](../../plugins/lunette/skills/decisions/references/recording-rules.md)).
+([`packages/lntt/skills/decisions/references/recording-rules.md`](../../packages/lntt/skills/decisions/references/recording-rules.md)).
 The logs, their paths and their language are in `recording` of
 [`.agents/config.jsonc`](../../.agents/config.jsonc). This page holds what is
 particular to this repo.
@@ -30,7 +30,7 @@ That a template ships its logs in this shape is part of the shared base
 ## What ships cites the records of the project it ships to
 
 `lntt check` (CI runs it) checks that every path to a record resolves in this repo.
-The shared packages and the plugin's skills are installed in other projects, and a
+The shared packages and the shared skills are installed in other projects, and a
 path they name (a lint rule's `docs/adr/<subject>.md`) is that project's record. Such
 a folder goes in `recording.externalReferences` with the reason, when it is added to
 the repo; nothing else does: a file of this repo that cites a record that does not

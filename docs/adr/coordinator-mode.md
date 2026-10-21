@@ -34,7 +34,7 @@ two.
   depends on a sibling, from the sibling's branch (`--base`). It follows the single-issue
   brief ([worktree tooling](./worktree-tooling.md)) and stops at a draft pull request.
 
-The coordinator's instructions are the `coordinate` skill of the `lunette` plugin; the
+The coordinator's instructions are the shared `coordinate` skill (`lntt guide coordinate`); the
 flags and files are in the `@lntt/lntt` README. The briefs are templates in
 `packages/lntt/agents/`: `coordinator.md` for the parent, `brief.md` for a child, with
 `reporting.md` and `workflow.md` added to it when the child belongs to a theme.
