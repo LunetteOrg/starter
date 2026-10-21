@@ -6,9 +6,10 @@
 // are issue-titles-hook.js.
 
 import { issueTitles } from './issue-titles-hook.js'
-import { bandLines, fold, readEvents, SPIN_MS } from './review-band.mjs'
+import { bandLines, fold, ownedBy, readEvents, SPIN_MS } from './review-band.mjs'
 
 let progressFile = null
+let session = null // this Claude Code session's id, from its classic events
 let view = null
 let alive = null // whether the round's lntt review process still runs, null when unknown
 
@@ -41,6 +42,16 @@ const running = () => view && view.round !== null && !view.done && !view.error
 
 export function register(on) {
   issueTitles(on)
+  // The session's id, read from the events that carry it: the band shows the round only
+  // in the session that started it (lntt review records CLAUDE_CODE_SESSION_ID).
+  on('classic.SessionStart', async ($, e, next) => {
+    if (typeof e.session_id === 'string') session = e.session_id
+    return next(e)
+  })
+  on('classic.UserPromptSubmit', async ($, e, next) => {
+    if (typeof e.session_id === 'string') session = e.session_id
+    return next(e)
+  })
   on('session.start', async ($, e, next) => {
     await locate($)
     $.clock.every(1000, () => refresh($))
@@ -59,6 +70,7 @@ export function register(on) {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (!ownedBy(view, session)) return next(e)
     const lines = bandLines(view, await $.clock.now(), alive)
     if (!lines) return next(e)
     const { Text, Box } = $.ui.resolve(e)

@@ -524,6 +524,16 @@ describe('lntt review, end to end with a fake agent', () => {
     assert.match(JSON.parse(r.out).failed[0].error, /the round took longer than/)
   })
 
+  test('the progress names the Claude Code session that started the round, or none', () => {
+    lntt(['--base', 'main'], { CLAUDE_CODE_SESSION_ID: 'session-1' })
+    const named = JSON.parse(readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8').split('\n')[0] as string)
+    assert.equal(named.session, 'session-1')
+    git('commit', '-q', '--allow-empty', '-m', 'again')
+    lntt(['--base', 'main'])
+    const none = JSON.parse(readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8').split('\n')[0] as string)
+    assert.equal(none.session, null)
+  })
+
   test("the progress names lntt review's pid; an error starts a new file", () => {
     lntt(['--base', 'main'])
     const first = JSON.parse(readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8').split('\n')[0] as string)

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { bandLines, fold, readEvents, SPIN_MS, tokens } from './review-band.mjs'
+import { bandLines, fold, ownedBy, readEvents, SPIN_MS, tokens } from './review-band.mjs'
 
 const T = 1_000_000
 const round = (extra = []) => [
@@ -142,5 +142,27 @@ describe('the band of a running round', () => {
 
   test('the progress file read line by line, a line that is not JSON skipped', () => {
     assert.deepEqual(readEvents('{"type":"round","t":1}\nnot json\n\n{"type":"beat","t":2}\n').map((e) => e.type), ['round', 'beat'])
+  })
+})
+
+describe('which session shows the band', () => {
+  const started = (session) => fold([{ t: T, type: 'round', pid: 42, round: 1, session }])
+
+  test('the session that started the round, and no other', () => {
+    assert.equal(ownedBy(started('s1'), 's1'), true)
+    assert.equal(ownedBy(started('s1'), 's2'), false)
+  })
+
+  test('a round started outside a session (a terminal, an older lntt) shows in every session of the checkout', () => {
+    assert.equal(ownedBy(started(null), 's1'), true)
+    assert.equal(ownedBy(started(undefined), 's1'), true)
+  })
+
+  test('a session that does not know its id yet shows it, as before', () => {
+    assert.equal(ownedBy(started('s1'), null), true)
+  })
+
+  test("nothing running is nobody's", () => {
+    assert.equal(ownedBy(null, 's1'), false)
   })
 })
