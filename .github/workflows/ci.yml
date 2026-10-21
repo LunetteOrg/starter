@@ -5,9 +5,11 @@ name: CI
 #   when it leaves draft. The author has `pnpm ci:local` green before that;
 # - a pull request into a candidate runs the minimal CI: what a clean machine catches
 #   and the author's machine may not (frozen install, lint, typecheck, lntt check, the
-#   branch name, the plugin version and its validation);
+#   branch name, the plugin version and its validation, the tests but the scaffold
+#   level unless the change touches packages/create);
 # - a pull request into the default branch (the candidate itself, a hotfix) and a push
-#   to it run the full CI, tests and scaffold smoke included. The push gates a release.
+#   to it run the full CI: every test, the scaffold level and its smoke included. The
+#   push gates a release.
 on:
   push:
     branches: [main]
@@ -52,10 +54,13 @@ jobs:
       # caught before the candidate. The scaffold level (`packages/create`: a project
       # generated and committed with git, the package packed with npm, and the smoke that
       # installs, lints and typechecks a generated project) is slow and depends on the
-      # machine: it runs on the full CI only.
-      - if: ${{ !(github.event_name == 'push' || github.base_ref == github.event.repository.default_branch) }}
-        run: pnpm test:minimal
-      - if: github.event_name == 'push' || github.base_ref == github.event.repository.default_branch
-        run: pnpm test
+      # machine: on a pull request into a candidate it runs only when the change touches
+      # packages/create; the full CI runs it always, with the smoke.
+      - run: |
+          if [ "$FULL" = true ]; then SCAFFOLD_SMOKE=1 pnpm test
+          elif ! git diff --quiet "origin/$BASE_REF...HEAD" -- packages/create; then pnpm test
+          else pnpm test:minimal
+          fi
         env:
-          SCAFFOLD_SMOKE: '1'
+          FULL: ${{ github.event_name == 'push' || github.base_ref == github.event.repository.default_branch }}
+          BASE_REF: ${{ github.base_ref }}
