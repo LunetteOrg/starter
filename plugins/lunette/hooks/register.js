@@ -20,7 +20,18 @@ async function locate($) {
   } catch {}
 }
 
+// This session's id, read again at every refresh: a /clear gives the session a new one,
+// and an id that cannot be read leaves none, never the last one.
+async function readSession($) {
+  try {
+    session = (await $.session.id()) || null
+  } catch {
+    session = null
+  }
+}
+
 async function refresh($) {
+  await readSession($)
   if (!progressFile) return
   try {
     if (!(await $.fs.exists(progressFile))) {
@@ -43,9 +54,6 @@ const running = () => view && view.round !== null && !view.done && !view.error
 export function register(on) {
   issueTitles(on)
   on('session.start', async ($, e, next) => {
-    try {
-      session = await $.session.id()
-    } catch {}
     await locate($)
     $.clock.every(1000, () => refresh($))
     // Only the spinner needs the faster redraw, and only while a round runs.
@@ -80,9 +88,9 @@ export function register(on) {
   })
 
   on('command.run', { command: 'review-status' }, async ($) => {
+    if (view && !ownedBy(view, session)) return { text: 'An lntt review round runs in another session of this worktree.' }
     const lines = bandLines(view, await $.clock.now(), alive)
     if (!lines || !view) return { text: 'No lntt review round in this worktree.' }
-    if (!ownedBy(view, session)) return { text: 'An lntt review round runs in another session of this worktree.' }
     const all = [...view.running.entries()].flatMap(([l, rs]) => rs.map((r) => `  running ${l}${r.optional ? ' (optional)' : ''}`))
     return { text: [...lines.map((l) => l.text), ...all].join('\n') }
   })

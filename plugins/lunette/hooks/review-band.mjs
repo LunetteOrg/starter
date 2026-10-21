@@ -28,7 +28,7 @@ export function readEvents(text) {
 export function ownedBy(view, session) {
   if (!view) return false
   if (!view.session) return true
-  return Boolean(session) && view.session === session
+  return view.session === session
 }
 
 // The round as the events tell it, or null when there are none. Agents running are

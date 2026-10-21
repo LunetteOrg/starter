@@ -109,8 +109,9 @@ same way every time; the `review` skill keeps the judgement.
   phase as a bar, the tokens, the agents running), and tells a dead or silent run from a
   working one. Every session open in the checkout reads that file, so the band draws a
   round only in the session that started it; a round started outside a session (a
-  terminal, an older `lntt`) shows in every session of the checkout, and a session that
-  cannot read its own id shows only such rounds. `/review-status` says when the round
+  terminal, an older `lntt`) shows in every session of the checkout. The plugin reads
+  its session's id from Claude Code at every refresh (it changes on `/clear`); a session
+  that cannot read it shows only rounds started outside a session. `/review-status` says when the round
   belongs to another session.
 - **Seen where the person works:** under a Claude Code session in Orca, each agent is
   announced as a subagent of that session (Claude Code's `SubagentStart` and

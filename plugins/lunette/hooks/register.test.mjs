@@ -14,7 +14,7 @@ const roundOf = (session) =>
 // The plugin registered on a fake engine, in a session whose id is `id` (an Error when
 // the session cannot tell it), reading a progress file written by `session`'s round.
 // Each load is a fresh copy of the module: its state is per session.
-async function plugin({ id, session }) {
+async function plugin({ id, session, ids }) {
   const { register } = await import(`./register.js?case=${Math.random()}`)
   const hooks = {}
   register((event, matcher, hook) => {
@@ -24,7 +24,12 @@ async function plugin({ id, session }) {
   const timers = []
   const el = (type) => (props) => ({ type, props })
   const $ = {
-    session: { id: async () => (id instanceof Error ? Promise.reject(id) : id) },
+    session: {
+      id: async () => {
+        const now = ids ? ids.shift() : id
+        return now instanceof Error ? Promise.reject(now) : now
+      },
+    },
     process: {
       run: async (argv) =>
         argv[0] === 'git' ? { exitCode: 0, stdout: '/repo/.git\n', stderr: '' } : { exitCode: 0, stdout: '', stderr: '' },
@@ -37,6 +42,7 @@ async function plugin({ id, session }) {
   await hooks['session.start']($, {}, async () => {})
   await timers[0]() // the first refresh reads the progress file
   return {
+    refresh: () => timers[0](),
     band: () => hooks['ui.render']($, { surface: 'terminal' }, async () => 'below'),
     status: async () => (await hooks['command.run']($, {})).text,
   }
@@ -64,6 +70,20 @@ describe('the band in a session of the checkout', () => {
 
   test("a session that cannot tell its id does not draw another session's round", async () => {
     const p = await plugin({ id: new Error('no id'), session: 's1' })
+    assert.equal(await p.band(), 'below')
+  })
+
+  test('a /clear gives the session a new id: the round of its old id leaves the band', async () => {
+    const p = await plugin({ ids: ['s1', 's1-after-clear'], session: 's1' })
+    assert.equal((await p.band()).type, 'Box')
+    await p.refresh()
+    assert.equal(await p.band(), 'below')
+  })
+
+  test('an id that can no longer be read leaves none, not the last one', async () => {
+    const p = await plugin({ ids: ['s1', new Error('gone')], session: 's1' })
+    assert.equal((await p.band()).type, 'Box')
+    await p.refresh()
     assert.equal(await p.band(), 'below')
   })
 })
