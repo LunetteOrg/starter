@@ -52,6 +52,20 @@ not see is caught on the candidate, and fixed forward there. The candidate autom
 
 A red run is fixed before the push, like a red CI.
 
+## Parallel worktrees
+
+Runs from parallel worktrees queue on the ci:local lock: by default one at a time on
+the machine, whoever started them, a coordinator's children and a run started by hand
+alike. A project that queues only its own runs sets `ci.local.lock`
+([`lntt ci`](../../packages/lntt/README.md#parallel-runs-and-timeouts)).
+`--no-lock` is the one exception, for a run that must not wait. A run stops at the
+lock's maximum hold time, and a step stops at `ci.local.timeoutMinutes`
+([`lntt ci`](../../packages/lntt/README.md#parallel-runs-and-timeouts)). A step
+that outlasts its timeout fails with the machine's load printed next to it. A timeout
+red with a high load, or with the load unavailable, is rerun once the machine is idle,
+and the pull request waits for that green: a red run is never explained away in its
+body.
+
 ## Secrets
 
 No real secret runs locally, and ci:local never reads one from a password manager.
@@ -75,6 +89,8 @@ No real secret runs locally, and ci:local never reads one from a password manage
   its job is declared cloud-only.
 - **Steps that only make sense on a cloud runner** (installing system packages, `sudo`)
   test `GITHUB_ACTIONS` or `CIRCLECI`: ci:local sets `CI=true` and neither of those.
+- **Steps run with no controlling terminal**, as on a CI runner: a step that prompts on
+  `/dev/tty` fails ([`lntt ci`](../../packages/lntt/README.md#parallel-runs-and-timeouts)).
 - A job's `services:` are not started locally: tests that need a database start their
   own (Testcontainers).
 
@@ -83,7 +99,8 @@ No real secret runs locally, and ci:local never reads one from a password manage
 `pnpm ci:local --container` runs each job whole in `act` (GitHub Actions) or
 `circleci local execute` (CircleCI) instead of on the host. It is optional, and the
 default stays native: it needs Docker and gigabytes of images, and its runner images
-are not the cloud's.
+are not the cloud's. A timeout or an interrupt stops the executor, not the containers
+it started ([`lntt ci`](../../packages/lntt/README.md#parallel-runs-and-timeouts)).
 
 Known to work, on macOS with Docker Desktop: a one-step job in each executor, with a
 fake secret. A full job needs a runner image that has what its steps call (`git` for
@@ -112,6 +129,12 @@ configuration.
 - **The full CI on every pull request into the candidate.** The candidate runs the
   scaffold smoke on the whole batch; on each pull request it would install a generated
   project twice for the same check.
+- **A lock held by the orchestration layer** (the coordinator's brief). It misses the
+  runs started by hand, and the load it guards against crosses projects, which no
+  project's coordinator sees.
+- **A retry of a failed step inside ci:local**, even for a known infrastructure flake.
+  A gate's green must mean the commit passed; a flaky test is the test runner's to
+  report.
 - **No tests on a pull request into the candidate.** They would run only on the
   author's machine, which is not the CI's: a test that depends on timing can pass there
   and fail on the Linux runner, and the candidate would be the first to see it.

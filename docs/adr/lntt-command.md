@@ -48,7 +48,8 @@ lntt ci local | candidate
   or a report for a person (`lntt check` without `--json`); progress and child-process output go to stderr. Exit codes:
   0 ok, 1 a configuration error, a red result or a check that cannot run (one line on
   stderr), 2 a usage error, 3 a stop that a person decides on (`lntt review` past
-  `delivery.review.maxRounds`); a defect of `lntt` itself exits 1 with its stack trace.
+  `delivery.review.maxRounds`), an interrupted command 128 plus the signal (130 for
+  Ctrl-C); a defect of `lntt` itself exits 1 with its stack trace.
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
   `decisions` and `tests`, whose results their review lenses read, and `agents-md` and
   `skills`, which no lens needs; a lens's checks are the area named after it. Alone it runs every

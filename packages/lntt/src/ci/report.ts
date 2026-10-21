@@ -104,5 +104,8 @@ export function formatReport(event: Event, results: JobResult[], { strict }: { s
   if (!strict && (count('blocked') > 0 || blockedSteps > 0)) {
     lines.push('Not run (⚠) does not fail the run; --strict makes it fail.')
   }
+  if (results.some((r) => r.timedOut || r.steps.some((s) => s.timedOut))) {
+    lines.push("A timeout is not a verdict on the code: the machine's load is printed next to it.")
+  }
   return lines.join('\n')
 }
