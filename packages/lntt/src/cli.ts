@@ -45,6 +45,12 @@ export function main(args: string[]): void {
 
 function run(command: string | undefined, key: string | undefined, raw: string | undefined): void {
   switch (command) {
+    // Asked for, the usage is the answer: stdout, exit 0 (`npx @lntt/lntt --help`).
+    case '--help':
+    case '-h':
+    case 'help':
+      stdout.write(`${USAGE}\n`)
+      break
     case 'path':
       stdout.write(`${findConfig(cwd()).path}\n`)
       break

@@ -1,10 +1,16 @@
 {
   "name": "@lntt/lntt",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.6.1",
   "description": "The lntt command: a Lunette project's configuration and operator profile, the managed block of AGENTS.md, the checks and reviews of a change, and its CI run on the local machine with the candidate automation",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LunetteOrg/starter.git",
+    "directory": "packages/lntt"
+  },
+  "homepage": "https://github.com/LunetteOrg/starter/tree/main/packages/lntt#readme",
+  "bugs": "https://github.com/LunetteOrg/starter/issues",
   "exports": {
     ".": "./src/index.ts",
     "./ci": "./src/ci/index.ts",
@@ -14,12 +20,36 @@
   "bin": {
     "lntt": "bin/lntt.ts"
   },
+  "files": [
+    "dist",
+    "schema"
+  ],
   "scripts": {
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node -e \"require('node:fs').cpSync('agents','dist/agents',{recursive:true})\"",
+    "prepack": "pnpm run build",
     "test": "node --test test/*.test.ts test/ci/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
     "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public",
+    "bin": {
+      "lntt": "dist/bin/lntt.js"
+    },
+    "exports": {
+      ".": {
+        "types": "./dist/src/index.d.ts",
+        "default": "./dist/src/index.js"
+      },
+      "./ci": {
+        "types": "./dist/src/ci/index.d.ts",
+        "default": "./dist/src/ci/index.js"
+      },
+      "./schema.json": "./schema/config.schema.json",
+      "./operator-schema.json": "./schema/operator.schema.json"
+    }
   },
   "dependencies": {
     "@actions/expressions": "0.3.61",
@@ -27,6 +57,14 @@
     "ajv": "^8.20.0",
     "jsonc-parser": "^3.3.1",
     "yaml": "^2.9.1"
+  },
+  "peerDependencies": {
+    "@commitlint/config-conventional": "^21.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@commitlint/config-conventional": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@commitlint/config-conventional": "^21.2.0",

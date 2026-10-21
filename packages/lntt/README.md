@@ -464,5 +464,14 @@ CircleCI projects need the `circleci` CLI; container mode needs Docker and `act`
 
 ## Requirements
 
-Node ≥ 24. The package is private and runs from source until it is published with the
-other shared packages.
+Node ≥ 24. A project installs it as a development dependency, with
+`@commitlint/config-conventional` as a peer when its commitlint configuration uses
+`commitlintConfig`:
+
+```sh
+pnpm add -D @lntt/lntt @commitlint/config-conventional
+```
+
+The configuration's `$schema` can point at the installed schema,
+`node_modules/@lntt/lntt/schema/config.schema.json`. In the starter the package runs
+from its sources through the workspace; the published package is compiled to `dist/`.
