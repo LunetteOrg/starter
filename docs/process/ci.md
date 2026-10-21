@@ -54,11 +54,14 @@ A red run is fixed before the push, like a red CI.
 
 ## Parallel worktrees
 
-Runs from parallel worktrees queue on the ci:local lock, one at a time on the machine,
-whoever started them: a coordinator's children and a run started by hand alike. A
-step that outlasts its timeout fails with the machine's load printed next to it. A
-timeout red with a high load is rerun once the machine is idle, and the pull request
-waits for that green: a red run is never explained away in its body.
+Runs from parallel worktrees queue on the ci:local lock: by default one at a time on
+the machine, whoever started them, a coordinator's children and a run started by hand
+alike. A project that queues only its own runs sets `ci.local.lock`
+([`lntt ci`](../../packages/lntt/README.md#parallel-runs-and-timeouts)).
+`--no-lock` is the one exception, for a run that must not wait. A step that outlasts
+its timeout fails with the machine's load printed next to it. A timeout red with a high
+load is rerun once the machine is idle, and the pull request waits for that green: a
+red run is never explained away in its body.
 
 ## Secrets
 

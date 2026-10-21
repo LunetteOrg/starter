@@ -418,30 +418,53 @@ configuration error, 2 a usage error.
 ### Parallel runs and timeouts
 
 - **The lock.** A run (not `--list`, and not a run refused for a dirty tree) takes the
-  ci:local lock before its first job and gives it back when it ends, on Ctrl-C or
-  SIGTERM too, so runs from parallel worktrees go one at a time instead of starving
-  each other's tests. It is a file in `$XDG_CACHE_HOME/lntt` (else `~/.cache/lntt`;
-  `$LNTT_CI_LOCK_DIR` names another folder). `ci.local.lock` sets its scope: `machine`
-  (the default), one `ci-local.lock` for every run on the machine, of any project;
-  `project`, one file per repository, shared by its worktrees. `--no-lock` runs
-  without it.
-- **Who holds it.** The file holds the owner's record: pid, host, worktree, start
-  time. A run that finds the lock taken prints, once per holder, `lntt ci: waiting for
-  the ci:local lock held by <worktree> (pid <pid> on <host>, since <HH:MM>, <N>m ago) —
-  <lock file>`, looks again every 5 seconds, and says how long it waited once it has
-  the lock.
-- **A stale lock is taken over:** its owner is no longer running on this host, its
-  record is unreadable for more than 10 seconds, or it has been held past the maximum
-  hold time of 120 minutes, which the waiter reports naming the holder. A run that
-  takes a lock over removes only the record it judged stale.
-- **The timeout.** Each step runs in a process group of its own; one that outlasts
-  `ci.local.timeoutMinutes` (default 30; in container mode, the whole job) is stopped
-  with whatever it started (SIGTERM, then SIGKILL five seconds later) and fails. The
-  following steps go on as after any failure. The report prints next to the step the
-  machine's load at that moment, `timed out after 30m — load 48.2 / 31.0 / 20.5 on 15
-  cores, 9 containers running (7 Testcontainers)` (the containers when Docker
-  answers), and the job line names the step. Nothing is retried: a green means every
-  step passed once.
+  ci:local lock before its first job and gives it back when it ends, on an interrupt
+  too, so runs from parallel worktrees go one at a time instead of starving each
+  other's tests. It is a file in `$XDG_CACHE_HOME/lntt` (else `~/.cache/lntt`;
+  `$LNTT_CI_LOCK_DIR` names another folder), which must be local to the machine: a
+  holder is judged by its pid. `ci.local.lock` sets its scope: `machine` (the default),
+  one `ci-local.lock` for every run on the machine, of any project; `project`, one file
+  per repository, shared by its worktrees. `--no-lock` runs without it. A lock folder
+  that cannot be made or read stops the run with one line, `lntt ci: cannot take the
+  ci:local lock (<reason>) — <path>; --no-lock runs without it`, exit 1.
+- **Who holds it.** The file holds the owner's record: pid, host (shown, not used to
+  judge it), worktree, the moment it took the lock, and the process group of the step
+  it is running. A run that finds the lock taken prints, once per holder, `lntt ci:
+  waiting for the ci:local lock held by <worktree> (pid <pid> on <host>, since <HH:MM>,
+  <N>m ago) — <lock file>`, looks again every 5 seconds, and says how long it waited
+  once it has the lock.
+- **The maximum hold time.** A holder's run stops 120 minutes after it took the lock:
+  the running step is stopped as on a timeout and fails with the machine's load, the
+  rest is skipped with `the run passed the lock's maximum hold time of 120 minutes`,
+  and the run exits 1.
+- **A stale lock is taken over:** its owner is no longer running and neither is the
+  step it recorded, its record is unreadable for more than 10 seconds, or it has been
+  held past the maximum hold time and 2 minutes of grace, the holder having failed to
+  stop, which the waiter reports naming the holder. An owner killed while its step
+  runs leaves that step's process group behind: the waiter says so, `… which is no
+  longer running, but its step (process group <N>) still is`, and waits for it.
+  Removals happen under a short guard file, `<lock>.takeover`, held by one run at a
+  time: its holder removes the lock only if it is still the record judged stale, so a
+  lock another run has just taken stays. A guard older than 10 seconds was left by a
+  crash and is removed.
+- **The timeout.** Each step runs in a process group and a session of its own, with no
+  controlling terminal, as on a CI runner: a step that prompts on `/dev/tty` (an ssh
+  passphrase, a credential prompt, sudo) fails. One that outlasts
+  `ci.local.timeoutMinutes` (default 30, at most 1440; in container mode, the whole
+  job) gets SIGTERM to its group, then SIGKILL five seconds later, and fails; one that
+  ended on its own before the signal is judged by its exit code. The following steps
+  go on as after any failure. The report prints next to the step the machine's load,
+  read once the step was signalled, `timed out after 30m — load 48.2 / 31.0 / 20.5 on
+  15 cores, 9 containers running (7 Testcontainers)` (the containers when Docker
+  answers within 3 seconds), and the job line names the step. Nothing is retried: a
+  green means every step passed once.
+- **An interrupt** (SIGINT, SIGTERM, SIGHUP, SIGQUIT) starts no further step or job,
+  stops the running step's group the same way, prints `lntt ci: interrupted (<signal>)`,
+  gives the lock back and exits 128 + the signal's number (130, 143, 129, 131), with no
+  report.
+- **Container mode's limit.** Stopping `act` or `circleci local execute`, on a timeout
+  or an interrupt, does not stop the containers they started: they keep running until
+  they end or are removed by hand (`docker ps`, `docker rm -f`).
 
 ### CircleCI
 
@@ -484,7 +507,8 @@ and Docker are on the PATH before starting.
     "actions": { "actions/upload-artifact": { "skip": "reports stay in the working tree" } },
     // What a run queues behind: every run on the machine, or this repository's (project).
     "lock": "machine",
-    // How long one step may run before it is stopped and fails with the machine's load.
+    // How long one step may run before it is stopped and fails with the machine's load
+    // (at most 1440).
     "timeoutMinutes": 30
   }
 }

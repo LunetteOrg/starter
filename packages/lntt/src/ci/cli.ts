@@ -17,7 +17,9 @@ import {
   formatList,
   formatReport,
   githubJobs,
+  type Lock,
   localEvent,
+  MAX_HOLD_MINUTES,
   missingTools,
   runJobs,
   stopRunning,
@@ -58,9 +60,8 @@ async function local(args: string[]): Promise<number> {
         list: { type: 'boolean', default: false },
         strict: { type: 'boolean', default: false },
         container: { type: 'boolean', default: false },
-        lock: { type: 'boolean', default: true },
+        'no-lock': { type: 'boolean', default: false },
       },
-      allowNegative: true,
     }),
   )
   const event = values.event
@@ -93,28 +94,47 @@ async function local(args: string[]): Promise<number> {
       return 1
     }
   }
-  // An interrupt stops the running command's process group, which does not get the
-  // terminal's Ctrl-C, gives the lock back and exits: no report of a run cut short.
-  let lock: { release: () => void } | null = null
+  // An interrupt starts nothing more, stops the running command's process group, which
+  // does not get the terminal's signals, gives the lock back and exits 128 + the signal's
+  // number: no report of a run cut short.
+  const interrupt = new AbortController()
+  let lock: Lock | null = null
   let interrupted: Promise<never> | null = null
   for (const [signal, code] of [
     ['SIGINT', 130],
     ['SIGTERM', 143],
+    ['SIGHUP', 129],
+    ['SIGQUIT', 131],
   ] as const) {
     process.on(signal, () => {
-      interrupted ??= stopRunning().then(() => {
+      if (interrupted) return
+      stderr.write(`lntt ci: interrupted (${signal}): stopping the running step\n`)
+      interrupt.abort()
+      interrupted = stopRunning().then(() => {
         lock?.release()
         exit(code)
       })
     })
   }
-  if (values.lock) lock = await acquireLock(root, config.lock, (line) => stderr.write(`${line}\n`))
+  if (!values['no-lock']) lock = await acquireLock(root, config.lock, (line) => stderr.write(`${line}\n`))
+  const held = lock
   try {
     const results = await runJobs(jobs, {
       log: (line) => stdout.write(`${line}\n`),
       ...(only ? { only } : {}),
       ...(values.container ? { container: containerCommand(localEv, config) } : {}),
       timeoutMs: config.timeoutMinutes * 60_000,
+      signal: interrupt.signal,
+      ...(held
+        ? {
+            // The lock's maximum hold time is the run's own limit too.
+            deadline: {
+              at: Date.parse(held.owner.started) + MAX_HOLD_MINUTES * 60_000,
+              reason: `the run passed the lock's maximum hold time of ${MAX_HOLD_MINUTES} minutes`,
+            },
+            onGroup: held.setGroup,
+          }
+        : {}),
     })
     if (interrupted) await interrupted
     stdout.write(`${formatReport(localEv, results, { strict })}\n`)

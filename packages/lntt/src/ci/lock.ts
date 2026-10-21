@@ -1,31 +1,59 @@
 // The ci:local lock: one run at a time, so parallel worktrees queue instead of starving
 // each other's tests. It is a file in a folder of the machine's cache, holding the owner's
-// record (pid, host, worktree, start); a run that finds it taken says whom it waits for,
-// and takes it over once the owner is gone, the record never got written, or the owner
-// has held it past the maximum hold time.
+// record (pid, host, worktree, the moment it took the lock, the process group of the step
+// it runs); a run that finds it taken says whom it waits for, and takes it over once the
+// owner and its step are gone, the record never got written, or the owner has held it
+// past the maximum hold time and failed to stop.
 
 import { execFileSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { linkSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  closeSync,
+  linkSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+  writeSync,
+} from 'node:fs'
 import { homedir, hostname } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 
 export type LockScope = 'machine' | 'project'
 
-export interface Owner {
+// Who runs: the record without the moment the lock was taken.
+export interface Identity {
   pid: number
+  // For display: the lock folder is the user's local cache, so a pid is judged here.
   host: string
   worktree: string
-  started: string
 }
 
-// A run that holds the lock longer than this is taken to be stuck, and the next waiter
-// takes the lock over: a full local CI takes minutes, not hours.
+export interface Owner extends Identity {
+  started: string
+  // The process group of the step the owner is running, while it runs one.
+  group?: number
+}
+
+// The longest a run holds the lock: past it, the holder stops its run (run.ts, `deadline`),
+// and a waiter takes the lock over once the grace has passed too, the holder having failed
+// to stop. A full local CI takes minutes, not hours.
 export const MAX_HOLD_MINUTES = 120
+export const TAKEOVER_GRACE_MINUTES = 2
 
 // A record is written whole under another name and linked in, so an unreadable one is a
-// crash between the two or a file put there by hand; after this long it is stale.
+// crash between the two or a file put there by hand; after this long it is stale. The
+// takeover guard is held for a few file operations, so one this old was left by a crash.
 const UNREADABLE_STALE_MS = 10_000
+const GUARD_STALE_MS = 10_000
+
+// How long a waiter pauses before looking again at a lock that vanished as it read it,
+// or whose takeover guard another run holds.
+const SHORT_PAUSE_MS = 50
 
 // $LNTT_CI_LOCK_DIR, else the user's cache folder.
 export function lockDir(env: Record<string, string | undefined> = process.env): string {
@@ -52,11 +80,13 @@ export function gitCommonDir(cwd: string): string {
 
 export interface LockDeps {
   path: string
-  owner: Owner
+  owner: Identity
   now: () => number
   sleep: (ms: number) => Promise<void>
-  // Whether a process of this host is running.
+  // Whether a process is running.
   alive: (pid: number) => boolean
+  // Whether a process group still has a member.
+  groupAlive: (group: number) => boolean
   log: (line: string) => void
   // How often a waiter looks at the lock again.
   interval?: number
@@ -64,13 +94,20 @@ export interface LockDeps {
 
 export interface Lock {
   path: string
+  // The record as published: `started` is the moment the lock was taken.
+  owner: Owner
   release: () => void
+  // Records the process group of the step being run (null once it closed), so a waiter
+  // does not take the lock over from a step that outlived its owner.
+  setGroup: (group: number | null) => void
 }
+
+const temporaryName = (path: string) => join(dirname(path), `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`)
 
 // The record is written whole under a temporary name, then linked to the lock's: a
 // waiter never reads half of it, and a lock that is taken is never overwritten.
 function publish(path: string, text: string): boolean {
-  const temporary = join(dirname(path), `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`)
+  const temporary = temporaryName(path)
   try {
     writeFileSync(temporary, text)
     linkSync(temporary, path)
@@ -100,11 +137,56 @@ function parse(text: string): Owner | null {
       typeof owner.host === 'string' &&
       typeof owner.worktree === 'string' &&
       typeof owner.started === 'string' &&
-      !Number.isNaN(Date.parse(owner.started))
+      !Number.isNaN(Date.parse(owner.started)) &&
+      (owner.group === undefined || typeof owner.group === 'number')
     )
       return owner as Owner
   } catch {}
   return null
+}
+
+const record = (owner: Owner) => `${JSON.stringify(owner)}\n`
+
+// The takeover guard: every change to a published lock (a stale one removed, a release, a
+// new process group recorded) happens under it, so none of them acts on a record another
+// run has just replaced. Returns its release, or null while another run holds it; a guard
+// left by a crash is removed, and the next attempt takes it.
+function takeGuard(path: string): (() => void) | null {
+  const guard = `${path}.takeover`
+  const token = randomUUID()
+  let fd: number
+  try {
+    fd = openSync(guard, 'wx')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    try {
+      if (Date.now() - statSync(guard).mtimeMs > GUARD_STALE_MS) unlinkSync(guard)
+    } catch {}
+    return null
+  }
+  try {
+    writeSync(fd, token)
+  } finally {
+    closeSync(fd)
+  }
+  return () => {
+    if (read(guard) === token) rmSync(guard, { force: true })
+  }
+}
+
+// The guard for a synchronous change: waits for it in short steps.
+function withGuardSync(path: string, change: () => void): void {
+  const pause = new Int32Array(new SharedArrayBuffer(4))
+  let free = takeGuard(path)
+  while (!free) {
+    Atomics.wait(pause, 0, 0, 10)
+    free = takeGuard(path)
+  }
+  try {
+    change()
+  } finally {
+    free()
+  }
 }
 
 function duration(ms: number): string {
@@ -120,8 +202,14 @@ function describe(owner: Owner, now: number): string {
   return `${owner.worktree} (pid ${owner.pid} on ${owner.host}, since ${clock(owner.started)}, ${duration(now - Date.parse(owner.started))} ago)`
 }
 
-// Why the lock in `text` can be taken over, or null while its owner holds it.
-function staleness(text: string, path: string, deps: LockDeps): string | null {
+type Verdict =
+  | { stale: string }
+  | { owner: Owner; orphan: boolean }
+  // An unreadable record still being written: waited for silently.
+  | { pending: true }
+
+// Whether the lock in `text` can be taken over, and why; else who holds it.
+function judge(text: string, path: string, deps: LockDeps): Verdict {
   const owner = parse(text)
   const now = deps.now()
   if (!owner) {
@@ -129,81 +217,128 @@ function staleness(text: string, path: string, deps: LockDeps): string | null {
     try {
       modified = statSync(path).mtimeMs
     } catch {
-      return null
+      return { pending: true }
     }
     return now - modified > UNREADABLE_STALE_MS
-      ? `lntt ci: the ci:local lock has no readable owner record: taking it over — ${path}`
-      : null
+      ? { stale: `lntt ci: the ci:local lock has no readable owner record: taking it over — ${path}` }
+      : { pending: true }
   }
-  if (owner.host === deps.owner.host && !deps.alive(owner.pid)) {
-    return `lntt ci: the ci:local lock was held by ${describe(owner, now)}, which is no longer running: taking it over — ${path}`
-  }
-  if (now - Date.parse(owner.started) > MAX_HOLD_MINUTES * 60_000) {
-    return `lntt ci: TAKING OVER the ci:local lock held by ${describe(owner, now)}, past the maximum hold time of ${MAX_HOLD_MINUTES} minutes — ${path}`
-  }
-  return null
-}
-
-// Moves the stale lock aside before deleting it, and deletes it only if it is still the
-// record judged stale: two waiters never remove a lock one of them has just taken. A
-// record that changed meanwhile is linked back, unless the lock was taken again since.
-function removeStale(path: string, text: string): void {
-  const aside = join(dirname(path), `.${basename(path)}.${process.pid}.${randomUUID()}.stale`)
-  try {
-    renameSync(path, aside)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
-    throw error
-  }
-  try {
-    if (read(aside) !== text) {
-      try {
-        linkSync(aside, path)
-      } catch {}
+  if (now - Date.parse(owner.started) > (MAX_HOLD_MINUTES + TAKEOVER_GRACE_MINUTES) * 60_000) {
+    return {
+      stale: `lntt ci: TAKING OVER the ci:local lock held by ${describe(owner, now)}, past the maximum hold time of ${MAX_HOLD_MINUTES} minutes — ${path}`,
     }
-  } finally {
-    rmSync(aside, { force: true })
+  }
+  if (deps.alive(owner.pid)) return { owner, orphan: false }
+  if (owner.group !== undefined && deps.groupAlive(owner.group)) return { owner, orphan: true }
+  return {
+    stale: `lntt ci: the ci:local lock was held by ${describe(owner, now)}, which is no longer running: taking it over — ${path}`,
   }
 }
 
-// Removes the lock if its record is still ours.
-export function release(path: string, owner: Owner): void {
+// Removes the stale lock under the takeover guard, and only if it is still the record
+// judged stale: a lock another run took meanwhile stays ('changed'). 'busy' while another
+// run holds the guard.
+function removeStale(path: string, text: string): 'removed' | 'changed' | 'busy' {
+  const free = takeGuard(path)
+  if (!free) return 'busy'
+  try {
+    if (read(path) !== text) return 'changed'
+    try {
+      unlinkSync(path)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    return 'removed'
+  } finally {
+    free()
+  }
+}
+
+const ours = (holder: Owner | null, owner: Owner) =>
+  holder !== null && holder.pid === owner.pid && holder.started === owner.started
+
+function current(path: string): Owner | null {
   const text = read(path)
-  const holder = text === null ? null : parse(text)
-  if (holder && holder.pid === owner.pid && holder.started === owner.started) rmSync(path, { force: true })
+  return text === null ? null : parse(text)
+}
+
+// Removes the lock if its record is still the one `owner` published.
+export function release(path: string, owner: Owner): void {
+  withGuardSync(path, () => {
+    if (ours(current(path), owner)) rmSync(path, { force: true })
+  })
+}
+
+// Rewrites the record with the step's process group, while it is still the one `owner`
+// published: written whole under another name, then renamed over the lock.
+export function recordGroup(path: string, owner: Owner, group: number | null): void {
+  withGuardSync(path, () => {
+    if (!ours(current(path), owner)) return
+    const { group: _, ...rest } = owner
+    const temporary = temporaryName(path)
+    try {
+      writeFileSync(temporary, record(group === null ? rest : { ...rest, group }))
+      renameSync(temporary, path)
+    } finally {
+      rmSync(temporary, { force: true })
+    }
+  })
 }
 
 export async function acquire(deps: LockDeps): Promise<Lock> {
   mkdirSync(dirname(deps.path), { recursive: true })
-  const record = `${JSON.stringify(deps.owner)}\n`
   const announced = new Set<string>()
+  const pause = Math.min(deps.interval ?? 5000, SHORT_PAUSE_MS)
   let waitingSince: number | null = null
   for (;;) {
-    if (publish(deps.path, record)) {
+    const owner: Owner = { ...deps.owner, started: new Date(deps.now()).toISOString() }
+    if (publish(deps.path, record(owner))) {
       if (waitingSince !== null) {
         deps.log(`lntt ci: took the ci:local lock after ${duration(deps.now() - waitingSince)} of waiting`)
       }
-      return { path: deps.path, release: () => release(deps.path, deps.owner) }
+      return {
+        path: deps.path,
+        owner,
+        release: () => release(deps.path, owner),
+        setGroup: (group) => {
+          // A record that cannot be rewritten leaves the lock to the owner's pid alone.
+          try {
+            recordGroup(deps.path, owner, group)
+          } catch {}
+        },
+      }
     }
     const text = read(deps.path)
-    if (text === null) continue
-    const stale = staleness(text, deps.path, deps)
-    if (stale) {
-      deps.log(stale)
-      removeStale(deps.path, text)
+    if (text === null) {
+      // Released between the attempt and the read: the next attempt likely takes it.
+      await deps.sleep(pause)
       continue
     }
-    const holder = parse(text)
-    if (holder && !announced.has(text)) {
-      announced.add(text)
-      deps.log(`lntt ci: waiting for the ci:local lock held by ${describe(holder, deps.now())} — ${deps.path}`)
+    const verdict = judge(text, deps.path, deps)
+    if ('stale' in verdict) {
+      const removal = removeStale(deps.path, text)
+      if (removal === 'removed') deps.log(verdict.stale)
+      if (removal === 'busy') await deps.sleep(pause)
+      continue
+    }
+    if ('owner' in verdict) {
+      const { owner: holder, orphan } = verdict
+      const key = `${holder.pid}|${holder.started}|${orphan ? holder.group : ''}`
+      if (!announced.has(key)) {
+        announced.add(key)
+        deps.log(
+          orphan
+            ? `lntt ci: waiting for the ci:local lock held by ${describe(holder, deps.now())}, which is no longer running, but its step (process group ${holder.group}) still is — ${deps.path}`
+            : `lntt ci: waiting for the ci:local lock held by ${describe(holder, deps.now())} — ${deps.path}`,
+        )
+      }
     }
     waitingSince ??= deps.now()
     await deps.sleep(deps.interval ?? 5000)
   }
 }
 
-// Whether a process of this host is running: EPERM is a process of another user.
+// Whether a process is running: EPERM is a process of another user.
 export function alive(pid: number): boolean {
   try {
     process.kill(pid, 0)
@@ -213,21 +348,51 @@ export function alive(pid: number): boolean {
   }
 }
 
+// Whether a process group still has a member.
+export function groupAlive(group: number): boolean {
+  return alive(-group)
+}
+
+// Why the lock could not be taken, in one line; `ci local` exits 1 on it.
+export class LockError extends Error {}
+
+function lockError(error: unknown, path: string): LockError {
+  const reason = ((error as { stderr?: string }).stderr || (error as Error).message || String(error))
+    .trim()
+    .split('\n')[0]
+  return new LockError(`cannot take the ci:local lock (${reason}) — ${path}; --no-lock runs without it`)
+}
+
+// $LNTT_CI_LOCK_POLL_MS shortens the wait between looks, for tests; a value that is not a
+// positive number is ignored.
+export function pollInterval(env: Record<string, string | undefined>): number | undefined {
+  const poll = Number(env.LNTT_CI_LOCK_POLL_MS)
+  return Number.isFinite(poll) && poll > 0 ? poll : undefined
+}
+
 // The lock for a run from `worktree`, with the real clock, processes and host.
-// $LNTT_CI_LOCK_POLL_MS shortens the wait between looks, for tests.
-export function acquireLock(
+export async function acquireLock(
   worktree: string,
   scope: LockScope,
   log: (line: string) => void,
   env: Record<string, string | undefined> = process.env,
 ): Promise<Lock> {
-  return acquire({
-    path: lockPath(lockDir(env), scope, scope === 'project' ? gitCommonDir(worktree) : ''),
-    owner: { pid: process.pid, host: hostname(), worktree, started: new Date().toISOString() },
-    now: Date.now,
-    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-    alive,
-    log,
-    ...(env.LNTT_CI_LOCK_POLL_MS ? { interval: Number(env.LNTT_CI_LOCK_POLL_MS) } : {}),
-  })
+  const dir = lockDir(env)
+  let path = dir
+  const interval = pollInterval(env)
+  try {
+    path = lockPath(dir, scope, scope === 'project' ? gitCommonDir(worktree) : '')
+    return await acquire({
+      path,
+      owner: { pid: process.pid, host: hostname(), worktree },
+      now: Date.now,
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      alive,
+      groupAlive,
+      log,
+      ...(interval ? { interval } : {}),
+    })
+  } catch (error) {
+    throw lockError(error, path)
+  }
 }

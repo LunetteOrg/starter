@@ -105,7 +105,8 @@
             "timeoutMinutes": {
               "type": "number",
               "exclusiveMinimum": 0,
-              "description": "How long one step (in container mode, one job) may run before it is stopped, with whatever it started, and fails with the machine's load printed next to it. Default 30."
+              "maximum": 1440,
+              "description": "How long one step (in container mode, one job) may run before its process group is stopped and it fails with the machine's load printed next to it. Default 30, at most 1440 (a day). The whole run of a lock's holder stops at the lock's maximum hold time of 120 minutes."
             }
           }
         }
