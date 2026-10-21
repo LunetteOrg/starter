@@ -138,7 +138,7 @@ const adopt: Record<string, () => void> = {
     assert.equal(execFileSync('node', [probe], { cwd: app, encoding: 'utf8' }).trim(), 'http://localhost:4321')
     rmSync(probe)
   },
-  // The command the project's tooling and the plugin's skills call: the installed bin
+  // The command the project's tooling and the shared skills call: the installed bin
   // reads the configuration the scaffolder wrote.
   '@lntt/lntt': () => {
     const lntt = join(app, 'node_modules/.bin/lntt')

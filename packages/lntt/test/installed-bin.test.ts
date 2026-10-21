@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -109,6 +110,25 @@ describe('the installed package', () => {
     const agents = readFileSync(join(project, 'AGENTS.md'), 'utf8')
     const source = readFileSync(join(PKG_DIR, 'agents/block.md'), 'utf8').trimEnd()
     assert.ok(agents.includes(source), 'AGENTS.md holds agents/block.md')
+  })
+
+  test('lntt guide prints the guides the package ships; lntt sync writes their stubs, which lntt check passes', () => {
+    const names = readdirSync(join(PKG_DIR, 'skills')).sort()
+    for (const name of names) assert.ok(files.includes(`package/dist/skills/${name}/SKILL.md`), name)
+    const out = execFileSync('node', [bin, 'guide', 'decisions'], { cwd: project, encoding: 'utf8' })
+    assert.ok(out.includes(readFileSync(join(PKG_DIR, 'skills/decisions/SKILL.md'), 'utf8')), 'the whole guide')
+    assert.ok(
+      out.startsWith(
+        `<!-- lntt guide decisions: relative links start from ${join(pkgRoot, 'dist/skills/decisions')} -->`,
+      ),
+    )
+    execFileSync('node', [bin, 'sync'], { cwd: project })
+    for (const dir of ['.agents/skills', '.claude/skills']) {
+      assert.deepEqual(readdirSync(join(project, dir)).sort(), names)
+      for (const name of names)
+        assert.match(readFileSync(join(project, dir, name, 'SKILL.md'), 'utf8'), new RegExp(`lntt guide ${name}\n`))
+    }
+    execFileSync('node', [bin, 'check', 'skills'], { cwd: project })
   })
 
   test('a project imports the package, its ci entry and its schemas by name', () => {

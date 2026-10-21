@@ -51,7 +51,7 @@ The packages published from `packages/` besides the CLI follow the same rule.
   `@lntt/lntt`) is authored in TypeScript and published compiled: `tsconfig.build.json`
   emits its sources to `dist/` with declarations, the published `exports` and `bin`
   point at `dist/`, `prepack` builds, `files` ships `dist`. Files its code reads at run
-  time ship next to it (`@lntt/lntt` copies `agents/` to `dist/agents`). Its tests
+  time ship next to it (`@lntt/lntt` copies `agents/` to `dist/agents`, and the shared skills to `dist/skills`). Its tests
   import the sources, and at least one imports it by name from a `node_modules`, built.
 - **A package this repo runs from source through the workspace** (`@lntt/lntt`: the
   root's `lntt`, the git hooks, `commitlint.config.mjs`, the CI workflows) keeps

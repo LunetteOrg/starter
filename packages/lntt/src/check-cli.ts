@@ -19,7 +19,7 @@ import {
 } from './check.ts'
 import { ConfigError, loadConfig } from './index.ts'
 
-const USAGE = `usage: lntt check [agents-md | decisions [structure | numbers [<file>...]] | tests [levels | focus | rules | touched]] [--base <ref>] [--json]
+const USAGE = `usage: lntt check [agents-md | skills | decisions [structure | numbers [<file>...]] | tests [levels | focus | rules | touched]] [--base <ref>] [--json]
        lntt check tests mutate <path:line> --text <on the line> --to <mutated> [--json]
        lntt check cite <path:line>... [--json]`
 
@@ -31,6 +31,7 @@ function usage(message?: string): never {
 
 const CHECKS: Record<string, string[]> = {
   'agents-md': [],
+  skills: [],
   decisions: ['structure', 'numbers'],
   tests: ['levels', 'focus', 'rules', 'touched', 'mutate'],
 }

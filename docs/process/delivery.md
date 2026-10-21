@@ -182,9 +182,20 @@ workflow file, with the app's key in reach, so anyone with write access can use 
 token in a run. When someone loses write access, generate a new private key in the
 app, replace `CANDIDATE_APP_PRIVATE_KEY`, and delete the old key.
 
+## The shared skills
+
+A skill's guide is edited in `packages/lntt/skills/<skill>/` and ships with the next
+release of `@lntt/lntt`. This repo installs its own stubs like any project: when a
+change adds, removes or redescribes a skill (its frontmatter), `pnpm exec lntt sync`
+runs on that branch and the stubs' diff goes in the same pull request; `lntt check`
+fails in CI until it does. A project gets a new version of every guide with the bump of
+`@lntt/lntt`, and runs `lntt sync` in that pull request when `lntt check skills` fails
+([agent layer](../adr/agent-layer.md)).
+
 ## The Lunette plugin
 
-A change under `plugins/lunette/` raises the version in its
+The plugin holds the Claude Code hooks (the `lntt review` band, the issue titles on
+screen). A change under `plugins/lunette/` raises the version in its
 `.claude-plugin/plugin.json`: installed copies update only when the version changes.
 CI checks it on every pull request (`scripts/check-plugin-version.sh`), and validates each
 plugin with `claude plugin validate`, which refuses a hooks module the engine would not

@@ -68,10 +68,25 @@ import { commitlintConfig } from '@lntt/lntt'
 export default commitlintConfig()
 ```
 
-## AGENTS.md
+## AGENTS.md and the shared skills
 
 `lntt sync` writes the managed block of `AGENTS.md` from
-[`agents/block.md`](./agents/block.md); `lntt check agents-md` fails when it differs.
+[`agents/block.md`](./agents/block.md), and a stub of each shared skill the package
+ships ([`skills/`](./skills/): `commit-message`, `coordinate`, `decisions`, `review`,
+`run-local`) into `.agents/skills/` and `.claude/skills/`; commit them. A stub holds the
+skill's frontmatter, for discovery, and the instruction to load its guide:
+
+```sh
+pnpm exec lntt guide decisions   # the guide, from the installed package
+pnpm exec lntt guide             # the skills it has
+```
+
+So the skills and the `lntt` they call are one version, the project's lockfile: a bump
+of `@lntt/lntt` updates the guides with no other step. `lntt check agents-md` fails
+when the block differs from its source; `lntt check skills` when a stub is missing or
+edited, or names a skill the package no longer has. Either way, `lntt sync` runs on the
+branch of the bump and its diff goes in the same pull request
+([agent layer](../../docs/adr/agent-layer.md)).
 
 ## Checks (`lntt check`)
 
@@ -81,6 +96,7 @@ result instead of redoing it by eye.
 ```sh
 lntt check                                              # every area: what CI runs
 lntt check agents-md                                    # the managed block of AGENTS.md
+lntt check skills                                       # the stubs of the shared skills
 lntt check decisions                                    # the decision logs of recording
 lntt check decisions --base main                        # … and what the diff from main touches
 lntt check decisions numbers docs/adr/review-agents.md  # every line carrying a figure
@@ -211,7 +227,7 @@ The host is the innermost one the session runs in, detected from the environment
 
 A theme is several issues at once. Its coordinator is a worktree that writes no code and
 starts one child per issue ([coordinator mode](../../docs/adr/coordinator-mode.md); the
-instructions are the `coordinate` skill of the `lunette` plugin).
+instructions are the shared `coordinate` skill).
 
 ```sh
 lntt worktree start --coordinator --theme release-0-6-1 --issue 84 --issue 89 --approve 89
