@@ -530,6 +530,8 @@ async function round(args: string[]): Promise<number> {
   emit({
     type: 'round',
     pid: process.pid,
+    // The Claude Code session that started the round, so its band shows there only.
+    session: process.env.CLAUDE_CODE_SESSION_ID || null,
     round: range.round,
     range: `${range.from}..${head}`,
     files: files.length,

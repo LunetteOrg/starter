@@ -6,9 +6,10 @@
 // are issue-titles-hook.js.
 
 import { issueTitles } from './issue-titles-hook.js'
-import { bandLines, fold, readEvents, SPIN_MS } from './review-band.mjs'
+import { bandLines, fold, ownedBy, readEvents, SPIN_MS } from './review-band.mjs'
 
 let progressFile = null
+let session = null // this Claude Code session's id, which lntt review records with its round
 let view = null
 let alive = null // whether the round's lntt review process still runs, null when unknown
 
@@ -19,7 +20,18 @@ async function locate($) {
   } catch {}
 }
 
+// This session's id, read again at every refresh: a /clear gives the session a new one,
+// and an id that cannot be read leaves none, never the last one.
+async function readSession($) {
+  try {
+    session = (await $.session.id()) || null
+  } catch {
+    session = null
+  }
+}
+
 async function refresh($) {
+  await readSession($)
   if (!progressFile) return
   try {
     if (!(await $.fs.exists(progressFile))) {
@@ -59,6 +71,7 @@ export function register(on) {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (!ownedBy(view, session)) return next(e)
     const lines = bandLines(view, await $.clock.now(), alive)
     if (!lines) return next(e)
     const { Text, Box } = $.ui.resolve(e)
@@ -75,6 +88,7 @@ export function register(on) {
   })
 
   on('command.run', { command: 'review-status' }, async ($) => {
+    if (view && !ownedBy(view, session)) return { text: 'An lntt review round runs in another session of this worktree.' }
     const lines = bandLines(view, await $.clock.now(), alive)
     if (!lines || !view) return { text: 'No lntt review round in this worktree.' }
     const all = [...view.running.entries()].flatMap(([l, rs]) => rs.map((r) => `  running ${l}${r.optional ? ' (optional)' : ''}`))

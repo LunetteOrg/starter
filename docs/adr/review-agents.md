@@ -100,13 +100,19 @@ same way every time; the `review` skill keeps the judgement.
   running every 30 seconds, `round N done` at the end, `error:` for a round that could
   not start and `limit:` for one past `maxRounds`. The `review` skill wakes on `failed`,
   `error:`, `limit:` and `round N done` only. The same goes as JSON events, one per
-  line, to `<git dir>/lntt-review.progress`: the round with the pid of `lntt review`,
+  line, to `<git dir>/lntt-review.progress`: the round with the pid of `lntt review`
+  and the Claude Code session that started it (`CLAUDE_CODE_SESSION_ID`, or none),
   each phase with its total, each agent's start and end, a beat every 15 seconds, the
   end, the error, or the limit with the findings and failures still open. `lntt review
   allow` starts the file again with an `allow` event, so the limit leaves the band. The
   `lunette` plugin's band reads it and draws the round above the Claude Code prompt, with no Claude turn (a spinner, the
   phase as a bar, the tokens, the agents running), and tells a dead or silent run from a
-  working one.
+  working one. Every session open in the checkout reads that file, so the band draws a
+  round only in the session that started it; a round started outside a session (a
+  terminal, an older `lntt`) shows in every session of the checkout. The plugin reads
+  its session's id from Claude Code at every refresh (it changes on `/clear`); a session
+  that cannot read it shows only rounds started outside a session. `/review-status` says when the round
+  belongs to another session.
 - **Seen where the person works:** under a Claude Code session in Orca, each agent is
   announced as a subagent of that session (Claude Code's `SubagentStart` and
   `SubagentStop`, sent through Orca's hook script, the start repeated every two seconds

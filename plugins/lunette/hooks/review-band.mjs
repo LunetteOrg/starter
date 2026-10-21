@@ -22,6 +22,15 @@ export function readEvents(text) {
   return events
 }
 
+// Whether the band of this round belongs in a session: the one that started it. A round
+// started outside a session (a terminal, an older lntt) shows in every session of the
+// checkout; a session that cannot tell its own id shows only such rounds.
+export function ownedBy(view, session) {
+  if (!view) return false
+  if (!view.session) return true
+  return view.session === session
+}
+
 // The round as the events tell it, or null when there are none. Agents running are
 // counted by label, since two agents can carry the same one.
 export function fold(events) {
@@ -29,6 +38,7 @@ export function fold(events) {
   const v = {
     round: null,
     pid: null,
+    session: null,
     started: null,
     grace: null,
     last: 0,
@@ -46,7 +56,13 @@ export function fold(events) {
   for (const e of events) {
     if (typeof e.t === 'number') v.last = e.t
     if (e.type === 'round') {
-      Object.assign(v, { round: e.round, pid: e.pid ?? null, started: e.t, grace: e.optionalGraceMs ?? null })
+      Object.assign(v, {
+        round: e.round,
+        pid: e.pid ?? null,
+        session: e.session ?? null,
+        started: e.t,
+        grace: e.optionalGraceMs ?? null,
+      })
     } else if (e.type === 'phase') {
       Object.assign(v, { phase: e.phase, total: e.total, ended: 0 })
     } else if (e.type === 'start') {
