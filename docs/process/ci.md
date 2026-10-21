@@ -41,7 +41,8 @@ not see is caught on the candidate, and fixed forward there. The candidate autom
 - **Before a push leaves the machine for review**: `pnpm ci:local` green on the head
   about to be pushed. It refuses uncommitted changes, so the run is about that head.
   Its default base is `main`, so it runs the full CI, a superset of the minimal one;
-  `--base <candidate> --list` shows what the minimal CI runs.
+  `--base <candidate> --list` shows what the minimal CI runs (the test step's choice,
+  scaffold level or not, is made when it runs, from the diff against the base).
 - **On the candidate, before it is marked ready** ([delivery](./delivery.md#the-candidate)).
 - **`pnpm ci:local --list`** before changing a workflow: it shows, per job, what the
   cloud runs and what the local run does instead.
@@ -114,6 +115,7 @@ configuration.
 - **No tests on a pull request into the candidate.** They would run only on the
   author's machine, which is not the CI's: a test that depends on timing can pass there
   and fail on the Linux runner, and the candidate would be the first to see it.
-- **The scaffold level on every pull request into the candidate.** It failed on loaded
-  machines in `ci:local` for reasons that had nothing to do with the change under
-  review, blocking every child of a coordinated theme at once.
+- **The scaffold level on every pull request into the candidate.** On a loaded machine
+  it fails for reasons outside the change (a git process the scaffold leaves behind),
+  and `ci:local` runs the same step: one such red blocks every pull request at once,
+  most of which do not touch `packages/create`.
