@@ -1,6 +1,6 @@
 {
   "name": "@lntt/biome-config",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "The Biome config and GritQL plugins every Lunette project extends",
   "type": "module",
   "license": "MIT",
