@@ -280,13 +280,19 @@ export const PORT = e2ePort({
 export default definePlaywrightConfig({ port: PORT, globalSetup: './__tests__/global-setup.ts' })
 ```
 
-`e2ePort` returns `E2E_PORT` when it is set, `ciPort` when `CI` is set and one is
-given, and otherwise a port derived from a hash of the checkout's real path, between
-20000 and 29999 (below the ephemeral ranges of Linux and macOS). Each app of `apps`
-gets the port next to the previous one, so `apps` lists every app with an e2e suite,
-always in the same order; it defaults to the app alone. Two worktrees run their suites
-at once on different ports; when two of them hash to the same slot, `E2E_PORT` on one
-is the way out. The global setup starts the dev server on the exported `PORT`.
+`e2ePort` returns, in this order:
+
+- **`E2E_PORT`, when it is set,** for the first app of `apps`, and the ports after it
+  for the others (`E2E_PORT=4000`: `web` on 4000, `admin` on 4001).
+- **`ciPort`, when `CI` is set and one is given.** Each app's config passes its own.
+- **A port derived from a hash of the checkout's real path,** between 20000 and 29999
+  (below the ephemeral ranges of Linux and macOS).
+
+Each app of `apps` gets the port next to the previous one, so `apps` lists every app
+with an e2e suite, always in the same order; it defaults to the app alone. Two
+worktrees run their suites at once on different ports; when two of them hash to the
+same slot, `E2E_PORT` in one of them is the way out. The global setup starts the dev
+server on the exported `PORT`.
 
 ### `test`, with hydration delayed on demand
 
@@ -310,22 +316,29 @@ test('the language menu opens', async ({ page }) => {
   client chunk that many milliseconds late, so the server HTML stays without handlers
   that long. A spec that passes only when hydration is fast fails. Read once when the
   module loads (`HYDRATION_DELAY_MS`); a value that is not whole milliseconds throws.
-- **A run that delayed nothing fails.** A passing test whose context loaded pages and
-  none of them requested the chunk fails, naming the pattern: the chunk was renamed, or
-  the pages never hydrate.
+- **A run that delayed nothing fails.** A test that passed as expected, whose context
+  loaded pages and none of them requested the chunk, fails, naming the pattern: the
+  chunk was renamed, or the pages never hydrate. A page is the HTML a top-level
+  navigation lands on; an iframe, a redirect hop, or a navigation to text, JSON or a
+  download is not counted.
 - **`hydrationChunk`** is the URL pattern held back. The default,
   `REACT_DOM_CLIENT_CHUNK`, is the chunk Vite's dep optimizer serves on the dev server;
-  a suite against a build sets its own with `use: { hydrationChunk }` in the config.
+  a suite against a build sets its own with `use: { hydrationChunk }` in the config. A
+  test whose pages never hydrate sets `test.use({ hydrationChunk: null })`: nothing is
+  delayed or checked there.
 - **A context the test opens itself** (`browser.newContext()`) is not delayed;
   `delayHydration(context, { delayMs: HYDRATION_DELAY_MS, chunk })` delays it, and its
   `assertDelayed()` makes the same check.
 - **`repeatUntil(gesture, effect)` and `ATTEMPT`.** When an e2e must touch a control
   that exists only in JavaScript, it repeats an idempotent gesture until the effect
-  shows; each attempt waits `ATTEMPT` (one second). A gesture that is not idempotent
-  (submitting a form) has no place in it.
-- **`expectFetchMetadata(headers, expected)`.** The route that delays the chunk makes
-  Playwright report requests without their `Sec-Fetch-*` headers: under a delay the
-  assertion is recorded on the test as an `unchecked` annotation instead of failing.
+  shows. `repeatUntil` sets no timeout: pass `ATTEMPT` (one second) to the gesture and
+  to the effect, as above, or a lost gesture waits out the test's timeout. A gesture
+  that is not idempotent (submitting a form) has no place in it.
+- **`expectFetchMetadata(await request.allHeaders(), expected)`.** The `Sec-Fetch-*`
+  headers are only in `allHeaders()`, never in `request.headers()`. The route that
+  delays the chunk makes Playwright report every request of the context without them:
+  under a delay the assertion is recorded on the test as an `unchecked` annotation
+  instead of failing.
 
 The delayed run is a script of the project, next to `test:e2e`:
 

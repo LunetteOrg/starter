@@ -86,7 +86,8 @@ describe.skipIf(!hasTestDatabase())('two checkouts at once', () => {
 })
 
 // A playwright.config.ts and an e2e import these subpaths by name: Node loads them from
-// dist/ as published, with no vitest in between. Needs no database, so it always runs.
+// dist/ as published, with no vitest in between. Needs no database, so it runs without
+// one; like the suites above it needs dist/, which the package's `test` script builds.
 describe('the Playwright subpaths', () => {
   it('load by name from the built package', () => {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-ws-playwright-')))

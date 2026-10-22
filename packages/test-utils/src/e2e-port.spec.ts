@@ -64,6 +64,21 @@ describe('worktreeE2ePort', () => {
   it('throws on an app missing from the list', () => {
     expect(() => worktreeE2ePort(ROOT_A, { app: 'shop', apps: APPS })).toThrow(/shop.*web, admin/)
   })
+
+  it('keeps the apps of one checkout apart and in the range for any number of apps', () => {
+    const apps = ['web', 'admin', 'docs', 'shop', 'api', 'blog', 'help']
+    for (let i = 0; i < 200; i++) {
+      const ports = apps.map((app) => worktreeE2ePort(`/checkouts/wt-${i}`, { app, apps }))
+      expect(new Set(ports).size).toBe(apps.length)
+      expect(Math.min(...ports)).toBeGreaterThanOrEqual(E2E_PORT_RANGE.min)
+      expect(Math.max(...ports)).toBeLessThanOrEqual(E2E_PORT_RANGE.max)
+    }
+  })
+
+  it('throws when the apps outnumber the ports of the range', () => {
+    const apps = Array.from({ length: 10_001 }, (_, i) => `app${i}`)
+    expect(() => worktreeE2ePort(ROOT_A, { app: 'app0', apps })).toThrow(/10001 apps.*20000 to 29999/)
+  })
 })
 
 describe('e2ePort', () => {
@@ -74,11 +89,38 @@ describe('e2ePort', () => {
   })
 
   it('takes E2E_PORT first', () => {
-    expect(e2ePort({ root: ROOT_A, app: 'admin', apps: APPS, env: { E2E_PORT: '4567' } })).toBe(4567)
+    expect(e2ePort({ root: ROOT_A, app: 'web', apps: APPS, env: { E2E_PORT: '4567' } })).toBe(4567)
+  })
+
+  it('gives each app the port after the previous one from E2E_PORT, so they never meet', () => {
+    const env = { E2E_PORT: '4000' }
+    expect(APPS.map((app) => e2ePort({ root: ROOT_A, app, apps: APPS, env }))).toEqual([4000, 4001])
+  })
+
+  it.each([
+    ['1', 1],
+    ['65535', 65_535],
+  ])('accepts E2E_PORT=%j at the edge of the port range', (value, port) => {
+    expect(e2ePort({ root: ROOT_A, app: 'web', env: { E2E_PORT: value } })).toBe(port)
+  })
+
+  it('rejects an E2E_PORT that puts the last app past 65535', () => {
+    expect(() => e2ePort({ root: ROOT_A, app: 'web', apps: APPS, env: { E2E_PORT: '65535' } })).toThrow(
+      /E2E_PORT.*65535.*2 apps/,
+    )
   })
 
   it('takes the CI port when CI is set', () => {
     expect(e2ePort({ root: ROOT_A, app: 'admin', apps: APPS, ciPort: 3200, env: { CI: 'true' } })).toBe(3200)
+  })
+
+  it('stays derived with the CI port given when CI is empty or unset', () => {
+    expect(e2ePort({ root: ROOT_A, app: 'admin', apps: APPS, ciPort: 3200, env: { CI: '' } })).toBe(derived)
+    expect(e2ePort({ root: ROOT_A, app: 'admin', apps: APPS, ciPort: 3200, env: {} })).toBe(derived)
+  })
+
+  it.each([0, -1, 65_536, 3200.5, Number.NaN])('rejects a CI port of %s', (ciPort) => {
+    expect(() => e2ePort({ root: ROOT_A, app: 'admin', apps: APPS, ciPort, env: { CI: 'true' } })).toThrow(/ciPort/)
   })
 
   it('stays derived in CI when no CI port is given', () => {
@@ -87,7 +129,7 @@ describe('e2ePort', () => {
 
   it('takes E2E_PORT over the CI port', () => {
     const env = { CI: 'true', E2E_PORT: '4000' }
-    expect(e2ePort({ root: ROOT_A, app: 'admin', apps: APPS, ciPort: 3200, env })).toBe(4000)
+    expect(e2ePort({ root: ROOT_A, app: 'web', apps: APPS, ciPort: 3200, env })).toBe(4000)
   })
 
   it.each(['abc', '0', '-1', '65536', '3100.5', ' 4000 ', '0x10', '1e3'])('rejects E2E_PORT=%j', (value) => {

@@ -31,11 +31,21 @@ export interface WorktreeE2ePortOptions {
  * of them is the way out.
  */
 export function worktreeE2ePort(root: string, { app, apps = [app] }: WorktreeE2ePortOptions): number {
-  const index = apps.indexOf(app)
-  if (index === -1) throw new Error(`e2e port: no app "${app}" among ${apps.join(', ')}`)
+  const index = appIndex(app, apps)
   const slots = Math.floor((E2E_PORT_RANGE.max - E2E_PORT_RANGE.min + 1) / apps.length)
+  if (slots < 1) {
+    throw new Error(
+      `e2e port: ${apps.length} apps do not fit in ${E2E_PORT_RANGE.min} to ${E2E_PORT_RANGE.max}, one port each`,
+    )
+  }
   const slot = createHash('sha256').update(realPath(root)).digest().readUInt32BE(0) % slots
   return E2E_PORT_RANGE.min + slot * apps.length + index
+}
+
+function appIndex(app: string, apps: readonly string[]): number {
+  const index = apps.indexOf(app)
+  if (index === -1) throw new Error(`e2e port: no app "${app}" among ${apps.join(', ')}`)
+  return index
 }
 
 /** A path that does not exist yet still gets a port, from its lexical form. */
@@ -50,21 +60,36 @@ function realPath(root: string): string {
 export interface E2ePortOptions extends WorktreeE2ePortOptions {
   /** The checkout's root: the directory holding `pnpm-workspace.yaml`. */
   root: string
-  /** The port used when `CI` is set, where one job runs one suite. Default: the derived one. */
+  /**
+   * This app's port when `CI` is set (any non-empty value, as `@lntt/playwright-config`
+   * reads it), where one job runs one suite. Default: the derived one.
+   */
   ciPort?: number
   env?: Record<string, string | undefined>
 }
 
-/** `E2E_PORT` first, then `ciPort` when `CI` is set, then the port derived from the checkout. */
+/**
+ * `E2E_PORT` first, as the port of the first app of `apps` and the ports after it for
+ * the others; then `ciPort` when `CI` is set; then the port derived from the checkout.
+ */
 export function e2ePort({ root, ciPort, env = process.env, ...app }: E2ePortOptions): number {
   const forced = env.E2E_PORT
   if (forced) {
+    const apps = app.apps ?? [app.app]
     const port = Number(forced)
     if (!/^\d+$/.test(forced) || port < 1 || port > 65_535) {
       throw new Error(`E2E_PORT must be an integer between 1 and 65535, got "${forced}"`)
     }
-    return port
+    if (port + apps.length - 1 > 65_535) {
+      throw new Error(`E2E_PORT=${forced} leaves no port up to 65535 for each of the ${apps.length} apps`)
+    }
+    return port + appIndex(app.app, apps)
   }
-  if (env.CI && ciPort !== undefined) return ciPort
+  if (env.CI && ciPort !== undefined) {
+    if (!Number.isInteger(ciPort) || ciPort < 1 || ciPort > 65_535) {
+      throw new Error(`ciPort must be an integer between 1 and 65535, got ${ciPort}`)
+    }
+    return ciPort
+  }
   return worktreeE2ePort(root, app)
 }

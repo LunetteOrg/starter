@@ -51,7 +51,7 @@ function project(files: Record<string, string>): string {
 }
 
 function check(dir: string): { ok: boolean; output: string } {
-  const r = spawnSync('node', [BIOME, 'check', '--colors=off', 'src'], {
+  const r = spawnSync('node', [BIOME, 'check', '--colors=off', '--max-diagnostics=1000', 'src'], {
     cwd: dir,
     encoding: 'utf8',
   })
@@ -112,13 +112,21 @@ test('no-react-internals flags a React internal key', () => {
   assert.match(r.output, /React internals/)
 })
 
-test('e2e-test-from-helper flags `test` taken from @playwright/test in every import form', () => {
+test('e2e-test-from-helper flags `test` taken from @playwright/test in every import and re-export form', () => {
   const forms = {
     'named.e2e.ts': "import { test } from '@playwright/test'\n",
     'renamed.e2e.ts': "import { expect, test as base } from '@playwright/test'\n",
     'multiline.e2e.ts': "import {\n  expect,\n  test,\n} from '@playwright/test'\n",
     'default.e2e.ts': "import playwright from '@playwright/test'\n",
+    'default-renamed.e2e.ts': "import { default as base } from '@playwright/test'\n",
+    'combined.e2e.ts': "import base, { expect } from '@playwright/test'\n",
+    'combined-namespace.e2e.ts': "import base, * as playwright from '@playwright/test'\n",
     'namespace.e2e.ts': "import * as playwright from '@playwright/test'\n",
+    'fixtures-named.ts': "export { expect, test } from '@playwright/test'\n",
+    'fixtures-renamed.ts': "export { test as base } from '@playwright/test'\n",
+    'fixtures-default.ts': "export { default } from '@playwright/test'\n",
+    'fixtures-star.ts': "export * from '@playwright/test'\n",
+    'fixtures-namespace.ts': "export * as playwright from '@playwright/test'\n",
   }
   const r = check(
     project(Object.fromEntries(Object.entries(forms).map(([f, src]) => [`e2e/${f}`, src]))),
@@ -139,6 +147,18 @@ test('e2e-test-from-helper leaves `test` from the helper, and expect, devices an
     'export type Used = [Page, TestInfo]',
     '',
   ].join('\n')
-  const r = check(project({ 'e2e/ok.e2e.ts': src }))
+  const r = check(
+    project({
+      'e2e/ok.e2e.ts': src,
+      'e2e/names.e2e.ts':
+        "import { contest, latest, testing } from '@playwright/test'\n\nexport const names = [contest, latest, testing]\n",
+      'e2e/fixtures.ts': [
+        "export { test } from '@lntt/test-utils/playwright'",
+        "export type { Page, TestInfo } from '@playwright/test'",
+        "export { devices, expect } from '@playwright/test'",
+        '',
+      ].join('\n'),
+    }),
+  )
   assert.ok(r.ok, r.output)
 })

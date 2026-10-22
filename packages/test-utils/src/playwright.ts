@@ -2,7 +2,18 @@
 // helpers for a control that exists only in JavaScript. The reasons are in the
 // starter's docs/adr/e2e-helpers.md.
 
-import { type BrowserContext, test as base, expect, type TestInfo } from '@playwright/test'
+import {
+  type BrowserContext,
+  test as base,
+  expect,
+  type Fixtures,
+  type PlaywrightTestArgs,
+  type PlaywrightTestOptions,
+  type PlaywrightWorkerArgs,
+  type PlaywrightWorkerOptions,
+  type Response,
+  type TestInfo,
+} from '@playwright/test'
 
 /** The record the messages of this module cite. */
 export const E2E_HELPERS_RECORD = 'https://github.com/LunetteOrg/starter/blob/main/docs/adr/e2e-helpers.md'
@@ -20,8 +31,9 @@ export const ATTEMPT = { timeout: 1_000 }
  * await repeatUntil(() => trigger.click(ATTEMPT), () => expect(menu).toBeVisible(ATTEMPT))
  * ```
  *
- * The effect asserts with `ATTEMPT`, so a lost gesture is repeated within a second
- * instead of waiting out the test's timeout.
+ * `repeatUntil` sets no timeout of its own: the gesture and the effect each take
+ * `ATTEMPT`, so a lost gesture is repeated within a second instead of waiting out the
+ * test's timeout.
  */
 export async function repeatUntil(gesture: () => Promise<unknown>, effect: () => Promise<unknown>): Promise<void> {
   await expect(async () => {
@@ -64,6 +76,23 @@ export interface HydrationDelay {
 }
 
 /**
+ * A page that can hydrate: the HTML a top-level navigation lands on. An iframe, a hop
+ * of a redirect, and a navigation to text, JSON or a download are not pages here.
+ */
+function isPage(response: Response): boolean {
+  const request = response.request()
+  if (request.resourceType() !== 'document' || !request.isNavigationRequest()) return false
+  if (response.status() >= 300 && response.status() < 400) return false
+  if (!/^text\/html\b/i.test(response.headers()['content-type'] ?? '')) return false
+  try {
+    return request.frame().parentFrame() === null
+  } catch {
+    // A service worker's request has no frame.
+    return false
+  }
+}
+
+/**
  * Holds back the chunk for `delayMs` on every page of `context`, so the server HTML stays
  * without handlers for that long. The `test` of this module does it to the test's own
  * context; a test that opens one with `browser.newContext()` calls it on that one.
@@ -72,10 +101,10 @@ export async function delayHydration(
   context: BrowserContext,
   { delayMs, chunk }: HydrationDelayOptions,
 ): Promise<HydrationDelay> {
-  let documents = 0
+  let pages = 0
   let delayed = 0
-  context.on('request', (request) => {
-    if (request.resourceType() === 'document') documents++
+  context.on('response', (response) => {
+    if (isPage(response)) pages++
   })
   await context.route(chunk, async (route) => {
     delayed++
@@ -85,37 +114,53 @@ export async function delayHydration(
   })
   return {
     assertDelayed() {
-      if (documents > 0 && delayed === 0) {
+      if (pages > 0 && delayed === 0) {
         throw new Error(
-          `E2E_HYDRATION_DELAY_MS is set but none of the ${documents} pages loaded a chunk matching ${String(chunk)}: ` +
-            `the chunk was renamed or the pages never hydrate. Set hydrationChunk to the chunk the app loads (${E2E_HELPERS_RECORD})`,
+          `E2E_HYDRATION_DELAY_MS is set but none of the ${pages} pages loaded a chunk matching ${String(chunk)}: ` +
+            'the chunk was renamed or the pages never hydrate. Set hydrationChunk to the chunk the app loads, ' +
+            `or to null in a test whose pages never hydrate (${E2E_HELPERS_RECORD})`,
         )
       }
     },
   }
 }
 
-interface HydrationFixtures {
-  /** The chunk `E2E_HYDRATION_DELAY_MS` holds back. Default: `REACT_DOM_CLIENT_CHUNK`. */
-  hydrationChunk: string | RegExp
+export interface HydrationFixtures {
+  /**
+   * The chunk `E2E_HYDRATION_DELAY_MS` holds back. Default: `REACT_DOM_CLIENT_CHUNK`.
+   * `null` in a test whose pages never hydrate: nothing is delayed and nothing checked.
+   */
+  hydrationChunk: string | RegExp | null
 }
 
 /**
  * The `context` fixture of `test`: with a delay, every page of the test's context gets
- * the chunk that late, and a passing test that loaded pages and delayed none fails, so
- * a run that proved nothing is not green. A test that already failed keeps its own error.
+ * the chunk that late, and a test that passed as expected, loaded pages and delayed none
+ * fails, so a run that proved nothing is not green. A test that failed, or that is
+ * expected to fail, keeps its own outcome.
  */
 export function hydrationDelayFixture(delayMs: number) {
   return async (
-    { context, hydrationChunk }: { context: BrowserContext; hydrationChunk: string | RegExp },
+    { context, hydrationChunk }: { context: BrowserContext; hydrationChunk: string | RegExp | null },
     use: (context: BrowserContext) => Promise<void>,
     testInfo: TestInfo,
   ): Promise<void> => {
-    if (delayMs === 0) return use(context)
+    if (delayMs === 0 || hydrationChunk === null) return use(context)
     const delay = await delayHydration(context, { delayMs, chunk: hydrationChunk })
     await use(context)
-    if (testInfo.status === testInfo.expectedStatus) delay.assertDelayed()
+    if (testInfo.status === 'passed' && testInfo.expectedStatus === 'passed') delay.assertDelayed()
   }
+}
+
+/** What `test` adds to Playwright's `test`: exported so a spec can check the wiring. */
+export const hydrationFixtures: Fixtures<
+  HydrationFixtures,
+  object,
+  PlaywrightTestArgs & PlaywrightTestOptions,
+  PlaywrightWorkerArgs & PlaywrightWorkerOptions
+> = {
+  hydrationChunk: [REACT_DOM_CLIENT_CHUNK, { option: true }],
+  context: hydrationDelayFixture(HYDRATION_DELAY_MS),
 }
 
 /**
@@ -123,10 +168,7 @@ export function hydrationDelayFixture(delayMs: number) {
  * test's context gets `hydrationChunk` that many milliseconds late; set it with
  * `use: { hydrationChunk }` in the config or `test.use` in a file.
  */
-export const test = base.extend<HydrationFixtures>({
-  hydrationChunk: [REACT_DOM_CLIENT_CHUNK, { option: true }],
-  context: hydrationDelayFixture(HYDRATION_DELAY_MS),
-})
+export const test = base.extend<HydrationFixtures>(hydrationFixtures)
 
 export interface FetchMetadataRun {
   /** Default: `HYDRATION_DELAY_MS`. */
@@ -136,10 +178,15 @@ export interface FetchMetadataRun {
 }
 
 /**
- * Asserts the `Sec-Fetch-*` headers the browser put on a request. A delayed-hydration
- * run intercepts requests with `context.route`, and Playwright then reports them without
- * those headers: there the assertion cannot be read, so it is recorded on the test as an
- * `unchecked` annotation and the rest of the test runs.
+ * Asserts the `Sec-Fetch-*` headers the browser put on a request. Pass
+ * `await request.allHeaders()`: `request.headers()` never holds them. A delayed-hydration
+ * run installs a route on the context, and Playwright then reports every request of that
+ * context without those headers: there the assertion cannot be read, so it is recorded
+ * on the test as an `unchecked` annotation and the rest of the test runs.
+ *
+ * ```ts
+ * expectFetchMetadata(await request.allHeaders(), { 'sec-fetch-site': 'same-origin' })
+ * ```
  */
 export function expectFetchMetadata(
   headers: Record<string, string>,
