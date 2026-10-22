@@ -114,7 +114,7 @@ configuration.
 Dependabot's pull requests stay on `main` and merge as hotfixes, when a person decides
 ([delivery](./delivery.md#the-candidate)): the candidate automation cannot move them.
 
-- **The CI runs once a person with write access approves.** Dependabot rebases its
+- **The CI runs once an owner, member or collaborator approves.** Dependabot rebases its
   pull requests often, and each rebase would start a full CI on a head nobody merges.
   Until an owner, member or collaborator approves, the `ci` job fails in its first
   step, before checkout and install, with "Approve this Dependabot pull request to run
@@ -125,9 +125,10 @@ Dependabot's pull requests stay on `main` and merge as hotfixes, when a person d
   merge ref; a comment or a request for changes fails in the first step, like the
   unapproved run. The newest `ci` run of a Dependabot head is therefore either red or
   the whole job. A new push (a Dependabot rebase) turns it red again, and only a new
-  approval runs it: re-running a red run fails again, since its event is unchanged. The
-  earlier approval stays on the pull request, so a red `ci` beside an approval means a
-  head nobody has run yet.
+  approval runs it: re-running a red run fails again, since its event is unchanged. A
+  comment or a request for changes after the approval turns it red as well, until the
+  next approval. The earlier approval stays on the pull request, so a red `ci` beside
+  an approval means a head or a review the CI has not run on.
 - **The approval runs the bump's code** (install, lint, tests, the scaffold smoke) on
   the repository's runner. The run is started by the reviewer, not by Dependabot, so it
   is not restricted like Dependabot's own runs: `ci.yml` reads no secret, and its

@@ -10,8 +10,8 @@ name: CI
 # - a pull request into the default branch (the candidate itself, a hotfix) and a push
 #   to it run the full CI: every test, the scaffold level and its smoke included. The
 #   push gates a release;
-# - a Dependabot pull request runs the CI only once a person with write access approves
-#   it: until then the job fails in its first step, before checkout, so the `ci` check
+# - a Dependabot pull request runs the CI only once an owner, member or collaborator
+#   approves it: until then the job fails in its first step, before checkout, so the `ci` check
 #   is red, never skipped (a skipped job counts as passed). Every review of a Dependabot
 #   pull request starts a run: an approval runs the whole job on the pull request's
 #   merge ref, any other review fails in the first step like the unapproved run, so the
@@ -52,9 +52,9 @@ jobs:
       !github.event.pull_request.draft)
     runs-on: ubuntu-latest
     steps:
-      # A Dependabot pull request waits for the approval of a person with write access
-      # (the repository is public: anyone can submit a review): its pull request run and
-      # any other review stop here. The branch prefix comes before the
+      # A Dependabot pull request waits for the approval of an owner, member or
+      # collaborator (the repository is public: anyone can submit a review): its pull
+      # request run and any other review stop here. The branch prefix comes before the
       # author: ci:local knows the branch but not the author, so on any other branch it
       # knows the condition false.
       - name: Dependabot pull request not approved
