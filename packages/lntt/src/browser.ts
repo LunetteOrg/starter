@@ -112,7 +112,7 @@ function orca(url: string, worktree: string): Pick<BrowserPlan, 'setup' | 'opera
       requests: { ...o('network --limit 100'), note: 'no failure filter: keep status >= 400 or no status' },
       close: {
         ...o('tab close --page <browserPageId>'),
-        note: 'browserPageId from tab create; then orca capture stop with the same --worktree',
+        note: `browserPageId from tab create; then ${o('capture stop').command}`,
       },
     },
   }
@@ -124,7 +124,7 @@ const PLAYWRIGHT_CLI = '@playwright/cli@0.1.22'
 // PLAYWRIGHT_MCP_OUTPUT_DIR names another folder; the session name keeps parallel
 // worktrees on separate browsers.
 function playwright(app: LocalApp, tmp: string): Pick<BrowserPlan, 'setup' | 'operations'> {
-  const session = `lntt-${app.name}-${app.port}`
+  const session = `lntt-${app.name.replaceAll(/[^\w.-]+/g, '-')}-${app.port}`
   const pw = (args: string) => ({
     command: `PLAYWRIGHT_MCP_OUTPUT_DIR=${quote(join(tmp, session))} npx -y ${PLAYWRIGHT_CLI} -s=${session} ${args}`,
   })
@@ -138,7 +138,7 @@ function playwright(app: LocalApp, tmp: string): Pick<BrowserPlan, 'setup' | 'op
       read: pw('snapshot'),
       click: pw('click <ref>'),
       type: pw("fill <ref> '<text>'"),
-      screenshot: pw('screenshot --filename=<file>'),
+      screenshot: pw("screenshot --filename='<file>'"),
       console: pw('console error'),
       requests: {
         ...pw('requests --static'),
@@ -210,7 +210,7 @@ function claudeDesktop(url: string): Pick<BrowserPlan, 'setup' | 'operations'> {
     setup: [
       {
         call: { tool: 'ToolSearch', input: { query: 'mcp__Claude_Browser__', max_results: 64 } },
-        note: 'loads the tools',
+        note: 'loads the tools; untried: the names below follow the built-in-browser skill and Chrome',
       },
     ],
     operations: {
@@ -266,7 +266,7 @@ export function formatPlan(plan: BrowserPlan): string {
     `Driver ${plan.driver}, on host ${plan.host} (${plan.reason}), for app ${plan.app} at ${plan.url}`,
     how,
     'Placeholders: <ref> an element ref from read (read again after each click or navigation: refs go stale), ' +
-      '<text> the text to type, <file> an absolute path for the screenshot; a placeholder between quotes keeps them.',
+      "<text> the text to type, <file> an absolute path for the screenshot; between single quotes, write a ' in them as '\\''.",
     'Run setup once, then the operations in any order; close when done.',
     '',
     ...(plan.setup ?? []).flatMap((step, i) => line(i === 0 ? 'setup' : '', step)),

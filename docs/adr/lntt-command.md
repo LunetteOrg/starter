@@ -44,7 +44,8 @@ lntt ci local | candidate
   (`lntt worktree start`, whose `issue` is null for a coordinator and which names the `parent`
   of a child, followed by the brief when no agent was started, for the
   person who will start one; `lntt check --json`), a document for an agent (`lntt guide
-  <skill>`: a comment naming the folder its relative links start from, then the guide),
+  <skill>`: a comment naming the folder its relative links start from, then the guide;
+  `lntt browser`: the driver, then one line per operation),
   or a report for a person (`lntt check` without `--json`); progress and child-process output go to stderr. Exit codes:
   0 ok, 1 a configuration error, a red result or a check that cannot run (one line on
   stderr), 2 a usage error, 3 a stop that a person decides on (`lntt review` past

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { BROWSER_OPERATIONS, browserPlan, chooseDriver, type LocalApp } from '../src/index.ts'
+import { BROWSER_OPERATIONS, browserPlan, chooseDriver, formatPlan, type LocalApp } from '../src/index.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
 
@@ -68,17 +68,19 @@ describe('choosing the driver', () => {
   })
 
   test('with no preference, the host the session runs in', () => {
-    assert.equal(chooseDriver({ env: { ORCA_WORKTREE_ID: 'x' }, preferences: [], has: has('orca') }).driver, 'orca')
+    const orca = chooseDriver({ env: { ORCA_WORKTREE_ID: 'x' }, preferences: [], has: has('orca') })
+    assert.deepEqual([orca.driver, orca.reason], ['orca', 'the session runs in orca'])
     const desktop = chooseDriver({ env: { CLAUDE_CODE_ENTRYPOINT: 'claude-desktop' }, preferences: [], has: has() })
     assert.equal(desktop.driver, 'claude-desktop')
   })
 
   test('Orca without its CLI, Wave, Herdr and a terminal fall to Playwright', () => {
-    assert.equal(chooseDriver({ env: { TERM_PROGRAM: 'Orca' }, preferences: [], has: has() }).driver, 'playwright')
+    const orca = chooseDriver({ env: { TERM_PROGRAM: 'Orca' }, preferences: [], has: has() })
+    assert.deepEqual([orca.driver, orca.reason], ['playwright', 'orca is not on PATH; playwright through npx'])
     for (const env of [{ TERM_PROGRAM: 'waveterm' }, { HERDR_ENV: '1' }, {}]) {
       const choice = chooseDriver({ env, preferences: [], has: has('wsh') })
       assert.equal(choice.driver, 'playwright')
-      assert.match(choice.reason, /playwright/i)
+      assert.match(choice.reason, /has no browser an agent can drive; playwright through npx$/)
     }
   })
 })
@@ -138,7 +140,40 @@ describe('the plan for each driver', () => {
       (plan.operations.screenshot as { command: string }).command,
       `orca exec --command "screenshot '<file>'" --worktree path:/w --json`,
     )
+    assert.equal(
+      (plan.operations.type as { command: string }).command,
+      "orca fill --element @<ref> --value '<text>' --worktree path:/w --json",
+    )
     assert.match((plan.operations.requests as { note: string }).note, />= 400/)
+    assert.deepEqual(plan.operations.close, {
+      command: 'orca tab close --page <browserPageId> --worktree path:/w --json',
+      note: 'browserPageId from tab create; then orca capture stop --worktree path:/w --json',
+    })
+  })
+
+  test('playwright: an app name a shell would split becomes a safe session name', () => {
+    const plan = browserPlan({
+      app: app({ name: "my app/it's" }),
+      choice: { host: 'terminal', driver: 'playwright', reason: 'r' },
+      worktree: '/w',
+      tmp: '/t',
+    })
+    assert.deepEqual(plan.operations.close, {
+      command:
+        'PLAYWRIGHT_MCP_OUTPUT_DIR=/t/lntt-my-app-it-s-5183 npx -y @playwright/cli@0.1.22 -s=lntt-my-app-it-s-5183 close',
+    })
+  })
+
+  test('the quoting branch: a worktree path and a URL a shell would split', () => {
+    const plan = browserPlan({
+      app: app({ url: 'http://localhost:5183/?a=1&b=2' }),
+      choice: { host: 'orca', driver: 'orca', reason: 'r' },
+      worktree: "/w x's",
+      tmp: '/t',
+    })
+    assert.deepEqual(plan.operations.open, {
+      command: `orca goto --url 'http://localhost:5183/?a=1&b=2' --worktree 'path:/w x'\\''s' --json`,
+    })
   })
 
   test('playwright: one session per app and port, its output outside the worktree', () => {
@@ -194,6 +229,8 @@ describe('the plan for each driver', () => {
     assert.deepEqual(plan.operations.open, {
       call: { tool: 'mcp__Claude_Browser__preview_start', input: { url: 'http://localhost:5183' } },
     })
+    assert.deepEqual(plan.operations.close, { lacks: 'the pane keeps its tabs' })
+    assert.match(formatPlan(plan), /^close {7}\(cannot: the pane keeps its tabs\)$/m)
   })
 })
 
@@ -253,6 +290,19 @@ describe('the command line', () => {
     const result = run(main, ['browser'])
     assert.equal(result.status, 1)
     assert.match(result.stderr, /web, admin/)
+  })
+
+  test('--json before the app name', () => {
+    writeApps({ web, admin: { ...web, port: 5174 } })
+    const result = run(main, ['browser', '--json', 'web'])
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(JSON.parse(result.stdout).app, 'web')
+  })
+
+  test('an unknown app is a configuration error naming the known ones', () => {
+    const result = run(main, ['browser', 'nope'])
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /no app nope in local\.apps \(web\)/)
   })
 
   test('more than one app, or an unknown flag, is a usage error', () => {
