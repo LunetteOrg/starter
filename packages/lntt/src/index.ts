@@ -52,6 +52,16 @@ export {
 export { type LocalApp, localApp } from './local.ts'
 export { loadOperator, type Operator } from './operator.ts'
 export {
+  entry,
+  type Mention,
+  mentions,
+  type Refs,
+  type RefsRun,
+  type Resolved,
+  resolveRefs,
+  type Why,
+} from './refs.ts'
+export {
   type Ask,
   agentLabel,
   type Checked,

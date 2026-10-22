@@ -31,6 +31,7 @@ const USAGE = [
   'usage: lntt path | validate | get <key> | set <key> <json> | operator [get <key> | sources]',
   '       lntt sync | guide [<skill>] | local app <name> | viewer detect|open <url> | browser [<app>] [--json]',
   '       lntt check [<area> [<check>]] [--base <ref>] [--json] | check cite <path:line>...',
+  '       lntt refs [--cached] [<text>...]',
   '       lntt branch name|check|rename [...]',
   '       lntt worktree start --issue <n> [...]',
   '       lntt ci local|candidate [...]',

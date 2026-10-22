@@ -20,6 +20,12 @@
 //                             worktree: the driver, why, and each operation as a shell
 //                             command or a tool call; <app> may be omitted when there is one
 //
+//   lntt refs [--cached] [<text>...]
+//                             the issue and pull request references of the text (the arguments,
+//                             else stdin) with their titles, from gh, cached for a day: one JSON
+//                             object (repository, mentions with their positions, refs);
+//                             --cached asks gh for no issue
+//
 //   lntt check [<area> [<check>]] [--base <ref>] [--json]
 //                             what is checked without judgement, one area per review lens;
 //                             alone, every area. Each check says PASS, FAIL or NOT RUN with
@@ -129,6 +135,7 @@ import { argv } from 'node:process'
 const args = argv.slice(2)
 if (args[0] === 'ci') await (await import('../src/ci/cli.ts')).main(args.slice(1))
 else if (args[0] === 'branch') (await import('../src/branch-cli.ts')).main(args.slice(1))
+else if (args[0] === 'refs') await (await import('../src/refs-cli.ts')).main(args.slice(1))
 else if (args[0] === 'check') (await import('../src/check-cli.ts')).main(args.slice(1))
 else if (args[0] === 'review') await (await import('../src/review-cli.ts')).main(args.slice(1))
 else if (args[0] === 'worktree') (await import('../src/worktree-cli.ts')).main(args.slice(1))

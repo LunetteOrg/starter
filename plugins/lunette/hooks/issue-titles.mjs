@@ -1,51 +1,24 @@
 // What a number means, on screen: the first `#N`, `repo#N` or `owner/repo#N` of a
 // message gets its issue's or pull request's title beside it, dimmed, unless the message
 // already gives that title, and the message ends with a box of what it cited, each with
-// its URL. Pure: the lookup and the hook are issue-titles-hook.js's. A message is read on
-// its own, delta by delta as it streams: `message()` holds what one message has shown.
+// its URL. Pure: which numbers are references, and their titles, are `lntt refs`'s; the
+// hook that calls it is issue-titles-hook.js. A message is read delta by delta as it
+// streams: `message()` holds what one message has shown.
 
 export const TITLE_MAX = 60
 
 const ESC = '\u001b'
 const dim = (text) => `${ESC}[2m${text}${ESC}[22m`
-const FENCE = /^\s*(```|~~~)/
-// A reference: `#N`, `repo#N` or `owner/repo#N`, N from 1 as GitHub numbers them; not
-// part of a word, a path or a URL (`/9#13`), nor an entity (`&#39;`). A name starts with
-// a letter or digit, so `.` and `..` are never one.
-const NAME = '[\\p{L}\\p{N}][\\p{L}\\p{N}_.-]*'
-const REF = new RegExp(`(^|[^\\p{L}\\p{N}_&/#.-])(?:(?:(${NAME})\\/)?(${NAME}))?#([1-9]\\d*)\\b`, 'gu')
-// `repo#N` alone is a reference only when `repo` is the session's repository; another
-// repository is cited as `owner/repo#N`. Any other `word#N` is no reference (`C#5`,
-// `fix#12`, `starter#94` from another repository's session), and a word that could be a
-// repository name (three characters or more, a letter first) makes the message foreign.
-const mayBeRepo = (r) => r.length >= 3 && /^\p{L}/u.test(r)
-// A Markdown link: its text is read, its URL is not, and a title goes after it.
-const LINK = /\[([^\]\n]*)\]\(([^)\s]*)\)/g
 
-// What one message has shown so far. `foreign`: it cited another repository, or a word
-// before `#` that could be one, or a reference came before the session's repository was
-// known; a bare `#N` after that may mean either, and is left as it is.
+// What one message has shown so far: its text as written, the references it cited, in
+// order, and whether a mention at the end of its text is held back for the next delta.
 export function message() {
-  return { text: '', fence: false, cited: [], foreign: false }
+  return { text: '', cited: [], held: false }
 }
 
 // `home` is the session's repository as `owner/repo`, lower case, or null while unknown.
 // GitHub names are not case-sensitive: keys are lower case.
 const parts = (home) => (home ? home.split('/') : [null, null])
-
-// What a match refers to: its key (`owner/repo#N`, lower case) or null when it cannot be
-// told for certain, and whether it names a repository other than the session's.
-function refOf(match, home, foreign) {
-  const [owner, repo] = parts(home)
-  const [, , o, r, n] = match
-  if (!r) return { key: home && !foreign ? `${owner}/${repo}#${n}` : null, other: !home }
-  if (!o) {
-    if (home && r.toLowerCase() === repo) return { key: `${home}#${n}`, other: false }
-    return { key: null, other: mayBeRepo(r) }
-  }
-  const full = `${o}/${r}`.toLowerCase()
-  return { key: `${full}#${n}`, other: !home || full !== home }
-}
 
 // The label a key shows in the box: as short as stays unambiguous in this session.
 export function label(key, home) {
@@ -70,78 +43,91 @@ const cut = (title) => {
   return chars.length > TITLE_MAX ? `${chars.slice(0, TITLE_MAX - 1).join('')}…` : title
 }
 
-// What a lookup or the cache gave, made safe to show: the title cleaned and not empty,
-// the URL an https address with no spaces or control characters. Null otherwise.
+// What lntt gave, made safe to show (lntt checks it too, but its answer is a process's
+// text): the title cleaned and not empty, the URL an https address with no spaces or
+// control characters. Null otherwise.
 export function entry(title, url) {
   const t = typeof title === 'string' ? clean(title) : ''
   if (!t || typeof url !== 'string' || !new RegExp(`^https://[^\\s${HIDDEN}]+$`, 'u').test(url)) return null
   return { title: t, url }
 }
 
-// The line with its code spans blanked, then its links' URLs, so a match's index is
-// still the line's.
-const noCode = (line) => line.replace(/`[^`]*`/g, (span) => ' '.repeat(span.length))
-const prose = (line) => noCode(line).replace(LINK, (link, text) => `[${text}]${' '.repeat(link.length - text.length - 2)}`)
+// A reference as lntt's refs.ts names one: `owner/repo#N` in lower case, each name of
+// letters, digits, `_`, `.` and `-`, starting with a letter or digit. A ref of any other
+// shape is lntt's text that is no reference (a terminal sequence among it): ignored.
+const KEY = /^[\p{L}\p{N}][\p{L}\p{N}_.-]*\/[\p{L}\p{N}][\p{L}\p{N}_.-]*#[1-9]\d*$/u
+export const isKey = (ref) => typeof ref === 'string' && KEY.test(ref) && ref === ref.toLowerCase()
 
-// Each line of a delta with whether it is prose (outside a fence), the fence state
-// carried from the message so far.
-function lines(delta, fence) {
-  const out = []
-  for (const line of delta.split(/(?<=\n)/)) {
-    if (FENCE.test(line)) {
-      fence = !fence
-      out.push({ line, prose: false })
-    } else out.push({ line, prose: !fence })
-  }
-  return { out, fence }
+// Whether a mention may still become the text of a Markdown link as the text goes on: a
+// `[` opens before it on its line, and no `]` closes it yet, or the `]` ends the text,
+// or `](` follows with no `)` closing it yet. Its title then goes after the link, once
+// the link is whole.
+const linkMayOpen = (x, text) => {
+  const start = text.lastIndexOf('\n', x.index - 1) + 1
+  const before = text.slice(start, x.index)
+  const open = before.lastIndexOf('[')
+  if (open < 0 || before.includes(']', open)) return false
+  const nl = text.indexOf('\n', x.index)
+  if (nl >= 0) return false
+  const rest = text.slice(x.index)
+  const close = rest.indexOf(']')
+  if (close < 0) return true
+  const after = rest.slice(close + 1)
+  return after === '' || /^\([^)\s]*$/.test(after)
 }
 
-// Whether a delta has anything that looks like a reference, before the session's
-// repository is known.
-export const hasRefs = (delta) => /#[1-9]/.test(delta)
+// A mention lntt gave that can be placed in a text and is settled: one that ends at the
+// end of the text may go on in the next delta (`#1` | `38`), and one that may still
+// become a link's text may move its title after the link, so each is settled only on
+// the last delta.
+export const settled = (x, text, final) =>
+  isKey(x?.ref) &&
+  Number.isInteger(x.index) &&
+  Number.isInteger(x.after) &&
+  x.index >= 0 &&
+  x.index <= x.after &&
+  (x.after < text.length || (final && x.after === text.length)) &&
+  (final || !linkMayOpen(x, text))
 
-// The references this delta cites for the first time in the message, as keys, in order.
-export function refsIn(delta, m, home) {
-  const found = []
-  let foreign = m.foreign
-  for (const { line, prose: isProse } of lines(delta, m.fence).out) {
-    if (!isProse) continue
-    for (const match of prose(line).matchAll(REF)) {
-      const { key, other } = refOf(match, home, foreign)
-      if (other) foreign = true
-      if (key && !m.cited.includes(key) && !found.includes(key)) found.push(key)
-    }
-  }
-  return found
+// Records the references these settled mentions cite, in the order given, once each: a
+// title that comes after its delta still goes to the box. `text` and `final`: the text
+// they were found in, and whether it was the message's last delta.
+export function cite(m, found, text, final) {
+  for (const x of found) if (settled(x, text, final) && !m.cited.includes(x.ref)) m.cited.push(x.ref)
 }
 
-// The delta as shown: the title beside each reference cited for the first time, when it
-// is known and the message does not already give it; after the link when the reference
-// is a link's text. Records what the message cited.
-export function annotate(delta, m, info, home) {
-  const seenText = (m.text + delta).toLowerCase()
-  const { out, fence } = lines(delta, m.fence)
-  const shown = out.map(({ line, prose: isProse }) => {
-    if (!isProse) return line
-    const links = [...noCode(line).matchAll(LINK)].map((l) => ({ from: l.index, to: l.index + l[0].length }))
-    const inserts = []
-    for (const match of prose(line).matchAll(REF)) {
-      const { key, other } = refOf(match, home, m.foreign)
-      if (other) m.foreign = true
-      if (!key || m.cited.includes(key)) continue
-      m.cited.push(key)
-      const title = info.get(key)?.title
-      if (!title || seenText.includes(title.toLowerCase().slice(0, 30))) continue
-      const end = match.index + match[0].length
-      const start = match.index + match[1].length
-      const link = links.find((l) => l.from <= start && end <= l.to)
-      inserts.push({ at: link ? link.to : end, text: ` ${dim(`· ${cut(title)}`)}` })
-    }
-    return inserts.sort((a, b) => a.at - b.at).reduceRight((l, { at, text }) => l.slice(0, at) + text + l.slice(at), line)
-  })
-  m.text += delta
-  m.fence = fence
-  return shown.join('')
+// The delta as shown: the title beside each reference the message cites for the first
+// time, when it is known and the message does not already give it. `found` is what
+// `lntt refs` returned for the message so far with the delta (its mentions, positions in
+// that text). A mention belongs to the delta where it ends: one that ends where the
+// delta starts was held back from the delta before, and its title goes at the start of
+// this one. One held back because it might become a link's text, and that does not
+// (a newline, or no `]` by the last delta), ends in an earlier delta: its title goes to
+// the box only. Records what the message cited, and whether a mention is held back.
+export function annotate(delta, m, found, info, final = false) {
+  const from = m.text.length
+  const text = m.text + delta
+  const seenText = text.toLowerCase()
+  const seen = new Set()
+  const inserts = []
+  for (const x of [...found].filter((x) => settled(x, text, final)).sort((a, b) => a.index - b.index)) {
+    if (seen.has(x.ref)) continue
+    seen.add(x.ref)
+    if (!m.cited.includes(x.ref)) m.cited.push(x.ref)
+    if (x.after < from) continue
+    const title = info.get(x.ref)?.title
+    if (!title || seenText.includes(title.toLowerCase().slice(0, 30))) continue
+    inserts.push({ at: x.after - from, text: ` ${dim(`· ${cut(title)}`)}` })
+  }
+  m.held =
+    !final &&
+    found.some(
+      (x) =>
+        isKey(x?.ref) &&
+        (x.after === text.length || (Number.isInteger(x.index) && x.index >= 0 && x.index <= text.length && linkMayOpen(x, text))),
+    )
+  m.text = text
+  return inserts.sort((a, b) => a.at - b.at).reduceRight((l, { at, text }) => l.slice(0, at) + text + l.slice(at), delta)
 }
 
 // The box closing the message: each reference it cited that has a title, its URL plain
