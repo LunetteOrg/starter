@@ -354,6 +354,27 @@ session, else the app the session runs in (Orca opens in the browser of the same
 worktree), else the system browser. Claude desktop (`preview_start`) and Chrome
 (`navigate`) are tool calls only the agent can make: `open` prints the call.
 
+## Driving a browser
+
+```sh
+lntt browser [<app>] [--json]   # how an agent drives a browser on <app>, in this worktree
+```
+
+It prints, for the app's URL on this worktree's port, which browser to drive and why,
+then one line per operation: `open`, `read` (an accessibility snapshot with element
+refs), `click`, `type`, `screenshot` (to a file), `console` (errors), `requests` and
+`close`, after a `setup` where the driver needs one. `<app>` may be omitted when
+`local.apps` has one app; `--json` prints the same as one object.
+
+The choice: the first of the operator's `workspace.browsers` usable in this session,
+else the app the session runs in (Orca drives the browser of the same worktree,
+Claude desktop its built-in browser), else Playwright through `npx @playwright/cli`,
+in a session named after the app and port and writing its files outside the
+worktree. Orca and Playwright are shell commands; Chrome and Claude desktop are tool
+calls only the agent can make, printed with the call that loads them. Chrome counts
+wherever it is listed, since no shell can tell whether a session has its tools: it goes
+after the browsers that are detected.
+
 ## CI (`lntt ci`)
 
 Runs a project's CI on the local machine, and moves pull requests through the

@@ -22,6 +22,17 @@ export {
   slugify,
   typeFor,
 } from './branch.ts'
+export {
+  BROWSER_OPERATIONS,
+  type BrowserOperation,
+  type BrowserPlan,
+  browserApp,
+  browserPlan,
+  chooseDriver,
+  type Driver,
+  type DriverChoice,
+  formatPlan,
+} from './browser.ts'
 export { commitlintConfig } from './commitlint.ts'
 export { ConfigError, type Format, type Located, NoConfigError } from './files.ts'
 export {
