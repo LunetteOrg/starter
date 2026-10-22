@@ -176,10 +176,10 @@ and pull requests stay where they are opened. To turn it on:
 5. **Repository settings:** rebase merge and squash merge allowed (the rulesets narrow
    each branch to one). *Automatically delete head branches* may stay as it is: the
    automation finds the pull requests left behind either way.
-6. **Create the hotfix label**, named by `delivery.candidate.hotfix.label`, which the
-   steps above do not create: `gh label create hotfix --description "Stays on main, not
-   on the candidate"`. Without it the label cannot be put on a pull request that must
-   stay on `main`.
+6. **Create the hotfix label**, the one named by `delivery.candidate.hotfix.label`,
+   which the steps above do not create: `gh label create <name> --description "Stays
+   on main, not on the candidate"`. Without it the label cannot be put on a pull
+   request that must stay on `main`.
 
 **Rotating the key.** A pull request from this repository runs its own copy of the
 workflow file, with the app's key in reach, so anyone with write access can use the
@@ -269,7 +269,7 @@ because npm configures a trusted publisher only on a package that exists:
 2. On the package's page on npmjs.com, Settings → Trusted publishing: repository
    `LunetteOrg/starter`, workflow `release.yml`, with **allow `npm publish`**
    ticked; a configuration created after 2026-09-03 otherwise allows only
-   `npm stage publish`. The form marks *Allow npm publish* "Not recommended"; the
+   `npm stage publish`. npm's form discourages *Allow npm publish*; the
    release process ticks it on purpose (*Discarded directions*).
 3. Run the CI release within two days: an unused trusted publisher configuration
    expires.

@@ -9,6 +9,8 @@
 // configure the trusted publisher. `package.json` is restored after every publish.
 // The publish asks for 2FA in the browser, so it needs a terminal a person can answer:
 // run it there, not from an agent's shell. Run from the repository root.
+//
+// LNTT_PLACEHOLDER_NO_TTY=1 lifts the terminal check; the tests set it.
 import { spawnSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -23,9 +25,13 @@ function fail(message: string): never {
 const args = process.argv.slice(2)
 const dryRun = args.includes('--dry-run')
 if (args.some((a) => a !== '--dry-run')) fail('usage: placeholder-publish.mts [--dry-run]')
-if (!dryRun && !(process.stdin.isTTY && process.stdout.isTTY)) {
+if (!dryRun && !process.env.LNTT_PLACEHOLDER_NO_TTY && !(process.stdin.isTTY && process.stdout.isTTY)) {
   fail('npm asks for 2FA through a browser prompt: run this in a terminal a person can answer, or with --dry-run')
 }
+
+// spawnSync blocks the event loop: a Ctrl-C kills npm, the `finally` below restores
+// the manifest, and only then does this handler end the process.
+for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => process.exit(130))
 
 const listed = spawnSync(process.execPath, ['scripts/packages-version.mts', 'list'], { encoding: 'utf8' })
 if (listed.status !== 0) fail(`cannot list the packages:\n${listed.stderr}`)
@@ -42,14 +48,16 @@ for (const dir of listed.stdout.split('\n').filter(Boolean)) {
     continue
   }
   // Only a missing package is published; a registry or network error stops the run.
-  if (!view.stderr.includes('E404')) fail(`cannot ask npm for ${name}:\n${view.stderr}`)
+  if (!view.stderr?.includes('E404')) fail(`cannot ask npm for ${name}:\n${view.error?.message ?? view.stderr}`)
 
   if (dryRun) {
     console.log(`${name}: would publish ${PLACEHOLDER} from ${dir}`)
     continue
   }
   console.log(`${name}: publishing ${PLACEHOLDER} from ${dir}`)
-  writeFileSync(file, original.replace(/("version":\s*)"[^"]*"/, `$1"${PLACEHOLDER}"`))
+  const placeholder = original.replace(/("version":\s*)"[^"]*"/, `$1"${PLACEHOLDER}"`)
+  if (JSON.parse(placeholder).version !== PLACEHOLDER) fail(`${file} has no "version" field to set`)
+  writeFileSync(file, placeholder)
   let status: number | null
   try {
     status = spawnSync('npm', ['publish', '--access', 'public'], { cwd: dir, stdio: 'inherit' }).status
