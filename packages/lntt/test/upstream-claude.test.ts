@@ -11,12 +11,16 @@ import { collect, flagsOf, helpFlags, missingFlags, tool, upstream } from './ups
 
 // lntt against the real claude: the flags of the headless reviewer and of the
 // interactive agent (Herdr's `--` arguments) against `claude --help`, which needs no
-// login, and a one-line call whose JSON reply lntt parses, which needs an API key.
+// login, and a one-line call whose JSON reply lntt parses, which needs credentials: in
+// the Upstream tools workflow, Workload Identity Federation (the ANTHROPIC_FEDERATION_*
+// variables and an OIDC token in ANTHROPIC_IDENTITY_TOKEN_FILE), never a stored key.
 const skip = upstream('claude') ? false : 'set UPSTREAM_SMOKE=claude to run (needs the real claude)'
 // The cheapest model: the call proves the reply's shape, not an answer.
 const replySkip =
   skip ||
-  (process.env.ANTHROPIC_API_KEY ? false : 'set ANTHROPIC_API_KEY to check the JSON reply (a call of a few cents)')
+  (process.env.ANTHROPIC_FEDERATION_RULE_ID && process.env.ANTHROPIC_IDENTITY_TOKEN_FILE
+    ? false
+    : 'set the ANTHROPIC_FEDERATION_* variables and ANTHROPIC_IDENTITY_TOKEN_FILE to check the JSON reply (a call of a few cents)')
 
 describe('claude', () => {
   test('every flag lntt passes to claude is in claude --help', { skip }, () => {

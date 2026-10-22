@@ -116,6 +116,9 @@ jobs:
     permissions:
       contents: read
       issues: write
+      # claude's job asks GitHub for an OIDC token, which Anthropic's Workload Identity
+      # Federation exchanges for a short-lived access token: no API key is stored.
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -144,13 +147,34 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: sh scripts/upstream-install.sh "$TOOL" "$VERSION" 2>&1 | tee -a upstream.log
-      # claude's JSON reply needs a real call: with no ANTHROPIC_API_KEY secret, that
-      # test skips with its reason and the flags check still runs. Only claude's job gets
-      # the key: Orca's and Herdr's need the real claude not logged in.
+      # claude's JSON reply needs a real call, authenticated through Workload Identity
+      # Federation: the four repository variables name the federation rule, and the
+      # GitHub OIDC token (audience https://api.anthropic.com) goes in a file claude
+      # reads. The token lives about five minutes, so it is fetched right before the
+      # tests, whose one call comes first in seconds. Without the variables the step
+      # leaves a notice, and that test skips with its reason; the flags check still runs.
+      - id: oidc
+        if: matrix.tool == 'claude'
+        env:
+          RULE: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+        run: |
+          if [ -z "$RULE" ]; then
+            echo "::notice::no ANTHROPIC_FEDERATION_RULE_ID variable: claude's JSON reply is not checked"
+            exit 0
+          fi
+          token="$RUNNER_TEMP/anthropic-oidc.jwt"
+          curl -fsS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://api.anthropic.com" | jq -er .value > "$token"
+          echo "ANTHROPIC_IDENTITY_TOKEN_FILE=$token" >> "$GITHUB_ENV"
+      # Only claude's job gets the federation: Orca's and Herdr's need the real claude
+      # not logged in.
       - id: test
         env:
           UPSTREAM_SMOKE: ${{ matrix.tool }}
-          ANTHROPIC_API_KEY: ${{ matrix.tool == 'claude' && secrets.ANTHROPIC_API_KEY || '' }}
+          ANTHROPIC_FEDERATION_RULE_ID: ${{ matrix.tool == 'claude' && vars.ANTHROPIC_FEDERATION_RULE_ID || '' }}
+          ANTHROPIC_ORGANIZATION_ID: ${{ matrix.tool == 'claude' && vars.ANTHROPIC_ORGANIZATION_ID || '' }}
+          ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ matrix.tool == 'claude' && vars.ANTHROPIC_SERVICE_ACCOUNT_ID || '' }}
+          ANTHROPIC_WORKSPACE_ID: ${{ matrix.tool == 'claude' && vars.ANTHROPIC_WORKSPACE_ID || '' }}
         # Every upstream test file runs; those of the other tools skip.
         run: pnpm --filter @lntt/lntt test:upstream 2>&1 | tee -a upstream.log
       # One issue per tool and version: an issue with that title, open or closed, also
@@ -164,6 +188,7 @@ jobs:
           STEP: >-
             ${{ steps.install.outcome == 'failure' && 'pnpm install' ||
             steps.tool.outcome == 'failure' && 'scripts/upstream-install.sh' ||
+            steps.oidc.outcome == 'failure' && 'the GitHub OIDC token for claude' ||
             steps.test.outcome == 'failure' && format('the upstream test (packages/lntt/test/upstream-{0}.test.ts)', matrix.tool) ||
             'a setup step' }}
         run: |
