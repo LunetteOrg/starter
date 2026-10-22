@@ -138,7 +138,7 @@ describe('the plan for each driver', () => {
     )
     assert.equal(
       (plan.operations.screenshot as { command: string }).command,
-      `orca exec --command "screenshot '<file>'" --worktree path:/w --json`,
+      `orca exec --command 'screenshot "<file>"' --worktree path:/w --json`,
     )
     assert.equal(
       (plan.operations.type as { command: string }).command,
@@ -320,6 +320,7 @@ describe('the command line', () => {
     const ops = lines.map((l) => l.split(/\s+/)[0])
     for (const op of ['setup', ...BROWSER_OPERATIONS]) assert.ok(ops.includes(op), `${op} in\n${result.stdout}`)
     assert.ok(lines.some((l) => /^open\s+PLAYWRIGHT_MCP_OUTPUT_DIR=.* goto http:\/\/localhost:5173$/.test(l)))
+    assert.ok(lines.some((l) => l.includes(`such as e3`) && l.endsWith(`write a ' in them as '\\''.`)))
   })
 
   test('agent drivers are described, never a stop: exit 0', () => {
@@ -327,6 +328,7 @@ describe('the command line', () => {
     assert.equal(result.status, 0)
     assert.match(result.stdout, /tool call/)
     assert.match(result.stdout, /mcp__Claude_Browser__preview_start/)
+    assert.match(result.stdout, /they are JSON strings\.$/m)
   })
 
   test('the operator preference is read from workspace.browsers', () => {

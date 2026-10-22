@@ -111,7 +111,7 @@ function orca(url: string, worktree: string): Pick<BrowserPlan, 'setup' | 'opera
       read: o('snapshot'),
       click: { ...o('click --element @<ref>'), note: 'a browser_error about keyboard focus: run it again' },
       type: o("fill --element @<ref> --value '<text>'"),
-      screenshot: { ...o(`exec --command "screenshot '<file>'"`), note: '<file> is an absolute path' },
+      screenshot: { ...o(`exec --command 'screenshot "<file>"'`), note: '<file> is an absolute path' },
       console: o('console --limit 50'),
       requests: { ...o('network --limit 100'), note: 'no failure filter: keep status >= 400 or no status' },
       close: {
@@ -270,8 +270,11 @@ export function formatPlan(plan: BrowserPlan): string {
     `Driver ${plan.driver}, on host ${plan.host} (${plan.reason}), for app ${plan.app} at ${plan.url}`,
     how,
     'Placeholders: <ref> an element ref as read prints it, such as e3 (read again after each click or navigation: refs go stale), ' +
-      '<text> the text to type, <file> an absolute path for the screenshot; <text> and <file> go between the ' +
-      'quotes printed around them and hold no quote character.',
+      `<text> the text to type, <file> an absolute path for the screenshot; ${
+        plan.kind === 'shell'
+          ? `they sit between single quotes, so write a ' in them as '\\''.`
+          : 'they are JSON strings.'
+      }`,
     'Run setup once, then the operations in any order; close when done.',
     '',
     ...(plan.setup ?? []).flatMap((step, i) => line(i === 0 ? 'setup' : '', step)),
