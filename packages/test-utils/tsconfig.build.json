@@ -9,5 +9,5 @@
     "outDir": "dist"
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/__fixtures__", "src/**/*.spec.ts", "src/**/*.test.ts"]
+  "exclude": ["src/__fixtures__", "src/**/*.spec.ts", "src/**/*.test.ts", "src/**/*-kit.ts"]
 }

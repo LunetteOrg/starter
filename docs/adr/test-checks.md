@@ -113,5 +113,9 @@ reason, and sits at the lowest level where its assertion can.
   watching for `lntt` to end adds a platform dependency (`kill -0`, a fractional
   `sleep`), a race with the tests still writing, and its own tests, for a leftover
   folder in the temp directory.
+- **A `test-levels` guard in `@lntt/test-utils`**, an architecture test that every
+  `.test` file opens an integration harness, as pelion's does. The `levels` check
+  decides the same from `tests.levels`, with the harness per level in configuration
+  instead of a regular expression in a spec, in every project that runs `lntt check`.
 - **Coverage as an acceptance criterion.** A line run is not a line checked; coverage
   only names the tests to run.
