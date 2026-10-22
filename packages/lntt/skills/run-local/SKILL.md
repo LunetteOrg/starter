@@ -1,6 +1,6 @@
 ---
 name: run-local
-description: Start a Lunette project's app locally, reach it, sign in with a seeded user, check a change with requests and in a browser, and stop what was started — on the worktree's own port. Reads `local` from `.agents/config.*`. Use when asked to run, preview or try the app, to check a change in the real app rather than in tests, or to take a screenshot.
+description: Start a Lunette project's app locally, reach it, sign in with a seeded user, check a change with requests and in a browser, and stop what was started — on the worktree's own port. Reads `local` from `.agents/config.*`. Use when asked to run, preview or try the app, to check a change in the real app rather than in tests, to take a screenshot, or to prove a property of cloud infrastructure that no test covers (on a throwaway twin).
 ---
 
 # Run local
@@ -63,7 +63,31 @@ This skill is the procedure; never edit it to fit one project.
 - **Checking a page yourself**: a browser tool you have (Playwright, Chrome), or
   `playwright screenshot <url> <file>` and look at the file.
 
-## 6. Stop and report
+## 6. Infrastructure no test can cover
+
+Skip this section unless the change rests on a property of a cloud resource (a storage
+lock that refuses overwrite and delete, a CDN purge that refreshes a mirror). Such a
+property is proved by one live check, not by a test, and never against the production
+resource.
+
+- **A throwaway twin.** Declare it in the project's infrastructure as code: the same
+  region or jurisdiction and prefixes, a short-lived variant of what makes the check
+  destructive (a 24-hour lock instead of an indefinite one), its own hostname under the
+  same cache rule. On the production resource only read its configuration.
+- **Temporary credentials:** created by the person, scoped to the twin, with a short
+  expiry; kept in a `700` folder outside the repo (not `/tmp`, lost on reboot); loaded with
+  `set -a; . <file>; set +a` and never printed; revoked as soon as their step is done.
+  With some dashboards the expiry date also sets the start date: a token made "until
+  <date>" is valid only *from* it, answers `401`, and its verify endpoint still says
+  active. The host may refuse to let you write credentials to disk: the person writes the
+  file with a one-line `!` command that reads `pbpaste` and prints only the value's length.
+- **Removing a lock from the infrastructure code may not remove the lock.** With some
+  providers, destroying the lock resource only drops it from state: empty the bucket after
+  the lock age, then destroy the bucket. Read the provider's behaviour before the plan.
+- **Remove the twin after the check.** The decision record keeps one sentence of proof
+  (date, outcome, issue) and the trigger to recreate it.
+
+## 7. Stop and report
 
 - Stop what you started, and only that. Leave shared infrastructure running.
 - Report what was checked with its proof: the command and its outcome, the URL and
