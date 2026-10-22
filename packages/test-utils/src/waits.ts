@@ -10,6 +10,12 @@ const TIMEOUT = 'WAIT'
 // the prefix and is not a wait.
 const FIND_QUERY = /^find(All)?By(Role|LabelText|PlaceholderText|Text|DisplayValue|AltText|Title|TestId)$/
 const WAIT_CALLS = new Set(['waitFor', 'waitForElementToBeRemoved'])
+/**
+ * The modules a `waitFor` or `waitForElementToBeRemoved` counts from: testing-library's
+ * packages, and Storybook's re-export of them. A function of the project by that name,
+ * or Playwright's `locator.waitFor()`, is no wait.
+ */
+const WAIT_MODULE = /^(@testing-library\/[^/]+(\/.+)?|storybook\/test|@storybook\/test)$/
 
 /** A guard file calls this; mentioning it in a comment or a string does not count. */
 const GUARD = 'assertWaitsDeclareTimeout'
@@ -59,38 +65,95 @@ function calleeName(callee: unknown): string | undefined {
   return callee.type === 'MemberExpression' ? propertyName(callee) : undefined
 }
 
-/**
- * Where the timeout goes: `findBy*(query, options, waitOptions)`, `waitFor(callback, options)`.
- * A `waitFor` with no argument or an object first is Playwright's `locator.waitFor(options?)`,
- * which takes no timeout of testing-library's: no wait.
- */
-function timeoutPosition(name: string, args: unknown[]): number | undefined {
-  if (FIND_QUERY.test(name)) return 2
-  if (!WAIT_CALLS.has(name)) return undefined
-  const [first] = args
-  return isNode(first) && first.type !== 'ObjectExpression' ? 1 : undefined
+/** The name an import specifier takes from its module: `waitFor` in `{ waitFor as eventually }`. */
+function importedName(specifier: AstNode): string | undefined {
+  const imported = specifier.imported
+  if (!isNode(imported)) return undefined
+  return imported.type === 'Identifier' ? String(imported.name) : String(imported.value)
 }
 
-/** Calls `visit` on every call expression under `value`, with its callee's name. */
-function eachCall(value: unknown, visit: (call: AstNode, name: string, args: unknown[]) => void): void {
+/** The top-level imports of a module, as `{ source, specifiers }`. */
+function importsOf(ast: unknown): { source: unknown; specifiers: AstNode[] }[] {
+  const body = isNode(ast) && Array.isArray(ast.body) ? ast.body : []
+  return body.flatMap((statement) =>
+    isNode(statement) && statement.type === 'ImportDeclaration' && isNode(statement.source)
+      ? [
+          {
+            source: statement.source.value,
+            specifiers: (Array.isArray(statement.specifiers) ? statement.specifiers : []).filter(isNode),
+          },
+        ]
+      : [],
+  )
+}
+
+interface WaitImports {
+  /** Local name to the wait it imports: `eventually` → `waitFor`. */
+  functions: Map<string, string>
+  namespaces: Set<string>
+}
+
+/**
+ * The local names under which a module imports testing-library's waits from a
+ * {@link WAIT_MODULE}, at its top level and statically: each function, by the name it
+ * is called (`eventually` for `{ waitFor as eventually }`), and each namespace (`rtl`
+ * for `* as rtl`).
+ */
+function waitImports(ast: unknown): WaitImports {
+  const functions = new Map<string, string>()
+  const namespaces = new Set<string>()
+  for (const { source, specifiers } of importsOf(ast)) {
+    if (typeof source !== 'string' || !WAIT_MODULE.test(source)) continue
+    for (const specifier of specifiers) {
+      if (!isNode(specifier.local)) continue
+      const local = String(specifier.local.name)
+      if (specifier.type === 'ImportNamespaceSpecifier') namespaces.add(local)
+      const imported = specifier.type === 'ImportSpecifier' ? importedName(specifier) : undefined
+      if (imported !== undefined && WAIT_CALLS.has(imported)) functions.set(local, imported)
+    }
+  }
+  return { functions, namespaces }
+}
+
+/**
+ * Which wait a callee is, if any: a `findBy*` by its name, wherever it comes from; a
+ * `waitFor` or `waitForElementToBeRemoved` imported from a {@link WAIT_MODULE}, called
+ * by its local name or through the namespace; `vi.waitFor`.
+ */
+function waitCall(callee: unknown, imports: WaitImports): string | undefined {
+  const name = calleeName(callee)
+  if (name === undefined || !isNode(callee)) return undefined
+  if (FIND_QUERY.test(name)) return name
+  if (callee.type === 'Identifier') return imports.functions.get(name)
+  const object = callee.object
+  if (!WAIT_CALLS.has(name) || !isNode(object) || object.type !== 'Identifier') return undefined
+  if (imports.namespaces.has(String(object.name))) return name
+  return object.name === 'vi' && name === 'waitFor' ? name : undefined
+}
+
+/** Where the timeout goes: `findBy*(query, options, waitOptions)`, `waitFor(callback, options)`. */
+function timeoutPosition(name: string): number {
+  return FIND_QUERY.test(name) ? 2 : 1
+}
+
+/** Calls `visit` on every call expression under `value`. */
+function eachCall(value: unknown, visit: (call: AstNode, args: unknown[]) => void): void {
   if (Array.isArray(value)) {
     for (const item of value) eachCall(item, visit)
     return
   }
   if (!isNode(value)) return
-  if (value.type === 'CallExpression') {
-    const name = calleeName(value.callee)
-    if (name !== undefined) visit(value, name, Array.isArray(value.arguments) ? value.arguments : [])
-  }
+  if (value.type === 'CallExpression') visit(value, Array.isArray(value.arguments) ? value.arguments : [])
   for (const [field, child] of Object.entries(value)) {
     if (field !== 'type' && typeof child === 'object') eachCall(child, visit)
   }
 }
 
 /**
- * Every `findBy*`, `findAllBy*`, `waitFor`, `vi.waitFor` and `waitForElementToBeRemoved`
- * call in `source`, and whether it passes `WAIT` as its timeout. Parsed, not matched:
- * a call in a comment or a string is no call.
+ * Every `findBy*`, `findAllBy*`, `vi.waitFor` call in `source`, and every `waitFor` and
+ * `waitForElementToBeRemoved` it imports from testing-library or `storybook/test`, with
+ * whether it passes `WAIT` as its timeout. Parsed, not matched: a call in a comment or a
+ * string is no call.
  */
 export function findWaits(source: string, lang: 'ts' | 'tsx' = 'tsx'): Wait[] {
   return waitsOf(parseAst(source, { lang }), source)
@@ -98,10 +161,11 @@ export function findWaits(source: string, lang: 'ts' | 'tsx' = 'tsx'): Wait[] {
 
 function waitsOf(ast: unknown, source: string): Wait[] {
   const found: Wait[] = []
-  eachCall(ast, (node, call, args) => {
-    const position = timeoutPosition(call, args)
-    if (position === undefined) return
-    const timeout: unknown = args[position]
+  const imports = waitImports(ast)
+  eachCall(ast, (node, args) => {
+    const call = waitCall(node.callee, imports)
+    if (call === undefined) return
+    const timeout: unknown = args[timeoutPosition(call)]
     found.push({
       line: lineAt(source, node.start),
       call,
@@ -134,18 +198,13 @@ function readModule(dir: string, path: string): { waits: Wait[]; ast: unknown } 
 function guardImports(ast: unknown): { functions: Set<string>; namespaces: Set<string> } {
   const functions = new Set<string>()
   const namespaces = new Set<string>()
-  const body = isNode(ast) && Array.isArray(ast.body) ? ast.body : []
-  for (const statement of body) {
-    if (!isNode(statement) || statement.type !== 'ImportDeclaration') continue
-    if (!isNode(statement.source) || statement.source.value !== GUARD_MODULE) continue
-    for (const specifier of Array.isArray(statement.specifiers) ? statement.specifiers : []) {
-      if (!isNode(specifier) || !isNode(specifier.local)) continue
+  for (const { source, specifiers } of importsOf(ast)) {
+    if (source !== GUARD_MODULE) continue
+    for (const specifier of specifiers) {
+      if (!isNode(specifier.local)) continue
       const local = String(specifier.local.name)
       if (specifier.type === 'ImportNamespaceSpecifier') namespaces.add(local)
-      if (specifier.type === 'ImportSpecifier' && isNode(specifier.imported)) {
-        const imported = specifier.imported.type === 'Identifier' ? specifier.imported.name : specifier.imported.value
-        if (imported === GUARD) functions.add(local)
-      }
+      if (specifier.type === 'ImportSpecifier' && importedName(specifier) === GUARD) functions.add(local)
     }
   }
   return { functions, namespaces }
