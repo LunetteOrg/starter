@@ -11,7 +11,7 @@
 // run it there, not from an agent's shell. Run from the repository root.
 //
 // LNTT_PLACEHOLDER_NO_TTY=1 lifts the terminal check; the tests set it.
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -25,13 +25,18 @@ function fail(message: string): never {
 const args = process.argv.slice(2)
 const dryRun = args.includes('--dry-run')
 if (args.some((a) => a !== '--dry-run')) fail('usage: placeholder-publish.mts [--dry-run]')
-if (!dryRun && !process.env.LNTT_PLACEHOLDER_NO_TTY && !(process.stdin.isTTY && process.stdout.isTTY)) {
+if (!dryRun && process.env.LNTT_PLACEHOLDER_NO_TTY !== '1' && !(process.stdin.isTTY && process.stdout.isTTY)) {
   fail('npm asks for 2FA through a browser prompt: run this in a terminal a person can answer, or with --dry-run')
 }
 
-// spawnSync blocks the event loop: a Ctrl-C kills npm, the `finally` below restores
-// the manifest, and only then does this handler end the process.
-for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => process.exit(130))
+// Ctrl-C reaches this process as well as npm: put the manifest back before leaving.
+let restore: (() => void) | undefined
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(signal, () => {
+    restore?.()
+    process.exit(130)
+  })
+}
 
 const listed = spawnSync(process.execPath, ['scripts/packages-version.mts', 'list'], { encoding: 'utf8' })
 if (listed.status !== 0) fail(`cannot list the packages:\n${listed.stderr}`)
@@ -56,15 +61,21 @@ for (const dir of listed.stdout.split('\n').filter(Boolean)) {
   }
   console.log(`${name}: publishing ${PLACEHOLDER} from ${dir}`)
   const placeholder = original.replace(/("version":\s*)"[^"]*"/, `$1"${PLACEHOLDER}"`)
-  if (JSON.parse(placeholder).version !== PLACEHOLDER) fail(`${file} has no "version" field to set`)
+  if (JSON.parse(placeholder).version !== PLACEHOLDER) fail(`${file}: cannot set the top-level "version" field`)
   writeFileSync(file, placeholder)
-  let status: number | null
+  restore = () => writeFileSync(file, original)
+  let outcome: string
   try {
-    status = spawnSync('npm', ['publish', '--access', 'public'], { cwd: dir, stdio: 'inherit' }).status
+    outcome = await new Promise<string>((done) => {
+      const child = spawn('npm', ['publish', '--access', 'public'], { cwd: dir, stdio: 'inherit' })
+      child.on('error', (e) => done(e.message))
+      child.on('close', (code) => done(code === 0 ? '' : `exit ${code}`))
+    })
   } finally {
-    writeFileSync(file, original)
+    restore()
+    restore = undefined
   }
-  if (status !== 0) fail(`npm publish failed for ${name} (exit ${status}); package.json restored`)
+  if (outcome) fail(`npm publish failed for ${name} (${outcome}); package.json restored`)
   published++
 }
 console.log(dryRun ? 'dry run: nothing published' : `${published} placeholders published`)

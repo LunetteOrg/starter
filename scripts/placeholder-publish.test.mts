@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, resolve } from 'node:path'
@@ -37,7 +37,7 @@ ${cases.join('\n')}
   esac
 fi
 if [ "$1" = publish ]; then
-  echo "$(basename "$PWD") $(grep '"version"' package.json)" >> "${root}/npm.log"
+  echo "$(basename "$PWD") $* $(grep '"version"' package.json)" >> "${root}/npm.log"
 fi
 `,
   )
@@ -108,7 +108,7 @@ test('the real run publishes 0.0.0 from the directory of each missing package on
       .trim()
       .split('\n')
       .map((l) => l.replace(/\s+/g, ' ')),
-    ['a "version": "0.0.0"', 'c "version": "0.0.0"'],
+    ['a publish --access public "version": "0.0.0"', 'c publish --access public "version": "0.0.0"'],
   )
   for (const pkg of ['a', 'b', 'c']) assert.match(manifest(pkg), /"version": "1\.2\.0"/)
   assert.match(r.out, /2 placeholders published/)
@@ -136,7 +136,7 @@ test('a manifest without a version is refused before anything is published', () 
   writeFileSync(join(root, 'packages', 'a', 'package.json'), '{ "name": "@lntt/a" }\n')
   const r = run([], NO_TTY)
   assert.equal(r.status, 1)
-  assert.match(r.out, /no "version" field/)
+  assert.match(r.out, /cannot set the top-level "version"/)
   assert.equal(published(), '')
 })
 
@@ -154,5 +154,35 @@ test('a missing npm is a message, not a stack trace', () => {
   const r = run(['--dry-run'], { PATH: join(root, 'bin') })
   assert.equal(r.status, 1)
   assert.match(r.out, /cannot ask npm for @lntt\/a/)
+  assert.match(r.out, /ENOENT/)
   assert.doesNotMatch(r.out, /TypeError/)
+})
+
+test('the terminal check is lifted by 1 only', () => {
+  repo(['@lntt/a'], {})
+  const r = run([], { LNTT_PLACEHOLDER_NO_TTY: '0' })
+  assert.equal(r.status, 1)
+  assert.match(r.out, /2FA/)
+})
+
+test('a signal during the publish puts package.json back', async () => {
+  repo(['@lntt/a'], {})
+  writeFileSync(
+    join(root, 'bin', 'npm'),
+    `#!/bin/sh
+[ "$1" = view ] && { echo "npm error code E404" >&2; exit 1; }
+sleep 30
+`,
+  )
+  const child = spawn(process.execPath, ['scripts/placeholder-publish.mts'], {
+    cwd: root,
+    env: { ...process.env, PATH: `${join(root, 'bin')}${delimiter}${process.env.PATH}`, ...NO_TTY },
+    stdio: 'ignore',
+  })
+  const exited = new Promise<number | null>((done) => child.on('close', done))
+  for (let i = 0; i < 100 && !manifest('a').includes('"0.0.0"'); i++) await new Promise((r) => setTimeout(r, 50))
+  assert.match(manifest('a'), /"version": "0.0.0"/)
+  child.kill('SIGTERM')
+  assert.equal(await exited, 130)
+  assert.match(manifest('a'), /"version": "1\.2\.0"/)
 })
