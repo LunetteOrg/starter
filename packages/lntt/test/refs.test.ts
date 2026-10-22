@@ -443,6 +443,16 @@ describe("the session's repository", () => {
     assert.equal(JSON.parse(text).repository.remotes, digest(remotes))
   })
 
+  test('a cached repository whose remotes are text, not a digest, is dropped: its URL may carry a credential', async () => {
+    const remotes = 'remote.origin.url https://user:secret@github.com/o/r.git\n'
+    cache({ repository: { name: HOME, at: NOW - 1, remotes } })
+    const { resolve } = machine({ remotes: 128, gh: { [k(1)]: ok('One', 1) } })
+    await resolve('#1')
+    const text = readFileSync(file, 'utf8')
+    assert.equal(JSON.parse(text)[k(1)]?.title, 'One')
+    assert.doesNotMatch(text, /secret/)
+  })
+
   test('a cached repository older than a day, or not a repository, is asked again', async () => {
     for (const repository of [
       { name: HOME, at: NOW - DAY, remotes: digest(REMOTES) },

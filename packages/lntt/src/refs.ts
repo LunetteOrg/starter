@@ -158,7 +158,13 @@ function readCache(file: string, now: number): Cache {
     if (!value || typeof value !== 'object') continue
     if (key === 'repository') {
       const { name, at, remotes } = value as { name?: unknown; at?: unknown; remotes?: unknown }
-      if (typeof name === 'string' && KEY_REPO.test(name) && fresh(at, now) && typeof remotes === 'string') {
+      if (
+        typeof name === 'string' &&
+        KEY_REPO.test(name) &&
+        fresh(at, now) &&
+        typeof remotes === 'string' &&
+        /^[0-9a-f]{64}$/.test(remotes)
+      ) {
         cache.repository = { name, at, remotes }
       }
       continue
@@ -189,7 +195,9 @@ function writeCache(file: string, found: Cache, now: number): void {
     writeFileSync(temporary, `${JSON.stringify(data)}\n`)
     renameSync(temporary, file)
   } catch {
-    rmSync(temporary, { force: true })
+    try {
+      rmSync(temporary, { force: true })
+    } catch {}
   }
 }
 

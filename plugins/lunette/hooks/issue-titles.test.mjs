@@ -84,6 +84,18 @@ describe('the title beside the number', () => {
     assert.deepEqual(lines, [`see [#138 ${dim(`· ${known.get(k(138)).title}`)} first`])
   })
 
+  test('a newline after a [ left open releases the mention: the title beside the number at once', () => {
+    const { lines } = show(['see [#138 first\n', 'more\n'])
+    assert.equal(lines[0], `see [#138 ${dim(`· ${known.get(k(138)).title}`)} first\n`)
+  })
+
+  test('a mention held for a link that never forms gets its title in the box only', () => {
+    const { lines, m } = show(['see [#138 first', ' more\n', 'end'], known, true)
+    assert.deepEqual(lines, ['see [#138 first', ' more\n', 'end'])
+    assert.deepEqual(m.cited, [k(138)])
+    assert.match(footer(m, known, HOME), /#138 .*Publish @lntt/)
+  })
+
   test('a [ closed before the number, or a ] not followed by (, holds nothing back', () => {
     const { lines } = show(['[a](u) #138 now', ' end\n'])
     assert.equal(lines[0], `[a](u) #138 ${dim(`· ${known.get(k(138)).title}`)} now`)

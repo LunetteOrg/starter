@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, wr
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
-import { FAILURES, issueTitles, KEPT, LNTT_TIMEOUT_MS, WAIT_MS } from './issue-titles-hook.js'
+import { FAILURES, issueTitles, KEPT, KEYS_PER_RUN, LNTT_TIMEOUT_MS, WAIT_MS } from './issue-titles-hook.js'
 import { register } from './register.js'
 
 const TOP = '/repo'
@@ -132,6 +132,16 @@ describe('the issue titles hook', () => {
       ],
     )
     for (const r of runs) assert.equal(r.init.timeoutMs, LNTT_TIMEOUT_MS)
+  })
+
+  test('a lookup asks lntt refs for at most KEYS_PER_RUN references, the rest in runs of their own', async () => {
+    const { flush, lookups } = engine()
+    const text = Array.from({ length: 2 * KEYS_PER_RUN + 1 }, (_, i) => `#${i + 1}`).join(' ')
+    await flush('m1', `${text}\n`, true)
+    const asked = lookups()
+    assert.equal(asked.length, 3)
+    for (const keys of asked) assert.ok(keys.length <= KEYS_PER_RUN)
+    assert.equal(asked.flat().length, 2 * KEYS_PER_RUN + 1)
   })
 
   test("the project's lntt, else the lntt on PATH", async () => {

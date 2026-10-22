@@ -155,8 +155,9 @@ How a title is written is the `issues` skill's.
 
 ### Negative / accepted risks
 
-- A `gh repo view` slower than `GH_TIMEOUT_MS` (a slow network) leaves every number
-  as written until a later call gets the repository.
+- A `gh repo view` slower than `GH_TIMEOUT_MS` (a slow network) counts as a failed
+  `lntt refs` run: `FAILURES` of them in a row turn the titles off for the session, and
+  they come back only in a new session.
 - Another repository's issue gets a title only when cited as `owner/repo#N`; a short
   `repo#N` from a session in another repository is shown as written.
 - Prose with a word before `#` that could be a repository name (`issue#4`, `fix#12`)

@@ -101,8 +101,9 @@ export function cite(m, found, text, final) {
 // `lntt refs` returned for the message so far with the delta (its mentions, positions in
 // that text). A mention belongs to the delta where it ends: one that ends where the
 // delta starts was held back from the delta before, and its title goes at the start of
-// this one; so does one that may still become a link's text. Records what the message
-// cited, and whether a mention is held back.
+// this one. One held back because it might become a link's text, and that does not
+// (a newline, or no `]` by the last delta), ends in an earlier delta: its title goes to
+// the box only. Records what the message cited, and whether a mention is held back.
 export function annotate(delta, m, found, info, final = false) {
   const from = m.text.length
   const text = m.text + delta

@@ -16,10 +16,12 @@ export const WAIT_MS = 800
 export const KEPT = 20
 // How long one gh call of lntt refs may run (GH_TIMEOUT_MS in packages/lntt/src/refs.ts).
 const GH_TIMEOUT_MS = 3000
+// References one lntt refs is asked for at most: as many as it looks up at once
+// (LOOKUPS_AT_ONCE in packages/lntt/src/refs.ts). More go to runs of their own, side by side.
+export const KEYS_PER_RUN = 6
 // How long one lntt refs may run: a call with no repository cached asks gh for it, then
-// for the titles together (six at once, LOOKUPS_AT_ONCE in refs.ts: the hook asks a
-// delta's few), each within GH_TIMEOUT_MS, and two seconds go to node's start and git.
-// Past it, the run failed.
+// for its KEYS_PER_RUN titles together, each within GH_TIMEOUT_MS, and two seconds go to
+// node's start and git. Past it, the run failed.
 export const LNTT_TIMEOUT_MS = 2 * GH_TIMEOUT_MS + 2000
 // Failed runs of lntt in a row that turn the titles off for the session. A run that
 // finds no session repository counts as failed: each asks git and gh again.
@@ -89,13 +91,14 @@ function learn(s, out) {
 async function lookUp($, s, keys, wait) {
   if (s.off || !keys.length) return
   const todo = keys.filter((k) => !s.info.has(k) && !s.unknown.has(k) && !s.pending.has(k))
-  if (todo.length) {
-    const call = refs($, s, todo)
+  for (let i = 0; i < todo.length; i += KEYS_PER_RUN) {
+    const run = todo.slice(i, i + KEYS_PER_RUN)
+    const call = refs($, s, run)
       .then((out) => learn(s, out))
       .finally(() => {
-        for (const k of todo) s.pending.delete(k)
+        for (const k of run) s.pending.delete(k)
       })
-    for (const k of todo) s.pending.set(k, call)
+    for (const k of run) s.pending.set(k, call)
   }
   const waiting = [...new Set(keys.map((k) => s.pending.get(k)).filter(Boolean))]
   if (waiting.length) await Promise.race([Promise.all(waiting), wait()])
