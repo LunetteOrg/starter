@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-10-13
+date: 2026-10-22
 tags: [agents, skills, configuration, operator, templates]
 ---
 
@@ -96,25 +96,50 @@ In Claude Code the `lunette` plugin shows, beside the first `#N` or `owner/repo#
 each message, the title of that issue or pull request, dimmed, and ends the message
 with a box of what it cited and their URLs (`plugins/lunette/hooks/issue-titles.mjs`).
 It is a `MessageDisplay` hook: it changes the screen only, and what the agent wrote and
-reads stays as it was. The titles come from `gh`, cached for a day in the git
-directory: `#N` (and `repo#N` naming the same repository) from the session's
-repository as `gh repo view` names it, `owner/repo#N` from that repository. A delta
-waits for the cache and the titles at most `WAIT_MS` (`issue-titles-hook.js`); a slower
-title shows in a later delta, in the box or beside the number in the next message.
+reads stays as it was.
+
+The rules below, the cache and the `gh` lookups are `lntt refs`
+(`packages/lntt/src/refs.ts`), for the hook and for any agent: it reads a text and
+prints, as JSON, each reference with where it sits, its title and URL, or why it has
+none. The titles come from `gh`, cached for a day in the git directory
+(`lntt-issue-titles.json`, with the session's repository, which holds while the git
+remotes `gh` resolves it from read the same, kept as their sha256 since a URL may hold
+a credential: a fork, `gh repo set-default` or a changed URL asks for it again;
+concurrent calls merge, the newest entry of each key kept, and an entry lost in a race
+is only asked again): `#N` (and `repo#N` naming the same repository) from the session's
+repository as `gh repo view` names it, `owner/repo#N` from that repository. The hook
+keeps the display and calls `lntt refs`, the project's `node_modules/.bin/lntt`, else
+`lntt` on `PATH`. A delta waits for lntt and the titles at most `WAIT_MS`
+(`issue-titles-hook.js`); a slower title shows in a later delta, in the box or beside
+the number in the next message. The titles still missing are asked in `lntt refs` runs
+of at most `KEYS_PER_RUN` references, side by side, so that one run fits
+`LNTT_TIMEOUT_MS` however many a message cites; the runs of one lookup count as one
+failure at most. A reference belongs to the delta where it ends, and one that ends a
+delta other than the last is read with the next delta, since it may go on (`#1` | `38`
+is `#138`); so is one inside a `[` still open, since it may become a link's text (its
+title then goes after the link). A newline, or the last delta, ends that wait; a
+reference held for a link that does not form gets its title in the box only.
 
 - **Never a title from the wrong repository:** a message that cites another
-  repository, or any reference before the session's repository is known (a bare `#N`
-  too), shows every bare `#N` after that as written. Any other `word#N` is no
+  repository shows every bare `#N` after that as written. Any other `word#N` is no
   reference (`C#5`, `fix#12`, `starter#94` written in another repository's session);
   when the word could be a repository name (three characters or more, a letter
   first) it counts as another repository. Names are compared in lower case.
-- **Shown as written:** code, a link's URL (a title goes after the link), `#0` (GitHub
-  numbers from 1), and a reference `gh` answers with HTTP 404 or 410 (a missing issue,
-  or a repository the token cannot see).
-- **Nothing for the session** when `gh repo view` fails or does not answer within
-  `GH_TIMEOUT_MS` (`gh` missing, not logged in, no GitHub remote): without the
-  session's repository no reference is shown, not even a cached one. A lookup that
-  fails otherwise (past `GH_TIMEOUT_MS`, the network, a rate limit) is tried again.
+- **Shown as written:** code, a link's URL (a title goes after the link, once the link
+  is whole), `#0` (GitHub numbers from 1), a reference `gh` answers with HTTP 404 or
+  410 (a missing issue, or a repository the token cannot see), and one `gh` answers
+  with an empty title or a URL that is not a plain `https` address.
+- **Nothing for the session** after `FAILURES` failures in a row, a failure being a
+  call of `lntt` that fails or finds no session repository (the runs of one lookup
+  count as one call), and at once from an `lntt` with no `refs` (its usage,
+  exit 2): the session then shows every number as written. A run fails when it cannot
+  start, runs past `LNTT_TIMEOUT_MS` or answers no JSON with `mentions` and `refs`;
+  it finds no repository when `gh repo view` fails or does not answer within
+  `GH_TIMEOUT_MS` (`gh` missing, not logged in, no GitHub remote). Such a run shows
+  its delta as written, with no reference, not even a cached one, and the next lookup
+  runs `lntt` again; a run that finds the repository starts the count again. A lookup
+  that fails otherwise (past `GH_TIMEOUT_MS`, the network, a rate limit) is tried
+  again. A `ref` from `lntt` that is not a lower-case `owner/repo#N` is ignored.
 - **A title is anyone's text:** control, format and other invisible characters (line
   separators, variation selectors, the grapheme joiner) are dropped, and a URL is
   shown only when it is a plain `https` address, from `gh` or from the cache.
@@ -136,8 +161,9 @@ How a title is written is the `issues` skill's.
 
 ### Negative / accepted risks
 
-- A `gh repo view` slower than `GH_TIMEOUT_MS` at the start of a session (a slow
-  network) turns the titles off until the next session.
+- A `gh repo view` slower than `GH_TIMEOUT_MS` (a slow network) counts as a failed
+  `lntt refs` call: `FAILURES` of them in a row turn the titles off for the session, and
+  they come back only in a new session.
 - Another repository's issue gets a title only when cited as `owner/repo#N`; a short
   `repo#N` from a session in another repository is shown as written.
 - Prose with a word before `#` that could be a repository name (`issue#4`, `fix#12`)
@@ -146,7 +172,12 @@ How a title is written is the `issues` skill's.
 - The titles on screen are Claude Code's and the plugin's alone: another agent, a
   session without `gh`, or one where an organization manages Claude Code (plugin
   hooks on `MessageDisplay` run only for plugins it lists) shows numbers as written.
-  A renamed issue shows its old title for up to a day, from the cache.
+  Another agent can resolve its references with `lntt refs` before writing, so its
+  text carries the titles. A renamed issue shows its old title for up to a day, from
+  the cache.
+- Each delta that holds a number starts one `lntt` process (`lntt refs --cached`, with
+  the message so far on stdin) within `WAIT_MS`, and one more for each `KEYS_PER_RUN`
+  titles still missing: a machine slow to start Node shows more titles a delta late.
 - Skills depend on `lntt`; a generated project needs it installed, which ties the
   template to a published `@lntt/lntt`.
 - Reading the profile from the main checkout fails over to the home directory when the

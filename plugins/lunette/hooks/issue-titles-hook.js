@@ -1,130 +1,116 @@
 // Issue titles on screen: each message Claude writes shows the title beside the first
 // `#N`, `repo#N` or `owner/repo#N` and ends with a box of what it cited, with their
-// URLs. Display-only: what Claude wrote and reads is unchanged. The titles come from
-// `gh`, a bare `#N` from the session's repository, cached in
-// <git dir>/lntt-issue-titles.json for a day; what to show is issue-titles.mjs, tested
-// on its own. The functions that take `$` are declared at the
-// top of the file, as the engine requires; the session's state is passed to them.
+// URLs. Display-only: what Claude wrote and reads is unchanged. Which numbers are
+// references, their titles, the cache and the gh calls are `lntt refs`'s (the project's
+// node_modules/.bin/lntt, else lntt on PATH); what to show is issue-titles.mjs, tested
+// on its own. The functions that take `$` are declared at the top of the file, as the
+// engine requires; the session's state is passed to them.
 
-import { annotate, entry, footer, hasRefs, message, refsIn } from './issue-titles.mjs'
+import { annotate, cite, entry, footer, isKey, message, settled } from './issue-titles.mjs'
 
-export const DAY = 24 * 60 * 60 * 1000
-// How long a delta waits, for the cache and the titles together: what is slower goes
-// on, and its title shows in a later delta (in the box of this message when it arrives
-// before the last delta, beside the number from the next message). A cache write still
-// running when the session ends is lost, and that title is asked again next time.
+// How long a delta waits, for lntt and the titles together: what is slower goes on, and
+// its title shows in a later delta (in the box of this message when it arrives before
+// the last delta, beside the number from the next message).
 export const WAIT_MS = 800
 // Messages kept at once: one interrupted before its last delta is never closed.
 export const KEPT = 20
-// How long each gh call may take: past it, the call counts as failed.
-export const GH_TIMEOUT_MS = 3000
-
-// A repository and a reference as the hook keys them: lower case, each name starting
-// with a letter or digit.
-const KEY_REPO = /^[a-z0-9][\w.-]*\/[a-z0-9][\w.-]*$/
-const KEY = /^[a-z0-9][\w.-]*\/[a-z0-9][\w.-]*#[1-9]\d*$/
+// How long one gh call of lntt refs may run (GH_TIMEOUT_MS in packages/lntt/src/refs.ts).
+const GH_TIMEOUT_MS = 3000
+// References one lntt refs is asked for at most: as many as it looks up at once
+// (LOOKUPS_AT_ONCE in packages/lntt/src/refs.ts). More go to runs of their own, side by side.
+export const KEYS_PER_RUN = 6
+// How long one lntt refs may run: a call with no repository cached asks gh for it, then
+// for its KEYS_PER_RUN titles together, each within GH_TIMEOUT_MS, and two seconds go to
+// node's start and git. Past it, the run failed.
+export const LNTT_TIMEOUT_MS = 2 * GH_TIMEOUT_MS + 2000
+// Failed runs of lntt in a row that turn the titles off for the session. A run that
+// finds no session repository counts as failed: each asks git and gh again.
+export const FAILURES = 3
+// What an lntt with no `refs` answers (an @lntt/lntt older than it): its usage, exit 2.
+const NO_REFS = /usage:|unknown command/i
 
 function session() {
   return {
-    info: new Map(), // owner/repo#N -> { title, url, at }
+    info: new Map(), // owner/repo#N -> { title, url }
     unknown: new Set(), // references gh answered it does not know (404, 410), for the session
     pending: new Map(), // owner/repo#N -> its lookup, while it runs
-    off: false, // gh cannot answer here (missing, not logged in, no GitHub remote)
-    home: null, // the session's repository, owner/repo
-    writing: Promise.resolve(), // cache writes, one after the other
+    off: false, // lntt asks gh nothing here (gh missing, not logged in)
+    failures: 0, // lntt runs in a row that failed
+    dead: false, // lntt has no refs, or failed FAILURES times in a row: the titles are off
+    home: null, // the session's repository, owner/repo, as lntt names it
+    lntt: null, // the look for lntt, started at the first number
     messages: new Map(), // message_id -> what that message has shown so far
-    cache: null, // the look for the cache file, started at the first number
-    file: undefined, // its path once found (null outside a repository)
   }
 }
 
-async function readCache($, s) {
-  const r = await $.process.run(['git', 'rev-parse', '--absolute-git-dir'])
-  if (r.exitCode !== 0) return null
-  // The session's repository, as gh resolves `#N`: a gh that is missing, not logged in
-  // or finds no GitHub remote (or does not answer within GH_TIMEOUT_MS) turns the
-  // lookups off, and no cached title is read.
+// The project's lntt, else the one on PATH.
+async function findLntt($) {
   try {
-    const v = await $.process.run(['gh', 'repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
-      timeoutMs: GH_TIMEOUT_MS,
-    })
-    const home = v.stdout.trim().toLowerCase()
-    if (v.exitCode === 0 && KEY_REPO.test(home)) s.home = home
-    else s.off = true
-  } catch {
-    s.off = true
+    const r = await $.process.run(['git', 'rev-parse', '--show-toplevel'])
+    const bin = `${r.stdout.trim()}/node_modules/.bin/lntt`
+    if (r.exitCode === 0 && (await $.fs.exists(bin))) return bin
+  } catch {}
+  return 'lntt'
+}
+
+// One lntt refs: its JSON, or null when lntt cannot start, runs past its timeout, fails
+// or answers anything else. A failed run, and one with no session repository, is tried
+// again at the next lookup, until FAILURES in a row; an lntt with no refs turns the
+// titles off at once. The runs of one lookup (`batch`) count as one failure at most.
+async function refs($, s, args, stdin, batch = { failed: false }) {
+  let out = null
+  try {
+    s.lntt ??= findLntt($)
+    const r = await $.process.run([await s.lntt, 'refs', ...args], { stdin, timeoutMs: LNTT_TIMEOUT_MS })
+    if (r.exitCode === 2 && NO_REFS.test(r.stderr ?? '')) {
+      s.dead = true
+      return null
+    }
+    const json = r.exitCode === 0 ? JSON.parse(r.stdout) : null
+    if (Array.isArray(json?.mentions) && Array.isArray(json?.refs)) out = json
+  } catch {}
+  if (out?.repository) s.failures = 0
+  else if (!batch.failed) {
+    batch.failed = true
+    if (++s.failures >= FAILURES) s.dead = true
   }
-  const file = `${r.stdout.trim()}/lntt-issue-titles.json`
-  if (!s.home) return file
-  try {
-    if (await $.fs.exists(file)) {
-      const now = await $.clock.now()
-      for (const [n, v] of Object.entries(JSON.parse(await $.fs.read(file)) ?? {})) {
-        const e = entry(v?.title, v?.url)
-        const fresh = typeof v?.at === 'number' && v.at <= now && now - v.at < DAY
-        if (e && fresh && KEY.test(n)) s.info.set(n, { ...e, at: v.at })
-      }
-    }
-  } catch {}
-  return file
+  return out
 }
 
-// One reference's title and URL. A reference gh answers is not there (not found, gone)
-// stays unknown for the session; gh not logged in stops the lookups for the session;
-// any other failure (a timeout, the network, a rate limit) is tried again at the next
-// lookup.
-async function lookUpOne($, s, key) {
-  try {
-    const [, repo, n] = key.match(/^(.+)#(\d+)$/)
-    const r = await $.process.run(['gh', 'api', `repos/${repo}/issues/${n}`, '--jq', '[.title, .html_url] | @tsv'], {
-      timeoutMs: GH_TIMEOUT_MS,
-    })
-    if (r.exitCode !== 0) {
-      if (/HTTP (404|410)\b/.test(r.stderr)) s.unknown.add(key)
-      else if (/gh auth login|HTTP 401/i.test(r.stderr)) s.off = true
-      return
-    }
-    const [title, url] = r.stdout.trim().split('\t')
-    const e = entry(title, url)
-    if (!e) {
-      s.unknown.add(key)
-      return
-    }
-    s.info.set(key, { ...e, at: await $.clock.now() })
-    const file = s.file // set before any lookup starts (lookUp), and never unset
-    s.writing = s.writing.then(() => $.fs.write(file, JSON.stringify(Object.fromEntries(s.info)))).catch(() => {})
-  } catch {}
+// What lntt found, into the session: the titles, what gh does not know, lookups off.
+function learn(s, out) {
+  if (!out?.repository) return
+  for (const r of out.refs) {
+    if (!isKey(r?.ref)) continue
+    const e = entry(r.title, r.url)
+    if (e) s.info.set(r.ref, e)
+    else if (r?.why === 'unknown') s.unknown.add(r.ref)
+    else if (r?.why === 'off') s.off = true
+  }
 }
 
-// The session's cache and repository, looked for at the first reference of the session
-// and waited for within the delta's timer.
-async function ready($, s, wait) {
-  if (s.file !== undefined) return
-  s.cache ??= readCache($, s)
-    .catch(() => null)
-    .then((f) => (s.file = f))
-  // gh repo view may take all of GH_TIMEOUT_MS: the lookups wait for it in a later
-  // delta, this one goes on.
-  await Promise.race([s.cache, wait()])
-}
-
-// The lookups of these references, waited for within the delta's timer.
+// The lookups of these references, one lntt refs for each KEYS_PER_RUN of those not yet
+// asked, side by side, waited for within the delta's timer: a run that ends past it gives
+// its titles to a later delta or the box. A failed one is asked again at the next lookup.
 async function lookUp($, s, keys, wait) {
-  if (!s.file || s.off || !keys.length) return
-  for (const k of keys) {
-    if (s.info.has(k) || s.unknown.has(k) || s.pending.has(k)) continue
-    s.pending.set(
-      k,
-      lookUpOne($, s, k).finally(() => s.pending.delete(k)),
-    )
+  if (s.off || !keys.length) return
+  const todo = keys.filter((k) => !s.info.has(k) && !s.unknown.has(k) && !s.pending.has(k))
+  const batch = { failed: false }
+  for (let i = 0; i < todo.length; i += KEYS_PER_RUN) {
+    const run = todo.slice(i, i + KEYS_PER_RUN)
+    const call = refs($, s, run, undefined, batch)
+      .then((out) => learn(s, out))
+      .finally(() => {
+        for (const k of run) s.pending.delete(k)
+      })
+    for (const k of run) s.pending.set(k, call)
   }
-  const waiting = keys.map((k) => s.pending.get(k)).filter(Boolean)
+  const waiting = [...new Set(keys.map((k) => s.pending.get(k)).filter(Boolean))]
   if (waiting.length) await Promise.race([Promise.all(waiting), wait()])
 }
 
 async function show($, s, e, base) {
-  // Without the session's repository nothing can be told for certain: shown as written.
-  if (s.file === null || (s.file && !s.home)) return base
+  if (s.dead) return base
   const delta = base?.displayContent ?? e.delta
   let m = s.messages.get(e.message_id)
   if (!m) {
@@ -132,18 +118,37 @@ async function show($, s, e, base) {
     s.messages.set(e.message_id, m)
     if (s.messages.size > KEPT) s.messages.delete(s.messages.keys().next().value)
   }
+  if (e.final) s.messages.delete(e.message_id)
   // One timer for the whole wait of a delta, started only when something is waited for.
   let deadline = null
   const wait = () => (deadline ??= $.clock.sleep(WAIT_MS))
-  if (hasRefs(delta) || (e.final && m.cited.length)) await ready($, s, wait)
-  // The last delta waits once, for its own references and the message's still missing.
-  const keys = refsIn(delta, m, s.home)
-  await lookUp($, s, e.final ? [...m.cited, ...keys] : keys, wait)
-  let shown = annotate(delta, m, s.info, s.home)
-  if (e.final) {
-    shown += footer(m, s.info, s.home)
-    s.messages.delete(e.message_id)
+  let found = []
+  const text = m.text + delta
+  // lntt reads the message when the delta has a number, or goes on one the text so far
+  // ends in (`#` | `138`), or ends where a mention was held back.
+  if (/#[1-9]/.test(delta) || /#\d*$/.test(m.text) || m.held || (e.final && m.cited.length)) {
+    // An answer later than the wait still counts: its titles and what the message cited
+    // go to the box.
+    const call = refs($, s, ['--cached'], text).then((out) => {
+      if (!out?.repository) return out
+      s.home = out.repository
+      learn(s, out)
+      cite(m, out.mentions, text, e.final)
+      return out
+    })
+    const out = await Promise.race([call, wait().then(() => undefined)])
+    // Without the session's repository nothing can be told for certain: shown as written.
+    if (out === null || (out && !out.repository)) {
+      annotate(delta, m, [], s.info, e.final)
+      return base
+    }
+    found = out?.mentions ?? []
+    // The last delta waits once, for its own references and the message's still missing.
+    const keys = found.filter((x) => settled(x, text, e.final) && (e.final || x.after >= m.text.length))
+    await lookUp($, s, [...new Set(keys.map((x) => x.ref))], wait)
   }
+  let shown = annotate(delta, m, found, s.info, e.final)
+  if (e.final) shown += footer(m, s.info, s.home)
   return shown === delta ? base : { ...base, displayContent: shown }
 }
 

@@ -22,7 +22,7 @@ One package, `@lntt/lntt`, with one command, `lntt`. The package is named after 
 command, so a reader who sees `lntt` in a script knows which package provides it.
 
 ```
-lntt path | validate | get | set | operator | sync | guide | local app | viewer | browser
+lntt path | validate | get | set | operator | sync | guide | local app | viewer | browser | refs
 lntt check [agents-md | skills | decisions [structure | numbers] | tests [levels | focus | rules | touched | mutate]] | check cite
 lntt branch name | check | rename
 lntt review [reply | allow]
@@ -34,13 +34,15 @@ lntt ci local | candidate
 - **One entry point, one module per command group.** `bin/lntt.ts` dispatches to
   `src/cli.ts` (configuration, operator, `AGENTS.md`, local apps, viewer, browser),
   `src/check-cli.ts`, `src/branch-cli.ts`, `src/review-cli.ts`, `src/worktree-cli.ts`,
-  `src/messages-cli.ts` (`ask`, `inbox`, `answer`) and `src/ci/cli.ts`. A group loads only when it runs.
+  `src/refs-cli.ts`, `src/messages-cli.ts` (`ask`, `inbox`, `answer`) and `src/ci/cli.ts`.
+  A group loads only when it runs. What a script needs as a library, `@lntt/lntt`
+  exports too (`resolveRefs` and `mentions` for `lntt refs`).
 - **What a person types is what an agent runs.** Skills, workflows, git hooks and
   `orca.yaml` call `lntt`, never a package's files by path, with one exception: the
   candidate workflow runs `node packages/lntt/bin/lntt.ts`, because it installs only
   this package and its dependencies.
 - **Output for scripts.** stdout carries only the result: a bare value (`lntt path`,
-  `lntt branch name`), JSON (`lntt get`, `lntt operator`), or one JSON line per item
+  `lntt branch name`), JSON (`lntt get`, `lntt operator`, `lntt refs`), or one JSON line per item
   (`lntt worktree start`, whose `issue` is null for a coordinator and which names the `parent`
   of a child, followed by the brief when no agent was started, for the
   person who will start one; `lntt check --json`), a document for an agent (`lntt guide
