@@ -169,11 +169,14 @@ pays.
   after `++` or `--` (`i++ / 2 + j / 3`) is read as a regex, which blanks the code up to
   the next `/` on its line. The waits scans parse the module and have none of these
   misses.
-- A `waitFor` that reaches a file through a module of the project re-exporting
-  testing-library (`test/render.tsx` with `export * from '@testing-library/react'`) is
-  not counted: the scan reads the imports of each file, not the modules they lead to.
-  A project that re-exports the waits calls them through the package in the specs it
-  wants guarded.
+- A `waitFor` is counted only through a static import at the top of the file that
+  calls it. One that reaches the file through a module of the project re-exporting
+  testing-library (`test/render.tsx` with `export * from '@testing-library/react'`),
+  through `require` or a dynamic `import()`, is not counted, and a workspace whose only
+  waits come that way counts as not waiting. A project that re-exports the waits
+  imports them from the package in the specs it wants guarded.
+- `vi.waitFor` is recognised by the name `vi`, as vitest's globals provide it; `vi`
+  imported under another name is not.
 - The wait guard requires vite 8; a project on an older vite cannot import
   `@lntt/test-utils/waits`.
 - Projects call the guards from their own specs; a project that never calls one is not
@@ -193,6 +196,10 @@ pays.
 - **Accepting any options object as a wait's timeout.** An inline `{ timeout: 5_000 }`
   cannot be told from options that carry no timeout without evaluating them, and it
   scatters the budget across the file.
+- **Telling testing-library's `waitFor` by its arguments** (a first argument that is
+  not an object). A project's own helper by that name passes a callback first and is
+  read as a wait, and Playwright's `locator.waitFor(options)` with its options in a
+  variable is too; the import names the function.
 - **Matching waits with a regular expression.** It cannot tell a call from a mention in
   a string or a template literal, and misses the argument position.
 - **Citing this record by a path in the consuming project.** The consuming project's

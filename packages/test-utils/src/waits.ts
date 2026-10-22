@@ -15,7 +15,7 @@ const WAIT_CALLS = new Set(['waitFor', 'waitForElementToBeRemoved'])
  * packages, and Storybook's re-export of them. A function of the project by that name,
  * or Playwright's `locator.waitFor()`, is no wait.
  */
-const WAIT_MODULE = /^(@testing-library\/[^/]+|storybook\/test|@storybook\/test)$/
+const WAIT_MODULE = /^(@testing-library\/[^/]+(\/.+)?|storybook\/test|@storybook\/test)$/
 
 /** A guard file calls this; mentioning it in a comment or a string does not count. */
 const GUARD = 'assertWaitsDeclareTimeout'
@@ -87,16 +87,18 @@ function importsOf(ast: unknown): { source: unknown; specifiers: AstNode[] }[] {
   )
 }
 
-/**
- * The local names under which a module imports testing-library's waits from a
- * {@link WAIT_MODULE}: each function, by the name it is called (`eventually` for
- * `{ waitFor as eventually }`), and each namespace (`rtl` for `* as rtl`).
- */
 interface WaitImports {
+  /** Local name to the wait it imports: `eventually` → `waitFor`. */
   functions: Map<string, string>
   namespaces: Set<string>
 }
 
+/**
+ * The local names under which a module imports testing-library's waits from a
+ * {@link WAIT_MODULE}, at its top level and statically: each function, by the name it
+ * is called (`eventually` for `{ waitFor as eventually }`), and each namespace (`rtl`
+ * for `* as rtl`).
+ */
 function waitImports(ast: unknown): WaitImports {
   const functions = new Map<string, string>()
   const namespaces = new Set<string>()

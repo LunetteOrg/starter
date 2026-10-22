@@ -30,6 +30,8 @@ describe('findWaits', () => {
     `import { waitFor } from '@storybook/test'\nawait waitFor(check)`,
     `import { waitFor as eventually } from '@testing-library/react'\nawait eventually(check)`,
     `import * as rtl from '@testing-library/react'\nawait rtl.waitFor(check)`,
+    `import * as rtl from '@testing-library/react'\nawait rtl.waitForElementToBeRemoved(gone)`,
+    `import { waitFor } from '@testing-library/react/pure'\nawait waitFor(check)`,
   ])('catches %s', (line) => {
     expect(untimed(line)).toHaveLength(1)
   })
@@ -54,6 +56,14 @@ describe('findWaits', () => {
     `import { waitFor } from './upstream.ts'\nawait waitFor('ready', probe, 5_000)`,
     `await waitFor(() => expect(spy).toHaveBeenCalled())`,
     `${RTL}await helpers.waitFor(check)`,
+    `import { waitFor as eventually } from '@testing-library/react'\nawait eventually(check, WAIT)`,
+    `import * as rtl from '@testing-library/react'\nawait rtl.waitFor(check, WAIT)`,
+    // Only testing-library's waits count, and only from its own modules.
+    `import { render } from '@testing-library/react'\nrender(view)`,
+    `import * as rtl from '@testing-library/react'\nrtl.render(view)\nrtl.screen.getByText('x')`,
+    `import { waitFor } from './vendor/storybook/test'\nawait waitFor(check)`,
+    `import { waitFor } from '@testing-library-x/react'\nawait waitFor(check)`,
+    `import { waitFor } from 'my-storybook/test'\nawait waitFor(check)`,
   ])('lets %s through', (line) => {
     expect(untimed(line)).toEqual([])
   })
@@ -64,6 +74,12 @@ describe('findWaits', () => {
     ).toEqual([
       { line: 4, call: 'findByText', timed: false },
       { line: 5, call: 'waitFor', timed: true },
+    ])
+  })
+
+  it('names an aliased wait by what it imports', () => {
+    expect(findWaits(`import { waitFor as eventually } from '@testing-library/react'\nawait eventually(f)`)).toEqual([
+      { line: 2, call: 'waitFor', timed: false },
     ])
   })
 
@@ -229,6 +245,14 @@ describe('assertWaitingWorkspacesRunTheGuard', () => {
       'packages/cli/test/upstream.test.ts': `import { waitFor } from './upstream.ts'\nawait waitFor('ready', probe)`,
     })
     expect(() => assertWaitingWorkspacesRunTheGuard(root)).not.toThrow()
+  })
+
+  it('fails a workspace whose waitFor comes from testing-library and that runs no guard', () => {
+    const root = probeProject({
+      'packages/ui/package.json': pkg,
+      'packages/ui/src/view.spec.tsx': `${RTL}await waitFor(check, WAIT)`,
+    })
+    expect(() => assertWaitingWorkspacesRunTheGuard(root)).toThrow(/packages\/ui \(src\/view\.spec\.tsx\)/)
   })
 
   it('fails when its workspaces have no test module, rather than pass on nothing', () => {
