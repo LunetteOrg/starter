@@ -186,3 +186,26 @@ sleep 30
   assert.equal(await exited, 130)
   assert.match(manifest('a'), /"version": "1\.2\.0"/)
 })
+
+test('a manifest that cannot take the placeholder stops the run before any publish', () => {
+  repo(['@lntt/a', '@lntt/b'], {})
+  writeFileSync(join(root, 'packages', 'b', 'package.json'), '{ "name": "@lntt/b" }\n')
+  const r = run([], NO_TTY)
+  assert.equal(r.status, 1)
+  assert.equal(published(), '')
+  assert.match(manifest('a'), /"version": "1\.2\.0"/)
+})
+
+test('an npm that cannot be started at publish time is a message and the manifest is restored', () => {
+  repo(['@lntt/a'], {})
+  writeFileSync(
+    join(root, 'bin', 'npm'),
+    `#!/bin/sh
+[ "$1" = view ] && { echo "npm error code E404" >&2; /bin/rm "$0"; exit 1; }
+`,
+  )
+  const r = run([], { ...NO_TTY, PATH: join(root, 'bin') })
+  assert.equal(r.status, 1)
+  assert.match(r.out, /npm publish failed for @lntt\/a \(.*ENOENT/)
+  assert.match(manifest('a'), /"version": "1\.2\.0"/)
+})

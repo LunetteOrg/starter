@@ -11,7 +11,7 @@
 // run it there, not from an agent's shell. Run from the repository root.
 //
 // LNTT_PLACEHOLDER_NO_TTY=1 lifts the terminal check; the tests set it.
-import { spawn, spawnSync } from 'node:child_process'
+import { type ChildProcess, spawn, spawnSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -29,10 +29,12 @@ if (!dryRun && process.env.LNTT_PLACEHOLDER_NO_TTY !== '1' && !(process.stdin.is
   fail('npm asks for 2FA through a browser prompt: run this in a terminal a person can answer, or with --dry-run')
 }
 
-// Ctrl-C reaches this process as well as npm: put the manifest back before leaving.
+// Ctrl-C reaches this process as well as npm: stop npm and put the manifest back.
 let restore: (() => void) | undefined
+let running: ChildProcess | undefined
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
+    running?.kill()
     restore?.()
     process.exit(130)
   })
@@ -41,7 +43,9 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 const listed = spawnSync(process.execPath, ['scripts/packages-version.mts', 'list'], { encoding: 'utf8' })
 if (listed.status !== 0) fail(`cannot list the packages:\n${listed.stderr}`)
 
-let published = 0
+// Everything that can refuse is checked before the first publish, so a run does not
+// stop half-way through the batch for a reason known at the start.
+const missing: { name: string; dir: string; file: string; original: string; placeholder: string }[] = []
 for (const dir of listed.stdout.split('\n').filter(Boolean)) {
   const file = join(dir, 'package.json')
   const original = readFileSync(file, 'utf8')
@@ -55,25 +59,31 @@ for (const dir of listed.stdout.split('\n').filter(Boolean)) {
   // Only a missing package is published; a registry or network error stops the run.
   if (!view.stderr?.includes('E404')) fail(`cannot ask npm for ${name}:\n${view.error?.message ?? view.stderr}`)
 
+  const placeholder = original.replace(/("version":\s*)"[^"]*"/, `$1"${PLACEHOLDER}"`)
+  if (JSON.parse(placeholder).version !== PLACEHOLDER) fail(`${file}: cannot set the top-level "version" field`)
+  missing.push({ name, dir, file, original, placeholder })
+}
+
+let published = 0
+for (const { name, dir, file, original, placeholder } of missing) {
   if (dryRun) {
     console.log(`${name}: would publish ${PLACEHOLDER} from ${dir}`)
     continue
   }
   console.log(`${name}: publishing ${PLACEHOLDER} from ${dir}`)
-  const placeholder = original.replace(/("version":\s*)"[^"]*"/, `$1"${PLACEHOLDER}"`)
-  if (JSON.parse(placeholder).version !== PLACEHOLDER) fail(`${file}: cannot set the top-level "version" field`)
   writeFileSync(file, placeholder)
   restore = () => writeFileSync(file, original)
   let outcome: string
   try {
     outcome = await new Promise<string>((done) => {
-      const child = spawn('npm', ['publish', '--access', 'public'], { cwd: dir, stdio: 'inherit' })
-      child.on('error', (e) => done(e.message))
-      child.on('close', (code) => done(code === 0 ? '' : `exit ${code}`))
+      running = spawn('npm', ['publish', '--access', 'public'], { cwd: dir, stdio: 'inherit' })
+      running.on('error', (e) => done(e.message))
+      running.on('close', (code) => done(code === 0 ? '' : `exit ${code}`))
     })
   } finally {
     restore()
     restore = undefined
+    running = undefined
   }
   if (outcome) fail(`npm publish failed for ${name} (${outcome}); package.json restored`)
   published++
