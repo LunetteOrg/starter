@@ -71,36 +71,39 @@ lntt ci local | candidate
 
 `lntt` holds commands of two natures. A **gate** gives a verdict a project relies on,
 so it gives the same answer on the same commit today and in a month. An **agent tool**
-helps an agent work and blocks nothing; some of its code follows hosts that change
-every few days. The two could ship apart, the gates pinned by the project and the
-agent tools at their latest version. What decides it:
+helps an agent work and blocks nothing; some of its code follows hosts that release
+faster than a project bumps its dependencies. Whether the two ship as one package
+rests on these criteria:
 
-1. **A gate is reproducible on the same commit.** CI runs `pnpm exec lntt check` and
-   `lntt branch check` (`.github/workflows/ci.yml:37`, `:42`), the git hooks run
-   `lntt branch check --pre-push` and commitlint with `@lntt/lntt`'s configuration
-   (`lefthook.yml:23-30`). Their answer is fixed only by the project's lockfile.
-2. **The host adapters follow the hosts' release cadence.** The hosts release faster
-   than a project bumps its dependencies (#137); Orca 1.4.229 moved the agent's handle
-   and `lntt worktree start` reported the agent as unknown until #126. A fix reaches a
-   project only with a release ([delivery](../process/delivery.md#releasing)) and
-   that project's bump. The adapters' cost lands only in a project that pins a
-   released `@lntt/lntt`: the template does not depend on it yet (#60), and this repo
-   runs it from the workspace.
+1. **A gate is reproducible on the same commit.** The CI workflow runs
+   `pnpm exec lntt check` and `lntt branch check` (`.github/workflows/ci.yml`), the
+   git hooks run `lntt branch check --pre-push` and commitlint with `@lntt/lntt`'s
+   configuration (`lefthook.yml`, `pre-push` and `commit-msg`). Their answer is fixed
+   only by the project's lockfile. A red of `lntt ci local` for a timeout is the
+   machine's, never a verdict on the code (`packages/lntt/src/ci/report.ts`).
+2. **The host adapters follow the hosts' release cadence** (#137): Orca 1.4.229 moved
+   the agent's handle and `lntt worktree start` reported the agent as unknown until
+   #126. A fix reaches a project only with a release
+   ([delivery](../process/delivery.md#releasing)) and that project's bump. The
+   adapters' cost lands only in a project that pins a released `@lntt/lntt`: the
+   template does not depend on it yet (#60), and this repo runs it from the workspace.
 3. **The configuration is a contract between versions.** The agent tools read
-   `delivery.review` (`packages/lntt/src/review.ts:70-95`), `coordinator`
-   (`packages/lntt/src/coordinator.ts:32-45`), `local`
-   (`packages/lntt/src/local.ts:67`), and `delivery.candidate` and `delivery.branches`
-   to name branches; every read validates the whole file with Ajv (`strict`,
-   `allErrors`; `packages/lntt/src/index.ts:109`, `:122-126`) against a schema that
-   rejects unknown fields (`packages/lntt/schema/config.schema.json:7`), so the
-   contract is the whole file.
+   `delivery.review` (`reviewConfig` in `packages/lntt/src/review.ts`), `coordinator`
+   (`gateOf` in `packages/lntt/src/coordinator.ts`) and `local` (`localApp` in
+   `packages/lntt/src/local.ts`); `lntt worktree start` reads `delivery.candidate`
+   and `delivery.branches` through the gate's branch code. Every read validates the
+   whole file with Ajv (`loadConfig` in `packages/lntt/src/index.ts`) against a schema
+   that rejects unknown fields (`additionalProperties: false` in
+   `packages/lntt/schema/config.schema.json`), so the contract is the whole file.
 4. **The skills call both groups.** `review` calls `lntt review`, `lntt check cite` and
    `ci:local`; `decisions` calls `lntt check decisions` and is a lens of `lntt review`;
-   `coordinate` calls `lntt worktree start`, the mailbox and `lntt get`; only
-   `commit-message` stays on the gate side (`lntt get`, commitlint). In the code,
-   `lntt review` runs `lntt check` areas and mutations in-process
-   (`packages/lntt/src/review-cli.ts:19`, `:32`) and `lntt worktree start` names
-   branches with the gate's code (`packages/lntt/src/worktree-cli.ts:8-9`).
+   `coordinate` calls `lntt worktree start`, the mailbox and `lntt get`; `run-local`
+   calls `lntt get`, `lntt local app` and `lntt viewer`; only `commit-message` stays on
+   the gate side (`lntt get`, commitlint). In the code, `lntt review` imports the check
+   areas and the mutations and runs them in-process (`packages/lntt/src/review-cli.ts`
+   imports `runArea` and `mutateAll`), and `lntt worktree start` names branches with
+   the gate's code (`packages/lntt/src/worktree-cli.ts` imports `branchName` and
+   `checkBranch`).
 5. **The cost of a split.** A second package needs its placeholder published by hand
    ([publishing](./cli-runtime-and-publishing.md#one-version-for-every-published-package-one-release)),
    a second release stream beside the one version `scripts/packages-version.mts`
@@ -114,19 +117,19 @@ So:
 - **The commands stay in one package, `@lntt/lntt`, pinned by the project's
   lockfile**, until the split's trigger fires (below). One version runs the gates,
   the agent tools and the skills, so `lntt review`'s checks in-process are CI's.
-- **The commands belong to two groups.** The gates' interface (a command, a flag, an
-  exit code, a `--json` field) is what the agent side calls, so it changes only by
-  addition:
+- **The commands belong to two groups.** The pinned group's interface (a command, a
+  flag, an exit code, a `--json` field) is what the agent side calls, so it changes
+  only by addition:
 
-  | Gates | Agent tools |
+  | Pinned by the project: gates and what CI runs | Agent tools |
   |---|---|
   | `lntt check [area]`, `lntt check cite`: deterministic, read only the commit | `lntt review [reply \| allow]`: its outcome is an opinion, wired into no CI |
-  | `lntt ci local \| candidate` | `lntt worktree start`: the Orca and Herdr adapters |
+  | `lntt ci local`: CI's jobs on the machine; `lntt ci candidate`: what the candidate workflow runs on GitHub, at the version the workflow installs | `lntt worktree start`: the Orca and Herdr adapters |
   | `lntt branch check`, and `branch name` and `branch rename`, so the name an agent gets is the one the gate accepts | `lntt ask \| inbox \| answer` |
   | `lntt validate \| get \| set \| path`: they hold the schema; `set` writes a tracked file | `lntt guide`: it prints the skills |
   | `lntt sync`: it writes tracked files (the `AGENTS.md` block, the skill stubs) that `lntt check` verifies | `lntt operator`: personal context, read by no gate |
   | the commitlint configuration (the `@lntt/lntt` export) | `lntt local app`, `lntt viewer` |
-  | the configuration schema | `lntt refs` (#144), `lntt doctor` (#124), the plugin's hooks |
+  | the configuration schema | the plugin's hooks; once they exist, `lntt refs` (#144) and `lntt doctor` (#124) |
 
 - **The configuration schema follows one compatibility rule.** Its version is the
   `@lntt/lntt` version in the project's lockfile; the file carries none.
@@ -138,22 +141,23 @@ So:
     does: an unknown field is a typo until proven otherwise. A project writes a new
     field after bumping `@lntt/lntt` to a version that knows it, and `lntt validate`
     at that version is the check.
-  - A missing file means the defaults (`NoConfigError`,
-    `packages/lntt/src/files.ts:21-24`); a file that does not validate stops the
-    command with the error, as `lntt review` does
-    (`packages/lntt/src/review-cli.ts:70-77`). No command answers an invalid file
-    with its defaults.
+  - A missing file means the defaults (`NoConfigError` in
+    `packages/lntt/src/files.ts`); a file that does not validate stops the command
+    with the error, as `lntt review` does (`loaded` in
+    `packages/lntt/src/review-cli.ts`). No command answers an invalid file with its
+    defaults; the two that do are listed under the accepted risks.
   - A removal or a rename is a breaking change, the one release where an older file
     stops validating: the release knows both names, the gate fails on the old one and
     names the new one while the agent tools still read it, and a later release drops
-    the old name.
-  - The fixed list of areas of the [agent layer](./agent-layer.md#an-installed-skill-is-never-edited)
-    changes under this rule.
+    the old name. Renaming one of the fixed areas of the
+    [agent layer](./agent-layer.md#an-installed-skill-is-never-edited) is such a
+    change, and these two releases are its coordination.
 - **When the split's trigger fires**, the agent tools leave `@lntt/lntt` for a second
-  command at its latest version, shipped with the plugin and through `npx`. The gates
-  stay pinned. The skills become full files beside the agent tools and the stubs of
+  command at its latest version, shipped with the plugin and through `npx`. The pinned
+  group stays where it is. The skills become full files beside the agent tools and the
+  stubs of
   [the agent layer](./agent-layer.md#the-shared-skills-come-with-lntt-a-project-holds-their-stubs)
-  go; a skill calls the gates through `pnpm exec lntt`, the project's version.
+  go; a skill calls the pinned group through `pnpm exec lntt`, the project's version.
   `lntt review` runs `pnpm exec lntt check --json` instead of the check in-process,
   and `lntt worktree start` calls `lntt branch name`, so their results stay CI's. An
   agent tool older than the project's `@lntt/lntt` says so and stops, since it may not
@@ -178,8 +182,8 @@ So:
 - A host's change reaches a project's agent tools only with a release and that
   project's bump, until the split's trigger fires.
 - `lntt worktree start` and the commitlint configuration answer a file that does not
-  validate with their defaults (`packages/lntt/src/worktree-cli.ts:93-100`,
-  `packages/lntt/src/commitlint.ts:35-42`), against the compatibility rule; the test
+  validate with their defaults (`projectConfig` in `packages/lntt/src/worktree-cli.ts`,
+  `commits` in `packages/lntt/src/commitlint.ts`), against the compatibility rule; the test
   of each released version's configuration does not exist yet. Both are work that
   follows this record.
 
