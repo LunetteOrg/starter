@@ -63,8 +63,9 @@ vitest main process
    containers by label, `--all` every workspace's, `--dry-run` lists them; it fails
    when `docker info` does not answer.
 5. **The rule arms itself.** `assertContainerUsersMountAPlugin(root)` fails a
-   workspace whose sources start containers (comments and strings blanked) without a
-   vitest config that calls one of the plugins.
+   workspace whose sources start or need containers (comments and strings blanked;
+   `createTestDb` starts none but needs the plugin's server) without a vitest config
+   that calls one of the plugins.
 6. **`databaseName` is required**, a lower-case identifier checked at construction.
    Each instance owns one database, created under an advisory lock. Whether a
    project uses one per app or one per test file is its own choice.
