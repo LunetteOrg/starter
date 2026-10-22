@@ -52,6 +52,19 @@ export interface NoSourcePatternOptions {
  * are preserved). Exported for testing.
  */
 export function blankCommentsAndStrings(source: string): string {
+  return blank(source, true)
+}
+
+/**
+ * Like {@link blankCommentsAndStrings}, with string and template literals KEPT: for a
+ * rule about a name that code may spell as a string, such as an environment variable
+ * read as `process.env['NAME']` or set as `env: { NAME: '1' }` beside `'NAME'`.
+ */
+export function blankComments(source: string): string {
+  return blank(source, false)
+}
+
+function blank(source: string, strings: boolean): string {
   const out: string[] = []
   let inString: string | null = null
   let inLineComment = false
@@ -79,13 +92,13 @@ export function blankCommentsAndStrings(source: string): string {
     }
     if (inString) {
       if (c === '\\') {
-        out.push('  ')
+        out.push(strings ? '  ' : source.slice(i, i + 2))
         i++
       } else if (c === inString) {
         inString = null
         out.push(c) // keep the closing quote as-is
       } else {
-        out.push(keep)
+        out.push(strings ? keep : c)
       }
       continue
     }

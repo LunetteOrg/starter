@@ -13,7 +13,7 @@ decisions) is in [`docs/process/`](../process/README.md).
 | [template-model](./template-model.md) | What a Lunette template is; templates as folders bundled inside the CLI | accepted |
 | [scaffolding-contract](./scaffolding-contract.md) | Placeholders, the `@lntt/*` scope, dotfiles and text-file coverage every template honours | accepted |
 | [cli-runtime-and-publishing](./cli-runtime-and-publishing.md) | The CLI and the `@lntt/*` packages run as TypeScript in-repo and ship compiled; one shared version and release; explicit `.ts` imports | accepted |
-| [test-database](./test-database.md) | `@lntt/test-utils`: one Postgres per vitest run, owned by a globalSetup; required `databaseName`; cleanup by label | accepted |
+| [test-database](./test-database.md) | `@lntt/test-utils`: one Postgres per vitest run, owned by a globalSetup; Ryuk on; required `databaseName`; container rules; cleanup by label | accepted |
 | [agent-layer](./agent-layer.md) | Installed skills are never edited; their guides come with `lntt`, a project holds stubs; project values in `.agents/config.*`; operator context; issue titles on screen | accepted |
 | [lntt-command](./lntt-command.md) | One package, `@lntt/lntt`, with one command, `lntt`, for configuration, agent files, branches, worktrees and CI; its gates and agent tools, and the configuration's compatibility rule | accepted |
 | [review-agents](./review-agents.md) | Reviews by agents with no context, per-project lenses, agents and models; adversarial verification; `lntt review` | accepted |

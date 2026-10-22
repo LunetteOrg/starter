@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 // lntt-clean-test [--all] [--dry-run]
 //
-// Removes the test Postgres containers a run could not: one killed with SIGKILL, or
-// during its startup. By LABEL, never by image: a development machine runs other
-// projects' Postgres too. By default only this workspace's (a worktree is a workspace
-// of its own); `--all` widens to every workspace, for worktrees that no longer exist.
-// `--dry-run` lists and removes nothing.
+// Removes every container that carries the workspace label, the run's Postgres and
+// any container a suite labelled itself, running or exited. It is the net for what Ryuk
+// misses: containers left exited after the Docker daemon restarted (they have no
+// restart policy, and Ryuk does not survive the restart), and the containers of runs
+// whose user disabled Ryuk in their shell. By LABEL, never by image: a development
+// machine runs other projects' Postgres too. By default only this workspace's (a
+// worktree is a workspace of its own); `--all` widens to every workspace, for worktrees
+// that no longer exist. `--dry-run` lists and removes nothing.
 import { execFileSync } from 'node:child_process'
 import { WORKSPACE_LABEL, workspaceRoot } from './workspace.ts'
 
