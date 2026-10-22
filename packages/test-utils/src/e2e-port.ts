@@ -75,8 +75,10 @@ export interface E2ePortOptions extends WorktreeE2ePortOptions {
  */
 export function e2ePort({ root, ciPort, env = process.env, ...app }: E2ePortOptions): number {
   const forced = env.E2E_PORT
+  const apps = app.apps ?? [app.app]
+  // Checked on every branch, so a list wrong locally is wrong in CI too.
+  const index = appIndex(app.app, apps)
   if (forced) {
-    const apps = app.apps ?? [app.app]
     const port = Number(forced)
     if (!/^\d+$/.test(forced) || port < 1 || port > 65_535) {
       throw new Error(`E2E_PORT must be an integer between 1 and 65535, got "${forced}"`)
@@ -84,7 +86,7 @@ export function e2ePort({ root, ciPort, env = process.env, ...app }: E2ePortOpti
     if (port + apps.length - 1 > 65_535) {
       throw new Error(`E2E_PORT=${forced} leaves no port up to 65535 for each of the ${apps.length} apps`)
     }
-    return port + appIndex(app.app, apps)
+    return port + index
   }
   if (env.CI && ciPort !== undefined) {
     if (!Number.isInteger(ciPort) || ciPort < 1 || ciPort > 65_535) {

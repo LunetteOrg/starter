@@ -129,6 +129,8 @@ test('e2e-test-from-helper flags `test` taken from @playwright/test in every imp
     'fixtures-namespace.ts': "export * as playwright from '@playwright/test'\n",
     'dynamic.e2e.ts': "export const { test } = await import('@playwright/test')\n",
     'require.e2e.ts': "export const { test } = require('@playwright/test')\n",
+    'dynamic-template.e2e.ts': 'export const { test } = await import(`@playwright/test`)\n',
+    'require-template.e2e.ts': 'export const { test } = require(`@playwright/test`)\n',
     'import-equals.e2e.ts':
       "import playwright = require('@playwright/test')\n\nexport const { test } = playwright\n",
   }
@@ -163,8 +165,12 @@ test('e2e-test-from-helper leaves `test` from the helper, and expect, devices an
         "export const helper = await import('@lntt/test-utils/playwright')",
         "export const path = createRequire(import.meta.url).resolve('@lntt/test-utils/playwright')",
         "export const text = readFileSync(path, 'utf8')",
+        'export const template = await import(`@lntt/test-utils/playwright`)',
+        "export const fs = require('node:fs')",
         '',
       ].join('\n'),
+      'e2e/import-type.e2e.ts':
+        "import type playwright = require('@playwright/test')\n\nexport type Test = typeof playwright.test\n",
       'e2e/fixtures.ts': [
         "export { test } from '@lntt/test-utils/playwright'",
         "export type { Page, TestInfo } from '@playwright/test'",

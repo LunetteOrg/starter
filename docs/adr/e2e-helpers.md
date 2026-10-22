@@ -67,10 +67,11 @@ import { expect } from '@playwright/test'
    `test` from `@playwright/test`: by name, renamed, as the default export (alone or
    next to named imports) or through a namespace, and a fixtures file that re-exports
    it (`export { test }`, `export { default }`, `export *`). It flags every dynamic
-   form whatever it takes (`import('@playwright/test')`, `require('@playwright/test')`,
+   form whose specifier is the string or template literal `@playwright/test`, whatever
+   it takes (`import('@playwright/test')`, `require('@playwright/test')`,
    `import playwright = require('@playwright/test')`): an e2e takes `expect` and
-   `devices` with a static import. `expect`, `devices`, `import type` and `export type`
-   pass.
+   `devices` with a static import. A computed specifier is not seen. `expect`,
+   `devices`, `import type` and `export type` pass.
 5. **`await expectFetchMetadata(request, expected)`** asserts the `Sec-Fetch-*`
    headers of `request`, read with `request.allHeaders()`. When the request belongs to
    a context `delayHydration` routed (the fixture's, with a delay and a chunk), it
@@ -95,10 +96,10 @@ import { expect } from '@playwright/test'
    `@lntt/playwright-config` reads it) and `ciPort` is given, `ciPort`, which must be
    an integer from 1 to 65535; without `CI`, `ciPort` is neither read nor checked.
    Otherwise the port derived from a SHA-256 of the checkout's real path, in
-   `E2E_PORT_RANGE` (20000 to 29999). Each slot holds one port per app of `apps`, in
-   that order; `apps` defaults to the app alone, an app listed twice throws, and more
-   apps than the range has ports throws. The range sits below the ephemeral ports of
-   Linux (from 32768) and macOS (from 49152), so a port the system hands to a
+   `E2E_PORT_RANGE`. Each slot holds one port per app of `apps`, in that order; more
+   apps than the range has ports throws. `apps` defaults to the app alone; on every
+   branch, an app listed twice or missing from `apps` throws. The range sits below the
+   default ephemeral ports of Linux and macOS, so a port the system hands to a
    container mapping never lands on it.
    A symlink and its target, or a path with and without a trailing slash, get one port.
 8. **The e2e port is separate from `lntt`'s local slots.** `lntt` runs an app by hand

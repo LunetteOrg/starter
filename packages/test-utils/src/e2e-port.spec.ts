@@ -119,6 +119,16 @@ describe('e2ePort', () => {
     )
   })
 
+  it('stays derived when E2E_PORT is empty', () => {
+    expect(e2ePort({ root: ROOT_A, app: 'admin', apps: APPS, env: { E2E_PORT: '' } })).toBe(derived)
+  })
+
+  it('throws on an app listed twice or missing in CI with a CI port too', () => {
+    const env = { CI: 'true' }
+    expect(() => e2ePort({ root: ROOT_A, app: 'web', apps: ['web', 'web'], ciPort: 3200, env })).toThrow(/twice/)
+    expect(() => e2ePort({ root: ROOT_A, app: 'shop', apps: APPS, ciPort: 3200, env })).toThrow(/shop/)
+  })
+
   it('takes the CI port when CI is set', () => {
     expect(e2ePort({ root: ROOT_A, app: 'admin', apps: APPS, ciPort: 3200, env: { CI: 'true' } })).toBe(3200)
   })

@@ -6,9 +6,11 @@
 // renamed (`{ test as base }`, `{ default as base }`), as the default export, alone or
 // next to named imports, or through a namespace. Flags the same forms re-exported by a
 // fixtures file: `export { test }`, `export { default }`, `export *`, `export * as`.
-// Flags every dynamic form, whatever it takes: `import('@playwright/test')`,
+// Flags every dynamic form whose specifier is the string or template literal
+// `@playwright/test`, whatever it takes: `import('@playwright/test')`,
 // `require('@playwright/test')`, `import playwright = require('@playwright/test')`; an
-// e2e takes `expect` and `devices` with a static import. `expect`, `devices` and types
+// e2e takes `expect` and `devices` with a static import. A computed specifier
+// (`import(name)`) is not seen. `expect`, `devices` and types
 // still come from @playwright/test; `import type` and `export type` are left alone. A
 // regex here matches the whole node, not a part of it.
 or {
@@ -31,10 +33,12 @@ or {
       JsExportNamedFromSpecifier() as $name where { $name <: r"(?s)(?:test|default)(?:\s+as\s.*)?" }
     }
   },
-  JsImportCallExpression() as $statement where { $statement <: contains `"@playwright/test"` },
+  JsImportCallExpression() as $statement where {
+    $statement <: contains or { `"@playwright/test"`, JsTemplateExpression() as $t where { $t <: r"`@playwright/test`" } }
+  },
   JsCallExpression() as $statement where {
     $statement <: `require($module)`,
-    $module <: contains `"@playwright/test"`
+    $module <: contains or { `"@playwright/test"`, JsTemplateExpression() as $t where { $t <: r"`@playwright/test`" } }
   },
   TsImportEqualsDeclaration() as $statement where {
     $statement <: contains `"@playwright/test"`,
@@ -43,6 +47,6 @@ or {
 } where {
   register_diagnostic(
     span = $statement,
-    message = "An e2e imports `test` from @lntt/test-utils/playwright, not from @playwright/test: its context fixture is what E2E_HYDRATION_DELAY_MS delays. `expect`, `devices` and types still come from @playwright/test. See https://github.com/LunetteOrg/starter/blob/main/docs/adr/e2e-helpers.md"
+    message = "An e2e imports `test` from @lntt/test-utils/playwright, not from @playwright/test: its context fixture is what E2E_HYDRATION_DELAY_MS delays. `expect`, `devices` and types still come from @playwright/test, with a static import: a dynamic import() or require of @playwright/test is flagged whatever it takes. See https://github.com/LunetteOrg/starter/blob/main/docs/adr/e2e-helpers.md"
   )
 }
