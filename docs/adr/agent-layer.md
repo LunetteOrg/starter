@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-10-13
+date: 2026-10-22
 tags: [agents, skills, configuration, operator, templates]
 ---
 
@@ -96,15 +96,21 @@ In Claude Code the `lunette` plugin shows, beside the first `#N` or `owner/repo#
 each message, the title of that issue or pull request, dimmed, and ends the message
 with a box of what it cited and their URLs (`plugins/lunette/hooks/issue-titles.mjs`).
 It is a `MessageDisplay` hook: it changes the screen only, and what the agent wrote and
-reads stays as it was. The titles come from `gh`, cached for a day in the git
-directory: `#N` (and `repo#N` naming the same repository) from the session's
-repository as `gh repo view` names it, `owner/repo#N` from that repository. A delta
-waits for the cache and the titles at most `WAIT_MS` (`issue-titles-hook.js`); a slower
-title shows in a later delta, in the box or beside the number in the next message.
+reads stays as it was.
+
+The rules below, the cache and the `gh` lookups are `lntt refs`
+(`packages/lntt/src/refs.ts`), for the hook and for any agent: it reads a text and
+prints, as JSON, each reference with where it sits, its title and URL, or why it has
+none. The titles come from `gh`, cached for a day in the git directory
+(`lntt-issue-titles.json`, with the session's repository): `#N` (and `repo#N` naming
+the same repository) from the session's repository as `gh repo view` names it,
+`owner/repo#N` from that repository. The hook keeps the display and calls `lntt refs`,
+the project's `node_modules/.bin/lntt`, else `lntt` on `PATH`. A delta waits for lntt
+and the titles at most `WAIT_MS` (`issue-titles-hook.js`); a slower title shows in a
+later delta, in the box or beside the number in the next message.
 
 - **Never a title from the wrong repository:** a message that cites another
-  repository, or any reference before the session's repository is known (a bare `#N`
-  too), shows every bare `#N` after that as written. Any other `word#N` is no
+  repository shows every bare `#N` after that as written. Any other `word#N` is no
   reference (`C#5`, `fix#12`, `starter#94` written in another repository's session);
   when the word could be a repository name (three characters or more, a letter
   first) it counts as another repository. Names are compared in lower case.
@@ -115,6 +121,7 @@ title shows in a later delta, in the box or beside the number in the next messag
   `GH_TIMEOUT_MS` (`gh` missing, not logged in, no GitHub remote): without the
   session's repository no reference is shown, not even a cached one. A lookup that
   fails otherwise (past `GH_TIMEOUT_MS`, the network, a rate limit) is tried again.
+  A session with no `lntt` to run, or one that fails, shows every number as written.
 - **A title is anyone's text:** control, format and other invisible characters (line
   separators, variation selectors, the grapheme joiner) are dropped, and a URL is
   shown only when it is a plain `https` address, from `gh` or from the cache.
@@ -146,7 +153,12 @@ How a title is written is the `issues` skill's.
 - The titles on screen are Claude Code's and the plugin's alone: another agent, a
   session without `gh`, or one where an organization manages Claude Code (plugin
   hooks on `MessageDisplay` run only for plugins it lists) shows numbers as written.
-  A renamed issue shows its old title for up to a day, from the cache.
+  Another agent can resolve its references with `lntt refs` before writing, so its
+  text carries the titles. A renamed issue shows its old title for up to a day, from
+  the cache.
+- Each delta that holds a number starts one `lntt` process (`lntt refs --cached`, with
+  the message so far on stdin) within `WAIT_MS`: a machine slow to start Node shows
+  more titles a delta late.
 - Skills depend on `lntt`; a generated project needs it installed, which ties the
   template to a published `@lntt/lntt`.
 - Reading the profile from the main checkout fails over to the home directory when the

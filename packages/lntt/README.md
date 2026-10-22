@@ -375,6 +375,25 @@ calls only the agent can make, printed with the call that loads them. Chrome cou
 wherever it is listed, since no shell can tell whether a session has its tools: it goes
 after the browsers that are detected.
 
+## Issue and pull request references
+
+```sh
+lntt refs '#12' o/r#3                # these references, with their titles
+git log -1 --format=%B | lntt refs   # every reference of a text on stdin
+lntt refs --cached < message.md      # only what the cache holds: no gh call per issue
+```
+
+A bare `#N` (or `repo#N` naming the session's repository) is the session's repository
+as `gh repo view` names it, `owner/repo#N` is that repository, any other `word#N` is no
+reference; code and link URLs are not read, and after a reference to another
+repository a bare `#N` is left unresolved. Titles come from `gh api`, three seconds
+at most each, cached for a day in `<git dir>/lntt-issue-titles.json`; without the
+session's repository nothing is looked up. The output is one JSON object:
+`repository`, `mentions` (each reference-looking match with its `ref`, its `index` and
+the `after` position where a title goes, UTF-16 indices into the text) and `refs`
+(each reference once with its `title` and `url`, or a `why`: `unknown`, `failed`,
+`off`, `cached`). The `lunette` plugin's hook shows these titles on screen.
+
 ## CI (`lntt ci`)
 
 Runs a project's CI on the local machine, and moves pull requests through the
