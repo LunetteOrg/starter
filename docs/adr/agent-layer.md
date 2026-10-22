@@ -102,12 +102,17 @@ The rules below, the cache and the `gh` lookups are `lntt refs`
 (`packages/lntt/src/refs.ts`), for the hook and for any agent: it reads a text and
 prints, as JSON, each reference with where it sits, its title and URL, or why it has
 none. The titles come from `gh`, cached for a day in the git directory
-(`lntt-issue-titles.json`, with the session's repository): `#N` (and `repo#N` naming
+(`lntt-issue-titles.json`, with the session's repository, which holds while the git
+remotes `gh` resolves it from read the same: a fork, `gh repo set-default` or a changed
+URL asks for it again; concurrent calls merge, the newest entry of each key kept, and
+an entry lost in a race is only asked again): `#N` (and `repo#N` naming
 the same repository) from the session's repository as `gh repo view` names it,
 `owner/repo#N` from that repository. The hook keeps the display and calls `lntt refs`,
 the project's `node_modules/.bin/lntt`, else `lntt` on `PATH`. A delta waits for lntt
 and the titles at most `WAIT_MS` (`issue-titles-hook.js`); a slower title shows in a
-later delta, in the box or beside the number in the next message.
+later delta, in the box or beside the number in the next message. A reference belongs
+to the delta where it ends, and one that ends a delta other than the last is read with
+the next delta, since it may go on (`#1` | `38` is `#138`).
 
 - **Never a title from the wrong repository:** a message that cites another
   repository shows every bare `#N` after that as written. Any other `word#N` is no
@@ -121,7 +126,11 @@ later delta, in the box or beside the number in the next message.
   `GH_TIMEOUT_MS` (`gh` missing, not logged in, no GitHub remote): without the
   session's repository no reference is shown, not even a cached one. A lookup that
   fails otherwise (past `GH_TIMEOUT_MS`, the network, a rate limit) is tried again.
-  A session with no `lntt` to run, or one that fails, shows every number as written.
+  A run of `lntt` that fails (it cannot start, runs past `LNTT_TIMEOUT_MS`, answers
+  no JSON) shows the delta as written and is tried again at the next lookup; after
+  `FAILURES` in a row, or from an `lntt` with no `refs` (its usage, exit 2), the
+  session shows every number as written. A `ref` from `lntt` that is not a lower-case
+  `owner/repo#N` is ignored.
 - **A title is anyone's text:** control, format and other invisible characters (line
   separators, variation selectors, the grapheme joiner) are dropped, and a URL is
   shown only when it is a plain `https` address, from `gh` or from the cache.
@@ -143,8 +152,8 @@ How a title is written is the `issues` skill's.
 
 ### Negative / accepted risks
 
-- A `gh repo view` slower than `GH_TIMEOUT_MS` at the start of a session (a slow
-  network) turns the titles off until the next session.
+- A `gh repo view` slower than `GH_TIMEOUT_MS` (a slow network) leaves every number
+  as written until a later call gets the repository.
 - Another repository's issue gets a title only when cited as `owner/repo#N`; a short
   `repo#N` from a session in another repository is shown as written.
 - Prose with a word before `#` that could be a repository name (`issue#4`, `fix#12`)

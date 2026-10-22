@@ -19,10 +19,11 @@ const find = (text) =>
     index: x.index,
     after: x.index + x[0].length,
   }))
-// Each delta annotated with the mentions of the message so far, as the hook does.
-const show = (deltas, info = known) => {
+// Each delta annotated with the mentions of the message so far, as the hook does; the
+// last one is final when `final` says so.
+const show = (deltas, info = known, final = false) => {
   const m = message()
-  return { lines: deltas.map((d) => annotate(d, m, find(m.text + d), info)), m }
+  return { lines: deltas.map((d, i) => annotate(d, m, find(m.text + d), info, final && i === deltas.length - 1)), m }
 }
 
 describe('the title beside the number', () => {
@@ -103,6 +104,34 @@ describe('the title beside the number', () => {
   test('a title given in the message is matched once cleaned of control characters', () => {
     const info = new Map([[k(6), entry('Fix\u0007 the CI', url(6))]])
     assert.equal(show(['#6, "Fix the CI", first.\n'], info).lines[0], '#6, "Fix the CI", first.\n')
+  })
+
+  test('a number split across deltas is the one the message cites, its title in the delta where it ends', () => {
+    const info = new Map([...known, [k(1), { title: 'One', url: url(1) }]])
+    const { lines, m } = show(['See #1', '38 now.', ' end'], info, true)
+    assert.deepEqual(lines, ['See #1', `38 ${dim(`· ${known.get(k(138)).title}`)} now.`, ' end'])
+    assert.deepEqual(m.cited, [k(138)])
+  })
+
+  test('a number at the end of a delta waits for the next one: its title goes at its start', () => {
+    const { lines, m } = show(['See #138', ' now.\n'])
+    assert.deepEqual(lines, ['See #138', ` ${dim(`· ${known.get(k(138)).title}`)} now.\n`])
+    assert.deepEqual(m.cited, [k(138)])
+  })
+
+  test('a number at the end of the last delta is cited and gets its title', () => {
+    const { lines, m } = show(['See #138'], known, true)
+    assert.deepEqual(lines, [`See #138 ${dim(`· ${known.get(k(138)).title}`)}`])
+    assert.deepEqual(m.cited, [k(138)])
+  })
+
+  test('a ref that is not a lower-case owner/repo#N is ignored: no title, nothing cited', () => {
+    const m = message()
+    const bad = ['o/r\u001b]0;pwned\u0007#5', 'O/R#5', 'o/.r#5', '-o/r#5', 'o/r#05', 'o/r/x#5']
+    const found = bad.map((ref) => ({ ref, index: 0, after: 2 }))
+    const info = new Map(bad.map((ref) => [ref, { title: 'T', url: url(5) }]))
+    assert.equal(annotate('#5 x\n', m, found, info), '#5 x\n')
+    assert.deepEqual(m.cited, [])
   })
 
   test('a number with no title found is left as it is', () => {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { issueTitles, KEPT, LNTT_TIMEOUT_MS, WAIT_MS } from './issue-titles-hook.js'
+import { FAILURES, issueTitles, KEPT, LNTT_TIMEOUT_MS, WAIT_MS } from './issue-titles-hook.js'
 import { register } from './register.js'
 
 const TOP = '/repo'
@@ -36,6 +36,13 @@ function fakeRefs({ args, stdin, home, cache, gh }) {
   const keys = [...new Set(mentions.flatMap((m) => (m.ref ? [m.ref] : [])))]
   return Promise.all(keys.map(refs)).then((r) => JSON.stringify({ repository: home, mentions, refs: r }))
 }
+
+// One run of the fake lntt.
+const fakeRun = async (argv, init, { gh = {}, cache = {}, home = 'o/r' }) => ({
+  exitCode: 0,
+  stdout: await fakeRefs({ args: argv.slice(2), stdin: init?.stdin, home, cache, gh }),
+  stderr: '',
+})
 
 // A fake engine: lntt answers as fakeRefs, unless `lntt` replaces it (an Error to throw,
 // or a function returning a run's result); `local` says whether the project has its own
@@ -168,18 +175,89 @@ describe('the issue titles hook', () => {
     assert.deepEqual(lookups(), [])
   })
 
-  for (const [what, lntt] of [
-    ['cannot start', new Error('spawn lntt ENOENT')],
-    ['exits non-zero', async () => ({ exitCode: 2, stdout: '', stderr: 'usage: lntt' })],
+  for (const [what, failing] of [
+    ['cannot start', () => Promise.reject(new Error('spawn lntt ENOENT'))],
+    ['runs past its timeout', () => Promise.reject(new Error('timed out'))],
+    ['fails', async () => ({ exitCode: 1, stdout: '', stderr: 'lntt refs: EACCES' })],
     ['answers garbage', async () => ({ exitCode: 0, stdout: 'not json', stderr: '' })],
   ]) {
-    test(`lntt that ${what}: shown as written, and not run again in the session`, async () => {
-      const { flush, runs } = engine({ lntt })
+    test(`lntt that ${what}: shown as written, and run again at the next lookup`, async () => {
+      let fail = true
+      const { flush, runs } = engine({
+        lntt: (argv, init) => (fail ? failing() : fakeRun(argv, init, { gh: { 'o/r#2': 'Two' } })),
+      })
+      assert.deepEqual(await flush('m1', '#1\n'), {})
+      fail = false
+      assert.match((await flush('m2', '#2\n')).displayContent, /· Two/)
+      assert.ok(runs.length > 1)
+    })
+  }
+
+  test(`${FAILURES} failed runs in a row turn the titles off for the session; a success in between starts the count again`, async () => {
+    // Each run in turn: two fail, then --cached and its lookup answer, then every run fails.
+    const ok = new Set([3, 4])
+    const { flush, runs } = engine({
+      lntt: (argv, init) =>
+        ok.has(runs.length) ? fakeRun(argv, init, { gh: { 'o/r#3': 'Three' } }) : Promise.reject(new Error('timed out')),
+    })
+    for (let i = 1; i <= 7; i += 1) await flush(`m${i}`, `#${i}\n`)
+    assert.equal(FAILURES, 3)
+    assert.equal(runs.length, 2 + 2 + FAILURES)
+  })
+
+  for (const [what, stderr] of [
+    ['an @lntt/lntt older than refs (its usage, exit 2)', 'usage: lntt path | validate | get <key>'],
+    ['an unknown command', "lntt: unknown command 'refs'"],
+  ]) {
+    test(`lntt answering ${what}: off for the session at once`, async () => {
+      const { flush, runs } = engine({ lntt: async () => ({ exitCode: 2, stdout: '', stderr }) })
       assert.deepEqual(await flush('m1', '#1\n'), {})
       assert.deepEqual(await flush('m2', '#2\n'), {})
       assert.equal(runs.length, 1)
     })
   }
+
+  test('one lntt refs may ask the repository and then the titles: its timeout is two gh timeouts and two seconds', () => {
+    assert.equal(LNTT_TIMEOUT_MS, 2 * 3000 + 2000)
+  })
+
+  test('a number split across deltas is the one cited: its title in the delta where it ends', async () => {
+    const { flush, lookups } = engine({ gh: { 'o/r#1': 'Issue one', 'o/r#138': 'Publish lntt' } })
+    assert.deepEqual(await flush('m1', 'See #1'), {})
+    assert.match((await flush('m1', '38 now.')).displayContent, /^38 .*· Publish lntt.* now\.$/)
+    const end = await flush('m1', ' end', true)
+    assert.doesNotMatch(end.displayContent, /Issue one|\/1\b/)
+    assert.match(end.displayContent, /cited.*#138/s)
+    assert.deepEqual(lookups(), [['o/r#138']])
+  })
+
+  test('a delta that goes on a number of the text so far runs lntt: # | 138', async () => {
+    const { flush } = engine({ gh: { 'o/r#138': 'Publish lntt' } })
+    await flush('m1', 'See #')
+    assert.match((await flush('m1', '138 now.')).displayContent, /^138 .*· Publish lntt.* now\.$/)
+  })
+
+  test('a number at the end of a delta gets its title at the start of the next, with no number in it', async () => {
+    const { flush } = engine({ gh: { 'o/r#5': 'Five' } })
+    assert.deepEqual(await flush('m1', 'See #5'), {})
+    assert.match((await flush('m1', ' now.\n')).displayContent, /^ .*· Five.* now\.\n$/)
+  })
+
+  test('a ref lntt gives that is not a lower-case owner/repo#N is ignored', async () => {
+    const evil = 'o/r\u001b]0;pwned\u0007#5'
+    const lntt = async () => ({
+      exitCode: 0,
+      stdout: JSON.stringify({
+        repository: 'o/r',
+        mentions: [{ text: '#5', ref: evil, index: 0, after: 2 }],
+        refs: [{ ref: evil, title: 'T', url: 'https://x/y' }],
+      }),
+      stderr: '',
+    })
+    const { flush } = engine({ lntt })
+    assert.deepEqual(await flush('m1', '#5 x'), {})
+    assert.deepEqual(await flush('m1', 'y', true), {})
+  })
 
   test('a reference to another repository is looked up there; a bare #N after it is not', async () => {
     const { flush, lookups } = engine({ gh: { 'x/pelion#3': 'Pelion three', 'o/r#65': 'Ours' } })

@@ -170,9 +170,10 @@ describe('what a lookup gave, made safe to show', () => {
   })
 })
 
-// A fake machine: git answers the git directory (or fails), gh answers `repo view` from
+// A fake machine: git answers the git directory (or fails) and the remotes gh resolves
+// from (`remotes`: their config lines, or an exit code), gh answers `repo view` from
 // `home` and each issue from `gh` (by owner/repo#N: a result, an Error to throw, or a
-// function returning a promise). Every command run is recorded.
+// function returning a promise). `now` is the clock. Every command run is recorded.
 type Answer = { exitCode: number; stdout: string; stderr: string } | Error | (() => Promise<unknown>)
 const ok = (title: string, n: number, repo = HOME) => ({
   exitCode: 0,
@@ -182,6 +183,8 @@ const ok = (title: string, n: number, repo = HOME) => ({
 const notFound = { exitCode: 1, stdout: '', stderr: 'gh: Not Found (HTTP 404)' }
 const missing = () => Object.assign(new Error('spawn gh ENOENT'), { code: 'ENOENT' })
 const NOW = 10 * DAY
+const REMOTES = 'remote.origin.url git@github.com:o/r.git\n'
+const REMOTES_ARGS = ['config', '--get-regexp', '^remote\\..*\\.(url|gh-resolved)$']
 
 let dir: string
 let file: string
@@ -196,14 +199,22 @@ function machine({
   gh = {} as Record<string, Answer>,
   home = 'o/r' as string | number | Error,
   git = 0,
+  remotes = REMOTES as string | number,
+  now = () => NOW,
 }: {
   gh?: Record<string, Answer>
   home?: string | number | Error
   git?: number
+  remotes?: string | number
+  now?: () => number
 } = {}) {
   const runs: { command: string; args: string[]; timeoutMs: number }[] = []
   const run: RefsRun = async (command, args, timeoutMs) => {
     runs.push({ command, args, timeoutMs })
+    if (command === 'git' && args[0] === 'config') {
+      if (typeof remotes === 'number') return { exitCode: remotes, stdout: '', stderr: '' }
+      return { exitCode: 0, stdout: remotes, stderr: '' }
+    }
     if (command === 'git') return { exitCode: git, stdout: git ? '' : `${dir}\n`, stderr: '' }
     if (args[0] === 'repo') {
       if (home instanceof Error) throw home
@@ -216,7 +227,7 @@ function machine({
     return (typeof answer === 'function' ? await answer() : answer) as Awaited<ReturnType<RefsRun>>
   }
   const lookups = () => runs.filter((r) => r.args[0] === 'api').map((r) => r.args[1])
-  const resolve = (text: string, cached = false) => resolveRefs(text, { run, now: () => NOW, cached })
+  const resolve = (text: string, cached = false) => resolveRefs(text, { run, now, cached })
   return { resolve, runs, lookups }
 }
 
@@ -353,12 +364,38 @@ describe("the session's repository", () => {
     assert.deepEqual(out.refs, [{ ref: k(5), title: 'Five', url: url(5) }])
     assert.deepEqual(
       second.runs.map((r) => r.command),
-      ['git'],
+      ['git', 'git'],
     )
   })
 
+  test('the cached repository is used only while the remotes gh resolves it from are unchanged', async () => {
+    await machine().resolve('#5', true)
+    const same = machine({ home: 1 })
+    assert.equal((await same.resolve('#5', true)).repository, HOME)
+    assert.ok(same.runs.some((r) => r.command === 'git' && r.args.join(' ') === REMOTES_ARGS.join(' ')))
+    for (const remotes of [
+      'remote.origin.url git@github.com:x/fork.git\nremote.upstream.url git@github.com:o/r.git\n',
+      `${REMOTES}remote.origin.gh-resolved base\n`,
+      1,
+    ]) {
+      const changed = machine({ home: 'x/fork', remotes })
+      assert.equal((await changed.resolve('#5', true)).repository, 'x/fork')
+      assert.ok(changed.runs.some((r) => r.args[0] === 'repo'))
+    }
+  })
+
+  test('with no remote, an empty list is what the cached repository is kept with', async () => {
+    await machine({ remotes: 1 }).resolve('#5', true)
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).repository.remotes, '')
+  })
+
   test('a cached repository older than a day, or not a repository, is asked again', async () => {
-    for (const repository of [{ name: HOME, at: NOW - DAY }, { name: '../x', at: NOW }, 'o/r']) {
+    for (const repository of [
+      { name: HOME, at: NOW - DAY, remotes: REMOTES },
+      { name: '../x', at: NOW, remotes: REMOTES },
+      { name: HOME, at: NOW },
+      'o/r',
+    ]) {
       cache({ repository })
       const { resolve, runs } = machine()
       assert.equal((await resolve('#5', true)).repository, HOME)
@@ -387,7 +424,7 @@ describe('the cache', () => {
     await resolve('#138')
     const written = JSON.parse(readFileSync(file, 'utf8'))
     assert.deepEqual(written[k(138)], { title: 'Publish lntt', url: url(138), at: NOW })
-    assert.deepEqual(written.repository, { name: HOME, at: NOW })
+    assert.deepEqual(written.repository, { name: HOME, at: NOW, remotes: REMOTES })
   })
 
   test('a write merges with what the file holds when it is written, not when it was read', async () => {
@@ -400,6 +437,28 @@ describe('the cache', () => {
     await resolve('#1')
     const written = JSON.parse(readFileSync(file, 'utf8'))
     assert.deepEqual([written[k(1)]?.title, written[k(2)]?.title], ['One', 'Two'])
+  })
+
+  test('two calls at once keep the newest entry of each key', async () => {
+    let t = NOW - 10
+    // #1 answers at once; while #2 is asked, another call writes a newer #1 and the
+    // repository.
+    const other = () =>
+      new Promise((r) =>
+        setImmediate(() => {
+          cache({
+            repository: { name: 'o/r', at: NOW - 5, remotes: REMOTES },
+            [k(1)]: cachedEntry('Newer', 1, NOW - 5),
+          })
+          t = NOW
+          r(ok('Two', 2))
+        }),
+      )
+    const { resolve } = machine({ gh: { [k(1)]: ok('Older', 1), [k(2)]: other }, now: () => t })
+    await resolve('#1 #2')
+    const written = JSON.parse(readFileSync(file, 'utf8'))
+    assert.deepEqual([written[k(1)]?.title, written[k(2)]?.title], ['Newer', 'Two'])
+    assert.equal(written.repository.at, NOW - 5)
   })
 
   test('a write that fails still answers', async () => {

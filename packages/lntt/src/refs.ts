@@ -130,10 +130,11 @@ interface Cached {
   url: string
   at: number
 }
-// The cache: `{ "owner/repo#n": { title, url, at }, "repository": { name, at } }`. The
-// repository's key holds no `#`, so it never reads as a reference.
+// The cache: `{ "owner/repo#n": { title, url, at }, "repository": { name, at, remotes } }`.
+// The repository's key holds no `#`, so it never reads as a reference; `remotes` is what
+// gh resolved it from (see remotesOf).
 interface Cache {
-  repository: { name: string; at: number } | null
+  repository: { name: string; at: number; remotes: string } | null
   entries: Map<string, Cached>
 }
 
@@ -149,13 +150,12 @@ function readCache(file: string, now: number): Cache {
     return cache
   }
   if (!data || typeof data !== 'object' || Array.isArray(data)) return cache
-  for (const [key, value] of Object.entries(
-    data as Record<string, { title?: unknown; url?: unknown; at?: unknown; name?: unknown }>,
-  )) {
+  for (const [key, value] of Object.entries(data as Record<string, { title?: unknown; url?: unknown; at?: unknown }>)) {
     if (!value || typeof value !== 'object') continue
     if (key === 'repository') {
-      if (typeof value.name === 'string' && KEY_REPO.test(value.name) && fresh(value.at, now)) {
-        cache.repository = { name: value.name, at: value.at }
+      const { name, at, remotes } = value as { name?: unknown; at?: unknown; remotes?: unknown }
+      if (typeof name === 'string' && KEY_REPO.test(name) && fresh(at, now) && typeof remotes === 'string') {
+        cache.repository = { name, at, remotes }
       }
       continue
     }
@@ -165,19 +165,40 @@ function readCache(file: string, now: number): Cache {
   return cache
 }
 
-// Read, merge and write once, through a temporary file renamed over the cache, so two
-// calls at once never leave a torn file. A write that fails is ignored: the titles
-// are asked again next time.
+const newest = <T extends { at: number }>(a: T | null | undefined, b: T | null | undefined) =>
+  a && (!b || a.at > b.at) ? a : (b ?? null)
+
+// What was found, merged with what the file holds just before it is replaced, the newest
+// of each key kept, through a temporary file renamed over the cache, so two calls at once
+// never leave a torn file. With no lock, a call that writes between another's read and
+// rename can lose its entries: they are only asked again. A write that fails is ignored
+// the same way.
 function writeCache(file: string, found: Cache, now: number): void {
   try {
-    const cache = readCache(file, now)
-    for (const [key, value] of found.entries) cache.entries.set(key, value)
-    const repository = found.repository ?? cache.repository
-    const data = { ...(repository ? { repository } : {}), ...Object.fromEntries(cache.entries) }
     const temporary = `${file}.${pid}.${Math.random().toString(36).slice(2)}.tmp`
+    const cache = readCache(file, now)
+    for (const [key, value] of found.entries) {
+      cache.entries.set(key, newest(value, cache.entries.get(key)) as Cached)
+    }
+    const repository = newest(found.repository, cache.repository)
+    const data = { ...(repository ? { repository } : {}), ...Object.fromEntries(cache.entries) }
     writeFileSync(temporary, `${JSON.stringify(data)}\n`)
     renameSync(temporary, file)
   } catch {}
+}
+
+// The remotes gh resolves the repository from: the url and gh-resolved lines of the git
+// config, '' when there is none, null when git does not answer. A cached repository
+// holds for as long as they read the same (a fork, `gh repo set-default`, a changed URL
+// all change them).
+async function remotesOf(run: RefsRun): Promise<string | null> {
+  try {
+    const r = await run('git', ['config', '--get-regexp', '^remote\\..*\\.(url|gh-resolved)$'], GH_TIMEOUT_MS)
+    if (r.exitCode === 0) return r.stdout
+    return r.exitCode === 1 ? '' : null
+  } catch {
+    return null
+  }
 }
 
 // The session's repository as gh resolves `#N`: null when gh is missing, not logged in,
@@ -228,10 +249,11 @@ export async function resolveRefs(
   const file = gitDir && `${gitDir}/${CACHE_FILE}`
   const cache = file ? readCache(file, now()) : null
   const found: Cache = { repository: null, entries: new Map() }
-  let repository = cache?.repository?.name ?? null
+  const remotes = cache ? await remotesOf(run) : null
+  let repository = remotes !== null && cache?.repository?.remotes === remotes ? cache.repository.name : null
   if (cache && !repository) {
     repository = await repositoryOf(run)
-    if (repository) found.repository = { name: repository, at: now() }
+    if (repository && remotes !== null) found.repository = { name: repository, at: now(), remotes }
   }
   const all = mentions(text, repository)
   const keys = [...new Set(all.flatMap((m) => (m.ref ? [m.ref] : [])))]

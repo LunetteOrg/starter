@@ -10,10 +10,10 @@ export const TITLE_MAX = 60
 const ESC = '\u001b'
 const dim = (text) => `${ESC}[2m${text}${ESC}[22m`
 
-// What one message has shown so far: its text as written, and the references it cited,
-// in order.
+// What one message has shown so far: its text as written, the references it cited, in
+// order, and whether a mention at the end of its text is held back for the next delta.
 export function message() {
-  return { text: '', cited: [] }
+  return { text: '', cited: [], held: false }
 }
 
 // `home` is the session's repository as `owner/repo`, lower case, or null while unknown.
@@ -52,43 +52,52 @@ export function entry(title, url) {
   return { title: t, url }
 }
 
-// A mention lntt gave that can be placed in the text: a key, and positions inside it.
-const KEY = /^[^\s/#]+\/[^\s#]+#[1-9]\d*$/
-const placed = (x, end) =>
-  typeof x?.ref === 'string' &&
-  KEY.test(x.ref) &&
+// A reference as lntt's refs.ts names one: `owner/repo#N` in lower case, each name of
+// letters, digits, `_`, `.` and `-`, starting with a letter or digit. A ref of any other
+// shape is lntt's text that is no reference (a terminal sequence among it): ignored.
+const KEY = /^[\p{L}\p{N}][\p{L}\p{N}_.-]*\/[\p{L}\p{N}][\p{L}\p{N}_.-]*#[1-9]\d*$/u
+export const isKey = (ref) => typeof ref === 'string' && KEY.test(ref) && ref === ref.toLowerCase()
+
+// A mention lntt gave that can be placed in a text of `end` UTF-16 units and is settled:
+// one that ends at the end of the text may go on in the next delta (`#1` | `38`), so it
+// is settled only on the last delta.
+export const settled = (x, end, final) =>
+  isKey(x?.ref) &&
   Number.isInteger(x.index) &&
   Number.isInteger(x.after) &&
   x.index >= 0 &&
   x.index <= x.after &&
-  x.after <= end
+  (x.after < end || (final && x.after === end))
 
-// Records the references these mentions cite, in the order given, once each: a title
-// that comes after its delta still goes to the box.
-export function cite(m, found) {
-  for (const x of found) if (typeof x?.ref === 'string' && KEY.test(x.ref) && !m.cited.includes(x.ref)) m.cited.push(x.ref)
+// Records the references these settled mentions cite, in the order given, once each: a
+// title that comes after its delta still goes to the box. `end` and `final`: the text
+// they were found in, and whether it was the message's last delta.
+export function cite(m, found, end, final) {
+  for (const x of found) if (settled(x, end, final) && !m.cited.includes(x.ref)) m.cited.push(x.ref)
 }
 
 // The delta as shown: the title beside each reference the message cites for the first
 // time, when it is known and the message does not already give it. `found` is what
 // `lntt refs` returned for the message so far with the delta (its mentions, positions in
-// that text): those before the delta were the earlier deltas'. Records what the message
-// cited.
-export function annotate(delta, m, found, info) {
+// that text). A mention belongs to the delta where it ends: one that ends where the
+// delta starts was held back from the delta before, and its title goes at the start of
+// this one. Records what the message cited, and whether a mention is held back.
+export function annotate(delta, m, found, info, final = false) {
   const from = m.text.length
   const text = m.text + delta
   const seenText = text.toLowerCase()
   const seen = new Set()
   const inserts = []
-  for (const x of [...found].filter((x) => placed(x, text.length)).sort((a, b) => a.index - b.index)) {
+  for (const x of [...found].filter((x) => settled(x, text.length, final)).sort((a, b) => a.index - b.index)) {
     if (seen.has(x.ref)) continue
     seen.add(x.ref)
     if (!m.cited.includes(x.ref)) m.cited.push(x.ref)
-    if (x.index < from) continue
+    if (x.after < from) continue
     const title = info.get(x.ref)?.title
     if (!title || seenText.includes(title.toLowerCase().slice(0, 30))) continue
     inserts.push({ at: x.after - from, text: ` ${dim(`· ${cut(title)}`)}` })
   }
+  m.held = !final && found.some((x) => isKey(x?.ref) && x.after === text.length)
   m.text = text
   return inserts.sort((a, b) => a.at - b.at).reduceRight((l, { at, text }) => l.slice(0, at) + text + l.slice(at), delta)
 }

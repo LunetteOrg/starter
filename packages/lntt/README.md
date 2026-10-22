@@ -387,7 +387,8 @@ A bare `#N` (or `repo#N` naming the session's repository) is the session's repos
 as `gh repo view` names it, `owner/repo#N` is that repository, any other `word#N` is no
 reference; code and link URLs are not read, and after a reference to another
 repository a bare `#N` is left unresolved. Titles come from `gh api`, three seconds
-at most each, cached for a day in `<git dir>/lntt-issue-titles.json`; without the
+at most each, cached for a day in `<git dir>/lntt-issue-titles.json` with the
+session's repository, which holds while the git remotes read the same; without the
 session's repository nothing is looked up. The output is one JSON object:
 `repository`, `mentions` (each reference-looking match with its `ref`, its `index` and
 the `after` position where a title goes, UTF-16 indices into the text) and `refs`
