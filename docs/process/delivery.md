@@ -176,6 +176,10 @@ and pull requests stay where they are opened. To turn it on:
 5. **Repository settings:** rebase merge and squash merge allowed (the rulesets narrow
    each branch to one). *Automatically delete head branches* may stay as it is: the
    automation finds the pull requests left behind either way.
+6. **Create the hotfix label**, named by `delivery.candidate.hotfix.label`, which the
+   steps above do not create: `gh label create hotfix --description "Stays on main, not
+   on the candidate"`. Without it the label cannot be put on a pull request that must
+   stay on `main`.
 
 **Rotating the key.** A pull request from this repository runs its own copy of the
 workflow file, with the app's key in reach, so anyone with write access can use the
@@ -243,20 +247,30 @@ Promoting a pre-release to a full release publishes nothing: the promotion fires
 **A new package** reaches npm by hand once, before the release that first carries it,
 because npm configures a trusted publisher only on a package that exists:
 
-1. Publish a `0.0.0` placeholder from the package directory, logged in to npm with
-   publish rights on the `@lntt` scope:
-   `npm version 0.0.0 --no-git-tag-version && npm publish --access public && git checkout package.json`.
-   The placeholder only reserves the name and is never installed: published from the
-   directory, npm ignores `publishConfig.bin` and `publishConfig.exports`, so a package
-   that points its published `bin` and `exports` at `dist/` there ships its source
-   entries in the placeholder.
+1. Publish a `0.0.0` placeholder of every package npm lacks, with
+   `node scripts/placeholder-publish.mts`, logged in to npm with publish rights on the
+   `@lntt` scope. `--dry-run` prints which packages it would publish and writes
+   nothing. A package npm already has, at any version, is skipped; `package.json` is
+   restored after each publish. The placeholder only reserves the name and is never
+   installed: published from the directory, npm ignores `publishConfig.bin` and
+   `publishConfig.exports`, so a package that points its published `bin` and
+   `exports` at `dist/` there ships its source entries in the placeholder.
    It is the only publish ever made from a machine
    ([CLI runtime and publishing](../adr/cli-runtime-and-publishing.md)); the version
    set by the release bump is untouched.
+
+   **Run it in a terminal a person can answer.** `npm publish` asks for 2FA through a
+   browser prompt and waits for it; from an agent's shell or a `!` command in Claude
+   Code it fails with `EOTP`, and the script refuses to start without a terminal. A
+   failed attempt may still leave a `0.0.0-stage` placeholder ("Temporary package
+   placeholder for staged publishing") on the registry with nothing in *Staged
+   Packages* to approve. That placeholder is enough to configure the trusted
+   publisher (step 2), and the script skips it because `npm view` returns it.
 2. On the package's page on npmjs.com, Settings → Trusted publishing: repository
    `LunetteOrg/starter`, workflow `release.yml`, with **allow `npm publish`**
    ticked; a configuration created after 2026-09-03 otherwise allows only
-   `npm stage publish`.
+   `npm stage publish`. The form marks *Allow npm publish* "Not recommended"; the
+   release process ticks it on purpose (*Discarded directions*).
 3. Run the CI release within two days: an unused trusted publisher configuration
    expires.
 
@@ -264,6 +278,12 @@ because npm configures a trusted publisher only on a package that exists:
 
 - **Publishing from a developer machine.** The token would live on a laptop, and
   nothing would check that the tests ran on the published code.
+- **Staged publishing for every release** (leave *Allow npm publish* unchecked, as npm
+  recommends). Each release would wait for a maintainer's 2FA approval on npmjs.com,
+  and `release.yml` would publish with `npm stage publish` (npm ≥ 11.15) instead of
+  `npm publish`. A release is already gated by the tag, the tests and the person's go
+  to publish the GitHub Release, and the approval would only add a second wait on the
+  same decision.
 - **Release pull requests.** A version bump has nothing to review that CI does not
   already check.
 - **GitHub's merge queue.** It is the mechanism built for this. The flow here is the
