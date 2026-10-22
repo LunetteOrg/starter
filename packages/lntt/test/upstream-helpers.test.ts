@@ -1,6 +1,18 @@
 import assert from 'node:assert/strict'
 import { afterEach, describe, test } from 'node:test'
-import { collect, drawn, flagsOf, helpFlags, missingFlags, ownArgs, recorder, upstream, waitFor } from './upstream.ts'
+import {
+  collect,
+  drawn,
+  FEDERATION,
+  federationMissing,
+  flagsOf,
+  helpFlags,
+  missingFlags,
+  ownArgs,
+  recorder,
+  upstream,
+  waitFor,
+} from './upstream.ts'
 
 // The helpers of the upstream tests, without the real tools: every upstream test skips
 // on a machine without them, so a helper that always says yes would go unseen.
@@ -103,5 +115,14 @@ describe('upstream helpers', () => {
       ),
       /timed out after 50 ms waiting for nothing\nthe screen/,
     )
+  })
+
+  test("claude's reply check runs only with every federation variable and the token file", () => {
+    const all = Object.fromEntries(FEDERATION.map((name) => [name, 'x']))
+    assert.deepEqual(federationMissing(all), [])
+    for (const name of FEDERATION) {
+      assert.deepEqual(federationMissing({ ...all, [name]: '' }), [name])
+    }
+    assert.deepEqual(federationMissing({}), [...FEDERATION])
   })
 })

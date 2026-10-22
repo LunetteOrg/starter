@@ -19,6 +19,19 @@ export function upstream(tool: Tool): boolean {
     .includes(tool)
 }
 
+// What claude needs to authenticate through Workload Identity Federation: the four
+// variables naming the rule and the file holding the OIDC token. The names it lacks.
+export const FEDERATION = [
+  'ANTHROPIC_FEDERATION_RULE_ID',
+  'ANTHROPIC_ORGANIZATION_ID',
+  'ANTHROPIC_SERVICE_ACCOUNT_ID',
+  'ANTHROPIC_WORKSPACE_ID',
+  'ANTHROPIC_IDENTITY_TOKEN_FILE',
+] as const
+export function federationMissing(env: NodeJS.ProcessEnv): string[] {
+  return FEDERATION.filter((name) => !env[name])
+}
+
 // Records every call and answers from a table keyed by the command and its first
 // arguments, so every path of an adapter runs without the tool's runtime. The longest
 // key a call starts with wins: `orca worktree create --help` over `orca worktree create`.

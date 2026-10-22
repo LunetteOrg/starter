@@ -104,6 +104,7 @@ done
 # the job checks the one installed, under that version's name (its issue, its cache
 # entry), rather than going red for one it never installed.
 if [ "$tool" = opencode ] && [ -n "${GITHUB_ENV:-}" ]; then
+  now=''
   for word in $installed; do now=${word#v}; done
   case $now in
     [0-9]*.[0-9]*) ;;

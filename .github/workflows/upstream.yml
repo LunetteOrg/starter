@@ -157,9 +157,12 @@ jobs:
         if: matrix.tool == 'claude'
         env:
           RULE: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          ORG: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          ACCOUNT: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          WORKSPACE: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
         run: |
-          if [ -z "$RULE" ]; then
-            echo "::notice::no ANTHROPIC_FEDERATION_RULE_ID variable: claude's JSON reply is not checked"
+          if [ -z "$RULE" ] || [ -z "$ORG" ] || [ -z "$ACCOUNT" ] || [ -z "$WORKSPACE" ]; then
+            echo "::notice::the ANTHROPIC_FEDERATION_RULE_ID, _ORGANIZATION_ID, _SERVICE_ACCOUNT_ID and _WORKSPACE_ID variables are not all set: claude's JSON reply is not checked"
             exit 0
           fi
           token="$RUNNER_TEMP/anthropic-oidc.jwt"

@@ -7,7 +7,7 @@ import { describe, test } from 'node:test'
 import { headlessInvocation, parseReply } from '../src/headless.ts'
 import { agentEnv } from '../src/review-cli.ts'
 import { agentArgs } from '../src/worktree.ts'
-import { collect, flagsOf, helpFlags, missingFlags, tool, upstream } from './upstream.ts'
+import { collect, federationMissing, flagsOf, helpFlags, missingFlags, tool, upstream } from './upstream.ts'
 
 // lntt against the real claude: the flags of the headless reviewer and of the
 // interactive agent (Herdr's `--` arguments) against `claude --help`, which needs no
@@ -18,9 +18,9 @@ const skip = upstream('claude') ? false : 'set UPSTREAM_SMOKE=claude to run (nee
 // The cheapest model: the call proves the reply's shape, not an answer.
 const replySkip =
   skip ||
-  (process.env.ANTHROPIC_FEDERATION_RULE_ID && process.env.ANTHROPIC_IDENTITY_TOKEN_FILE
-    ? false
-    : 'set the ANTHROPIC_FEDERATION_* variables and ANTHROPIC_IDENTITY_TOKEN_FILE to check the JSON reply (a call of a few cents)')
+  (federationMissing(process.env).length
+    ? `set ${federationMissing(process.env).join(', ')} to check the JSON reply (a call of a few cents)`
+    : false)
 
 describe('claude', () => {
   test('every flag lntt passes to claude is in claude --help', { skip }, () => {
