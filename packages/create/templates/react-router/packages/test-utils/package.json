@@ -18,12 +18,12 @@
     "drizzle-orm": "1.0.0-rc.4",
     "glob": "^13.0.6",
     "postgres": "^3.4.9",
-    "testcontainers": "^12.0.4"
+    "testcontainers": "^12.0.4",
+    "vitest": "^4.1.10"
   },
   "devDependencies": {
     "@starter/typescript-config": "workspace:*",
     "@vitest/coverage-v8": "^4.1.10",
-    "typescript": "7.0.2",
-    "vitest": "^4.1.10"
+    "typescript": "7.0.2"
   }
 }

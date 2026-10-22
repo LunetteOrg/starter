@@ -6,12 +6,10 @@ export {
 } from './arch'
 export {
   createTestDb,
-  stopAllTestDbs,
-  stopTestDb,
   type TestDb,
   type TestDbOptions,
   type TestTransaction,
-  withTestDb,
+  txTest,
 } from './db'
 export { defineFixture } from './fixtures'
 export {

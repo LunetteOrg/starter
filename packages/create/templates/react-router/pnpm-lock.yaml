@@ -141,6 +141,9 @@ importers:
       testcontainers:
         specifier: ^12.0.4
         version: 12.0.4
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@26.1.1)(@vitest/browser-playwright@4.1.10)(@vitest/coverage-v8@4.1.10)(jsdom@21.1.2)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.49.0)(yaml@2.9.0))
     devDependencies:
       '@starter/typescript-config':
         specifier: workspace:*
@@ -151,9 +154,6 @@ importers:
       typescript:
         specifier: 7.0.2
         version: 7.0.2
-      vitest:
-        specifier: ^4.1.10
-        version: 4.1.10(@types/node@26.1.1)(@vitest/browser-playwright@4.1.10)(@vitest/coverage-v8@4.1.10)(jsdom@21.1.2)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.6.1)(terser@5.49.0)(yaml@2.9.0))
 
   packages/typescript-config: {}
 

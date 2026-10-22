@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-07-02
+date: 2026-10-22
 tags: [testing, vitest, playwright, storybook, a11y]
 ---
 
@@ -19,13 +19,13 @@ Tests must be fast enough to run on every PR, trustworthy enough to gate deploys
 | Layer | Tool | Convention |
 |---|---|---|
 | Unit | Vitest | `.spec.ts`, co-located with the source — TDD red-green |
-| Integration | Vitest + Testcontainers | `.test.ts`, co-located — real Postgres, transaction rollback |
+| Integration | Vitest + Testcontainers | `.test.ts`, co-located — real Postgres, the `tx` fixture rolled back |
 | Component | Vitest browser mode + Storybook | `*.stories.tsx` in `packages/ui` — **the story is the test** |
 | E2E | Playwright | `*.e2e.ts` — critical flows only: revenue, onboarding, data loss |
 
 Rules:
 
-- Never `vi.mock` the database or a repository in `.test.ts` — use `withTestDb` from `@starter/test-utils`: each test runs inside a transaction that is rolled back, so no state leaks between tests.
+- Never `vi.mock` the database or a repository in `.test.ts` — an integration test asks for `tx` from the app's `it`, built once as `export const it = txTest(db.withTestDb)` with `@starter/test-utils`: `it('…', async ({ tx }) => …)` runs inside a transaction that is rolled back when the test ends, passed or failed, so no state leaks between tests. `withTestDb` underneath stays runner-agnostic; `txTest` is the only code that knows Vitest's `test.extend`.
 - External services get stub implementations in `@starter/test-utils` (e.g. stub `EmailService`, noop analytics) injected through the composition root — full flows are testable offline.
 - `test` does not depend on `build` in the Turbo pipeline — Vitest runs on TypeScript sources (fast PR feedback). `test:e2e` depends on `build` and runs only on main push: Playwright gates the deploy, not the PR.
 - A shared UI component is covered by its story, not by a separate spec file ([component tests](#component-tests)). Playwright is the browser *engine* there, never the runner: `@playwright/test` stays reserved for e2e.
@@ -121,9 +121,10 @@ own migrations corrupts/leaks state for the others.
    dev enables it once via `~/.testcontainers.properties`
    (`testcontainers.reuse.enable=true`). CI runs ephemerally; Ryuk reaps
    everything at session end.
-2. **`stopTestDb` never calls `container.stop()`.** Teardown only clears
-   in-process state. With reuse on, the shared container persists for the next
-   run; with reuse off (CI), Ryuk culls it. No code path stops the container.
+2. **No code path stops the container.** The globalSetup teardown
+   (`stopAllTestDbs`) never calls `container.stop()`: it clears in-process state
+   only, and a test file has nothing to stop. With reuse on, the shared container
+   persists for the next run; with reuse off (CI), Ryuk culls it.
 3. **Isolate via `databaseName`, not via a separate container.** An instance that
    commits state (real migrations) passes a dedicated `databaseName`;
    `createTestDb` creates that database once on the shared container (idempotent,
