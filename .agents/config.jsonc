@@ -137,7 +137,7 @@
     },
     // The body of a pull request: its sections are in docs/process/delivery.md, the
     // retrospective block is filled by the retrospective skill and checked by
-    // lntt pr check. The review's cost is a line of its own: the harvest weighs it.
+    // lntt check body. The review's cost is a line of its own: the harvest weighs it.
     "pullRequest": {
       "language": "en",
       "template": ".github/pull_request_template.md",

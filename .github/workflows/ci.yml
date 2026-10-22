@@ -88,17 +88,20 @@ jobs:
         run: pnpm exec lntt branch check --branch "$BRANCH"
       # The retrospective block of the body is filled (the retrospective skill): a
       # warning, not a gate. A body edit starts no run, so a red step would stay red
-      # after the fix; the annotations show on the pull request until the next push.
+      # after the fix; each FAIL is an annotation on the pull request until the next push.
       # The candidate and Dependabot write no block of their own. ci:local has no body
-      # and reports the step as not run; the skill runs lntt pr check before ready.
+      # and reports the step as not run; the skill runs lntt check body before ready.
       - if: >-
           github.event_name == 'pull_request' &&
           !startsWith(github.event.pull_request.head.ref, 'candidate/') &&
           !startsWith(github.event.pull_request.head.ref, 'dependabot/')
         continue-on-error: true
+        shell: bash
         env:
           BODY: ${{ github.event.pull_request.body }}
-        run: printf '%s\n' "$BODY" | pnpm exec lntt pr check -
+        run: |
+          printf '%s\n' "$BODY" | pnpm exec lntt check body - --json |
+            jq -r 'select(.status == "FAIL") | .message | gsub("%"; "%25") | gsub("\r"; "%0D") | gsub("\n"; "%0A") | "::warning title=Pull request body::\(.)"'
       # An installed plugin updates only when its version changes.
       - if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review'
         env:

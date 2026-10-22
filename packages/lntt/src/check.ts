@@ -9,6 +9,7 @@ import { isAbsolute, join, relative } from 'node:path'
 import { checkAgentsBlock } from './agents.ts'
 import { checkDecisions, decisionFigures } from './check-decisions.ts'
 import { runTests } from './check-tests.ts'
+import { checkBody, retrospectiveRules } from './pull-request.ts'
 import { checkSkills, stubFolders } from './skills.ts'
 
 export type Status = 'PASS' | 'FAIL' | 'NOT RUN' | 'INFO'
@@ -22,7 +23,7 @@ export interface Result {
   message: string
 }
 
-export const AREAS = ['agents-md', 'skills', 'decisions', 'tests'] as const
+export const AREAS = ['agents-md', 'skills', 'decisions', 'tests', 'body'] as const
 export type Area = (typeof AREAS)[number]
 
 export function isArea(name: string): name is Area {
@@ -41,6 +42,8 @@ export interface CheckOptions {
   base?: string
   // `tests mutate`: what is on the line, and what it becomes.
   mutation?: { text: string; to: string }
+  // `body`: the pull request body read, and where from; the area does not run without it.
+  body?: { text: string; from: string }
 }
 
 // The files a check reads: tracked or new and not ignored, relative to the root, less
@@ -117,12 +120,33 @@ function skills(root: string): Result[] {
   }))
 }
 
+// The retrospective block of a pull request body (delivery.pullRequest.retrospective).
+// The body is not in the repository: it is given to the area, which without one does not
+// run.
+function body(options: CheckOptions): Result[] {
+  const result = (status: Status, message: string): Result => ({
+    area: 'body',
+    check: 'retrospective',
+    status,
+    path: null,
+    line: null,
+    message,
+  })
+  if (options.body === undefined) {
+    return [result('NOT RUN', 'no pull request body given: lntt check body [--pr <n> | -]')]
+  }
+  const problems = checkBody(options.body.text, retrospectiveRules(options.data))
+  if (problems.length === 0) return [result('PASS', `${options.body.from}: every retrospective label is filled`)]
+  return problems.map((p) => result('FAIL', `${options.body?.from}: ${p}`))
+}
+
 // One area, or one of its checks: `structure` and `numbers` for the decisions, `levels`,
 // `focus`, `rules`, `touched` and `mutate` for the tests.
 export function runArea(area: Area, check: string | undefined, files: string[], options: CheckOptions): Result[] {
   if (area === 'agents-md') return agentsMd(options.root)
   if (area === 'skills') return skills(options.root)
   if (area === 'tests') return runTests(check, files, options)
+  if (area === 'body') return body(options)
   if (check === 'numbers') return decisionFigures(options, files)
   return checkDecisions(options, { figures: check === undefined })
 }

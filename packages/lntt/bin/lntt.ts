@@ -49,6 +49,9 @@
 //     tests mutate <path:line> --text <on the line> --to <mutated>
 //                             applies the mutation in a scratch worktree, runs the tests that
 //                             import the file: PASS killed (failing test), FAIL survived
+//     body [--pr <n> | -]     the retrospective block of a pull request body (default: the
+//                             current branch's, with gh; -: stdin): FAIL for a missing block, a
+//                             missing, repeated or empty label; alone, lntt check does not run it
 //   lntt check cite <path:line>...
 //                             what is on those lines; FAIL for a line or file that does not exist
 //
@@ -65,10 +68,6 @@
 //
 //   lntt pr block             the empty retrospective block of delivery.pullRequest.retrospective,
 //                             for the pull request template and the retrospective skill
-//   lntt pr check [--pr <n> | -]
-//                             exit 1 when the body of the pull request (default: the current
-//                             branch's; -: stdin) has no retrospective block, misses one of its
-//                             labels or leaves one empty; in GitHub Actions each is a ::warning
 //
 //   lntt review [--base <branch>] [--plan]
 //                             one review round on the current branch: the lenses and agents of

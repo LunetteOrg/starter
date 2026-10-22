@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -45,6 +54,10 @@ describe('the retrospective rules', () => {
       delivery: { pullRequest: { retrospective: { lines: ['Attrito', 'Causa di rilavoro'], none: 'nessuno' } } },
     })
     assert.deepEqual(rules, { heading: '🔁 Retrospective', lines: ['Attrito', 'Causa di rilavoro'], none: 'nessuno' })
+    const heading = retrospectiveRules({
+      delivery: { pullRequest: { retrospective: { heading: '🔁 Retrospettiva' } } },
+    })
+    assert.equal(heading.heading, '🔁 Retrospettiva')
   })
 
   test('the empty block: the heading, the markers, one label per line with no value', () => {
@@ -83,6 +96,42 @@ describe('checkBody', () => {
     ])
   })
 
+  test('a placeholder comment across several lines is no value either', () => {
+    const lines = ['- **Friction:** <!--', '  what was harder', '  than it should be -->', ...FILLED.slice(1)]
+    assert.deepEqual(checkBody(body(...lines), DEFAULTS), [
+      'retrospective: "Friction" is empty: write none when nothing applies',
+    ])
+  })
+
+  test('an unclosed comment hides the rest of the block', () => {
+    const lines = ['- **Friction:** <!-- what was harder', ...FILLED.slice(1)]
+    assert.equal(checkBody(body(...lines), DEFAULTS).length, 4)
+  })
+
+  test('* bullets are labels too', () => {
+    assert.deepEqual(checkBody(body(...FILLED.map((l) => l.replace(/^-/, '*'))), DEFAULTS), [])
+  })
+
+  test('an indented bold item belongs to the value above it, not a label', () => {
+    const lines = ['- **Friction:**', '  - **Rework cause:** the squash order', ...FILLED.slice(1, 3)]
+    assert.deepEqual(checkBody(body(...lines), DEFAULTS), ['retrospective: no "Rework cause" line in the block'])
+  })
+
+  test('a label written twice is reported, whichever copy is filled', () => {
+    const empty = [...FILLED, '- **Friction:**']
+    assert.deepEqual(checkBody(body(...empty), DEFAULTS), [
+      'retrospective: "Friction" is in the block more than once: keep one',
+    ])
+    assert.equal(checkBody(body('- **Friction:**', ...FILLED), DEFAULTS).length, 1)
+  })
+
+  test('an end marker above the start marker closes nothing', () => {
+    const text = ['<!-- retro:end -->', '<!-- retro:start -->', ...FILLED].join('\n')
+    assert.deepEqual(checkBody(text, DEFAULTS), [
+      'retrospective: no <!-- retro:start --> … <!-- retro:end --> block in the body',
+    ])
+  })
+
   test('a missing label is named', () => {
     assert.deepEqual(checkBody(body(...FILLED.slice(0, 3)), DEFAULTS), [
       'retrospective: no "Rework cause" line in the block',
@@ -114,18 +163,31 @@ describe('checkBody', () => {
   })
 })
 
-describe('lntt pr', () => {
+describe('lntt pr block and lntt check body', () => {
   let tmp: string
   let stubs: string
   let repo: string
 
-  function lntt(args: string[], input?: string, env: Record<string, string> = {}) {
-    return spawnSync(process.execPath, [BIN, 'pr', ...args], {
+  function lntt(args: string[], input?: string) {
+    return spawnSync(process.execPath, [BIN, ...args], {
       cwd: repo,
       encoding: 'utf8',
       input,
-      env: { ...process.env, GITHUB_ACTIONS: '', PATH: `${stubs}:${process.env.PATH}`, ...env },
+      env: { ...process.env, PATH: `${stubs}:${process.env.PATH}` },
     })
+  }
+
+  // A fake gh that records its arguments and prints the body, or fails.
+  function gh(answer: string, status = 0): void {
+    writeFileSync(
+      join(stubs, 'gh'),
+      `#!/bin/sh\necho "$*" > "${join(tmp, 'gh-args')}"\ncat <<'EOF'\n${answer}\nEOF\nexit ${status}\n`,
+    )
+    chmodSync(join(stubs, 'gh'), 0o755)
+  }
+
+  function ghArgs(): string {
+    return readFileSync(join(tmp, 'gh-args'), 'utf8')
   }
 
   beforeEach(() => {
@@ -134,55 +196,97 @@ describe('lntt pr', () => {
     repo = join(tmp, 'repo')
     mkdirSync(stubs)
     mkdirSync(join(repo, '.agents'), { recursive: true })
-    writeFileSync(
-      join(repo, '.agents/config.jsonc'),
-      JSON.stringify({ delivery: { pullRequest: { retrospective: { lines: ['Friction', 'Review cost'] } } } }),
-    )
+    const retrospective = { heading: '🔁 Retro', lines: ['Friction', 'Review cost'] }
+    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify({ delivery: { pullRequest: { retrospective } } }))
   })
 
   afterEach(() => {
     rmSync(tmp, { recursive: true, force: true })
   })
 
-  test('block prints the empty block of the configuration', () => {
-    const r = lntt(['block'])
+  test('lntt pr block prints the empty block of the configuration', () => {
+    const r = lntt(['pr', 'block'])
     assert.equal(r.status, 0, r.stderr)
     assert.equal(
       r.stdout,
-      '## 🔁 Retrospective\n<!-- retro:start -->\n- **Friction:**\n- **Review cost:**\n<!-- retro:end -->\n',
+      '## 🔁 Retro\n<!-- retro:start -->\n- **Friction:**\n- **Review cost:**\n<!-- retro:end -->\n',
     )
   })
 
-  test('check - reads the body on stdin: exit 0 when filled, 1 with each problem', () => {
+  test('lntt pr: a usage error exits 2', () => {
+    assert.equal(lntt(['pr', 'block', 'more']).status, 2)
+    assert.equal(lntt(['pr', 'check']).status, 2)
+  })
+
+  test('- reads the body on stdin: PASS when filled, a FAIL per problem', () => {
     const filled =
       '<!-- retro:start -->\n- **Friction:** none\n- **Review cost:** 1 round, 0.4M tokens, $0.52\n<!-- retro:end -->'
-    assert.equal(lntt(['check', '-'], filled).status, 0)
-    const r = lntt(['check', '-'], '<!-- retro:start -->\n- **Friction:** none\n<!-- retro:end -->')
+    const pass = lntt(['check', 'body', '-', '--json'], filled)
+    assert.equal(pass.status, 0, pass.stderr)
+    assert.deepEqual(JSON.parse(pass.stdout), {
+      area: 'body',
+      check: 'retrospective',
+      status: 'PASS',
+      path: null,
+      line: null,
+      message: 'stdin: every retrospective label is filled',
+    })
+    const r = lntt(['check', 'body', '-', '--json'], '<!-- retro:start -->\n- **Friction:** none\n<!-- retro:end -->')
     assert.equal(r.status, 1)
-    assert.equal(r.stderr, 'lntt pr: retrospective: no "Review cost" line in the block\n')
+    assert.equal(JSON.parse(r.stdout).message, 'stdin: retrospective: no "Review cost" line in the block')
   })
 
-  test('in GitHub Actions each problem is a warning annotation', () => {
-    const r = lntt(['check', '-'], 'no block', { GITHUB_ACTIONS: 'true' })
+  test("--pr reads that pull request with gh; with neither, the current branch's", () => {
+    gh('<!-- retro:start -->\n- **Friction:**\n- **Review cost:** none\n<!-- retro:end -->')
+    const r = lntt(['check', 'body', '--pr', '171'])
     assert.equal(r.status, 1)
-    assert.match(r.stdout, /^::warning title=Pull request body::retrospective: no <!-- retro:start -->/)
+    assert.match(r.stdout, /FAIL +body\/retrospective — pull request #171: retrospective: "Friction" is empty/)
+    assert.equal(ghArgs(), 'pr view 171 --json body --jq .body\n')
+    assert.equal(lntt(['check', 'body']).status, 1)
+    assert.equal(ghArgs(), 'pr view --json body --jq .body\n')
   })
 
-  test('check --pr reads the body of that pull request with gh', () => {
-    const answer = '<!-- retro:start -->\n- **Friction:**\n- **Review cost:** none\n<!-- retro:end -->'
-    writeFileSync(join(stubs, 'gh'), `#!/bin/sh\necho "$*" > "${join(tmp, 'gh-args')}"\ncat <<'EOF'\n${answer}\nEOF\n`)
-    chmodSync(join(stubs, 'gh'), 0o755)
-    const r = lntt(['check', '--pr', '171'])
+  test('a gh that fails is a check that cannot run: one line, exit 1, no stack', () => {
+    gh('', 1)
+    const r = lntt(['check', 'body'])
     assert.equal(r.status, 1)
-    assert.match(r.stderr, /"Friction" is empty/)
-    assert.equal(
-      spawnSync('cat', [join(tmp, 'gh-args')], { encoding: 'utf8' }).stdout,
-      'pr view 171 --json body --jq .body\n',
+    assert.equal(r.stdout, '')
+    assert.match(r.stderr, /^lntt: error: gh pr view --json body --jq \.body failed\n$/)
+  })
+
+  test('lntt check alone does not run the body area, and says so', () => {
+    const r = lntt(['check', '--json'])
+    const lines = r.stdout
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l))
+    assert.deepEqual(
+      lines.filter((l) => l.area === 'body'),
+      [
+        {
+          area: 'body',
+          check: 'retrospective',
+          status: 'NOT RUN',
+          path: null,
+          line: null,
+          message: 'no pull request body given: lntt check body [--pr <n> | -]',
+        },
+      ],
     )
   })
 
-  test('a usage error exits 2', () => {
-    assert.equal(lntt(['check', '--pr', 'abc']).status, 2)
-    assert.equal(lntt(['nothing']).status, 2)
+  test('usage errors exit 2 and run no gh', () => {
+    gh('unused')
+    for (const args of [
+      ['check', 'body', '--pr', 'abc'],
+      ['check', 'body', '-', '--pr', '3'],
+      ['check', 'body', 'foo'],
+      ['check', 'body', '-', '-'],
+      ['check', 'body', '--prr', '3'],
+      ['check', 'tests', '--pr', '3'],
+    ]) {
+      assert.equal(lntt(args).status, 2, args.join(' '))
+    }
+    assert.equal(existsSync(join(tmp, 'gh-args')), false)
   })
 })

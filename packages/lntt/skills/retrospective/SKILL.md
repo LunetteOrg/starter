@@ -1,6 +1,6 @@
 ---
 name: retrospective
-description: Carry the friction met while working to where it gets fixed — a `Retro:` trailer on the commit, the retrospective block of the pull request body (between `<!-- retro:start -->` and `<!-- retro:end -->`), and a harvest of the merged pull requests' blocks into proposals, published where `cycle.retrospective` says. Use when opening a pull request (to fill the block), before marking one ready (`lntt pr check`), when a coordinator closes a theme, and when a theme or a release ends (the harvest).
+description: Carry the friction met while working to where it gets fixed — a `Retro:` trailer on the commit, the retrospective block of the pull request body (between `<!-- retro:start -->` and `<!-- retro:end -->`), and a harvest of the merged pull requests' blocks into proposals, published where `cycle.retrospective` says. Use when opening a pull request (to fill the block), before marking one ready (`lntt check body`), when a coordinator closes a theme, and when a theme or a release ends (the harvest).
 ---
 
 # Retrospective
@@ -62,10 +62,10 @@ such as `Refs #91`, has no colon.)
 Before the pull request is marked ready:
 
 ```sh
-lntt pr check            # the current branch's pull request; --pr <n>, or - for stdin
+lntt check body          # the current branch's pull request; --pr <n>, or - for stdin
 ```
 
-It exits 1 naming a missing block, a missing label or an empty one. CI reports the same
+It fails naming a missing block, or a label missing, written twice or left empty. CI reports the same
 on the pull request.
 
 ## 3. A coordinator, when the theme ends

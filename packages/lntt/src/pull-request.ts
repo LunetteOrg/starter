@@ -40,13 +40,9 @@ export function retrospectiveBlock(rules: RetrospectiveRules): string {
   return [`## ${rules.heading}`, RETRO_START, ...rules.lines.map((line) => `- **${line}:**`), RETRO_END, ''].join('\n')
 }
 
-// `- **<label>:** <value>`, with `*` bullets too.
-const LABEL = /^\s*[-*]\s+\*\*(.+?):\*\*(.*)$/
-
-// What a line holds once its HTML comments are gone: a placeholder is no value.
-function text(line: string): string {
-  return line.replace(/<!--[\s\S]*?-->/g, '').trim()
-}
+// `- **<label>:** <value>`, with `*` bullets too, at the start of the line: an indented
+// bold item is part of the value above it.
+const LABEL = /^[-*]\s+\*\*(.+?):\*\*(.*)$/
 
 export function checkBody(body: string, rules: RetrospectiveRules): string[] {
   const lines = body.replaceAll('\r\n', '\n').split('\n')
@@ -55,17 +51,27 @@ export function checkBody(body: string, rules: RetrospectiveRules): string[] {
   const end = start === -1 ? -1 : lines.findIndex((l, i) => i > start && l.trim() === RETRO_END)
   if (start === -1 || end === -1) return [`retrospective: no ${RETRO_START} … ${RETRO_END} block in the body`]
 
+  // HTML comments are no value, on one line or across several: a placeholder is not an
+  // answer.
+  const block = lines
+    .slice(start + 1, end)
+    .join('\n')
+    .replace(/<!--[\s\S]*?(?:-->|$)/g, '')
+    .split('\n')
+
   // Each label with its value: the rest of its line, and the lines below it up to the
   // next label.
   const values = new Map<string, string>()
+  const repeated = new Set<string>()
   let current: string | null = null
-  for (const line of lines.slice(start + 1, end)) {
+  for (const line of block) {
     const label = LABEL.exec(line)
     if (label) {
       current = (label[1] as string).trim()
-      values.set(current, text(label[2] as string))
+      if (values.has(current)) repeated.add(current)
+      values.set(current, (label[2] as string).trim())
     } else if (current !== null) {
-      values.set(current, `${values.get(current)} ${text(line)}`.trim())
+      values.set(current, `${values.get(current)} ${line.trim()}`.trim())
     }
   }
 
@@ -73,6 +79,7 @@ export function checkBody(body: string, rules: RetrospectiveRules): string[] {
   for (const line of rules.lines) {
     const value = values.get(line)
     if (value === undefined) problems.push(`retrospective: no "${line}" line in the block`)
+    else if (repeated.has(line)) problems.push(`retrospective: "${line}" is in the block more than once: keep one`)
     else if (value === '') problems.push(`retrospective: "${line}" is empty: write ${rules.none} when nothing applies`)
   }
   return problems

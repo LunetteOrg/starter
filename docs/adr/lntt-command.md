@@ -23,8 +23,9 @@ command, so a reader who sees `lntt` in a script knows which package provides it
 
 ```
 lntt path | validate | get | set | operator | sync | guide | local app | viewer | browser | refs
-lntt check [agents-md | skills | decisions [structure | numbers] | tests [levels | focus | rules | touched | mutate]] | check cite
+lntt check [agents-md | skills | decisions [structure | numbers] | tests [levels | focus | rules | touched | mutate] | body] | check cite
 lntt branch name | check | rename
+lntt pr block
 lntt review [reply | allow]
 lntt worktree start
 lntt ask | inbox | answer
@@ -34,7 +35,8 @@ lntt ci local | candidate
 - **One entry point, one module per command group.** `bin/lntt.ts` dispatches to
   `src/cli.ts` (configuration, operator, `AGENTS.md`, local apps, viewer, browser),
   `src/check-cli.ts`, `src/branch-cli.ts`, `src/review-cli.ts`, `src/worktree-cli.ts`,
-  `src/refs-cli.ts`, `src/messages-cli.ts` (`ask`, `inbox`, `answer`) and `src/ci/cli.ts`.
+  `src/refs-cli.ts`, `src/pull-request-cli.ts`, `src/messages-cli.ts` (`ask`, `inbox`,
+  `answer`) and `src/ci/cli.ts`.
   A group loads only when it runs. What a script needs as a library, `@lntt/lntt`
   exports too (`resolveRefs` and `mentions` for `lntt refs`).
 - **What a person types is what an agent runs.** Skills, workflows, git hooks and
@@ -54,8 +56,8 @@ lntt ci local | candidate
   `delivery.review.maxRounds`), an interrupted command 128 plus the signal (130 for
   Ctrl-C); a defect of `lntt` itself exits 1 with its stack trace.
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
-  `decisions` and `tests`, whose results their review lenses read, and `agents-md` and
-  `skills`, which no lens needs; a lens's checks are the area named after it. Alone it runs every
+  `decisions` and `tests`, whose results their review lenses read, and `agents-md`,
+  `skills` and `body` (a pull request body's retrospective block), which no lens needs; a lens's checks are the area named after it. Alone it runs every
   area, which is what CI runs. Every check reports `PASS`, `FAIL` or `NOT RUN` with its
   reason, so a check that did not run is never read as one that passed, and `INFO` for
   what it prints
@@ -101,12 +103,12 @@ rests on these criteria:
 4. **The skills call both groups.** `review` calls `lntt review`, `lntt check cite` and
    `ci:local`; `decisions` calls `lntt check decisions` and is a lens of `lntt review`;
    `coordinate` calls `lntt worktree start`, the mailbox and `lntt get`; `run-local`
-   calls `lntt get`, `lntt local app` and `lntt viewer`; `retrospective` calls `lntt get`
-   and `lntt pr`, whose check of a pull request body CI runs as a warning (a body is
-   not part of a commit, so it is no gate); only `commit-message` stays on the gate side
-   (`lntt get`, commitlint). In the code, `lntt review` imports the check areas and
-   the mutations and runs them in-process (`packages/lntt/src/review-cli.ts` imports
-   `runArea` and `mutateAll`), and `lntt worktree start` names branches with
+   calls `lntt get`, `lntt local app` and `lntt viewer`; `retrospective` calls `lntt get`,
+   `lntt pr block` and `lntt check body`, which CI runs as a warning: a body edit
+   starts no run, so a red would outlive its fix; only `commit-message` stays on the
+   gate side (`lntt get`, commitlint). In the code, `lntt review` imports the check
+   areas and the mutations and runs them in-process (`packages/lntt/src/review-cli.ts`
+   imports `runArea` and `mutateAll`), and `lntt worktree start` names branches with
    the gate's code (`packages/lntt/src/worktree-cli.ts` imports `branchName` and
    `checkBranch`).
 5. **The cost of a split.** A second package needs its placeholder published by hand
@@ -128,11 +130,11 @@ So:
 
   | Pinned by the project: gates and what CI runs | Agent tools |
   |---|---|
-  | `lntt check [area]`, `lntt check cite`: deterministic, read only the commit | `lntt review [reply \| allow]`: its outcome is an opinion, wired into no CI |
+  | `lntt check [area]`, `lntt check cite`: deterministic, read only the commit, or for `body` the pull request body they are given | `lntt review [reply \| allow]`: its outcome is an opinion, wired into no CI |
   | `lntt ci local`: CI's jobs on the machine; `lntt ci candidate`: what the candidate workflow runs on GitHub, at the default branch's version, which the workflow checks out ([delivery](../process/delivery.md#the-candidate-automation)) | `lntt worktree start`: the Orca and Herdr adapters |
   | `lntt branch check`, and `branch name` and `branch rename`, so the name an agent gets is the one the gate accepts | `lntt ask \| inbox \| answer` |
   | `lntt validate \| get \| set \| path`: they hold the schema; `set` writes a tracked file | `lntt guide`: it prints the skills |
-  | `lntt sync`: it writes tracked files (the `AGENTS.md` block, the skill stubs) that `lntt check` verifies | `lntt operator`: personal context, read by no gate |
+  | `lntt sync`: it writes tracked files (the `AGENTS.md` block, the skill stubs) that `lntt check` verifies | `lntt operator`: personal context, read by no gate; `lntt pr block`: the empty retrospective block, for the template and the skill |
   | the commitlint configuration (the `@lntt/lntt` export) | `lntt local app`, `lntt viewer` |
   | the configuration schema | the plugin's hooks; once they exist, `lntt refs` (#144) and `lntt doctor` (#124) |
 

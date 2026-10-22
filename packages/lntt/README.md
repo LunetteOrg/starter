@@ -187,16 +187,16 @@ worktree (`orca worktree current`); it leaves an existing branch alone.
 
 ```sh
 lntt pr block                        # the empty retrospective block, from the configuration
-lntt pr check                        # exit 1 on a missing block, a missing or an empty label
-lntt pr check --pr 171               # another pull request's body; `-` reads it on stdin
+lntt check body                      # FAIL on a missing block, a missing, repeated or empty label
+lntt check body --pr 171             # another pull request's body; `-` reads it on stdin
 ```
 
 The block is `delivery.pullRequest.retrospective`: its heading and its labels, each
 written `- **<label>:** <value>` between `<!-- retro:start -->` and `<!-- retro:end -->`,
 the markers on lines of their own. A value may run on the lines below its label; an HTML
-comment is no value; the configured `none` is an answer. `check` reads the current
-branch's pull request with `gh` unless told otherwise; in GitHub Actions each problem is
-a `::warning` annotation. The `retrospective` skill fills the block and harvests the
+comment is no value; the configured `none` is an answer. `lntt check body` is an area of
+`lntt check` whose input is not in the repository: it reads the current branch's pull
+request with `gh` unless told otherwise, and `lntt check` alone reports it `NOT RUN`. The `retrospective` skill fills the block and harvests the
 merged pull requests' blocks.
 
 ## Starting work on an issue

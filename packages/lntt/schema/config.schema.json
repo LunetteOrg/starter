@@ -388,7 +388,7 @@
         },
         "pullRequest": {
           "type": "object",
-          "description": "The pull request body, read by the skill that opens a pull request and by the retrospective skill; lntt pr check reports a retrospective label missing or left empty. What each section of the body holds is in docs/process/delivery.md.",
+          "description": "The pull request body, read by the skill that opens a pull request and by the retrospective skill; lntt check body reports a retrospective label missing, repeated or left empty. What each section of the body holds is in docs/process/delivery.md.",
           "additionalProperties": false,
           "properties": {
             "language": {

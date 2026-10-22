@@ -46,7 +46,7 @@ stops at the draft pull request.
    more rounds for that branch, or an issue
    ([review agents](../adr/review-agents.md)).
 3. **`pnpm ci:local` green** on the head about to be published, then one push, then
-   `lntt pr check` clean on the body, then `gh pr ready`. A red `ci:local` goes back
+   `lntt check body` clean on the body, then `gh pr ready`. A red `ci:local` goes back
    into the review.
 4. **On the candidate.** When the pull request is opened or marked ready, the candidate
    automation moves it onto the open candidate, creating one when none is open, and
@@ -78,7 +78,7 @@ and is written in `delivery.pullRequest.language`:
   between `<!-- retro:start -->` and `<!-- retro:end -->`, each with a value or `none`,
   the review's cost among them. The `retrospective` skill fills it from the branch's
   `Retro:` trailers and what the agents reported. A squash collapses the commits; the
-  body survives it, so it is what the harvest reads. `lntt pr check` reports a block
+  body survives it, so it is what the harvest reads. `lntt check body` reports a block
   missing or a label left empty, before `gh pr ready` and in CI as a warning: a body
   edit starts no run, so a gate would stay red after the fix.
 
