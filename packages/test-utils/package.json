@@ -1,7 +1,7 @@
 {
   "name": "@lntt/test-utils",
   "version": "0.6.2",
-  "description": "Test helpers every Lunette project uses: one Postgres per vitest run, rollback per test, architecture, migration and test-suite guards, the vitest preset and the jsdom setup",
+  "description": "Test helpers every Lunette project uses: one Postgres per vitest run, rollback per test, architecture, migration and test-suite guards, the vitest preset and the jsdom setup, the Playwright helpers and a stable e2e port per checkout",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -35,6 +35,14 @@
     "./jsdom-setup": {
       "types": "./dist/jsdom-setup.d.ts",
       "default": "./dist/jsdom-setup.js"
+    },
+    "./playwright": {
+      "types": "./dist/playwright.d.ts",
+      "default": "./dist/playwright.js"
+    },
+    "./e2e-port": {
+      "types": "./dist/e2e-port.d.ts",
+      "default": "./dist/e2e-port.js"
     }
   },
   "bin": {
@@ -62,12 +70,16 @@
     "testcontainers": "^12.0.4"
   },
   "peerDependencies": {
+    "@playwright/test": "^1.61.1",
     "@testing-library/react": "^16.0.0",
     "drizzle-orm": "^1.0.0-rc.4",
     "vite": "^8.0.0",
     "vitest": "^4.1.10"
   },
   "peerDependenciesMeta": {
+    "@playwright/test": {
+      "optional": true
+    },
     "@testing-library/react": {
       "optional": true
     },
@@ -77,6 +89,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.3",
+    "@playwright/test": "^1.61.1",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^26.1.1",
