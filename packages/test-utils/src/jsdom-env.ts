@@ -61,7 +61,11 @@ export function installDomStubs(): void {
   }
 }
 
-/** The jsdom instance vitest's jsdom environment exposes as a global. */
+/**
+ * The jsdom instance vitest's jsdom environment exposes as `globalThis.jsdom`, an
+ * internal of vitest rather than a documented API: without it the storages stay as
+ * Node left them.
+ */
 type WithJsdom = { jsdom?: { window: Window } }
 
 /**

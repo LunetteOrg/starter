@@ -33,6 +33,11 @@ describe('findJsdomSetupImports', () => {
     'packages/ui/src/kit.jsx': "import '@lntt/test-utils/jsdom-setup'\n",
     'packages/ui/src/esm.mts': "import '@lntt/test-utils/jsdom-setup'\n",
     'packages/ui/src/cjs.cts': "require('@lntt/test-utils/jsdom-setup')\n",
+    // By path, to the source or the build in a workspace: two in one file, in line order.
+    'packages/ui/test/paths.ts':
+      "import '../../test-utils/src/jsdom-setup.ts'\nimport { x } from './x'\nawait import('../../test-utils/dist/jsdom-setup.js')\n",
+    // The app's own setup file, only named like it.
+    'apps/web/test/own.ts': "import './jsdom-setup.ts'\nimport '../shared/src/jsdom-setup'\n",
     'packages/talker/node_modules/dep/index.js': "import '@lntt/test-utils/jsdom-setup'\n",
     // Generated or built: no source of the project's.
     'packages/talker/dist/index.js': "import '@lntt/test-utils/jsdom-setup'\n",
@@ -41,7 +46,7 @@ describe('findJsdomSetupImports', () => {
     'apps/web/.react-router/types/app.ts': "import '@lntt/test-utils/jsdom-setup'\n",
   })
 
-  it('finds every import of the setup, by file and line, and none of the listings or mentions', () => {
+  it('finds every import of the setup, by name or path, by file and line, and none of the listings or mentions', () => {
     // Sorted by code unit, on every machine: `Upper` before `cjs`, which a locale puts after.
     expect(findJsdomSetupImports(root)).toEqual([
       { file: 'apps/web/test/setup.ts', line: 2 },
@@ -51,6 +56,8 @@ describe('findJsdomSetupImports', () => {
       { file: 'packages/ui/src/from.ts', line: 1 },
       { file: 'packages/ui/src/kit.jsx', line: 1 },
       { file: 'packages/ui/src/require.cjs', line: 1 },
+      { file: 'packages/ui/test/paths.ts', line: 1 },
+      { file: 'packages/ui/test/paths.ts', line: 3 },
       { file: 'packages/ui/vitest.setup.mjs', line: 1 },
     ])
   })

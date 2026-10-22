@@ -79,15 +79,37 @@ describe('the stubs', () => {
     localStorage.clear()
   })
 
-  it('leave a storage the environment already has alone', () => {
-    const own = { clear() {} } as Storage
-    vi.stubGlobal('localStorage', undefined)
-    vi.stubGlobal('sessionStorage', own)
-    installJsdomStorage()
-    const { window: dom } = (globalThis as unknown as { jsdom: { window: Window } }).jsdom
-    expect(localStorage).toBe(dom.localStorage)
-    expect(sessionStorage).toBe(own)
-    vi.unstubAllGlobals()
+  describe('installJsdomStorage', () => {
+    // A failed expectation must not leave the stubs to the tests after it.
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+    const jsdomWindow = () => (globalThis as unknown as { jsdom: { window: Window } }).jsdom.window
+
+    it('leaves a storage the environment already has alone', () => {
+      const own = { clear() {} } as Storage
+      vi.stubGlobal('localStorage', undefined)
+      vi.stubGlobal('sessionStorage', own)
+      installJsdomStorage()
+      expect(localStorage).toBe(jsdomWindow().localStorage)
+      expect(sessionStorage).toBe(own)
+    })
+
+    it('gives jsdom’s sessionStorage where only that one is missing', () => {
+      const own = { clear() {} } as Storage
+      vi.stubGlobal('localStorage', own)
+      vi.stubGlobal('sessionStorage', undefined)
+      installJsdomStorage()
+      expect(sessionStorage).toBe(jsdomWindow().sessionStorage)
+      expect(localStorage).toBe(own)
+    })
+
+    it('does nothing in an environment that is not jsdom', () => {
+      vi.stubGlobal('jsdom', undefined)
+      vi.stubGlobal('localStorage', undefined)
+      expect(() => installJsdomStorage()).not.toThrow()
+      expect(globalThis.localStorage).toBeUndefined()
+    })
   })
 
   it('make act() flush synchronously in every file', () => {

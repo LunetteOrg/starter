@@ -5,6 +5,7 @@ import {
   type TestUserConfig,
 } from 'vitest/config'
 import type { CoverageV8Options } from 'vitest/node'
+import { JSDOM_SETUP_PATH } from './jsdom-setup-path.ts'
 
 /**
  * The preset a Lunette project's vitest configs start from: `sharedTest()` for every
@@ -74,13 +75,6 @@ export function sharedTest({ sources = 'src' }: SharedTestOptions = {}) {
  */
 export const JSDOM_SETUP_FILE = '@lntt/test-utils/jsdom-setup'
 
-/**
- * The jsdom setup of this package, by name or by path: the published name, the built
- * file under `node_modules`, or the source in a workspace. An app's own file named
- * `jsdom-setup` is not it.
- */
-const JSDOM_SETUP = /(^|[/\\])(@lntt[/\\]test-utils([/\\]dist)?|test-utils[/\\]src)[/\\]jsdom-setup(\.[cm]?[jt]s)?$/
-
 /** What no app project runs: builds, React Router's generated types, the e2e suite. */
 const APP_EXCLUDE = [...configDefaults.exclude, '**/.react-router/**', '**/build/**', '**/e2e/**']
 
@@ -127,7 +121,7 @@ export interface AppTestOptions {
  * ```
  */
 export function appTest({ sources = 'app', exclude = [], setupFiles = [], last }: AppTestOptions = {}) {
-  const listed = setupFiles.find((file) => JSDOM_SETUP.test(file))
+  const listed = setupFiles.find((file) => JSDOM_SETUP_PATH.test(file))
   if (listed) {
     throw new Error(`appTest() lists ${JSDOM_SETUP_FILE} itself: remove ${listed} from its setupFiles.`)
   }

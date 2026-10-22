@@ -81,6 +81,8 @@ describe('appTest', () => {
       '@lntt/test-utils/jsdom-setup',
       './node_modules/@lntt/test-utils/dist/jsdom-setup.js',
       '../../packages/test-utils/src/jsdom-setup.ts',
+      '../../packages/test-utils/dist/jsdom-setup.js',
+      '..\\..\\packages\\test-utils\\dist\\jsdom-setup',
     ]) {
       expect(() => appTest({ setupFiles: [listed] }), listed).toThrow(
         `appTest() lists @lntt/test-utils/jsdom-setup itself: remove ${listed} from its setupFiles.`,
@@ -94,6 +96,7 @@ describe('appTest', () => {
       './jsdom-setup.ts',
       './my-jsdom-setup.ts',
       '@acme/test-utils/jsdom-setup',
+      '../shared/src/jsdom-setup.ts',
     ]) {
       expect(appTest({ setupFiles: [own] }).setupFiles, own).toEqual([own, JSDOM_SETUP_FILE])
     }

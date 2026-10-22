@@ -1,16 +1,16 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { globSync } from 'glob'
+import { JSDOM_SETUP_PATH } from './jsdom-setup-path.ts'
 import { blankCommentsAndStrings } from './source-scan.ts'
 
 /**
- * An import of the jsdom setup by its package name, in any syntax: side effect,
- * `from`, dynamic, `require`. A relative path to the source or an alias is not
- * matched. Matched on the raw source, kept only when the keyword is code (comments and
- * strings blanked), so a listing in `setupFiles` (a string) or a mention is not an
- * import.
+ * An import in any syntax (side effect, `from`, dynamic, `require`), its specifier in
+ * the second group; the jsdom setup is the specifier `JSDOM_SETUP_PATH` matches.
+ * Matched on the raw source, kept only when the keyword is code (comments and strings
+ * blanked), so a listing in `setupFiles` (a string) or a mention is not an import.
  */
-const IMPORTS_SETUP = /\b(?:import|from|require)\s*\(?\s*(['"`])@lntt\/test-utils\/jsdom-setup\1/g
+const IMPORT = /\b(?:import|from|require)\s*\(?\s*(['"`])([^'"`\n]*)\1/g
 
 /** The record of the rule, which the message cites: no project path holds it yet. */
 export const VITEST_PRESET_RECORD = 'https://github.com/LunetteOrg/starter/blob/main/docs/adr/vitest-preset.md'
@@ -24,8 +24,9 @@ export interface JsdomSetupImport {
 }
 
 /**
- * Every import of `@lntt/test-utils/jsdom-setup` by name in the workspaces under
- * `apps/*` and `packages/*`, sorted by file (code-unit order) and line.
+ * Every import of this package's jsdom setup, by name or by a path `JSDOM_SETUP_PATH`
+ * matches, in the workspaces under `apps/*` and `packages/*`, sorted by file
+ * (code-unit order) and line.
  */
 export function findJsdomSetupImports(root: string): JsdomSetupImport[] {
   const workspaces = globSync(['apps/*/', 'packages/*/'], { cwd: root })
@@ -47,8 +48,10 @@ export function findJsdomSetupImports(root: string): JsdomSetupImport[] {
       .flatMap((path) => {
         const source = readFileSync(path, 'utf8')
         const code = blankCommentsAndStrings(source)
-        return [...source.matchAll(IMPORTS_SETUP)]
-          .filter((match) => code.startsWith(match[0].slice(0, 4), match.index))
+        return [...source.matchAll(IMPORT)]
+          .filter(
+            (match) => JSDOM_SETUP_PATH.test(match[2] ?? '') && code.startsWith(match[0].slice(0, 4), match.index),
+          )
           .map((match) => ({ file: relative(root, path), line: source.slice(0, match.index).split('\n').length }))
       })
       // Code-unit order, the same on every machine: localeCompare follows the locale.

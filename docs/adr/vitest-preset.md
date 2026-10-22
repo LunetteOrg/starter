@@ -17,10 +17,10 @@ for its apps.
   the end of a test is skipped when an assertion before it fails.
 - **Each jsdom file reloads React, the router and the component library** when vitest
   isolates files. With the module registry and the environment shared by the files
-  of a worker (`isolate: false`, worker threads) pelion's two apps ran in about half
-  the time (community, 2,571 tests: ~7-8 s against ~12-15 s; admin, 1,154 tests:
-  ~5-6 s against ~8-9 s, on a loaded machine). Node-only packages gained at most a
-  tenth of a second.
+  of a worker (`isolate: false`, worker threads) a jsdom-heavy suite skips those
+  reloads, and pelion's two apps ran markedly faster; a node-only package has nothing
+  heavy to reload and gains next to nothing. The timings are in
+  [issue #92](https://github.com/LunetteOrg/starter/issues/92#issuecomment-6195713671).
 - **One spec that boots a whole Vite dev server** takes over a gigabyte; run alongside
   the others, the sum got the CI process killed.
 - **jsdom lacks APIs a real DOM always has** (`ResizeObserver`, `scrollIntoView`,
@@ -73,13 +73,15 @@ export default defineConfig({
 3. **The jsdom setup is listed in `setupFiles`, never imported.** Setup files run
    again for every test file; a module they import runs once per worker, so under
    `isolate: false` its hooks would reach only the first file of each worker.
-   `appTest()` appends `@lntt/test-utils/jsdom-setup` after the app's own setup files,
-   and throws when the app lists it too, by name or by its path (built under
-   `node_modules`, or the source in a workspace); an app's own file named
-   `jsdom-setup` is not it. `assertNoJsdomSetupImports(root)` fails on any import of
-   it by package name (side effect, `from`, dynamic, `require`) in the workspaces
-   under `apps/*` and `packages/*`, naming the file and line; a project calls it from
-   a spec, as it calls the other guards.
+   `appTest()` appends `@lntt/test-utils/jsdom-setup` after the app's own setup files.
+   It throws when the app lists it too, and `assertNoJsdomSetupImports(root)` fails on
+   any import of it (side effect, `from`, dynamic, `require`) in the workspaces under
+   `apps/*` and `packages/*`, naming the file and line; a project calls it from a
+   spec, as it calls the other guards. Both recognise it the same way: by its package
+   name, by the built file under `node_modules`, or by a path ending in
+   `test-utils/src/jsdom-setup` or `test-utils/dist/jsdom-setup`, with or without an
+   extension. An app's own file named `jsdom-setup`, an alias, or a copy under another
+   directory name is not caught.
 4. **What the jsdom setup does**, in every jsdom file. Everything that touches the DOM
    is behind `typeof window !== 'undefined'`: an app's node files run the same setup.
    - **Stubs** for what jsdom lacks, each installed only when missing:
@@ -142,8 +144,9 @@ A project whose suite breaks one of these rules keeps the file out of `fast`: in
 - A package's config is one spread, an app's one call; a stub or spy cannot outlive
   its test.
 - An app's jsdom specs load the framework once per worker.
-- Importing the jsdom setup from a setup file fails in the project's suite, not in a
-  file that leaks only when the order of files changes.
+- Importing the jsdom setup from a setup file, by name or by a path to this package,
+  fails in the project's suite, not in a file that leaks only when the order of files
+  changes.
 
 ### Negative / accepted risks
 
@@ -163,8 +166,8 @@ A project whose suite breaks one of these rules keeps the file out of `fast`: in
 
 ## Discarded directions
 
-- **`isolate: false` in `sharedTest()`.** Node-only packages gain a tenth of a second
-  at most, and would take on every leak above.
+- **`isolate: false` in `sharedTest()`.** Node-only packages gain next to nothing,
+  and would take on every leak above.
 - **A separate `@lntt/vitest-config` package.** The preset lists the jsdom setup by
   this package's name, and the guards share its scanning; one published package with
   subpaths keeps them at the same version.

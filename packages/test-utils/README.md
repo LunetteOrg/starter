@@ -218,11 +218,12 @@ export default defineConfig({
   React and the router load once per worker; and **`last`**, when given, isolated
   and ordered after `fast` (its `include` globs are relative to the app's root, and
   `fast` excludes them). It lists the jsdom setup after your `setupFiles`, and throws
-  if you list `@lntt/test-utils/jsdom-setup` there too.
+  if you list it there too: `@lntt/test-utils/jsdom-setup`, or a path ending in
+  `test-utils/src/jsdom-setup` or `test-utils/dist/jsdom-setup`.
 - `isolate: false` is safe only while no spec mocks a module with a hoisted
   `vi.mock`; nothing in this package checks it (a `tests.rules` pattern of
-  `lntt check tests` can). What else a shared registry carries from file to file, and the rule that
-  keeps each safe, is in the starter's
+  `lntt check tests` can). What else a shared registry carries from file to file,
+  and the rule that keeps each safe, is in the starter's
   [vitest-preset ADR](https://github.com/LunetteOrg/starter/blob/main/docs/adr/vitest-preset.md).
 
 ### The jsdom setup
