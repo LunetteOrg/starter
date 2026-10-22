@@ -10,8 +10,8 @@
     "test:minimal": "pnpm -r --filter '!@lntt/create' test && node --test scripts/*.test.mts plugins/*/hooks/*.test.mjs",
     "ci:local": "lntt ci local",
     "typecheck": "pnpm -r typecheck",
-    "lint": "biome check",
-    "lint:fix": "biome check --write",
+    "lint": "biome check --error-on-warnings",
+    "lint:fix": "biome check --write --error-on-warnings",
     "format": "biome format --write"
   },
   "devDependencies": {

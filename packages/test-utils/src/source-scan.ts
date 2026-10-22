@@ -120,10 +120,70 @@ function blank(source: string, strings: boolean): string {
       out.push(c) // keep the opening quote as-is
       continue
     }
+    if (c === '/' && startsRegex(out)) {
+      const end = regexEnd(source, i)
+      if (end !== undefined) {
+        // A quote inside `/can't/` opens no string: blank the body, keep both slashes.
+        out.push('/', ' '.repeat(end - i - 1), '/')
+        i = end
+        continue
+      }
+    }
     out.push(c)
   }
 
   return out.join('')
+}
+
+/** Tokens after which a `/` opens a regex literal rather than a division. */
+const BEFORE_REGEX = new Set('(,=:[!&|?{;+-*%~^'.split(''))
+const KEYWORDS_BEFORE_REGEX = new Set([
+  'return',
+  'typeof',
+  'case',
+  'do',
+  'else',
+  'in',
+  'of',
+  'new',
+  'delete',
+  'void',
+  'throw',
+  'yield',
+  'await',
+  'instanceof',
+])
+
+/**
+ * Whether a `/` opens a regex literal, from the code before it: an operator, an arrow
+ * `=>` or the start of the source does, an expression (an identifier, a number, `)`,
+ * `]`, `}`, a JSX tag's `<`) is divided, as `<Foo a={1}/>` closes a tag.
+ */
+function startsRegex(before: string[]): boolean {
+  let j = before.length - 1
+  while (j >= 0 && /\s/.test(before[j] as string)) j--
+  if (j < 0) return true
+  const last = before[j] as string
+  if (BEFORE_REGEX.has(last)) return true
+  if (last === '>') return before[j - 1] === '='
+  if (!/[\w$]/.test(last)) return false
+  let word = ''
+  while (j >= 0 && /[\w$]/.test(before[j] as string)) word = before[j--] + word
+  return KEYWORDS_BEFORE_REGEX.has(word)
+}
+
+/** The index of the `/` that closes the regex literal opened at `start`, or undefined on its line. */
+function regexEnd(source: string, start: number): number | undefined {
+  let inClass = false
+  for (let i = start + 1; i < source.length; i++) {
+    const c = source[i]
+    if (c === '\n') return undefined
+    if (c === '\\') i++
+    else if (c === '[') inClass = true
+    else if (c === ']') inClass = false
+    else if (c === '/' && !inClass) return i
+  }
+  return undefined
 }
 
 /** Scans one file's source for forbidden patterns. Exported for testing. */

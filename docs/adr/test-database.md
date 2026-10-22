@@ -124,8 +124,9 @@ vitest main process
     the `TEST_DATABASE_URL` it published, and the kill handlers are registered once.
 
 The package also carries the template's guards (architecture boundaries,
-serialization, source patterns, migration safety) unchanged; their messages cite the
-template's ADR files, which every project scaffolded from it has.
+serialization, source patterns, migration safety) with the template's rules and
+messages; their messages cite the template's ADR files, which every project
+scaffolded from it has.
 
 Tests in `packages/test-utils` cover each point; `workspaces.test.ts` runs two
 checkouts' suites at once with the same `databaseName` and migration name and

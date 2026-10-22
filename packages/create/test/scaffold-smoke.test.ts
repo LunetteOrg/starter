@@ -106,7 +106,8 @@ const adopt: Record<string, () => void> = {
         'export default defineConfig({ plugins: [testDbPlugin()] })\n',
       'drizzle/20260101000000_init/migration.sql': 'CREATE TABLE probe (id integer PRIMARY KEY);\n',
       'probe.test.ts': [
-        "import { assertContainerRules, createTestDb, hasTestDatabase, txTest } from '@lntt/test-utils'",
+        "import { assertContainerRules, assertNoModuleMocks, createTestDb, hasTestDatabase, txTest } from '@lntt/test-utils'",
+        "import { assertWaitingWorkspacesRunTheGuard } from '@lntt/test-utils/waits'",
         "import { WORKSPACE_LABEL } from '@lntt/test-utils/workspace'",
         "import { expect, it } from 'vitest'",
         '',
@@ -124,6 +125,12 @@ const adopt: Record<string, () => void> = {
         '',
         "it('exports the workspace label from its Node-only subpath', () => {",
         "  expect(WORKSPACE_LABEL).toBe('com.lntt.workspace')",
+        '})',
+        '',
+        // The test guards, from the root export and from the subpath that parses with vite.
+        "it('no test mocks a module for the whole worker, and every workspace that waits runs the guard', () => {",
+        "  assertNoModuleMocks(new URL('../..', import.meta.url).pathname)",
+        "  assertWaitingWorkspacesRunTheGuard(new URL('../..', import.meta.url).pathname)",
         '})',
         '',
       ].join('\n'),
@@ -173,7 +180,13 @@ test('the published packages install into a scaffolded project, which lints, typ
   for (const { dir } of packages) run('pnpm', ['pack', '--pack-destination', tarballs], dir)
   const files = readdirSync(tarballs).map((f) => join(tarballs, f))
   // The peers a project installs next to the packages.
-  const peers = ['stylelint@^17.0.0', '@playwright/test@^1.61.1', 'vitest@^4.1.10', 'drizzle-orm@1.0.0-rc.4']
+  const peers = [
+    'stylelint@^17.0.0',
+    '@playwright/test@^1.61.1',
+    'vitest@^4.1.10',
+    'vite@^8.0.0',
+    'drizzle-orm@1.0.0-rc.4',
+  ]
   run('pnpm', ['add', '-w', '-D', '--ignore-scripts', ...files, ...peers], app)
 
   for (const { name } of packages) adopt[name]?.()
