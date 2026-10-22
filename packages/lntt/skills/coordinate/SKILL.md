@@ -98,6 +98,15 @@ lntt ask --to orchestrator "<questions>"               # waits for the person's 
   sending text: text typed under an open question becomes its answer.
 - **A long wait is one background wait** with one notification, not repeated checks: every
   polling turn re-reads the whole context.
+- **A watcher is light.** One read every 150 seconds, a line only when something changed, no
+  heartbeat, no automatic restart: under memory pressure the host kills background shells
+  of an idle session, and a heavy watcher is the first to go. A watcher that died is
+  restarted by hand after looking at why.
+- **A child runs `ci:local` in the foreground,** with a 10-minute timeout, not as a
+  background shell: the host kills the background shells of an idle session and the run
+  dies with no result. Say so in the child's context.
+- **On Orca** there is no Sleep in the CLI (only the UI has one), and `terminal close`
+  also deletes the records that resume the session: close a terminal only for good.
 
 ## 6. Merging and cleaning up
 
@@ -107,8 +116,9 @@ lntt ask --to orchestrator "<questions>"               # waits for the person's 
   became `CONFLICTING`, and run its local CI again.
 - **Remove a child's worktree only when its pull request is `MERGED`**, `git status
   --porcelain` is empty and `@{upstream}..HEAD` is empty. Stop its containers by label
-  first, never pass `--force`, keep the branches.
-- The theme outlives its pull requests: the coordinator stays while the theme has open
+  first, never pass `--force`, keep the branches. A cleanup script that calls `docker rm`
+  can be refused by the host's safety check: run `docker ps` first and run the script only
+  when containers exist.- The theme outlives its pull requests: the coordinator stays while the theme has open
   issues, and is archived when the last child has merged.
 
 ## 7. What a coordinator brief must say
