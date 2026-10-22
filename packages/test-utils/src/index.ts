@@ -25,6 +25,11 @@ export {
 } from './db.ts'
 export { defineFixture } from './fixtures.ts'
 export {
+  assertNoJsdomSetupImports,
+  findJsdomSetupImports,
+  type JsdomSetupImport,
+} from './jsdom-setup-imports.ts'
+export {
   assertBiomeDomainsDeclared,
   assertLintFailsOnWarnings,
   BIOME_DOMAIN_OF_DEPENDENCY,

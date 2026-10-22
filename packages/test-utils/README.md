@@ -1,9 +1,10 @@
 # @lntt/test-utils
 
 Test helpers every Lunette project uses: a real Postgres per vitest run with a
-rollback around each test, the guards that keep architecture, serialization and
-migrations honest, and the guards that keep the test suite itself honest. Kept current
-by version.
+rollback around each test, the vitest preset and the jsdom setup every package and
+app starts from, the guards that keep architecture, serialization and migrations
+honest, and the guards that keep the test suite itself honest. Kept current by
+version.
 
 ```sh
 pnpm add -D @lntt/test-utils vitest drizzle-orm
@@ -183,6 +184,70 @@ The rules read source text, not a syntax tree: a quote or a `/*` inside a regula
 expression literal or JSX text can throw the scan off for the rest of that file,
 passing a violation or failing a correct line.
 
+## The vitest preset
+
+```ts
+// packages/<name>/vitest.config.ts
+import { sharedTest } from '@lntt/test-utils/vitest'
+export default defineConfig({ test: { ...sharedTest(), testTimeout: 30_000 } })
+```
+
+```ts
+// apps/<name>/vitest.config.ts
+import { testDbPlugin } from '@lntt/test-utils/plugin'
+import { appTest } from '@lntt/test-utils/vitest'
+
+export default defineConfig({
+  plugins: [testDbPlugin()],
+  test: appTest({
+    setupFiles: ['@testing-library/jest-dom/vitest'],
+    // optional: specs too heavy to share the run, isolated and run last
+    last: { name: 'dev-server', include: ['vite-deps.test.ts'] },
+  }),
+})
+```
+
+- **`sharedTest({ sources = 'src' })`** sets `unstubGlobals`, `unstubEnvs` and
+  `restoreMocks` (no `vi.stubGlobal`, `vi.stubEnv` or `vi.spyOn` outlives its test:
+  make them in `beforeEach`, not at module scope), the JUnit reporter writing
+  `test-results/junit.xml`, and V8 coverage of `<sources>/**/*.{ts,tsx}` into
+  `./coverage` (install `@vitest/coverage-v8` to run it). `sharedCoverage` and
+  `sharedReporters` are exported on their own.
+- **`appTest({ sources = 'app', exclude, setupFiles, last })`** adds 30 s and 60 s
+  timeouts and two projects: **`fast`**, worker threads with `isolate: false`, so
+  React and the router load once per worker; and **`last`**, when given, isolated
+  and ordered after `fast`. It lists the jsdom setup after your `setupFiles`.
+- `isolate: false` is safe only while no spec mocks a module with a hoisted
+  `vi.mock`. What else a shared registry carries from file to file, and the rule that
+  keeps each safe, is in the starter's
+  [vitest-preset ADR](https://github.com/LunetteOrg/starter/blob/main/docs/adr/vitest-preset.md).
+
+### The jsdom setup
+
+`@lntt/test-utils/jsdom-setup` is the setup file of every jsdom spec (`appTest()`
+lists it; a config without `appTest()` lists it in `setupFiles` itself). It needs
+`jsdom` and `@testing-library/react` in the project.
+
+- **Stubs**, only where jsdom lacks the API: `ResizeObserver`, `scrollIntoView`,
+  `Range` `getClientRects`/`getBoundingClientRect`, `elementFromPoint`, `matchMedia`.
+- **`IS_REACT_ACT_ENVIRONMENT`** set for every file.
+- **After each test**: real timers, `cleanup()`, a 1 ms wait for timers an unmount
+  scheduled. **After each file**: `localStorage`, `sessionStorage` and readable
+  cookies cleared, nodes added to `document.head` removed.
+- Node-environment files get only the real-timers restore.
+
+**List it, never import it** from another setup file: an imported module runs once
+per worker, and its hooks would reach only the first file. The guard:
+
+```ts
+// jsdom-setup.spec.ts, in a spec that knows the project root
+import { assertNoJsdomSetupImports } from '@lntt/test-utils'
+
+it('lists the jsdom setup, never imports it', () => {
+  assertNoJsdomSetupImports(resolve(__dirname, '../../..'))
+})
+```
+
 ## The guards
 
 | Export | Asserts |
@@ -191,10 +256,12 @@ passing a violation or failing a correct line.
 | `assertNoEntitySpreadInReturn`, `findReturnSpreads` | no `return { ...entity }` in loaders and actions |
 | `assertNoSourcePattern`, `findSourceMatches`, `blankCommentsAndStrings` | a forbidden pattern in code, comments and strings aside |
 | `assertNoMigrationSafetyViolations`, `checkMigration` | migrations follow expand/migrate/contract; no down-migrations |
+| `assertNoJsdomSetupImports`, `findJsdomSetupImports` | the jsdom setup is listed in `setupFiles`, never imported |
 | `defineFixture` | a builder with defaults, deep-merged overrides |
 
 Their messages cite the ADRs of a project scaffolded from the Lunette `react-router`
-template (`docs/adr/architecture-and-boundaries.md`, `docs/adr/data-and-migrations.md`).
+template (`docs/adr/architecture-and-boundaries.md`, `docs/adr/data-and-migrations.md`);
+`assertNoJsdomSetupImports` cites the starter's `vitest-preset` ADR.
 
 ## The guards of the test suite
 

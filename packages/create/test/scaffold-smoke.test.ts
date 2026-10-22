@@ -95,18 +95,27 @@ const adopt: Record<string, () => void> = {
   '@lntt/stylelint-config': () =>
     rewrite(/^\.stylelintrc\.json$/, './packages/stylelint-config', '@lntt/stylelint-config'),
   // No package of the template has database tests yet: a probe package does, the
-  // way an app would, and checks the project with the container rule.
+  // way an app would, and checks the project with the container rule. Its config is
+  // the app preset, so the jsdom setup appTest() lists is resolved by name.
   '@lntt/test-utils': () => {
     const probe = join(app, 'packages/db-probe')
     mkdirSync(join(probe, 'drizzle/20260101000000_init'), { recursive: true })
     const files: Record<string, string> = {
       'package.json': JSON.stringify({ name: '@smoke-app/db-probe', private: true, type: 'module' }),
       'vitest.config.ts':
-        "import { testDbPlugin } from '@lntt/test-utils/plugin'\nimport { defineConfig } from 'vitest/config'\n\n" +
-        'export default defineConfig({ plugins: [testDbPlugin()] })\n',
+        "import { testDbPlugin } from '@lntt/test-utils/plugin'\nimport { appTest } from '@lntt/test-utils/vitest'\n" +
+        "import { defineConfig } from 'vitest/config'\n\n" +
+        "export default defineConfig({ plugins: [testDbPlugin()], test: appTest({ sources: '.' }) })\n",
       'drizzle/20260101000000_init/migration.sql': 'CREATE TABLE probe (id integer PRIMARY KEY);\n',
       'probe.test.ts': [
-        "import { assertContainerRules, assertNoModuleMocks, createTestDb, hasTestDatabase, txTest } from '@lntt/test-utils'",
+        'import {',
+        '  assertContainerRules,',
+        '  assertNoJsdomSetupImports,',
+        '  assertNoModuleMocks,',
+        '  createTestDb,',
+        '  hasTestDatabase,',
+        '  txTest,',
+        "} from '@lntt/test-utils'",
         "import { assertWaitingWorkspacesRunTheGuard } from '@lntt/test-utils/waits'",
         "import { WORKSPACE_LABEL } from '@lntt/test-utils/workspace'",
         "import { expect, it } from 'vitest'",
@@ -131,6 +140,11 @@ const adopt: Record<string, () => void> = {
         "it('no test mocks a module for the whole worker, and every workspace that waits runs the guard', () => {",
         "  assertNoModuleMocks(new URL('../..', import.meta.url).pathname)",
         "  assertWaitingWorkspacesRunTheGuard(new URL('../..', import.meta.url).pathname)",
+        '})',
+        '',
+        "it('ran the jsdom setup appTest() lists, and no file imports it', () => {",
+        '  expect((globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT).toBe(true)',
+        "  assertNoJsdomSetupImports(new URL('../..', import.meta.url).pathname)",
         '})',
         '',
       ].join('\n'),
