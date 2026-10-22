@@ -62,4 +62,5 @@ export {
   type TestProjectPackage,
   testProjectPackages,
 } from './test-projects.ts'
+export { assertTestsUseTxFixture, findDirectTestDbCalls, type TxFixtureOptions } from './tx-fixture.ts'
 export { WORKSPACE_LABEL, workspaceRoot } from './workspace.ts'

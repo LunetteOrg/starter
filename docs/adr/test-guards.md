@@ -84,6 +84,17 @@ needs it, and vitest 4 already installs it.
   `biome check|lint|ci` step lacks `--error-on-warnings`, or whose `stylelint` step
   lacks `--max-warnings 0`. A warning that exits 0 is a rule nobody enforces.
 
+### The tx fixture
+
+`assertTestsUseTxFixture(root)` fails on every test module that calls `withTestDb(`
+itself. An integration test reaches the database through the `tx` fixture that
+`txTest` of `@lntt/test-utils` (#90) builds, `export const it = txTest(db.withTestDb)`,
+and asks for `tx` in its signature: the rollback around the test is the fixture's, so
+a test cannot open a second transaction beside it or forget to roll its own back.
+Passing the function by reference, as `txTest(db.withTestDb)` does, is no call. The
+scan blanks comments, strings and regex literals first, like the module-mocks scan,
+and reads the same modules.
+
 ### Test projects
 
 `assertTestProjectsAreDependencies(workspace, config)` reads the inline projects of
@@ -119,11 +130,11 @@ pays.
 - The checks read source text and configs, not the running suite: a mock reached
   through an alias of `vi`, or a test project given as a path to another config, is
   not seen.
-- The module-mocks scan tells a regex literal from a division by the token before the
-  `/`, and does not read JSX: a regex right after `)` (`if (x) /'/.test(s)`) or an
-  apostrophe in JSX text (`<p>Don't</p>`) is read as the start of a string, and the
-  code after it on the following lines is not scanned. The waits scans parse the
-  module and have neither miss.
+- The module-mocks and tx-fixture scans tell a regex literal from a division by the
+  token before the `/`, and do not read JSX: a regex right after `)`
+  (`if (x) /'/.test(s)`) or an apostrophe in JSX text (`<p>Don't</p>`) is read as the
+  start of a string, and the code after it on the following lines is not scanned. The
+  waits scans parse the module and have neither miss.
 - The wait guard requires vite 8; a project on an older vite cannot import
   `@lntt/test-utils/waits`.
 - Projects call the guards from their own specs; a project that never calls one is not
