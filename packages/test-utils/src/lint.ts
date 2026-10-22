@@ -94,7 +94,11 @@ function dropTrailingCommas(text: string): string {
 }
 
 function readJson<T>(path: string): T {
-  return parseJsonc(readFileSync(path, 'utf8')) as T
+  try {
+    return parseJsonc(readFileSync(path, 'utf8')) as T
+  } catch (error) {
+    throw new Error(`Cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`)
+  }
 }
 
 /** `package.json` at the root, then each workspace's: `[path relative to root, manifest]`. */

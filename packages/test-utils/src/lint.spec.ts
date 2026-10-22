@@ -96,6 +96,24 @@ describe('assertLintFailsOnWarnings', () => {
     expect(message).toMatch(/test-guards\.md/)
   })
 
+  it.each([
+    ['&&', 'biome check --error-on-warnings && biome lint src'],
+    ['||', 'biome check --error-on-warnings || biome lint src'],
+    [';', 'biome check --error-on-warnings; biome lint src'],
+    ['|', 'biome check --error-on-warnings | biome lint src'],
+  ])('reads each step of a script chained with %s', (_, lint) => {
+    const root = probeProject({ 'package.json': manifest({ scripts: { lint } }) })
+    expect(() => assertLintFailsOnWarnings(root)).toThrow(/`biome lint src` needs --error-on-warnings/)
+  })
+
+  it('fails naming a manifest that does not parse', () => {
+    const root = probeProject({
+      'package.json': manifest({ scripts: { lint: 'biome check --error-on-warnings' } }),
+      'packages/ui/package.json': '{ "name": "ui", }}',
+    })
+    expect(() => assertLintFailsOnWarnings(root)).toThrow(/packages\/ui\/package\.json/)
+  })
+
   it('passes scripts that fail on a warning', () => {
     const root = probeProject({
       'package.json': manifest({ scripts: { lint: 'biome check --error-on-warnings' } }),
