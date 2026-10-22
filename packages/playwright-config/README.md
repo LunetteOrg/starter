@@ -18,6 +18,10 @@ export default definePlaywrightConfig({
 })
 ```
 
+A fixed `port` collides when two worktrees run their suites at once: `e2ePort` from
+`@lntt/test-utils/e2e-port` gives each checkout its own, and the specs take `test` from
+`@lntt/test-utils/playwright` (see that package's README).
+
 ## What it encodes
 
 - `testDir: './__tests__'`, `testMatch: '**/*.e2e.ts'`.

@@ -2,8 +2,9 @@
 
 Test helpers every Lunette project uses: a real Postgres per vitest run with a
 rollback around each test, the vitest preset and the jsdom setup every package and
-app starts from, the guards that keep architecture, serialization and migrations
-honest, and the guards that keep the test suite itself honest. Kept current by
+app starts from, the Playwright helpers of an app's e2e suite, the guards that keep
+architecture, serialization and migrations honest, and the guards that keep the test
+suite itself honest. Kept current by
 version.
 
 ```sh
@@ -253,6 +254,106 @@ it('lists the jsdom setup, never imports it', () => {
   assertNoJsdomSetupImports(resolve(__dirname, '../../..'))
 })
 ```
+
+## The e2e helpers
+
+```sh
+pnpm add -D @lntt/test-utils @playwright/test
+```
+
+`@playwright/test` is an optional peer: only `@lntt/test-utils/playwright` loads it.
+
+### A stable port per checkout
+
+```ts
+// apps/web/playwright.config.ts
+import { fileURLToPath } from 'node:url'
+import { definePlaywrightConfig } from '@lntt/playwright-config'
+import { e2ePort } from '@lntt/test-utils/e2e-port'
+
+export const PORT = e2ePort({
+  root: fileURLToPath(new URL('../..', import.meta.url)),
+  app: 'web',
+  apps: ['web', 'admin'],
+})
+
+export default definePlaywrightConfig({ port: PORT, globalSetup: './__tests__/global-setup.ts' })
+```
+
+`e2ePort` returns, in this order:
+
+- **`E2E_PORT`, when it is set,** for the first app of `apps`, and the ports after it
+  for the others (`E2E_PORT=4000`: `web` on 4000, `admin` on 4001).
+- **`ciPort`, when `CI` is set and one is given.** Each app's config passes its own.
+- **A port derived from a hash of the checkout's real path,** in `E2E_PORT_RANGE`
+  (20000 to 29999, below the ephemeral ranges of Linux and macOS).
+
+Each app of `apps` gets the port next to the previous one, so `apps` lists every app
+with an e2e suite once, always in the same order; it defaults to the app alone. Two
+worktrees run their suites at once on different ports; when two of them hash to the
+same slot, `E2E_PORT` in one of them is the way out. The global setup starts the dev
+server on the exported `PORT`. Keep the ports `lntt` runs the apps on by hand
+(`local.apps.<name>.port` and the worktree slots above it) out of `E2E_PORT_RANGE`:
+nothing checks it.
+
+### `test`, with hydration delayed on demand
+
+Every e2e takes `test` from the helper; `expect`, `devices` and types still come from
+`@playwright/test`. The opt-in `e2e-test-from-helper.grit` plugin of
+`@lntt/biome-config` flags a spec that takes `test` from the runner.
+
+```ts
+import { ATTEMPT, repeatUntil, test } from '@lntt/test-utils/playwright'
+import { expect } from '@playwright/test'
+
+test('the language menu opens', async ({ page }) => {
+  await page.goto('/')
+  const trigger = page.getByRole('button', { name: 'Language' })
+  const menu = page.getByRole('menu')
+  await repeatUntil(() => trigger.click(ATTEMPT), () => expect(menu).toBeVisible(ATTEMPT))
+})
+```
+
+- **`E2E_HYDRATION_DELAY_MS`.** Set, every page of the test's context gets React DOM's
+  client chunk that many milliseconds late, so the server HTML stays without handlers
+  that long. A spec that passes only when hydration is fast fails. Read once when the
+  module loads (`HYDRATION_DELAY_MS`); a value that is not whole milliseconds, or is
+  above 2147483647 (the longest delay `setTimeout` keeps), throws.
+- **A run that delayed nothing fails.** A test that passed as expected, whose context
+  loaded pages and none of them requested the chunk, fails, naming the pattern: the
+  chunk was renamed, or the pages never hydrate. A page is the HTML a top-level
+  navigation lands on; an iframe, a redirect hop, or a navigation to text, JSON or a
+  download is not counted.
+- **`hydrationChunk`** is the URL pattern held back. The default,
+  `REACT_DOM_CLIENT_CHUNK`, is the chunk Vite's dep optimizer serves on the dev server;
+  a suite against a build sets its own with `use: { hydrationChunk }` in the config. A
+  test whose pages never hydrate sets `test.use({ hydrationChunk: null })`: nothing is
+  delayed or checked there.
+- **A context the test opens itself** (`browser.newContext()`) is not delayed;
+  `delayHydration(context, { delayMs: HYDRATION_DELAY_MS, chunk })` delays it, and its
+  `assertDelayed()` makes the same check.
+- **`repeatUntil(gesture, effect)` and `ATTEMPT`.** When an e2e must touch a control
+  that exists only in JavaScript, it repeats an idempotent gesture until the effect
+  shows. `repeatUntil` sets no timeout: pass `ATTEMPT` (one second) to the gesture and
+  to the effect, as above, or a lost gesture waits out the test's timeout. A gesture
+  that is not idempotent (submitting a form) has no place in it.
+- **`await expectFetchMetadata(request, expected)`.** Asserts the `Sec-Fetch-*`
+  headers of the request, read with `request.allHeaders()` (`request.headers()` never
+  holds them). The route that delays the chunk makes Playwright report every request
+  of its context without them: on a context the delay routed, the assertion is
+  recorded on the test as an `unchecked` annotation instead of failing. A request of
+  any other context (`hydrationChunk: null`, a context the test opened and did not
+  delay) is asserted in a delayed run too.
+
+The delayed run is a script of the project, next to `test:e2e`:
+
+```jsonc
+// package.json at the project root
+"scripts": { "e2e:hydration": "E2E_HYDRATION_DELAY_MS=${E2E_HYDRATION_DELAY_MS:-3000} turbo run test:e2e" }
+```
+
+The react-router template's `turbo.json` passes every variable to its tasks; a project
+that narrows it declares `"passThroughEnv": ["E2E_HYDRATION_DELAY_MS"]` on `test:e2e`.
 
 ## The guards
 

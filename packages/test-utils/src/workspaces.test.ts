@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { afterAll, describe, expect, it } from 'vitest'
 import { hasTestDatabase, WORKSPACE_LABEL } from './db.ts'
+import { E2E_PORT_RANGE, e2ePort } from './e2e-port.ts'
 
 /**
  * Two checkouts of one project (two git worktrees) run their suites at the same
@@ -82,5 +83,34 @@ describe.skipIf(!hasTestDatabase())('two checkouts at once', () => {
       })
       expect(left.trim(), `containers left by ${dir}`).toBe('')
     }
+  })
+})
+
+// A playwright.config.ts and an e2e import these subpaths by name: Node loads them from
+// dist/ as published, with no vitest in between. Needs no database, so it runs without
+// one; like the suites above it needs dist/, which the package's `test` script builds.
+describe('the Playwright subpaths', () => {
+  it('load by name from the built package', () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-ws-playwright-')))
+    dirs.push(dir)
+    link(dir, '@lntt/test-utils', PKG)
+    writeFileSync(
+      join(dir, 'probe.mjs'),
+      "import { e2ePort } from '@lntt/test-utils/e2e-port'\n" +
+        "import { ATTEMPT, HYDRATION_DELAY_MS, test } from '@lntt/test-utils/playwright'\n" +
+        "const port = e2ePort({ root: process.cwd(), app: 'web', env: {} })\n" +
+        'console.log(JSON.stringify({ port, attempt: ATTEMPT.timeout, delay: HYDRATION_DELAY_MS, test: typeof test }))\n',
+    )
+    const out = JSON.parse(
+      execFileSync(process.execPath, ['probe.mjs'], {
+        cwd: dir,
+        encoding: 'utf8',
+        env: { ...process.env, E2E_HYDRATION_DELAY_MS: '' },
+      }),
+    )
+    expect(out).toMatchObject({ attempt: 1000, delay: 0, test: 'function' })
+    expect(out.port).toBe(e2ePort({ root: dir, app: 'web', env: {} }))
+    expect(out.port).toBeGreaterThanOrEqual(E2E_PORT_RANGE.min)
+    expect(out.port).toBeLessThanOrEqual(E2E_PORT_RANGE.max)
   })
 })
