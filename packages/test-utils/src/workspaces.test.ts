@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { afterAll, describe, expect, it } from 'vitest'
 import { hasTestDatabase, WORKSPACE_LABEL } from './db.ts'
+import { E2E_PORT_RANGE, e2ePort } from './e2e-port.ts'
 
 /**
  * Two checkouts of one project (two git worktrees) run their suites at the same
@@ -108,6 +109,8 @@ describe('the Playwright subpaths', () => {
       }),
     )
     expect(out).toMatchObject({ attempt: 1000, delay: 0, test: 'function' })
-    expect(out.port).toBeGreaterThanOrEqual(20_000)
+    expect(out.port).toBe(e2ePort({ root: dir, app: 'web', env: {} }))
+    expect(out.port).toBeGreaterThanOrEqual(E2E_PORT_RANGE.min)
+    expect(out.port).toBeLessThanOrEqual(E2E_PORT_RANGE.max)
   })
 })

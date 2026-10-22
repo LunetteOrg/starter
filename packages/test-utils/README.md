@@ -285,14 +285,16 @@ export default definePlaywrightConfig({ port: PORT, globalSetup: './__tests__/gl
 - **`E2E_PORT`, when it is set,** for the first app of `apps`, and the ports after it
   for the others (`E2E_PORT=4000`: `web` on 4000, `admin` on 4001).
 - **`ciPort`, when `CI` is set and one is given.** Each app's config passes its own.
-- **A port derived from a hash of the checkout's real path,** between 20000 and 29999
-  (below the ephemeral ranges of Linux and macOS).
+- **A port derived from a hash of the checkout's real path,** in `E2E_PORT_RANGE`
+  (20000 to 29999, below the ephemeral ranges of Linux and macOS).
 
 Each app of `apps` gets the port next to the previous one, so `apps` lists every app
 with an e2e suite once, always in the same order; it defaults to the app alone. Two
 worktrees run their suites at once on different ports; when two of them hash to the
 same slot, `E2E_PORT` in one of them is the way out. The global setup starts the dev
-server on the exported `PORT`.
+server on the exported `PORT`. Keep the ports `lntt` runs the apps on by hand
+(`local.apps.<name>.port` and the worktree slots above it) out of `E2E_PORT_RANGE`:
+nothing checks it.
 
 ### `test`, with hydration delayed on demand
 
@@ -315,7 +317,8 @@ test('the language menu opens', async ({ page }) => {
 - **`E2E_HYDRATION_DELAY_MS`.** Set, every page of the test's context gets React DOM's
   client chunk that many milliseconds late, so the server HTML stays without handlers
   that long. A spec that passes only when hydration is fast fails. Read once when the
-  module loads (`HYDRATION_DELAY_MS`); a value that is not whole milliseconds throws.
+  module loads (`HYDRATION_DELAY_MS`); a value that is not whole milliseconds, or is
+  above 2147483647 (the longest delay `setTimeout` keeps), throws.
 - **A run that delayed nothing fails.** A test that passed as expected, whose context
   loaded pages and none of them requested the chunk, fails, naming the pattern: the
   chunk was renamed, or the pages never hydrate. A page is the HTML a top-level

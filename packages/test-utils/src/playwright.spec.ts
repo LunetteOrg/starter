@@ -89,11 +89,12 @@ describe('parseHydrationDelay', () => {
     expect(parseHydrationDelay('')).toBe(0)
   })
 
-  it('reads whole milliseconds', () => {
+  it('reads whole milliseconds, up to the longest delay setTimeout keeps', () => {
     expect(parseHydrationDelay('3000')).toBe(3000)
+    expect(parseHydrationDelay('2147483647')).toBe(2_147_483_647)
   })
 
-  it.each(['3s', '-1', '1.5', 'abc'])('rejects %j', (value) => {
+  it.each(['3s', '-1', '1.5', 'abc', '2147483648', '99999999999'])('rejects %j', (value) => {
     expect(() => parseHydrationDelay(value)).toThrow(/E2E_HYDRATION_DELAY_MS/)
   })
 })
@@ -146,6 +147,7 @@ describe('delayHydration', () => {
     ["a service worker's request, which has no frame", { noFrame: true }],
     ['an iframe', { iframe: true }],
     ['a document that is no navigation', { navigation: false }],
+    ['a navigation that is no document', { resourceType: 'fetch', navigation: true }],
   ])('counts no page for a navigation to %s', async (_, page) => {
     const { context, navigate } = fakeContext()
     const delay = await delayHydration(context, { delayMs: 1, chunk: REACT_DOM_CLIENT_CHUNK })

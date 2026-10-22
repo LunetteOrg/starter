@@ -27,8 +27,8 @@ export interface WorktreeE2ePortOptions {
 
 /**
  * The port derived from a hash of the checkout's real path. Two checkouts share a slot
- * with a chance of `apps.length` in 10,000 per pair: `E2E_PORT` on one
- * of them is the way out.
+ * with a chance of 1 in `slots` per pair, `slots` being the size of `E2E_PORT_RANGE`
+ * divided by `apps.length`, rounded down: `E2E_PORT` on one of them is the way out.
  */
 export function worktreeE2ePort(root: string, { app, apps = [app] }: WorktreeE2ePortOptions): number {
   const index = appIndex(app, apps)

@@ -43,12 +43,15 @@ export async function repeatUntil(gesture: () => Promise<unknown>, effect: () =>
   }).toPass()
 }
 
+/** The longest delay `setTimeout` keeps: above it, Node waits 1 ms instead. */
+const MAX_TIMEOUT_MS = 2_147_483_647
+
 /** `E2E_HYDRATION_DELAY_MS` as milliseconds; 0 when unset. */
 export function parseHydrationDelay(value: string | undefined): number {
   if (value === undefined || value === '') return 0
-  if (!/^\d+$/.test(value)) {
+  if (!/^\d+$/.test(value) || Number(value) > MAX_TIMEOUT_MS) {
     throw new Error(
-      `E2E_HYDRATION_DELAY_MS must be a whole number of milliseconds, got "${value}" (${E2E_HELPERS_RECORD})`,
+      `E2E_HYDRATION_DELAY_MS must be a whole number of milliseconds up to ${MAX_TIMEOUT_MS}, got "${value}" (${E2E_HELPERS_RECORD})`,
     )
   }
   return Number(value)

@@ -43,7 +43,8 @@ import { expect } from '@playwright/test'
 
 1. **Every e2e takes `test` from `@lntt/test-utils/playwright`.** Its `context`
    fixture reads `E2E_HYDRATION_DELAY_MS` once per worker, when the module loads
-   (`HYDRATION_DELAY_MS`, 0 when unset; anything but whole milliseconds throws). With a
+   (`HYDRATION_DELAY_MS`, 0 when unset; anything but whole milliseconds up to the
+   longest delay `setTimeout` keeps throws). With a
    delay, every request of the test's context for the `hydrationChunk` waits that long
    and then falls back to the next route, so a route the test installs still runs.
    Without one the fixture hands the context over untouched.
@@ -101,15 +102,17 @@ import { expect } from '@playwright/test'
    branch, an app listed twice or missing from `apps` throws. The range sits below the
    default ephemeral ports of Linux and macOS, so a port the system hands to a
    container mapping never lands on it.
-   A symlink and its target, or a path with and without a trailing slash, get one port.
+   A symlink and its target, or a path with and without a trailing slash, get one port;
+   on a case-insensitive file system, two spellings of a path that differ only in case
+   get two.
 8. **The e2e port is separate from `lntt`'s local slots.** `lntt` runs an app by hand
-   on `local.apps.<name>.port` plus ten per worktree slot, slots stored in the git
-   common dir (`packages/lntt/src/local.ts`). The e2e suite starts its own server in
+   on `local.apps.<name>.port` plus `STEP` times its worktree slot, slots stored in the
+   git common dir (`packages/lntt/src/local.ts`). The e2e suite starts its own server in
    its global setup, next to the containers it needs, while the developer's dev server
    may be up on the slot port of the same checkout: the two need different ports. The
    e2e port needs no git, no file and no `lntt`, because every Playwright worker
-   evaluates the config. A project keeps its local base ports outside 20000 to 29999:
-   it is a convention, and nothing checks it.
+   evaluates the config. Keeping the local ports out of `E2E_PORT_RANGE` is a
+   convention for projects, stated in the package README; nothing checks it.
 9. **The delayed run is a script of the project**, not of this package, because it
    wraps the project's own e2e command: it sets `E2E_HYDRATION_DELAY_MS` and runs the
    e2e task. The package README shows one.
@@ -132,8 +135,9 @@ the delayed run is a rule of this package, recorded here and in no project's ADR
 
 - The delay is paid on every page load: a test with many navigations nears its timeout
   in a delayed run.
-- Two checkouts share a slot with a chance of `apps.length` in 10,000 per pair: then
-  `E2E_PORT` on one of them.
+- Two checkouts share a slot with a chance of 1 in `slots` per pair, `slots` being the
+  size of `E2E_PORT_RANGE` divided by `apps.length`, rounded down: then `E2E_PORT` on
+  one of them.
 - The default chunk matches the dev server only; a suite against a build that keeps
   the default fails every delayed test, by design, until it sets `hydrationChunk`.
 - `Sec-Fetch-*` assertions are not checked on a context the delay routed.
@@ -146,8 +150,8 @@ the delayed run is a rule of this package, recorded here and in no project's ADR
   goes, and the assertions become plain ones.
 - Vite renames the dep chunk or React Router stops serving React DOM separately in
   dev: the default changes.
-- A project needs more e2e apps than a slot of 10,000 ports divided evenly can hold
-  without collisions it notices: the range widens.
+- A project needs more e2e apps than `E2E_PORT_RANGE` divided evenly can hold without
+  collisions it notices: the range widens.
 
 ## Discarded directions
 

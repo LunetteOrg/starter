@@ -15,6 +15,14 @@ describe('worktreeE2ePort', () => {
     )
   })
 
+  // A pinned value: a change of digest or offset moves every checkout's port, and must
+  // show here rather than as two versions disagreeing on a port.
+  it('derives a fixed port from a fixed path', () => {
+    const root = '/lntt-e2e-fixed-root'
+    expect(worktreeE2ePort(root, { app: 'web' })).toBe(28_305)
+    expect(worktreeE2ePort(root, { app: 'admin', apps: APPS })).toBe(26_611)
+  })
+
   it('ignores a trailing slash', () => {
     expect(worktreeE2ePort(`${ROOT_A}/`, { app: 'web', apps: APPS })).toBe(
       worktreeE2ePort(ROOT_A, { app: 'web', apps: APPS }),
