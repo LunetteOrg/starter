@@ -10,6 +10,7 @@ import { createTestDb, hasTestDatabase } from './db.ts'
  */
 describe.skipIf(!hasTestDatabase())('withTestDb', () => {
   const { withTestDb } = createTestDb({ databaseName: 'rollback_probe' })
+  const throwProbe = createTestDb({ databaseName: 'throw_probe', migrationsFolder: './src/__fixtures__/migrations' })
 
   // Two sequential transactions in one test: a version where a second test only
   // asserts ABSENCE would pass vacuously if the first never ran.
@@ -31,6 +32,26 @@ describe.skipIf(!hasTestDatabase())('withTestDb', () => {
         throw new Error('boom-from-inside')
       }),
     ).rejects.toThrow('boom-from-inside')
+  })
+
+  // On a table committed by the migration, read back from a connection of its own: a
+  // throw must not skip the rollback. The table is emptied first: a row committed by
+  // an earlier broken run on a server that outlived it would fail this one for an old
+  // cause.
+  it('rolls back the writes of a callback that throws', async () => {
+    const reader = postgres(await throwProbe.connectionString(), { max: 1 })
+    try {
+      await reader`DELETE FROM migrated_probe`
+      await expect(
+        throwProbe.withTestDb(async (tx) => {
+          await tx.execute(sql`INSERT INTO migrated_probe (id) VALUES (7)`)
+          throw new Error('boom-after-insert')
+        }),
+      ).rejects.toThrow('boom-after-insert')
+      expect(await reader`SELECT id FROM migrated_probe`).toEqual([])
+    } finally {
+      await reader.end()
+    }
   })
 })
 
@@ -97,14 +118,5 @@ describe.skipIf(!hasTestDatabase())('connectionString', () => {
       await writer.end()
       await reader.end()
     }
-  })
-})
-
-describe.skipIf(!hasTestDatabase())('stopTestDb', () => {
-  it('leaves alone a server it did not start', async () => {
-    const db = createTestDb({ databaseName: 'stop_probe' })
-    await db.withTestDb(async () => {})
-    await db.stopTestDb()
-    await expect(db.withTestDb(async () => {})).resolves.toBeUndefined()
   })
 })

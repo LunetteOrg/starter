@@ -4,7 +4,8 @@ import { globSync } from 'glob'
 import { blankCommentsAndStrings } from './source-scan.ts'
 
 /**
- * What can bring a container up: testcontainers directly, or this package's helpers.
+ * What needs a container: testcontainers used directly and `postgresContainer` start
+ * one; `createTestDb` starts none but needs the server `testDbPlugin()` starts.
  * Matched on code only, comments and string literals blanked, so a package that merely
  * talks about `createTestDb` is not taken for a user.
  */
@@ -46,9 +47,11 @@ export function containerUsers(root: string): ContainerUser[] {
 }
 
 /**
- * The rule that arms itself: a workspace that starts containers without mounting one
- * of the plugins fails. Forgetting the plugin is not a red test otherwise: it is a
- * Postgres per worker, none stopped, found days later.
+ * The rule that arms itself: a workspace that needs containers without mounting one
+ * of the plugins fails. Without it, a package on `createTestDb` has no server: its
+ * database suites reject, or skip on `hasTestDatabase()` and go green on nothing. A
+ * package on testcontainers directly leaves a Postgres per worker, none stopped,
+ * found days later.
  *
  * @example
  * ```ts
