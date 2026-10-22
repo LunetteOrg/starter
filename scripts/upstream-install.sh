@@ -105,6 +105,10 @@ done
 # entry), rather than going red for one it never installed.
 if [ "$tool" = opencode ] && [ -n "${GITHUB_ENV:-}" ]; then
   for word in $installed; do now=${word#v}; done
+  case $now in
+    [0-9]*.[0-9]*) ;;
+    *) echo "upstream-install: asked for $tool $version, installed $installed" >&2; exit 1 ;;
+  esac
   echo "::notice::Homebrew installs opencode $now, read as $version; checking $now"
   echo "VERSION=$now" >> "$GITHUB_ENV"
   exit 0

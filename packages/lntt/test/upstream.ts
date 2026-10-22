@@ -73,7 +73,7 @@ export function missingFlags(
     const have = known(subcommand)
     // A description read as no flag at all is a format the parser no longer follows,
     // not every flag removed.
-    if (!have.size) {
+    if (flags.size && !have.size) {
       lines.push(`${tool} ${subcommand}: its description lists no flag; the format may have changed`)
       continue
     }

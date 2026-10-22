@@ -200,3 +200,9 @@ jobs:
           # env.VERSION: the version installed, which scripts/upstream-install.sh may
           # have set (opencode, when Homebrew moved on since the versions job).
           key: upstream-${{ matrix.tool }}-${{ env.VERSION }}
+      # The version read, when another was installed: the versions job looks that one up.
+      - if: ${{ !cancelled() && steps.issue.outcome != 'failure' && env.VERSION != matrix.version }}
+        uses: actions/cache/save@v6
+        with:
+          path: .upstream-checked
+          key: upstream-${{ matrix.tool }}-${{ matrix.version }}

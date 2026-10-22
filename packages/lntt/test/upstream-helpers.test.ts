@@ -87,6 +87,8 @@ describe('upstream helpers', () => {
       'claude',
     ])
     assert.deepEqual(ownArgs(['pane', 'run', 'p1', 'opencode']), ['pane', 'run', 'p1', 'opencode'])
+    assert.deepEqual(ownArgs(['--', 'x']), [])
+    assert.deepEqual(ownArgs(['a', '--', 'b', '--', 'c']), ['a'])
   })
 
   test('waitFor returns the first value its probe gives, and times out naming what it waited for', async () => {

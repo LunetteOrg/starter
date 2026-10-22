@@ -177,8 +177,8 @@ failing step, the run and the end of the log. Whoever takes it reads the log, th
 lntt's adapter (`packages/lntt/src/worktree.ts`, `headless.ts`, `orca-subagents.ts`) or
 records the tool's change in the decision that relies on it
 ([worktree tooling](../adr/worktree-tooling.md), [review agents](../adr/review-agents.md)).
-When Homebrew moves to a newer opencode between the reading of the version and its
-install, the job checks the one installed, under its own version. A red that is the
+When Homebrew installs another opencode than the one the versions job read, the job
+checks the one installed, under its own version, and saves an entry for both. A red that is the
 runner's (a download that failed) closes the issue and runs the
 workflow again with that tool and `force`, which checks the tool's latest version; that
 run opens no second issue, so its outcome is read in the run. A job that outlasts its
@@ -192,7 +192,6 @@ its red runs are the signal.
 - **The checked versions in a file of the repository.** The workflow would push to
   `main` every day, and a person's commit would race it; a cache entry costs nothing to
   write and is lost only to a check run again.
-
 - **A script that restates the CI's commands** (wai's `scripts/ci-local.sh`), or job
   steps moved into scripts both sides call (pelion). The first drifts as soon as a
   step changes in the YAML; the second still lets the two environments drift, and a
