@@ -63,6 +63,13 @@
 //   lntt branch rename        rename the current branch to the convention, from the name a
 //                             tool gave it or, in Orca, from the linked issue; never fails
 //
+//   lntt pr block             the empty retrospective block of delivery.pullRequest.retrospective,
+//                             for the pull request template and the retrospective skill
+//   lntt pr check [--pr <n> | -]
+//                             exit 1 when the body of the pull request (default: the current
+//                             branch's; -: stdin) has no retrospective block, misses one of its
+//                             labels or leaves one empty; in GitHub Actions each is a ::warning
+//
 //   lntt review [--base <branch>] [--plan]
 //                             one review round on the current branch: the lenses and agents of
 //                             delivery.review, headless and read-only, then verifiers that try to
@@ -135,6 +142,7 @@ import { argv } from 'node:process'
 const args = argv.slice(2)
 if (args[0] === 'ci') await (await import('../src/ci/cli.ts')).main(args.slice(1))
 else if (args[0] === 'branch') (await import('../src/branch-cli.ts')).main(args.slice(1))
+else if (args[0] === 'pr') (await import('../src/pull-request-cli.ts')).main(args.slice(1))
 else if (args[0] === 'refs') await (await import('../src/refs-cli.ts')).main(args.slice(1))
 else if (args[0] === 'check') (await import('../src/check-cli.ts')).main(args.slice(1))
 else if (args[0] === 'review') await (await import('../src/review-cli.ts')).main(args.slice(1))

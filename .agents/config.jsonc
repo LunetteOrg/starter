@@ -134,6 +134,37 @@
       "longTrailers": [
         "Retro"
       ]
+    },
+    // The body of a pull request: its sections are in docs/process/delivery.md, the
+    // retrospective block is filled by the retrospective skill and checked by
+    // lntt pr check. The review's cost is a line of its own: the harvest weighs it.
+    "pullRequest": {
+      "language": "en",
+      "template": ".github/pull_request_template.md",
+      "retrospective": {
+        "heading": "🔁 Retrospective",
+        "lines": [
+          "Friction",
+          "To automate (hook/skill/agent)",
+          "Rule rediscovered (→ ADR/AGENTS.md)",
+          "Rework cause",
+          "Review cost (rounds, tokens, USD)"
+        ],
+        "none": "none"
+      }
+    }
+  },
+  // The harvest of the retrospective blocks, at the end of a theme or a release
+  // (docs/process/delivery.md): a Discussion, so the adopted proposals are issues and
+  // the retrospective itself is not one.
+  "cycle": {
+    "retrospective": {
+      "target": {
+        "kind": "discussion",
+        "category": "Ideas",
+        "title": "Retrospective — {window}",
+        "targetedTitle": "Targeted retrospective — {subject}"
+      }
     }
   }
 }

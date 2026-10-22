@@ -101,10 +101,12 @@ rests on these criteria:
 4. **The skills call both groups.** `review` calls `lntt review`, `lntt check cite` and
    `ci:local`; `decisions` calls `lntt check decisions` and is a lens of `lntt review`;
    `coordinate` calls `lntt worktree start`, the mailbox and `lntt get`; `run-local`
-   calls `lntt get`, `lntt local app` and `lntt viewer`; only `commit-message` stays on
-   the gate side (`lntt get`, commitlint). In the code, `lntt review` imports the check
-   areas and the mutations and runs them in-process (`packages/lntt/src/review-cli.ts`
-   imports `runArea` and `mutateAll`), and `lntt worktree start` names branches with
+   calls `lntt get`, `lntt local app` and `lntt viewer`; `retrospective` calls `lntt get`
+   and `lntt pr`, whose check of a pull request body CI runs as a warning (a body is
+   not part of a commit, so it is no gate); only `commit-message` stays on the gate side
+   (`lntt get`, commitlint). In the code, `lntt review` imports the check areas and
+   the mutations and runs them in-process (`packages/lntt/src/review-cli.ts` imports
+   `runArea` and `mutateAll`), and `lntt worktree start` names branches with
    the gate's code (`packages/lntt/src/worktree-cli.ts` imports `branchName` and
    `checkBranch`).
 5. **The cost of a split.** A second package needs its placeholder published by hand

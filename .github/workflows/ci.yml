@@ -86,6 +86,19 @@ jobs:
         env:
           BRANCH: ${{ github.event.pull_request.head.ref }}
         run: pnpm exec lntt branch check --branch "$BRANCH"
+      # The retrospective block of the body is filled (the retrospective skill): a
+      # warning, not a gate. A body edit starts no run, so a red step would stay red
+      # after the fix; the annotations show on the pull request until the next push.
+      # The candidate and Dependabot write no block of their own. ci:local has no body
+      # and reports the step as not run; the skill runs lntt pr check before ready.
+      - if: >-
+          github.event_name == 'pull_request' &&
+          !startsWith(github.event.pull_request.head.ref, 'candidate/') &&
+          !startsWith(github.event.pull_request.head.ref, 'dependabot/')
+        continue-on-error: true
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s\n' "$BODY" | pnpm exec lntt pr check -
       # An installed plugin updates only when its version changes.
       - if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review'
         env:

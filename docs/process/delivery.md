@@ -46,7 +46,8 @@ stops at the draft pull request.
    more rounds for that branch, or an issue
    ([review agents](../adr/review-agents.md)).
 3. **`pnpm ci:local` green** on the head about to be published, then one push, then
-   `gh pr ready`. A red `ci:local` goes back into the review.
+   `lntt pr check` clean on the body, then `gh pr ready`. A red `ci:local` goes back
+   into the review.
 4. **On the candidate.** When the pull request is opened or marked ready, the candidate
    automation moves it onto the open candidate, creating one when none is open, and
    leaves a comment saying where it went. Marking it ready starts the minimal CI.
@@ -60,6 +61,40 @@ both take changes through pull requests only, with no required approval. The
 repository admin role bypasses both: the release bump is a direct commit on `main`,
 and rewriting a candidate (a rebase on `main`) is a force push an
 admin makes.
+
+## The pull request body
+
+The body starts from [`.github/pull_request_template.md`](../../.github/pull_request_template.md)
+and is written in `delivery.pullRequest.language`:
+
+- **`Closes #N`** for the issue it completes, `Part of #N` for one piece of it.
+- **Why** and **What changes**: what a reviewer cannot see in the diff.
+- **Definition of done**: the issue's entries, each checked, or left open with the
+  reason.
+- **Review**: the rounds of `lntt review`, what each found and how it ended, and the
+  findings left open.
+- **Checks**: `pnpm ci:local` on the commit pushed, with its outcome.
+- **The retrospective block**: the labels of `delivery.pullRequest.retrospective`
+  between `<!-- retro:start -->` and `<!-- retro:end -->`, each with a value or `none`,
+  the review's cost among them. The `retrospective` skill fills it from the branch's
+  `Retro:` trailers and what the agents reported. A squash collapses the commits; the
+  body survives it, so it is what the harvest reads. `lntt pr check` reports a block
+  missing or a label left empty, before `gh pr ready` and in CI as a warning: a body
+  edit starts no run, so a gate would stay red after the fix.
+
+## The retrospective
+
+**A harvest runs when a release's last candidate merges into `main`**, and when a theme
+run by a coordinator ends, on the pull requests of that theme. The `retrospective`
+skill reads the blocks of the window's merged pull requests (bodies and comments; a
+theme's coordinator leaves its block as a comment on the candidate), clusters them,
+checks the proposals of the previous retrospectives and proposes one mechanism per
+cluster. The person reads the draft before it is published.
+
+It is published where `cycle.retrospective.target` says: a Discussion in its category,
+titled with the window. A Discussion and not an issue, so the board holds only the work
+a retrospective adopts: each proposal the person adopts becomes an issue of its own
+(the `issues` skill), citing the Discussion and its cluster.
 
 ## The candidate
 

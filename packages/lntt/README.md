@@ -73,8 +73,8 @@ export default commitlintConfig()
 
 `lntt sync` writes the managed block of `AGENTS.md` from
 [`agents/block.md`](./agents/block.md), and a stub of each shared skill the package
-ships ([`skills/`](./skills/): `commit-message`, `coordinate`, `decisions`, `review`,
-`run-local`) into `.agents/skills/` and `.claude/skills/`; commit them. A stub holds the
+ships ([`skills/`](./skills/): `commit-message`, `coordinate`, `decisions`,
+`retrospective`, `review`, `run-local`) into `.agents/skills/` and `.claude/skills/`; commit them. A stub holds the
 skill's frontmatter, for discovery, and the instruction to load its guide:
 
 ```sh
@@ -182,6 +182,22 @@ else the labels `bug` and `documentation`, else `feat`). `rename` reads the conv
 back from a flattened name (Orca's `<user>/<type>-<issue>-<slug>`, the agent harness's
 `worktree-<type>+<issue>+<slug>`) or, inside Orca, builds it from the issue linked to the
 worktree (`orca worktree current`); it leaves an existing branch alone.
+
+## The pull request body
+
+```sh
+lntt pr block                        # the empty retrospective block, from the configuration
+lntt pr check                        # exit 1 on a missing block, a missing or an empty label
+lntt pr check --pr 171               # another pull request's body; `-` reads it on stdin
+```
+
+The block is `delivery.pullRequest.retrospective`: its heading and its labels, each
+written `- **<label>:** <value>` between `<!-- retro:start -->` and `<!-- retro:end -->`,
+the markers on lines of their own. A value may run on the lines below its label; an HTML
+comment is no value; the configured `none` is an answer. `check` reads the current
+branch's pull request with `gh` unless told otherwise; in GitHub Actions each problem is
+a `::warning` annotation. The `retrospective` skill fills the block and harvests the
+merged pull requests' blocks.
 
 ## Starting work on an issue
 
