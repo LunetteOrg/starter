@@ -9,7 +9,7 @@ import { isAbsolute, join, relative } from 'node:path'
 import { checkAgentsBlock } from './agents.ts'
 import { checkDecisions, decisionFigures } from './check-decisions.ts'
 import { runTests } from './check-tests.ts'
-import { checkBody, retrospectiveRules } from './pull-request.ts'
+import { checkBody, RETRO_START, retrospectiveBlock, retrospectiveRules } from './pull-request.ts'
 import { checkSkills, stubFolders } from './skills.ts'
 
 export type Status = 'PASS' | 'FAIL' | 'NOT RUN' | 'INFO'
@@ -120,10 +120,18 @@ function skills(root: string): Result[] {
   }))
 }
 
-// The retrospective block of a pull request body (delivery.pullRequest.retrospective).
-// The body is not in the repository: it is given to the area, which without one does not
-// run.
-function body(options: CheckOptions): Result[] {
+// The retrospective block (delivery.pullRequest.retrospective): `retrospective` in a pull
+// request body, which is not in the repository and is given to the area (without one the
+// check does not run); `template` in the pull request template, which must hold the block
+// `lntt pr block` prints, so a label added to the configuration reaches the template.
+function body(check: string | undefined, options: CheckOptions): Result[] {
+  const results: Result[] = []
+  if (check !== 'template') results.push(...bodyRetrospective(options))
+  if (check === undefined || check === 'template') results.push(bodyTemplate(options))
+  return results
+}
+
+function bodyRetrospective(options: CheckOptions): Result[] {
   const result = (status: Status, message: string): Result => ({
     area: 'body',
     check: 'retrospective',
@@ -140,13 +148,39 @@ function body(options: CheckOptions): Result[] {
   return problems.map((p) => result('FAIL', `${options.body?.from}: ${p}`))
 }
 
+function bodyTemplate(options: CheckOptions): Result {
+  const pullRequest = (options.data.delivery as { pullRequest?: { template?: string } } | undefined)?.pullRequest
+  const path = pullRequest?.template ?? '.github/pull_request_template.md'
+  const result = (status: Status, message: string): Result => ({
+    area: 'body',
+    check: 'template',
+    status,
+    path,
+    line: null,
+    message,
+  })
+  const file = join(options.root, path)
+  if (!existsSync(file)) return result('NOT RUN', 'no pull request template')
+  const text = readFileSync(file, 'utf8').replaceAll('\r\n', '\n')
+  if (!text.split('\n').some((l) => l.trim() === RETRO_START)) {
+    return result('FAIL', 'no retrospective block: paste what lntt pr block prints')
+  }
+  if (!text.includes(retrospectiveBlock(retrospectiveRules(options.data)).trimEnd())) {
+    return result(
+      'FAIL',
+      'the retrospective block differs from the configuration: replace it with what lntt pr block prints',
+    )
+  }
+  return result('PASS', 'the retrospective block is the one lntt pr block prints')
+}
+
 // One area, or one of its checks: `structure` and `numbers` for the decisions, `levels`,
 // `focus`, `rules`, `touched` and `mutate` for the tests.
 export function runArea(area: Area, check: string | undefined, files: string[], options: CheckOptions): Result[] {
   if (area === 'agents-md') return agentsMd(options.root)
   if (area === 'skills') return skills(options.root)
   if (area === 'tests') return runTests(check, files, options)
-  if (area === 'body') return body(options)
+  if (area === 'body') return body(check, options)
   if (check === 'numbers') return decisionFigures(options, files)
   return checkDecisions(options, { figures: check === undefined })
 }

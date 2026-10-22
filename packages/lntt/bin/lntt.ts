@@ -52,6 +52,7 @@
 //     body [--pr <n> | -]     the retrospective block of a pull request body (default: the
 //                             current branch's, with gh; -: stdin): FAIL for a missing block, a
 //                             missing, repeated or empty label; alone, lntt check does not run it
+//     body template           the pull request template holds the block lntt pr block prints
 //   lntt check cite <path:line>...
 //                             what is on those lines; FAIL for a line or file that does not exist
 //

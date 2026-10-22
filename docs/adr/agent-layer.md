@@ -44,11 +44,11 @@ it never guesses.
 
 ### The shared skills come with `lntt`; a project holds their stubs
 
-The shared skills (`commit-message`, `coordinate`, `decisions`, `retrospective`, `review`,
-`run-local`) ship inside `@lntt/lntt`, in `packages/lntt/skills/`. `lntt guide <skill>` prints a
-skill's guide from the installed package, with the folder its relative links start
-from, so a skill and the `lntt` it calls are always one version: the project's
-lockfile.
+The shared skills (`commit-message`, `coordinate`, `decisions`, `retrospective`,
+`review`, `run-local`) ship inside `@lntt/lntt`, in `packages/lntt/skills/`.
+`lntt guide <skill>` prints a skill's guide from the installed package, with the folder
+its relative links start from, so a skill and the `lntt` it calls are always one
+version: the project's lockfile.
 
 `lntt sync` writes a stub of each skill into the two directories the clients read at
 the project root, as their documentation states it in October 2026:

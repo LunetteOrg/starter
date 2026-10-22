@@ -75,12 +75,13 @@ and is written in `delivery.pullRequest.language`:
   findings left open.
 - **Checks**: `pnpm ci:local` on the commit pushed, with its outcome.
 - **The retrospective block**: the labels of `delivery.pullRequest.retrospective`
-  between `<!-- retro:start -->` and `<!-- retro:end -->`, each with a value or `none`,
-  the review's cost among them. The `retrospective` skill fills it from the branch's
-  `Retro:` trailers and what the agents reported. A squash collapses the commits; the
-  body survives it, so it is what the harvest reads. `lntt check body` reports a block
-  missing or a label left empty, before `gh pr ready` and in CI as a warning: a body
-  edit starts no run, so a gate would stay red after the fix.
+  between `<!-- retro:start -->` and `<!-- retro:end -->`, each with a value or the
+  configured `none`. The `retrospective` skill fills it from the branch's `Retro:`
+  trailers and what the agents reported. A squash collapses the commits; the body
+  survives it, so it is what the harvest reads. `lntt check body` reports a block
+  missing or a label left empty: the author runs it before `gh pr ready`, and CI shows
+  each problem as a warning on the pull request. `lntt check` keeps the template's
+  block equal to the configuration's.
 
 ## The retrospective
 
@@ -91,10 +92,9 @@ theme's coordinator leaves its block as a comment on the candidate), clusters th
 checks the proposals of the previous retrospectives and proposes one mechanism per
 cluster. The person reads the draft before it is published.
 
-It is published where `cycle.retrospective.target` says: a Discussion in its category,
-titled with the window. A Discussion and not an issue, so the board holds only the work
-a retrospective adopts: each proposal the person adopts becomes an issue of its own
-(the `issues` skill), citing the Discussion and its cluster.
+It is published where `cycle.retrospective.target` says. Each proposal the person
+adopts becomes an issue of its own (the `issues` skill), citing the retrospective and
+its cluster, so the board holds only the work a retrospective adopts.
 
 ## The candidate
 
@@ -321,6 +321,11 @@ because npm configures a trusted publisher only on a package that exists:
   `npm publish`. A release is already gated by the tag, the tests and the person's go
   to publish the GitHub Release, and the approval would only add a second wait on the
   same decision.
+- **The body's retrospective block as a gate in CI.** Editing a body starts no run, so
+  a red check would stay red after the block is filled, until the next push.
+- **A retrospective published as an issue.** The board would hold the report beside
+  the work it proposes; the report is a Discussion, and only the adopted proposals are
+  issues.
 - **Release pull requests.** A version bump has nothing to review that CI does not
   already check.
 - **GitHub's merge queue.** It is the mechanism built for this. The flow here is the

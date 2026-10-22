@@ -189,6 +189,7 @@ worktree (`orca worktree current`); it leaves an existing branch alone.
 lntt pr block                        # the empty retrospective block, from the configuration
 lntt check body                      # FAIL on a missing block, a missing, repeated or empty label
 lntt check body --pr 171             # another pull request's body; `-` reads it on stdin
+lntt check body template             # the template holds the block lntt pr block prints
 ```
 
 The block is `delivery.pullRequest.retrospective`: its heading and its labels, each
@@ -196,7 +197,9 @@ written `- **<label>:** <value>` between `<!-- retro:start -->` and `<!-- retro:
 the markers on lines of their own. A value may run on the lines below its label; an HTML
 comment is no value; the configured `none` is an answer. `lntt check body` is an area of
 `lntt check` whose input is not in the repository: it reads the current branch's pull
-request with `gh` unless told otherwise, and `lntt check` alone reports it `NOT RUN`. The `retrospective` skill fills the block and harvests the
+request with `gh` unless told otherwise, and `lntt check` alone reports it `NOT RUN`.
+Its `template` check reads the repository: the template at `delivery.pullRequest.template`
+holds the block `lntt pr block` prints, so `lntt check` alone runs it. The `retrospective` skill fills the block and harvests the
 merged pull requests' blocks.
 
 ## Starting work on an issue

@@ -21,7 +21,7 @@ import {
 } from './check.ts'
 import { ConfigError, loadConfig } from './index.ts'
 
-const USAGE = `usage: lntt check [agents-md | skills | decisions [structure | numbers [<file>...]] | tests [levels | focus | rules | touched] | body [--pr <n> | -]] [--base <ref>] [--json]
+const USAGE = `usage: lntt check [agents-md | skills | decisions [structure | numbers [<file>...]] | tests [levels | focus | rules | touched] | body [template | --pr <n> | -]] [--base <ref>] [--json]
        lntt check tests mutate <path:line> --text <on the line> --to <mutated> [--json]
        lntt check cite <path:line>... [--json]`
 
@@ -36,10 +36,10 @@ const CHECKS: Record<string, string[]> = {
   skills: [],
   decisions: ['structure', 'numbers'],
   tests: ['levels', 'focus', 'rules', 'touched', 'mutate'],
-  body: ['-'],
+  body: ['-', 'template'],
 }
 
-// The body the body area checks: stdin for `-`, else the pull request named, else the
+// The body the body area's retrospective check reads: stdin for `-`, else the pull request named, else the
 // current branch's, read with gh.
 function readBody(check: string | undefined, pr: string | undefined): { text: string; from: string } {
   if (check === '-') return { text: readFileSync(0, 'utf8'), from: 'stdin' }
@@ -92,6 +92,7 @@ function run(args: string[]): Result[] {
   if (values.pr !== undefined) {
     if (area !== 'body') usage('--pr is for body')
     if (check === '-') usage('give --pr <n> or -, not both')
+    if (check === 'template') usage('template reads the repository, not a pull request')
     if (!/^[1-9]\d*$/.test(values.pr)) usage(`--pr takes a number, not ${values.pr}`)
   }
   // The root of the project whose configuration is read, as `lntt sync` writes it.
@@ -103,7 +104,7 @@ function run(args: string[]): Result[] {
     data: loaded.data,
     ...(base === undefined ? {} : { base }),
     ...(values.text === undefined ? {} : { mutation: { text: values.text, to: values.to as string } }),
-    ...(area === 'body' ? { body: readBody(check, values.pr) } : {}),
+    ...(area === 'body' && check !== 'template' ? { body: readBody(check, values.pr) } : {}),
   }
   if (area === undefined) return AREAS.flatMap((a) => runArea(a, undefined, [], options))
   return runArea(area as Area, check, rest, options)

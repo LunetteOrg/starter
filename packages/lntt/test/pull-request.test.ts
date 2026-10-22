@@ -254,25 +254,79 @@ describe('lntt pr block and lntt check body', () => {
     assert.match(r.stderr, /^lntt: error: gh pr view --json body --jq \.body failed\n$/)
   })
 
-  test('lntt check alone does not run the body area, and says so', () => {
-    const r = lntt(['check', '--json'])
-    const lines = r.stdout
+  function bodyResults(args: string[]) {
+    const r = lntt([...args, '--json'])
+    return r.stdout
       .trim()
       .split('\n')
+      .filter(Boolean)
       .map((l) => JSON.parse(l))
-    assert.deepEqual(
-      lines.filter((l) => l.area === 'body'),
-      [
-        {
-          area: 'body',
-          check: 'retrospective',
-          status: 'NOT RUN',
-          path: null,
-          line: null,
-          message: 'no pull request body given: lntt check body [--pr <n> | -]',
-        },
-      ],
+      .filter((l) => l.area === 'body')
+      .map(({ check, status, path, message }) => ({ check, status, path, message }))
+  }
+
+  function template(text: string, path = '.github/pull_request_template.md'): void {
+    mkdirSync(dirname(join(repo, path)), { recursive: true })
+    writeFileSync(join(repo, path), text)
+  }
+
+  const BLOCK = '## 🔁 Retro\n<!-- retro:start -->\n- **Friction:**\n- **Review cost:**\n<!-- retro:end -->\n'
+
+  test('lntt check alone does not run the retrospective check, and says so; the template check runs', () => {
+    template(`## Why\n\n${BLOCK}`)
+    assert.deepEqual(bodyResults(['check']), [
+      {
+        check: 'retrospective',
+        status: 'NOT RUN',
+        path: null,
+        message: 'no pull request body given: lntt check body [--pr <n> | -]',
+      },
+      {
+        check: 'template',
+        status: 'PASS',
+        path: '.github/pull_request_template.md',
+        message: 'the retrospective block is the one lntt pr block prints',
+      },
+    ])
+  })
+
+  test('template: a block that differs from the configuration fails, with the fix', () => {
+    template(BLOCK.replace('- **Review cost:**\n', ''))
+    assert.deepEqual(bodyResults(['check', 'body', 'template']), [
+      {
+        check: 'template',
+        status: 'FAIL',
+        path: '.github/pull_request_template.md',
+        message: 'the retrospective block differs from the configuration: replace it with what lntt pr block prints',
+      },
+    ])
+    template('## Why\n')
+    assert.match(bodyResults(['check', 'body', 'template'])[0].message, /no retrospective block/)
+  })
+
+  test('template: at delivery.pullRequest.template, and NOT RUN when there is none', () => {
+    assert.deepEqual(bodyResults(['check', 'body', 'template']), [
+      {
+        check: 'template',
+        status: 'NOT RUN',
+        path: '.github/pull_request_template.md',
+        message: 'no pull request template',
+      },
+    ])
+    const retrospective = { heading: '🔁 Retro', lines: ['Friction', 'Review cost'] }
+    writeFileSync(
+      join(repo, '.agents/config.jsonc'),
+      JSON.stringify({ delivery: { pullRequest: { template: 'docs/pr.md', retrospective } } }),
     )
+    template(BLOCK, 'docs/pr.md')
+    assert.equal(bodyResults(['check', 'body', 'template'])[0].status, 'PASS')
+  })
+
+  test('- checks only the body given, not the template', () => {
+    template('no block')
+    const filled = '<!-- retro:start -->\n- **Friction:** none\n- **Review cost:** none\n<!-- retro:end -->'
+    const r = lntt(['check', 'body', '-'], filled)
+    assert.equal(r.status, 0, r.stdout)
   })
 
   test('usage errors exit 2 and run no gh', () => {
@@ -281,6 +335,7 @@ describe('lntt pr block and lntt check body', () => {
       ['check', 'body', '--pr', 'abc'],
       ['check', 'body', '-', '--pr', '3'],
       ['check', 'body', 'foo'],
+      ['check', 'body', 'template', '--pr', '3'],
       ['check', 'body', '-', '-'],
       ['check', 'body', '--prr', '3'],
       ['check', 'tests', '--pr', '3'],

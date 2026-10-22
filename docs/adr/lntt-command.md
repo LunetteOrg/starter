@@ -57,7 +57,8 @@ lntt ci local | candidate
   Ctrl-C); a defect of `lntt` itself exits 1 with its stack trace.
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
   `decisions` and `tests`, whose results their review lenses read, and `agents-md`,
-  `skills` and `body` (a pull request body's retrospective block), which no lens needs; a lens's checks are the area named after it. Alone it runs every
+  `skills` and `body` (the retrospective block of a pull request body and of the
+  template), which no lens needs; a lens's checks are the area named after it. Alone it runs every
   area, which is what CI runs. Every check reports `PASS`, `FAIL` or `NOT RUN` with its
   reason, so a check that did not run is never read as one that passed, and `INFO` for
   what it prints
@@ -104,9 +105,7 @@ rests on these criteria:
    `ci:local`; `decisions` calls `lntt check decisions` and is a lens of `lntt review`;
    `coordinate` calls `lntt worktree start`, the mailbox and `lntt get`; `run-local`
    calls `lntt get`, `lntt local app` and `lntt viewer`; `retrospective` calls `lntt get`,
-   `lntt pr block` and `lntt check body`, which CI runs as a warning: a body edit
-   starts no run, so a red would outlive its fix; only `commit-message` stays on the
-   gate side (`lntt get`, commitlint). In the code, `lntt review` imports the check
+   `lntt pr block` and `lntt check body`; only `commit-message` stays on the gate side (`lntt get`, commitlint). In the code, `lntt review` imports the check
    areas and the mutations and runs them in-process (`packages/lntt/src/review-cli.ts`
    imports `runArea` and `mutateAll`), and `lntt worktree start` names branches with
    the gate's code (`packages/lntt/src/worktree-cli.ts` imports `branchName` and

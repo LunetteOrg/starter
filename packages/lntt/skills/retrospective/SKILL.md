@@ -23,10 +23,11 @@ lntt get delivery.commits          # whether Retro is one of the trailers
 
 `lntt pr block` prints the block with the schema's defaults for what
 `delivery.pullRequest.retrospective` leaves out. `lntt get` fails on a key the
-configuration does not have: no `cycle.retrospective.target` means a harvest is
-published nowhere and goes to the person as a report. Labels are written exactly as the
-configuration gives them, in its language; the values in the language of
-`delivery.pullRequest.language`.
+configuration does not have. Without `cycle.retrospective.target`, a harvest stops
+before publishing and proposes the section to the person (`kind`, `category` for a
+Discussion, `title` with `{window}`); it never picks a place to publish. Labels are
+written exactly as the configuration gives them, in its language; the values in the
+language of `delivery.pullRequest.language`.
 
 ## 1. Capture, while working
 
@@ -65,8 +66,10 @@ Before the pull request is marked ready:
 lntt check body          # the current branch's pull request; --pr <n>, or - for stdin
 ```
 
-It fails naming a missing block, or a label missing, written twice or left empty. CI reports the same
-on the pull request.
+It fails naming a missing block, or a label missing, written twice or left empty. CI
+reports the same on the pull request. The template's block is the one `lntt pr block`
+prints (`lntt check body template`): a label added to the configuration goes into the
+template in the same change.
 
 ## 3. A coordinator, when the theme ends
 
@@ -117,7 +120,8 @@ published without the person's go.
    titled with `target.targetedTitle` when the configuration has it.
 8. **The draft goes to the person** (or to the orchestrator, from a coordinator) before
    it is published.
-9. **Publish** at `cycle.retrospective.target`, with `{window}` replaced in the title:
+9. **Publish** at `cycle.retrospective.target` (section 0 when it is missing), with
+   `{window}` replaced in the title:
    - `discussion`: a GitHub Discussion in `category`, with the `createDiscussion`
      mutation; the repository and category ids are read with `gh api graphql`, never
      written down.
