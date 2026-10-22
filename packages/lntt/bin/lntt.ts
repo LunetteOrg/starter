@@ -15,6 +15,10 @@
 //   lntt local app <name>     an app of local.apps, resolved for this worktree (port, url, commands)
 //   lntt viewer detect        where the session runs and which viewer shows pages, with why
 //   lntt viewer open <url>    open it there; exit 3 with the agent call when only the agent can
+//   lntt browser [<app>] [--json]
+//                             how an agent drives a browser on the app of local.apps in this
+//                             worktree: the driver, why, and each operation as a shell
+//                             command or a tool call; <app> may be omitted when there is one
 //
 //   lntt check [<area> [<check>]] [--base <ref>] [--json]
 //                             what is checked without judgement, one area per review lens;

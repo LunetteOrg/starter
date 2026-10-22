@@ -73,7 +73,7 @@ The other check areas skip the stubs.
 
 The operator profile has its own schema (`packages/lntt/schema/operator.schema.json`:
 name, handle, role, language, confidence per topic, accounts, workspace with the
-preferred viewers in order) and is read,
+preferred viewers and browsers in order) and is read,
 in merge order, from:
 
 1. `~/.agents/operator.{jsonc,yml}`, for every project;

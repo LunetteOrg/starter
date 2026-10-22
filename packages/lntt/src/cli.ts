@@ -1,12 +1,18 @@
 // The configuration commands of `lntt` (usage: bin/lntt.ts).
 
 import { execFileSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import {
+  browserApp,
+  browserPlan,
   ConfigError,
+  chooseDriver,
   chooseViewer,
   commandExists,
+  type Driver,
   findConfig,
+  formatPlan,
   getValue,
   guide,
   loadConfig,
@@ -23,7 +29,7 @@ import { checkReferences } from './references.ts'
 
 const USAGE = [
   'usage: lntt path | validate | get <key> | set <key> <json> | operator [get <key> | sources]',
-  '       lntt sync | guide [<skill>] | local app <name> | viewer detect|open <url>',
+  '       lntt sync | guide [<skill>] | local app <name> | viewer detect|open <url> | browser [<app>] [--json]',
   '       lntt check [<area> [<check>]] [--base <ref>] [--json] | check cite <path:line>...',
   '       lntt branch name|check|rename [...]',
   '       lntt worktree start --issue <n> [...]',
@@ -38,6 +44,7 @@ function usage(): never {
 // `lntt <command> [...]`, every command but `ci` (./ci/cli.ts).
 export function main(args: string[]): void {
   const [command, key, raw] = args
+  if (command === 'browser' && args.length > 3) usage()
   try {
     run(command, key, raw)
   } catch (e) {
@@ -131,6 +138,23 @@ function run(command: string | undefined, key: string | undefined, raw: string |
           exit(3)
         }
       } else usage()
+      break
+    }
+    case 'browser': {
+      const args = [key, raw].filter((a) => a !== undefined)
+      const named = args.filter((a) => a !== '--json')
+      if (named.length > 1 || named.some((a) => a.startsWith('-'))) usage()
+      const preferences = ((loadOperator(cwd()).profile.workspace as { browsers?: Driver[] } | undefined)?.browsers ??
+        []) as Driver[]
+      const app = localApp(cwd(), browserApp(cwd(), named[0]))
+      const worktree = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
+      const plan = browserPlan({
+        app,
+        choice: chooseDriver({ env, preferences, has: commandExists }),
+        worktree,
+        tmp: tmpdir(),
+      })
+      stdout.write(args.includes('--json') ? `${JSON.stringify(plan)}\n` : formatPlan(plan))
       break
     }
     default:
