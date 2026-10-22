@@ -124,7 +124,7 @@ So:
   | Pinned by the project: gates and what CI runs | Agent tools |
   |---|---|
   | `lntt check [area]`, `lntt check cite`: deterministic, read only the commit | `lntt review [reply \| allow]`: its outcome is an opinion, wired into no CI |
-  | `lntt ci local`: CI's jobs on the machine; `lntt ci candidate`: what the candidate workflow runs on GitHub, at the commit's version (this repo's workspace, a project's lockfile) | `lntt worktree start`: the Orca and Herdr adapters |
+  | `lntt ci local`: CI's jobs on the machine; `lntt ci candidate`: what the candidate workflow runs on GitHub, at the default branch's version, which the workflow checks out ([delivery](../process/delivery.md#the-candidate-automation)) | `lntt worktree start`: the Orca and Herdr adapters |
   | `lntt branch check`, and `branch name` and `branch rename`, so the name an agent gets is the one the gate accepts | `lntt ask \| inbox \| answer` |
   | `lntt validate \| get \| set \| path`: they hold the schema; `set` writes a tracked file | `lntt guide`: it prints the skills |
   | `lntt sync`: it writes tracked files (the `AGENTS.md` block, the skill stubs) that `lntt check` verifies | `lntt operator`: personal context, read by no gate |
@@ -137,7 +137,7 @@ So:
     absence means the behaviour from before it existed. An enum only gains values.
     A newer `lntt` therefore reads an older file; the rule needs a test that
     validates a configuration of each released version against the current schema
-    (accepted risks).
+    ([accepted risks](#negative--accepted-risks)).
   - An older `lntt` rejects a field it does not know, as `additionalProperties: false`
     does: an unknown field is a typo until proven otherwise. A project writes a new
     field after bumping `@lntt/lntt` to a version that knows it, and `lntt validate`
@@ -147,7 +147,7 @@ So:
     with the error, as `lntt review` does (`loaded` in
     `packages/lntt/src/review-cli.ts`). The rule is that an invalid file gets an
     error, not the defaults; two commands still answer it with their defaults
-    (accepted risks).
+    ([accepted risks](#negative--accepted-risks)).
   - A removal or a rename is a breaking change, the one release where an older file
     stops validating: the release knows both names, the gate fails on the old one and
     names the new one while the agent tools still read it, and a later release drops
