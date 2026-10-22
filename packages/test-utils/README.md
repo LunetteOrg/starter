@@ -202,7 +202,7 @@ export default defineConfig({
   test: appTest({
     setupFiles: ['@testing-library/jest-dom/vitest'],
     // optional: specs too heavy to share the run, isolated and run last
-    last: { name: 'dev-server', include: ['vite-deps.test.ts'] },
+    last: { name: 'dev-server', include: ['**/vite-deps.test.ts'] },
   }),
 })
 ```
@@ -216,9 +216,12 @@ export default defineConfig({
 - **`appTest({ sources = 'app', exclude, setupFiles, last })`** adds 30 s and 60 s
   timeouts and two projects: **`fast`**, worker threads with `isolate: false`, so
   React and the router load once per worker; and **`last`**, when given, isolated
-  and ordered after `fast`. It lists the jsdom setup after your `setupFiles`.
+  and ordered after `fast` (its `include` globs are relative to the app's root, and
+  `fast` excludes them). It lists the jsdom setup after your `setupFiles`, and throws
+  if you list `@lntt/test-utils/jsdom-setup` there too.
 - `isolate: false` is safe only while no spec mocks a module with a hoisted
-  `vi.mock`. What else a shared registry carries from file to file, and the rule that
+  `vi.mock`; nothing in this package checks it (a `tests.rules` pattern of
+  `lntt check tests` can). What else a shared registry carries from file to file, and the rule that
   keeps each safe, is in the starter's
   [vitest-preset ADR](https://github.com/LunetteOrg/starter/blob/main/docs/adr/vitest-preset.md).
 
@@ -226,10 +229,13 @@ export default defineConfig({
 
 `@lntt/test-utils/jsdom-setup` is the setup file of every jsdom spec (`appTest()`
 lists it; a config without `appTest()` lists it in `setupFiles` itself). It needs
-`jsdom` and `@testing-library/react` in the project.
+`jsdom`, `@testing-library/react` and its peer `@testing-library/dom` in the project.
 
 - **Stubs**, only where jsdom lacks the API: `ResizeObserver`, `scrollIntoView`,
-  `Range` `getClientRects`/`getBoundingClientRect`, `elementFromPoint`, `matchMedia`.
+  `Range` `getClientRects`/`getBoundingClientRect`, `elementFromPoint`, `matchMedia`;
+  and jsdom's `localStorage`/`sessionStorage` where the global is missing (from
+  Node 25, vitest's jsdom environment keeps Node's, `undefined` without
+  `--localstorage-file`).
 - **`IS_REACT_ACT_ENVIRONMENT`** set for every file.
 - **After each test**: real timers, `cleanup()`, a 1 ms wait for timers an unmount
   scheduled. **After each file**: `localStorage`, `sessionStorage` and readable

@@ -42,7 +42,7 @@ export default defineConfig({
   plugins: [testDbPlugin()],
   test: appTest({
     setupFiles: ['@testing-library/jest-dom/vitest'],
-    last: { name: 'dev-server', include: ['vite-deps.test.ts'] },
+    last: { name: 'dev-server', include: ['**/vite-deps.test.ts'] },
   }),
 })
 ```
@@ -60,22 +60,26 @@ export default defineConfig({
      thresholds: a project sets them when it decides one.
    - No `pool` and no `isolate`: a package keeps vitest's isolation.
 2. **`appTest({ sources, exclude, setupFiles, last })` is an app's `test` block**:
-   `sharedTest` on `app` (React Router's directory), `testTimeout` 30 s, `hookTimeout`
-   60 s, and projects that inherit it (`extends: true`):
+   `sharedTest` on `app` (React Router's directory), the longer test and hook timeouts
+   of a component suite (their values are in `appTest()`), and projects that inherit
+   it (`extends: true`):
    - **`fast`**, every file not excluded: `pool: 'threads'`, `isolate: false`.
    - **`last`**, when given: the heavy specs, by name and globs the app passes, with
      vitest's isolation and `sequence.groupOrder: 1`, so they run after `fast` and
-     their memory does not add to it. `fast` excludes them. A `last` with an empty
-     `include` throws.
+     their memory does not add to it. `fast` excludes the same globs. They are
+     relative to the app's root, as vitest's `include`: a spec in a subdirectory needs
+     a leading `**/`. A `last` with an empty `include` throws.
    - `exclude` adds to vitest's defaults, `.react-router/`, `build/` and `e2e/`.
 3. **The jsdom setup is listed in `setupFiles`, never imported.** Setup files run
    again for every test file; a module they import runs once per worker, so under
    `isolate: false` its hooks would reach only the first file of each worker.
    `appTest()` appends `@lntt/test-utils/jsdom-setup` after the app's own setup files,
-   and throws when the app lists it too. `assertNoJsdomSetupImports(root)` fails on
-   any import of it (side effect, `from`, dynamic, `require`) in the workspaces under
-   `apps/*` and `packages/*`, naming the file and line; a project calls it from a
-   spec, as it calls the other guards.
+   and throws when the app lists it too, by name or by its path (built under
+   `node_modules`, or the source in a workspace); an app's own file named
+   `jsdom-setup` is not it. `assertNoJsdomSetupImports(root)` fails on any import of
+   it by package name (side effect, `from`, dynamic, `require`) in the workspaces
+   under `apps/*` and `packages/*`, naming the file and line; a project calls it from
+   a spec, as it calls the other guards.
 4. **What the jsdom setup does**, in every jsdom file. Everything that touches the DOM
    is behind `typeof window !== 'undefined'`: an app's node files run the same setup.
    - **Stubs** for what jsdom lacks, each installed only when missing:
@@ -84,6 +88,10 @@ export default defineConfig({
      `document.elementFromPoint` (`null`), `window.matchMedia` (matches nothing). A
      component never guards these with `typeof … === 'function'`; a test that asserts
      a call puts its own `vi.spyOn` on top.
+   - **jsdom's `localStorage` and `sessionStorage`** where the global is missing. From
+     Node 25, Node defines both globals and vitest's jsdom environment keeps Node's:
+     `localStorage` is `undefined` unless Node runs with `--localstorage-file`. A
+     storage the environment has, Node's `sessionStorage` included, stays.
    - **`IS_REACT_ACT_ENVIRONMENT = true`**, set by the setup for every file:
      `@testing-library/react` sets it in a `beforeAll` registered when it loads, which
      under a shared registry reaches only the first file.
@@ -104,7 +112,7 @@ it; none has been seen failing in pelion.
 
 | Leak | The rule that keeps it safe |
 |---|---|
-| A hoisted `vi.mock` of a module: every later file of the worker gets the mock | No `vi.mock`; `vi.doMock` with `vi.resetModules()` around it, or dependency injection. The module-mocks guard of `@lntt/test-utils` asserts it |
+| A hoisted `vi.mock` of a module: every later file of the worker gets the mock | No `vi.mock` in a file of `fast`; `vi.doMock` with `vi.resetModules()` around it, or dependency injection. `@lntt/test-utils` does not check it: a project forbids `vi.mock(` with a `tests.rules` pattern of `lntt check tests` ([test-checks](./test-checks.md)), or the review holds it |
 | A direct assignment to `window`, `globalThis` or a prototype | `vi.stubGlobal` or `vi.spyOn`, which `sharedTest()` undoes |
 | A module-level singleton (a store, a cache, a client) | Built per test, or reset by the module's own test helper in `beforeEach` |
 | A global testing-library `configure({ asyncUtilTimeout })` | A timeout on each `findBy*` and `waitFor` call (`const WAIT = { timeout: 5_000 }`) |
@@ -139,8 +147,9 @@ A project whose suite breaks one of these rules keeps the file out of `fast`: in
 
 ### Negative / accepted risks
 
-- Under `isolate: false` the leaks above are kept out by rules, not by the runner;
-  the guards hold two of them, the review the others.
+- Under `isolate: false` the leaks above are kept out by rules, not by the runner, and
+  no guard of `@lntt/test-utils` asserts any of them: the review holds them, and a
+  project adds a `tests.rules` pattern for the ones a pattern can catch.
 - The setup's 1 ms wait adds to every jsdom test.
 - Fake timers are reset after every test of an app: a test that keeps a fake clock
   across tests sets it up in `beforeEach`.
