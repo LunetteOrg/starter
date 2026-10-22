@@ -57,7 +57,7 @@ export function ciConfig(cwd: string): CiConfig {
 }
 
 // The board statuses a candidate sets when delivery.candidate.status leaves them out.
-export const CANDIDATE_STATUS = { inRelease: 'In release', done: 'Done' }
+export const CANDIDATE_STATUS = Object.freeze({ inRelease: 'In release', done: 'Done' })
 
 // delivery.candidate with its defaults, or null when the project has no candidate.
 export function candidateConfig(cwd: string): CandidateConfig | null {

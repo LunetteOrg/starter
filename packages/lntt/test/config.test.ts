@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { candidateConfig } from '../src/ci/config.ts'
 import { ConfigError, findConfig, getValue, loadConfig, setValue } from '../src/index.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
@@ -236,6 +237,14 @@ describe('delivery.candidate', () => {
     assert.equal(getValue(loadConfig(root).data, 'delivery.candidate.prefix'), 'candidate/')
   })
 
+  test('a candidate status left out of the file takes its default, a written one is kept', () => {
+    write('.agents/config.jsonc', JSON.stringify({ delivery: { candidate: { prefix: 'release/' } } }))
+    assert.deepEqual(candidateConfig(root)?.status, { inRelease: 'In release', done: 'Done' })
+    const candidate = { prefix: 'release/', status: { inRelease: 'To release' } }
+    write('.agents/config.jsonc', JSON.stringify({ delivery: { candidate } }))
+    assert.deepEqual(candidateConfig(root)?.status, { inRelease: 'To release', done: 'Done' })
+  })
+
   test("pelion's release/ is a prefix like any other; only the prefix is required", () => {
     write('.agents/config.jsonc', JSON.stringify({ delivery: { candidate: { prefix: 'release/' } } }))
     assert.equal(getValue(loadConfig(root).data, 'delivery.candidate.prefix'), 'release/')
@@ -275,6 +284,7 @@ function assertBadReference(config: unknown, ...lines: RegExp[]): void {
   const run = validateCli(config)
   assert.doesNotThrow(() => loadConfig(root))
   assert.equal(run.status, 1, run.stderr)
+  assert.match(run.stderr, /a value names no entry of its list:\n {2}\S/)
   for (const line of lines) assert.match(run.stderr, line)
 }
 
@@ -443,6 +453,8 @@ describe('the board section', () => {
   test('track paths are relative to the repository root and never leave it', () => {
     assertRejected({ board: { tracks: { from: ['/apps/*'] } } }, /\/board\/tracks\/from/)
     assertRejected({ board: { tracks: { from: ['apps/../../*'] } } }, /\/board\/tracks\/from/)
+    assertRejected({ board: { tracks: { from: ['apps/..'] } } }, /\/board\/tracks\/from/)
+    assertRejected({ board: { tracks: { from: ['apps/../x'] } } }, /\/board\/tracks\/from/)
     assertRejected({ board: { tracks: { labels: { admin: { paths: ['..'] } } } } }, /\/labels\/admin\/paths/)
     assertRejected({ board: { tracks: { labels: { admin: { paths: ['/apps/admin'] } } } } }, /\/labels\/admin\/paths/)
     write('.agents/config.jsonc', JSON.stringify({ board: { tracks: { from: ['apps/*', '..apps/x'] } } }))

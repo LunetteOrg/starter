@@ -173,6 +173,9 @@ How a title is written is the `issues` skill's.
 - **Project values inside the skills, or in ADRs.** It is why the skills of two
   projects scaffolded from the same template diverged, and why ADRs mixed process with
   architecture.
+- **Checking the references between lists on every load and in `lntt set`.** A typo
+  on the board would fail every reader of the configuration (commitlint, `lntt ci`),
+  and renaming a status option would take a value that is wrong in between.
 - **Values in the frontmatter of each process description.** Seven files to read and
   validate instead of one, and no single schema.
 - **Operator context in `~/.claude/CLAUDE.md`.** Read by one agent only, and it mixes
