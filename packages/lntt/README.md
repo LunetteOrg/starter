@@ -10,7 +10,8 @@ machine with the candidate automation ([`lntt ci`](#ci-lntt-ci)).
 Reads, validates and edits a Lunette project's configuration: the values skills and
 scripts need, in `.agents/config.jsonc` **or** `.agents/config.yml` at the repository
 root (one of the two; both is an error). Sections are named after process areas
-(`recording` today); [`schema/config.schema.json`](./schema/config.schema.json) says
+(`recording`, `board`, `ci`, `delivery`, `cycle`, `spaces`, `team`, `local`) and the
+tools that read them; [`schema/config.schema.json`](./schema/config.schema.json) says
 what each one holds.
 
 Both formats allow comments: a short reason for a value goes next to it. So scripts
@@ -19,7 +20,7 @@ through an editor that keeps them.
 
 ```sh
 lntt path                       # the file in use
-lntt validate                   # exit 0 when it matches the schema
+lntt validate                   # exit 0 when it matches the schema and every value naming another list is in it
 lntt get recording.logs         # a dotted key, as plain JSON (pipe it to jq)
 lntt set recording.language '"it"'   # a JSON value, comments kept
 ```

@@ -19,6 +19,7 @@ import {
   syncSkills,
   type Viewer,
 } from './index.ts'
+import { checkReferences } from './references.ts'
 
 const USAGE = [
   'usage: lntt path | validate | get <key> | set <key> <json> | operator [get <key> | sources]',
@@ -57,9 +58,15 @@ function run(command: string | undefined, key: string | undefined, raw: string |
     case 'path':
       stdout.write(`${findConfig(cwd()).path}\n`)
       break
-    case 'validate':
-      loadConfig(cwd())
+    case 'validate': {
+      // The schema on load, then the references it cannot express (./references.ts).
+      const { path, data } = loadConfig(cwd())
+      const wrong = checkReferences(data)
+      if (wrong.length > 0) {
+        throw new ConfigError(`${path}: a value names no entry of its list:\n${wrong.map((l) => `  ${l}`).join('\n')}`)
+      }
       break
+    }
     case 'get':
       if (!key) usage()
       stdout.write(`${JSON.stringify(getValue(loadConfig(cwd()).data, key))}\n`)
