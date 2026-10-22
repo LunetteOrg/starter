@@ -1,0 +1,121 @@
+{
+  // wai's process (Welcome-Association-Italy/wai, main at e5f4aafb) as one configuration:
+  // values from AGENTS.md, CONTRIBUTING.md, docs/adr, .claude/skills, .github and the live
+  // board. wai has no .agents/config of its own. The handles are placeholders, not the
+  // members' real ones.
+  "recording": {
+    "language": "en", // ADRs; PDRs are written in Italian
+    "logs": {
+      "adr": { "path": "docs/adr", "index": "docs/adr/README.md", "template": "docs/adr/template.md" },
+      "product": {
+        "path": "docs/product/decisions",
+        "index": "docs/product/README.md",
+        "template": "docs/product/decisions/template.md"
+      }
+    }
+  },
+  "board": {
+    "project": {
+      "owner": "Welcome-Association-Italy",
+      "ownerType": "organization",
+      "number": 1,
+      "title": "Wai Remake"
+    },
+    // Platform holds containers of platform work (#201), beside the documented Feature.
+    "issueTypes": { "parents": ["Feature", "Platform"], "children": ["Task", "Bug"] },
+    "fields": {
+      "status": {
+        "name": "Status",
+        "type": "singleSelect",
+        "options": ["Backlog", "Ready", "In progress", "In review", "Done"],
+        "initial": "Backlog", // the "Item added to project" workflow sets it
+        "done": "Done"
+      },
+      // The project field; the organization's issue field Priority (Urgent…Low) is not the board's.
+      "priority": { "name": "Priority", "type": "singleSelect", "options": ["P0", "P1", "P2", "P3"] },
+      "size": { "name": "Size", "type": "singleSelect", "options": ["XS", "S", "M", "L", "XL"] },
+      "scope": { "name": "Scope", "type": "singleSelect", "options": ["Now", "Next", "Not now"] }, // Features only
+      "iteration": { "name": "Iteration", "type": "iteration" },
+      "estimate": { "name": "Estimate", "type": "number" },
+      // Issue fields of the organization: written with updateIssueFieldValue, never on the item.
+      "startDate": { "name": "Start date", "kind": "issue", "type": "date" },
+      "targetDate": { "name": "Target date", "kind": "issue", "type": "date" },
+      "effort": { "name": "Effort", "kind": "issue", "type": "singleSelect", "options": ["High", "Medium", "Low"] }
+    },
+    "tracks": {
+      "from": ["apps/*"],
+      // Title Case with spaces, as they are on GitHub; one owner per track.
+      "labels": {
+        "Sito Vetrina": { "owner": "developer-1" },
+        "Intranet - Dashboard Associato": { "owner": "maintainer-1" },
+        "Infrastruttura": { "owner": "maintainer-1" },
+        "Amministrazione": {
+          "owner": "maintainer-1",
+          "description": "App di amministrazione (@wai/admin): shell, theming, infrastruttura"
+        },
+        "Prodotto": {
+          "owner": "maintainer-1",
+          "description": "Decisioni di prodotto (PDR), analisi di dominio e ADR che ne discendono"
+        },
+        "Prototipi": { "description": "Prototipi di flusso in prototypes/: dati finti, per discutere col cliente" },
+        "revisione-prodotto": {
+          "description": "Revisione col cliente di una funzione già costruita, portata al venerdì prodotto"
+        }
+      }
+    }
+  },
+  "ci": {
+    "providers": ["github-actions"],
+    "drafts": false // every job skips a draft: a draft is checked by pnpm ci:local --mutate
+  },
+  "delivery": {
+    "branches": { "types": ["feat", "fix", "chore", "refactor", "docs"] },
+    "commits": {
+      "language": "it",
+      "maxLineLength": 100,
+      "longTrailers": ["Retro", "Removed-section"],
+      "trailers": {
+        "Retro": "a signal for the retrospective, absorbed into the pull request body",
+        "Removed-section": "<file> § <heading> a commit removes; checked by scripts/removed-headings.sh"
+      }
+    },
+    "pullRequest": {
+      "language": "it",
+      "template": ".github/pull_request_template.md",
+      "closing": ["Closes", "Refs"], // Refs links an issue the pull request does not close
+      "outcome": { "done": "— fatto", "notApplicable": "— non applicabile perché" },
+      "retrospective": {
+        "heading": "🔁 Retrospettiva",
+        "lines": [
+          "Attrito",
+          "Da automatizzare (hook/skill/agente)",
+          "Regola ri-scoperta (→ ADR/AGENTS.md)",
+          "Causa di rilavoro"
+        ],
+        "none": "nessuno"
+      }
+    }
+  },
+  "cycle": {
+    "iteration": { "days": 7, "startDay": 1 },
+    "retrospective": {
+      // {window} is "<from> → <to> (<N> PR mergiate)"; a targeted one is "Retrospettiva mirata — <subject>".
+      "target": { "kind": "discussion", "category": "Ideas", "title": "Retrospettiva — {window}" }
+    }
+  },
+  "spaces": {
+    "reference": { "path": "reference/", "description": "Raw input, committed in quarantine (secret-sieve)" },
+    "prototypes": { "path": "prototypes/", "archive": "reference/prototypes/" },
+    "spikes": { "path": "docs/spike/", "description": "Evidence notes, never edited after the ADR that cites them" },
+    "notes": { "path": "appunti/", "tracked": false }
+  },
+  "team": {
+    "language": "it",
+    "members": {
+      "maintainer-1": { "role": "maintainer" },
+      "developer-1": { "role": "developer", "owns": ["Sito Vetrina"] },
+      "developer-2": { "role": "developer" },
+      "developer-3": { "role": "developer" }
+    }
+  }
+}

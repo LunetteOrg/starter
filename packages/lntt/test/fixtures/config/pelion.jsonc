@@ -1,0 +1,125 @@
+{
+  // pelion's process (DiscenTech/pelion, main at e06676ff) as one configuration: values from
+  // AGENTS.md, CONTRIBUTING.md, docs/adr (ciclo-di-lavoro.md, ci.md), .claude/skills, .github
+  // and the live board. pelion has no .agents/config of its own. The handles are
+  // placeholders, not the members' real ones.
+  "recording": {
+    "language": "it",
+    "logs": {
+      "adr": { "path": "docs/adr", "index": "docs/adr/README.md", "template": "docs/adr/template.md" },
+      "product": {
+        "path": "docs/product/decisions",
+        "index": "docs/product/README.md",
+        "template": "docs/product/decisions/template.md"
+      }
+    }
+  },
+  "board": {
+    "project": { "owner": "DiscenTech", "ownerType": "organization", "number": 1, "title": "Discentis Tech Projects" },
+    "issueTypes": { "parents": ["Feature"], "children": ["Task", "Bug"] },
+    "fields": {
+      "status": {
+        "name": "Status",
+        "type": "singleSelect",
+        // Discussing holds an open decision; To release, a change squashed into release/N.
+        "options": ["Todo", "Discussing", "Ready", "In progress", "To review", "To release", "Done"],
+        "initial": "Todo",
+        "done": "Done"
+      },
+      "priority": { "name": "Priority", "type": "singleSelect", "options": ["P0", "P1", "P2", "P3", "Not now"] },
+      "size": { "name": "Size", "type": "singleSelect", "options": ["XS", "S", "M", "L", "XL"] },
+      // The live field and docs/adr/ciclo-di-lavoro.md; the skills still list three.
+      "scope": {
+        "name": "Scope",
+        "type": "singleSelect",
+        "options": ["Now", "Next", "Later", "Not now", "Permanent"]
+      },
+      // On every Feature; Debito stays out of the roadmap and of velocity.
+      "classe": { "name": "Classe", "type": "singleSelect", "options": ["Prodotto", "Piattaforma", "Debito"] },
+      "iteration": { "name": "Iteration", "type": "iteration" }, // set when scheduling, never on a Feature
+      "startDate": { "name": "Start Date", "type": "date" },
+      "endDate": { "name": "End Date", "type": "date" }
+    },
+    "tracks": {
+      "from": ["apps/*"],
+      // Dependabot's labels (dependencies, github_actions, javascript) are not tracks.
+      "labels": {
+        "community": { "description": "apps/community — l'app pubblica" },
+        "admin": { "description": "apps/admin — backoffice authoring" },
+        "design-system": { "description": "packages/ui e ui-tokens — il design system" },
+        "infrastructure": { "description": "CI, deploy, tooling — cross-cutting, non di un singolo app" },
+        "marketing": {
+          "description": "Tag manager, pixel, conversioni — lavoro sul container/agenzia, non codice app"
+        },
+        "moodle": { "description": "Piattaforma della formazione: Moodle in casa" },
+        "prodotto": { "description": "Decisioni di prodotto (PDR), analisi e ADR che ne discendono" },
+        "documentation": { "description": "Improvements or additions to documentation" },
+        "security": { "description": "Finding delle scansioni di sicurezza (Semgrep, pnpm audit) e il loro triage" },
+        // The levers: a dimension an issue can take several values of, so labels and not a field.
+        "leva:acquisizione": { "description": "Serve l'asse Acquisizione (iscritti esterni)" },
+        "leva:stickiness": { "description": "Serve l'asse Stickiness (membri di ritorno per settimana)" },
+        "leva:b2b": { "description": "Leva: vendita e relazione con istituzioni, non con il singolo docente" }
+      }
+    }
+  },
+  "ci": {
+    "providers": ["circleci", "github-actions"],
+    "drafts": false // a pull request goes ready after a green pnpm ci:local --e2e
+  },
+  "delivery": {
+    // test is used besides the documented types; the middle segment is the issue number or no-story.
+    "branches": { "types": ["feat", "fix", "chore", "refactor", "docs", "test"] },
+    "candidate": {
+      "base": "main",
+      "prefix": "release/",
+      "hotfix": { "prefix": "hotfix/", "label": "hotfix" }, // the label does not exist yet
+      "status": { "inRelease": "To release", "done": "Done" }
+    },
+    "commits": {
+      "language": "it",
+      "longTrailers": ["Retro"],
+      "trailers": { "Retro": "a signal for the retrospective, or none; absorbed into the pull request body" }
+    },
+    "pullRequest": {
+      "language": "it", // the prose; the template's headings and labels are English
+      "template": ".github/pull_request_template.md",
+      "closing": ["Closes", "Fixes", "Resolves"], // "Chiude #N" closes nothing
+      "outcome": { "done": "— done", "notApplicable": "— not applicable:" },
+      "retrospective": {
+        "heading": "🔁 Retrospective",
+        "lines": [
+          "Friction",
+          "To automate (hook/skill/agent)",
+          "Rule rediscovered (→ ADR/AGENTS.md)",
+          "Rework cause",
+          "Unstable tests"
+        ],
+        "none": "none"
+      }
+    }
+  },
+  "cycle": {
+    "iteration": { "days": 14, "startDay": 1 },
+    "retrospective": {
+      "target": { "kind": "issue", "title": "Retrospective — {window}" },
+      // The same test or cause in two pull requests: a targeted review of the suite (DiscenTech/pelion#1132).
+      "targetedReview": { "line": "Unstable tests", "minPullRequests": 2 }
+    }
+  },
+  // No spikes: a spike is a sub-issue, with a written decision as its deliverable, under a Feature in Discussing.
+  "spaces": {
+    "reference": { "path": "reference/", "description": "Legacy and raw prototypes, read-only and quarantined" },
+    "prototypes": { "path": "apps/design-system/src/Explorations/", "description": "Storybook explorations" },
+    "notes": { "path": "appunti/", "tracked": false }
+  },
+  "team": {
+    "language": "it",
+    // Marketing, content and design people work in the repository too.
+    "members": {
+      "maintainer-1": { "role": "maintainer", "owns": ["*"] }, // the code owner of every path
+      "member-1": {},
+      "member-2": {},
+      "member-3": {}
+    }
+  }
+}

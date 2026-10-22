@@ -27,6 +27,133 @@
         }
       }
     },
+    "board": {
+      "type": "object",
+      "description": "The GitHub Project (v2) the work is planned on, read by the board skills (github-board, plan-round, roadmap): the Project, the issue types, its fields and their options, the track labels. How they are used is in docs/process/board.md.",
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "type": "object",
+          "description": "The Project, found by its owner and number.",
+          "additionalProperties": false,
+          "required": ["owner", "number"],
+          "properties": {
+            "owner": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The login of the organization or user that owns it."
+            },
+            "ownerType": {
+              "enum": ["organization", "user"],
+              "description": "Whether the owner is an organization or a user: GitHub's queries differ. Default organization."
+            },
+            "number": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "The Project's number, in its URL."
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Its title, for a person to recognise it; owner and number find it."
+            }
+          }
+        },
+        "issueTypes": {
+          "type": "object",
+          "description": "The native issue types (not labels) the board uses: a parent holds the sub-issues the work is done in.",
+          "additionalProperties": false,
+          "properties": {
+            "parents": {
+              "type": "array",
+              "description": "The types of the issues that hold sub-issues. Default Feature.",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "children": {
+              "type": "array",
+              "description": "The types of the issues that go in an iteration. Default Task, Bug.",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          }
+        },
+        "fields": {
+          "type": "object",
+          "description": "The Project's fields, by key: the ones the board skills know (status, priority, size, scope, iteration) and the project's own, in camelCase (classe). A field missing here is one the project does not use.",
+          "propertyNames": {
+            "pattern": "^[a-z][a-zA-Z0-9]*$"
+          },
+          "properties": {
+            "status": {
+              "$ref": "#/definitions/statusField"
+            },
+            "priority": {
+              "$ref": "#/definitions/boardField"
+            },
+            "size": {
+              "$ref": "#/definitions/boardField"
+            },
+            "scope": {
+              "$ref": "#/definitions/boardField"
+            },
+            "iteration": {
+              "$ref": "#/definitions/boardField"
+            }
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/boardField"
+          }
+        },
+        "tracks": {
+          "type": "object",
+          "description": "The track labels: one label per track (an app, an area), each with one owner, a dimension an issue can take several values of. The github-board skill derives the labels from `from` and the plan and creates only the missing ones; `labels` records the known ones.",
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "type": "array",
+              "description": "Globs of the folders whose names are track labels (apps/*).",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "uniqueItems": true
+            },
+            "labels": {
+              "type": "object",
+              "description": "The known labels, by their name on GitHub.",
+              "propertyNames": {
+                "minLength": 1
+              },
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "owner": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9-]+$",
+                    "description": "The GitHub handle that owns the track, one of team.members."
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "What the label covers, as its description on GitHub."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "ci": {
       "type": "object",
       "description": "How the project's CI runs: in the cloud, from the provider's own configuration, and locally with ci:local (@lntt/ci).",
@@ -109,6 +236,19 @@
               "description": "How long one step (in container mode, one job) may run before its process group is stopped and it fails with the machine's load printed next to it. Default 30, at most 1440 (a day). The whole run of a lock's holder stops at the lock's maximum hold time of 120 minutes."
             }
           }
+        },
+        "providers": {
+          "type": "array",
+          "description": "The providers the cloud CI runs on, for the skills that read a pull request's checks and propose a CI check. What runs on drafts, pull requests and the main branch, and the deploy gates, are in docs/process/ci.md.",
+          "items": {
+            "enum": ["github-actions", "circleci"]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "drafts": {
+          "type": "boolean",
+          "description": "Whether the cloud CI runs on a draft pull request. false: a draft is checked by ci:local alone, and the cloud runs once it is marked ready. Default true, GitHub's own."
         }
       }
     },
@@ -218,6 +358,88 @@
                 "pattern": "^[A-Za-z][A-Za-z-]*$"
               },
               "uniqueItems": true
+            },
+            "trailers": {
+              "type": "object",
+              "description": "The trailers the project's commits carry, by name, each with when it is used: read by the commit-message skill, not by commitlint (a trailer whose value is a sentence goes in longTrailers too).",
+              "propertyNames": {
+                "pattern": "^[A-Z][A-Za-z0-9-]*$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "pullRequest": {
+          "type": "object",
+          "description": "The pull request body, read by the skill that opens a pull request and by the retrospective harvest; a pull request body check validates the same keywords and labels. What each section of the body holds is in docs/process/delivery.md.",
+          "additionalProperties": false,
+          "properties": {
+            "language": {
+              "type": "string",
+              "description": "Language of the body's prose, as a BCP 47 tag. Headings and labels are written as the template and this section give them.",
+              "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]+)*$"
+            },
+            "template": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The body's template, from the repository root. Default .github/pull_request_template.md."
+            },
+            "closing": {
+              "type": "array",
+              "description": "The keywords that link an issue (Closes #N), the usual one first. GitHub closes the issue only on its own keywords (Close, Fix, Resolve and their forms); another one (Refs) only links it. Default Closes.",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "outcome": {
+              "type": "object",
+              "description": "How each Definition of Done entry copied from the issue ends: done, or not applicable followed by the reason. An entry that ends in neither is still open.",
+              "additionalProperties": false,
+              "properties": {
+                "done": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Default — done."
+                },
+                "notApplicable": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Followed by the reason. Default — not applicable:."
+                }
+              }
+            },
+            "retrospective": {
+              "type": "object",
+              "description": "The retrospective block, between <!-- retro:start --> and <!-- retro:end -->: one `- **<line>:** <value>` per line. An empty value means not filled in; none is the answer when nothing applies. cycle.retrospective says where the harvest is published.",
+              "additionalProperties": false,
+              "properties": {
+                "heading": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The block's heading, without the ##. Default 🔁 Retrospective."
+                },
+                "lines": {
+                  "type": "array",
+                  "description": "The labels of the block, in order. Default Friction, To automate (hook/skill/agent), Rule rediscovered (→ ADR/AGENTS.md), Rework cause.",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 1,
+                  "uniqueItems": true
+                },
+                "none": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The value of a line with nothing to report. Default none."
+                }
+              }
             }
           }
         },
@@ -315,6 +537,91 @@
         }
       }
     },
+    "cycle": {
+      "type": "object",
+      "description": "The cadence of the work, read by plan-round, roadmap and the retrospective skill: the iteration, and where a retrospective is published. The moments of the cycle (planning, grooming, retrospective) are in docs/process/cycle.md.",
+      "additionalProperties": false,
+      "properties": {
+        "iteration": {
+          "type": "object",
+          "description": "The iteration, as the Project's iteration field (board.fields.iteration) has it.",
+          "additionalProperties": false,
+          "properties": {
+            "days": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 31,
+              "description": "How long an iteration lasts."
+            },
+            "startDay": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 7,
+              "description": "The weekday an iteration starts on, 1 for Monday to 7 for Sunday. Default 1."
+            }
+          }
+        },
+        "retrospective": {
+          "type": "object",
+          "description": "What the harvest of the pull requests' retrospective blocks (delivery.pullRequest.retrospective) produces: where it is published, and when it proposes a targeted review.",
+          "additionalProperties": false,
+          "properties": {
+            "target": {
+              "type": "object",
+              "description": "Where a retrospective is published: a GitHub Discussion, in its category, or an issue on the board.",
+              "additionalProperties": false,
+              "required": ["kind", "title"],
+              "properties": {
+                "kind": {
+                  "enum": ["discussion", "issue"]
+                },
+                "category": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The Discussion category; required for a discussion."
+                },
+                "title": {
+                  "type": "string",
+                  "description": "The title; {window} is replaced by the window the harvest read.",
+                  "pattern": "\\{window\\}"
+                }
+              },
+              "if": {
+                "properties": {
+                  "kind": {
+                    "const": "discussion"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "category": true
+                },
+                "required": ["category"]
+              }
+            },
+            "targetedReview": {
+              "type": "object",
+              "description": "A retrospective line counted on its own: when the same test or cause comes back in enough pull requests of the window, the harvest proposes a targeted review of the suite.",
+              "additionalProperties": false,
+              "required": ["line"],
+              "properties": {
+                "line": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "One of delivery.pullRequest.retrospective.lines."
+                },
+                "minPullRequests": {
+                  "type": "integer",
+                  "minimum": 2,
+                  "description": "How many pull requests must name the same test or cause. Default 2."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "recording": {
       "type": "object",
       "description": "How the project records its decisions: which logs exist, where, and in which language.",
@@ -342,6 +649,55 @@
           "additionalProperties": {
             "type": "string",
             "minLength": 1
+          }
+        }
+      }
+    },
+    "spaces": {
+      "type": "object",
+      "description": "Where the material that is not the product lives, by name (reference, prototypes, spikes, notes, or a project's own): read by plan-round and by any skill that files material. What goes in each and when it is archived is in docs/process/spaces.md.",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/space"
+      }
+    },
+    "team": {
+      "type": "object",
+      "description": "Who works on the project, as the others need to know it: read by the board skills for owners and assignees. Never a personal profile (what someone knows, how they want to be told): that is the operator profile, never tracked (lntt operator).",
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "type": "string",
+          "description": "The language the team works in (issues, discussions), as a BCP 47 tag.",
+          "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]+)*$"
+        },
+        "members": {
+          "type": "object",
+          "description": "The members, by GitHub handle.",
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9-]+$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "role": {
+                "type": "string",
+                "minLength": 1,
+                "description": "What they do on the project (maintainer, developer, design, marketing)."
+              },
+              "owns": {
+                "type": "array",
+                "description": "What they own: track labels of board.tracks, paths.",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uniqueItems": true
+              }
+            }
           }
         }
       }
@@ -562,6 +918,105 @@
     }
   },
   "definitions": {
+    "boardField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The field's name on the Project."
+        },
+        "kind": {
+          "enum": ["project", "issue"],
+          "description": "project: a custom field of the Project, written on the Project item. issue: a field of the organization's issues that the Project shows, written on the issue (updateIssueFieldValue); writing it on the item fails, sometimes silently. Default project."
+        },
+        "type": {
+          "enum": ["singleSelect", "iteration", "date", "number", "text"],
+          "description": "The field's type on GitHub."
+        },
+        "options": {
+          "type": "array",
+          "description": "A single select's options, in the Project's order.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "statusField": {
+      "type": "object",
+      "description": "The Status field: a board field, plus the status a new item gets and the one that counts as done. Both are among its options, as are the names in delivery.candidate.status.",
+      "additionalProperties": false,
+      "required": ["name", "type"],
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/boardField/properties/name"
+        },
+        "kind": {
+          "$ref": "#/definitions/boardField/properties/kind"
+        },
+        "type": {
+          "$ref": "#/definitions/boardField/properties/type"
+        },
+        "options": {
+          "$ref": "#/definitions/boardField/properties/options"
+        },
+        "initial": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The status a new item gets. Default the first option."
+        },
+        "done": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The status that counts as done, for velocity. Default Done."
+        }
+      }
+    },
+    "space": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": {
+          "description": "The folder, or folders, from the repository root.",
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            }
+          ]
+        },
+        "tracked": {
+          "type": "boolean",
+          "description": "Whether git tracks it: false for a git-ignored folder, whose content stays on one machine. Default true."
+        },
+        "archive": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The folder its closed material moves to."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What goes there, in one line."
+        }
+      }
+    },
     "log": {
       "type": "object",
       "additionalProperties": false,
