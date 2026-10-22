@@ -71,10 +71,22 @@ export function missingFlags(
   const lines: string[] = []
   for (const [subcommand, flags] of used) {
     const have = known(subcommand)
+    // A description read as no flag at all is a format the parser no longer follows,
+    // not every flag removed.
+    if (!have.size) {
+      lines.push(`${tool} ${subcommand}: its description lists no flag; the format may have changed`)
+      continue
+    }
     const missing = [...flags].filter((flag) => !have.has(flag))
     if (missing.length) lines.push(`${tool} ${subcommand}: ${missing.join(', ')} not in its description`)
   }
   return lines
+}
+
+// A tool's own arguments: what follows `--` is the agent's (agentArgs), checked against
+// the agent's help.
+export function ownArgs(args: string[]): string[] {
+  return args.includes('--') ? args.slice(0, args.indexOf('--')) : args
 }
 
 // Adds the flags of one call to its subcommand's set.

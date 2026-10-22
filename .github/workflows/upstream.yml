@@ -148,7 +148,8 @@ jobs:
         env:
           UPSTREAM_SMOKE: ${{ matrix.tool }}
           ANTHROPIC_API_KEY: ${{ matrix.tool == 'claude' && secrets.ANTHROPIC_API_KEY || '' }}
-        run: node --test "packages/lntt/test/upstream-$TOOL.test.ts" 2>&1 | tee -a upstream.log
+        # Every upstream test file runs; those of the other tools skip.
+        run: pnpm --filter @lntt/lntt test:upstream 2>&1 | tee -a upstream.log
       # One issue per tool and version: an issue with that title, open or closed, also
       # covers a forced run and a cache entry GitHub evicted.
       - id: issue

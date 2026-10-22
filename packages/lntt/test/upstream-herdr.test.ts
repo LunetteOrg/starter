@@ -11,6 +11,7 @@ import {
   flagsOf,
   helpFlags,
   missingFlags,
+  ownArgs,
   recorder,
   throwawayHome,
   tool,
@@ -53,8 +54,7 @@ describe('Herdr flags', () => {
     const used = new Map<string, Set<string>>()
     for (const [command, ...args] of calls) {
       if (command !== 'herdr') continue
-      // What follows `--` is the agent's (agentArgs), checked against the agent's help.
-      const own = args.includes('--') ? args.slice(0, args.indexOf('--')) : args
+      const own = ownArgs(args)
       collect(used, own.slice(0, 2).join(' '), flagsOf(own))
     }
     assert.ok(used.has('agent start') && used.has('pane run'), 'both routes ran')

@@ -36,6 +36,8 @@ fetch() { # <owner/repo> <asset> <file>
   esac
 }
 
+# npm's global prefix is writable without sudo: setup-node's on the runner, root's in a
+# container.
 claude_latest() {
   npm install -g --silent @anthropic-ai/claude-code@latest
 }

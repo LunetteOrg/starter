@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { afterEach, describe, test } from 'node:test'
-import { collect, drawn, flagsOf, helpFlags, missingFlags, recorder, upstream } from './upstream.ts'
+import { collect, drawn, flagsOf, helpFlags, missingFlags, ownArgs, recorder, upstream, waitFor } from './upstream.ts'
 
 // The helpers of the upstream tests, without the real tools: every upstream test skips
 // on a machine without them, so a helper that always says yes would go unseen.
@@ -68,5 +68,38 @@ describe('upstream helpers', () => {
     assert.equal(drawn(`$ OPENCODE_CONFIG_CONTENT='{}' opencode --standalone\n${brief}`, brief), false)
     assert.equal(drawn(`opencode\n> ${brief}`, brief), true)
     assert.equal(drawn('opencode\n> ', brief), false)
+  })
+
+  test('missingFlags tells a description it reads no flag from apart from a removed flag', () => {
+    const used = new Map([['agent start', new Set(['--kind'])]])
+    assert.deepEqual(
+      missingFlags('herdr', used, () => new Set()),
+      ['herdr agent start: its description lists no flag; the format may have changed'],
+    )
+  })
+
+  test("ownArgs leaves out the agent's arguments after --", () => {
+    assert.deepEqual(ownArgs(['agent', 'start', 'x', '--kind', 'claude', '--', '--model', 'sonnet']), [
+      'agent',
+      'start',
+      'x',
+      '--kind',
+      'claude',
+    ])
+    assert.deepEqual(ownArgs(['pane', 'run', 'p1', 'opencode']), ['pane', 'run', 'p1', 'opencode'])
+  })
+
+  test('waitFor returns the first value its probe gives, and times out naming what it waited for', async () => {
+    let tries = 0
+    assert.equal(await waitFor('a second try', () => ++tries >= 2 && 'ready', 5_000), 'ready')
+    await assert.rejects(
+      waitFor(
+        'nothing',
+        () => false,
+        50,
+        () => 'the screen',
+      ),
+      /timed out after 50 ms waiting for nothing\nthe screen/,
+    )
   })
 })

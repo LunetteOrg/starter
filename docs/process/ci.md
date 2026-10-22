@@ -152,8 +152,11 @@ Dependabot's pull requests stay on `main` and merge as hotfixes, when a person d
 lntt drives tools it does not own, and its own tests run against fakes of them.
 `upstream.yml` reads the latest release of each one every day and checks lntt against
 each version it has not checked yet, in a job of its own on a throwaway runner:
-`scripts/upstream-install.sh` installs it, and `packages/lntt/test/upstream-<tool>.test.ts`
-runs with `UPSTREAM_SMOKE=<tool>` (the tests skip without it).
+`scripts/upstream-install.sh` installs it, and `pnpm --filter @lntt/lntt test:upstream`
+runs `packages/lntt/test/upstream-<tool>.test.ts` with `UPSTREAM_SMOKE=<tool>` (the tests
+skip without it). The script installs system packages and refuses a release asset whose
+sha256 GitHub does not record, so it runs only on a throwaway machine: a GitHub runner,
+or a container to try a change to it.
 
 | Tool | Where its version comes from | What the test checks |
 |---|---|---|
@@ -163,22 +166,31 @@ runs with `UPSTREAM_SMOKE=<tool>` (the tests skip without it).
 | opencode | Homebrew's `opencode` formula | the flags, against `opencode run --help` and `opencode --help`; a one-line call on a free model whose JSON lntt parses |
 
 A version counts as checked once its cache entry `upstream-<tool>-<version>` exists, which
-the job saves green or red. GitHub evicts an entry left unused (its cache retention); the version
+the job saves green or red, unless the issue of a red could not be opened: that version is
+checked again the next day. GitHub evicts an entry left unused (its cache retention); the version
 is then checked again, and its issue, if any, stops a second one. `workflow_dispatch` takes
-one tool and `force`, to check a version again.
+one tool and `force`, to check a version again; it is run from `main`, whose cache the
+scheduled runs use.
 
 A red opens the issue `<tool> <version> breaks lntt`, once per tool and version, with the
 failing step, the run and the end of the log. Whoever takes it reads the log, then fixes
 lntt's adapter (`packages/lntt/src/worktree.ts`, `headless.ts`, `orca-subagents.ts`) or
 records the tool's change in the decision that relies on it
 ([worktree tooling](../adr/worktree-tooling.md), [review agents](../adr/review-agents.md)).
-A red that is the runner's (a download that failed) closes the issue and runs the
+A red that is the runner's (a download that failed, or Homebrew moving to a newer
+opencode between the reading of the version and its install) closes the issue and runs the
 workflow again with that tool and `force`, which checks the tool's latest version; that
 run opens no second issue, so its outcome is read in the run. A job that outlasts its
 timeout opens no issue and saves no entry: the version is checked again the next day, and
 its red runs are the signal.
 
 ## Discarded directions
+
+- **One workflow per upstream tool.** The install, the issue and the cache steps would be
+  written four times; a matrix job per tool keeps each tool's log, red and issue apart.
+- **The checked versions in a file of the repository.** The workflow would push to
+  `main` every day, and a person's commit would race it; a cache entry costs nothing to
+  write and is lost only to a check run again.
 
 - **A script that restates the CI's commands** (wai's `scripts/ci-local.sh`), or job
   steps moved into scripts both sides call (pelion). The first drifts as soon as a
