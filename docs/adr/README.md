@@ -15,7 +15,7 @@ decisions) is in [`docs/process/`](../process/README.md).
 | [cli-runtime-and-publishing](./cli-runtime-and-publishing.md) | The CLI and the `@lntt/*` packages run as TypeScript in-repo and ship compiled; one shared version and release; explicit `.ts` imports | accepted |
 | [test-database](./test-database.md) | `@lntt/test-utils`: one Postgres per vitest run, owned by a globalSetup; required `databaseName`; cleanup by label | accepted |
 | [agent-layer](./agent-layer.md) | Installed skills are never edited; their guides come with `lntt`, a project holds stubs; project values in `.agents/config.*`; operator context; issue titles on screen | accepted |
-| [lntt-command](./lntt-command.md) | One package, `@lntt/lntt`, with one command, `lntt`, for configuration, agent files, branches, worktrees and CI | accepted |
+| [lntt-command](./lntt-command.md) | One package, `@lntt/lntt`, with one command, `lntt`, for configuration, agent files, branches, worktrees and CI; its gates and agent tools, and the configuration's compatibility rule | accepted |
 | [review-agents](./review-agents.md) | Reviews by agents with no context, per-project lenses, agents and models; adversarial verification; `lntt review` | accepted |
 | [test-checks](./test-checks.md) | `lntt check tests`: the test levels, `focus`, `rules`, `touched`, and the mutations a reviewer proposes and `lntt` runs | accepted |
 | [worktree-tooling](./worktree-tooling.md) | Branch names, setup, brief and agent launch decided in `lntt`; Orca, Herdr and git as adapters | accepted |
