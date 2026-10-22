@@ -114,24 +114,33 @@ configuration.
 Dependabot's pull requests stay on `main` and merge as hotfixes, when a person decides
 ([delivery](./delivery.md#the-candidate)): the candidate automation cannot move them.
 
-- **The CI runs once a person approves.** Dependabot rebases its pull requests often,
-  and each rebase would start a full CI on a head nobody merges. Until a person
-  approves, the `ci` job fails in its first step, before checkout and install, with
-  "Approve this Dependabot pull request to run the CI before merging": red, never
-  skipped, since a skipped job counts as passed.
+- **The CI runs once a person with write access approves.** Dependabot rebases its
+  pull requests often, and each rebase would start a full CI on a head nobody merges.
+  Until an owner, member or collaborator approves, the `ci` job fails in its first
+  step, before checkout and install, with "Approve this Dependabot pull request to run
+  the CI before merging": red, never skipped, since a skipped job counts as passed. The
+  repository is public, so anyone can submit a review: an approval from anyone else
+  fails like the unapproved run.
 - **Every review starts a run.** An approval runs the whole job on the pull request's
   merge ref; a comment or a request for changes fails in the first step, like the
   unapproved run. The newest `ci` run of a Dependabot head is therefore either red or
   the whole job. A new push (a Dependabot rebase) turns it red again, and only a new
-  approval runs it: re-running a red run fails again, since its event is unchanged.
+  approval runs it: re-running a red run fails again, since its event is unchanged. The
+  earlier approval stays on the pull request, so a red `ci` beside an approval means a
+  head nobody has run yet.
 - **The approval runs the bump's code** (install, lint, tests, the scaffold smoke) on
-  the repository's runner, with a `GITHUB_TOKEN` that `ci.yml` limits to reading the
-  contents. Approving is the review of the bump.
-- **A review of any other pull request** starts a run whose job is skipped: a skipped
-  `ci` entry next to the real one, on the same head.
-- **The merge reads the newest `ci` run** of the head: the repository requires no
-  checks, and an approved Dependabot pull request carries the red run of its push and
-  the run of its approval.
+  the repository's runner. The run is started by the reviewer, not by Dependabot, so it
+  is not restricted like Dependabot's own runs: `ci.yml` reads no secret, and its
+  `GITHUB_TOKEN` can only read the contents, on every run, since no job writes.
+  Approving is the review of the bump.
+- **A review of any other pull request** starts a run whose job is skipped. It is an
+  entry of its own in the pull request's checks, `CI / ci (pull_request_review)`, beside
+  the `CI / ci (pull_request)` it does not replace.
+- **The merge reads the newest `ci` run** of the head: the repository's rulesets
+  require no status check, and an approved Dependabot pull request carries the red run
+  of its push and the run of its approval, as two entries of the checks.
+- **ci:local does not simulate a review**: it runs the pull request or the push. The
+  approval run is the cloud's.
 - A Dependabot pull request moved onto a candidate keeps the gate, and its approval
   runs the minimal CI, as for any pull request into a candidate.
 
@@ -171,11 +180,14 @@ Dependabot's pull requests stay on `main` and merge as hotfixes, when a person d
   most of which do not touch `packages/create`.
 - **A `run-ci` label that starts the CI on a Dependabot pull request.** A `labeled`
   trigger cannot filter by the label's name, so every label on every pull request
-  starts a run whose job is skipped; that skipped run is the newest `ci` on the head
-  and can hide the red one.
+  starts a run whose job is skipped; that skipped run is a `pull_request` run too, so it
+  takes the place of the red `ci (pull_request)` entry and can hide it.
 - **Moving each Dependabot pull request onto the candidate by hand.** One command per
   pull request, on a bot that opens them in waves and rebases them on its own; the
   command stays available for the one that belongs in a batch.
 - **A merge queue (`merge_group`).** It runs the CI on what would be merged, but it
   works through required checks, which the repository does not set, and it puts every
   pull request through the queue, not only Dependabot's.
+- **A concurrency group on `ci.yml`.** Review runs would share it with the pull
+  request's own runs, so a review of any pull request could cancel or queue its real
+  run; the unapproved run of a Dependabot pull request ends in seconds anyway.

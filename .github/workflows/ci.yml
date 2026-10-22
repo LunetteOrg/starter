@@ -10,16 +10,18 @@ name: CI
 # - a pull request into the default branch (the candidate itself, a hotfix) and a push
 #   to it run the full CI: every test, the scaffold level and its smoke included. The
 #   push gates a release;
-# - a Dependabot pull request runs the CI only once a person approves it: until then
-#   the job fails in its first step, before checkout, so the `ci` check is red, never
-#   skipped (a skipped job counts as passed). Every review of a Dependabot pull request
-#   starts a run: an approval runs the whole job on the pull request's merge ref, any
-#   other review fails in the first step like the unapproved run, so the newest `ci` of
-#   a Dependabot head is either red or the whole job. A later push turns it red again
-#   until the next approval. Dependabot rebases often, and a run on every head nobody
-#   merges is minutes spent for nothing. A review of any other pull request starts a
-#   run whose job is skipped. On a review event `github.head_ref` and `github.base_ref`
-#   are empty: the steps read `github.event.pull_request`.
+# - a Dependabot pull request runs the CI only once a person with write access approves
+#   it: until then the job fails in its first step, before checkout, so the `ci` check
+#   is red, never skipped (a skipped job counts as passed). Every review of a Dependabot
+#   pull request starts a run: an approval runs the whole job on the pull request's
+#   merge ref, any other review fails in the first step like the unapproved run, so the
+#   newest `ci` of a Dependabot head is either red or the whole job. A later push turns
+#   it red again until the next approval. Dependabot rebases often, and a run on every
+#   head nobody merges is minutes spent for nothing. A review of any other pull request
+#   starts a run whose job is skipped: an entry of its own, `ci (pull_request_review)`,
+#   beside the `ci (pull_request)` it does not replace. On a review event
+#   `github.head_ref` and `github.base_ref` are empty: the steps read
+#   `github.event.pull_request`.
 #   No concurrency group: the unapproved run ends in seconds, and a group shared by the
 #   review runs would let a review of any pull request cancel or queue its real run.
 on:
@@ -30,7 +32,8 @@ on:
   pull_request_review:
     types: [submitted]
 
-# The approval run executes the bumped dependencies' code with this token: read only.
+# No job writes. The approval of a Dependabot pull request runs the bumped dependencies'
+# code with this token: read only, for every run.
 permissions:
   contents: read
 
@@ -49,8 +52,9 @@ jobs:
       !github.event.pull_request.draft)
     runs-on: ubuntu-latest
     steps:
-      # A Dependabot pull request waits for a person's approval: its pull request run
-      # and any review but an approval stop here. The branch prefix comes before the
+      # A Dependabot pull request waits for the approval of a person with write access
+      # (the repository is public: anyone can submit a review): its pull request run and
+      # any other review stop here. The branch prefix comes before the
       # author: ci:local knows the branch but not the author, so on any other branch it
       # knows the condition false.
       - name: Dependabot pull request not approved
@@ -58,7 +62,8 @@ jobs:
           (github.event_name == 'pull_request' || github.event_name == 'pull_request_review') &&
           startsWith(github.event.pull_request.head.ref, 'dependabot/') &&
           github.event.pull_request.user.login == 'dependabot[bot]' &&
-          (github.event_name == 'pull_request' || github.event.review.state != 'approved')
+          (github.event_name == 'pull_request' || github.event.review.state != 'approved' ||
+          !contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association))
         run: |
           echo "::error title=CI not run::Approve this Dependabot pull request to run the CI before merging"
           exit 1
@@ -83,7 +88,9 @@ jobs:
         run: pnpm exec lntt branch check --branch "$BRANCH"
       # An installed plugin updates only when its version changes.
       - if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review'
-        run: sh scripts/check-plugin-version.sh origin/${{ github.event.pull_request.base.ref }}
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: sh scripts/check-plugin-version.sh "origin/$BASE"
       # The engine refuses a hooks module its own checker refuses, and no test sees that
       # (a function given `$` must be declared at the top of its file): validate each
       # plugin with the Claude Code that loads it. It needs no login. The pinned version
