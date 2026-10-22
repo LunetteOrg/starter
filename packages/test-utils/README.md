@@ -61,11 +61,12 @@ An integration test asks for `tx` in its signature. That is the way to write one
   lazy: a test that does not destructure `tx` opens no transaction. Vitest resolves
   the fixture only once the test body is over, passed or failed, so the rollback
   always runs; `src/tx-test.test.ts` proves it against a committed table.
-- **`withTestDb`** underneath runs a callback in a transaction and rolls it back; an
-  error thrown inside is rethrown. It knows no test runner: `txTest` is the only code
-  that knows `test.extend`. **`connectionString()`** returns the migrated database's
-  URL for a test that must commit (two transactions racing on their own
-  connections); that test removes its rows itself.
+- **`withTestDb`** underneath runs a callback in a transaction and rolls it back,
+  whether it returns or throws; an error thrown inside is rethrown. It knows no test
+  runner ([ADR](../../docs/adr/test-database.md), point 10).
+  **`connectionString()`** returns the migrated database's URL for a test that must
+  commit (two transactions racing on their own connections); that test removes its
+  rows itself.
 - **No Docker on a developer machine**: the globalSetup publishes no server, unit tests
   run and database suites skip on `hasTestDatabase()`. **With `CI` set** a missing
   Docker fails the run.
@@ -103,9 +104,10 @@ rather than report a clean machine it cannot see.
 
 ### The rule that arms itself
 
-A package that starts containers without one of the plugins leaves a Postgres per
-worker behind, and no test turns red. Put this in a spec that knows the project
-root:
+A package on `createTestDb` without the plugin has no server: its database suites
+reject, or skip and go green on nothing. A package that starts containers itself
+without one leaves a Postgres per worker behind, and no test turns red. Put this in
+a spec that knows the project root:
 
 ```ts
 // meta-containers.spec.ts

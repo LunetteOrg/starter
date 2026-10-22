@@ -15,9 +15,11 @@
 // It is a `.test.ts` (integration, docs/adr/testing.md): it wires a real app over a rolled-
 // back test transaction — no mocks — so the assertion runs against the real
 // use-case output, the exact thing that leaks in production. The transaction is
-// the `tx` fixture of the app's `it`, built once next to the app's test database:
+// the `tx` fixture of the app's `it`. REQUIRED: `apps/<app>/app/test/db.ts`
+// exports that `it`, built once next to the app's test database, or this file
+// does not compile:
 //
-//   // app/test/db.ts
+//   // apps/<app>/app/test/db.ts
 //   import { createTestDb, txTest } from '@starter/test-utils'
 //   const db = createTestDb({ migrationsFolder: './drizzle', databaseName: '<app>' })
 //   export const it = txTest(db.withTestDb)

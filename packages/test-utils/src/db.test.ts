@@ -32,6 +32,25 @@ describe.skipIf(!hasTestDatabase())('withTestDb', () => {
       }),
     ).rejects.toThrow('boom-from-inside')
   })
+
+  // On a table committed by the migration, read back from a connection of its own: a
+  // throw must not skip the rollback.
+  it('rolls back the writes of a callback that throws', async () => {
+    const db = createTestDb({ databaseName: 'throw_probe', migrationsFolder: './src/__fixtures__/migrations' })
+    await expect(
+      db.withTestDb(async (tx) => {
+        await tx.execute(sql`INSERT INTO migrated_probe (id) VALUES (7)`)
+        throw new Error('boom-after-insert')
+      }),
+    ).rejects.toThrow('boom-after-insert')
+
+    const reader = postgres(await db.connectionString(), { max: 1 })
+    try {
+      expect(await reader`SELECT id FROM migrated_probe WHERE id = 7`).toEqual([])
+    } finally {
+      await reader.end()
+    }
+  })
 })
 
 describe.skipIf(!hasTestDatabase())('databaseName', () => {

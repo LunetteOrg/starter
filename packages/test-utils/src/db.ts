@@ -261,8 +261,8 @@ export function txTest<Tx extends object>(
 }
 
 /**
- * Kept for the globalSetup's teardown, which calls it; app tests never call it. No
- * `createTestDb` instance starts a container, so there is nothing here to stop: the
- * globalSetup removes the server it started itself.
+ * Internal to the globalSetup's teardown, which calls it; not exported from the
+ * package. A no-op: no `createTestDb` instance starts a container, so there is
+ * nothing here to stop, and the globalSetup removes the server it started itself.
  */
 export async function stopAllTestDbs(): Promise<void> {}

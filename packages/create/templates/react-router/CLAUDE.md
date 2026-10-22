@@ -50,7 +50,7 @@ keep them clean. The `commit-msg` hook strips them as a backstop (`lefthook.yml`
 - Use-cases compose via injected deps in `bootstrap/` — never import each other (docs/adr/architecture-and-boundaries.md — use-case composition)
 - `tryAsync()` at repository boundary, `matchError()` at route layer
 - `.spec.ts` = unit test, `.test.ts` = integration test, `*.stories.tsx` in `packages/ui` = component test (the story runs in a real browser; a11y violations fail the build — docs/adr/testing.md — component tests)
-- Never `vi.mock` the database — an integration test asks for `tx` from the app's `it = txTest(db.withTestDb)`: `it('…', async ({ tx }) => …)`, rolled back when the test ends
+- Never `vi.mock` the database — an integration test asks for `tx` from the app's `it = txTest(db.withTestDb)`: `it('…', async ({ tx }) => …)`, rolled back when the test ends (docs/adr/testing.md — testing strategy)
 - Import boundaries are enforced twice: Biome overrides in `biome.json` + per-app `app/arch.spec.ts` (docs/adr/architecture-and-boundaries.md — import boundaries). Keep both in sync when boundaries change.
 
 ## Reviews

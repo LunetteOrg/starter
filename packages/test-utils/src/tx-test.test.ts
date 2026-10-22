@@ -35,9 +35,14 @@ async function committedIds(): Promise<number[]> {
   }
 }
 
-// The tests of a describe run one after the other, in file order: the last two read
-// what the first two did.
-describe.skipIf(!hasTestDatabase())('txTest', () => {
+/**
+ * The four tests run as a group, in file order: the last two read what the first two
+ * did. The options pin that order against `--sequence.shuffle`,
+ * `--sequence.concurrent` and a retry, which would re-run a test with the flags
+ * already set. `-t` on one of the last two alone is red by design: the flags stay
+ * unset.
+ */
+describe.skipIf(!hasTestDatabase())('txTest', { concurrent: false, shuffle: false, retry: 0 }, () => {
   // A server that outlived an earlier run could hold rows already; the final check
   // must start from an empty table, or it fails for the wrong reason.
   beforeAll(async () => {
@@ -55,7 +60,7 @@ describe.skipIf(!hasTestDatabase())('txTest', () => {
     expect(await tx.execute(sql`SELECT id FROM migrated_probe`)).toHaveLength(1)
   })
 
-  it.fails('rolls back a test that throws, too', async ({ tx }) => {
+  it.fails('rolls back a failing test, too', async ({ tx }) => {
     await tx.execute(sql`INSERT INTO migrated_probe (id) VALUES (2)`)
     expect(await tx.execute(sql`SELECT id FROM migrated_probe WHERE id = 2`)).toHaveLength(1)
     inserted.failing = true

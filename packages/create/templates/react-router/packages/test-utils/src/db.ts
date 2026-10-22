@@ -209,8 +209,9 @@ export function createTestDb<TRelations extends AnyRelations = EmptyRelations>(
     }
   }
 
-  // Internal: only `stopAllTestDbs` (the globalSetup teardown) reaches it. A test
-  // file has nothing to stop.
+  // Internal: `stopAllTestDbs`, the globalSetup teardown, calls the registry of
+  // vitest's main process, so it does not reach the instances of the workers. A
+  // test file has nothing to stop.
   registry.add(stopTestDb)
   return { withTestDb }
 }
@@ -232,7 +233,7 @@ export function createTestDb<TRelations extends AnyRelations = EmptyRelations>(
  * transaction. Vitest resolves `use` only once the test body is over, passed or
  * failed, so the rollback inside `withDb` always runs. `withTestDb` stays
  * runner-agnostic; this is the only code that knows `test.extend`
- * (docs/adr/testing.md — test database isolation).
+ * (docs/adr/testing.md — testing strategy).
  */
 export function txTest<Tx extends object>(
   withDb: (fn: (tx: Tx) => Promise<void>) => Promise<void>,

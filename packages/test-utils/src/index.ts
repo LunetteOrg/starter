@@ -10,7 +10,6 @@ export {
   hasTestDatabase,
   POSTGRES_IMAGE,
   postgresContainer,
-  stopAllTestDbs,
   type TestDb,
   type TestDbOptions,
   type TestTransaction,

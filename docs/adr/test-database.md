@@ -119,9 +119,9 @@ test in a generated project on the packed package.
   Removing by label on exit would close the window, but sibling packages of one
   workspace run under the same label at the same time.
 - **Integration tests are coupled to Vitest's fixture API**: the `({ tx })` signature
-  and the app-level `it`. The coupling is contained (`withTestDb` is runner-agnostic,
-  `txTest` is the only code on `test.extend`, and Playwright's fixtures have the same
-  shape), but a change of test runner touches every integration test's signature.
+  and the app-level `it`. The coupling is contained (point 10; Playwright's fixtures
+  have the same shape), but a change of test runner touches every integration
+  test's signature.
 - **The Postgres major is the package's**: a project on another major waits for the
   package or passes its own server through `TEST_DATABASE_URL`.
 - The no-Docker path is tested on the decision function, not end to end: testcontainers
@@ -156,7 +156,7 @@ test in a generated project on the packed package.
   test.
 - **`afterAll(() => stop…Db())` in test files.** Under the globalSetup it is a no-op,
   and under a shared module registry the first file that runs it can stop the
-  database under the files that follow (pelion#1131 removed 30 of them).
+  database under the files that follow (pelion#1131).
 - **An optional `databaseName` with a default instance.** Instances without a name
   share one database and one migrations journal, the leak this package exists to
   close.

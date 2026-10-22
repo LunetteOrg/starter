@@ -121,9 +121,10 @@ own migrations corrupts/leaks state for the others.
    dev enables it once via `~/.testcontainers.properties`
    (`testcontainers.reuse.enable=true`). CI runs ephemerally; Ryuk reaps
    everything at session end.
-2. **`stopTestDb` never calls `container.stop()`.** Teardown only clears
-   in-process state. With reuse on, the shared container persists for the next
-   run; with reuse off (CI), Ryuk culls it. No code path stops the container.
+2. **No code path stops the container.** The globalSetup teardown
+   (`stopAllTestDbs`) never calls `container.stop()`: it clears in-process state
+   only, and a test file has nothing to stop. With reuse on, the shared container
+   persists for the next run; with reuse off (CI), Ryuk culls it.
 3. **Isolate via `databaseName`, not via a separate container.** An instance that
    commits state (real migrations) passes a dedicated `databaseName`;
    `createTestDb` creates that database once on the shared container (idempotent,

@@ -29,7 +29,7 @@ Treat Oslo as an implementation detail behind `SessionRepository` / `OtpReposito
 
 ## Testing
 
-Because auth is just another domain module, it follows the standard [testing strategy](../adr/testing.md#testing-strategy): exercise repositories against a real database with [test database isolation](../adr/testing.md#test-database-isolation) (the `tx` fixture of the app's `it = txTest(db.withTestDb)`), and use the `@starter/test-utils` stub `EmailService` to drive the full OTP flow offline — no real provider, no network.
+Because auth is just another domain module, it follows the standard [testing strategy](../adr/testing.md#testing-strategy) (the `tx` fixture of the app's `it = txTest(db.withTestDb)`): exercise repositories against a real database with [test database isolation](../adr/testing.md#test-database-isolation), and use the `@starter/test-utils` stub `EmailService` to drive the full OTP flow offline — no real provider, no network.
 
 ## Secrets
 
