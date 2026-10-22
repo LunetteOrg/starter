@@ -56,9 +56,11 @@ them is no call, and a quote inside `/can't/` opens no string.
 ### Waits
 
 `assertWaitsDeclareTimeout(workspace)` (`@lntt/test-utils/waits`) fails on every
-`findBy*`, `findAllBy*`, `waitFor`, `vi.waitFor` and `waitForElementToBeRemoved` that
-does not pass the identifier `WAIT` where the timeout goes (`findBy*(query, options,
-WAIT)`, `waitFor(callback, WAIT)`). A file declares `const WAIT = { timeout: 5_000 }`.
+`findBy*`, `findAllBy*`, `vi.waitFor`, and every `waitFor` and
+`waitForElementToBeRemoved` imported from a `@testing-library/*` package or from
+Storybook's re-export of them (`storybook/test`, `@storybook/test`), that does not pass
+the identifier `WAIT` where the timeout goes (`findBy*(query, options, WAIT)`,
+`waitFor(callback, WAIT)`). A file declares `const WAIT = { timeout: 5_000 }`.
 
 - A global `configure({ asyncUtilTimeout })` is module state: under `isolate: false`
   it reaches every file the worker runs after it. A timeout on each call does not.
@@ -66,8 +68,12 @@ WAIT)`, `waitFor(callback, WAIT)`). A file declares `const WAIT = { timeout: 5_0
   "this wait declared its budget" and is found by a search.
 - The calls are found by parsing (`parseAst` from vite 8, which reads TypeScript and
   JSX), so a call in a comment or a string is no call. Only testing-library's query
-  suffixes count, so a repository's `findById` is not a wait, and a `waitFor` with no
-  argument or an object first is Playwright's `locator.waitFor(options?)`, not a wait.
+  suffixes count, so a repository's `findById` is not a wait.
+- A `waitFor` or `waitForElementToBeRemoved` counts by where the module imports it
+  from: by the local name it is imported under (`{ waitFor as eventually }`), or
+  through a namespace (`rtl.waitFor` after `import * as rtl`). A function of the
+  project by that name (a polling helper in its tests) and Playwright's
+  `locator.waitFor()` are not waits.
 - `ignore` takes globs, relative to the workspace, for modules the guard must not
   read (a fixture that does not parse).
 
@@ -163,9 +169,11 @@ pays.
   after `++` or `--` (`i++ / 2 + j / 3`) is read as a regex, which blanks the code up to
   the next `/` on its line. The waits scans parse the module and have none of these
   misses.
-- A `waitFor` whose first argument is not an object counts as testing-library's: a
-  Playwright `locator.waitFor(options)` given its options as a variable, in a spec the
-  scan reads (outside `e2e/`), is reported as a wait without `WAIT`.
+- A `waitFor` that reaches a file through a module of the project re-exporting
+  testing-library (`test/render.tsx` with `export * from '@testing-library/react'`) is
+  not counted: the scan reads the imports of each file, not the modules they lead to.
+  A project that re-exports the waits calls them through the package in the specs it
+  wants guarded.
 - The wait guard requires vite 8; a project on an older vite cannot import
   `@lntt/test-utils/waits`.
 - Projects call the guards from their own specs; a project that never calls one is not
