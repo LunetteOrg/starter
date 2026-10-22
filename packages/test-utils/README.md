@@ -209,7 +209,7 @@ then passes a project whose tests do not wait.
 | Export | Asserts |
 |---|---|
 | `assertNoModuleMocks`, `findModuleMocks` | no hoisted `vi.mock`; a `vi.doMock` has `vi.resetModules()` before the first `vi.doMock` and after the last `vi.doUnmock` |
-| `assertWaitsDeclareTimeout`, `findWaits` (`@lntt/test-utils/waits`) | every `findBy*`, `findAllBy*`, `waitFor`, `vi.waitFor` and `waitForElementToBeRemoved` passes `WAIT` as its timeout (Playwright's `locator.waitFor(options?)` is not a wait) |
+| `assertWaitsDeclareTimeout`, `findWaits` (`@lntt/test-utils/waits`) | every `findBy*`, `findAllBy*`, `vi.waitFor`, and every `waitFor` and `waitForElementToBeRemoved` imported from `@testing-library/*`, `storybook/test` or `@storybook/test`, passes `WAIT` as its timeout (a helper of the project named `waitFor`, or Playwright's `locator.waitFor()`, is not a wait) |
 | `assertWaitingWorkspacesRunTheGuard` (`@lntt/test-utils/waits`) | every workspace whose tests wait has a spec or test that imports `assertWaitsDeclareTimeout` from `@lntt/test-utils/waits` and calls it at its top level or in a test, suite or hook that is not skipped (`.skip`, `.todo`, `.skipIf`, `.runIf`, `.fails`, `x`-prefixed); a call inside another function does not count. The path it is given and a condition around it are not checked |
 | `assertBiomeDomainsDeclared`, `enabledBiomeDomains`, `BIOME_DOMAIN_OF_DEPENDENCY` | a dependency with a Biome rule domain (`vitest` → `test`, `react` → `react`…) finds it switched on in the project's Biome config |
 | `assertLintFailsOnWarnings` | every `lint` and `lint:*` script runs `biome check` with `--error-on-warnings` and `stylelint` with `--max-warnings 0` |
