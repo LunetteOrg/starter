@@ -28,6 +28,8 @@ describe('blankCommentsAndStrings', () => {
     'if (!/`/.test(s)) process.env.X',
     "return /\\/'/\nprocess.env.X",
     "const f = (s) => /'/.test(s)\nprocess.env.X",
+    "/'/.test(s)\nprocess.env.X",
+    "\n  /'/.test(s)\nprocess.env.X",
   ])('reads a quote inside a regex literal as no string: %s', (src) => {
     expect(blankCommentsAndStrings(src)).toMatch(/process\.env\.X/)
   })

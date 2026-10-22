@@ -50,6 +50,46 @@ describe('testProjectPackages', () => {
     )
   })
 
+  it.each([
+    ['../../libs/ui/src/**/*.test.ts', 'libs/ui/src'],
+    ['../../packages/@acme/ui/src/**', 'packages/@acme/ui/src'],
+    ['../../packages/docs/**', 'packages/docs'],
+  ])('fails on an include into no package of apps/* or packages/*, rather than skip it: %s', (include, path) => {
+    const root = probeProject({
+      'pnpm-workspace.yaml': 'packages: ["apps/*", "packages/*", "libs/*"]\n',
+      'apps/design-system/package.json': JSON.stringify({ name: '@acme/design-system' }),
+      'libs/ui/package.json': JSON.stringify({ name: '@acme/ui' }),
+      'packages/@acme/ui/package.json': JSON.stringify({ name: '@acme/ui' }),
+      'packages/docs/README.md': '',
+    })
+    const config = { test: { projects: [{ test: { name: 'lib', include: ['src/**', include] } }] } }
+    expect(() => testProjectPackages(join(root, 'apps/design-system'), config)).toThrow(
+      new RegExp(`project "lib" includes "${include.replace(/[.*{}]/g, '\\$&')}", which points into ${path}:`),
+    )
+  })
+
+  it('skips a negated include, which excludes files rather than adding a package', () => {
+    const workspace = join(project({}), 'apps/design-system')
+    const negated = {
+      test: {
+        projects: [{ root: '../../packages/ui', test: { name: 'ui', include: ['src/**', '!src/**/*.slow.ts'] } }],
+      },
+    }
+    expect(testProjectPackages(workspace, negated)).toEqual([{ project: 'ui', include: 'src/**', pkg: '@acme/ui' }])
+  })
+
+  it('names a package manifest that does not parse', () => {
+    const root = probeProject({
+      'pnpm-workspace.yaml': 'packages: ["apps/*", "packages/*"]\n',
+      'apps/design-system/package.json': JSON.stringify({ name: '@acme/design-system' }),
+      'packages/ui/package.json': '{ "name": "@acme/ui", }',
+    })
+    const workspace = join(root, 'apps/design-system')
+    expect(() => testProjectPackages(workspace, { test: { include: ['../../packages/ui/**'] } })).toThrow(
+      /Cannot read .*packages\/ui\/package\.json/,
+    )
+  })
+
   it('resolves an include from the project root it sets', () => {
     const workspace = join(project({}), 'apps/design-system')
     const rooted = { test: { projects: [{ root: '../../packages/ui', test: { name: 'ui', include: ['src/**'] } }] } }

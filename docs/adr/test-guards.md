@@ -24,13 +24,20 @@ from its own specs.
 
 The package exports one guard per rule. Each takes the project root (or a workspace),
 throws a message naming every offending `file:line` and pointing at this record, and
-fails when its scan finds nothing to check, so a moved folder cannot pass on an empty
-list. The messages cite this record by its URL on the starter's `main` branch, not by a
+fails when its scan finds nothing to read (no test file, no lint script, no dependency
+with a domain, no test project into another package), so a moved folder cannot pass on
+an empty list. The messages cite this record by its URL on the starter's `main` branch, not by a
 path in the consuming project, whose records do not hold these rules. The scans read the workspaces under `apps/*` and `packages/*` that have a
 `package.json`, and in each the modules a test run loads: specs and tests, stories,
 `*-kit.ts(x)` helpers and any module under a `test/` directory. A helper shares the
 worker's registry with the spec that imports it, so it obeys the same rules. Build
-output, `e2e/` (Playwright, no vitest registry) and `__fixtures__/` are not scanned.
+output, `e2e/` (Playwright, no vitest registry) and `__fixtures__/` inside a workspace
+are not scanned; a workspace named like one of them (`packages/build`, `apps/e2e`) is.
+
+This repo runs the module-mocks, waits and lint guards on its own `packages/*` from
+`packages/test-utils/src/repo.spec.ts`, as any project that depends on the package
+does, leaving out the templates and lntt's fixture repositories, which are projects of
+their own.
 
 ### Module mocks
 
@@ -65,8 +72,15 @@ WAIT)`, `waitFor(callback, WAIT)`). A file declares `const WAIT = { timeout: 5_0
   read (a fixture that does not parse).
 
 `assertWaitingWorkspacesRunTheGuard(root)` is the rule that arms itself: every
-workspace whose test modules wait has a spec or test that calls
-`assertWaitsDeclareTimeout`, found by parsing as well. The guard sits in each workspace so that a wait without
+workspace whose test modules wait has a spec or test that imports
+`assertWaitsDeclareTimeout` from `@lntt/test-utils/waits` and calls it, found by
+parsing as well. A call counts at the top level of the module or in the callback of a
+test, a suite or a hook (`it`, `test`, `describe`, `suite`, `beforeAll`…), not under
+`.skip`, `.todo`, `.skipIf`, `.runIf` or `.fails`, nor in an `x`-prefixed one; a call
+inside any other function does not count, since nothing proves it is called. "Armed"
+proves that much: the guard does not check the path the call is given, nor a condition
+around it. A project with test modules and no wait passes; one whose workspaces hold no
+test module fails. The guard sits in each workspace so that a wait without
 `WAIT` fails that workspace's own test task, which a task cache keys on the
 workspace's files. `vite` is an optional peer of the package: only this subpath
 needs it, and vitest 4 already installs it.
@@ -103,7 +117,9 @@ and reads the same modules.
 `assertTestProjectsAreDependencies(workspace, config)` reads the inline projects of
 the workspace's vitest config (or its own `test.include`) and fails when an include
 points into another workspace whose package is not among the workspace's
-dependencies or devDependencies. A project with no `include` points at its `root`
+dependencies or devDependencies. An include into a directory of the project that is no
+`apps/*` or `packages/*` package with a `package.json` (`libs/ui`,
+`packages/@scope/ui`) fails, naming it, rather than go unchecked. A project with no `include` points at its `root`
 (and `test.dir`), where vitest's default include looks. An include whose fixed part
 stops above one package (`../../packages/{ui,icons}/**`) fails: the guard names one
 package per include. The packages are found from the pnpm workspace root, the
@@ -139,8 +155,11 @@ pays.
   token before the `/`, and do not read JSX: a regex right after `)` or `}`
   (`if (x) /'/.test(s)`, a regex opening the statement after a block) or an apostrophe
   in JSX text (`<p>Don't</p>`) is read as the start of a string, and the code after it
-  on the following lines is not scanned. The waits scans parse the module and have
-  neither miss.
+  on the following lines is not scanned. A regex after `<` (`a < /'/.test(s)`; `<`
+  before `/` is how a JSX closing tag opens) is missed the same way, and a division
+  after `++` or `--` (`i++ / 2 + j / 3`) is read as a regex, which blanks the code up to
+  the next `/` on its line. The waits scans parse the module and have none of these
+  misses.
 - A `waitFor` whose first argument is not an object counts as testing-library's: a
   Playwright `locator.waitFor(options)` given its options as a variable, in a spec the
   scan reads (outside `e2e/`), is reported as a wait without `WAIT`.
@@ -165,5 +184,6 @@ pays.
   scatters the budget across the file.
 - **Matching waits with a regular expression.** It cannot tell a call from a mention in
   a string or a template literal, and misses the argument position.
-- **Specs in this package that scan the project.** The package is installed in other
-  projects and does not know their root; the guards are functions their specs call.
+- **Specs in this package that scan the consuming project.** The package is installed
+  in other projects and does not know their root; the guards are functions their specs
+  call, and `repo.spec.ts` is this repo calling them on itself.

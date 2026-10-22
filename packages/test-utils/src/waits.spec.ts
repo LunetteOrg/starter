@@ -20,6 +20,7 @@ describe('findWaits', () => {
     `await waitForElementToBeRemoved(() => screen.queryByText('x'))`,
     `await canvas.findByText('x', {}, OTHER)`,
     `const view = <List onLoad={() => waitFor(check)} />`,
+    `await screen['findByText']('x')`,
   ])('catches %s', (line) => {
     expect(untimed(line)).toHaveLength(1)
   })
@@ -110,7 +111,14 @@ describe('assertWaitsDeclareTimeout', () => {
 })
 
 describe('assertWaitingWorkspacesRunTheGuard', () => {
-  const guard = `import { assertWaitsDeclareTimeout } from '@lntt/test-utils/waits'\nit('waits declare their timeout', () => {\n  assertWaitsDeclareTimeout(WORKSPACE)\n})\n`
+  const IMPORT = `import { assertWaitsDeclareTimeout } from '@lntt/test-utils/waits'\n`
+  const guard = `${IMPORT}it('waits declare their timeout', () => {\n  assertWaitsDeclareTimeout(WORKSPACE)\n})\n`
+  const waiting = (guardFile: string) =>
+    probeProject({
+      'apps/web/package.json': pkg,
+      'apps/web/app/page.spec.tsx': `await screen.findByText('x', undefined, WAIT)`,
+      'apps/web/app/waits.spec.ts': guardFile,
+    })
 
   it('fails naming a workspace that waits without a guard calling assertWaitsDeclareTimeout', () => {
     const root = probeProject({
@@ -121,7 +129,7 @@ describe('assertWaitingWorkspacesRunTheGuard', () => {
       'packages/ui/test/render.ts': `export const shown = () => screen.findByText('x', undefined, WAIT)`,
       // Naming the guard in a comment, or calling it from a helper no test runs, does not arm it.
       'packages/ui/test/guard-kit.ts': guard,
-      'packages/ui/src/waits.spec.ts': `// assertWaitsDeclareTimeout(WORKSPACE)\nit('x', () => {})\n`,
+      'packages/ui/src/waits.spec.ts': `${IMPORT}// assertWaitsDeclareTimeout(WORKSPACE)\nit('x', () => {})\n`,
       'packages/std/package.json': pkg,
       'packages/std/src/sum.spec.ts': `it('adds', () => expect(1 + 1).toBe(2))`,
     })
@@ -135,9 +143,76 @@ describe('assertWaitingWorkspacesRunTheGuard', () => {
     const root = probeProject({
       'apps/web/package.json': pkg,
       'apps/web/app/page.spec.tsx': `await screen.findByText('x', undefined, WAIT)`,
-      'apps/web/app/waits.spec.ts': `const r = /'/\nassertWaitsDeclareTimeout(WORKSPACE)\n`,
+      'apps/web/app/waits.spec.ts': `${IMPORT}const r = /'/\nassertWaitsDeclareTimeout(WORKSPACE)\n`,
     })
     expect(() => assertWaitingWorkspacesRunTheGuard(root)).not.toThrow()
+  })
+
+  it.each([
+    ['in it.skip', `${IMPORT}it.skip('w', () => assertWaitsDeclareTimeout(WORKSPACE))`],
+    [
+      'in describe.skip',
+      `${IMPORT}describe.skip('s', () => {\n  it('w', () => assertWaitsDeclareTimeout(WORKSPACE))\n})`,
+    ],
+    ['in it.todo', `${IMPORT}it.todo('w', () => assertWaitsDeclareTimeout(WORKSPACE))`],
+    ['in it.skipIf', `${IMPORT}it.skipIf(ci)('w', () => assertWaitsDeclareTimeout(WORKSPACE))`],
+    ['in xit', `${IMPORT}xit('w', () => assertWaitsDeclareTimeout(WORKSPACE))`],
+    [
+      'in a function never called',
+      `${IMPORT}function check() {\n  assertWaitsDeclareTimeout(WORKSPACE)\n}\nit('x', () => {})`,
+    ],
+    [
+      'in an arrow never called',
+      `${IMPORT}const check = () => assertWaitsDeclareTimeout(WORKSPACE)\nit('x', () => {})`,
+    ],
+    [
+      'of a local function by that name',
+      `function assertWaitsDeclareTimeout(_: string) {}\nit('w', () => assertWaitsDeclareTimeout(WORKSPACE))`,
+    ],
+    [
+      'imported from elsewhere',
+      `import { assertWaitsDeclareTimeout } from './my-waits.ts'\nit('w', () => assertWaitsDeclareTimeout(WORKSPACE))`,
+    ],
+  ])('does not count a guard call %s', (_, guardFile) => {
+    expect(() => assertWaitingWorkspacesRunTheGuard(waiting(guardFile))).toThrow(/apps\/web \(app\/page\.spec\.tsx\)/)
+  })
+
+  it.each([
+    ['at the top level', `${IMPORT}assertWaitsDeclareTimeout(WORKSPACE)`],
+    [
+      'in a test inside a suite',
+      `${IMPORT}describe('s', () => {\n  test('w', function () {\n    assertWaitsDeclareTimeout(WORKSPACE)\n  })\n})`,
+    ],
+    ['in it.each', `${IMPORT}it.each([1])('w %s', () => assertWaitsDeclareTimeout(WORKSPACE))`],
+    ['in a hook', `${IMPORT}beforeAll(() => assertWaitsDeclareTimeout(WORKSPACE))`],
+    [
+      'imported under another name',
+      `import { assertWaitsDeclareTimeout as guard } from '@lntt/test-utils/waits'\nit('w', () => guard(WORKSPACE))`,
+    ],
+    [
+      'through a namespace',
+      `import * as waits from '@lntt/test-utils/waits'\nit('w', () => waits.assertWaitsDeclareTimeout(WORKSPACE))`,
+    ],
+  ])('counts a guard call %s', (_, guardFile) => {
+    expect(() => assertWaitingWorkspacesRunTheGuard(waiting(guardFile))).not.toThrow()
+  })
+
+  it('passes a project whose workspaces have tests but no wait', () => {
+    const root = probeProject({
+      'packages/std/package.json': pkg,
+      'packages/std/src/sum.spec.ts': `it('adds', () => expect(1 + 1).toBe(2))`,
+    })
+    expect(() => assertWaitingWorkspacesRunTheGuard(root)).not.toThrow()
+  })
+
+  it('fails when its workspaces have no test module, rather than pass on nothing', () => {
+    const root = probeProject({ 'packages/std/package.json': pkg, 'packages/std/src/sum.ts': '' })
+    expect(() => assertWaitingWorkspacesRunTheGuard(root)).toThrow(/no test file/)
+  })
+
+  it('names the test module it cannot parse', () => {
+    const root = probeProject({ 'packages/std/package.json': pkg, 'packages/std/src/broken.spec.ts': 'const = (' })
+    expect(() => assertWaitingWorkspacesRunTheGuard(root)).toThrow(/Cannot parse src\/broken\.spec\.ts/)
   })
 
   it('passes when every waiting workspace runs the guard', () => {

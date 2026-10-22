@@ -201,24 +201,27 @@ template (`docs/adr/architecture-and-boundaries.md`, `docs/adr/data-and-migratio
 Each takes the project root (or a workspace) and throws a message that names every
 `file:line` and the rule's record, the starter's
 [test-guards ADR](https://github.com/LunetteOrg/starter/blob/main/docs/adr/test-guards.md),
-which also says why each rule holds. Each fails when its scan finds nothing to check,
-so a moved folder cannot pass vacuously.
+which also says why each rule holds. Each fails when its scan finds nothing to read
+(no test file, no lint script, no dependency with a domain, no test project into another
+package), so a moved folder cannot pass vacuously; `assertWaitingWorkspacesRunTheGuard`
+then passes a project whose tests do not wait.
 
 | Export | Asserts |
 |---|---|
 | `assertNoModuleMocks`, `findModuleMocks` | no hoisted `vi.mock`; a `vi.doMock` has `vi.resetModules()` before the first `vi.doMock` and after the last `vi.doUnmock` |
 | `assertWaitsDeclareTimeout`, `findWaits` (`@lntt/test-utils/waits`) | every `findBy*`, `findAllBy*`, `waitFor`, `vi.waitFor` and `waitForElementToBeRemoved` passes `WAIT` as its timeout (Playwright's `locator.waitFor(options?)` is not a wait) |
-| `assertWaitingWorkspacesRunTheGuard` (`@lntt/test-utils/waits`) | every workspace whose tests wait has a test calling `assertWaitsDeclareTimeout` |
+| `assertWaitingWorkspacesRunTheGuard` (`@lntt/test-utils/waits`) | every workspace whose tests wait has a spec or test that imports `assertWaitsDeclareTimeout` from `@lntt/test-utils/waits` and calls it at its top level or in a test, suite or hook that is not skipped (`.skip`, `.todo`, `.skipIf`, `.runIf`, `.fails`, `x`-prefixed); a call inside another function does not count. The path it is given and a condition around it are not checked |
 | `assertBiomeDomainsDeclared`, `enabledBiomeDomains`, `BIOME_DOMAIN_OF_DEPENDENCY` | a dependency with a Biome rule domain (`vitest` → `test`, `react` → `react`…) finds it switched on in the project's Biome config |
 | `assertLintFailsOnWarnings` | every `lint` and `lint:*` script runs `biome check` with `--error-on-warnings` and `stylelint` with `--max-warnings 0` |
 | `assertTestsUseTxFixture`, `findDirectTestDbCalls` | no test module calls `withTestDb(` itself: integration tests take `tx` from the fixture `txTest(db.withTestDb)` builds. It pairs with `txTest`, the tx fixture [#90](https://github.com/LunetteOrg/starter/issues/90) adds to this package: turn it on once the project builds its fixture with `txTest` |
-| `assertTestProjectsAreDependencies`, `testProjectPackages` | every package a vitest test project includes files from, or points at with `root`, is a dependency of the workspace; the packages are found from the root holding `pnpm-workspace.yaml` |
+| `assertTestProjectsAreDependencies`, `testProjectPackages` | every package a vitest test project includes files from, or points at with `root`, is a dependency of the workspace; the packages are found from the root holding `pnpm-workspace.yaml`, and an include into a directory that is no `apps/*` or `packages/*` package fails, naming it |
 
 The scans read `apps/*` and `packages/*` (directories with a `package.json`): specs and
 tests, stories, `*-kit.ts(x)` helpers and any module under a `test/` directory, since a
 helper shares the worker's module registry with the spec that imports it. Build
-output, `e2e/` and `__fixtures__/` are not scanned; `ignore` takes more globs,
-relative to the root (to the workspace for `assertWaitsDeclareTimeout`).
+output, `e2e/` and `__fixtures__/` inside a workspace are not scanned (a workspace
+named `packages/build` or `apps/e2e` is); `ignore` takes more globs, relative to the
+root (to the workspace for `assertWaitsDeclareTimeout`).
 
 ```ts
 // packages/test-utils/src/suite.spec.ts: the project-wide guards

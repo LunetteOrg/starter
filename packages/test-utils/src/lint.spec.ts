@@ -1,5 +1,13 @@
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { describe, expect, it } from 'vitest'
-import { assertBiomeDomainsDeclared, assertLintFailsOnWarnings, enabledBiomeDomains, parseJsonc } from './lint.ts'
+import {
+  assertBiomeDomainsDeclared,
+  assertLintFailsOnWarnings,
+  BIOME_DOMAIN_OF_DEPENDENCY,
+  enabledBiomeDomains,
+  parseJsonc,
+} from './lint.ts'
 import { probeProject } from './probe-kit.ts'
 
 const manifest = (fields: object) => JSON.stringify({ name: 'x', ...fields })
@@ -33,9 +41,33 @@ describe('enabledBiomeDomains', () => {
     expect([...enabledBiomeDomains(root)].sort()).toEqual(['drizzle', 'react', 'test'])
   })
 
+  it('reads configs that extend each other once each', () => {
+    const root = probeProject({
+      'biome.json': '{ "extends": ["./b.json"], "linter": { "domains": { "react": "all" } } }',
+      'b.json': '{ "extends": ["./biome.json"], "linter": { "domains": { "test": "all" } } }',
+    })
+    expect([...enabledBiomeDomains(root)].sort()).toEqual(['react', 'test'])
+  })
+
+  it('takes "//", the monorepo root marker, as the config it already reads', () => {
+    const root = probeProject({ 'biome.json': '{ "extends": ["//"], "linter": { "domains": { "test": "all" } } }' })
+    expect([...enabledBiomeDomains(root)]).toEqual(['test'])
+  })
+
   it('fails naming an extends it cannot resolve', () => {
     const root = probeProject({ 'biome.json': '{ "extends": ["@missing/biome"] }' })
     expect(() => enabledBiomeDomains(root)).toThrow(/@missing\/biome/)
+  })
+})
+
+describe('BIOME_DOMAIN_OF_DEPENDENCY', () => {
+  it('maps every dependency to a rule domain Biome knows', () => {
+    const schemaPath = createRequire(import.meta.url).resolve('@biomejs/biome/configuration_schema.json')
+    const schema = JSON.parse(readFileSync(schemaPath, 'utf8')) as {
+      $defs: { RuleDomain: { oneOf: { const: string }[] } }
+    }
+    const known = new Set(schema.$defs.RuleDomain.oneOf.map((domain) => domain.const))
+    expect(Object.values(BIOME_DOMAIN_OF_DEPENDENCY).filter((domain) => !known.has(domain))).toEqual([])
   })
 })
 

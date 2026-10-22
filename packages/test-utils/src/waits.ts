@@ -13,6 +13,13 @@ const WAIT_CALLS = new Set(['waitFor', 'waitForElementToBeRemoved'])
 
 /** A guard file calls this; mentioning it in a comment or a string does not count. */
 const GUARD = 'assertWaitsDeclareTimeout'
+/** Where a guard file imports {@link GUARD} from: a function of its own by that name is no guard. */
+const GUARD_MODULE = '@lntt/test-utils/waits'
+/** The vitest functions whose callback the run calls: tests, suites and hooks. */
+const RUNS_CALLBACK = new Set(['it', 'test', 'describe', 'suite', 'beforeAll', 'beforeEach', 'afterAll', 'afterEach'])
+/** Modifiers under which a callback may not run, or runs expecting a failure. */
+const MAY_NOT_RUN = new Set(['skip', 'todo', 'skipIf', 'runIf', 'fails'])
+const FUNCTION = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'])
 /** The guard is a test of the workspace, which its test task runs. */
 const TEST_FILE = /\.(spec|test)\.[cm]?tsx?$/
 
@@ -38,13 +45,18 @@ function isNode(value: unknown): value is AstNode {
   return typeof value === 'object' && value !== null && typeof Reflect.get(value, 'type') === 'string'
 }
 
+/** The name a member expression reads: `.findByText`, or `['findByText']` with a string literal. */
+function propertyName(member: AstNode): string | undefined {
+  const property = member.property
+  if (!isNode(property)) return undefined
+  if (!member.computed) return property.type === 'Identifier' ? String(property.name) : undefined
+  return property.type === 'Literal' && typeof property.value === 'string' ? property.value : undefined
+}
+
 function calleeName(callee: unknown): string | undefined {
   if (!isNode(callee)) return undefined
   if (callee.type === 'Identifier') return String(callee.name)
-  if (callee.type === 'MemberExpression' && !callee.computed && isNode(callee.property)) {
-    return callee.property.type === 'Identifier' ? String(callee.property.name) : undefined
-  }
-  return undefined
+  return callee.type === 'MemberExpression' ? propertyName(callee) : undefined
 }
 
 /**
@@ -81,8 +93,12 @@ function eachCall(value: unknown, visit: (call: AstNode, name: string, args: unk
  * a call in a comment or a string is no call.
  */
 export function findWaits(source: string, lang: 'ts' | 'tsx' = 'tsx'): Wait[] {
+  return waitsOf(parseAst(source, { lang }), source)
+}
+
+function waitsOf(ast: unknown, source: string): Wait[] {
   const found: Wait[] = []
-  eachCall(parseAst(source, { lang }), (node, call, args) => {
+  eachCall(ast, (node, call, args) => {
     const position = timeoutPosition(call, args)
     if (position === undefined) return
     const timeout: unknown = args[position]
@@ -99,29 +115,93 @@ function langOf(path: string): 'ts' | 'tsx' {
   return path.endsWith('x') ? 'tsx' : 'ts'
 }
 
-function parsed(dir: string, path: string): ReturnType<typeof parseAst> {
+/** A test module read and parsed once: its waits, and whether it runs the guard. */
+function readModule(dir: string, path: string): { waits: Wait[]; ast: unknown } {
+  const source = readFileSync(resolve(dir, path), 'utf8')
+  let ast: unknown
   try {
-    return parseAst(readFileSync(resolve(dir, path), 'utf8'), { lang: langOf(path) })
+    ast = parseAst(source, { lang: langOf(path) })
   } catch (error) {
     throw new Error(`Cannot parse ${path}: ${error instanceof Error ? error.message : String(error)}`)
   }
+  return { waits: waitsOf(ast, source), ast }
 }
 
-function waitsIn(dir: string, path: string): Wait[] {
-  try {
-    return findWaits(readFileSync(resolve(dir, path), 'utf8'), langOf(path))
-  } catch (error) {
-    throw new Error(`Cannot parse ${path}: ${error instanceof Error ? error.message : String(error)}`)
+/**
+ * The local names under which a module imports the guard from {@link GUARD_MODULE}:
+ * the function itself (`import { assertWaitsDeclareTimeout as guard }`) and namespaces.
+ */
+function guardImports(ast: unknown): { functions: Set<string>; namespaces: Set<string> } {
+  const functions = new Set<string>()
+  const namespaces = new Set<string>()
+  const body = isNode(ast) && Array.isArray(ast.body) ? ast.body : []
+  for (const statement of body) {
+    if (!isNode(statement) || statement.type !== 'ImportDeclaration') continue
+    if (!isNode(statement.source) || statement.source.value !== GUARD_MODULE) continue
+    for (const specifier of Array.isArray(statement.specifiers) ? statement.specifiers : []) {
+      if (!isNode(specifier) || !isNode(specifier.local)) continue
+      const local = String(specifier.local.name)
+      if (specifier.type === 'ImportNamespaceSpecifier') namespaces.add(local)
+      if (specifier.type === 'ImportSpecifier' && isNode(specifier.imported)) {
+        const imported = specifier.imported.type === 'Identifier' ? specifier.imported.name : specifier.imported.value
+        if (imported === GUARD) functions.add(local)
+      }
+    }
   }
+  return { functions, namespaces }
 }
 
-/** Whether the module calls the guard: parsed, so a mention in a comment or a string is no call. */
-function callsGuard(dir: string, path: string): boolean {
-  let called = false
-  eachCall(parsed(dir, path), (_, name) => {
-    if (name === GUARD) called = true
-  })
-  return called
+/**
+ * Whether a call to `callee` runs the callback it is given: `it`, `test`, `describe`,
+ * `suite` and the hooks, with `.only`, `.each(…)`, `.concurrent`…, but not `.skip`,
+ * `.todo`, `.skipIf(…)`, `.runIf(…)` or `.fails`.
+ */
+function runsCallback(callee: unknown): boolean {
+  let node = callee
+  while (isNode(node)) {
+    if (node.type === 'Identifier') return RUNS_CALLBACK.has(String(node.name))
+    if (node.type === 'MemberExpression') {
+      const name = propertyName(node)
+      if (name === undefined || MAY_NOT_RUN.has(name)) return false
+      node = node.object
+    } else if (node.type === 'CallExpression') node = node.callee
+    else return false
+  }
+  return false
+}
+
+/**
+ * Whether the module runs the guard: a call to the function it imports from
+ * {@link GUARD_MODULE}, at the top level of the module or in the callback of a test, a
+ * suite or a hook that is not skipped. A call inside any other function is not counted,
+ * since nothing proves that function is called.
+ */
+function runsGuard(ast: unknown): boolean {
+  const { functions, namespaces } = guardImports(ast)
+  if (functions.size === 0 && namespaces.size === 0) return false
+  const isGuard = (callee: unknown) =>
+    isNode(callee) &&
+    ((callee.type === 'Identifier' && functions.has(String(callee.name))) ||
+      (callee.type === 'MemberExpression' &&
+        isNode(callee.object) &&
+        callee.object.type === 'Identifier' &&
+        namespaces.has(String(callee.object.name)) &&
+        propertyName(callee) === GUARD))
+  const walk = (value: unknown, live: boolean, run = false): boolean => {
+    if (Array.isArray(value)) return value.some((item) => walk(item, live))
+    if (!isNode(value)) return false
+    const here = live && (run || !FUNCTION.has(value.type))
+    if (value.type === 'CallExpression') {
+      if (here && isGuard(value.callee)) return true
+      const runs = runsCallback(value.callee)
+      const args = Array.isArray(value.arguments) ? value.arguments : []
+      return walk(value.callee, here) || args.some((arg) => walk(arg, here, runs))
+    }
+    return Object.entries(value).some(
+      ([field, child]) => field !== 'type' && typeof child === 'object' && walk(child, here),
+    )
+  }
+  return walk(ast, true)
 }
 
 /**
@@ -142,8 +222,8 @@ export function assertWaitsDeclareTimeout(workspace: string, label = '.', option
   const files = testModules(workspace, options.ignore)
   if (files.length === 0) throw new Error(`assertWaitsDeclareTimeout: no test file found under ${label}`)
   const offenders = files.flatMap((path) =>
-    waitsIn(workspace, path)
-      .filter((wait) => !wait.timed)
+    readModule(workspace, path)
+      .waits.filter((wait) => !wait.timed)
       .map(({ line, call }) => `  - ${label}/${path}:${line} ${call}`),
   )
   if (offenders.length > 0) {
@@ -158,27 +238,40 @@ export function assertWaitsDeclareTimeout(workspace: string, label = '.', option
 
 /**
  * The rule that arms itself: every workspace under `apps/*` and `packages/*` of `root`
- * whose test modules wait (timed or not) has a test module that calls
- * `assertWaitsDeclareTimeout`, so a new package that waits cannot skip the guard.
+ * whose test modules wait (timed or not) has a spec or test that imports
+ * `assertWaitsDeclareTimeout` from `@lntt/test-utils/waits` and calls it at its top level
+ * or in a test, suite or hook callback that is not skipped, so a new package that waits
+ * cannot skip the guard. It does not check the path the call is given, nor a condition
+ * around it. A project whose workspaces do not wait passes; one with no test module
+ * under its workspaces fails.
  */
 export function assertWaitingWorkspacesRunTheGuard(root: string, options: WaitGuardOptions = {}): void {
   const found = workspaces(root)
   if (found.length === 0) {
     throw new Error(`assertWaitingWorkspacesRunTheGuard: no workspace found under apps/* or packages/* of ${root}`)
   }
+  let scanned = 0
   const unguarded = found.flatMap((workspace) => {
     const dir = resolve(root, workspace)
-    const files = workspaceTestModules(root, workspace, options.ignore)
-    const waiting = files.filter((path) => waitsIn(dir, path).length > 0)
+    const modules = workspaceTestModules(root, workspace, options.ignore).map((path) => ({
+      path,
+      ...readModule(dir, path),
+    }))
+    scanned += modules.length
+    const waiting = modules.filter(({ waits }) => waits.length > 0).map(({ path }) => path)
     if (waiting.length === 0) return []
-    const guarded = files.some((path) => TEST_FILE.test(path) && callsGuard(dir, path))
+    const guarded = modules.some(({ path, ast }) => TEST_FILE.test(path) && runsGuard(ast))
     return guarded ? [] : [`  - ${workspace} (${waiting.join(', ')})`]
   })
+  if (scanned === 0) {
+    throw new Error(`assertWaitingWorkspacesRunTheGuard: no test file found under apps/* or packages/* of ${root}`)
+  }
   if (unguarded.length > 0) {
     throw new Error(
-      `These workspaces wait in their tests but no test of theirs calls assertWaitsDeclareTimeout ` +
-        `from @lntt/test-utils/waits:\n${unguarded.join('\n')}\n` +
-        `Add a spec that calls it on the workspace, so a wait without ${TIMEOUT} fails the workspace's own test task. ` +
+      `These workspaces wait in their tests but no test of theirs runs assertWaitsDeclareTimeout ` +
+        `from ${GUARD_MODULE}:\n${unguarded.join('\n')}\n` +
+        `Add a spec that imports it and calls it on the workspace in a test that is not skipped, ` +
+        `so a wait without ${TIMEOUT} fails the workspace's own test task. ` +
         `See ${TEST_GUARDS_RECORD} (waits).`,
     )
   }

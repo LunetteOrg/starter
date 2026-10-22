@@ -99,6 +99,26 @@ describe('assertNoModuleMocks', () => {
     expect(message).not.toMatch(/repo\.ts|e2e|__fixtures__|repo\.test\.ts/)
   })
 
+  it('scans a workspace named like a skipped directory, and skips that directory inside it', () => {
+    const root = probeProject({
+      'packages/build/package.json': pkg,
+      'packages/build/src/a.spec.ts': "vi.mock('./db.ts')\n",
+      'packages/build/dist/a.spec.ts': "vi.mock('./db.ts')\n",
+      'apps/e2e/package.json': pkg,
+      'apps/e2e/src/b.spec.ts': "vi.mock('./db.ts')\n",
+    })
+    let message = ''
+    try {
+      assertNoModuleMocks(root)
+    } catch (error) {
+      message = (error as Error).message
+    }
+    expect(message.match(/(apps|packages)\/\S+:\d+/g)).toEqual([
+      'apps/e2e/src/b.spec.ts:1',
+      'packages/build/src/a.spec.ts:1',
+    ])
+  })
+
   it('passes a project whose tests mock only inside a test, with the registry reset', () => {
     const root = probeProject({
       'packages/db/package.json': pkg,

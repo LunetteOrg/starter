@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { join, relative, resolve, sep } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { TEST_GUARDS_RECORD } from './test-modules.ts'
 import { workspaceRoot } from './workspace.ts'
 
@@ -21,7 +21,18 @@ const GLOB_CHARS = /[*?[\]{}()!]/
 const DEFAULT_INCLUDE = '(default)'
 
 function readManifest(dir: string): Manifest {
-  return JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as Manifest
+  const path = join(dir, 'package.json')
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as Manifest
+  } catch (error) {
+    throw new Error(`Cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+/** Whether `path` is `dir` or below it. */
+function inside(dir: string, path: string): boolean {
+  const rel = relative(dir, path)
+  return rel === '' || !(rel.startsWith('..') || isAbsolute(rel))
 }
 
 /** The part of a glob before its first wildcard: the directory it can only match under. */
@@ -42,6 +53,9 @@ function label(name: TestOptions['name']): string {
  * A project with no `include` keeps vitest's default under its `root` (and `test.dir`),
  * which is then the directory it points at. An include whose fixed part stops above a
  * package (`../../packages/{ui,icons}/**`) throws: it cannot be mapped to one package.
+ * An include inside the project that lands in no `apps/*` or `packages/*` directory with
+ * a `package.json` (`../../libs/ui/**`, `../../packages/@scope/ui/**`) throws as well,
+ * naming it; one inside `workspace` or outside the project is not another package.
  * Projects given as paths (`'packages/*'`) are configs of their own and are not read.
  * Pass the config object a `vitest.config.ts` exports (`import config from '../vitest.config.ts'`).
  * The packages are found from the pnpm workspace root, the nearest `pnpm-workspace.yaml`.
@@ -71,17 +85,19 @@ export function testProjectPackages(workspace: string, config: unknown): TestPro
             .map((include) => [include, resolve(base, staticPrefix(include))])
     return targets.flatMap(([include, target]) => {
       const path = relative(root, target)
-      if (target === resolve(workspace) || path.startsWith('..')) return []
+      if (inside(resolve(workspace), target) || path.startsWith('..')) return []
       const [group, name] = path === '' ? [] : path.split(sep)
+      const named = `testProjectPackages: project "${label(project.test?.name)}" includes "${include}"`
       if (group === undefined || ((group === 'apps' || group === 'packages') && name === undefined)) {
+        throw new Error(`${named}, which spans several packages: write one include per package`)
+      }
+      const dir = join(root, group, name ?? '')
+      if ((group !== 'apps' && group !== 'packages') || !existsSync(join(dir, 'package.json'))) {
         throw new Error(
-          `testProjectPackages: project "${label(project.test?.name)}" includes "${include}", ` +
-            'which spans several packages: write one include per package',
+          `${named}, which points into ${path.split(sep).join('/')}: no package under apps/* or packages/* ` +
+            'with a package.json holds it, so the guard cannot tell whether it is a dependency',
         )
       }
-      if ((group !== 'apps' && group !== 'packages') || name === undefined) return []
-      const dir = join(root, group, name)
-      if (resolve(dir) === resolve(workspace) || !existsSync(join(dir, 'package.json'))) return []
       return [{ project: label(project.test?.name), include, pkg: readManifest(dir).name ?? `${group}/${name}` }]
     })
   })

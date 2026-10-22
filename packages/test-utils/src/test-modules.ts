@@ -8,6 +8,8 @@ export const TEST_GUARDS_RECORD = 'https://github.com/LunetteOrg/starter/blob/ma
 /**
  * Not test code: installed or built output, Playwright's `e2e/` (no vitest registry),
  * probes kept under `__fixtures__`, and directories vitest writes screenshots into.
+ * Relative to the directory scanned: inside a workspace, never the workspace's own
+ * name, so `packages/build` or `apps/e2e` is scanned like any other.
  */
 const NOT_SCANNED = [
   '**/node_modules/**',
@@ -52,11 +54,10 @@ export function testModules(dir: string, ignore: string[] = []): string[] {
  * `ignore` globs are relative to `root`.
  */
 export function workspaceTestModules(root: string, workspace: string, ignore: string[] = []): string[] {
-  return scan(
-    root,
-    TEST_MODULES.map((glob) => `${workspace}/${glob}`),
-    ignore,
-  ).map((path) => path.slice(workspace.length + 1))
+  const below = (glob: string) => `${workspace}/${glob}`
+  return scan(root, TEST_MODULES.map(below), ignore, NOT_SCANNED.map(below)).map((path) =>
+    path.slice(workspace.length + 1),
+  )
 }
 
 /** Every test module of every workspace of `root`, relative to `root`. `ignore` globs are relative to `root`. */
@@ -66,8 +67,8 @@ export function projectTestModules(root: string, ignore: string[] = []): string[
   )
 }
 
-function scan(cwd: string, globs: string[], ignore: string[]): string[] {
-  return globSync(globs, { cwd, nodir: true, posix: true, ignore: [...NOT_SCANNED, ...ignore] }).sort()
+function scan(cwd: string, globs: string[], ignore: string[], notScanned: string[] = NOT_SCANNED): string[] {
+  return globSync(globs, { cwd, nodir: true, posix: true, ignore: [...notScanned, ...ignore] }).sort()
 }
 
 /** The 1-based line of `index` in `source`. */
