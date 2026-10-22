@@ -72,10 +72,26 @@ An integration test asks for `tx` in its signature. That is the way to write one
   Docker fails the run.
 - **A killed run** (Ctrl-C, turbo stopping a task when a sibling fails, a closed
   terminal) removes its container synchronously on `exit`, `SIGTERM` and `SIGHUP`.
-  A `SIGKILL` cannot be caught: `lntt-clean-test` is the net.
-- **Ryuk is off** in the main process and in the workers: it would kill the run's
-  server between two test files. `ryukDisabledPlugin()` is that half alone, for a
-  package that starts other containers and stops them itself.
+  A `SIGKILL` cannot be caught: Ryuk removes that Postgres about 10 s after the last
+  Node testcontainers process on the machine disconnects, so it stays while another
+  run is connected.
+- **Ryuk, the testcontainers reaper, is on.** The globalSetup starts the Postgres in
+  vitest's main process, which holds Ryuk's connection for the whole run, and no
+  worker starts a container. Ryuk's session is shared by every Node testcontainers
+  process on the machine: it removes the container about 10 s after the LAST of them
+  disconnects, never while the run is alive. No plugin or setup of this package sets
+  or clears `TESTCONTAINERS_RYUK_DISABLED`.
+- **What Ryuk asks of the machine.** Every run needs the `testcontainers/ryuk` image
+  and a runtime that lets Ryuk mount the Docker socket: offline without the image,
+  or on a runtime that refuses the mount, the run fails before the Postgres starts.
+  On Podman, set `TESTCONTAINERS_RYUK_PRIVILEGED=true` in your shell first:
+  testcontainers then starts Ryuk privileged. Disabling Ryuk
+  (`TESTCONTAINERS_RYUK_DISABLED=true`, in your own shell) is the last resort, and it
+  gives up the `SIGKILL` cleanup: `clean:test` is then the net for a killed run.
+- **Docker restarting.** The containers of a run alive when the Docker daemon
+  restarts are left exited: they have no restart policy, and Ryuk does not survive
+  the restart. `clean:test` lists stopped containers too (`docker ps -a`) and removes
+  them.
 
 ### `TEST_DATABASE_URL` set by you
 
@@ -102,30 +118,69 @@ workspace's (worktrees that no longer exist), `--dry-run` only lists them. It
 removes by label, never by image, and fails when the Docker daemon does not answer
 rather than report a clean machine it cannot see.
 
+A suite that starts containers of its own labels them the same way, from
+`@lntt/test-utils/workspace`, a module that loads nothing beyond Node (no
+testcontainers, postgres or drizzle):
+
+```ts
+import { WORKSPACE_LABEL, workspaceRoot } from '@lntt/test-utils/workspace'
+
+const vault = await new GenericContainer('hashicorp/vault:1.18')
+  .withLabels({ [WORKSPACE_LABEL]: workspaceRoot() })
+  .start()
+```
+
 ### The rule that arms itself
 
-A package on `createTestDb` without the plugin has no server: its database suites
-reject, or skip and go green on nothing. A package that starts containers itself
-without one leaves a Postgres per worker behind, and no test turns red. Put this in
-a spec that knows the project root:
+None of the ways a container goes wrong turns a test red: a package on
+`createTestDb` without `testDbPlugin()` has no server, so its database suites reject,
+or skip and go green on nothing; a `TESTCONTAINERS_RYUK_DISABLED` set in the project
+leaves every killed run's containers; an unlabelled container is one `clean:test`
+cannot find. Put this in a spec that knows the project root:
 
 ```ts
 // meta-containers.spec.ts
-import { assertContainerUsersMountAPlugin, containerUsers } from '@lntt/test-utils'
+import { resolve } from 'node:path'
+import { assertContainerRules, testDbUsers } from '@lntt/test-utils'
 
 const root = resolve(__dirname, '../../..')
 
-it('finds the packages that start containers', () => {
-  expect(containerUsers(root).length).toBeGreaterThan(0)
+it('finds the packages that use the test database', () => {
+  expect(testDbUsers(root).length).toBeGreaterThan(0)
 })
-it('every one of them mounts testDbPlugin() or ryukDisabledPlugin()', () => {
-  assertContainerUsersMountAPlugin(root)
+it('every container the tests start can be cleaned up', () => {
+  assertContainerRules(root)
 })
 ```
 
-It scans `apps/*` and `packages/*` for `createTestDb`, `postgresContainer`,
-`new PostgreSqlContainer` and `new GenericContainer`, comments and strings blanked,
-and requires a vitest config that calls a plugin.
+It scans the sources of `apps/*` and `packages/*` (`.ts`, `.tsx`, `.mts`, `.cts`,
+`.js`, `.mjs`, `.cjs`, vitest configs and globalSetup files included) and fails
+once, listing every violation under its rule with what to do:
+
+- **`testDbUsers`**: a workspace whose code calls `createTestDb` or `withTestDb`
+  (comments and strings blanked) needs a `vitest*.config.*` that calls
+  `testDbPlugin()`. A workspace that only starts other containers needs no plugin.
+- **`ryukDisablers`**: no source may set `TESTCONTAINERS_RYUK_DISABLED`, by an
+  assignment (`process.env.NAME = …`, `process.env['NAME'] = …`, or `??=`, `||=`,
+  `&&=`) or an object key
+  (`env: { NAME: … }`, `{ 'NAME': … }`), string literals included; and no `scripts`
+  entry of the root's or a workspace's `package.json` may assign or export it.
+  Reading the variable, or checking that it is absent, is allowed; declaration files
+  (`*.d.ts`) are not read. A `package.json` that is not valid JSON, or not an object,
+  fails the rule, naming the file.
+- **`unlabelledContainers`**: every `new GenericContainer(` and
+  `new PostgreSqlContainer(` needs, in its builder chain, a `.withLabels(...)` whose
+  argument has `WORKSPACE_LABEL` as a computed key: `{ [WORKSPACE_LABEL]: … }`. Pass
+  `{ labels: ['E2E_LABEL'] }` to accept other label constants. Links written `?.`,
+  after a `!`, or with generic arguments are part of the chain. Other container
+  classes (`new RedisContainer(`) are not checked. Only the chain and the literal key
+  are read: a container labelled later through a variable, labels spread from an
+  object (`{ ...labels }`) and a chain broken by an `as` cast fail the rule; label it
+  in the chain, with the constant as the key.
+
+The rules read source text, not a syntax tree: a quote or a `/*` inside a regular
+expression literal or JSX text can throw the scan off for the rest of that file,
+passing a violation or failing a correct line.
 
 ## The guards
 

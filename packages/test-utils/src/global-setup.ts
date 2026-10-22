@@ -17,10 +17,6 @@ let published: string | undefined
 let handlersRegistered = false
 
 export async function setup(): Promise<void> {
-  // Before any early return: a hand-registered globalSetup, without the plugin, keeps
-  // the reaper off too.
-  process.env.TESTCONTAINERS_RYUK_DISABLED = 'true'
-
   const action = testDbAction({
     env: process.env,
     docker: process.env.TEST_DATABASE_URL ? false : await dockerAvailable(),
@@ -60,10 +56,15 @@ export async function teardown(): Promise<void> {
  * Synchronous, through the docker CLI: an `exit` handler runs synchronous code only,
  * and `container.stop()` returns a promise the closing event loop never settles.
  *
- * Not covered, and left to `lntt-clean-test`: SIGKILL, which cannot be caught, and a
- * signal during `start()`, when Docker created the container but `container` is not
- * yet assigned. Removing by label would close that window, but sibling packages of
- * the same workspace run under the same label at the same time.
+ * Not covered here: SIGKILL, which cannot be caught, and a signal during `start()`,
+ * when Docker created the container but `container` is not yet assigned. Removing by
+ * label would close that window, but sibling packages of the same workspace run under
+ * the same label at the same time. Ryuk covers both: the container carries this
+ * process's Ryuk session label from its creation, and Ryuk removes it about 10 s
+ * after the last Node testcontainers process on the machine disconnects, so a killed
+ * run's Postgres stays while another run is connected. `lntt-clean-test` is the net
+ * for what Ryuk misses: containers left exited after the Docker daemon restarted (Ryuk
+ * does not survive the restart), and runs whose user disabled Ryuk in their shell.
  */
 function removeContainerSync(): void {
   if (!container) return

@@ -7,6 +7,7 @@ import { drizzle, type PostgresJsQueryResultHKT } from 'drizzle-orm/postgres-js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
 import { type TestAPI, test } from 'vitest'
+import { WORKSPACE_LABEL, workspaceRoot } from './workspace'
 
 /** Transaction type produced by relations-aware createTestDb */
 export type TestTransaction<TRelations extends AnyRelations = EmptyRelations> = PgAsyncTransaction<
@@ -66,6 +67,9 @@ export function createTestDb<TRelations extends AnyRelations = EmptyRelations>(
     if (!initPromise) {
       initPromise = new PostgreSqlContainer('postgres:17')
         .withTmpFs({ '/var/lib/postgresql/data': 'rw' })
+        // What finds this checkout's test containers (workspace.ts). The labels enter
+        // the reuse hash, so each worktree reuses a container of its own.
+        .withLabels({ [WORKSPACE_LABEL]: workspaceRoot() })
         .withReuse()
         .start()
       initPromise.catch(() => {

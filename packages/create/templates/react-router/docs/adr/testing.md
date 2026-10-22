@@ -129,6 +129,10 @@ own migrations corrupts/leaks state for the others.
    commits state (real migrations) passes a dedicated `databaseName`;
    `createTestDb` creates that database once on the shared container (idempotent,
    advisory-locked) and repoints the URI at it.
+4. **The Postgres carries `com.lntt.workspace=<workspace root>`**, the nearest
+   directory holding `pnpm-workspace.yaml`. The label is in the reuse hash, so each
+   checkout and worktree reuses a container of its own, and it is what the cleanup
+   command below filters on.
 
 ### Consequences
 
@@ -136,9 +140,15 @@ own migrations corrupts/leaks state for the others.
 - \+ No container accumulation when reuse is enabled; CI stays hygienic.
 - \+ Migration-committing instances are isolated without stopping the shared
   container, so they can't leak into sibling suites.
-- − Reuse is machine-local setup a new dev performs once; if skipped, tests still
-  pass but containers accumulate (clean with
-  `docker rm -f $(docker ps -aq --filter "label=org.testcontainers=true")`).
+- − Nothing removes the shared container: testcontainers 12 reuses it whenever the
+  code calls `.withReuse()` (only `TESTCONTAINERS_REUSE_ENABLE=false` turns that
+  off), and a reused container carries no Ryuk session label. Remove it with
+  `docker rm -f $(docker ps -aq --filter "label=com.lntt.workspace=$(pwd -P)")` from the
+  workspace root. A container created before the label carries none and is not found
+  by it; `docker rm -f $(docker ps -aq --filter "label=org.testcontainers=true"
+  --filter "ancestor=postgres:17" | xargs -r docker inspect --format
+  '{{if not (index .Config.Labels "com.lntt.workspace")}}{{.Id}}{{end}}')` removes it,
+  with every other unlabelled testcontainers Postgres on the machine.
 - − The shared container is long-lived: after a Postgres image/config bump,
   remove it manually so a fresh one is created.
 
