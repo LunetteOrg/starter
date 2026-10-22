@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -8,6 +9,7 @@ import {
   DAY,
   entry,
   GH_TIMEOUT_MS,
+  LOOKUPS_AT_ONCE,
   type Mention,
   mentions,
   type RefsRun,
@@ -171,9 +173,10 @@ describe('what a lookup gave, made safe to show', () => {
 })
 
 // A fake machine: git answers the git directory (or fails) and the remotes gh resolves
-// from (`remotes`: their config lines, or an exit code), gh answers `repo view` from
-// `home` and each issue from `gh` (by owner/repo#N: a result, an Error to throw, or a
-// function returning a promise). `now` is the clock. Every command run is recorded.
+// from (`remotes`: their config lines, an exit code or an Error to throw), gh answers
+// `repo view` from `home` and each issue from `gh` (by owner/repo#N: a result, an Error
+// to throw, or a function returning a promise). `now` is the clock. Every command run is
+// recorded.
 type Answer = { exitCode: number; stdout: string; stderr: string } | Error | (() => Promise<unknown>)
 const ok = (title: string, n: number, repo = HOME) => ({
   exitCode: 0,
@@ -185,6 +188,8 @@ const missing = () => Object.assign(new Error('spawn gh ENOENT'), { code: 'ENOEN
 const NOW = 10 * DAY
 const REMOTES = 'remote.origin.url git@github.com:o/r.git\n'
 const REMOTES_ARGS = ['config', '--get-regexp', '^remote\\..*\\.(url|gh-resolved)$']
+// What the cache keeps of the remotes: their sha256, never the text.
+const digest = (text: string) => createHash('sha256').update(text).digest('hex')
 
 let dir: string
 let file: string
@@ -199,19 +204,20 @@ function machine({
   gh = {} as Record<string, Answer>,
   home = 'o/r' as string | number | Error,
   git = 0,
-  remotes = REMOTES as string | number,
+  remotes = REMOTES as string | number | Error,
   now = () => NOW,
 }: {
   gh?: Record<string, Answer>
   home?: string | number | Error
   git?: number
-  remotes?: string | number
+  remotes?: string | number | Error
   now?: () => number
 } = {}) {
   const runs: { command: string; args: string[]; timeoutMs: number }[] = []
   const run: RefsRun = async (command, args, timeoutMs) => {
     runs.push({ command, args, timeoutMs })
     if (command === 'git' && args[0] === 'config') {
+      if (remotes instanceof Error) throw remotes
       if (typeof remotes === 'number') return { exitCode: remotes, stdout: '', stderr: '' }
       return { exitCode: 0, stdout: remotes, stderr: '' }
     }
@@ -260,6 +266,31 @@ describe('looking a reference up', () => {
     assert.deepEqual(
       out.refs.map((r) => r.title),
       ['Both', 'Both'],
+    )
+  })
+
+  test(`at most ${LOOKUPS_AT_ONCE} lookups run at once`, async () => {
+    let running = 0
+    let most = 0
+    const slow = () => {
+      running += 1
+      most = Math.max(most, running)
+      return new Promise((r) =>
+        setImmediate(() => {
+          running -= 1
+          r(ok('Slow', 1))
+        }),
+      )
+    }
+    const ns = Array.from({ length: LOOKUPS_AT_ONCE * 2 + 1 }, (_, i) => i + 1)
+    const { resolve, lookups } = machine({ gh: Object.fromEntries(ns.map((n) => [k(n), slow])) })
+    const out = await resolve(ns.map((n) => `#${n}`).join(' '))
+    assert.equal(LOOKUPS_AT_ONCE, 6)
+    assert.equal(most, LOOKUPS_AT_ONCE)
+    assert.equal(lookups().length, ns.length)
+    assert.deepEqual(
+      out.refs.map((r) => r.ref),
+      ns.map((n) => k(n)),
     )
   })
 
@@ -386,13 +417,36 @@ describe("the session's repository", () => {
 
   test('with no remote, an empty list is what the cached repository is kept with', async () => {
     await machine({ remotes: 1 }).resolve('#5', true)
-    assert.equal(JSON.parse(readFileSync(file, 'utf8')).repository.remotes, '')
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).repository.remotes, digest(''))
+  })
+
+  for (const [what, remotes] of [
+    ['exits 128', 128],
+    ['throws', new Error('timed out')],
+  ] as const) {
+    test(`git config that ${what}: a fresh cached repository is not used, and none is written`, async () => {
+      cache({ repository: { name: HOME, at: NOW - 1, remotes: digest(REMOTES) } })
+      const { resolve, runs } = machine({ home: 'x/fork', remotes, gh: { [k(1, 'x/fork')]: ok('One', 1, 'x/fork') } })
+      assert.equal((await resolve('#1')).repository, 'x/fork')
+      assert.ok(runs.some((r) => r.args[0] === 'repo'))
+      const written = JSON.parse(readFileSync(file, 'utf8'))
+      assert.equal(written[k(1, 'x/fork')]?.title, 'One')
+      assert.deepEqual(written.repository, { name: HOME, at: NOW - 1, remotes: digest(REMOTES) })
+    })
+  }
+
+  test('the cache holds a digest of the remotes, never their text: a URL may carry a credential', async () => {
+    const remotes = 'remote.origin.url https://user:secret@github.com/o/r.git\n'
+    await machine({ remotes }).resolve('#5', true)
+    const text = readFileSync(file, 'utf8')
+    assert.doesNotMatch(text, /secret/)
+    assert.equal(JSON.parse(text).repository.remotes, digest(remotes))
   })
 
   test('a cached repository older than a day, or not a repository, is asked again', async () => {
     for (const repository of [
-      { name: HOME, at: NOW - DAY, remotes: REMOTES },
-      { name: '../x', at: NOW, remotes: REMOTES },
+      { name: HOME, at: NOW - DAY, remotes: digest(REMOTES) },
+      { name: '../x', at: NOW, remotes: digest(REMOTES) },
       { name: HOME, at: NOW },
       'o/r',
     ]) {
@@ -424,7 +478,7 @@ describe('the cache', () => {
     await resolve('#138')
     const written = JSON.parse(readFileSync(file, 'utf8'))
     assert.deepEqual(written[k(138)], { title: 'Publish lntt', url: url(138), at: NOW })
-    assert.deepEqual(written.repository, { name: HOME, at: NOW, remotes: REMOTES })
+    assert.deepEqual(written.repository, { name: HOME, at: NOW, remotes: digest(REMOTES) })
   })
 
   test('a write merges with what the file holds when it is written, not when it was read', async () => {
@@ -447,7 +501,7 @@ describe('the cache', () => {
       new Promise((r) =>
         setImmediate(() => {
           cache({
-            repository: { name: 'o/r', at: NOW - 5, remotes: REMOTES },
+            repository: { name: 'o/r', at: NOW - 5, remotes: digest(REMOTES) },
             [k(1)]: cachedEntry('Newer', 1, NOW - 5),
           })
           t = NOW
@@ -465,6 +519,13 @@ describe('the cache', () => {
     const { resolve } = machine({ gh: { [k(1)]: ok('One', 1) } })
     rmSync(dir, { recursive: true, force: true })
     assert.equal((await resolve('#1')).refs[0]?.title, 'One')
+  })
+
+  test('a write that fails leaves no temporary file behind', async () => {
+    mkdirSync(file)
+    const { resolve } = machine({ gh: { [k(1)]: ok('One', 1) } })
+    assert.equal((await resolve('#1')).refs[0]?.title, 'One')
+    assert.deepEqual(readdirSync(dir), [CACHE_FILE])
   })
 
   test('a cached title younger than a day is used; an older one is asked again', async () => {

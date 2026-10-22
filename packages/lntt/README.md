@@ -386,14 +386,20 @@ lntt refs --cached < message.md      # only what the cache holds: no gh call per
 A bare `#N` (or `repo#N` naming the session's repository) is the session's repository
 as `gh repo view` names it, `owner/repo#N` is that repository, any other `word#N` is no
 reference; code and link URLs are not read, and after a reference to another
-repository a bare `#N` is left unresolved. Titles come from `gh api`, three seconds
-at most each, cached for a day in `<git dir>/lntt-issue-titles.json` with the
-session's repository, which holds while the git remotes read the same; without the
-session's repository nothing is looked up. The output is one JSON object:
+repository a bare `#N` is left unresolved. Titles come from `gh api`, six at once, three
+seconds at most each, cached for a day in `<git dir>/lntt-issue-titles.json` with the
+session's repository, which holds while the git remotes read the same (the cache keeps
+their sha256, never a URL); without the session's repository nothing is looked up.
+The output is one JSON object:
 `repository`, `mentions` (each reference-looking match with its `ref`, its `index` and
 the `after` position where a title goes, UTF-16 indices into the text) and `refs`
 (each reference once with its `title` and `url`, or a `why`: `unknown`, `failed`,
 `off`, `cached`). The `lunette` plugin's hook shows these titles on screen.
+
+A text that starts with `-` goes after `--` (`lntt refs -- '-see #12'`). Exit codes: 0
+with the JSON, also when `gh` is missing or not logged in (each reference's `why` is
+`off`); 1 when the text cannot be read or the command fails, one line on stderr; 2 a
+usage error, as with no text and a terminal on stdin.
 
 ## CI (`lntt ci`)
 

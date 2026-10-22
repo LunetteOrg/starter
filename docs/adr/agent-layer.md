@@ -103,34 +103,37 @@ The rules below, the cache and the `gh` lookups are `lntt refs`
 prints, as JSON, each reference with where it sits, its title and URL, or why it has
 none. The titles come from `gh`, cached for a day in the git directory
 (`lntt-issue-titles.json`, with the session's repository, which holds while the git
-remotes `gh` resolves it from read the same: a fork, `gh repo set-default` or a changed
-URL asks for it again; concurrent calls merge, the newest entry of each key kept, and
-an entry lost in a race is only asked again): `#N` (and `repo#N` naming
-the same repository) from the session's repository as `gh repo view` names it,
-`owner/repo#N` from that repository. The hook keeps the display and calls `lntt refs`,
-the project's `node_modules/.bin/lntt`, else `lntt` on `PATH`. A delta waits for lntt
-and the titles at most `WAIT_MS` (`issue-titles-hook.js`); a slower title shows in a
-later delta, in the box or beside the number in the next message. A reference belongs
-to the delta where it ends, and one that ends a delta other than the last is read with
-the next delta, since it may go on (`#1` | `38` is `#138`).
+remotes `gh` resolves it from read the same, kept as their sha256 since a URL may hold
+a credential: a fork, `gh repo set-default` or a changed URL asks for it again;
+concurrent calls merge, the newest entry of each key kept, and an entry lost in a race
+is only asked again): `#N` (and `repo#N` naming the same repository) from the session's
+repository as `gh repo view` names it, `owner/repo#N` from that repository. The hook
+keeps the display and calls `lntt refs`, the project's `node_modules/.bin/lntt`, else
+`lntt` on `PATH`. A delta waits for lntt and the titles at most `WAIT_MS`
+(`issue-titles-hook.js`); a slower title shows in a later delta, in the box or beside
+the number in the next message. A reference belongs to the delta where it ends, and one
+that ends a delta other than the last is read with the next delta, since it may go on
+(`#1` | `38` is `#138`).
 
 - **Never a title from the wrong repository:** a message that cites another
   repository shows every bare `#N` after that as written. Any other `word#N` is no
   reference (`C#5`, `fix#12`, `starter#94` written in another repository's session);
   when the word could be a repository name (three characters or more, a letter
   first) it counts as another repository. Names are compared in lower case.
-- **Shown as written:** code, a link's URL (a title goes after the link), `#0` (GitHub
-  numbers from 1), and a reference `gh` answers with HTTP 404 or 410 (a missing issue,
-  or a repository the token cannot see).
-- **Nothing for the session** when `gh repo view` fails or does not answer within
-  `GH_TIMEOUT_MS` (`gh` missing, not logged in, no GitHub remote): without the
-  session's repository no reference is shown, not even a cached one. A lookup that
-  fails otherwise (past `GH_TIMEOUT_MS`, the network, a rate limit) is tried again.
-  A run of `lntt` that fails (it cannot start, runs past `LNTT_TIMEOUT_MS`, answers
-  no JSON) shows the delta as written and is tried again at the next lookup; after
-  `FAILURES` in a row, or from an `lntt` with no `refs` (its usage, exit 2), the
-  session shows every number as written. A `ref` from `lntt` that is not a lower-case
-  `owner/repo#N` is ignored.
+- **Shown as written:** code, a link's URL (a title goes after the link, once the link
+  is whole), `#0` (GitHub numbers from 1), a reference `gh` answers with HTTP 404 or
+  410 (a missing issue, or a repository the token cannot see), and one `gh` answers
+  with an empty title or a URL that is not a plain `https` address.
+- **Nothing for the session** after `FAILURES` runs of `lntt` in a row that fail or
+  find no session repository, and at once from an `lntt` with no `refs` (its usage,
+  exit 2): the session then shows every number as written. A run fails when it cannot
+  start, runs past `LNTT_TIMEOUT_MS` or answers no JSON with `mentions` and `refs`;
+  it finds no repository when `gh repo view` fails or does not answer within
+  `GH_TIMEOUT_MS` (`gh` missing, not logged in, no GitHub remote). Such a run shows
+  its delta as written, with no reference, not even a cached one, and the next lookup
+  runs `lntt` again; a run that finds the repository starts the count again. A lookup
+  that fails otherwise (past `GH_TIMEOUT_MS`, the network, a rate limit) is tried
+  again. A `ref` from `lntt` that is not a lower-case `owner/repo#N` is ignored.
 - **A title is anyone's text:** control, format and other invisible characters (line
   separators, variation selectors, the grapheme joiner) are dropped, and a URL is
   shown only when it is a plain `https` address, from `gh` or from the cache.

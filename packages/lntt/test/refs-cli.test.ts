@@ -2,9 +2,11 @@ import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
 import {
   chmodSync,
+  closeSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -34,14 +36,26 @@ case "$*" in
 esac
 `
 
-function lntt(args: string[], { input, path }: { input?: string; path?: string } = {}) {
-  return spawnSync(process.execPath, [BIN, 'refs', ...args], {
+// `node`: options for node before the bin (a preload); `stdin`: a file descriptor in
+// place of `input`.
+function lntt(
+  args: string[],
+  { input, path, node = [], stdin }: { input?: string; path?: string; node?: string[]; stdin?: number } = {},
+) {
+  return spawnSync(process.execPath, [...node, BIN, 'refs', ...args], {
     cwd: repo,
     encoding: 'utf8',
     input: input ?? '',
+    ...(stdin === undefined ? {} : { stdio: [stdin, 'pipe', 'pipe'] }),
     env: { ...process.env, GH_LOG: log, PATH: path ?? `${stubs}:${process.env.PATH}` },
   })
 }
+// A fake gh in place of GH: the repository is o/r, every issue answered by `issue`.
+const ghWith = (issue: string) =>
+  writeFileSync(
+    join(stubs, 'gh'),
+    `#!/bin/sh\necho "$*" >> "$GH_LOG"\ncase "$*" in\n  "repo view"*) echo o/r ;;\n  *) ${issue} ;;\nesac\n`,
+  )
 const json = (r: ReturnType<typeof lntt>) => {
   assert.equal(r.status, 0, r.stderr)
   return JSON.parse(r.stdout)
@@ -121,6 +135,60 @@ describe('lntt refs', () => {
     const out = json(lntt(['#1', 'o/r#1'], { path: stubs }))
     assert.equal(out.repository, null)
     assert.deepEqual(out.refs, [{ ref: 'o/r#1', title: null, url: null, why: 'off' }])
+  })
+
+  test('a gh lookup past its timeout failed, and its gh is killed', () => {
+    ghWith('exec sleep 10')
+    const started = Date.now()
+    const out = json(lntt(['#1']))
+    assert.ok(Date.now() - started < 8000)
+    assert.deepEqual(out.refs, [{ ref: 'o/r#1', title: null, url: null, why: 'failed' }])
+  })
+
+  test('a gh lookup that exits non-zero with anything but a 404 or a login failed', () => {
+    ghWith("echo 'gh: API rate limit exceeded (HTTP 403)' >&2; exit 1")
+    assert.deepEqual(json(lntt(['#1'])).refs, [{ ref: 'o/r#1', title: null, url: null, why: 'failed' }])
+  })
+
+  test('the repository is asked again once remote.origin.url changes', () => {
+    execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:o/r.git'], { cwd: repo })
+    json(lntt(['--cached', '#1']))
+    rmSync(log)
+    json(lntt(['--cached', '#1']))
+    assert.deepEqual(ghCalls(), [])
+    execFileSync('git', ['remote', 'set-url', 'origin', 'git@github.com:o/other.git'], { cwd: repo })
+    json(lntt(['--cached', '#1']))
+    assert.deepEqual(
+      ghCalls().map((c) => c.split(' ').slice(0, 2).join(' ')),
+      ['repo view'],
+    )
+  })
+
+  test('no text and a terminal on stdin: a usage error, nothing read', () => {
+    const r = lntt([], { node: ['--import', 'data:text/javascript,process.stdin.isTTY=true'] })
+    assert.equal(r.status, 2)
+    assert.match(r.stderr, /give the text, or pipe it on stdin/)
+    assert.deepEqual(ghCalls(), [])
+  })
+
+  test('a text that cannot be read: one line on stderr, exit 1', () => {
+    const fd = openSync(repo, 'r')
+    try {
+      const r = lntt([], { stdin: fd })
+      assert.equal(r.status, 1)
+      assert.match(r.stderr, /^lntt refs: EISDIR\b.*\n$/)
+      assert.equal(r.stdout, '')
+    } finally {
+      closeSync(fd)
+    }
+  })
+
+  test('a text that starts with - goes after --', () => {
+    const out = json(lntt(['--', '-see #1']))
+    assert.deepEqual(
+      out.mentions.map((m: { text: string }) => m.text),
+      ['#1'],
+    )
   })
 
   test('an unknown option is a usage error', () => {

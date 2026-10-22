@@ -58,22 +58,42 @@ export function entry(title, url) {
 const KEY = /^[\p{L}\p{N}][\p{L}\p{N}_.-]*\/[\p{L}\p{N}][\p{L}\p{N}_.-]*#[1-9]\d*$/u
 export const isKey = (ref) => typeof ref === 'string' && KEY.test(ref) && ref === ref.toLowerCase()
 
-// A mention lntt gave that can be placed in a text of `end` UTF-16 units and is settled:
-// one that ends at the end of the text may go on in the next delta (`#1` | `38`), so it
-// is settled only on the last delta.
-export const settled = (x, end, final) =>
+// Whether a mention may still become the text of a Markdown link as the text goes on: a
+// `[` opens before it on its line, and no `]` closes it yet, or the `]` ends the text,
+// or `](` follows with no `)` closing it yet. Its title then goes after the link, once
+// the link is whole.
+const linkMayOpen = (x, text) => {
+  const start = text.lastIndexOf('\n', x.index - 1) + 1
+  const before = text.slice(start, x.index)
+  const open = before.lastIndexOf('[')
+  if (open < 0 || before.includes(']', open)) return false
+  const nl = text.indexOf('\n', x.index)
+  if (nl >= 0) return false
+  const rest = text.slice(x.index)
+  const close = rest.indexOf(']')
+  if (close < 0) return true
+  const after = rest.slice(close + 1)
+  return after === '' || /^\([^)\s]*$/.test(after)
+}
+
+// A mention lntt gave that can be placed in a text and is settled: one that ends at the
+// end of the text may go on in the next delta (`#1` | `38`), and one that may still
+// become a link's text may move its title after the link, so each is settled only on
+// the last delta.
+export const settled = (x, text, final) =>
   isKey(x?.ref) &&
   Number.isInteger(x.index) &&
   Number.isInteger(x.after) &&
   x.index >= 0 &&
   x.index <= x.after &&
-  (x.after < end || (final && x.after === end))
+  (x.after < text.length || (final && x.after === text.length)) &&
+  (final || !linkMayOpen(x, text))
 
 // Records the references these settled mentions cite, in the order given, once each: a
-// title that comes after its delta still goes to the box. `end` and `final`: the text
+// title that comes after its delta still goes to the box. `text` and `final`: the text
 // they were found in, and whether it was the message's last delta.
-export function cite(m, found, end, final) {
-  for (const x of found) if (settled(x, end, final) && !m.cited.includes(x.ref)) m.cited.push(x.ref)
+export function cite(m, found, text, final) {
+  for (const x of found) if (settled(x, text, final) && !m.cited.includes(x.ref)) m.cited.push(x.ref)
 }
 
 // The delta as shown: the title beside each reference the message cites for the first
@@ -81,14 +101,15 @@ export function cite(m, found, end, final) {
 // `lntt refs` returned for the message so far with the delta (its mentions, positions in
 // that text). A mention belongs to the delta where it ends: one that ends where the
 // delta starts was held back from the delta before, and its title goes at the start of
-// this one. Records what the message cited, and whether a mention is held back.
+// this one; so does one that may still become a link's text. Records what the message
+// cited, and whether a mention is held back.
 export function annotate(delta, m, found, info, final = false) {
   const from = m.text.length
   const text = m.text + delta
   const seenText = text.toLowerCase()
   const seen = new Set()
   const inserts = []
-  for (const x of [...found].filter((x) => settled(x, text.length, final)).sort((a, b) => a.index - b.index)) {
+  for (const x of [...found].filter((x) => settled(x, text, final)).sort((a, b) => a.index - b.index)) {
     if (seen.has(x.ref)) continue
     seen.add(x.ref)
     if (!m.cited.includes(x.ref)) m.cited.push(x.ref)
@@ -97,7 +118,13 @@ export function annotate(delta, m, found, info, final = false) {
     if (!title || seenText.includes(title.toLowerCase().slice(0, 30))) continue
     inserts.push({ at: x.after - from, text: ` ${dim(`· ${cut(title)}`)}` })
   }
-  m.held = !final && found.some((x) => isKey(x?.ref) && x.after === text.length)
+  m.held =
+    !final &&
+    found.some(
+      (x) =>
+        isKey(x?.ref) &&
+        (x.after === text.length || (Number.isInteger(x.index) && x.index >= 0 && x.index <= text.length && linkMayOpen(x, text))),
+    )
   m.text = text
   return inserts.sort((a, b) => a.at - b.at).reduceRight((l, { at, text }) => l.slice(0, at) + text + l.slice(at), delta)
 }

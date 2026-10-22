@@ -4,12 +4,15 @@
 // this finds; any agent can ask it before writing (`lntt refs`, src/refs-cli.ts).
 // Nothing here loads src/index.ts: the hook waits for it on every delta.
 
-import { readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { pid } from 'node:process'
 
 export const DAY = 24 * 60 * 60 * 1000
 // How long each gh call may take: past it, the call counts as failed.
 export const GH_TIMEOUT_MS = 3000
+// How many issues are asked of gh at once.
+export const LOOKUPS_AT_ONCE = 6
 export const CACHE_FILE = 'lntt-issue-titles.json'
 
 // A repository and a reference as keys: lower case, each name starting with a letter
@@ -131,8 +134,9 @@ interface Cached {
   at: number
 }
 // The cache: `{ "owner/repo#n": { title, url, at }, "repository": { name, at, remotes } }`.
-// The repository's key holds no `#`, so it never reads as a reference; `remotes` is what
-// gh resolved it from (see remotesOf).
+// The repository's key holds no `#`, so it never reads as a reference; `remotes` is the
+// sha256 of what gh resolved it from (see remotesOf): a URL may hold a credential, which
+// the cache never copies.
 interface Cache {
   repository: { name: string; at: number; remotes: string } | null
   entries: Map<string, Cached>
@@ -172,10 +176,10 @@ const newest = <T extends { at: number }>(a: T | null | undefined, b: T | null |
 // of each key kept, through a temporary file renamed over the cache, so two calls at once
 // never leave a torn file. With no lock, a call that writes between another's read and
 // rename can lose its entries: they are only asked again. A write that fails is ignored
-// the same way.
+// the same way, and its temporary file removed.
 function writeCache(file: string, found: Cache, now: number): void {
+  const temporary = `${file}.${pid}.${Math.random().toString(36).slice(2)}.tmp`
   try {
-    const temporary = `${file}.${pid}.${Math.random().toString(36).slice(2)}.tmp`
     const cache = readCache(file, now)
     for (const [key, value] of found.entries) {
       cache.entries.set(key, newest(value, cache.entries.get(key)) as Cached)
@@ -184,8 +188,12 @@ function writeCache(file: string, found: Cache, now: number): void {
     const data = { ...(repository ? { repository } : {}), ...Object.fromEntries(cache.entries) }
     writeFileSync(temporary, `${JSON.stringify(data)}\n`)
     renameSync(temporary, file)
-  } catch {}
+  } catch {
+    rmSync(temporary, { force: true })
+  }
 }
+
+const digest = (text: string) => createHash('sha256').update(text).digest('hex')
 
 // The remotes gh resolves the repository from: the url and gh-resolved lines of the git
 // config, '' when there is none, null when git does not answer. A cached repository
@@ -234,6 +242,20 @@ async function lookUp(run: RefsRun, key: string): Promise<{ title: string; url: 
 
 const none = (ref: string, why: Why): Resolved => ({ ref, title: null, url: null, why })
 
+// Each item through `f`, at most `limit` running at once; the results in the items' order.
+async function atMost<T, R>(limit: number, items: T[], f: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let next = 0
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++
+      results[i] = await f(items[i] as T)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return results
+}
+
 // The references of a text with their titles. Without the session's repository (outside
 // a git repository, gh failing) nothing is looked up and no cached title is read.
 // `cached`: no issue is asked of gh, only the cache is read.
@@ -250,27 +272,27 @@ export async function resolveRefs(
   const cache = file ? readCache(file, now()) : null
   const found: Cache = { repository: null, entries: new Map() }
   const remotes = cache ? await remotesOf(run) : null
-  let repository = remotes !== null && cache?.repository?.remotes === remotes ? cache.repository.name : null
+  const remotesDigest = remotes === null ? null : digest(remotes)
+  // A cached repository holds only with remotes read now: git failing (null) matches none.
+  let repository = cache?.repository && cache.repository.remotes === remotesDigest ? cache.repository.name : null
   if (cache && !repository) {
     repository = await repositoryOf(run)
-    if (repository && remotes !== null) found.repository = { name: repository, at: now(), remotes }
+    if (repository && remotesDigest !== null) found.repository = { name: repository, at: now(), remotes: remotesDigest }
   }
   const all = mentions(text, repository)
   const keys = [...new Set(all.flatMap((m) => (m.ref ? [m.ref] : [])))]
   let refs: Resolved[]
   if (!cache || !repository) refs = keys.map((k) => none(k, 'off'))
   else {
-    refs = await Promise.all(
-      keys.map(async (k): Promise<Resolved> => {
-        const hit = cache.entries.get(k)
-        if (hit) return { ref: k, title: hit.title, url: hit.url }
-        if (cached) return none(k, 'cached')
-        const answer = await lookUp(run, k)
-        if (typeof answer === 'string') return none(k, answer)
-        found.entries.set(k, { ...answer, at: now() })
-        return { ref: k, ...answer }
-      }),
-    )
+    refs = await atMost(LOOKUPS_AT_ONCE, keys, async (k): Promise<Resolved> => {
+      const hit = cache.entries.get(k)
+      if (hit) return { ref: k, title: hit.title, url: hit.url }
+      if (cached) return none(k, 'cached')
+      const answer = await lookUp(run, k)
+      if (typeof answer === 'string') return none(k, answer)
+      found.entries.set(k, { ...answer, at: now() })
+      return { ref: k, ...answer }
+    })
   }
   if (file && (found.repository || found.entries.size)) writeCache(file, found, now())
   return { repository, mentions: all, refs }

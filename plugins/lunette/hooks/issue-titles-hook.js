@@ -17,10 +17,12 @@ export const KEPT = 20
 // How long one gh call of lntt refs may run (GH_TIMEOUT_MS in packages/lntt/src/refs.ts).
 const GH_TIMEOUT_MS = 3000
 // How long one lntt refs may run: a call with no repository cached asks gh for it, then
-// for the titles together, each within GH_TIMEOUT_MS, and two seconds go to node's start
-// and git. Past it, the run failed.
+// for the titles together (six at once, LOOKUPS_AT_ONCE in refs.ts: the hook asks a
+// delta's few), each within GH_TIMEOUT_MS, and two seconds go to node's start and git.
+// Past it, the run failed.
 export const LNTT_TIMEOUT_MS = 2 * GH_TIMEOUT_MS + 2000
-// Failed runs of lntt in a row that turn the titles off for the session.
+// Failed runs of lntt in a row that turn the titles off for the session. A run that
+// finds no session repository counts as failed: each asks git and gh again.
 export const FAILURES = 3
 // What an lntt with no `refs` answers (an @lntt/lntt older than it): its usage, exit 2.
 const NO_REFS = /usage:|unknown command/i
@@ -50,9 +52,11 @@ async function findLntt($) {
 }
 
 // One lntt refs: its JSON, or null when lntt cannot start, runs past its timeout, fails
-// or answers anything else. A failed run is tried again at the next lookup, until
-// FAILURES in a row; an lntt with no refs turns the titles off at once.
+// or answers anything else. A failed run, and one with no session repository, is tried
+// again at the next lookup, until FAILURES in a row; an lntt with no refs turns the
+// titles off at once.
 async function refs($, s, args, stdin) {
+  let out = null
   try {
     s.lntt ??= findLntt($)
     const r = await $.process.run([await s.lntt, 'refs', ...args], { stdin, timeoutMs: LNTT_TIMEOUT_MS })
@@ -60,15 +64,12 @@ async function refs($, s, args, stdin) {
       s.dead = true
       return null
     }
-    const out = r.exitCode === 0 ? JSON.parse(r.stdout) : null
-    if (Array.isArray(out?.mentions) && Array.isArray(out?.refs)) {
-      s.failures = 0
-      return out
-    }
+    const json = r.exitCode === 0 ? JSON.parse(r.stdout) : null
+    if (Array.isArray(json?.mentions) && Array.isArray(json?.refs)) out = json
   } catch {}
-  s.failures += 1
-  if (s.failures >= FAILURES) s.dead = true
-  return null
+  if (out?.repository) s.failures = 0
+  else if (++s.failures >= FAILURES) s.dead = true
+  return out
 }
 
 // What lntt found, into the session: the titles, what gh does not know, lookups off.
@@ -124,7 +125,7 @@ async function show($, s, e, base) {
       if (!out?.repository) return out
       s.home = out.repository
       learn(s, out)
-      cite(m, out.mentions, text.length, e.final)
+      cite(m, out.mentions, text, e.final)
       return out
     })
     const out = await Promise.race([call, wait().then(() => undefined)])
@@ -135,7 +136,7 @@ async function show($, s, e, base) {
     }
     found = out?.mentions ?? []
     // The last delta waits once, for its own references and the message's still missing.
-    const keys = found.filter((x) => settled(x, text.length, e.final) && (e.final || x.after >= m.text.length))
+    const keys = found.filter((x) => settled(x, text, e.final) && (e.final || x.after >= m.text.length))
     await lookUp($, s, [...new Set(keys.map((x) => x.ref))], wait)
   }
   let shown = annotate(delta, m, found, s.info, e.final)

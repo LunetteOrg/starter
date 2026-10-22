@@ -11,14 +11,17 @@ const known = new Map([
   [k(134), { title: 'lntt review stops at delivery.review.maxRounds', url: url(134) }],
 ])
 // The mentions `lntt refs` gives for a text, for these tests: `#N` and `owner/repo#N`,
-// a title right after each. Which numbers are references is lntt's, tested there.
-const find = (text) =>
-  [...text.matchAll(/(?:([a-z]+\/[a-z]+))?#([1-9]\d*)/g)].map((x) => ({
-    text: x[0],
-    ref: `${x[1] ?? HOME}#${x[2]}`,
-    index: x.index,
-    after: x.index + x[0].length,
-  }))
+// a title right after each, or after the whole link whose text holds it. Which numbers
+// are references is lntt's, tested there.
+const LINK = /\[([^\]\n]*)\]\(([^)\s]*)\)/g
+const find = (text) => {
+  const links = [...text.matchAll(LINK)].map((l) => ({ from: l.index, to: l.index + l[0].length }))
+  return [...text.matchAll(/(?:([a-z]+\/[a-z]+))?#([1-9]\d*)/g)].map((x) => {
+    const end = x.index + x[0].length
+    const link = links.find((l) => l.from <= x.index && end <= l.to)
+    return { text: x[0], ref: `${x[1] ?? HOME}#${x[2]}`, index: x.index, after: link ? link.to : end }
+  })
+}
 // Each delta annotated with the mentions of the message so far, as the hook does; the
 // last one is final when `final` says so.
 const show = (deltas, info = known, final = false) => {
@@ -61,6 +64,30 @@ describe('the title beside the number', () => {
     const at = text.indexOf(' now')
     const line = annotate(text, m, [{ text: '#138', ref: k(138), index: 5, after: at }], known)
     assert.equal(line, `see [#138](https://x.org/1) ${dim(`· ${known.get(k(138)).title}`)} now\n`)
+  })
+
+  for (const deltas of [
+    ['see [#138', '](https://x.org/1) now\n'],
+    ['see [#138 first', '](https://x.org/1) now\n'],
+    ['see [#138]', '(https://x.org/1) now\n'],
+    ['see [#138](http', 's://x.org/1) now\n'],
+  ]) {
+    test(`a link split across deltas (${deltas.map((d) => d.trimEnd()).join(' | ')}): the title goes after the whole link`, () => {
+      const { lines, m } = show(deltas)
+      assert.deepEqual(lines, [deltas[0], deltas[1].replace(') now', `) ${dim(`· ${known.get(k(138)).title}`)} now`)])
+      assert.deepEqual(m.cited, [k(138)])
+    })
+  }
+
+  test('a link left open on the last delta: the title goes beside the number', () => {
+    const { lines } = show(['see [#138 first'], known, true)
+    assert.deepEqual(lines, [`see [#138 ${dim(`· ${known.get(k(138)).title}`)} first`])
+  })
+
+  test('a [ closed before the number, or a ] not followed by (, holds nothing back', () => {
+    const { lines } = show(['[a](u) #138 now', ' end\n'])
+    assert.equal(lines[0], `[a](u) #138 ${dim(`· ${known.get(k(138)).title}`)} now`)
+    assert.match(show(['[#134] then #138 now']).lines[0], /^\[#134 .*· lntt review/)
   })
 
   test('a mention lntt gave that does not fit the text, or has no ref, is skipped', () => {

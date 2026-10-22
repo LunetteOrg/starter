@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict'
+import { execFile, execFileSync } from 'node:child_process'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { FAILURES, issueTitles, KEPT, LNTT_TIMEOUT_MS, WAIT_MS } from './issue-titles-hook.js'
 import { register } from './register.js'
@@ -11,18 +15,21 @@ const url = (ref) => {
 }
 
 // A fake `lntt refs`: `#N` is the session repository's (`home`), `owner/repo#N` that
-// repository's, a bare `#N` after another repository has no ref (lntt's rules, tested
-// in packages/lntt). `cache` holds the titles found (`ref -> title`); a full lookup
+// repository's, a bare `#N` after another repository has no ref, a title goes after
+// the whole link whose text holds the number (lntt's rules, tested in packages/lntt). `cache` holds the titles found (`ref -> title`); a full lookup
 // answers from `gh` (`ref -> a title, "unknown", "failed", "off", or a function
 // returning a promise of one`) and caches each title.
 function fakeRefs({ args, stdin, home, cache, gh }) {
   const cached = args[0] === '--cached'
   const text = cached ? stdin : args.join('\n')
   let foreign = false
+  const links = [...text.matchAll(/\[([^\]\n]*)\]\(([^)\s]*)\)/g)].map((l) => ({ from: l.index, to: l.index + l[0].length }))
   const mentions = [...text.matchAll(/(?:([a-z]+\/[a-z]+))?#([1-9]\d*)/g)].map((x) => {
     const full = x[1] ?? (foreign || !home ? null : home)
     if (x[1] && x[1] !== home) foreign = true
-    return { text: x[0], ref: full && `${full}#${x[2]}`, index: x.index, after: x.index + x[0].length }
+    const end = x.index + x[0].length
+    const link = links.find((l) => l.from <= x.index && end <= l.to)
+    return { text: x[0], ref: full && `${full}#${x[2]}`, index: x.index, after: link ? link.to : end }
   })
   const refs = async (ref) => {
     if (!home) return { ref, title: null, url: null, why: 'off' }
@@ -205,6 +212,29 @@ describe('the issue titles hook', () => {
     assert.equal(runs.length, 2 + 2 + FAILURES)
   })
 
+  test(`a run with no session repository counts as failed: ${FAILURES} in a row turn the titles off; one with it starts the count again`, async () => {
+    // Each run in turn: two find no repository, the third finds it (#3 cached), then none.
+    const { flush, runs } = engine({
+      lntt: (argv, init) => fakeRun(argv, init, { home: runs.length === 3 ? 'o/r' : null, cache: { 'o/r#3': 'Three' } }),
+    })
+    for (let i = 1; i <= 7; i += 1) await flush(`m${i}`, `#${i}\n`)
+    assert.equal(runs.length, 2 + 1 + FAILURES)
+  })
+
+  test('lntt exiting 2 with anything else on stderr is a failed run, not an lntt with no refs', async () => {
+    const { flush, runs } = engine({ lntt: async () => ({ exitCode: 2, stdout: '', stderr: 'boom' }) })
+    for (let i = 1; i <= FAILURES + 2; i += 1) assert.deepEqual(await flush(`m${i}`, `#${i}\n`), {})
+    assert.equal(runs.length, FAILURES)
+  })
+
+  for (const stdout of ['{}', '{"repository":"o/r"}']) {
+    test(`lntt answering ${stdout}, with no mentions or refs: a failed run, ${FAILURES} in a row turn the titles off`, async () => {
+      const { flush, runs } = engine({ lntt: async () => ({ exitCode: 0, stdout, stderr: '' }) })
+      for (let i = 1; i <= FAILURES + 2; i += 1) assert.deepEqual(await flush(`m${i}`, `#${i}\n`), {})
+      assert.equal(runs.length, FAILURES)
+    })
+  }
+
   for (const [what, stderr] of [
     ['an @lntt/lntt older than refs (its usage, exit 2)', 'usage: lntt path | validate | get <key>'],
     ['an unknown command', "lntt: unknown command 'refs'"],
@@ -351,6 +381,26 @@ describe('the issue titles hook', () => {
     assert.match((await flush('m1', 'end', true)).displayContent, /cited.*Second try/s)
   })
 
+  test('a reference of an earlier delta whose lookup failed is asked again on the last delta, not before', async () => {
+    let tries = 0
+    const flaky = async () => {
+      tries += 1
+      return tries === 1 ? 'failed' : 'Second try'
+    }
+    const { flush, lookups } = engine({ gh: { 'o/r#2': flaky, 'o/r#3': 'Three' } })
+    await flush('m1', '#2 here\n')
+    await flush('m1', 'and #3\n')
+    assert.deepEqual(lookups(), [['o/r#2'], ['o/r#3']])
+    assert.match((await flush('m1', 'end', true)).displayContent, /cited.*Second try/s)
+    assert.deepEqual(lookups(), [['o/r#2'], ['o/r#3'], ['o/r#2']])
+  })
+
+  test('a link split across deltas runs lntt again with the next delta: the title goes after the link', async () => {
+    const { flush } = engine({ gh: { 'o/r#138': 'Publish lntt' } })
+    assert.deepEqual(await flush('m1', 'see [#138](http'), {})
+    assert.match((await flush('m1', 's://x.org/1) now\n')).displayContent, /^s:\/\/x\.org\/1\) .*· Publish lntt.* now\n$/)
+  })
+
   test('one timer per delta for lntt and the lookups together, and none when nothing waits', async () => {
     const { flush, waits } = engine({ gh: { 'o/r#9': 'Nine', 'o/r#1': () => new Promise(() => {}) }, late: true })
     await flush('m1', '#9\n')
@@ -387,5 +437,58 @@ describe('the issue titles hook', () => {
     const { flush } = engine()
     const below = { displayContent: 'rewritten, no numbers\n' }
     assert.equal(await flush('m1', 'raw\n', false, below), below)
+  })
+})
+
+// The real lntt refs (packages/lntt/bin/lntt.ts), run in a git repository of its own with
+// a gh on PATH that knows o/r#1: the fake lntt above answers as it does.
+const LNTT_BIN = new URL('../../../packages/lntt/bin/lntt.ts', import.meta.url).pathname
+const GH = `#!/bin/sh
+case "$*" in
+  "repo view"*) echo o/r ;;
+  "api repos/o/r/issues/1 "*) printf 'One\\thttps://github.com/o/r/issues/1\\n' ;;
+  *) echo 'gh: Not Found (HTTP 404)' >&2; exit 1 ;;
+esac
+`
+
+describe('the issue titles hook with the real lntt refs', () => {
+  test('a title beside the number, and the box on the last delta', async () => {
+    const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'issue-titles-')))
+    try {
+      const stubs = join(tmp, 'bin')
+      const repo = join(tmp, 'repo')
+      mkdirSync(stubs)
+      mkdirSync(repo)
+      writeFileSync(join(stubs, 'gh'), GH)
+      chmodSync(join(stubs, 'gh'), 0o755)
+      execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repo })
+      const env = { ...process.env, PATH: `${stubs}:${process.env.PATH}` }
+      // The engine's process.run: a command to its end, its exit code an answer.
+      const run = (argv, init = {}) =>
+        new Promise((resolve, reject) => {
+          const [command, ...args] = argv[0] === 'lntt' ? [process.execPath, LNTT_BIN, ...argv.slice(1)] : argv
+          const child = execFile(command, args, { cwd: repo, env, encoding: 'utf8', timeout: init.timeoutMs }, (error, stdout, stderr) => {
+            if (error && typeof error.code !== 'number') reject(error)
+            else resolve({ exitCode: error ? error.code : 0, stdout, stderr })
+          })
+          child.stdin.end(init.stdin ?? '')
+        })
+      const $ = {
+        process: { run },
+        fs: { exists: async (p) => existsSync(p) },
+        clock: { sleep: () => new Promise(() => {}) },
+      }
+      let hook
+      issueTitles((_, h) => {
+        hook = h
+        return { catch: () => {} }
+      })
+      const flush = (delta, final = false) => hook($, { message_id: 'm1', delta, final }, async () => ({}))
+      assert.match((await flush('Do #1.\n')).displayContent, /^Do #1 .*· One.*\.\n$/)
+      const end = (await flush('Done.', true)).displayContent
+      assert.match(end, /^Done\.\n.*╭─ cited.*#1 .*One.*https:\/\/github\.com\/o\/r\/issues\/1/s)
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
   })
 })
