@@ -121,8 +121,35 @@ export function findConfig(cwd: string): Located {
 
 export function loadConfig(cwd: string): Loaded {
   const located = findConfig(cwd)
-  const data = check(validate, parse(readFileSync(located.path, 'utf8'), located) ?? {}, located.path)
+  const data = checkStatuses(
+    check(validate, parse(readFileSync(located.path, 'utf8'), located) ?? {}, located.path),
+    located.path,
+  )
   return { ...located, data }
+}
+
+const STATUS_ROLES = ['initial', 'ready', 'inProgress', 'inReview', 'done']
+
+// What the schema cannot say: every status the skills set (a role of the Status field,
+// a status of delivery.candidate) is one of the Status field's options, so a typo is
+// caught here and not when the automation fails to move an item.
+function checkStatuses(data: Record<string, unknown>, path: string): Record<string, unknown> {
+  const field = (data.board as { fields?: { status?: Record<string, unknown> } } | undefined)?.fields?.status
+  const options = field?.options as string[] | undefined
+  if (!field || !options) return data
+  const candidate = (data.delivery as { candidate?: { status?: Record<string, unknown> } } | undefined)?.candidate
+  const named: [string, unknown][] = [
+    ...STATUS_ROLES.map((role): [string, unknown] => [`board.fields.status.${role}`, field[role]]),
+    ...Object.entries(candidate?.status ?? {}).map(([k, v]): [string, unknown] => [
+      `delivery.candidate.status.${k}`,
+      v,
+    ]),
+  ]
+  const lines = named
+    .filter(([, value]) => value !== undefined && !options.includes(value as string))
+    .map(([key, value]) => `  ${key} is ${JSON.stringify(value)}, not one of the options: ${options.join(', ')}`)
+  if (lines.length === 0) return data
+  throw new ConfigError(`${path}: a status is not an option of board.fields.status:\n${lines.join('\n')}`)
 }
 
 // A dotted key (`recording.logs.adr.path`). A missing key is an error: a script that
@@ -158,6 +185,6 @@ export function setValue(cwd: string, key: string, value: unknown): void {
     doc.setIn(keyPath, value)
     next = doc.toString()
   }
-  check(validate, parse(next, located), located.path)
+  checkStatuses(check(validate, parse(next, located), located.path), located.path)
   writeFileSync(located.path, next)
 }

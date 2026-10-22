@@ -249,6 +249,13 @@ describe('delivery.candidate', () => {
   })
 })
 
+// Writes `config` as the project's configuration and asserts that loading it fails
+// with a message matching `names`: the key, or the path, the rule rejects.
+function assertRejected(config: unknown, names: RegExp): void {
+  write('.agents/config.jsonc', JSON.stringify(config))
+  assert.throws(() => loadConfig(root), names)
+}
+
 describe('the board section', () => {
   const board = {
     project: { owner: 'DemoOrg', ownerType: 'organization', number: 1, title: 'Demo board' },
@@ -257,49 +264,125 @@ describe('the board section', () => {
       status: {
         name: 'Status',
         type: 'singleSelect',
-        options: ['Todo', 'Discussing', 'Ready', 'Done'],
+        options: ['Todo', 'Discussing', 'Ready', 'In progress', 'To review', 'Done'],
         initial: 'Todo',
+        ready: 'Ready',
+        inProgress: 'In progress',
+        inReview: 'To review',
         done: 'Done',
       },
       iteration: { name: 'Iteration', type: 'iteration' },
       startDate: { name: 'Start date', kind: 'issue', type: 'date' },
+      targetDate: { name: 'End Date', type: 'date' },
       classe: { name: 'Classe', type: 'singleSelect', options: ['Prodotto', 'Piattaforma', 'Debito'] },
     },
     tracks: {
       from: ['apps/*'],
-      labels: { community: { owner: 'developer-1', description: 'apps/community' }, 'leva:b2b': {} },
+      labels: {
+        community: { owner: 'developer-1', paths: ['apps/community'], description: "l'app pubblica" },
+        'leva:b2b': {},
+      },
     },
   }
+  const withStatus = (status: Record<string, unknown>) => ({
+    board: { fields: { status: { ...board.fields.status, ...status } } },
+  })
 
   test('the Project, the issue types, its fields with their options, and the track labels', () => {
     write('.agents/config.jsonc', JSON.stringify({ board }))
     const data = loadConfig(root).data
     assert.deepEqual(getValue(data, 'board.fields.classe.options'), ['Prodotto', 'Piattaforma', 'Debito'])
     assert.equal(getValue(data, 'board.fields.status.initial'), 'Todo')
+    assert.equal(getValue(data, 'board.fields.status.inReview'), 'To review')
+    assert.equal(getValue(data, 'board.fields.targetDate.name'), 'End Date')
     assert.equal(getValue(data, 'board.tracks.labels.community.owner'), 'developer-1')
+    assert.deepEqual(getValue(data, 'board.tracks.labels.community.paths'), ['apps/community'])
   })
 
-  test('a Project is found by its owner and number, and its owner is an organization or a user', () => {
-    write('.agents/config.jsonc', JSON.stringify({ board: { project: { title: 'Demo board' } } }))
-    assert.throws(() => loadConfig(root), /owner|number/)
-    const project = { owner: 'someone', ownerType: 'enterprise', number: 1 }
-    write('.agents/config.jsonc', JSON.stringify({ board: { project } }))
-    assert.throws(() => loadConfig(root), /ownerType/)
+  test('a Project is found by its owner and a number from 1, and its owner is an organization or a user', () => {
+    assertRejected({ board: { project: { title: 'Demo board' } } }, /owner|number/)
+    assertRejected({ board: { project: { owner: 'someone', ownerType: 'enterprise', number: 1 } } }, /ownerType/)
+    assertRejected({ board: { project: { owner: 'someone', number: 0 } } }, /\/board\/project\/number/)
   })
 
-  test('a field has a GitHub field type; initial and done belong to the status alone', () => {
-    const size = { name: 'Size', type: 'tshirt' }
-    write('.agents/config.jsonc', JSON.stringify({ board: { fields: { size } } }))
-    assert.throws(() => loadConfig(root), /\/board\/fields\/size\/type/)
+  test('the issue types are listed once each, and a list is never empty', () => {
+    assertRejected({ board: { issueTypes: { parents: [], children: ['Task'] } } }, /\/board\/issueTypes\/parents/)
+    assertRejected(
+      { board: { issueTypes: { parents: ['Feature'], children: ['Task', 'Task'] } } },
+      /\/issueTypes\/children/,
+    )
+  })
+
+  test('a field has a name and a GitHub field type; initial and done belong to the status alone', () => {
+    assertRejected({ board: { fields: { size: { name: 'Size', type: 'tshirt' } } } }, /\/board\/fields\/size\/type/)
+    assertRejected({ board: { fields: { estimate: { type: 'number' } } } }, /name/)
+    assertRejected({ board: { fields: { estimate: { name: 'Estimate' } } } }, /type/)
     const scope = { name: 'Scope', type: 'singleSelect', options: ['Now'], done: 'Now' }
-    write('.agents/config.jsonc', JSON.stringify({ board: { fields: { scope } } }))
-    assert.throws(() => loadConfig(root), /done/)
+    assertRejected({ board: { fields: { scope } } }, /done/)
+  })
+
+  test('a field is a custom field of the Project or an issue field, nothing else', () => {
+    assertRejected(
+      { board: { fields: { startDate: { name: 'Start', kind: 'item', type: 'date' } } } },
+      /\/startDate\/kind/,
+    )
+  })
+
+  test('a single select lists its options, once each; another type has none', () => {
+    assertRejected({ board: { fields: { priority: { name: 'Priority', type: 'singleSelect' } } } }, /options/)
+    const twice = { name: 'Priority', type: 'singleSelect', options: ['P0', 'P0'] }
+    assertRejected({ board: { fields: { priority: twice } } }, /\/board\/fields\/priority\/options/)
+    const none = { name: 'Priority', type: 'singleSelect', options: [] }
+    assertRejected({ board: { fields: { priority: none } } }, /\/board\/fields\/priority\/options/)
+    const dated = { name: 'Start date', type: 'date', options: ['Monday'] }
+    assertRejected({ board: { fields: { startDate: dated } } }, /\/board\/fields\/startDate/)
+  })
+
+  test('the status is a single select with its options', () => {
+    assertRejected(withStatus({ type: 'text' }), /\/board\/fields\/status\/type/)
+    const { options: _, ...noOptions } = board.fields.status
+    assertRejected({ board: { fields: { status: noOptions } } }, /options/)
+  })
+
+  test('every status role is one of the options, and the error names the role and the options', () => {
+    assertRejected(withStatus({ inReview: 'In review' }), /board\.fields\.status\.inReview.*Todo, Discussing, Ready/)
+    assertRejected(withStatus({ initial: 'Backlog' }), /board\.fields\.status\.initial/)
+    assertRejected(withStatus({ ready: 'Ready!' }), /board\.fields\.status\.ready/)
+    assertRejected(withStatus({ inProgress: 'Doing' }), /board\.fields\.status\.inProgress/)
+    assertRejected(withStatus({ done: 'Closed' }), /board\.fields\.status\.done/)
+  })
+
+  test("the candidate's statuses are options of the status too", () => {
+    const status = { inRelease: 'To review', done: 'Done' }
+    write(
+      '.agents/config.jsonc',
+      JSON.stringify({ ...withStatus({}), delivery: { candidate: { prefix: 'r/', status } } }),
+    )
+    assert.equal(getValue(loadConfig(root).data, 'delivery.candidate.status.inRelease'), 'To review')
+    const missing = { inRelease: 'In release', done: 'Done' }
+    assertRejected(
+      { ...withStatus({}), delivery: { candidate: { prefix: 'r/', status: missing } } },
+      /delivery\.candidate\.status\.inRelease.*Todo, Discussing/,
+    )
+  })
+
+  test('lntt set refuses a status role that is not an option, and leaves the file as it was', () => {
+    const path = write('.agents/config.jsonc', JSON.stringify(withStatus({})))
+    const before = readFileSync(path, 'utf8')
+    assert.throws(() => setValue(root, 'board.fields.status.done', 'Closed'), /board\.fields\.status\.done/)
+    assert.equal(readFileSync(path, 'utf8'), before)
   })
 
   test("a project's own field is a camelCase key", () => {
     const Classe = { name: 'Classe', type: 'singleSelect', options: ['Prodotto'] }
-    write('.agents/config.jsonc', JSON.stringify({ board: { fields: { Classe } } }))
-    assert.throws(() => loadConfig(root), /\/board\/fields/)
+    assertRejected({ board: { fields: { Classe } } }, /\/board\/fields/)
+  })
+
+  test('a track owner is a GitHub handle', () => {
+    assertRejected(
+      { board: { tracks: { labels: { admin: { owner: 'developer 1' } } } } },
+      /\/tracks\/labels\/admin\/owner/,
+    )
   })
 })
 
@@ -321,19 +404,34 @@ describe('the cycle section', () => {
     write('.agents/config.jsonc', JSON.stringify({ cycle: { retrospective: { target } } }))
     assert.equal(getValue(loadConfig(root).data, 'cycle.retrospective.target.category'), 'Ideas')
     const { category: _, ...noCategory } = target
-    write('.agents/config.jsonc', JSON.stringify({ cycle: { retrospective: { target: noCategory } } }))
-    assert.throws(() => loadConfig(root), /category/)
+    assertRejected({ cycle: { retrospective: { target: noCategory } } }, /category/)
   })
 
-  test('an iteration starts on a day of the week, 1 to 7', () => {
-    write('.agents/config.jsonc', JSON.stringify({ cycle: { iteration: { days: 7, startDay: 8 } } }))
-    assert.throws(() => loadConfig(root), /startDay/)
+  test('the title holds the window, the targeted title the subject', () => {
+    const target = { kind: 'issue', title: 'Retrospective', targetedTitle: 'Retrospective — {subject}' }
+    assertRejected({ cycle: { retrospective: { target } } }, /\/cycle\/retrospective\/target\/title/)
+    const targeted = { ...target, title: 'Retrospective — {window}' }
+    write('.agents/config.jsonc', JSON.stringify({ cycle: { retrospective: { target: targeted } } }))
+    assert.equal(
+      getValue(loadConfig(root).data, 'cycle.retrospective.target.targetedTitle'),
+      'Retrospective — {subject}',
+    )
+    const noSubject = { ...targeted, targetedTitle: 'Targeted retrospective' }
+    assertRejected({ cycle: { retrospective: { target: noSubject } } }, /\/target\/targetedTitle/)
   })
 
-  test('a targeted review needs the same line in two pull requests at least', () => {
-    const targetedReview = { line: 'Unstable tests', minPullRequests: 1 }
-    write('.agents/config.jsonc', JSON.stringify({ cycle: { retrospective: { targetedReview } } }))
-    assert.throws(() => loadConfig(root), /minPullRequests/)
+  test('an iteration starts on a day of the week, 1 to 7, and lasts 1 to 31 days', () => {
+    assertRejected({ cycle: { iteration: { days: 7, startDay: 8 } } }, /startDay/)
+    assertRejected({ cycle: { iteration: { days: 0 } } }, /\/cycle\/iteration\/days/)
+    assertRejected({ cycle: { iteration: { days: 32 } } }, /\/cycle\/iteration\/days/)
+  })
+
+  test('a targeted review names its line, and needs it in two pull requests at least', () => {
+    assertRejected(
+      { cycle: { retrospective: { targetedReview: { line: 'Unstable tests', minPullRequests: 1 } } } },
+      /minPull/,
+    )
+    assertRejected({ cycle: { retrospective: { targetedReview: { minPullRequests: 2 } } } }, /line/)
   })
 })
 
@@ -343,9 +441,13 @@ describe('ci providers and drafts', () => {
     assert.deepEqual(getValue(loadConfig(root).data, 'ci.providers'), ['circleci', 'github-actions'])
   })
 
-  test('an unknown provider is named', () => {
-    write('.agents/config.jsonc', JSON.stringify({ ci: { providers: ['jenkins'] } }))
-    assert.throws(() => loadConfig(root), /\/ci\/providers/)
+  test('an unknown or repeated provider is named', () => {
+    assertRejected({ ci: { providers: ['jenkins'] } }, /\/ci\/providers/)
+    assertRejected({ ci: { providers: ['circleci', 'circleci'] } }, /\/ci\/providers/)
+  })
+
+  test('drafts is a yes or a no, as a boolean', () => {
+    assertRejected({ ci: { drafts: 'no' } }, /\/ci\/drafts/)
   })
 })
 
@@ -365,16 +467,19 @@ describe('delivery.pullRequest and delivery.commits.trailers', () => {
 
   test('the outcome has a done and a not-applicable keyword, nothing else', () => {
     const outcome = { ...pullRequest.outcome, partial: '— in parte' }
-    write('.agents/config.jsonc', JSON.stringify({ delivery: { pullRequest: { ...pullRequest, outcome } } }))
-    assert.throws(() => loadConfig(root), /partial/)
+    assertRejected({ delivery: { pullRequest: { ...pullRequest, outcome } } }, /partial/)
   })
 
-  test('the trailers a project uses, by their capitalised name', () => {
+  test('the language is a language tag', () => {
+    assertRejected({ delivery: { pullRequest: { ...pullRequest, language: 'Italian' } } }, /\/pullRequest\/language/)
+  })
+
+  test('the trailers a project uses, named as longTrailers names them', () => {
     const trailers = { Retro: 'a signal for the retrospective', 'Removed-section': 'a heading a commit removes' }
     write('.agents/config.jsonc', JSON.stringify({ delivery: { commits: { trailers } } }))
     assert.equal(getValue(loadConfig(root).data, 'delivery.commits.trailers.Retro'), trailers.Retro)
-    write('.agents/config.jsonc', JSON.stringify({ delivery: { commits: { trailers: { retro: 'x' } } } }))
-    assert.throws(() => loadConfig(root), /\/delivery\/commits\/trailers/)
+    assertRejected({ delivery: { commits: { trailers: { 'Removed section': 'x' } } } }, /\/delivery\/commits\/trailers/)
+    assertRejected({ delivery: { commits: { trailers: { Retro2: 'x' } } } }, /\/delivery\/commits\/trailers/)
   })
 })
 
@@ -390,24 +495,30 @@ describe('the spaces section', () => {
   })
 
   test('a space needs its path, and an unknown key is named', () => {
-    write('.agents/config.jsonc', JSON.stringify({ spaces: { notes: { tracked: false } } }))
-    assert.throws(() => loadConfig(root), /path/)
-    write('.agents/config.jsonc', JSON.stringify({ spaces: { notes: { path: 'appunti/', retention: '30d' } } }))
-    assert.throws(() => loadConfig(root), /retention/)
+    assertRejected({ spaces: { notes: { tracked: false } } }, /path/)
+    assertRejected({ spaces: { notes: { path: 'appunti/', retention: '30d' } } }, /retention/)
+  })
+
+  test('a space is named in lowercase', () => {
+    assertRejected({ spaces: { Notes: { path: 'appunti/' } } }, /\/spaces/)
   })
 })
 
 describe('the team section', () => {
-  test('members by GitHub handle, with their role and what they own', () => {
-    const team = { language: 'it', members: { 'maintainer-1': { role: 'maintainer', owns: ['infrastructure'] } } }
+  test('members by GitHub handle, with their role and the paths whose code they own', () => {
+    const team = { language: 'it', members: { 'maintainer-1': { role: 'maintainer', owns: ['apps/admin/', '*'] } } }
     write('.agents/config.jsonc', JSON.stringify({ team }))
-    assert.deepEqual(getValue(loadConfig(root).data, 'team.members.maintainer-1.owns'), ['infrastructure'])
+    assert.deepEqual(getValue(loadConfig(root).data, 'team.members.maintainer-1.owns'), ['apps/admin/', '*'])
   })
 
   test('has no place for what is personal: that stays in the operator profile', () => {
     const members = { 'maintainer-1': { role: 'maintainer', email: 'someone@example.com' } }
-    write('.agents/config.jsonc', JSON.stringify({ team: { members } }))
-    assert.throws(() => loadConfig(root), /email/)
+    assertRejected({ team: { members } }, /email/)
+  })
+
+  test('a member is a GitHub handle, the language a language tag', () => {
+    assertRejected({ team: { members: { developer_1: { role: 'developer' } } } }, /\/team\/members/)
+    assertRejected({ team: { language: 'Italiano' } }, /\/team\/language/)
   })
 })
 
@@ -416,25 +527,34 @@ describe('the configurations of the projects the starter was ported from', () =>
   const distinct: Record<string, Record<string, unknown>> = {
     wai: {
       'cycle.iteration.days': 7,
+      'cycle.iteration.startDay': 3,
       'cycle.retrospective.target.kind': 'discussion',
       'cycle.retrospective.target.category': 'Ideas',
+      'cycle.retrospective.target.targetedTitle': 'Retrospettiva mirata — {subject}',
       'delivery.pullRequest.outcome.done': '— fatto',
+      'delivery.commits.longTrailers': ['Retro', 'Removed-section'],
       'ci.providers': ['github-actions'],
       'board.fields.scope.options': ['Now', 'Next', 'Not now'],
+      'board.fields.status.inReview': 'In review',
+      'board.tracks.labels.Amministrazione.paths': ['apps/admin'],
     },
     pelion: {
       'cycle.iteration.days': 14,
+      'cycle.iteration.startDay': 1,
       'cycle.retrospective.target.kind': 'issue',
       'delivery.pullRequest.outcome.done': '— done',
+      'delivery.branches.types': ['feat', 'fix', 'chore', 'refactor', 'docs', 'test', 'ci'],
       'ci.providers': ['circleci', 'github-actions'],
       'board.fields.scope.options': ['Now', 'Next', 'Later', 'Not now', 'Permanent'],
       'board.fields.classe.options': ['Prodotto', 'Piattaforma', 'Debito'],
+      'board.fields.status.inReview': 'To review',
+      'board.fields.targetDate.name': 'End Date',
       'delivery.candidate.prefix': 'release/',
     },
   }
 
   for (const [project, values] of Object.entries(distinct)) {
-    test(`${project}: the whole file is valid, with the values that set it apart`, () => {
+    test(`${project}: lntt validate accepts it, and it carries the values that set it apart`, () => {
       write('.agents/config.jsonc', readFileSync(join(FIXTURES, `${project}.jsonc`), 'utf8'))
       const valid = spawnSync(process.execPath, [BIN, 'validate'], { cwd: root, encoding: 'utf8' })
       assert.equal(valid.status, 0, valid.stderr)
@@ -450,5 +570,10 @@ describe('the configurations of the projects the starter was ported from', () =>
     }
     assert.ok(options('pelion').includes('Discussing'))
     assert.ok(!options('wai').includes('Discussing'))
+  })
+
+  test("pelion's commitlint is the plain conventional config: no trailer is exempt from the line limit", () => {
+    write('.agents/config.jsonc', readFileSync(join(FIXTURES, 'pelion.jsonc'), 'utf8'))
+    assert.throws(() => getValue(loadConfig(root).data, 'delivery.commits.longTrailers'), /longTrailers/)
   })
 })

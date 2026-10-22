@@ -29,7 +29,7 @@
     },
     "board": {
       "type": "object",
-      "description": "The GitHub Project (v2) the work is planned on, read by the board skills (github-board, plan-round, roadmap): the Project, the issue types, its fields and their options, the track labels. How they are used is in docs/process/board.md.",
+      "description": "The GitHub Project (v2) the work is planned on, read by the board skills (github-board, plan-round, roadmap): the Project, the issue types, its fields and their options, the track labels. How they are used is in docs/process/board.md, when the project has one.",
       "additionalProperties": false,
       "properties": {
         "project": {
@@ -88,7 +88,7 @@
         },
         "fields": {
           "type": "object",
-          "description": "The Project's fields, by key: the ones the board skills know (status, priority, size, scope, iteration) and the project's own, in camelCase (classe). A field missing here is one the project does not use.",
+          "description": "The Project's fields, by key: the ones the board skills know (status, priority, size, scope, iteration, and startDate and targetDate, the dates the roadmap reads) and the project's own, in camelCase (classe). A field missing here is one the project does not use.",
           "propertyNames": {
             "pattern": "^[a-z][a-zA-Z0-9]*$"
           },
@@ -107,6 +107,12 @@
             },
             "iteration": {
               "$ref": "#/definitions/boardField"
+            },
+            "startDate": {
+              "$ref": "#/definitions/boardField"
+            },
+            "targetDate": {
+              "$ref": "#/definitions/boardField"
             }
           },
           "additionalProperties": {
@@ -115,12 +121,12 @@
         },
         "tracks": {
           "type": "object",
-          "description": "The track labels: one label per track (an app, an area), each with one owner, a dimension an issue can take several values of. The github-board skill derives the labels from `from` and the plan and creates only the missing ones; `labels` records the known ones.",
+          "description": "The track labels: one label per track (an app, an area), each with one owner, a dimension an issue can take several values of. A label's name is free text and need not match a folder: `paths` ties it to the code it covers. The github-board skill proposes a label for a folder of `from` that no label's `paths` covers, and creates only the missing ones; `labels` records the known ones.",
           "additionalProperties": false,
           "properties": {
             "from": {
               "type": "array",
-              "description": "Globs of the folders whose names are track labels (apps/*).",
+              "description": "Globs of the folders that are candidate tracks (apps/*): a folder no label's `paths` covers is a candidate for a new label.",
               "items": {
                 "type": "string",
                 "minLength": 1
@@ -140,12 +146,22 @@
                   "owner": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9-]+$",
-                    "description": "The GitHub handle that owns the track, one of team.members."
+                    "description": "The GitHub handle that owns the track, one of team.members. The one place a track's owner is written."
+                  },
+                  "paths": {
+                    "type": "array",
+                    "description": "The folders, or globs, the track covers, from the repository root (apps/admin). A label with no paths covers no folder: an area, a cross-cutting concern.",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "uniqueItems": true
                   },
                   "description": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "What the label covers, as its description on GitHub."
+                    "description": "The label's purpose, in a line."
                   }
                 }
               }
@@ -361,9 +377,9 @@
             },
             "trailers": {
               "type": "object",
-              "description": "The trailers the project's commits carry, by name, each with when it is used: read by the commit-message skill, not by commitlint (a trailer whose value is a sentence goes in longTrailers too).",
+              "description": "The trailers the project's commits carry, by name, each with when it is used: for the commit-message skill. commitlint does not read it; a trailer whose value is a sentence goes in longTrailers too.",
               "propertyNames": {
-                "pattern": "^[A-Z][A-Za-z0-9-]*$"
+                "pattern": "^[A-Za-z][A-Za-z-]*$"
               },
               "additionalProperties": {
                 "type": "string",
@@ -539,7 +555,7 @@
     },
     "cycle": {
       "type": "object",
-      "description": "The cadence of the work, read by plan-round, roadmap and the retrospective skill: the iteration, and where a retrospective is published. The moments of the cycle (planning, grooming, retrospective) are in docs/process/cycle.md.",
+      "description": "The cadence of the work, read by plan-round, roadmap and the retrospective skill: the iteration, and where a retrospective is published. The moments of the cycle (planning, grooming, retrospective) are in docs/process/cycle.md, when the project has one.",
       "additionalProperties": false,
       "properties": {
         "iteration": {
@@ -584,6 +600,11 @@
                   "type": "string",
                   "description": "The title; {window} is replaced by the window the harvest read.",
                   "pattern": "\\{window\\}"
+                },
+                "targetedTitle": {
+                  "type": "string",
+                  "description": "The title of a targeted retrospective, on one subject; {subject} is replaced by it.",
+                  "pattern": "\\{subject\\}"
                 }
               },
               "if": {
@@ -655,7 +676,7 @@
     },
     "spaces": {
       "type": "object",
-      "description": "Where the material that is not the product lives, by name (reference, prototypes, spikes, notes, or a project's own): read by plan-round and by any skill that files material. What goes in each and when it is archived is in docs/process/spaces.md.",
+      "description": "Where the material that is not the product lives, by name (reference, prototypes, spikes, notes, or a project's own): read by plan-round and by any skill that files material. What goes in each and when it is archived is in docs/process/spaces.md, when the project has one.",
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9-]*$"
       },
@@ -665,7 +686,7 @@
     },
     "team": {
       "type": "object",
-      "description": "Who works on the project, as the others need to know it: read by the board skills for owners and assignees. Never a personal profile (what someone knows, how they want to be told): that is the operator profile, never tracked (lntt operator).",
+      "description": "Who works on the project, as the others need to know it: read by the board skills for owners and assignees. Who works how is in docs/process/team.md, when the project has one. Never a personal profile (what someone knows, how they want to be told): that is the operator profile, never tracked (lntt operator).",
       "additionalProperties": false,
       "properties": {
         "language": {
@@ -690,7 +711,7 @@
               },
               "owns": {
                 "type": "array",
-                "description": "What they own: track labels of board.tracks, paths.",
+                "description": "The code they own, by path or glob from the repository root, as CODEOWNERS has it (* for every path). A track's owner is written on its label, board.tracks.labels.",
                 "items": {
                   "type": "string",
                   "minLength": 1
@@ -938,7 +959,7 @@
         },
         "options": {
           "type": "array",
-          "description": "A single select's options, in the Project's order.",
+          "description": "A single select's options, in the Project's order: required for a single select, and only there.",
           "items": {
             "type": "string",
             "minLength": 1
@@ -946,13 +967,35 @@
           "minItems": 1,
           "uniqueItems": true
         }
+      },
+      "if": {
+        "properties": {
+          "type": {
+            "const": "singleSelect"
+          }
+        },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "options": true
+        },
+        "required": ["options"]
+      },
+      "else": {
+        "not": {
+          "properties": {
+            "options": true
+          },
+          "required": ["options"]
+        }
       }
     },
     "statusField": {
       "type": "object",
-      "description": "The Status field: a board field, plus the status a new item gets and the one that counts as done. Both are among its options, as are the names in delivery.candidate.status.",
+      "description": "The Status field: a single select, plus the role some of its options play for the board skills. Each role, and each name in delivery.candidate.status, is one of its options: lntt validate checks it.",
       "additionalProperties": false,
-      "required": ["name", "type"],
+      "required": ["name", "type", "options"],
       "properties": {
         "name": {
           "$ref": "#/definitions/boardField/properties/name"
@@ -961,7 +1004,8 @@
           "$ref": "#/definitions/boardField/properties/kind"
         },
         "type": {
-          "$ref": "#/definitions/boardField/properties/type"
+          "const": "singleSelect",
+          "description": "The field's type on GitHub: the Status is a single select."
         },
         "options": {
           "$ref": "#/definitions/boardField/properties/options"
@@ -970,6 +1014,21 @@
           "type": "string",
           "minLength": 1,
           "description": "The status a new item gets. Default the first option."
+        },
+        "ready": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The status of an item that can be picked up. Default Ready."
+        },
+        "inProgress": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The status of an item someone is working on. Default In progress."
+        },
+        "inReview": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The status of an item whose pull request is ready for review. Default In review."
         },
         "done": {
           "type": "string",

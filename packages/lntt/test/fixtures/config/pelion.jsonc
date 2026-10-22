@@ -24,6 +24,9 @@
         // Discussing holds an open decision; To release, a change squashed into release/N.
         "options": ["Todo", "Discussing", "Ready", "In progress", "To review", "To release", "Done"],
         "initial": "Todo",
+        "ready": "Ready",
+        "inProgress": "In progress",
+        "inReview": "To review",
         "done": "Done"
       },
       "priority": { "name": "Priority", "type": "singleSelect", "options": ["P0", "P1", "P2", "P3", "Not now"] },
@@ -38,15 +41,19 @@
       "classe": { "name": "Classe", "type": "singleSelect", "options": ["Prodotto", "Piattaforma", "Debito"] },
       "iteration": { "name": "Iteration", "type": "iteration" }, // set when scheduling, never on a Feature
       "startDate": { "name": "Start Date", "type": "date" },
-      "endDate": { "name": "End Date", "type": "date" }
+      "targetDate": { "name": "End Date", "type": "date" }
     },
     "tracks": {
       "from": ["apps/*"],
       // Dependabot's labels (dependencies, github_actions, javascript) are not tracks.
       "labels": {
-        "community": { "description": "apps/community — l'app pubblica" },
-        "admin": { "description": "apps/admin — backoffice authoring" },
-        "design-system": { "description": "packages/ui e ui-tokens — il design system" },
+        "community": { "paths": ["apps/community"], "description": "apps/community — l'app pubblica" },
+        "admin": { "paths": ["apps/admin"], "description": "apps/admin — backoffice authoring" },
+        // Storybook, packages/ui and the tokens (.claude/skills/party/SKILL.md).
+        "design-system": {
+          "paths": ["apps/design-system", "packages/ui", "packages/ui-tokens"],
+          "description": "packages/ui e ui-tokens — il design system"
+        },
         "infrastructure": { "description": "CI, deploy, tooling — cross-cutting, non di un singolo app" },
         "marketing": {
           "description": "Tag manager, pixel, conversioni — lavoro sul container/agenzia, non codice app"
@@ -67,8 +74,9 @@
     "drafts": false // a pull request goes ready after a green pnpm ci:local --e2e
   },
   "delivery": {
-    // test is used besides the documented types; the middle segment is the issue number or no-story.
-    "branches": { "types": ["feat", "fix", "chore", "refactor", "docs", "test"] },
+    // test and ci are used besides the documented types (ci on 11 branches, the latest
+    // 2026-10-15); the middle segment is the issue number or no-story.
+    "branches": { "types": ["feat", "fix", "chore", "refactor", "docs", "test", "ci"] },
     "candidate": {
       "base": "main",
       "prefix": "release/",
@@ -77,7 +85,8 @@
     },
     "commits": {
       "language": "it",
-      "longTrailers": ["Retro"],
+      // No longTrailers: commitlint is the plain config-conventional, so a Retro line over
+      // 100 characters is rejected.
       "trailers": { "Retro": "a signal for the retrospective, or none; absorbed into the pull request body" }
     },
     "pullRequest": {
@@ -116,7 +125,7 @@
     "language": "it",
     // Marketing, content and design people work in the repository too.
     "members": {
-      "maintainer-1": { "role": "maintainer", "owns": ["*"] }, // the code owner of every path
+      "maintainer-1": { "role": "maintainer", "owns": ["*"] }, // .github/CODEOWNERS: the code owner of every path
       "member-1": {},
       "member-2": {},
       "member-3": {}
