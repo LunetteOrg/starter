@@ -38,10 +38,29 @@ it('reports what the earlier files left, then leaves some', () => {
     act: globalThis.IS_REACT_ACT_ENVIRONMENT,
     stubbed: typeof ResizeObserver,
     body: document.body.textContent,
+    storage: localStorage.length + sessionStorage.length,
   }) + '\\n')
   document.head.appendChild(document.createElement('style'))
   document.cookie = 'left=1; path=/'
+  localStorage.setItem('left', '1')
+  sessionStorage.setItem('left', '1')
   render(createElement('p', null, 'rendered'))
+  vi.useFakeTimers()
+})
+`
+
+// A node-environment file of the fast project: the setup's node branch restores the
+// clock, and nothing else there would.
+const nodeFile = `// @vitest-environment node
+import { appendFileSync } from 'node:fs'
+import { expect, it, vi } from 'vitest'
+
+const files = (globalThis.__probeNodeFiles ??= [])
+files.push(import.meta.url)
+
+it('reports the clock the earlier node files left, then fakes it', () => {
+  expect(files).toContain(import.meta.url)
+  appendFileSync('report.jsonl', JSON.stringify({ node: files.length, fakeTimers: vi.isFakeTimers() }) + '\\n')
   vi.useFakeTimers()
 })
 `
@@ -63,6 +82,8 @@ type Line = {
   act?: boolean
   stubbed?: string
   body?: string
+  storage?: number
+  node?: number
   heavy?: true
 }
 
@@ -90,6 +111,8 @@ async function runProbe(config: string, extra: Record<string, string> = {}): Pro
     'one.spec.mjs': probeFile,
     'two.spec.mjs': probeFile,
     'three.spec.mjs': probeFile,
+    'node-one.spec.mjs': nodeFile,
+    'node-two.spec.mjs': nodeFile,
     'heavy.spec.mjs': heavyFile,
     ...extra,
   }
@@ -116,7 +139,7 @@ describe('appTest() in a real run', () => {
   const listedRun = () => (listed ??= runProbe(preset('')))
 
   it('shares one worker across the fast files, and the listed setup leaves each file clean', async () => {
-    const fast = (await listedRun()).filter((line) => !line.heavy)
+    const fast = (await listedRun()).filter((line) => !line.heavy && line.node === undefined)
     // Not vacuous: the files did share the worker's registry and environment.
     expect(fast.map((line) => line.files)).toEqual([1, 2, 3])
     for (const line of fast) {
@@ -128,8 +151,18 @@ describe('appTest() in a real run', () => {
         act: true,
         stubbed: 'function',
         body: '',
+        storage: 0,
       })
     }
+  })
+
+  it('gives the node files of the fast project the real clock back after each test', async () => {
+    const node = (await listedRun()).filter((line) => line.node !== undefined)
+    // Not vacuous: the second file shared the first one's registry.
+    expect(node).toEqual([
+      { node: 1, fakeTimers: false },
+      { node: 2, fakeTimers: false },
+    ])
   })
 
   it('runs the last project once, after the others', async () => {
@@ -138,10 +171,28 @@ describe('appTest() in a real run', () => {
     expect(report.at(-1)).toEqual({ heavy: true })
   })
 
+  it('gives each jsdom file a storage where the environment leaves the global undefined', async () => {
+    // What vitest's jsdom environment leaves from Node 25 on: Node's own localStorage,
+    // undefined without --localstorage-file. Reproduced here on every Node version.
+    const nodeStorage = `if (typeof window !== 'undefined') {
+  Object.defineProperty(globalThis, 'localStorage', { value: undefined, configurable: true, writable: true })
+}
+`
+    const report = await runProbe(preset("setupFiles: ['./node-storage.mjs', ...test.setupFiles],"), {
+      'node-storage.mjs': nodeStorage,
+    })
+    const fast = report.filter((line) => line.files !== undefined)
+    expect(fast.map(({ files, storage }) => ({ files, storage }))).toEqual([
+      { files: 1, storage: 0 },
+      { files: 2, storage: 0 },
+      { files: 3, storage: 0 },
+    ])
+  })
+
   it('leaks from file to file when another setup file imports the jsdom setup', async () => {
     const setup = "import '@lntt/test-utils/jsdom-setup'\n"
     const report = await runProbe(preset("setupFiles: ['./setup.mjs'],"), { 'setup.mjs': setup })
     const third = report.find((line) => line.files === 3)
-    expect(third).toMatchObject({ head: 1, cookie: 'left=1', fakeTimers: true, body: 'rendered' })
+    expect(third).toMatchObject({ head: 1, cookie: 'left=1', fakeTimers: true, body: 'rendered', storage: 2 })
   })
 })

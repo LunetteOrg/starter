@@ -61,11 +61,27 @@ export function installDomStubs(): void {
   }
 }
 
+/** The jsdom instance vitest's jsdom environment exposes as a global. */
+type WithJsdom = { jsdom?: { window: Window } }
+
 /**
- * Empties `localStorage` and `sessionStorage`, when the environment has them. On Node
- * 25 and later, vitest's jsdom environment keeps Node's own `localStorage`, which is
- * `undefined` unless Node runs with `--localstorage-file`.
+ * Gives the page jsdom's own `localStorage` and `sessionStorage` where the global is
+ * missing. From Node 25, Node defines both globals itself, and vitest's jsdom
+ * environment keeps Node's: `localStorage` is `undefined` unless Node runs with
+ * `--localstorage-file`, so a component that reads it throws. A storage the
+ * environment already has, Node's `sessionStorage` included, is left alone.
  */
+export function installJsdomStorage(): void {
+  const dom = (globalThis as WithJsdom).jsdom?.window
+  if (!dom) return
+  for (const name of ['localStorage', 'sessionStorage'] as const) {
+    if ((globalThis as Partial<Record<typeof name, Storage>>)[name] === undefined) {
+      Object.defineProperty(globalThis, name, { value: dom[name], configurable: true, writable: true })
+    }
+  }
+}
+
+/** Empties `localStorage` and `sessionStorage`, when the environment has them. */
 export function clearStorage(): void {
   const storages = globalThis as { localStorage?: Storage; sessionStorage?: Storage }
   storages.localStorage?.clear()

@@ -13,7 +13,13 @@
  * missed by nobody and would hide the real absence.
  */
 import { afterAll, afterEach, vi } from 'vitest'
-import { clearCookies, clearStorage, installDomStubs, removeHeadNodesAddedSince } from './jsdom-env.ts'
+import {
+  clearCookies,
+  clearStorage,
+  installDomStubs,
+  installJsdomStorage,
+  removeHeadNodesAddedSince,
+} from './jsdom-env.ts'
 
 /**
  * `act()` flushes updates synchronously only when this flag is true.
@@ -40,6 +46,7 @@ if (typeof window === 'undefined') {
   })
 } else {
   installDomStubs()
+  installJsdomStorage()
 
   // Imported only here: a node-environment file has no tree to unmount and no reason
   // to load React.
