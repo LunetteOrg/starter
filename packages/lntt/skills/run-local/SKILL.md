@@ -60,8 +60,10 @@ This skill is the procedure; never edit it to fit one project.
   worktree when the viewer belongs to one. **Exit 3** prints a JSON with `call`: the
   viewer is a tool only you can use (`preview_start` in Claude desktop, `navigate` in
   Chrome); make that one call with the URL.
-- **Checking a page yourself**: a browser tool you have (Playwright, Chrome), or
-  `playwright screenshot <url> <file>` and look at the file.
+- **Checking a page yourself**: run `lntt browser <app>` and follow what it prints.
+  It names the browser to drive in this session and gives each operation (open,
+  read, click, type, screenshot, console, requests, close) on this worktree's URL,
+  either as a command to run from a shell or as a tool call to make yourself.
 
 ## 6. Stop and report
 

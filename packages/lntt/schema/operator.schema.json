@@ -71,6 +71,15 @@
           },
           "uniqueItems": true
         },
+        "browsers": {
+          "type": "array",
+          "description": "Browsers an agent drives to check a page, in order of preference; the first one usable in the session wins (lntt browser).",
+          "items": {
+            "type": "string",
+            "enum": ["orca", "claude-desktop", "chrome", "playwright"]
+          },
+          "uniqueItems": true
+        },
         "agents": {
           "type": "array",
           "description": "Coding agents the operator uses, as named by `npx skills` (claude-code, codex, cursor, …).",
