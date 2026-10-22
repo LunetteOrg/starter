@@ -34,7 +34,11 @@ function project(files: Record<string, string>): string {
       { includes: ['src/routes/**'], plugins: [`${PLUGINS}/no-entity-spread-in-loader.grit`] },
       {
         includes: ['src/e2e/**'],
-        plugins: [`${PLUGINS}/no-implicit-e2e-sync.grit`, `${PLUGINS}/no-react-internals.grit`],
+        plugins: [
+          `${PLUGINS}/no-implicit-e2e-sync.grit`,
+          `${PLUGINS}/no-react-internals.grit`,
+          `${PLUGINS}/e2e-test-from-helper.grit`,
+        ],
       },
     ],
   }
@@ -106,4 +110,35 @@ test('no-react-internals flags a React internal key', () => {
   const r = check(project({ 'e2e/internals.e2e.ts': "export const key = '__reactProps$'\n" }))
   assert.equal(r.ok, false)
   assert.match(r.output, /React internals/)
+})
+
+test('e2e-test-from-helper flags `test` taken from @playwright/test in every import form', () => {
+  const forms = {
+    'named.e2e.ts': "import { test } from '@playwright/test'\n",
+    'renamed.e2e.ts': "import { expect, test as base } from '@playwright/test'\n",
+    'multiline.e2e.ts': "import {\n  expect,\n  test,\n} from '@playwright/test'\n",
+    'default.e2e.ts': "import playwright from '@playwright/test'\n",
+    'namespace.e2e.ts': "import * as playwright from '@playwright/test'\n",
+  }
+  const r = check(
+    project(Object.fromEntries(Object.entries(forms).map(([f, src]) => [`e2e/${f}`, src]))),
+  )
+  assert.equal(r.ok, false)
+  assert.match(r.output, /@lntt\/test-utils\/playwright/)
+  for (const file of Object.keys(forms))
+    assert.match(r.output, new RegExp(`e2e/${file}:1:1 plugin`))
+})
+
+test('e2e-test-from-helper leaves `test` from the helper, and expect, devices and types from @playwright/test', () => {
+  const src = [
+    "import { test } from '@lntt/test-utils/playwright'",
+    "import type { TestInfo } from '@playwright/test'",
+    "import { expect as check, devices, expect, type Page } from '@playwright/test'",
+    '',
+    'export const use = [test, devices, expect, check] as const',
+    'export type Used = [Page, TestInfo]',
+    '',
+  ].join('\n')
+  const r = check(project({ 'e2e/ok.e2e.ts': src }))
+  assert.ok(r.ok, r.output)
 })
