@@ -21,7 +21,7 @@ batch for what is expensive ([delivery](./delivery.md) has the flow):
 | A push to `main` | the full CI, which gates a release |
 | A Dependabot pull request | the `ci` check red in seconds, until an owner, member or collaborator approves it; the approval runs the CI the base calls for, and a later push turns it red again ([Dependabot pull requests](#dependabot-pull-requests)) |
 | A merge into a candidate | nothing |
-| Every day at 04:23 UTC, or by hand (`workflow_dispatch`) | the [upstream check](#upstream-tools) of each new release of Orca, Herdr, claude and opencode |
+| Every day (the `schedule` of `upstream.yml`), or by hand (`workflow_dispatch`) | the [upstream check](#upstream-tools) of each new release of Orca, Herdr, claude and opencode |
 
 `ci.yml` is one job, so each run is billed once. The job is skipped on a draft, and
 `ready_for_review` starts it when the draft leaves draft. The tests run on every run:
@@ -163,8 +163,8 @@ runs with `UPSTREAM_SMOKE=<tool>` (the tests skip without it).
 | opencode | Homebrew's `opencode` formula | the flags, against `opencode run --help` and `opencode --help`; a one-line call on a free model whose JSON lntt parses |
 
 A version counts as checked once its cache entry `upstream-<tool>-<version>` exists, which
-the job saves green or red. GitHub evicts an entry unused for seven days; the version is
-then checked again, and its issue, if any, stops a second one. `workflow_dispatch` takes
+the job saves green or red. GitHub evicts an entry left unused (its cache retention); the version
+is then checked again, and its issue, if any, stops a second one. `workflow_dispatch` takes
 one tool and `force`, to check a version again.
 
 A red opens the issue `<tool> <version> breaks lntt`, once per tool and version, with the
@@ -172,9 +172,11 @@ failing step, the run and the end of the log. Whoever takes it reads the log, th
 lntt's adapter (`packages/lntt/src/worktree.ts`, `headless.ts`, `orca-subagents.ts`) or
 records the tool's change in the decision that relies on it
 ([worktree tooling](../adr/worktree-tooling.md), [review agents](../adr/review-agents.md)).
-A red that is the runner's (a download that failed, a timeout) closes the issue and runs
-the workflow again with that tool and `force`; that run opens no second issue, so its
-outcome is read in the run.
+A red that is the runner's (a download that failed) closes the issue and runs the
+workflow again with that tool and `force`, which checks the tool's latest version; that
+run opens no second issue, so its outcome is read in the run. A job that outlasts its
+timeout opens no issue and saves no entry: the version is checked again the next day, and
+its red runs are the signal.
 
 ## Discarded directions
 

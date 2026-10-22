@@ -17,6 +17,7 @@ import {
   throwawayHome,
   tool,
   upstream,
+  useHome,
   waitFor,
 } from './upstream.ts'
 
@@ -86,14 +87,15 @@ describe('Orca headless', () => {
   let home = ''
   let repo = ''
   let stop = () => {}
-  const saved = { home: process.env.HOME, cwd: process.cwd() }
+  const cwd = process.cwd()
+  let restore = () => {}
 
   // orca and lntt's runner find the server through HOME, and Orca picks the repository
   // from the working directory, as for a person in their checkout.
   before(async () => {
     if (skip) return
     ;({ home, repo } = throwawayHome())
-    process.env.HOME = home
+    restore = useHome(home)
     process.chdir(repo)
     const log = join(home, 'serve.log')
     stop = background('orca', ['serve', '--no-pairing'], log)
@@ -104,8 +106,8 @@ describe('Orca headless', () => {
   after(() => {
     if (skip) return
     stop()
-    process.chdir(saved.cwd)
-    process.env.HOME = saved.home
+    process.chdir(cwd)
+    restore()
     // Orca's terminal daemon may still be writing there; the machine is thrown away.
     try {
       rmSync(home, { recursive: true, force: true, maxRetries: 3 })
@@ -184,7 +186,9 @@ describe('Orca headless', () => {
     skip,
     timeout: 120_000,
   }, async () => {
+    // Orca writes it at its first start, which this test does not order after.
     const script = join(home, '.orca/agent-hooks/claude-hook.sh')
+    await waitFor(`Orca to install ${script}`, () => existsSync(script))
     assert.ok(existsSync(script), `Orca installed ${script}`)
     // The variables of a session in an Orca terminal, read from one.
     const dump = join(home, 'terminal.env')
@@ -210,18 +214,21 @@ describe('Orca headless', () => {
     assert.equal(direct.stderr, '')
     const subagents = orcaSubagents(env, repo)
     assert.ok(subagents, 'orcaSubagents finds the script and the variables')
-    subagents.start('upstream-1', 'upstream check')
-    // Orca lists the subagent under the pane that sent it.
-    const seen = await waitFor('the subagent in orca worktree ps', () => {
-      const ps = JSON.parse(tool('orca', ['worktree', 'ps', '--json'])) as {
-        result: { worktrees: { agents?: { subagents?: { id: string; agentType: string }[] }[] }[] }
-      }
-      return ps.result.worktrees
-        .flatMap((w) => w.agents ?? [])
-        .flatMap((a) => a.subagents ?? [])
-        .find((s) => s.id === 'upstream-1')
-    })
-    assert.equal(seen.agentType, 'upstream check')
-    subagents.close()
+    try {
+      subagents.start('upstream-1', 'upstream check')
+      // Orca lists the subagent under the pane that sent it.
+      const seen = await waitFor('the subagent in orca worktree ps', () => {
+        const ps = JSON.parse(tool('orca', ['worktree', 'ps', '--json'])) as {
+          result: { worktrees: { agents?: { subagents?: { id: string; agentType: string }[] }[] }[] }
+        }
+        return ps.result.worktrees
+          .flatMap((w) => w.agents ?? [])
+          .flatMap((a) => a.subagents ?? [])
+          .find((s) => s.id === 'upstream-1')
+      })
+      assert.equal(seen.agentType, 'upstream check')
+    } finally {
+      subagents.close()
+    }
   })
 })

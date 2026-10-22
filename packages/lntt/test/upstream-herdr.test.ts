@@ -15,6 +15,7 @@ import {
   throwawayHome,
   tool,
   upstream,
+  useHome,
   waitFor,
 } from './upstream.ts'
 
@@ -66,13 +67,14 @@ describe('Herdr headless', () => {
   let home = ''
   let repo = ''
   let stop = () => {}
-  const saved = { home: process.env.HOME, cwd: process.cwd() }
+  const cwd = process.cwd()
+  let restore = () => {}
 
   // herdr and lntt's runner reach the server through its socket under HOME.
   before(async () => {
     if (skip) return
     ;({ home, repo } = throwawayHome())
-    process.env.HOME = home
+    restore = useHome(home)
     process.chdir(repo)
     stop = background('herdr', ['server'], join(home, 'server.log'))
     await waitFor('herdr server to answer', () => tool('herdr', ['agent', 'list']).includes('agent_list'))
@@ -84,8 +86,8 @@ describe('Herdr headless', () => {
       tool('herdr', ['server', 'stop'])
     } catch {}
     stop()
-    process.chdir(saved.cwd)
-    process.env.HOME = saved.home
+    process.chdir(cwd)
+    restore()
     try {
       rmSync(home, { recursive: true, force: true, maxRetries: 3 })
     } catch {}

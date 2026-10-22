@@ -28,6 +28,12 @@ on:
 
 permissions: {}
 
+# A dispatch that overlaps the scheduled run waits for it, so the two do not check the
+# same version and open the same issue twice.
+concurrency:
+  group: upstream
+  cancel-in-progress: false
+
 jobs:
   versions:
     runs-on: ubuntu-latest
@@ -87,19 +93,23 @@ jobs:
           OPENCODE: ${{ steps.latest.outputs.opencode }} ${{ steps.opencode.outputs.cache-hit }}
         run: |
           tools='[]'
+          missing=''
           for pair in "orca $ORCA" "herdr $HERDR" "claude $CLAUDE" "opencode $OPENCODE"; do
             read -r tool version hit <<< "$pair"
             [ "$ONLY" = all ] || [ "$ONLY" = "$tool" ] || continue
-            if [ -z "$version" ]; then echo "::error::no latest version read for $tool"; exit 1; fi
+            # A version that could not be read fails this job at the end, after the
+            # other tools are passed on: one registry down does not hide the others.
+            if [ -z "$version" ]; then echo "::error::no latest version read for $tool"; missing="$missing $tool"; continue; fi
             if [ "$hit" = true ] && [ "$FORCE" != true ]; then echo "$tool $version: already checked"; continue; fi
             echo "$tool $version: to check"
             tools=$(echo "$tools" | jq -c --arg t "$tool" --arg v "$version" '. + [{tool: $t, version: $v}]')
           done
           echo "tools=$tools" >> "$GITHUB_OUTPUT"
+          [ -z "$missing" ]
 
   check:
     needs: versions
-    if: needs.versions.outputs.tools != '[]'
+    if: ${{ !cancelled() && needs.versions.outputs.tools != '' && needs.versions.outputs.tools != '[]' }}
     name: ${{ matrix.tool }} ${{ matrix.version }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -132,15 +142,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: sh scripts/upstream-install.sh "$TOOL" "$VERSION" 2>&1 | tee -a upstream.log
       # claude's JSON reply needs a real call: with no ANTHROPIC_API_KEY secret, that
-      # test skips with its reason and the flags check still runs.
+      # test skips with its reason and the flags check still runs. Only claude's job gets
+      # the key: Orca's and Herdr's need the real claude not logged in.
       - id: test
         env:
           UPSTREAM_SMOKE: ${{ matrix.tool }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ matrix.tool == 'claude' && secrets.ANTHROPIC_API_KEY || '' }}
         run: node --test "packages/lntt/test/upstream-$TOOL.test.ts" 2>&1 | tee -a upstream.log
       # One issue per tool and version: an issue with that title, open or closed, also
       # covers a forced run and a cache entry GitHub evicted.
-      - name: Open an issue
+      - id: issue
+        name: Open an issue
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -173,9 +185,11 @@ jobs:
             echo '</details>'
           } > issue.md
           gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file issue.md
-      - if: ${{ !cancelled() }}
+      # A red whose issue could not be opened saves no entry: the next run checks the
+      # version again and opens it.
+      - if: ${{ !cancelled() && steps.issue.outcome != 'failure' }}
         run: mkdir -p .upstream-checked && echo "$TOOL $VERSION ${{ job.status }}" > .upstream-checked/version
-      - if: ${{ !cancelled() }}
+      - if: ${{ !cancelled() && steps.issue.outcome != 'failure' }}
         uses: actions/cache/save@v6
         with:
           path: .upstream-checked

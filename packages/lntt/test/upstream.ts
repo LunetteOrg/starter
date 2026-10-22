@@ -4,7 +4,7 @@
 // only when UPSTREAM_SMOKE names its tool.
 
 import { execFileSync, spawn } from 'node:child_process'
-import { closeSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, closeSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Runner } from '../src/worktree.ts'
@@ -20,14 +20,17 @@ export function upstream(tool: Tool): boolean {
 }
 
 // Records every call and answers from a table keyed by the command and its first
-// arguments, so every path of an adapter runs without the tool's runtime.
+// arguments, so every path of an adapter runs without the tool's runtime. The longest
+// key a call starts with wins: `orca worktree create --help` over `orca worktree create`.
 export function recorder(answers: Record<string, string> = {}) {
   const calls: string[][] = []
   const runner: Runner = {
     run(command, args) {
       calls.push([command, ...args])
       const line = [command, ...args].join(' ')
-      const key = Object.keys(answers).find((k) => line.startsWith(k))
+      const key = Object.keys(answers)
+        .filter((k) => line.startsWith(k))
+        .sort((a, b) => b.length - a.length)[0]
       return key ? (answers[key] as string) : ''
     },
     shell() {},
@@ -43,9 +46,19 @@ export function flagsOf(args: string[]): string[] {
   return args.filter((arg) => FLAG.test(arg))
 }
 
-// The flags a tool's help names, long and short.
+// The flags a tool's help defines, long and short: only from the lines that start with
+// a flag at an option's indent (a description's wrapped lines sit deeper), up to the gap
+// before the description, so a removed flag that another option's description still
+// mentions counts as missing.
 export function helpFlags(help: string): Set<string> {
-  return new Set(help.match(/(?<![\w-])--?[A-Za-z][\w-]*/g) ?? [])
+  const flags = new Set<string>()
+  for (const line of help.split('\n')) {
+    const indent = line.length - line.trimStart().length
+    const spec = line.trim().split(/\s{2,}/)[0] ?? ''
+    if (indent > 8 || !spec.startsWith('-')) continue
+    for (const flag of spec.match(/(?<![\w-])--?[A-Za-z][\w-]*/g) ?? []) flags.add(flag)
+  }
+  return flags
 }
 
 // Each flag lntt passes that the tool's own description lacks, as one line per
@@ -121,11 +134,28 @@ export function throwawayHome(): { home: string; repo: string } {
   return { home, repo }
 }
 
+// Points this process, and every tool it starts, at `home`: HOME, and none of the
+// variables that lead the orca and herdr CLIs to a person's running instance (an Orca or
+// Herdr terminal sets them). Returns what puts the environment back.
+export function useHome(home: string): () => void {
+  const saved = { ...process.env }
+  for (const name of Object.keys(process.env)) {
+    if (/^(ORCA_|HERDR_|XDG_)/.test(name)) delete process.env[name]
+  }
+  process.env.HOME = home
+  return () => {
+    for (const name of Object.keys(process.env)) delete process.env[name]
+    Object.assign(process.env, saved)
+  }
+}
+
 // A long-running server in the background, its output in a log file the test reads.
 export function background(command: string, args: string[], log: string): () => void {
   const fd = openSync(log, 'a')
   const child = spawn(command, args, { stdio: ['ignore', fd, fd], detached: true })
   closeSync(fd)
+  // A server that cannot start (not on the PATH) says so in the log the test waits on.
+  child.on('error', (error) => appendFileSync(log, `${command} did not start: ${error.message}\n`))
   child.unref()
   return () => {
     try {

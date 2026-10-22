@@ -32,7 +32,7 @@ fetch() { # <owner/repo> <asset> <file>
     node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const a=JSON.parse(s).assets.find(a=>a.name===process.argv[1]);console.log(a?.digest??"")})' "$2")
   case $digest in
     sha256:*) echo "${digest#sha256:}  $3" | sha256sum -c - ;;
-    *) echo "upstream-install: no digest for $2 in the release; not verified" >&2 ;;
+    *) echo "upstream-install: no digest for $2 in the release, so it is not installed unverified" >&2; exit 1 ;;
   esac
 }
 
@@ -90,7 +90,13 @@ case $tool in
   claude) installed=$(claude --version) ;;
   opencode) installed=$(opencode --version) ;;
 esac
-case " $installed " in
-  *[!0-9.]"$version"[!0-9.]*) echo "upstream-install: $tool $version" ;;
-  *) echo "upstream-install: asked for $tool $version, installed $installed" >&2; exit 1 ;;
-esac
+# One word of the tool's version line is the version exactly (a leading v aside), so
+# 1.2.30 or 1.2.3-rc.1 do not pass for 1.2.3.
+for word in $installed; do
+  if [ "${word#v}" = "$version" ]; then
+    echo "upstream-install: $tool $version"
+    exit 0
+  fi
+done
+echo "upstream-install: asked for $tool $version, installed $installed" >&2
+exit 1
