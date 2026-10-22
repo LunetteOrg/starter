@@ -21,6 +21,7 @@ batch for what is expensive ([delivery](./delivery.md) has the flow):
 | A push to `main` | the full CI, which gates a release |
 | A Dependabot pull request | the `ci` check red in seconds, until an owner, member or collaborator approves it; the approval runs the CI the base calls for, and a later push turns it red again ([Dependabot pull requests](#dependabot-pull-requests)) |
 | A merge into a candidate | nothing |
+| Every day (the `schedule` of `upstream.yml`), or by hand (`workflow_dispatch`) | the [upstream check](#upstream-tools) of each new release of Orca, Herdr, claude and opencode |
 
 `ci.yml` is one job, so each run is billed once. The job is skipped on a draft, and
 `ready_for_review` starts it when the draft leaves draft. The tests run on every run:
@@ -146,8 +147,51 @@ Dependabot's pull requests stay on `main` and merge as hotfixes, when a person d
 - A Dependabot pull request moved onto a candidate keeps the gate, and its approval
   runs the minimal CI, as for any pull request into a candidate.
 
+## Upstream tools
+
+lntt drives tools it does not own, and its own tests run against fakes of them.
+`upstream.yml` reads the latest release of each one every day and checks lntt against
+each version it has not checked yet, in a job of its own on a throwaway runner:
+`scripts/upstream-install.sh` installs it, and `pnpm --filter @lntt/lntt test:upstream`
+runs `packages/lntt/test/upstream-<tool>.test.ts` with `UPSTREAM_SMOKE=<tool>` (the tests
+skip without it). The script installs system packages and refuses a release asset whose
+sha256 GitHub does not record, so it runs only on a throwaway machine: a GitHub runner,
+or a container to try a change to it.
+
+| Tool | Where its version comes from | What the test checks |
+|---|---|---|
+| Orca | GitHub Releases of `stablyai/orca` (the `.deb`) | the flags lntt passes, against `orca agent-context --json`; on a headless `orca serve`, `startOrca` with the real `claude` not logged in (path, handle, model, effort, brief) and with opencode's shell launch, and the review's subagents through Orca's hook script |
+| Herdr | GitHub Releases of `herdrdev/herdr` | the flags, against each subcommand's `--help`; on a headless `herdr server`, `startHerdr` through `agent start` and through the shell command Herdr detects |
+| claude | npm `@anthropic-ai/claude-code` | the flags, against `claude --help`; a one-line call on `haiku` whose JSON lntt parses, authenticated by Workload Identity Federation: the repository variables `ANTHROPIC_FEDERATION_RULE_ID`, `ANTHROPIC_ORGANIZATION_ID`, `ANTHROPIC_SERVICE_ACCOUNT_ID` and `ANTHROPIC_WORKSPACE_ID` and the job's GitHub OIDC token, with no stored key; without the variables, that call is skipped with a notice |
+| opencode | Homebrew's `opencode` formula | the flags, against `opencode run --help` and `opencode --help`; a one-line call on a free model whose JSON lntt parses |
+
+A version counts as checked once its cache entry `upstream-<tool>-<version>` exists, which
+the job saves green or red, unless the issue of a red could not be opened: that version is
+checked again the next day. GitHub evicts an entry left unused (its cache retention); the version
+is then checked again, and its issue, if any, stops a second one. `workflow_dispatch` takes
+one tool and `force`, to check a version again; it is run from `main`, whose cache the
+scheduled runs use.
+
+A red opens the issue `<tool> <version> breaks lntt`, once per tool and version, with the
+failing step, the run and the end of the log. Whoever takes it reads the log, then fixes
+lntt's adapter (`packages/lntt/src/worktree.ts`, `headless.ts`, `orca-subagents.ts`) or
+records the tool's change in the decision that relies on it
+([worktree tooling](../adr/worktree-tooling.md), [review agents](../adr/review-agents.md)).
+When Homebrew installs another opencode than the one the versions job read, the job
+checks the one installed, under its own version, and saves an entry for both. A red that is the
+runner's (a download that failed) closes the issue and runs the
+workflow again with that tool and `force`, which checks the tool's latest version; that
+run opens no second issue, so its outcome is read in the run. A job that outlasts its
+timeout opens no issue and saves no entry: the version is checked again the next day, and
+its red runs are the signal.
+
 ## Discarded directions
 
+- **One workflow per upstream tool.** The install, the issue and the cache steps would be
+  written four times; a matrix job per tool keeps each tool's log, red and issue apart.
+- **The checked versions in a file of the repository.** The workflow would push to
+  `main` every day, and a person's commit would race it; a cache entry costs nothing to
+  write and is lost only to a check run again.
 - **A script that restates the CI's commands** (wai's `scripts/ci-local.sh`), or job
   steps moved into scripts both sides call (pelion). The first drifts as soon as a
   step changes in the YAML; the second still lets the two environments drift, and a
