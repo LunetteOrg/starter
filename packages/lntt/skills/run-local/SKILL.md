@@ -65,9 +65,10 @@ This skill is the procedure; never edit it to fit one project.
 
 ## 6. Infrastructure no test can cover
 
-A property of a cloud resource (a storage lock that refuses overwrite and delete, a CDN
-purge that refreshes a mirror) is proved by one live check, not by a test. Never run it
-against the production resource.
+Skip this section unless the change rests on a property of a cloud resource (a storage
+lock that refuses overwrite and delete, a CDN purge that refreshes a mirror). Such a
+property is proved by one live check, not by a test, and never against the production
+resource.
 
 - **A throwaway twin.** Declare it in the project's infrastructure as code: the same
   region or jurisdiction and prefixes, a short-lived variant of what makes the check
@@ -76,10 +77,10 @@ against the production resource.
 - **Temporary credentials:** created by the person, scoped to the twin, with a short
   expiry; kept in a `700` folder outside the repo (not `/tmp`, lost on reboot); loaded with
   `set -a; . <file>; set +a` and never printed; revoked as soon as their step is done.
-  The expiry picker of some dashboards also sets the start date: a token made "until
-  <date>" may be valid only *from* it, and answer `401` while its verify endpoint says
-  active. The host may refuse to let you write credentials to disk: the person then runs
-  a one-line `!` command that writes the file from `pbpaste` and prints only the length.
+  With some dashboards the expiry date also sets the start date: a token made "until
+  <date>" is valid only *from* it, answers `401`, and its verify endpoint still says
+  active. The host may refuse to let you write credentials to disk: the person writes the
+  file with a one-line `!` command that reads `pbpaste` and prints only the value's length.
 - **Removing a lock from the infrastructure code may not remove the lock.** With some
   providers, destroying the lock resource only drops it from state: empty the bucket after
   the lock age, then destroy the bucket. Read the provider's behaviour before the plan.
