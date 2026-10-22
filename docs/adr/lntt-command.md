@@ -124,7 +124,7 @@ So:
   | Pinned by the project: gates and what CI runs | Agent tools |
   |---|---|
   | `lntt check [area]`, `lntt check cite`: deterministic, read only the commit | `lntt review [reply \| allow]`: its outcome is an opinion, wired into no CI |
-  | `lntt ci local`: CI's jobs on the machine; `lntt ci candidate`: what the candidate workflow runs on GitHub, at the version the workflow installs | `lntt worktree start`: the Orca and Herdr adapters |
+  | `lntt ci local`: CI's jobs on the machine; `lntt ci candidate`: what the candidate workflow runs on GitHub, at the commit's version (this repo's workspace, a project's lockfile) | `lntt worktree start`: the Orca and Herdr adapters |
   | `lntt branch check`, and `branch name` and `branch rename`, so the name an agent gets is the one the gate accepts | `lntt ask \| inbox \| answer` |
   | `lntt validate \| get \| set \| path`: they hold the schema; `set` writes a tracked file | `lntt guide`: it prints the skills |
   | `lntt sync`: it writes tracked files (the `AGENTS.md` block, the skill stubs) that `lntt check` verifies | `lntt operator`: personal context, read by no gate |
@@ -144,8 +144,8 @@ So:
   - A missing file means the defaults (`NoConfigError` in
     `packages/lntt/src/files.ts`); a file that does not validate stops the command
     with the error, as `lntt review` does (`loaded` in
-    `packages/lntt/src/review-cli.ts`). No command answers an invalid file with its
-    defaults; the two that do are listed under the accepted risks.
+    `packages/lntt/src/review-cli.ts`). A command answers an invalid file with an
+    error, never with its defaults; the accepted risks name the two that do not.
   - A removal or a rename is a breaking change, the one release where an older file
     stops validating: the release knows both names, the gate fails on the old one and
     names the new one while the agent tools still read it, and a later release drops
@@ -183,9 +183,9 @@ So:
   project's bump, until the split's trigger fires.
 - `lntt worktree start` and the commitlint configuration answer a file that does not
   validate with their defaults (`projectConfig` in `packages/lntt/src/worktree-cli.ts`,
-  `commits` in `packages/lntt/src/commitlint.ts`), against the compatibility rule; the test
-  of each released version's configuration does not exist yet. Both are work that
-  follows this record.
+  `commits` in `packages/lntt/src/commitlint.ts`), against the compatibility rule, and no test
+  validates each released version's configuration: until the work that follows this
+  record closes both gaps, the rule rests on review.
 
 ### When to deviate (revisit triggers)
 
