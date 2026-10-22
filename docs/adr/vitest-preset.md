@@ -115,7 +115,7 @@ it; none has been seen failing in pelion.
 
 | Leak | The rule that keeps it safe |
 |---|---|
-| A hoisted `vi.mock` of a module: every later file of the worker gets the mock | No `vi.mock` in a file of `fast`; `vi.doMock` with `vi.resetModules()` around it, or dependency injection. `@lntt/test-utils` does not check it: a project forbids `vi.mock(` with a `tests.rules` pattern of `lntt check tests` ([test-checks](./test-checks.md)), or the review holds it |
+| A hoisted `vi.mock` of a module: every later file of the worker gets the mock | No `vi.mock` in a file of `fast`; `vi.doMock` with `vi.resetModules()` around it, or dependency injection. `assertNoModuleMocks` of `@lntt/test-utils` asserts it ([test-guards](./test-guards.md)) |
 | A direct assignment to `window`, `globalThis` or a prototype | `vi.stubGlobal` or `vi.spyOn`, which `sharedTest()` undoes |
 | A module-level singleton (a store, a cache, a client) | Built per test, or reset by the module's own test helper in `beforeEach` |
 | A global testing-library `configure({ asyncUtilTimeout })` | A timeout on each `findBy*` and `waitFor` call (`const WAIT = { timeout: 5_000 }`) |
@@ -151,9 +151,10 @@ A project whose suite breaks one of these rules keeps the file out of `fast`: in
 
 ### Negative / accepted risks
 
-- Under `isolate: false` the leaks above are kept out by rules, not by the runner, and
-  no guard of `@lntt/test-utils` asserts any of them: the review holds them, and a
-  project adds a `tests.rules` pattern for the ones a pattern can catch.
+- Under `isolate: false` the leaks above are kept out by rules, not by the runner. A
+  guard of `@lntt/test-utils` asserts only the hoisted `vi.mock`
+  ([test-guards](./test-guards.md)); the review holds the others, and a project adds a
+  `tests.rules` pattern for the ones a pattern can catch.
 - A path does not say which package holds a file: an app's own
   `test-utils/src/jsdom-setup` or `test-utils/dist/jsdom-setup` is refused in
   `setupFiles` and reported when imported, as this package's setup would be. The app
