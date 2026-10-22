@@ -120,9 +120,11 @@ label, keeps the pull request on `main`, where it gets the full CI and merges on
 own. A pull request moved by mistake goes back with the label and
 `gh pr edit <n> --base main`.
 
-**Pull requests from forks and from Dependabot** stay on `main`: their runs get no
-repository secrets, so no app token. A maintainer moves one onto the candidate with
-`pnpm exec lntt ci candidate --pr <n>`, or merges it on `main` as a hotfix.
+**Pull requests from forks and from Dependabot** stay on `main`: the runs they start
+get no repository secrets, so no app token. A maintainer moves one onto the candidate with
+`pnpm exec lntt ci candidate --pr <n>`, or merges it on `main` as a hotfix. A
+Dependabot pull request runs the CI once an owner, member or collaborator approves it
+([CI](./ci.md#dependabot-pull-requests)).
 
 The automation runs from a terminal too: `pnpm exec lntt ci candidate --pr <n>` does
 what the workflow would do on that pull request's event (move it, rebuild a
