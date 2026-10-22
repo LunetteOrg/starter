@@ -453,6 +453,19 @@ describe("the session's repository", () => {
     assert.doesNotMatch(text, /secret/)
   })
 
+  for (const [what, remotes] of [
+    ['63 hexadecimal characters', 'a'.repeat(63)],
+    ['an upper-case digest', digest(REMOTES).toUpperCase()],
+  ] as const) {
+    test(`a cached repository whose remotes are ${what}, not a digest, is not kept`, async () => {
+      cache({ repository: { name: HOME, at: NOW - 1, remotes } })
+      await machine({ remotes: 128, gh: { [k(1)]: ok('One', 1) } }).resolve('#1')
+      const written = JSON.parse(readFileSync(file, 'utf8'))
+      assert.equal(written[k(1)]?.title, 'One')
+      assert.equal(written.repository, undefined)
+    })
+  }
+
   test('a cached repository older than a day, or not a repository, is asked again', async () => {
     for (const repository of [
       { name: HOME, at: NOW - DAY, remotes: digest(REMOTES) },

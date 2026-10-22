@@ -111,9 +111,14 @@ repository as `gh repo view` names it, `owner/repo#N` from that repository. The 
 keeps the display and calls `lntt refs`, the project's `node_modules/.bin/lntt`, else
 `lntt` on `PATH`. A delta waits for lntt and the titles at most `WAIT_MS`
 (`issue-titles-hook.js`); a slower title shows in a later delta, in the box or beside
-the number in the next message. A reference belongs to the delta where it ends, and one
-that ends a delta other than the last is read with the next delta, since it may go on
-(`#1` | `38` is `#138`).
+the number in the next message. The titles still missing are asked in `lntt refs` runs
+of at most `KEYS_PER_RUN` references, side by side, so that one run fits
+`LNTT_TIMEOUT_MS` however many a message cites; the runs of one lookup count as one
+failure at most. A reference belongs to the delta where it ends, and one that ends a
+delta other than the last is read with the next delta, since it may go on (`#1` | `38`
+is `#138`); so is one inside a `[` still open, since it may become a link's text (its
+title then goes after the link). A newline, or the last delta, ends that wait; a
+reference held for a link that does not form gets its title in the box only.
 
 - **Never a title from the wrong repository:** a message that cites another
   repository shows every bare `#N` after that as written. Any other `word#N` is no
@@ -170,8 +175,8 @@ How a title is written is the `issues` skill's.
   text carries the titles. A renamed issue shows its old title for up to a day, from
   the cache.
 - Each delta that holds a number starts one `lntt` process (`lntt refs --cached`, with
-  the message so far on stdin) within `WAIT_MS`: a machine slow to start Node shows
-  more titles a delta late.
+  the message so far on stdin) within `WAIT_MS`, and one more for each `KEYS_PER_RUN`
+  titles still missing: a machine slow to start Node shows more titles a delta late.
 - Skills depend on `lntt`; a generated project needs it installed, which ties the
   template to a published `@lntt/lntt`.
 - Reading the profile from the main checkout fails over to the home directory when the

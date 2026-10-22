@@ -144,6 +144,68 @@ describe('the issue titles hook', () => {
     assert.equal(asked.flat().length, 2 * KEYS_PER_RUN + 1)
   })
 
+  test('the runs of one lookup that fail together count as one failure', async () => {
+    // lntt knows the repository and no title; every full lookup fails.
+    const cached = (text) => ({
+      repository: 'o/r',
+      mentions: [...text.matchAll(/#(\d+)/g)].map((x) => ({
+        text: x[0],
+        ref: `o/r#${x[1]}`,
+        index: x.index,
+        after: x.index + x[0].length,
+      })),
+      refs: [],
+    })
+    const { flush, runs } = engine({
+      lntt: (argv, init) =>
+        argv[2] === '--cached'
+          ? { exitCode: 0, stdout: JSON.stringify(cached(init.stdin)), stderr: '' }
+          : { exitCode: 1, stdout: '', stderr: 'boom' },
+    })
+    const many = Array.from({ length: 2 * KEYS_PER_RUN + 1 }, (_, i) => `#${i + 1}`).join(' ')
+    await flush('m1', `${many}\n`, true)
+    assert.equal(runs.filter((r) => r.argv[2] !== '--cached').length, 3)
+    for (const id of ['m2', 'm3']) await flush(id, '#1 again\n')
+    assert.equal(runs.filter((r) => r.argv[2] === '--cached').length, 3)
+  })
+
+  test('each run of a lookup keeps its own references pending, and a failed run frees its own', async () => {
+    const cached = (text) => ({
+      repository: 'o/r',
+      mentions: [...text.matchAll(/#(\d+)/g)].map((x) => ({
+        text: x[0],
+        ref: `o/r#${x[1]}`,
+        index: x.index,
+        after: x.index + x[0].length,
+      })),
+      refs: [],
+    })
+    const held = []
+    const { flush, lookups } = engine({
+      late: true,
+      lntt: (argv, init) => {
+        if (argv[2] === '--cached') return { exitCode: 0, stdout: JSON.stringify(cached(init.stdin)), stderr: '' }
+        return new Promise((resolve) => held.push({ keys: argv.slice(2), resolve }))
+      },
+    })
+    const many = Array.from({ length: KEYS_PER_RUN + 2 }, (_, i) => `#${i + 1}`).join(' ')
+    await flush('m1', `${many}\n`)
+    assert.equal(held.length, 2)
+    await flush('m2', `${many}\n`)
+    assert.equal(lookups().length, 2)
+    const [first, second] = held
+    const ok = {
+      repository: 'o/r',
+      mentions: [],
+      refs: first.keys.map((ref) => ({ ref, title: `T ${ref}`, url: `https://x/${ref.split('#')[1]}` })),
+    }
+    first.resolve({ exitCode: 0, stdout: JSON.stringify(ok), stderr: '' })
+    second.resolve({ exitCode: 1, stdout: '', stderr: 'boom' })
+    for (let i = 0; i < 5; i++) await tick()
+    await flush('m3', `${many}\n`)
+    assert.deepEqual(lookups().slice(2), [second.keys])
+  })
+
   test("the project's lntt, else the lntt on PATH", async () => {
     const { flush, runs } = engine({ local: false, gh: { 'o/r#1': 'One' } })
     await flush('m1', '#1\n')

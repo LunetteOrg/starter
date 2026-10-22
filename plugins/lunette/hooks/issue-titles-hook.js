@@ -56,8 +56,8 @@ async function findLntt($) {
 // One lntt refs: its JSON, or null when lntt cannot start, runs past its timeout, fails
 // or answers anything else. A failed run, and one with no session repository, is tried
 // again at the next lookup, until FAILURES in a row; an lntt with no refs turns the
-// titles off at once.
-async function refs($, s, args, stdin) {
+// titles off at once. The runs of one lookup (`batch`) count as one failure at most.
+async function refs($, s, args, stdin, batch = { failed: false }) {
   let out = null
   try {
     s.lntt ??= findLntt($)
@@ -70,7 +70,10 @@ async function refs($, s, args, stdin) {
     if (Array.isArray(json?.mentions) && Array.isArray(json?.refs)) out = json
   } catch {}
   if (out?.repository) s.failures = 0
-  else if (++s.failures >= FAILURES) s.dead = true
+  else if (!batch.failed) {
+    batch.failed = true
+    if (++s.failures >= FAILURES) s.dead = true
+  }
   return out
 }
 
@@ -86,14 +89,16 @@ function learn(s, out) {
   }
 }
 
-// The lookups of these references, one lntt refs for those not yet asked, waited for
-// within the delta's timer. A failed one is asked again at the next lookup.
+// The lookups of these references, one lntt refs for each KEYS_PER_RUN of those not yet
+// asked, side by side, waited for within the delta's timer: a run that ends past it gives
+// its titles to a later delta or the box. A failed one is asked again at the next lookup.
 async function lookUp($, s, keys, wait) {
   if (s.off || !keys.length) return
   const todo = keys.filter((k) => !s.info.has(k) && !s.unknown.has(k) && !s.pending.has(k))
+  const batch = { failed: false }
   for (let i = 0; i < todo.length; i += KEYS_PER_RUN) {
     const run = todo.slice(i, i + KEYS_PER_RUN)
-    const call = refs($, s, run)
+    const call = refs($, s, run, undefined, batch)
       .then((out) => learn(s, out))
       .finally(() => {
         for (const k of run) s.pending.delete(k)
