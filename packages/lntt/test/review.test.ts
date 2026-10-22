@@ -670,6 +670,30 @@ describe('what the first real round taught', () => {
     assert.equal(roundClean(result), false)
   })
 
+  test('only unreadable lines and a note: the lens is partial and the round is not clean', async () => {
+    const reply = `- [note] a.ts:1 — x — y\n\n- [blocker] ${'z'.repeat(300)}`
+    const result = await runRound(
+      one,
+      input,
+      ask((p) => (reviewerFirst(p) ? reply : 'confirmed\nx')),
+    )
+    assert.deepEqual(result.failed, [])
+    assert.equal(result.partial[0]?.reply, reply)
+    assert.equal(roundClean(result), false)
+  })
+
+  test('a reply of only unreadable finding lines fails, with the whole reply', async () => {
+    const reply = `- [blocker] ${'z'.repeat(300)}`
+    const result = await runRound(
+      one,
+      input,
+      ask((p) => (reviewerFirst(p) ? reply : 'confirmed\nx')),
+    )
+    assert.match(result.failed[0]?.error ?? '', /1 finding lines that cannot be read/)
+    assert.equal(result.failed[0]?.reply, reply)
+    assert.deepEqual(result.partial, [])
+  })
+
   test('a reply that fails keeps its full text, not 160 characters', async () => {
     const reply = `Looks good overall. ${'x'.repeat(400)}`
     const result = await runRound(
@@ -680,13 +704,22 @@ describe('what the first real round taught', () => {
     assert.equal(result.failed[0]?.reply, reply)
   })
 
-  test('the reply that showed the problem in #170: ten findings read, three lines read as they can', async () => {
+  test('the reply that showed the problem in #170: all thirteen lines read, none dropped', async () => {
     const reply = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), 'fixtures/review-reply-decisions-170.txt'),
       'utf8',
     )
     assert.equal(unreadableFindings(reply), 0)
-    assert.equal(parseFindings(reply).length, 13)
+    const found = parseFindings(reply)
+    assert.equal(found.length, 13)
+    assert.deepEqual(
+      found.slice(1, 2).map((f) => [f.path, f.line, f.what.endsWith('(also :34-37)')]),
+      [['docs/adr/lntt-command.md', 24, true]],
+    )
+    assert.deepEqual(
+      found.slice(-1).map((f) => [f.severity, f.path]),
+      [['note', null]],
+    )
     const result = await runRound(
       one,
       input,
@@ -1007,6 +1040,13 @@ describe('what the fourth real round taught', () => {
     assert.deepEqual(
       parseFindings(line).map((f) => [f.severity, f.path, f.line, f.what, f.action]),
       [['note', null, null, 'not checked: needs `pnpm ci:local --list`. Verify the step', 'it was not run.']],
+    )
+  })
+
+  test('a head with one token that is no place has no anchor', () => {
+    assert.deepEqual(
+      parseFindings('- [blocker] something — x — y').map((f) => [f.path, f.what, f.action]),
+      [[null, 'something — x', 'y']],
     )
   })
 

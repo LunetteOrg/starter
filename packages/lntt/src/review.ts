@@ -159,8 +159,7 @@ function readLine(raw: string): Line | null {
     .filter((t) => t !== '' && !JOINERS.has(t.toLowerCase()))
   const whole = rest.slice(sep.index + sep[0].length)
   // A head that is not a place at all is a finding with no anchor, whole.
-  if (tokens.length === 0 || (tokens.length > 1 && !pathLike(tokens[0] as string)))
-    return { severity, anchor: null, also: [], whole: rest }
+  if (tokens.length === 0 || !pathLike(tokens[0] as string)) return { severity, anchor: null, also: [], whole: rest }
   return { severity, anchor: tokens[0] as string, also: tokens.slice(1), whole }
 }
 
@@ -476,7 +475,7 @@ export interface Failure {
 
 // A lens whose reply had finding lines that could not be read: the readable ones are in
 // the round, these are not, and the person or the child reads them.
-export interface Partial {
+export interface PartialLens {
   lens: string
   agent: string
   lines: string[]
@@ -503,7 +502,7 @@ export interface RoundResult {
   failed: Failure[]
   // Lenses with finding lines that could not be read: the round is not clean until they
   // are read, but the lens did answer.
-  partial: Partial[]
+  partial: PartialLens[]
   // Optional agents that did not answer: reported, never blocking.
   skipped: Failure[]
   cost: number | null

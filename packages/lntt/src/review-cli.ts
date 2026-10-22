@@ -574,12 +574,12 @@ async function round(args: string[]): Promise<number> {
   if (moved)
     result.failed.push({ lens: 'round', agent: 'lntt', error: `the branch moved from ${head} during the round` })
   // An empty delta keeps the last round's number: nothing new was read. A round with a
-  // failure does not move the reviewed commit, so the next one reads this range again.
+  // failure or a line left unread does not move the reviewed commit, so the next one reads this range again.
   const previous = state?.branch === branch ? state.reviewed : null
   const saved: ReviewState = {
     branch,
     round: files.length > 0 ? range.round : (state?.round ?? 1),
-    reviewed: result.failed.length > 0 ? previous : head,
+    reviewed: result.failed.length > 0 || result.partial.length > 0 ? previous : head,
     result,
     ...(state?.branch === branch && state.allowed ? { allowed: state.allowed } : {}),
   }
@@ -587,7 +587,7 @@ async function round(args: string[]): Promise<number> {
   report.stop()
   const tokens = result.tokens === null ? '' : `, ${formatTokens(result.tokens)}`
   stderr.write(
-    `lntt review: round ${saved.round} done in ${duration(Date.now() - began)}: ${result.findings.length} findings, ${result.refuted.length} refuted, ${result.failed.length} failed, ${result.skipped.length} skipped${tokens}\n`,
+    `lntt review: round ${saved.round} done in ${duration(Date.now() - began)}: ${result.findings.length} findings, ${result.refuted.length} refuted, ${result.failed.length} failed, ${result.partial.length} partial, ${result.skipped.length} skipped${tokens}\n`,
   )
   emit({
     type: 'done',
@@ -595,6 +595,7 @@ async function round(args: string[]): Promise<number> {
     findings: result.findings.length,
     refuted: result.refuted.length,
     failed: result.failed.length,
+    partial: result.partial.length,
     skipped: result.skipped.length,
     tokens: result.tokens,
     clean: roundClean(result),

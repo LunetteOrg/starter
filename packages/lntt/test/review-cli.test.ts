@@ -390,7 +390,7 @@ describe('lntt review, end to end with a fake agent', () => {
     const env = { FAKE_REVIEW: '- [blocker] a.ts:1 — wrong — fix', FAKE_VERIFY: 'confirmed\\nshown' }
     const r = lntt(['--base', 'main'], env)
     assert.match(r.err, /lntt review: done code · claude sonnet in \d+s \(1\.5k tokens\)/)
-    assert.match(r.err, /round 1 done in \d+s: 1 findings, 0 refuted, 0 failed, 0 skipped, 3k tokens/)
+    assert.match(r.err, /round 1 done in \d+s: 1 findings, 0 refuted, 0 failed, 0 partial, 0 skipped, 3k tokens/)
     assert.doesNotMatch(r.err, /\$/)
     const events = readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8')
       .trim()
