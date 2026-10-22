@@ -65,6 +65,10 @@ describe('worktreeE2ePort', () => {
     expect(() => worktreeE2ePort(ROOT_A, { app: 'shop', apps: APPS })).toThrow(/shop.*web, admin/)
   })
 
+  it('throws on an app listed twice, which would share a port', () => {
+    expect(() => worktreeE2ePort(ROOT_A, { app: 'web', apps: ['web', 'web'] })).toThrow(/twice: web, web/)
+  })
+
   it('keeps the apps of one checkout apart and in the range for any number of apps', () => {
     const apps = ['web', 'admin', 'docs', 'shop', 'api', 'blog', 'help']
     for (let i = 0; i < 200; i++) {
@@ -95,6 +99,11 @@ describe('e2ePort', () => {
   it('gives each app the port after the previous one from E2E_PORT, so they never meet', () => {
     const env = { E2E_PORT: '4000' }
     expect(APPS.map((app) => e2ePort({ root: ROOT_A, app, apps: APPS, env }))).toEqual([4000, 4001])
+  })
+
+  it('throws on an app listed twice under E2E_PORT too', () => {
+    const env = { E2E_PORT: '4000' }
+    expect(() => e2ePort({ root: ROOT_A, app: 'admin', apps: ['web', 'admin', 'web'], env })).toThrow(/twice/)
   })
 
   it.each([

@@ -127,6 +127,10 @@ test('e2e-test-from-helper flags `test` taken from @playwright/test in every imp
     'fixtures-default.ts': "export { default } from '@playwright/test'\n",
     'fixtures-star.ts': "export * from '@playwright/test'\n",
     'fixtures-namespace.ts': "export * as playwright from '@playwright/test'\n",
+    'dynamic.e2e.ts': "export const { test } = await import('@playwright/test')\n",
+    'require.e2e.ts': "export const { test } = require('@playwright/test')\n",
+    'import-equals.e2e.ts':
+      "import playwright = require('@playwright/test')\n\nexport const { test } = playwright\n",
   }
   const r = check(
     project(Object.fromEntries(Object.entries(forms).map(([f, src]) => [`e2e/${f}`, src]))),
@@ -134,7 +138,7 @@ test('e2e-test-from-helper flags `test` taken from @playwright/test in every imp
   assert.equal(r.ok, false)
   assert.match(r.output, /@lntt\/test-utils\/playwright/)
   for (const file of Object.keys(forms))
-    assert.match(r.output, new RegExp(`e2e/${file}:1:1 plugin`))
+    assert.match(r.output, new RegExp(`e2e/${file}:1:\\d+ plugin`))
 })
 
 test('e2e-test-from-helper leaves `test` from the helper, and expect, devices and types from @playwright/test', () => {
@@ -152,6 +156,15 @@ test('e2e-test-from-helper leaves `test` from the helper, and expect, devices an
       'e2e/ok.e2e.ts': src,
       'e2e/names.e2e.ts':
         "import { contest, latest, testing } from '@playwright/test'\n\nexport const names = [contest, latest, testing]\n",
+      'e2e/dynamic.e2e.ts': [
+        "import { readFileSync } from 'node:fs'",
+        "import { createRequire } from 'node:module'",
+        '',
+        "export const helper = await import('@lntt/test-utils/playwright')",
+        "export const path = createRequire(import.meta.url).resolve('@lntt/test-utils/playwright')",
+        "export const text = readFileSync(path, 'utf8')",
+        '',
+      ].join('\n'),
       'e2e/fixtures.ts': [
         "export { test } from '@lntt/test-utils/playwright'",
         "export type { Page, TestInfo } from '@playwright/test'",

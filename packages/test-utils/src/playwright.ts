@@ -11,6 +11,7 @@ import {
   type PlaywrightTestOptions,
   type PlaywrightWorkerArgs,
   type PlaywrightWorkerOptions,
+  type Request,
   type Response,
   type TestInfo,
 } from '@playwright/test'
@@ -92,6 +93,9 @@ function isPage(response: Response): boolean {
   }
 }
 
+/** The contexts `delayHydration` routed: Playwright reports their requests without `Sec-Fetch-*`. */
+const delayedContexts = new WeakSet<BrowserContext>()
+
 /**
  * Holds back the chunk for `delayMs` on every page of `context`, so the server HTML stays
  * without handlers for that long. The `test` of this module does it to the test's own
@@ -112,6 +116,7 @@ export async function delayHydration(
     // fallback, not continue: a route the test installs on the same URL still runs.
     await route.fallback()
   })
+  delayedContexts.add(context)
   return {
     assertDelayed() {
       if (pages > 0 && delayed === 0) {
@@ -170,35 +175,43 @@ export const hydrationFixtures: Fixtures<
  */
 export const test = base.extend<HydrationFixtures>(hydrationFixtures)
 
-export interface FetchMetadataRun {
-  /** Default: `HYDRATION_DELAY_MS`. */
-  delayMs?: number
+export interface FetchMetadataOptions {
   /** Default: `test.info()`. */
   testInfo?: TestInfo
 }
 
 /**
- * Asserts the `Sec-Fetch-*` headers the browser put on a request. Pass
- * `await request.allHeaders()`: `request.headers()` never holds them. A delayed-hydration
- * run installs a route on the context, and Playwright then reports every request of that
- * context without those headers: there the assertion cannot be read, so it is recorded
- * on the test as an `unchecked` annotation and the rest of the test runs.
+ * Asserts the `Sec-Fetch-*` headers the browser put on `request`, read with
+ * `request.allHeaders()`: `request.headers()` never holds them. Once `delayHydration`
+ * has routed a context, Playwright reports every request of that context without those
+ * headers: there the assertion cannot be read, so it is recorded on the test as an
+ * `unchecked` annotation and the rest of the test runs. A request of any other context
+ * is asserted, in a delayed run too.
  *
  * ```ts
- * expectFetchMetadata(await request.allHeaders(), { 'sec-fetch-site': 'same-origin' })
+ * await expectFetchMetadata(request, { 'sec-fetch-site': 'same-origin' })
  * ```
  */
-export function expectFetchMetadata(
-  headers: Record<string, string>,
+export async function expectFetchMetadata(
+  request: Request,
   expected: Record<string, string>,
-  { delayMs = HYDRATION_DELAY_MS, testInfo }: FetchMetadataRun = {},
-): void {
-  if (delayMs > 0) {
+  { testInfo }: FetchMetadataOptions = {},
+): Promise<void> {
+  if (routedByDelay(request)) {
     ;(testInfo ?? test.info()).annotations.push({
       type: 'unchecked',
       description: `Sec-Fetch-* under E2E_HYDRATION_DELAY_MS: ${JSON.stringify(expected)}`,
     })
     return
   }
-  expect(headers).toMatchObject(expected)
+  expect(await request.allHeaders()).toMatchObject(expected)
+}
+
+function routedByDelay(request: Request): boolean {
+  try {
+    return delayedContexts.has(request.frame().page().context())
+  } catch {
+    // A service worker's request has no frame, so no context to read: it is asserted.
+    return false
+  }
 }

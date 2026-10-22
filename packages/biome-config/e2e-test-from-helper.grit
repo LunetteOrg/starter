@@ -6,8 +6,11 @@
 // renamed (`{ test as base }`, `{ default as base }`), as the default export, alone or
 // next to named imports, or through a namespace. Flags the same forms re-exported by a
 // fixtures file: `export { test }`, `export { default }`, `export *`, `export * as`.
-// `expect`, `devices` and types still come from @playwright/test; `import type` and
-// `export type` are left alone. A regex here matches the whole node, not a part of it.
+// Flags every dynamic form, whatever it takes: `import('@playwright/test')`,
+// `require('@playwright/test')`, `import playwright = require('@playwright/test')`; an
+// e2e takes `expect` and `devices` with a static import. `expect`, `devices` and types
+// still come from @playwright/test; `import type` and `export type` are left alone. A
+// regex here matches the whole node, not a part of it.
 or {
   JsImport() as $statement where {
     $statement <: contains `"@playwright/test"`,
@@ -27,6 +30,15 @@ or {
       JsExportFromClause(),
       JsExportNamedFromSpecifier() as $name where { $name <: r"(?s)(?:test|default)(?:\s+as\s.*)?" }
     }
+  },
+  JsImportCallExpression() as $statement where { $statement <: contains `"@playwright/test"` },
+  JsCallExpression() as $statement where {
+    $statement <: `require($module)`,
+    $module <: contains `"@playwright/test"`
+  },
+  TsImportEqualsDeclaration() as $statement where {
+    $statement <: contains `"@playwright/test"`,
+    $statement <: not r"(?s)(?:export\s+)?import\s+type\b.*"
   }
 } where {
   register_diagnostic(

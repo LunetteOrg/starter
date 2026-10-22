@@ -43,6 +43,7 @@ export function worktreeE2ePort(root: string, { app, apps = [app] }: WorktreeE2e
 }
 
 function appIndex(app: string, apps: readonly string[]): number {
+  if (new Set(apps).size !== apps.length) throw new Error(`e2e port: apps lists an app twice: ${apps.join(', ')}`)
   const index = apps.indexOf(app)
   if (index === -1) throw new Error(`e2e port: no app "${app}" among ${apps.join(', ')}`)
   return index

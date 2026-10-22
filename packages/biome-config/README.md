@@ -38,12 +38,13 @@ formatted.
 | `no-entity-spread-in-loader.grit` | an object spread in a `return` (`return { ...entity }`), never an array spread | route modules (loaders and actions) |
 | `no-implicit-e2e-sync.grit` | `page.waitForTimeout(…)` | e2e tests |
 | `no-react-internals.grit` | `__reactProps$` / `__reactFiber$` keys | e2e tests |
-| `e2e-test-from-helper.grit` | `test` imported from `@playwright/test` (named, renamed, default or namespace) or re-exported from it; `expect`, `devices` and types pass | e2e tests and their fixtures |
+| `e2e-test-from-helper.grit` | `test` imported from `@playwright/test` (named, renamed, default or namespace) or re-exported from it, and any `import()` or `require` of it; `expect`, `devices` and types pass | e2e tests and their fixtures |
 
 The messages cite the ADRs of a project scaffolded from the Lunette `react-router`
 template (`docs/adr/architecture-and-boundaries.md`), where each rule's reason is
 recorded. `e2e-test-from-helper` cites the starter's
 [`e2e-helpers`](https://github.com/LunetteOrg/starter/blob/main/docs/adr/e2e-helpers.md),
 because the `test` it requires is `@lntt/test-utils/playwright`'s.
-`no-entity-spread-in-loader` and `no-throw-new-error` are the editor and pre-commit net; the matching CI net is the architecture tests of the test-utils
+`no-entity-spread-in-loader` and `no-throw-new-error` are the editor and pre-commit
+net; the matching CI net is the architecture tests of the test-utils
 package (today the template's `packages/test-utils`, extracted as `@lntt/test-utils`).

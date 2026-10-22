@@ -289,7 +289,7 @@ export default definePlaywrightConfig({ port: PORT, globalSetup: './__tests__/gl
   (below the ephemeral ranges of Linux and macOS).
 
 Each app of `apps` gets the port next to the previous one, so `apps` lists every app
-with an e2e suite, always in the same order; it defaults to the app alone. Two
+with an e2e suite once, always in the same order; it defaults to the app alone. Two
 worktrees run their suites at once on different ports; when two of them hash to the
 same slot, `E2E_PORT` in one of them is the way out. The global setup starts the dev
 server on the exported `PORT`.
@@ -334,11 +334,13 @@ test('the language menu opens', async ({ page }) => {
   shows. `repeatUntil` sets no timeout: pass `ATTEMPT` (one second) to the gesture and
   to the effect, as above, or a lost gesture waits out the test's timeout. A gesture
   that is not idempotent (submitting a form) has no place in it.
-- **`expectFetchMetadata(await request.allHeaders(), expected)`.** The `Sec-Fetch-*`
-  headers are only in `allHeaders()`, never in `request.headers()`. The route that
-  delays the chunk makes Playwright report every request of the context without them:
-  under a delay the assertion is recorded on the test as an `unchecked` annotation
-  instead of failing.
+- **`await expectFetchMetadata(request, expected)`.** Asserts the `Sec-Fetch-*`
+  headers of the request, read with `request.allHeaders()` (`request.headers()` never
+  holds them). The route that delays the chunk makes Playwright report every request
+  of its context without them: on a context the delay routed, the assertion is
+  recorded on the test as an `unchecked` annotation instead of failing. A request of
+  any other context (`hydrationChunk: null`, a context the test opened and did not
+  delay) is asserted in a delayed run too.
 
 The delayed run is a script of the project, next to `test:e2e`:
 

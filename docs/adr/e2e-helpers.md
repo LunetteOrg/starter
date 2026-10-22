@@ -15,9 +15,8 @@ from the app and starts no server of its own.
 - **A spec that passes only when hydration is fast.** Before React DOM's client has
   loaded, a click on a control that exists only in JavaScript lands on server HTML
   with no handler and is lost. On a fast machine hydration wins the race and the spec
-  is green; on a loaded CI runner the same spec fails now and then. pelion, scaffolded
-  from the react-router template, found these specs by running the whole suite with
-  React DOM's client chunk held back a few seconds.
+  is green; on a loaded CI runner the same spec fails now and then. With React DOM's
+  client chunk held back a few seconds, such a spec fails on every run.
 - **Holding the chunk back strips `Sec-Fetch-*`.** Once a context has a route,
   Playwright reports every request of that context without its Fetch Metadata headers,
   so an assertion on them cannot be read in that run. In any run they are only in
@@ -67,11 +66,19 @@ import { expect } from '@playwright/test'
    files and their fixtures, as the other e2e plugins. It flags an import that takes
    `test` from `@playwright/test`: by name, renamed, as the default export (alone or
    next to named imports) or through a namespace, and a fixtures file that re-exports
-   it (`export { test }`, `export { default }`, `export *`). `expect`, `devices`,
-   `import type` and `export type` pass.
-5. **`expectFetchMetadata(await request.allHeaders(), expected)`** asserts the
-   `Sec-Fetch-*` headers in a normal run; under a delay it records an `unchecked`
-   annotation on the test and returns, and the rest of the test runs.
+   it (`export { test }`, `export { default }`, `export *`). It flags every dynamic
+   form whatever it takes (`import('@playwright/test')`, `require('@playwright/test')`,
+   `import playwright = require('@playwright/test')`): an e2e takes `expect` and
+   `devices` with a static import. `expect`, `devices`, `import type` and `export type`
+   pass.
+5. **`await expectFetchMetadata(request, expected)`** asserts the `Sec-Fetch-*`
+   headers of `request`, read with `request.allHeaders()`. When the request belongs to
+   a context `delayHydration` routed (the fixture's, with a delay and a chunk), it
+   records an `unchecked` annotation on the test and returns, and the rest of the test
+   runs. A request of any other context is asserted, in a delayed run too: a test that
+   sets `hydrationChunk` to `null`, or a context the test opens itself and does not
+   delay. A service worker's request has no frame to read the context from, and is
+   asserted.
 6. **`repeatUntil(gesture, effect)` and `ATTEMPT` (one second).** A control that exists
    only in JavaScript is proved in a component test; when an e2e must touch one anyway,
    it repeats an idempotent gesture until the effect shows. The caller bounds each
@@ -80,16 +87,19 @@ import { expect } from '@playwright/test'
    its own. A gesture lost before hydration is then repeated within a second instead
    of waiting out the test's timeout. A gesture that is not idempotent (submitting a
    form) is never repeated: the spec reaches that state another way.
-7. **`e2ePort({ root, app, apps, ciPort, env })`**: when `E2E_PORT` is set, it is the
-   port of the first app of `apps` and each other app takes the next one, so the apps
-   of one checkout never meet (an integer from 1 to 65535 that leaves a port for every
-   app, anything else throws). Otherwise `ciPort` when `CI` is set (any non-empty
-   value, as `@lntt/playwright-config` reads it) and one is given (an integer from 1 to
-   65535, anything else throws). Otherwise the port derived from a SHA-256 of the
-   checkout's real path, in `E2E_PORT_RANGE` (20000 to 29999). Each slot holds one
-   port per app of `apps`, in that order; `apps` defaults to the app alone, and more
-   apps than the range has ports throws. The range sits below the ephemeral ports of Linux (from 32768) and macOS
-   (from 49152), so a port the system hands to a container mapping never lands on it.
+7. **`e2ePort({ root, app, apps, ciPort, env })`**: when `E2E_PORT` is set to a
+   non-empty value, it is the port of the first app of `apps` and each other app takes
+   the next one, so the apps of one checkout never meet (an integer from 1 to 65535
+   that leaves a port for every app, anything else throws); an empty `E2E_PORT` counts
+   as unset. Otherwise, when `CI` is set to a non-empty value (as
+   `@lntt/playwright-config` reads it) and `ciPort` is given, `ciPort`, which must be
+   an integer from 1 to 65535; without `CI`, `ciPort` is neither read nor checked.
+   Otherwise the port derived from a SHA-256 of the checkout's real path, in
+   `E2E_PORT_RANGE` (20000 to 29999). Each slot holds one port per app of `apps`, in
+   that order; `apps` defaults to the app alone, an app listed twice throws, and more
+   apps than the range has ports throws. The range sits below the ephemeral ports of
+   Linux (from 32768) and macOS (from 49152), so a port the system hands to a
+   container mapping never lands on it.
    A symlink and its target, or a path with and without a trailing slash, get one port.
 8. **The e2e port is separate from `lntt`'s local slots.** `lntt` runs an app by hand
    on `local.apps.<name>.port` plus ten per worktree slot, slots stored in the git
@@ -100,8 +110,8 @@ import { expect } from '@playwright/test'
    evaluates the config. A project keeps its local base ports outside 20000 to 29999:
    it is a convention, and nothing checks it.
 9. **The delayed run is a script of the project**, not of this package, because it
-   wraps the project's own e2e command:
-   `"e2e:hydration": "E2E_HYDRATION_DELAY_MS=${E2E_HYDRATION_DELAY_MS:-3000} turbo run test:e2e"`.
+   wraps the project's own e2e command: it sets `E2E_HYDRATION_DELAY_MS` and runs the
+   e2e task. The package README shows one.
 
 The messages of `./playwright` and of the plugin cite this record by URL. The other
 guards of `@lntt/test-utils` and the other plugins of `@lntt/biome-config` cite the
@@ -125,7 +135,7 @@ the delayed run is a rule of this package, recorded here and in no project's ADR
   `E2E_PORT` on one of them.
 - The default chunk matches the dev server only; a suite against a build that keeps
   the default fails every delayed test, by design, until it sets `hydrationChunk`.
-- `Sec-Fetch-*` assertions are not checked in a delayed run.
+- `Sec-Fetch-*` assertions are not checked on a context the delay routed.
 - A test whose pages are HTML that never hydrates fails the delayed run until it sets
   `hydrationChunk` to `null`.
 

@@ -1,4 +1,4 @@
-import type { BrowserContext, Response, Route, TestInfo } from '@playwright/test'
+import type { BrowserContext, Request, Response, Route, TestInfo } from '@playwright/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   delayHydration,
@@ -16,6 +16,8 @@ interface FakeResponse {
   status?: number
   contentType?: string
   iframe?: boolean
+  /** A service worker's request: `request.frame()` throws. */
+  noFrame?: boolean
 }
 
 /** A response as the context's `response` event hands it over: a top-level HTML page by default. */
@@ -25,9 +27,17 @@ function response({
   status = 200,
   contentType = 'text/html; charset=utf-8',
   iframe = false,
+  noFrame = false,
 }: FakeResponse = {}): Response {
   const frame = { parentFrame: () => (iframe ? {} : null) }
-  const request = { resourceType: () => resourceType, isNavigationRequest: () => navigation, frame: () => frame }
+  const request = {
+    resourceType: () => resourceType,
+    isNavigationRequest: () => navigation,
+    frame: () => {
+      if (noFrame) throw new Error('Service Worker requests do not have an associated frame.')
+      return frame
+    },
+  }
   return {
     request: () => request,
     status: () => status,
@@ -131,6 +141,9 @@ describe('delayHydration', () => {
     ['JSON', { contentType: 'application/json' }],
     ['a download', { contentType: 'application/pdf' }],
     ['a hop of a redirect', { status: 302 }],
+    ['a hop of a redirect at 300', { status: 300 }],
+    ['a hop of a redirect at 399', { status: 399 }],
+    ["a service worker's request, which has no frame", { noFrame: true }],
     ['an iframe', { iframe: true }],
     ['a document that is no navigation', { navigation: false }],
   ])('counts no page for a navigation to %s', async (_, page) => {
@@ -140,10 +153,10 @@ describe('delayHydration', () => {
     expect(() => delay.assertDelayed()).not.toThrow()
   })
 
-  it('counts a top-level HTML page, whatever its status', async () => {
+  it.each([200, 299, 400, 404])('counts a top-level HTML page answered with %i', async (status) => {
     const { context, navigate } = fakeContext()
     const delay = await delayHydration(context, { delayMs: 1, chunk: REACT_DOM_CLIENT_CHUNK })
-    navigate({ status: 404, contentType: 'TEXT/HTML' })
+    navigate({ status, contentType: 'TEXT/HTML' })
     expect(() => delay.assertDelayed()).toThrow(/none of the 1 pages/)
   })
 })
@@ -216,6 +229,20 @@ describe('test', () => {
     vi.resetModules()
   })
 
+  it("is Playwright's test extended with hydrationFixtures", async () => {
+    const extend = vi.fn((fixtures: unknown) => ({ extendedWith: fixtures }))
+    vi.resetModules()
+    vi.doMock('@playwright/test', () => ({ test: { extend }, expect: () => {} }))
+    try {
+      const { hydrationFixtures: fixtures, test } = await import('./playwright.ts')
+      expect(extend).toHaveBeenCalledExactlyOnceWith(fixtures)
+      expect(test).toEqual({ extendedWith: fixtures })
+    } finally {
+      vi.doUnmock('@playwright/test')
+      vi.resetModules()
+    }
+  })
+
   it('makes hydrationChunk an option, React DOM client chunk by default', () => {
     expect(hydrationFixtures.hydrationChunk).toEqual([REACT_DOM_CLIENT_CHUNK, { option: true }])
   })
@@ -234,23 +261,77 @@ describe('test', () => {
 })
 
 describe('expectFetchMetadata', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.resetModules()
+  })
+
   const headers = { 'sec-fetch-site': 'same-site', 'sec-fetch-dest': 'document' }
 
-  it('asserts the headers in a normal run', () => {
+  /** A request of a page of `context`, carrying `headers` as `allHeaders()` reports them. */
+  function requestOf(context: BrowserContext, allHeaders: Record<string, string> = headers): Request {
+    const page = { context: () => context }
+    return { allHeaders: async () => allHeaders, frame: () => ({ page: () => page }) } as unknown as Request
+  }
+
+  it('asserts the headers of a context with no delay', async () => {
     const testInfo = info()
-    expect(() =>
-      expectFetchMetadata(headers, { 'sec-fetch-site': 'same-site' }, { delayMs: 0, testInfo }),
-    ).not.toThrow()
-    expect(() => expectFetchMetadata(headers, { 'sec-fetch-site': 'cross-site' }, { delayMs: 0, testInfo })).toThrow()
+    const { context } = fakeContext()
+    await expect(
+      expectFetchMetadata(requestOf(context), { 'sec-fetch-site': 'same-site' }, { testInfo }),
+    ).resolves.toBe(undefined)
+    await expect(
+      expectFetchMetadata(requestOf(context), { 'sec-fetch-site': 'cross-site' }, { testInfo }),
+    ).rejects.toThrow()
     expect(testInfo.annotations).toEqual([])
   })
 
-  it('records the assertion as unchecked under a hydration delay, where the headers are stripped', () => {
+  it('records the assertion as unchecked on a context the delay routed, where the headers are stripped', async () => {
     const testInfo = info()
-    expectFetchMetadata({}, { 'sec-fetch-site': 'cross-site' }, { delayMs: 3000, testInfo })
+    const { context } = fakeContext()
+    await delayHydration(context, { delayMs: 1, chunk: REACT_DOM_CLIENT_CHUNK })
+    await expectFetchMetadata(requestOf(context, {}), { 'sec-fetch-site': 'cross-site' }, { testInfo })
     expect(testInfo.annotations).toEqual([
       { type: 'unchecked', description: 'Sec-Fetch-* under E2E_HYDRATION_DELAY_MS: {"sec-fetch-site":"cross-site"}' },
     ])
+  })
+
+  it("asserts a service worker's request, which has no frame to read the context from", async () => {
+    const testInfo = info()
+    const request = {
+      allHeaders: async () => ({}),
+      frame: () => {
+        throw new Error('Service Worker requests do not have an associated frame.')
+      },
+    } as unknown as Request
+    await expect(expectFetchMetadata(request, { 'sec-fetch-site': 'same-site' }, { testInfo })).rejects.toThrow()
+    expect(testInfo.annotations).toEqual([])
+  })
+
+  it('asserts in a delayed run when the test set hydrationChunk to null, or opened a context of its own', async () => {
+    vi.stubEnv('E2E_HYDRATION_DELAY_MS', '1')
+    vi.resetModules()
+    const mod = await import('./playwright.ts')
+    const contextFixture = mod.hydrationFixtures.context as ReturnType<typeof hydrationDelayFixture>
+    const testInfo = info()
+    const notHydrating = fakeContext()
+    await contextFixture({ context: notHydrating.context, hydrationChunk: null }, async () => {}, testInfo)
+    const own = fakeContext()
+    for (const { context } of [notHydrating, own]) {
+      await expect(
+        mod.expectFetchMetadata(requestOf(context, {}), { 'sec-fetch-site': 'same-site' }, { testInfo }),
+      ).rejects.toThrow()
+    }
+    expect(testInfo.annotations).toEqual([])
+  })
+
+  it("records on the running test's info when no testInfo is passed", async () => {
+    const { context } = fakeContext()
+    await delayHydration(context, { delayMs: 1, chunk: REACT_DOM_CLIENT_CHUNK })
+    // Outside a Playwright test the fallback is reached and Playwright refuses it.
+    await expect(expectFetchMetadata(requestOf(context), { 'sec-fetch-site': 'same-site' })).rejects.toThrow(
+      /test\.info\(\) can only be called while test is running/,
+    )
   })
 })
 
@@ -264,6 +345,18 @@ describe('repeatUntil', () => {
       async () => {
         if (clicks < 3) throw new Error('menu not open yet')
       },
+    )
+    expect(clicks).toBe(3)
+  })
+
+  it('repeats a gesture that failed, as one that timed out before hydration does', async () => {
+    let clicks = 0
+    await repeatUntil(
+      async () => {
+        clicks++
+        if (clicks < 3) throw new Error('locator.click: Timeout 1000ms exceeded')
+      },
+      async () => {},
     )
     expect(clicks).toBe(3)
   })
