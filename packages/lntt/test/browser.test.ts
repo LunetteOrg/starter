@@ -136,7 +136,7 @@ describe('the plan for each driver', () => {
     )
     assert.equal(
       (plan.operations.screenshot as { command: string }).command,
-      'orca exec --command "screenshot <file>" --worktree path:/w --json',
+      `orca exec --command "screenshot '<file>'" --worktree path:/w --json`,
     )
     assert.match((plan.operations.requests as { note: string }).note, />= 400/)
   })
@@ -152,7 +152,7 @@ describe('the plan for each driver', () => {
     assert.equal(plan.kind, 'shell')
     assert.deepEqual(plan.operations.open, { command: `${pw} goto http://localhost:5183` })
     assert.deepEqual(plan.setup?.[0] && 'command' in plan.setup[0] && plan.setup[0].command, `${pw} open`)
-    assert.deepEqual(plan.operations.type, { command: `${pw} fill <ref> <text>` })
+    assert.deepEqual(plan.operations.type, { command: `${pw} fill <ref> '<text>'` })
     assert.deepEqual(plan.operations.close, { command: `${pw} close` })
   })
 
@@ -253,5 +253,11 @@ describe('the command line', () => {
     const result = run(main, ['browser'])
     assert.equal(result.status, 1)
     assert.match(result.stderr, /web, admin/)
+  })
+
+  test('more than one app, or an unknown flag, is a usage error', () => {
+    for (const args of [['web', 'admin'], ['--json', 'web', 'admin'], ['web', '--json', 'x'], ['-x']]) {
+      assert.equal(run(main, ['browser', ...args]).status, 2, args.join(' '))
+    }
   })
 })

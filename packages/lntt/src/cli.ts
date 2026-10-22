@@ -43,6 +43,7 @@ function usage(): never {
 // `lntt <command> [...]`, every command but `ci` (./ci/cli.ts).
 export function main(args: string[]): void {
   const [command, key, raw] = args
+  if (command === 'browser' && args.length > 3) usage()
   try {
     run(command, key, raw)
   } catch (e) {

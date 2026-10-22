@@ -106,8 +106,8 @@ function orca(url: string, worktree: string): Pick<BrowserPlan, 'setup' | 'opera
       open: o(`goto --url ${quote(url)}`),
       read: o('snapshot'),
       click: { ...o('click --element @<ref>'), note: 'a browser_error about keyboard focus: run it again' },
-      type: o('fill --element @<ref> --value <text>'),
-      screenshot: { ...o('exec --command "screenshot <file>"'), note: '<file> is an absolute path' },
+      type: o("fill --element @<ref> --value '<text>'"),
+      screenshot: { ...o(`exec --command "screenshot '<file>'"`), note: '<file> is an absolute path' },
       console: o('console --limit 50'),
       requests: { ...o('network --limit 100'), note: 'no failure filter: keep status >= 400 or no status' },
       close: {
@@ -137,7 +137,7 @@ function playwright(app: LocalApp, tmp: string): Pick<BrowserPlan, 'setup' | 'op
       open: pw(`goto ${quote(app.url)}`),
       read: pw('snapshot'),
       click: pw('click <ref>'),
-      type: pw('fill <ref> <text>'),
+      type: pw("fill <ref> '<text>'"),
       screenshot: pw('screenshot --filename=<file>'),
       console: pw('console error'),
       requests: {
@@ -266,7 +266,7 @@ export function formatPlan(plan: BrowserPlan): string {
     `Driver ${plan.driver}, on host ${plan.host} (${plan.reason}), for app ${plan.app} at ${plan.url}`,
     how,
     'Placeholders: <ref> an element ref from read (read again after each click or navigation: refs go stale), ' +
-      '<text> the text to type, <file> an absolute path for the screenshot.',
+      '<text> the text to type, <file> an absolute path for the screenshot; a placeholder between quotes keeps them.',
     'Run setup once, then the operations in any order; close when done.',
     '',
     ...(plan.setup ?? []).flatMap((step, i) => line(i === 0 ? 'setup' : '', step)),
