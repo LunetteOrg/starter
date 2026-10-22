@@ -1,7 +1,7 @@
 {
   "name": "@lntt/test-utils",
   "version": "0.6.2",
-  "description": "Test helpers every Lunette project uses: one Postgres per vitest run, rollback per test, architecture and migration guards",
+  "description": "Test helpers every Lunette project uses: one Postgres per vitest run, rollback per test, architecture, migration and test-suite guards",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -23,6 +23,10 @@
     "./workspace": {
       "types": "./dist/workspace.d.ts",
       "default": "./dist/workspace.js"
+    },
+    "./waits": {
+      "types": "./dist/waits.d.ts",
+      "default": "./dist/waits.js"
     }
   },
   "bin": {
@@ -51,12 +55,19 @@
   },
   "peerDependencies": {
     "drizzle-orm": "^1.0.0-rc.4",
+    "vite": "^8.0.0",
     "vitest": "^4.1.10"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
     "drizzle-orm": "1.0.0-rc.4",
     "typescript": "^7.0.2",
+    "vite": "^8.3.4",
     "vitest": "^4.1.10"
   }
 }

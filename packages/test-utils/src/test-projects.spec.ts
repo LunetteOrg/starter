@@ -1,0 +1,66 @@
+import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { probeProject } from './probe-kit.ts'
+import { assertTestProjectsAreDependencies, testProjectPackages } from './test-projects.ts'
+
+function project(appManifest: object): string {
+  return probeProject({
+    'pnpm-workspace.yaml': 'packages: ["apps/*", "packages/*"]\n',
+    'apps/design-system/package.json': JSON.stringify({ name: '@acme/design-system', ...appManifest }),
+    'packages/ui/package.json': JSON.stringify({ name: '@acme/ui' }),
+    'packages/icons/package.json': JSON.stringify({ name: '@acme/icons' }),
+  })
+}
+
+const config = {
+  test: {
+    projects: [
+      { test: { name: 'stories', include: ['src/**/*.stories.tsx', '../../packages/ui/src/**/*.stories.tsx'] } },
+      { test: { name: { label: 'icons' }, include: ['../../packages/icons/src/**/*.test.ts'] } },
+      { test: { name: 'own', include: ['**/*.spec.ts'] } },
+      'packages/*',
+    ],
+  },
+}
+
+describe('testProjectPackages', () => {
+  it('maps each include that points into another workspace to its package name', () => {
+    const workspace = join(project({}), 'apps/design-system')
+    expect(testProjectPackages(workspace, config)).toEqual([
+      { project: 'stories', include: '../../packages/ui/src/**/*.stories.tsx', pkg: '@acme/ui' },
+      { project: 'icons', include: '../../packages/icons/src/**/*.test.ts', pkg: '@acme/icons' },
+    ])
+  })
+
+  it('reads the top-level include of a config with no projects', () => {
+    const workspace = join(project({}), 'apps/design-system')
+    expect(testProjectPackages(workspace, { test: { include: ['../../packages/ui/**/*.test.ts'] } })).toEqual([
+      { project: '(root)', include: '../../packages/ui/**/*.test.ts', pkg: '@acme/ui' },
+    ])
+  })
+})
+
+describe('assertTestProjectsAreDependencies', () => {
+  it('fails naming the project and the package missing from the manifest', () => {
+    const workspace = join(project({ devDependencies: { '@acme/ui': 'workspace:*' } }), 'apps/design-system')
+    expect(() => assertTestProjectsAreDependencies(workspace, config)).toThrow(
+      /project "icons" → "@acme\/icons": "workspace:\*"[\s\S]*test-guards\.md/,
+    )
+    expect(() => assertTestProjectsAreDependencies(workspace, config)).not.toThrow(/@acme\/ui"/)
+  })
+
+  it('passes when every included package is a dependency', () => {
+    const workspace = join(
+      project({ dependencies: { '@acme/icons': 'workspace:*' }, devDependencies: { '@acme/ui': 'workspace:*' } }),
+      'apps/design-system',
+    )
+    expect(() => assertTestProjectsAreDependencies(workspace, config)).not.toThrow()
+  })
+
+  it('fails when no project includes another package, rather than pass on nothing', () => {
+    const workspace = join(project({}), 'apps/design-system')
+    expect(() => assertTestProjectsAreDependencies(workspace, { test: { include: ['src/**/*.spec.ts'] } })).toThrow(
+      /no test project includes/,
+    )
+  })
+})

@@ -1,8 +1,9 @@
 # @lntt/test-utils
 
 Test helpers every Lunette project uses: a real Postgres per vitest run with a
-rollback around each test, and the guards that keep architecture, serialization and
-migrations honest. Kept current by version.
+rollback around each test, the guards that keep architecture, serialization and
+migrations honest, and the guards that keep the test suite itself honest. Kept current
+by version.
 
 ```sh
 pnpm add -D @lntt/test-utils vitest drizzle-orm
@@ -194,3 +195,72 @@ passing a violation or failing a correct line.
 
 Their messages cite the ADRs of a project scaffolded from the Lunette `react-router`
 template (`docs/adr/architecture-and-boundaries.md`, `docs/adr/data-and-migrations.md`).
+
+## The guards of the test suite
+
+Each takes the project root (or a workspace) and throws a message that names every
+`file:line` and the rule's record, the starter's
+[test-guards ADR](https://github.com/LunetteOrg/starter/blob/main/docs/adr/test-guards.md),
+which also says why each rule holds. Each fails when its scan finds nothing to check,
+so a moved folder cannot pass vacuously.
+
+| Export | Asserts |
+|---|---|
+| `assertNoModuleMocks`, `findModuleMocks` | no hoisted `vi.mock`; a `vi.doMock` has `vi.resetModules()` before the first `vi.doMock` and after the last `vi.doUnmock` |
+| `assertWaitsDeclareTimeout`, `findWaits` (`@lntt/test-utils/waits`) | every `findBy*`, `findAllBy*`, `waitFor`, `vi.waitFor` and `waitForElementToBeRemoved` passes `WAIT` as its timeout |
+| `assertWaitingWorkspacesRunTheGuard` (`@lntt/test-utils/waits`) | every workspace whose tests wait has a test calling `assertWaitsDeclareTimeout` |
+| `assertBiomeDomainsDeclared`, `enabledBiomeDomains`, `BIOME_DOMAIN_OF_DEPENDENCY` | a dependency with a Biome rule domain (`vitest` → `test`, `react` → `react`…) finds it switched on in the project's Biome config |
+| `assertLintFailsOnWarnings` | every `lint` and `lint:*` script runs `biome check` with `--error-on-warnings` and `stylelint` with `--max-warnings 0` |
+| `assertTestProjectsAreDependencies`, `testProjectPackages` | every package a vitest test project includes files from is a dependency of the workspace |
+
+The scans read `apps/*` and `packages/*` (directories with a `package.json`): specs and
+tests, stories, `*-kit.ts(x)` helpers and any module under a `test/` directory, since a
+helper shares the worker's module registry with the spec that imports it. Build
+output, `e2e/` and `__fixtures__/` are not scanned; `ignore` takes more globs,
+relative to the root.
+
+```ts
+// packages/test-utils/src/suite.spec.ts: the project-wide guards
+import { assertBiomeDomainsDeclared, assertLintFailsOnWarnings, assertNoModuleMocks } from '@lntt/test-utils'
+import { assertWaitingWorkspacesRunTheGuard } from '@lntt/test-utils/waits'
+
+const root = resolve(__dirname, '../../..')
+
+it('no test mocks a module for the whole worker', () => assertNoModuleMocks(root))
+it('every workspace that waits runs the wait guard', () => assertWaitingWorkspacesRunTheGuard(root))
+it('the Biome domains of the stack are declared', () => assertBiomeDomainsDeclared(root))
+it('a lint warning fails the script', () => assertLintFailsOnWarnings(root))
+```
+
+```ts
+// apps/web/app/waits.spec.ts: in each workspace whose tests wait
+import { assertWaitsDeclareTimeout } from '@lntt/test-utils/waits'
+
+it('every findBy* and waitFor declares its timeout', () => {
+  assertWaitsDeclareTimeout(resolve(__dirname, '..'), 'apps/web')
+})
+```
+
+```ts
+// in a test file that waits
+const WAIT = { timeout: 5_000 }
+
+await screen.findByRole('button', { name: 'Send' }, WAIT)
+await waitFor(() => expect(onSend).toHaveBeenCalled(), WAIT)
+```
+
+```ts
+// apps/design-system/src/test-projects.spec.ts: in a workspace whose projects include other packages
+import { assertTestProjectsAreDependencies } from '@lntt/test-utils'
+import config from '../vitest.config.ts'
+
+it('every package a test project includes is a dependency', () => {
+  assertTestProjectsAreDependencies(resolve(__dirname, '..'), config)
+})
+```
+
+`@lntt/test-utils/waits` parses with `parseAst` from `vite` 8, an optional peer: vitest
+4 already installs it, and a project that declares it resolves it from the root.
+`assertBiomeDomainsDeclared` reads `biome.json` or `biome.jsonc` at the root (comments
+allowed) and follows its `extends`; `config` and `domains` override the file and the
+dependency table.
