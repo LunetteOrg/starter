@@ -74,7 +74,9 @@ export function runTool(
   return (r.stdout ?? '').trim()
 }
 
-const runner: Runner = {
+// The real tools; exported for the upstream tests (test/upstream-*.test.ts), which run
+// lntt's adapters against them.
+export const runner: Runner = {
   run: (command, args, opts) => runTool(command, args, opts?.cwd ?? cwd()),
   sleep: (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms),
   shell: (script, dir) => {
