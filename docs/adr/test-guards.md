@@ -106,7 +106,9 @@ points into another workspace whose package is not among the workspace's
 dependencies or devDependencies. A project with no `include` points at its `root`
 (and `test.dir`), where vitest's default include looks. An include whose fixed part
 stops above one package (`../../packages/{ui,icons}/**`) fails: the guard names one
-package per include. Without the dependency, pnpm does not link the
+package per include. The packages are found from the pnpm workspace root, the
+nearest `pnpm-workspace.yaml`, and the guard fails naming that file when there is
+none. Without the dependency, pnpm does not link the
 package for the tests' imports, and a task cache keyed on the workspace's
 dependencies does not rerun those tests when only that package changes.
 

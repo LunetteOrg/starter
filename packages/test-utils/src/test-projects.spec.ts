@@ -50,6 +50,25 @@ describe('testProjectPackages', () => {
     )
   })
 
+  it('resolves an include from the project root it sets', () => {
+    const workspace = join(project({}), 'apps/design-system')
+    const rooted = { test: { projects: [{ root: '../../packages/ui', test: { name: 'ui', include: ['src/**'] } }] } }
+    expect(testProjectPackages(workspace, rooted)).toEqual([{ project: 'ui', include: 'src/**', pkg: '@acme/ui' }])
+  })
+
+  it('fails on a config passed as a function, the defineConfig(() => …) shape', () => {
+    const workspace = join(project({}), 'apps/design-system')
+    expect(() => testProjectPackages(workspace, () => ({}))).toThrow(/config object/)
+  })
+
+  it('fails naming pnpm-workspace.yaml when the project has none', () => {
+    const root = probeProject({
+      'apps/design-system/package.json': JSON.stringify({ name: '@acme/design-system' }),
+      'packages/ui/package.json': JSON.stringify({ name: '@acme/ui' }),
+    })
+    expect(() => testProjectPackages(join(root, 'apps/design-system'), config)).toThrow(/no pnpm-workspace\.yaml/)
+  })
+
   it('reads the top-level include of a config with no projects', () => {
     const workspace = join(project({}), 'apps/design-system')
     expect(testProjectPackages(workspace, { test: { include: ['../../packages/ui/**/*.test.ts'] } })).toEqual([

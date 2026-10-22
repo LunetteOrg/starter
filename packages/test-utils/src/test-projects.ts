@@ -44,10 +44,17 @@ function label(name: TestOptions['name']): string {
  * package (`../../packages/{ui,icons}/**`) throws: it cannot be mapped to one package.
  * Projects given as paths (`'packages/*'`) are configs of their own and are not read.
  * Pass the config object a `vitest.config.ts` exports (`import config from '../vitest.config.ts'`).
+ * The packages are found from the pnpm workspace root, the nearest `pnpm-workspace.yaml`.
  */
 export function testProjectPackages(workspace: string, config: unknown): TestProjectPackage[] {
   if (typeof config === 'function') throw new Error('testProjectPackages: pass the config object, not a function')
   const root = workspaceRoot(workspace)
+  if (!existsSync(join(root, 'pnpm-workspace.yaml'))) {
+    throw new Error(
+      `testProjectPackages: no pnpm-workspace.yaml in ${workspace} or above it: ` +
+        "the project's packages are found from the pnpm workspace root",
+    )
+  }
   const own = (config ?? {}) as ProjectConfig
   const inline = (own.test?.projects ?? []).filter(
     (project): project is ProjectConfig => typeof project === 'object' && project !== null,
