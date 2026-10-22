@@ -79,9 +79,10 @@ export default defineConfig({
    `apps/*` and `packages/*`, naming the file and line; a project calls it from a
    spec, as it calls the other guards. Both recognise it the same way: by its package
    name, by the built file under `node_modules`, or by a path ending in
-   `test-utils/src/jsdom-setup` or `test-utils/dist/jsdom-setup`, with or without an
-   extension. An app's own file named `jsdom-setup`, an alias, or a copy under another
-   directory name is not caught.
+   `test-utils/src/jsdom-setup` or `test-utils/dist/jsdom-setup`, with no extension
+   or one of `.js`, `.ts`, `.mjs`, `.cjs`, `.mts`, `.cts`. An app's own file named
+   `jsdom-setup`, an alias, or a copy under another directory name is not caught; an
+   app's own file at such a path is.
 4. **What the jsdom setup does**, in every jsdom file. Everything that touches the DOM
    is behind `typeof window !== 'undefined'`: an app's node files run the same setup.
    - **Stubs** for what jsdom lacks, each installed only when missing:
@@ -153,6 +154,10 @@ A project whose suite breaks one of these rules keeps the file out of `fast`: in
 - Under `isolate: false` the leaks above are kept out by rules, not by the runner, and
   no guard of `@lntt/test-utils` asserts any of them: the review holds them, and a
   project adds a `tests.rules` pattern for the ones a pattern can catch.
+- A path does not say which package holds a file: an app's own
+  `test-utils/src/jsdom-setup` or `test-utils/dist/jsdom-setup` is refused in
+  `setupFiles` and reported when imported, as this package's setup would be. The app
+  renames its directory or its file.
 - The setup's 1 ms wait adds to every jsdom test.
 - Fake timers are reset after every test of an app: a test that keeps a fake clock
   across tests sets it up in `beforeEach`.

@@ -36,8 +36,23 @@ describe('findJsdomSetupImports', () => {
     // By path, to the source or the build in a workspace: two in one file, in line order.
     'packages/ui/test/paths.ts':
       "import '../../test-utils/src/jsdom-setup.ts'\nimport { x } from './x'\nawait import('../../test-utils/dist/jsdom-setup.js')\n",
-    // The app's own setup file, only named like it.
-    'apps/web/test/own.ts': "import './jsdom-setup.ts'\nimport '../shared/src/jsdom-setup'\n",
+    // Other extensions of the build or the source.
+    'packages/ui/test/extensions.ts':
+      "import '../../test-utils/dist/jsdom-setup.mjs'\nrequire('../../test-utils/src/jsdom-setup.cts')\n",
+    // A string holding a keyword before the import, on the same line.
+    'packages/ui/test/after-string.ts': "const k = 'import'; import '@lntt/test-utils/jsdom-setup'\n",
+    // The app's own, at a path that does not say which package holds it.
+    'apps/web/test/own-test-utils.ts': "import '../test-utils/src/jsdom-setup'\n",
+    // The app's own setup file, only named like it, and modules that only start like it.
+    'apps/web/test/own.ts': [
+      "import './jsdom-setup.ts'",
+      "import '../shared/src/jsdom-setup'",
+      "import '../my-test-utils/src/jsdom-setup'",
+      "import '../../acme-test-utils/dist/jsdom-setup'",
+      "import { findJsdomSetupImports } from '@lntt/test-utils/jsdom-setup-imports'",
+      "import { JSDOM_SETUP_PATH } from '../../packages/test-utils/src/jsdom-setup-path.ts'",
+      '',
+    ].join('\n'),
     'packages/talker/node_modules/dep/index.js': "import '@lntt/test-utils/jsdom-setup'\n",
     // Generated or built: no source of the project's.
     'packages/talker/dist/index.js': "import '@lntt/test-utils/jsdom-setup'\n",
@@ -49,6 +64,7 @@ describe('findJsdomSetupImports', () => {
   it('finds every import of the setup, by name or path, by file and line, and none of the listings or mentions', () => {
     // Sorted by code unit, on every machine: `Upper` before `cjs`, which a locale puts after.
     expect(findJsdomSetupImports(root)).toEqual([
+      { file: 'apps/web/test/own-test-utils.ts', line: 1 },
       { file: 'apps/web/test/setup.ts', line: 2 },
       { file: 'packages/ui/src/Upper.tsx', line: 1 },
       { file: 'packages/ui/src/cjs.cts', line: 1 },
@@ -56,6 +72,9 @@ describe('findJsdomSetupImports', () => {
       { file: 'packages/ui/src/from.ts', line: 1 },
       { file: 'packages/ui/src/kit.jsx', line: 1 },
       { file: 'packages/ui/src/require.cjs', line: 1 },
+      { file: 'packages/ui/test/after-string.ts', line: 1 },
+      { file: 'packages/ui/test/extensions.ts', line: 1 },
+      { file: 'packages/ui/test/extensions.ts', line: 2 },
       { file: 'packages/ui/test/paths.ts', line: 1 },
       { file: 'packages/ui/test/paths.ts', line: 3 },
       { file: 'packages/ui/vitest.setup.mjs', line: 1 },

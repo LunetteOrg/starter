@@ -5,12 +5,14 @@ import { JSDOM_SETUP_PATH } from './jsdom-setup-path.ts'
 import { blankCommentsAndStrings } from './source-scan.ts'
 
 /**
- * An import in any syntax (side effect, `from`, dynamic, `require`), its specifier in
- * the second group; the jsdom setup is the specifier `JSDOM_SETUP_PATH` matches.
- * Matched on the raw source, kept only when the keyword is code (comments and strings
- * blanked), so a listing in `setupFiles` (a string) or a mention is not an import.
+ * An import in any syntax (side effect, `from`, dynamic, `require`), its specifier
+ * between the quotes of the second group. Matched on the source with comments and
+ * string contents blanked (quotes kept, offsets unchanged), so a keyword inside a
+ * string or a comment is neither an import nor able to swallow the import after it,
+ * and a listing in `setupFiles` (a string) is not one; the specifier is read from the
+ * raw source at the same offsets.
  */
-const IMPORT = /\b(?:import|from|require)\s*\(?\s*(['"`])([^'"`\n]*)\1/g
+const IMPORT = /\b(?:import|from|require)\s*\(?\s*(['"`])([^'"`\n]*)\1/dg
 
 /** The record of the rule, which the message cites: no project path holds it yet. */
 export const VITEST_PRESET_RECORD = 'https://github.com/LunetteOrg/starter/blob/main/docs/adr/vitest-preset.md'
@@ -47,11 +49,11 @@ export function findJsdomSetupImports(root: string): JsdomSetupImport[] {
       )
       .flatMap((path) => {
         const source = readFileSync(path, 'utf8')
-        const code = blankCommentsAndStrings(source)
-        return [...source.matchAll(IMPORT)]
-          .filter(
-            (match) => JSDOM_SETUP_PATH.test(match[2] ?? '') && code.startsWith(match[0].slice(0, 4), match.index),
-          )
+        return [...blankCommentsAndStrings(source).matchAll(IMPORT)]
+          .filter((match) => {
+            const [start, end] = match.indices?.[2] ?? [0, 0]
+            return JSDOM_SETUP_PATH.test(source.slice(start, end))
+          })
           .map((match) => ({ file: relative(root, path), line: source.slice(0, match.index).split('\n').length }))
       })
       // Code-unit order, the same on every machine: localeCompare follows the locale.
@@ -78,7 +80,8 @@ export function assertNoJsdomSetupImports(root: string): void {
   const found = findJsdomSetupImports(root)
   if (found.length > 0) {
     throw new Error(
-      'These files import @lntt/test-utils/jsdom-setup: list it in setupFiles instead (appTest() does), ' +
+      'These files import the jsdom setup of @lntt/test-utils, by name or by a path to it: ' +
+        'list it in setupFiles instead (appTest() does), ' +
         'or under isolate: false it tears down only the first file of each worker ' +
         `(${VITEST_PRESET_RECORD}):\n` +
         found.map((f) => `  - ${f.file}:${f.line}`).join('\n'),
