@@ -123,7 +123,7 @@ own. A pull request moved by mistake goes back with the label and
 **Pull requests from forks and from Dependabot** stay on `main`: the runs they start
 get no repository secrets, so no app token. A maintainer moves one onto the candidate with
 `pnpm exec lntt ci candidate --pr <n>`, or merges it on `main` as a hotfix. A
-Dependabot pull request runs the CI once a person approves it
+Dependabot pull request runs the CI once an owner, member or collaborator approves it
 ([CI](./ci.md#dependabot-pull-requests)).
 
 The automation runs from a terminal too: `pnpm exec lntt ci candidate --pr <n>` does

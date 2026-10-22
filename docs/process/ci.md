@@ -19,7 +19,7 @@ batch for what is expensive ([delivery](./delivery.md) has the flow):
 | A ready pull request into a candidate, or into any branch other than `main` (a stacked pull request) | the minimal CI: frozen install, lint, typecheck, `lntt check` (the AGENTS.md block, the installed skills, the decision logs), the branch name, the plugin version and `claude plugin validate`, the tests but the scaffold level, unless the change touches `packages/create` |
 | The candidate's pull request into `main`, ready; a hotfix | the full CI: the minimal CI plus the scaffold level (`packages/create`) and its smoke |
 | A push to `main` | the full CI, which gates a release |
-| A Dependabot pull request | the `ci` check red in seconds, until a person approves it; the approval runs the CI the base calls for, and a later push turns it red again ([Dependabot pull requests](#dependabot-pull-requests)) |
+| A Dependabot pull request | the `ci` check red in seconds, until an owner, member or collaborator approves it; the approval runs the CI the base calls for, and a later push turns it red again ([Dependabot pull requests](#dependabot-pull-requests)) |
 | A merge into a candidate | nothing |
 
 `ci.yml` is one job, so each run is billed once. The job is skipped on a draft, and
@@ -137,9 +137,10 @@ Dependabot's pull requests stay on `main` and merge as hotfixes, when a person d
 - **A review of any other pull request** starts a run whose job is skipped. It is an
   entry of its own in the pull request's checks, `CI / ci (pull_request_review)`, beside
   the `CI / ci (pull_request)` it does not replace.
-- **The merge reads the newest `ci` run** of the head: the repository's rulesets
-  require no status check, and an approved Dependabot pull request carries the red run
-  of its push and the run of its approval, as two entries of the checks.
+- **The merge reads the newest `ci` run** of the head. `ci` is not a required status
+  check in the repository's rulesets: an approved Dependabot pull request carries the
+  red run of its push and the run of its approval, as two entries of the checks, and a
+  required `ci` would need this section decided again.
 - **ci:local does not simulate a review**: it runs the pull request or the push. The
   approval run is the cloud's.
 - A Dependabot pull request moved onto a candidate keeps the gate, and its approval
