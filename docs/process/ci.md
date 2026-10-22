@@ -19,6 +19,7 @@ batch for what is expensive ([delivery](./delivery.md) has the flow):
 | A ready pull request into a candidate, or into any branch other than `main` (a stacked pull request) | the minimal CI: frozen install, lint, typecheck, `lntt check` (the AGENTS.md block, the installed skills, the decision logs), the branch name, the plugin version and `claude plugin validate`, the tests but the scaffold level, unless the change touches `packages/create` |
 | The candidate's pull request into `main`, ready; a hotfix | the full CI: the minimal CI plus the scaffold level (`packages/create`) and its smoke |
 | A push to `main` | the full CI, which gates a release |
+| A Dependabot pull request | the `ci` check red in seconds, until a person approves it; the approval runs the CI the base calls for, and a later push turns it red again ([Dependabot pull requests](#dependabot-pull-requests)) |
 | A merge into a candidate | nothing |
 
 `ci.yml` is one job, so each run is billed once. The job is skipped on a draft, and
@@ -108,6 +109,32 @@ fake secret. A full job needs a runner image that has what its steps call (`git`
 executor, the larger `act` images, a job with services, a dynamic CircleCI
 configuration.
 
+## Dependabot pull requests
+
+Dependabot's pull requests stay on `main` and merge as hotfixes, when a person decides
+([delivery](./delivery.md#the-candidate)): the candidate automation cannot move them.
+
+- **The CI runs once a person approves.** Dependabot rebases its pull requests often,
+  and each rebase would start a full CI on a head nobody merges. Until a person
+  approves, the `ci` job fails in its first step, before checkout and install, with
+  "Approve this Dependabot pull request to run the CI before merging": red, never
+  skipped, since a skipped job counts as passed.
+- **Every review starts a run.** An approval runs the whole job on the pull request's
+  merge ref; a comment or a request for changes fails in the first step, like the
+  unapproved run. The newest `ci` run of a Dependabot head is therefore either red or
+  the whole job. A new push (a Dependabot rebase) turns it red again, and only a new
+  approval runs it: re-running a red run fails again, since its event is unchanged.
+- **The approval runs the bump's code** (install, lint, tests, the scaffold smoke) on
+  the repository's runner, with a `GITHUB_TOKEN` that `ci.yml` limits to reading the
+  contents. Approving is the review of the bump.
+- **A review of any other pull request** starts a run whose job is skipped: a skipped
+  `ci` entry next to the real one, on the same head.
+- **The merge reads the newest `ci` run** of the head: the repository requires no
+  checks, and an approved Dependabot pull request carries the red run of its push and
+  the run of its approval.
+- A Dependabot pull request moved onto a candidate keeps the gate, and its approval
+  runs the minimal CI, as for any pull request into a candidate.
+
 ## Discarded directions
 
 - **A script that restates the CI's commands** (wai's `scripts/ci-local.sh`), or job
@@ -142,3 +169,13 @@ configuration.
   it fails for reasons outside the change (a git process the scaffold leaves behind),
   and `ci:local` runs the same step: one such red blocks every pull request at once,
   most of which do not touch `packages/create`.
+- **A `run-ci` label that starts the CI on a Dependabot pull request.** A `labeled`
+  trigger cannot filter by the label's name, so every label on every pull request
+  starts a run whose job is skipped; that skipped run is the newest `ci` on the head
+  and can hide the red one.
+- **Moving each Dependabot pull request onto the candidate by hand.** One command per
+  pull request, on a bot that opens them in waves and rebases them on its own; the
+  command stays available for the one that belongs in a batch.
+- **A merge queue (`merge_group`).** It runs the CI on what would be merged, but it
+  works through required checks, which the repository does not set, and it puts every
+  pull request through the queue, not only Dependabot's.
