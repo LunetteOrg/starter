@@ -72,8 +72,9 @@ export function chooseDriver(options: {
 }): DriverChoice {
   const host = detectHost(options.env)
   for (const driver of options.preferences) {
-    if (usable(driver, host, options.has))
-      return { host, driver, reason: 'first usable preference (workspace.browsers)' }
+    if (!usable(driver, host, options.has)) continue
+    const assumed = driver === 'chrome' ? '; assumed, no shell can tell whether this session has its tools' : ''
+    return { host, driver, reason: `first usable preference (workspace.browsers)${assumed}` }
   }
   const own = HOST_DRIVER[host]
   if (own && usable(own, host, options.has)) return { host, driver: own, reason: `the session runs in ${host}` }
@@ -99,7 +100,10 @@ function orca(url: string, worktree: string): Pick<BrowserPlan, 'setup' | 'opera
   const o = (args: string) => ({ command: `orca ${args} --worktree ${quote(`path:${worktree}`)} --json` })
   return {
     setup: [
-      { ...o('tab create --url about:blank'), note: 'the worktree needs a tab: goto fails with browser_no_tab' },
+      {
+        ...o('tab create --url about:blank'),
+        note: 'once per session: the worktree needs a tab, goto fails with browser_no_tab',
+      },
       { ...o('capture start'), note: 'before open, so requests from the page load are recorded' },
     ],
     operations: {
@@ -265,8 +269,9 @@ export function formatPlan(plan: BrowserPlan): string {
   return [
     `Driver ${plan.driver}, on host ${plan.host} (${plan.reason}), for app ${plan.app} at ${plan.url}`,
     how,
-    'Placeholders: <ref> an element ref from read (read again after each click or navigation: refs go stale), ' +
-      "<text> the text to type, <file> an absolute path for the screenshot; between single quotes, write a ' in them as '\\''.",
+    'Placeholders: <ref> an element ref as read prints it, such as e3 (read again after each click or navigation: refs go stale), ' +
+      '<text> the text to type, <file> an absolute path for the screenshot; <text> and <file> go between the ' +
+      'quotes printed around them and hold no quote character.',
     'Run setup once, then the operations in any order; close when done.',
     '',
     ...(plan.setup ?? []).flatMap((step, i) => line(i === 0 ? 'setup' : '', step)),

@@ -188,7 +188,22 @@ describe('the plan for each driver', () => {
     assert.deepEqual(plan.operations.open, { command: `${pw} goto http://localhost:5183` })
     assert.deepEqual(plan.setup?.[0] && 'command' in plan.setup[0] && plan.setup[0].command, `${pw} open`)
     assert.deepEqual(plan.operations.type, { command: `${pw} fill <ref> '<text>'` })
-    assert.deepEqual(plan.operations.close, { command: `${pw} close` })
+    assert.deepEqual(
+      BROWSER_OPERATIONS.map((op) => {
+        const step = plan.operations[op]
+        return 'command' in step ? step.command.replace(`${pw} `, '') : null
+      }),
+      [
+        'goto http://localhost:5183',
+        'snapshot',
+        'click <ref>',
+        "fill <ref> '<text>'",
+        "screenshot --filename='<file>'",
+        'console error',
+        'requests --static',
+        'close',
+      ],
+    )
   })
 
   test('playwright: an app with a sign-in test is told how to load its storage state', () => {
@@ -213,8 +228,29 @@ describe('the plan for each driver', () => {
     assert.ok(load && 'call' in load)
     assert.equal(load.call.tool, 'ToolSearch')
     assert.match(String(load.call.input.query), /^select:mcp__claude-in-chrome__tabs_context_mcp,/)
-    assert.deepEqual(plan.operations.open, {
-      call: { tool: 'mcp__claude-in-chrome__navigate', input: { url: 'http://localhost:5183', tabId: '<tabId>' } },
+    assert.deepEqual(
+      plan.setup?.slice(1).map((s) => ('call' in s ? [s.call.tool, s.call.input] : null)),
+      [
+        ['mcp__claude-in-chrome__tabs_context_mcp', { createIfEmpty: true }],
+        ['mcp__claude-in-chrome__read_network_requests', { tabId: '<tabId>' }],
+      ],
+    )
+    const calls = Object.fromEntries(
+      BROWSER_OPERATIONS.map((op) => {
+        const step = plan.operations[op]
+        return [op, 'call' in step ? [step.call.tool.replace('mcp__claude-in-chrome__', ''), step.call.input] : null]
+      }),
+    )
+    const tab = { tabId: '<tabId>' }
+    assert.deepEqual(calls, {
+      open: ['navigate', { url: 'http://localhost:5183', ...tab }],
+      read: ['read_page', { filter: 'all', ...tab }],
+      click: ['computer', { action: 'left_click', ref: '<ref>', ...tab }],
+      type: ['form_input', { ref: '<ref>', value: '<text>', ...tab }],
+      screenshot: ['computer', { action: 'screenshot', save_to_disk: true, ...tab }],
+      console: ['read_console_messages', { onlyErrors: true, ...tab }],
+      requests: ['read_network_requests', tab],
+      close: ['tabs_close_mcp', tab],
     })
   })
 
@@ -229,6 +265,21 @@ describe('the plan for each driver', () => {
     assert.deepEqual(plan.operations.open, {
       call: { tool: 'mcp__Claude_Browser__preview_start', input: { url: 'http://localhost:5183' } },
     })
+    assert.deepEqual(
+      BROWSER_OPERATIONS.filter((op) => op !== 'close').map((op) => {
+        const step = plan.operations[op]
+        return 'call' in step ? [step.call.tool.replace('mcp__Claude_Browser__', ''), step.call.input] : null
+      }),
+      [
+        ['preview_start', { url: 'http://localhost:5183' }],
+        ['read_page', {}],
+        ['computer', { action: 'left_click', ref: '<ref>' }],
+        ['form_input', { ref: '<ref>', value: '<text>' }],
+        ['computer', { action: 'screenshot' }],
+        ['read_console_messages', { onlyErrors: true }],
+        ['read_network_requests', {}],
+      ],
+    )
     assert.deepEqual(plan.operations.close, { lacks: 'the pane keeps its tabs' })
     assert.match(formatPlan(plan), /^close {7}\(cannot: the pane keeps its tabs\)$/m)
   })
@@ -283,6 +334,7 @@ describe('the command line', () => {
     writeFileSync(join(home, '.agents/operator.jsonc'), JSON.stringify({ workspace: { browsers: ['chrome'] } }))
     const plan = JSON.parse(run(main, ['browser', '--json']).stdout)
     assert.equal(plan.driver, 'chrome')
+    assert.match(plan.reason, /assumed, no shell can tell whether this session has its tools$/)
   })
 
   test('with several apps the app must be named, and the error lists them', () => {

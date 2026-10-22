@@ -370,7 +370,9 @@ else the app the session runs in (Orca drives the browser of the same worktree,
 Claude desktop its built-in browser), else Playwright through `npx @playwright/cli`,
 in a session named after the app and port and writing its files outside the
 worktree. Orca and Playwright are shell commands; Chrome and Claude desktop are tool
-calls only the agent can make, printed with the call that loads them.
+calls only the agent can make, printed with the call that loads them. Chrome counts
+wherever it is listed, since no shell can tell whether a session has its tools: it goes
+after the browsers that are detected.
 
 ## CI (`lntt ci`)
 

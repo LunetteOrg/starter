@@ -73,7 +73,7 @@
         },
         "browsers": {
           "type": "array",
-          "description": "Browsers an agent drives to check a page, in order of preference; the first one usable in the session wins (lntt browser).",
+          "description": "Browsers an agent drives to check a page, in order of preference; the first one usable in the session wins (lntt browser). chrome counts wherever it is listed, since no shell can tell whether a session has its tools: list it after the browsers that are detected.",
           "items": {
             "type": "string",
             "enum": ["orca", "claude-desktop", "chrome", "playwright"]
