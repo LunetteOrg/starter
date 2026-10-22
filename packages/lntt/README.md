@@ -20,7 +20,7 @@ through an editor that keeps them.
 
 ```sh
 lntt path                       # the file in use
-lntt validate                   # exit 0 when it matches the schema
+lntt validate                   # exit 0 when it matches the schema and every value naming another list is in it
 lntt get recording.logs         # a dotted key, as plain JSON (pipe it to jq)
 lntt set recording.language '"it"'   # a JSON value, comments kept
 ```

@@ -256,6 +256,28 @@ function assertRejected(config: unknown, names: RegExp): void {
   assert.throws(() => loadConfig(root), names)
 }
 
+// Runs `lntt validate` on `config`, which the schema accepts, and returns its exit
+// status and stderr: the references between lists are checked there, not on load.
+function validateCli(config: unknown): { status: number | null; stderr: string } {
+  write('.agents/config.jsonc', JSON.stringify(config))
+  const run = spawnSync(process.execPath, [BIN, 'validate'], { cwd: root, encoding: 'utf8' })
+  return { status: run.status, stderr: run.stderr }
+}
+
+function assertValid(config: unknown): void {
+  const run = validateCli(config)
+  assert.equal(run.status, 0, run.stderr)
+}
+
+// Asserts that the configuration loads (getValue works on it) but `lntt validate`
+// exits 1 with every pattern of `lines` in its message.
+function assertBadReference(config: unknown, ...lines: RegExp[]): void {
+  const run = validateCli(config)
+  assert.doesNotThrow(() => loadConfig(root))
+  assert.equal(run.status, 1, run.stderr)
+  for (const line of lines) assert.match(run.stderr, line)
+}
+
 describe('the board section', () => {
   const board = {
     project: { owner: 'DemoOrg', ownerType: 'organization', number: 1, title: 'Demo board' },
@@ -344,33 +366,58 @@ describe('the board section', () => {
     assertRejected({ board: { fields: { status: noOptions } } }, /options/)
   })
 
-  test('every status role is one of the options, and the error names the role and the options', () => {
-    assertRejected(withStatus({ inReview: 'In review' }), /board\.fields\.status\.inReview.*Todo, Discussing, Ready/)
-    assertRejected(withStatus({ initial: 'Backlog' }), /board\.fields\.status\.initial/)
-    assertRejected(withStatus({ ready: 'Ready!' }), /board\.fields\.status\.ready/)
-    assertRejected(withStatus({ inProgress: 'Doing' }), /board\.fields\.status\.inProgress/)
-    assertRejected(withStatus({ done: 'Closed' }), /board\.fields\.status\.done/)
+  test('lntt validate: every status role is one of the options, and the error names the role and the options', () => {
+    assertBadReference(
+      withStatus({ inReview: 'In review' }),
+      /board\.fields\.status\.inReview.*Todo, Discussing, Ready/,
+    )
+    assertBadReference(withStatus({ initial: 'Backlog' }), /board\.fields\.status\.initial/)
+    assertBadReference(withStatus({ ready: 'Ready!' }), /board\.fields\.status\.ready/)
+    assertBadReference(withStatus({ inProgress: 'Doing' }), /board\.fields\.status\.inProgress/)
+    assertBadReference(withStatus({ done: 'Closed' }), /board\.fields\.status\.done/)
   })
 
-  test("the candidate's statuses are options of the status too", () => {
-    const status = { inRelease: 'To review', done: 'Done' }
-    write(
-      '.agents/config.jsonc',
-      JSON.stringify({ ...withStatus({}), delivery: { candidate: { prefix: 'r/', status } } }),
+  test('lntt validate: a role left unset is checked by its default, and the defaults pass when they are options', () => {
+    const options = ['Backlog', 'Ready', 'In progress', 'In review', 'Done']
+    assertValid({ board: { fields: { status: { name: 'Status', type: 'singleSelect', options } } } })
+    const noReview = options.filter((option) => option !== 'In review')
+    assertBadReference(
+      { board: { fields: { status: { name: 'Status', type: 'singleSelect', options: noReview } } } },
+      /board\.fields\.status\.inReview is "In review"/,
     )
-    assert.equal(getValue(loadConfig(root).data, 'delivery.candidate.status.inRelease'), 'To review')
-    const missing = { inRelease: 'In release', done: 'Done' }
-    assertRejected(
-      { ...withStatus({}), delivery: { candidate: { prefix: 'r/', status: missing } } },
+  })
+
+  test('lntt validate: every wrong value is a line of the same message', () => {
+    assertBadReference(
+      withStatus({ ready: 'Ready!', done: 'Closed' }),
+      /board\.fields\.status\.ready is "Ready!"/,
+      /board\.fields\.status\.done is "Closed"/,
+    )
+  })
+
+  test("lntt validate: the candidate's statuses are options of the status too, defaults included", () => {
+    const status = { inRelease: 'To review', done: 'Done' }
+    assertValid({ ...withStatus({}), delivery: { candidate: { prefix: 'r/', status } } })
+    assertBadReference(
+      { ...withStatus({}), delivery: { candidate: { prefix: 'r/', status: { inRelease: 'In release' } } } },
       /delivery\.candidate\.status\.inRelease.*Todo, Discussing/,
     )
+    assertBadReference(
+      { ...withStatus({}), delivery: { candidate: { prefix: 'r/' } } },
+      /delivery\.candidate\.status\.inRelease is "In release"/,
+    )
+    assertValid({ ...withStatus({}), delivery: { candidate: { prefix: 'r/', status: { inRelease: 'To review' } } } })
   })
 
-  test('lntt set refuses a status role that is not an option, and leaves the file as it was', () => {
-    const path = write('.agents/config.jsonc', JSON.stringify(withStatus({})))
-    const before = readFileSync(path, 'utf8')
-    assert.throws(() => setValue(root, 'board.fields.status.done', 'Closed'), /board\.fields\.status\.done/)
-    assert.equal(readFileSync(path, 'utf8'), before)
+  test('a status role that is not an option still loads: the check is lntt validate, not every read', () => {
+    write('.agents/config.jsonc', JSON.stringify(withStatus({ done: 'Closed' })))
+    assert.equal(getValue(loadConfig(root).data, 'board.fields.status.done'), 'Closed')
+  })
+
+  test('lntt set renames a status option although the roles still name the old one', () => {
+    write('.agents/config.jsonc', JSON.stringify(withStatus({})))
+    setValue(root, 'board.fields.status.options', ['Todo', 'Discussing', 'Ready', 'In progress', 'In review', 'Done'])
+    assert.equal(getValue(loadConfig(root).data, 'board.fields.status.options.4'), 'In review')
   })
 
   test("a project's own field is a camelCase key", () => {
@@ -383,6 +430,23 @@ describe('the board section', () => {
       { board: { tracks: { labels: { admin: { owner: 'developer 1' } } } } },
       /\/tracks\/labels\/admin\/owner/,
     )
+  })
+
+  test('lntt validate: a track owner is one of team.members, when the team lists them', () => {
+    const tracks = { labels: { admin: { owner: 'developer-2' } } }
+    assertValid({ board: { tracks } })
+    const team = { members: { 'developer-1': { role: 'developer' } } }
+    assertBadReference({ board: { tracks }, team }, /board\.tracks\.labels\.admin\.owner is "developer-2".*developer-1/)
+    assertValid({ board: { tracks: { labels: { admin: { owner: 'developer-1' } } } }, team })
+  })
+
+  test('track paths are relative to the repository root and never leave it', () => {
+    assertRejected({ board: { tracks: { from: ['/apps/*'] } } }, /\/board\/tracks\/from/)
+    assertRejected({ board: { tracks: { from: ['apps/../../*'] } } }, /\/board\/tracks\/from/)
+    assertRejected({ board: { tracks: { labels: { admin: { paths: ['..'] } } } } }, /\/labels\/admin\/paths/)
+    assertRejected({ board: { tracks: { labels: { admin: { paths: ['/apps/admin'] } } } } }, /\/labels\/admin\/paths/)
+    write('.agents/config.jsonc', JSON.stringify({ board: { tracks: { from: ['apps/*', '..apps/x'] } } }))
+    assert.deepEqual(getValue(loadConfig(root).data, 'board.tracks.from'), ['apps/*', '..apps/x'])
   })
 })
 
@@ -432,6 +496,18 @@ describe('the cycle section', () => {
       /minPull/,
     )
     assertRejected({ cycle: { retrospective: { targetedReview: { minPullRequests: 2 } } } }, /line/)
+  })
+
+  test('lntt validate: the targeted line is one of the retrospective lines, when they are listed', () => {
+    const cycle = { retrospective: { targetedReview: { line: 'Flaky tests' } } }
+    assertValid({ cycle })
+    const pullRequest = { retrospective: { lines: ['Friction', 'Unstable tests'] } }
+    assertBadReference(
+      { cycle, delivery: { pullRequest } },
+      /cycle\.retrospective\.targetedReview\.line is "Flaky tests".*Friction, Unstable tests/,
+    )
+    const fixed = { retrospective: { targetedReview: { line: 'Unstable tests' } } }
+    assertValid({ cycle: fixed, delivery: { pullRequest } })
   })
 })
 
@@ -572,8 +648,10 @@ describe('the configurations of the projects the starter was ported from', () =>
     assert.ok(!options('wai').includes('Discussing'))
   })
 
-  test("pelion's commitlint is the plain conventional config: no trailer is exempt from the line limit", () => {
+  test("pelion's fixture has no long-trailer exemption: delivery.commits.longTrailers is absent", () => {
     write('.agents/config.jsonc', readFileSync(join(FIXTURES, 'pelion.jsonc'), 'utf8'))
-    assert.throws(() => getValue(loadConfig(root).data, 'delivery.commits.longTrailers'), /longTrailers/)
+    const delivery = getValue(loadConfig(root).data, 'delivery') as Record<string, unknown>
+    const commits = (delivery.commits ?? {}) as Record<string, unknown>
+    assert.equal(Object.hasOwn(commits, 'longTrailers'), false)
   })
 })

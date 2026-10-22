@@ -126,10 +126,9 @@
           "properties": {
             "from": {
               "type": "array",
-              "description": "Globs of the folders that are candidate tracks (apps/*): a folder no label's `paths` covers is a candidate for a new label.",
+              "description": "Globs of the folders that are candidate tracks (apps/*), from the repository root: no leading / and no .. segment. A folder no label's `paths` covers is a candidate for a new label.",
               "items": {
-                "type": "string",
-                "minLength": 1
+                "$ref": "#/definitions/repoPath"
               },
               "uniqueItems": true
             },
@@ -146,14 +145,13 @@
                   "owner": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9-]+$",
-                    "description": "The GitHub handle that owns the track, one of team.members. The one place a track's owner is written."
+                    "description": "The GitHub handle that owns the track, one of team.members: lntt validate checks it when team.members is present. The one place a track's owner is written."
                   },
                   "paths": {
                     "type": "array",
-                    "description": "The folders, or globs, the track covers, from the repository root (apps/admin). A label with no paths covers no folder: an area, a cross-cutting concern.",
+                    "description": "The folders, or globs, the track covers, from the repository root (apps/admin): no leading / and no .. segment. A label with no paths covers no folder: an area, a cross-cutting concern.",
                     "items": {
-                      "type": "string",
-                      "minLength": 1
+                      "$ref": "#/definitions/repoPath"
                     },
                     "minItems": 1,
                     "uniqueItems": true
@@ -630,7 +628,7 @@
                 "line": {
                   "type": "string",
                   "minLength": 1,
-                  "description": "One of delivery.pullRequest.retrospective.lines."
+                  "description": "One of delivery.pullRequest.retrospective.lines: lntt validate checks it when those lines are present."
                 },
                 "minPullRequests": {
                   "type": "integer",
@@ -991,9 +989,15 @@
         }
       }
     },
+    "repoPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!(?:.*/)?\\.\\.(?:/|$))",
+      "description": "A folder or glob from the repository root: no leading / and no .. segment."
+    },
     "statusField": {
       "type": "object",
-      "description": "The Status field: a single select, plus the role some of its options play for the board skills. Each role, and each name in delivery.candidate.status, is one of its options: lntt validate checks it.",
+      "description": "The Status field: a single select, plus the role some of its options play for the board skills. Each role, and each name in delivery.candidate.status when delivery.candidate is present, is one of its options: lntt validate checks it, a role or name left unset by its default.",
       "additionalProperties": false,
       "required": ["name", "type", "options"],
       "properties": {

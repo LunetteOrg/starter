@@ -28,7 +28,9 @@ Skills hold procedure. Everything particular to a project lives outside them, in
 places a skill reads:
 
 - **Values** in `.agents/config.jsonc` or `.agents/config.yml` at the repository root
-  (one of the two), validated by `packages/lntt/schema/config.schema.json`.
+  (one of the two), validated by `packages/lntt/schema/config.schema.json`, and by
+  `lntt validate` for what a schema cannot express (a value that must name an entry
+  of another list).
   Sections are named after fixed process areas (`recording`, `board`, `ci`,
   `delivery`, `cycle`, `spaces`, `team`, `local`); a section is added when a skill
   needs it. A short reason for a value is a comment next to it.
