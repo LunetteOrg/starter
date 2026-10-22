@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-10-14
+date: 2026-10-22
 tags: [testing, postgres, testcontainers, docker, packages, test-utils]
 ---
 
@@ -46,8 +46,12 @@ vitest main process
 ```
 
 1. **The globalSetup owns the container**: it starts it and removes it, in the only
-   process that outlives every worker. `createTestDb` starts a container only when
-   used without the plugin and without a server. Nothing is reused across runs.
+   process that outlives every worker, and it is the only code that does. `createTestDb`
+   never starts one and exports no stop function for a test file to call: without the
+   plugin, a `serverUrl` or `TEST_DATABASE_URL`, `withTestDb` and `connectionString()`
+   reject with an error that names `testDbPlugin()`. Construction needs no server, so
+   a suite that skips on `hasTestDatabase()` loads without Docker. Nothing is reused
+   across runs.
 2. **`postgresContainer()`** is the one factory: `postgres:17` (the template's major),
    data on tmpfs at the image's declared volume, labelled
    `com.lntt.workspace=<workspace root>`. The workspace root is the nearest directory
@@ -72,8 +76,15 @@ vitest main process
    locally; with `CI` set it is a hard error.
 9. **Killed runs** remove their container with a synchronous `docker rm --force` on
    `exit`, `SIGTERM` and `SIGHUP`, registered only by the process that started it.
-10. **`withTestDb`** rolls each test back. **`connectionString()`** gives the migrated
-    database to a test that must commit; that test removes what it committed.
+10. **An integration test asks for `tx`**: each app builds its `it` once with
+    `export const it = txTest(db.withTestDb)`, and a test is
+    `it('…', async ({ tx }) => …)`. The `tx` fixture is lazy (a test that does not
+    destructure it opens no transaction), and Vitest resolves it only after the body,
+    passed or failed, so the rollback always runs; `tx-test.test.ts` proves it on a
+    committed table from a separate connection. **`withTestDb`** underneath rolls
+    each callback back and knows no test runner: `txTest` is the only code that
+    knows `test.extend`. **`connectionString()`** gives the migrated database to a
+    test that must commit; that test removes what it committed.
 11. **`TEST_DATABASE_URL` set from outside** is used as is, and the globalSetup neither
     starts nor stops anything. When that is right and when it brings the stale-schema
     false green back is in the package README (§ `TEST_DATABASE_URL` set by you).
@@ -107,6 +118,10 @@ test in a generated project on the packed package.
   handler does not know it yet), leaves a container. `lntt-clean-test` is the remedy.
   Removing by label on exit would close the window, but sibling packages of one
   workspace run under the same label at the same time.
+- **Integration tests are coupled to Vitest's fixture API**: the `({ tx })` signature
+  and the app-level `it`. The coupling is contained (`withTestDb` is runner-agnostic,
+  `txTest` is the only code on `test.extend`, and Playwright's fixtures have the same
+  shape), but a change of test runner touches every integration test's signature.
 - **The Postgres major is the package's**: a project on another major waits for the
   package or passes its own server through `TEST_DATABASE_URL`.
 - The no-Docker path is tested on the decision function, not end to end: testcontainers
@@ -135,6 +150,13 @@ test in a generated project on the packed package.
   itself be wrong.
 - **Pointing the tests at the compose Postgres.** It outlives the run, which is the
   stale-schema false green.
+- **Wrapping each test body in `withTestDb(async (tx) => …)`.** Every test pays a
+  level of nesting, and nothing stops a test from writing outside the callback or
+  from forgetting to open it. It is the layer under `txTest`, not the way to write a
+  test.
+- **`afterAll(() => stop…Db())` in test files.** Under the globalSetup it is a no-op,
+  and under a shared module registry the first file that runs it can stop the
+  database under the files that follow (pelion#1131 removed 30 of them).
 - **An optional `databaseName` with a default instance.** Instances without a name
   share one database and one migrations journal, the leak this package exists to
   close.

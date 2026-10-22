@@ -14,6 +14,7 @@ export {
   type TestDb,
   type TestDbOptions,
   type TestTransaction,
+  txTest,
   WORKSPACE_LABEL,
   workspaceRoot,
 } from './db.ts'

@@ -98,13 +98,14 @@ Strategy and tiers are defined in [testing](./docs/adr/testing.md)
   run is the proof the test bites.
 - **Pick the tier by what you're proving**, not by habit:
   - `*.spec.ts` — **unit**: pure logic (domain, use-case wiring, helpers). No I/O.
-  - `*.test.ts` — **integration**: real Postgres via `withTestDb` + transaction
-    rollback. Repositories, migrations, anything that touches the DB.
+  - `*.test.ts` — **integration**: real Postgres, through the `tx` fixture of the
+    app's `it = txTest(db.withTestDb)`, rolled back when the test ends.
+    Repositories, migrations, anything that touches the DB.
   - **e2e** (Playwright) — full HTTP + DB path; add once there's a target app.
 - **Smell test:** if a test would still pass with the database and collaborators
   fully mocked, it isn't proving the thing that breaks in production — push it
   down a tier or assert on real effects.
-- **Never `vi.mock` the database.** Use `withTestDb` ([testing — test database isolation](./docs/adr/testing.md#test-database-isolation)). Mocking the DB
+- **Never `vi.mock` the database.** Ask for `tx`: `it('…', async ({ tx }) => …)` with the app's `it` ([testing strategy](./docs/adr/testing.md#testing-strategy)). Mocking the DB
   hides schema/migration/query bugs, which is exactly what integration tests exist
   to catch.
 

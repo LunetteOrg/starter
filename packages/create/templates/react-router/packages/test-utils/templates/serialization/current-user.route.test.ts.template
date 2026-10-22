@@ -14,12 +14,18 @@
 //
 // It is a `.test.ts` (integration, docs/adr/testing.md): it wires a real app over a rolled-
 // back test transaction — no mocks — so the assertion runs against the real
-// use-case output, the exact thing that leaks in production.
+// use-case output, the exact thing that leaks in production. The transaction is
+// the `tx` fixture of the app's `it`, built once next to the app's test database:
+//
+//   // app/test/db.ts
+//   import { createTestDb, txTest } from '@starter/test-utils'
+//   const db = createTestDb({ migrationsFolder: './drizzle', databaseName: '<app>' })
+//   export const it = txTest(db.withTestDb)
 
-import { withTestDb } from '@starter/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect } from 'vitest'
 import { createApp } from '#app/bootstrap' // your composition root (docs/adr/architecture-and-boundaries.md)
 import { appContext } from '#app/context' // the RR load-context key
+import { it } from '#app/test/db' // the app's `it = txTest(db.withTestDb)`, above
 import { action, loader } from './me'
 
 // ── copy-paste helpers ──────────────────────────────────────────────────────
@@ -62,38 +68,34 @@ function loadContext(app: ReturnType<typeof createApp>) {
 const USER_READ_VIEW: Shape = { id: true, email: true, displayName: true }
 
 describe('GET /me — loader serialization', () => {
-  it('returns exactly the user read-view — no entity fields leak', async () => {
-    await withTestDb(async (db) => {
-      const app = createApp({ db }) // adapt to your createApp signature
-      await app.useCases.users.seedForTest?.({ email: 'a@b.co' }) // arrange a user
+  it('returns exactly the user read-view — no entity fields leak', async ({ tx }) => {
+    const app = createApp({ db: tx }) // adapt to your createApp signature
+    await app.useCases.users.seedForTest?.({ email: 'a@b.co' }) // arrange a user
 
-      const result = await loader({
-        request: new Request('http://localhost/me'),
-        context: loadContext(app),
-        params: {},
-      } as never)
+    const result = await loader({
+      request: new Request('http://localhost/me'),
+      context: loadContext(app),
+      params: {},
+    } as never)
 
-      expectExactPayloadKeys(serialized(result), USER_READ_VIEW)
-    })
+    expectExactPayloadKeys(serialized(result), USER_READ_VIEW)
   })
 })
 
 describe('POST /me — action serialization', () => {
-  it('returns exactly the user read-view — no entity fields leak', async () => {
-    await withTestDb(async (db) => {
-      const app = createApp({ db })
-      await app.useCases.users.seedForTest?.({ email: 'a@b.co' })
+  it('returns exactly the user read-view — no entity fields leak', async ({ tx }) => {
+    const app = createApp({ db: tx })
+    await app.useCases.users.seedForTest?.({ email: 'a@b.co' })
 
-      const body = new FormData()
-      body.set('displayName', 'Ada')
-      const result = await action({
-        request: new Request('http://localhost/me', { method: 'POST', body }),
-        context: loadContext(app),
-        params: {},
-      } as never)
+    const body = new FormData()
+    body.set('displayName', 'Ada')
+    const result = await action({
+      request: new Request('http://localhost/me', { method: 'POST', body }),
+      context: loadContext(app),
+      params: {},
+    } as never)
 
-      expectExactPayloadKeys(serialized(result), USER_READ_VIEW)
-    })
+    expectExactPayloadKeys(serialized(result), USER_READ_VIEW)
   })
 })
 

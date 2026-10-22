@@ -34,6 +34,21 @@ describe('createTestDb at construction', () => {
     }
   })
 
+  // createTestDb never starts a container: with no server given or published, the
+  // first use says where one comes from. Construction stays silent, for the suites
+  // that skip on hasTestDatabase() without Docker.
+  it('rejects on use without a server, naming testDbPlugin()', async () => {
+    const published = process.env.TEST_DATABASE_URL
+    delete process.env.TEST_DATABASE_URL
+    try {
+      const db = createTestDb({ databaseName: 'app', serverUrl: undefined })
+      await expect(db.withTestDb(async () => {})).rejects.toThrow(/testDbPlugin\(\).*@lntt\/test-utils\/plugin/)
+      await expect(db.connectionString()).rejects.toThrow(/serverUrl.*TEST_DATABASE_URL/s)
+    } finally {
+      if (published !== undefined) process.env.TEST_DATABASE_URL = published
+    }
+  })
+
   it('requires databaseName: without it the call does not compile', () => {
     // @ts-expect-error databaseName is required; `pnpm typecheck` fails if it is optional
     expect(() => createTestDb({})).toThrow(/databaseName/)

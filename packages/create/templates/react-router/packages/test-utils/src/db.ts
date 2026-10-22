@@ -6,6 +6,7 @@ import type { PgAsyncTransaction } from 'drizzle-orm/pg-core'
 import { drizzle, type PostgresJsQueryResultHKT } from 'drizzle-orm/postgres-js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
+import { type TestAPI, test } from 'vitest'
 
 /** Transaction type produced by relations-aware createTestDb */
 export type TestTransaction<TRelations extends AnyRelations = EmptyRelations> = PgAsyncTransaction<
@@ -34,7 +35,6 @@ export interface TestDb<TRelations extends AnyRelations = EmptyRelations> {
   withTestDb: (
     fn: (tx: PgAsyncTransaction<PostgresJsQueryResultHKT, TRelations>) => Promise<void>,
   ) => Promise<void>
-  stopTestDb: () => Promise<void>
 }
 
 const registry = new Set<() => Promise<void>>()
@@ -209,18 +209,45 @@ export function createTestDb<TRelations extends AnyRelations = EmptyRelations>(
     }
   }
 
+  // Internal: only `stopAllTestDbs` (the globalSetup teardown) reaches it. A test
+  // file has nothing to stop.
   registry.add(stopTestDb)
-  return { withTestDb, stopTestDb }
+  return { withTestDb }
 }
 
-// Default instance (no migrations) — backward-compatible exports
-const defaultInstance = createTestDb()
-
-export const { withTestDb, stopTestDb } = defaultInstance
+/**
+ * The test transaction as a Vitest fixture. An app builds its `it` once, next to
+ * its `createTestDb`, and every integration test asks for `tx` in its signature:
+ *
+ * ```ts
+ * const db = createTestDb({ migrationsFolder: './drizzle', databaseName: 'web' })
+ * export const it = txTest(db.withTestDb)
+ *
+ * it('publishes a draft', async ({ tx }) => {
+ *   // writes here are rolled back when the test ends
+ * })
+ * ```
+ *
+ * The fixture is lazy: a test that does not destructure `tx` opens no
+ * transaction. Vitest resolves `use` only once the test body is over, passed or
+ * failed, so the rollback inside `withDb` always runs. `withTestDb` stays
+ * runner-agnostic; this is the only code that knows `test.extend`
+ * (docs/adr/testing.md — test database isolation).
+ */
+export function txTest<Tx extends object>(
+  withDb: (fn: (tx: Tx) => Promise<void>) => Promise<void>,
+): TestAPI<{ tx: Tx }> {
+  return test.extend<{ tx: Tx }>({
+    // biome-ignore lint/correctness/noEmptyPattern: Vitest reads a fixture's dependencies from its first parameter and requires an object pattern there, even an empty one
+    tx: async ({}, use) => {
+      await withDb(use)
+    },
+  })
+}
 
 /**
  * Stops all containers created by any createTestDb instance.
- * Used in globalSetup teardown.
+ * Used in globalSetup teardown; app tests never call it.
  */
 export async function stopAllTestDbs(): Promise<void> {
   const stops = [...registry].map((stop) => stop())

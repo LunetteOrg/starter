@@ -31,7 +31,7 @@ The CLI is [`@lntt/create`](https://www.npmjs.com/package/@lntt/create) ([source
 - **Shared packages** (`packages/`):
   - `@starter/biome-config` — Biome preset
   - `@starter/typescript-config` — `base.json` + `browser.json` (strict ES2024)
-  - `@starter/test-utils` — `createTestDb` + Vitest plugin (testcontainers + Postgres + transaction rollback)
+  - `@starter/test-utils` — `createTestDb`, `txTest` (the `tx` fixture integration tests ask for) + Vitest plugin (testcontainers + Postgres + transaction rollback)
   - `@starter/ui`, `@starter/ui-tokens` — empty scaffolds
 - **Infra**: `compose.yaml` (Postgres 17), `render.yaml` Blueprint (web + managed DB, autoDeploy)
 - **CI**: `.github/workflows/ci.yml` (lint+typecheck+test, e2e job disabled until there's a target app)

@@ -99,12 +99,3 @@ describe.skipIf(!hasTestDatabase())('connectionString', () => {
     }
   })
 })
-
-describe.skipIf(!hasTestDatabase())('stopTestDb', () => {
-  it('leaves alone a server it did not start', async () => {
-    const db = createTestDb({ databaseName: 'stop_probe' })
-    await db.withTestDb(async () => {})
-    await db.stopTestDb()
-    await expect(db.withTestDb(async () => {})).resolves.toBeUndefined()
-  })
-})

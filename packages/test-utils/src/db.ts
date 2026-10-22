@@ -6,6 +6,7 @@ import type { PgAsyncTransaction } from 'drizzle-orm/pg-core'
 import { drizzle, type PostgresJsQueryResultHKT } from 'drizzle-orm/postgres-js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
+import { type TestAPI, test } from 'vitest'
 import { WORKSPACE_LABEL, workspaceRoot } from './workspace.ts'
 
 export { WORKSPACE_LABEL, workspaceRoot }
@@ -56,10 +57,7 @@ export interface TestDbOptions<TRelations extends AnyRelations = EmptyRelations>
   migrationsFolder?: string
   /** Drizzle relations (from `defineRelations()`), for a typed `tx.query`. */
   relations?: TRelations
-  /**
-   * A server to use instead of `TEST_DATABASE_URL` or a container of its own: one
-   * the caller manages.
-   */
+  /** A server to use instead of `TEST_DATABASE_URL`: one the caller manages. */
   serverUrl?: string
 }
 
@@ -72,15 +70,11 @@ export interface TestDb<TRelations extends AnyRelations = EmptyRelations> {
    * so it removes its rows itself.
    */
   connectionString: () => Promise<string>
-  /** Stops the container this instance started, if any; never a server it was given. */
-  stopTestDb: () => Promise<void>
 }
 
 const DATABASE_NAME = /^[a-z_][a-z0-9_]*$/
 const CREATE_DATABASE_LOCK = 7354219803490735
 const MIGRATE_LOCK = 7354219803490734
-
-const registry = new Set<() => Promise<void>>()
 
 /** A promise made on first `get()` and kept; a rejected one is dropped, so the next call retries. */
 function cached<T>(make: () => Promise<T>) {
@@ -95,12 +89,6 @@ function cached<T>(make: () => Promise<T>) {
         })
       }
       return promise
-    },
-    /** Forgets the promise and returns it. */
-    take(): Promise<T> | undefined {
-      const taken = promise
-      promise = undefined
-      return taken
     },
   }
 }
@@ -130,14 +118,18 @@ function resolveMigrationsFolder(migrationsFolder: string): string {
  * An isolated test database: its own database on the run's Postgres, its own
  * migrations, and a rollback around each test.
  *
- * Under `testDbPlugin()` it starts nothing: the globalSetup started one Postgres for
- * the vitest process and published it as `TEST_DATABASE_URL`. A container is started
- * here only without the plugin and without a server, and `stopTestDb()` stops it.
+ * It never starts a server. `testDbPlugin()`'s globalSetup starts one Postgres for
+ * the vitest process, publishes it as `TEST_DATABASE_URL` and removes it at the end:
+ * the container's lifecycle has that one owner, and there is nothing for a test file
+ * to stop. Without the plugin, a `serverUrl` or `TEST_DATABASE_URL`, `withTestDb` and
+ * `connectionString` reject, naming the plugin. Construction itself needs no server,
+ * so a suite that skips on `hasTestDatabase()` still loads without Docker.
  *
  * @example
  * ```ts
  * import { relations } from '#app/lib/db/relations'
- * const { withTestDb } = createTestDb({ databaseName: 'web', migrationsFolder: './drizzle', relations })
+ * const db = createTestDb({ databaseName: 'web', migrationsFolder: './drizzle', relations })
+ * export const it = txTest(db.withTestDb)
  * ```
  */
 export function createTestDb<TRelations extends AnyRelations = EmptyRelations>(
@@ -152,12 +144,19 @@ export function createTestDb<TRelations extends AnyRelations = EmptyRelations>(
   // At construction: a wrong path fails at once, with or without Docker.
   const migrationsFolder = opts.migrationsFolder ? resolveMigrationsFolder(opts.migrationsFolder) : undefined
 
-  const container = cached(() => postgresContainer().start())
-
+  /** Read on use, not at construction: the globalSetup publishes it before the tests run. */
   function serverUrl(): Promise<string> {
     const given = opts.serverUrl ?? process.env.TEST_DATABASE_URL
     if (given) return Promise.resolve(given)
-    return container.get().then((c) => c.getConnectionUri())
+    return Promise.reject(
+      new Error(
+        `createTestDb(${JSON.stringify(databaseName)}): no test server.\n` +
+          `Mount testDbPlugin() from '@lntt/test-utils/plugin' in this package's vitest config: ` +
+          `its globalSetup starts the run's Postgres and publishes it as TEST_DATABASE_URL. ` +
+          `Or pass \`serverUrl\`, or set TEST_DATABASE_URL to a server you manage. ` +
+          `A suite that must run without Docker skips on hasTestDatabase().`,
+      ),
+    )
   }
 
   /** The server URL repointed at this instance's database, created once under a lock. */
@@ -232,25 +231,38 @@ export function createTestDb<TRelations extends AnyRelations = EmptyRelations>(
     if (failed) throw testError
   }
 
-  async function stopTestDb(): Promise<void> {
-    const started = container.take()
-    databaseUrl.take()
-    migrated.take()
-    registry.delete(stopTestDb)
-    if (started) await (await started).stop().catch(() => {})
-  }
-
-  registry.add(stopTestDb)
-  return { withTestDb, connectionString, stopTestDb }
+  return { withTestDb, connectionString }
 }
 
 /**
- * Stops every container a `createTestDb` instance started in THIS process. The
- * globalSetup teardown calls it for a hand-registered setup; under the plugin no
- * instance starts one, and containers started in workers are beyond its reach
- * (`lntt-clean-test` and `assertContainerUsersMountAPlugin` cover that case).
+ * The transaction as a Vitest fixture: a test asks for `tx` in its signature, and its
+ * writes are rolled back when it ends. An app builds its `it` once and its
+ * integration tests use that one:
+ *
+ * ```ts
+ * export const it = txTest(db.withTestDb)
+ * it('publishes a draft', async ({ tx }) => { … })
+ * ```
+ *
+ * Lazy: a test that does not destructure `tx` opens no transaction. Vitest resolves
+ * `use` only once the test body is over, passed or failed, so the rollback inside
+ * `withDb` runs in both cases. `withTestDb` stays runner-agnostic: this is the only
+ * code that knows `test.extend`.
  */
-export async function stopAllTestDbs(): Promise<void> {
-  await Promise.allSettled([...registry].map((stop) => stop()))
-  registry.clear()
+export function txTest<Tx extends object>(
+  withDb: (fn: (tx: Tx) => Promise<void>) => Promise<void>,
+): TestAPI<{ tx: Tx }> {
+  return test.extend<{ tx: Tx }>({
+    // biome-ignore lint/correctness/noEmptyPattern: Vitest reads a fixture's dependencies from its first parameter and requires an object pattern there, even an empty one
+    tx: async ({}, use) => {
+      await withDb(use)
+    },
+  })
 }
+
+/**
+ * Kept for the globalSetup's teardown, which calls it; app tests never call it. No
+ * `createTestDb` instance starts a container, so there is nothing here to stop: the
+ * globalSetup removes the server it started itself.
+ */
+export async function stopAllTestDbs(): Promise<void> {}
