@@ -177,8 +177,9 @@ failing step, the run and the end of the log. Whoever takes it reads the log, th
 lntt's adapter (`packages/lntt/src/worktree.ts`, `headless.ts`, `orca-subagents.ts`) or
 records the tool's change in the decision that relies on it
 ([worktree tooling](../adr/worktree-tooling.md), [review agents](../adr/review-agents.md)).
-A red that is the runner's (a download that failed, or Homebrew moving to a newer
-opencode between the reading of the version and its install) closes the issue and runs the
+When Homebrew moves to a newer opencode between the reading of the version and its
+install, the job checks the one installed, under its own version. A red that is the
+runner's (a download that failed) closes the issue and runs the
 workflow again with that tool and `force`, which checks the tool's latest version; that
 run opens no second issue, so its outcome is read in the run. A job that outlasts its
 timeout opens no issue and saves no entry: the version is checked again the next day, and

@@ -100,5 +100,14 @@ for word in $installed; do
     exit 0
   fi
 done
+# Homebrew installs only its current stable: when it moved on since the version was read,
+# the job checks the one installed, under that version's name (its issue, its cache
+# entry), rather than going red for one it never installed.
+if [ "$tool" = opencode ] && [ -n "${GITHUB_ENV:-}" ]; then
+  for word in $installed; do now=${word#v}; done
+  echo "::notice::Homebrew installs opencode $now, read as $version; checking $now"
+  echo "VERSION=$now" >> "$GITHUB_ENV"
+  exit 0
+fi
 echo "upstream-install: asked for $tool $version, installed $installed" >&2
 exit 1

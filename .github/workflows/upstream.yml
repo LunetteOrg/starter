@@ -122,12 +122,15 @@ jobs:
         include: ${{ fromJSON(needs.versions.outputs.tools) }}
     env:
       TOOL: ${{ matrix.tool }}
-      VERSION: ${{ matrix.version }}
     defaults:
       run:
         # pipefail: a step that tees into the log fails with the command, not with tee.
         shell: bash
     steps:
+      # VERSION through GITHUB_ENV, not the job's env, so the install step can replace it.
+      - env:
+          MATRIX_VERSION: ${{ matrix.version }}
+        run: echo "VERSION=$MATRIX_VERSION" >> "$GITHUB_ENV"
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
@@ -194,4 +197,6 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: .upstream-checked
-          key: upstream-${{ matrix.tool }}-${{ matrix.version }}
+          # env.VERSION: the version installed, which scripts/upstream-install.sh may
+          # have set (opencode, when Homebrew moved on since the versions job).
+          key: upstream-${{ matrix.tool }}-${{ env.VERSION }}
