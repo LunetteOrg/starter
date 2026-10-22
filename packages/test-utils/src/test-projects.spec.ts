@@ -32,6 +32,24 @@ describe('testProjectPackages', () => {
     ])
   })
 
+  it('reads a project that points at another package by its root, with the default include', () => {
+    const workspace = join(project({}), 'apps/design-system')
+    const byRoot = { test: { projects: [{ root: '../../packages/ui', test: { name: 'ui' } }] } }
+    expect(testProjectPackages(workspace, byRoot)).toEqual([{ project: 'ui', include: '(default)', pkg: '@acme/ui' }])
+    const byDir = { test: { projects: [{ test: { name: 'icons', dir: '../../packages/icons/src' } }] } }
+    expect(testProjectPackages(workspace, byDir)).toEqual([
+      { project: 'icons', include: '(default)', pkg: '@acme/icons' },
+    ])
+  })
+
+  it('fails on an include that spans several packages, rather than skip it', () => {
+    const workspace = join(project({}), 'apps/design-system')
+    const braces = { test: { projects: [{ test: { name: 'all', include: ['../../packages/{ui,icons}/src/**'] } }] } }
+    expect(() => testProjectPackages(workspace, braces)).toThrow(
+      /project "all".*\.\.\/\.\.\/packages\/\{ui,icons\}.*one include per package/,
+    )
+  })
+
   it('reads the top-level include of a config with no projects', () => {
     const workspace = join(project({}), 'apps/design-system')
     expect(testProjectPackages(workspace, { test: { include: ['../../packages/ui/**/*.test.ts'] } })).toEqual([

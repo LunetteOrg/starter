@@ -8,8 +8,8 @@ tags: [testing, test-utils, vitest, biome, lint, guards]
 
 ## Context
 
-A Lunette app runs its jsdom tests in worker threads with `isolate: false`: the module
-registry is loaded once per worker and shared by every file the worker runs, which
+A project that runs its jsdom tests in worker threads with `isolate: false` loads the
+module registry once per worker and shares it with every file the worker runs, which
 roughly halves a jsdom-heavy suite. Sharing the registry makes some test code leak
 from one file into the next, and the leak depends on the order files run in: a test
 passes alone and fails in the suite, or the reverse. Other drift in a suite goes
@@ -35,7 +35,8 @@ output, `e2e/` (Playwright, no vitest registry) and `__fixtures__/` are not scan
 
 `assertNoModuleMocks(root)` fails on a hoisted `vi.mock` and on a `vi.doMock` without
 `vi.resetModules()` before the first `vi.doMock` and after the last `vi.doUnmock`.
-Comments and strings are blanked first.
+Comments, strings and regex literals are blanked first, so a mention of `vi.mock` in
+them is no call, and a quote inside `/can't/` opens no string.
 
 - A hoisted `vi.mock` registers in the shared registry and stays there: every later
   file of the worker imports the mock. A test replaces a dependency by injecting it,
@@ -57,11 +58,14 @@ WAIT)`, `waitFor(callback, WAIT)`). A file declares `const WAIT = { timeout: 5_0
   "this wait declared its budget" and is found by a search.
 - The calls are found by parsing (`parseAst` from vite 8, which reads TypeScript and
   JSX), so a call in a comment or a string is no call. Only testing-library's query
-  suffixes count, so a repository's `findById` is not a wait.
+  suffixes count, so a repository's `findById` is not a wait, and a `waitFor` with no
+  argument or an object first is Playwright's `locator.waitFor(options?)`, not a wait.
+- `ignore` takes globs, relative to the workspace, for modules the guard must not
+  read (a fixture that does not parse).
 
 `assertWaitingWorkspacesRunTheGuard(root)` is the rule that arms itself: every
 workspace whose test modules wait has a spec or test that calls
-`assertWaitsDeclareTimeout`. The guard sits in each workspace so that a wait without
+`assertWaitsDeclareTimeout`, found by parsing as well. The guard sits in each workspace so that a wait without
 `WAIT` fails that workspace's own test task, which a task cache keys on the
 workspace's files. `vite` is an optional peer of the package: only this subpath
 needs it, and vitest 4 already installs it.
@@ -85,7 +89,10 @@ needs it, and vitest 4 already installs it.
 `assertTestProjectsAreDependencies(workspace, config)` reads the inline projects of
 the workspace's vitest config (or its own `test.include`) and fails when an include
 points into another workspace whose package is not among the workspace's
-dependencies or devDependencies. Without the dependency, pnpm does not link the
+dependencies or devDependencies. A project with no `include` points at its `root`
+(and `test.dir`), where vitest's default include looks. An include whose fixed part
+stops above one package (`../../packages/{ui,icons}/**`) fails: the guard names one
+package per include. Without the dependency, pnpm does not link the
 package for the tests' imports, and a task cache keyed on the workspace's
 dependencies does not rerun those tests when only that package changes.
 
@@ -112,6 +119,11 @@ pays.
 - The checks read source text and configs, not the running suite: a mock reached
   through an alias of `vi`, or a test project given as a path to another config, is
   not seen.
+- The module-mocks scan tells a regex literal from a division by the token before the
+  `/`, and does not read JSX: a regex right after `)` (`if (x) /'/.test(s)`) or an
+  apostrophe in JSX text (`<p>Don't</p>`) is read as the start of a string, and the
+  code after it on the following lines is not scanned. The waits scans parse the
+  module and have neither miss.
 - The wait guard requires vite 8; a project on an older vite cannot import
   `@lntt/test-utils/waits`.
 - Projects call the guards from their own specs; a project that never calls one is not
@@ -127,7 +139,7 @@ pays.
 ## Discarded directions
 
 - **A `test-levels` guard** (every `.test` file opens an integration harness): the
-  [`levels` check](./test-checks.md#discarded-directions) of `lntt check tests` holds it.
+  [`levels` check](./test-checks.md#decision) of `lntt check tests` holds it.
 - **Accepting any options object as a wait's timeout.** An inline `{ timeout: 5_000 }`
   cannot be told from options that carry no timeout without evaluating them, and it
   scatters the budget across the file.

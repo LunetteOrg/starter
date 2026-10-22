@@ -26,6 +26,11 @@ describe('findModuleMocks', () => {
     expect(findModuleMocks("// vi.mock('./db.ts')\nconst doc = \"vi.mock('./db.ts')\"\n")).toEqual([])
   })
 
+  it('sees a vi.mock after a regex literal holding a quote', () => {
+    expect(findModuleMocks("it('x', () => expect(m).toMatch(/can't/))\nvi.mock('./db.ts')\n")).toHaveLength(1)
+    expect(findModuleMocks("const QUOTE = /[\"']/\nvi.mock('./db.ts')\n")).toHaveLength(1)
+  })
+
   it('lets a vi.doMock with the registry reset around it through', () => {
     expect(findModuleMocks(SCOPED)).toEqual([])
   })

@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { parseAst } from 'vite'
-import { blankCommentsAndStrings } from './source-scan.ts'
 import { lineAt, TEST_GUARDS_RECORD, testModules, workspaces, workspaceTestModules } from './test-modules.ts'
 
 /** The identifier a wait passes as its timeout: `const WAIT = { timeout: 5_000 }`. */
@@ -13,7 +12,7 @@ const FIND_QUERY = /^find(All)?By(Role|LabelText|PlaceholderText|Text|DisplayVal
 const WAIT_CALLS = new Set(['waitFor', 'waitForElementToBeRemoved'])
 
 /** A guard file calls this; mentioning it in a comment or a string does not count. */
-const GUARD_CALL = /\bassertWaitsDeclareTimeout\s*\(/
+const GUARD = 'assertWaitsDeclareTimeout'
 /** The guard is a test of the workspace, which its test task runs. */
 const TEST_FILE = /\.(spec|test)\.[cm]?tsx?$/
 
@@ -26,7 +25,10 @@ export interface Wait {
 }
 
 export interface WaitGuardOptions {
-  /** Globs relative to the root that are not scanned, on top of build output, `e2e/` and `__fixtures__/`. */
+  /**
+   * Globs that are not scanned, on top of build output, `e2e/` and `__fixtures__/`: relative
+   * to the root, or to the workspace for {@link assertWaitsDeclareTimeout}.
+   */
   ignore?: string[]
 }
 
@@ -45,34 +47,31 @@ function calleeName(callee: unknown): string | undefined {
   return undefined
 }
 
-/** Where the timeout goes: `findBy*(query, options, waitOptions)`, `waitFor(callback, options)`. */
-function timeoutPosition(name: string): number | undefined {
+/**
+ * Where the timeout goes: `findBy*(query, options, waitOptions)`, `waitFor(callback, options)`.
+ * A `waitFor` with no argument or an object first is Playwright's `locator.waitFor(options?)`,
+ * which takes no timeout of testing-library's: no wait.
+ */
+function timeoutPosition(name: string, args: unknown[]): number | undefined {
   if (FIND_QUERY.test(name)) return 2
-  if (WAIT_CALLS.has(name)) return 1
-  return undefined
+  if (!WAIT_CALLS.has(name)) return undefined
+  const [first] = args
+  return isNode(first) && first.type !== 'ObjectExpression' ? 1 : undefined
 }
 
-function collect(value: unknown, source: string, found: Wait[]): void {
+/** Calls `visit` on every call expression under `value`, with its callee's name. */
+function eachCall(value: unknown, visit: (call: AstNode, name: string, args: unknown[]) => void): void {
   if (Array.isArray(value)) {
-    for (const item of value) collect(item, source, found)
+    for (const item of value) eachCall(item, visit)
     return
   }
   if (!isNode(value)) return
   if (value.type === 'CallExpression') {
-    const call = calleeName(value.callee)
-    const position = call === undefined ? undefined : timeoutPosition(call)
-    if (call !== undefined && position !== undefined) {
-      const args = Array.isArray(value.arguments) ? value.arguments : []
-      const timeout: unknown = args[position]
-      found.push({
-        line: lineAt(source, value.start),
-        call,
-        timed: isNode(timeout) && timeout.type === 'Identifier' && timeout.name === TIMEOUT,
-      })
-    }
+    const name = calleeName(value.callee)
+    if (name !== undefined) visit(value, name, Array.isArray(value.arguments) ? value.arguments : [])
   }
   for (const [field, child] of Object.entries(value)) {
-    if (field !== 'type' && typeof child === 'object') collect(child, source, found)
+    if (field !== 'type' && typeof child === 'object') eachCall(child, visit)
   }
 }
 
@@ -83,12 +82,29 @@ function collect(value: unknown, source: string, found: Wait[]): void {
  */
 export function findWaits(source: string, lang: 'ts' | 'tsx' = 'tsx'): Wait[] {
   const found: Wait[] = []
-  collect(parseAst(source, { lang }), source, found)
+  eachCall(parseAst(source, { lang }), (node, call, args) => {
+    const position = timeoutPosition(call, args)
+    if (position === undefined) return
+    const timeout: unknown = args[position]
+    found.push({
+      line: lineAt(source, node.start),
+      call,
+      timed: isNode(timeout) && timeout.type === 'Identifier' && timeout.name === TIMEOUT,
+    })
+  })
   return found
 }
 
 function langOf(path: string): 'ts' | 'tsx' {
   return path.endsWith('x') ? 'tsx' : 'ts'
+}
+
+function parsed(dir: string, path: string): ReturnType<typeof parseAst> {
+  try {
+    return parseAst(readFileSync(resolve(dir, path), 'utf8'), { lang: langOf(path) })
+  } catch (error) {
+    throw new Error(`Cannot parse ${path}: ${error instanceof Error ? error.message : String(error)}`)
+  }
 }
 
 function waitsIn(dir: string, path: string): Wait[] {
@@ -97,6 +113,15 @@ function waitsIn(dir: string, path: string): Wait[] {
   } catch (error) {
     throw new Error(`Cannot parse ${path}: ${error instanceof Error ? error.message : String(error)}`)
   }
+}
+
+/** Whether the module calls the guard: parsed, so a mention in a comment or a string is no call. */
+function callsGuard(dir: string, path: string): boolean {
+  let called = false
+  eachCall(parsed(dir, path), (_, name) => {
+    if (name === GUARD) called = true
+  })
+  return called
 }
 
 /**
@@ -113,8 +138,8 @@ function waitsIn(dir: string, path: string): Wait[] {
  * })
  * ```
  */
-export function assertWaitsDeclareTimeout(workspace: string, label = '.'): void {
-  const files = testModules(workspace)
+export function assertWaitsDeclareTimeout(workspace: string, label = '.', options: WaitGuardOptions = {}): void {
+  const files = testModules(workspace, options.ignore)
   if (files.length === 0) throw new Error(`assertWaitsDeclareTimeout: no test file found under ${label}`)
   const offenders = files.flatMap((path) =>
     waitsIn(workspace, path)
@@ -146,10 +171,7 @@ export function assertWaitingWorkspacesRunTheGuard(root: string, options: WaitGu
     const files = workspaceTestModules(root, workspace, options.ignore)
     const waiting = files.filter((path) => waitsIn(dir, path).length > 0)
     if (waiting.length === 0) return []
-    const guarded = files.some(
-      (path) =>
-        TEST_FILE.test(path) && GUARD_CALL.test(blankCommentsAndStrings(readFileSync(resolve(dir, path), 'utf8'))),
-    )
+    const guarded = files.some((path) => TEST_FILE.test(path) && callsGuard(dir, path))
     return guarded ? [] : [`  - ${workspace} (${waiting.join(', ')})`]
   })
   if (unguarded.length > 0) {

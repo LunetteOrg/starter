@@ -6,16 +6,19 @@ import { workspaceRoot } from './workspace.ts'
 export interface TestProjectPackage {
   /** The test project's name, `(root)` for the config's own `test.include`. */
   project: string
+  /** The include glob, or `(default)` for a project that keeps vitest's include under its `root` or `test.dir`. */
   include: string
   /** The name of the package the include points into. */
   pkg: string
 }
 
 type Manifest = { name?: string; dependencies?: Record<string, string>; devDependencies?: Record<string, string> }
-type TestOptions = { name?: string | { label?: string }; include?: string[]; projects?: unknown[] }
+type TestOptions = { name?: string | { label?: string }; dir?: string; include?: string[]; projects?: unknown[] }
 type ProjectConfig = { root?: string; test?: TestOptions }
 
 const GLOB_CHARS = /[*?[\]{}()!]/
+/** How a project with no `include` is reported: it keeps vitest's default. */
+const DEFAULT_INCLUDE = '(default)'
 
 function readManifest(dir: string): Manifest {
   return JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as Manifest
@@ -36,6 +39,9 @@ function label(name: TestOptions['name']): string {
 /**
  * The packages of the project that `config`'s tests include from outside `workspace`:
  * each inline project's `test.include`, and the config's own when it has no projects.
+ * A project with no `include` keeps vitest's default under its `root` (and `test.dir`),
+ * which is then the directory it points at. An include whose fixed part stops above a
+ * package (`../../packages/{ui,icons}/**`) throws: it cannot be mapped to one package.
  * Projects given as paths (`'packages/*'`) are configs of their own and are not read.
  * Pass the config object a `vitest.config.ts` exports (`import config from '../vitest.config.ts'`).
  */
@@ -49,10 +55,23 @@ export function testProjectPackages(workspace: string, config: unknown): TestPro
   const projects = inline.length > 0 ? inline : [{ ...own, test: { ...own.test, name: own.test?.name ?? '(root)' } }]
   return projects.flatMap((project) => {
     const base = resolve(workspace, project.root ?? '.')
-    return (project.test?.include ?? []).flatMap((include) => {
-      if (include.startsWith('!')) return []
-      const target = resolve(base, staticPrefix(include))
-      const [group, name] = relative(root, target).split(sep)
+    const includes = project.test?.include
+    const targets: [include: string, target: string][] =
+      includes === undefined
+        ? [[DEFAULT_INCLUDE, resolve(base, project.test?.dir ?? '.')]]
+        : includes
+            .filter((include) => !include.startsWith('!'))
+            .map((include) => [include, resolve(base, staticPrefix(include))])
+    return targets.flatMap(([include, target]) => {
+      const path = relative(root, target)
+      if (target === resolve(workspace) || path.startsWith('..')) return []
+      const [group, name] = path === '' ? [] : path.split(sep)
+      if (group === undefined || ((group === 'apps' || group === 'packages') && name === undefined)) {
+        throw new Error(
+          `testProjectPackages: project "${label(project.test?.name)}" includes "${include}", ` +
+            'which spans several packages: write one include per package',
+        )
+      }
       if ((group !== 'apps' && group !== 'packages') || name === undefined) return []
       const dir = join(root, group, name)
       if (resolve(dir) === resolve(workspace) || !existsSync(join(dir, 'package.json'))) return []

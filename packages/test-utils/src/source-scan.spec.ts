@@ -20,6 +20,26 @@ describe('blankCommentsAndStrings', () => {
     expect(out.startsWith('a ')).toBe(true) // real code kept
     expect(out.trimEnd().endsWith('b')).toBe(true)
   })
+
+  it.each([
+    "expect(m).toMatch(/can't/)\nprocess.env.X",
+    'const QUOTE = /["\']/\nprocess.env.X',
+    "const r = /[/']/g; process.env.X",
+    'if (!/`/.test(s)) process.env.X',
+    "return /\\/'/\nprocess.env.X",
+  ])('reads a quote inside a regex literal as no string: %s', (src) => {
+    expect(blankCommentsAndStrings(src)).toMatch(/process\.env\.X/)
+  })
+
+  it('keeps division apart from a regex literal', () => {
+    expect(blankCommentsAndStrings("const half = total / 2 / count\nconst s = 'process.env'")).not.toMatch(
+      /process\.env/,
+    )
+    expect(blankCommentsAndStrings("const el = <p>x</p>\nconst s = 'process.env'")).not.toMatch(/process\.env/)
+    expect(blankCommentsAndStrings("const x = (a) / b + 'a/b'\nprocess.env.X")).toMatch(
+      /^const x = \(a\) \/ b \+ ' {3}'\nprocess\.env\.X$/,
+    )
+  })
 })
 
 describe('blankComments', () => {

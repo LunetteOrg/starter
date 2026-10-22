@@ -43,31 +43,54 @@ type BiomeConfig = { extends?: string | string[]; linter?: LinterSection; overri
 
 /** JSON with comments and trailing commas (`biome.jsonc`, `tsconfig.json`), parsed. */
 export function parseJsonc(text: string): unknown {
+  // Comments go first, so a comment between a trailing comma and its bracket is gone
+  // by the time the commas are read.
+  return JSON.parse(dropTrailingCommas(dropComments(text)))
+}
+
+/** Walks `text` outside its strings; `step` returns how far it consumed and what to emit. */
+function outsideStrings(text: string, step: (i: number) => [next: number, emitted: string]): string {
   let out = ''
   let inString = false
-  for (let i = 0; i < text.length; i++) {
+  for (let i = 0; i < text.length; ) {
     const c = text[i] as string
     if (inString) {
-      out += c
-      if (c === '\\') out += text[++i] ?? ''
-      else if (c === '"') inString = false
+      const escaped = c === '\\' ? (text[i + 1] ?? '') : ''
+      if (c === '"') inString = false
+      out += c + escaped
+      i += 1 + escaped.length
     } else if (c === '"') {
       inString = true
       out += c
-    } else if (c === '/' && text[i + 1] === '/') {
-      while (i < text.length && text[i] !== '\n') i++
-      out += '\n'
-    } else if (c === '/' && text[i + 1] === '*') {
-      const end = text.indexOf('*/', i + 2)
-      i = end === -1 ? text.length : end + 1
-      out += ' '
-    } else if (c === ',' && /^\s*[}\]]/.test(text.slice(i + 1))) {
-      out += ' '
+      i++
     } else {
-      out += c
+      const [next, emitted] = step(i)
+      out += emitted
+      i = next
     }
   }
-  return JSON.parse(out)
+  return out
+}
+
+function dropComments(text: string): string {
+  return outsideStrings(text, (i) => {
+    if (text.startsWith('//', i)) {
+      const end = text.indexOf('\n', i)
+      return [end === -1 ? text.length : end, '']
+    }
+    if (text.startsWith('/*', i)) {
+      const end = text.indexOf('*/', i + 2)
+      return [end === -1 ? text.length : end + 2, ' ']
+    }
+    return [i + 1, text[i] as string]
+  })
+}
+
+function dropTrailingCommas(text: string): string {
+  return outsideStrings(text, (i) => [
+    i + 1,
+    text[i] === ',' && /^\s*[}\]]/.test(text.slice(i + 1)) ? ' ' : (text[i] as string),
+  ])
 }
 
 function readJson<T>(path: string): T {

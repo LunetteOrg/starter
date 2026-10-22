@@ -35,6 +35,9 @@ describe('findWaits', () => {
     `screen.getByText('x')`,
     `const code = "screen.findByText('x')"`,
     `// await screen.findByText('x')`,
+    // Playwright's locator.waitFor(options?) is no testing-library wait.
+    `await page.getByRole('button').waitFor({ state: 'visible' })`,
+    `await dialog.waitFor()`,
   ])('lets %s through', (line) => {
     expect(untimed(line)).toEqual([])
   })
@@ -89,6 +92,16 @@ describe('assertWaitsDeclareTimeout', () => {
     expect(() => assertWaitsDeclareTimeout(probeProject({ 'app/page.tsx': '' }))).toThrow(/no test file/)
   })
 
+  it('skips the paths it is told to ignore, relative to the workspace', () => {
+    const workspace = probeProject({
+      'app/page.spec.tsx': `await screen.findByText('x', undefined, WAIT)`,
+      'test/fixtures/broken.ts': 'const = (',
+      'test/fixtures/untimed.ts': `await waitFor(check)`,
+    })
+    expect(() => assertWaitsDeclareTimeout(workspace, 'apps/web')).toThrow(/test\/fixtures/)
+    expect(() => assertWaitsDeclareTimeout(workspace, 'apps/web', { ignore: ['test/fixtures/**'] })).not.toThrow()
+  })
+
   it('names the file it cannot parse', () => {
     expect(() => assertWaitsDeclareTimeout(probeProject({ 'app/broken.spec.ts': 'const = (' }))).toThrow(
       /app\/broken\.spec\.ts/,
@@ -116,6 +129,15 @@ describe('assertWaitingWorkspacesRunTheGuard', () => {
       /packages\/ui \(test\/render\.ts\)[\s\S]*test-guards\.md/,
     )
     expect(() => assertWaitingWorkspacesRunTheGuard(root)).not.toThrow(/apps\/web|packages\/std/)
+  })
+
+  it('counts a guard call that follows a regex literal holding a quote', () => {
+    const root = probeProject({
+      'apps/web/package.json': pkg,
+      'apps/web/app/page.spec.tsx': `await screen.findByText('x', undefined, WAIT)`,
+      'apps/web/app/waits.spec.ts': `const r = /'/\nassertWaitsDeclareTimeout(WORKSPACE)\n`,
+    })
+    expect(() => assertWaitingWorkspacesRunTheGuard(root)).not.toThrow()
   })
 
   it('passes when every waiting workspace runs the guard', () => {

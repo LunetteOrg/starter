@@ -207,17 +207,17 @@ so a moved folder cannot pass vacuously.
 | Export | Asserts |
 |---|---|
 | `assertNoModuleMocks`, `findModuleMocks` | no hoisted `vi.mock`; a `vi.doMock` has `vi.resetModules()` before the first `vi.doMock` and after the last `vi.doUnmock` |
-| `assertWaitsDeclareTimeout`, `findWaits` (`@lntt/test-utils/waits`) | every `findBy*`, `findAllBy*`, `waitFor`, `vi.waitFor` and `waitForElementToBeRemoved` passes `WAIT` as its timeout |
+| `assertWaitsDeclareTimeout`, `findWaits` (`@lntt/test-utils/waits`) | every `findBy*`, `findAllBy*`, `waitFor`, `vi.waitFor` and `waitForElementToBeRemoved` passes `WAIT` as its timeout (Playwright's `locator.waitFor(options?)` is not a wait) |
 | `assertWaitingWorkspacesRunTheGuard` (`@lntt/test-utils/waits`) | every workspace whose tests wait has a test calling `assertWaitsDeclareTimeout` |
 | `assertBiomeDomainsDeclared`, `enabledBiomeDomains`, `BIOME_DOMAIN_OF_DEPENDENCY` | a dependency with a Biome rule domain (`vitest` → `test`, `react` → `react`…) finds it switched on in the project's Biome config |
 | `assertLintFailsOnWarnings` | every `lint` and `lint:*` script runs `biome check` with `--error-on-warnings` and `stylelint` with `--max-warnings 0` |
-| `assertTestProjectsAreDependencies`, `testProjectPackages` | every package a vitest test project includes files from is a dependency of the workspace |
+| `assertTestProjectsAreDependencies`, `testProjectPackages` | every package a vitest test project includes files from, or points at with `root`, is a dependency of the workspace |
 
 The scans read `apps/*` and `packages/*` (directories with a `package.json`): specs and
 tests, stories, `*-kit.ts(x)` helpers and any module under a `test/` directory, since a
 helper shares the worker's module registry with the spec that imports it. Build
 output, `e2e/` and `__fixtures__/` are not scanned; `ignore` takes more globs,
-relative to the root.
+relative to the root (to the workspace for `assertWaitsDeclareTimeout`).
 
 ```ts
 // packages/test-utils/src/suite.spec.ts: the project-wide guards

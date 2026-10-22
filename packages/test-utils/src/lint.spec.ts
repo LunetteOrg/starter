@@ -11,6 +11,14 @@ describe('parseJsonc', () => {
       b: [1, 2],
     })
   })
+
+  it.each([
+    ['{ "a": [1, 2, // last\n], }', { a: [1, 2] }],
+    ['{ "a": 1, /* x */ }', { a: 1 }],
+    ['{ "a": "x,]", }', { a: 'x,]' }],
+  ])('drops a trailing comma with a comment between it and the bracket: %s', (text, parsed) => {
+    expect(parseJsonc(text)).toEqual(parsed)
+  })
 })
 
 describe('enabledBiomeDomains', () => {
