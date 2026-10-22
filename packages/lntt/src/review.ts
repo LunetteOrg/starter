@@ -122,7 +122,48 @@ export interface Finding {
 // fields; `(no anchor)` in place of the anchor. Backticks and bold around the severity
 // or the anchor, which models add, are dropped first, and so is a parenthesis after the
 // anchor (a section, a key). Other lines are the reviewer talking.
-const FINDING = /^\s*[-*]\s*\[(blocker|warning|note)\]\s+(\(no anchor\)|\S+?)(?:\s+\([^)]*\))?\s+(?:—|–|-)\s+(.+)$/
+const SEVERITY = /^\s*[-*]\s*\[(blocker|warning|note)\]\s+(.+)$/
+const SEPARATOR = /\s+(?:—|–|-)\s+/
+const NO_ANCHOR = /^\(no anchor\)(?:\s+\([^)]*\))?\s+(?:—|–|-)\s+(.+)$/
+// The note the brief asks for when a check could not run, which has no anchor to name.
+const NOT_CHECKED = /^not checked:/i
+// A finding may name several places (`a.md:24-32 e :34-37`, `a.md:1 and b.md:2`): the
+// words between them are not places.
+const JOINERS = new Set(['e', 'and', 'et', 'y', '&', '+', 'also'])
+const pathLike = (token: string): boolean => /\/|\.\w|:\d/.test(token)
+
+interface Line {
+  severity: Severity
+  // The first place, or null; the others it names follow it.
+  anchor: string | null
+  also: string[]
+  // Everything after the anchor: `what — action`, and a mutation.
+  whole: string
+}
+
+function readLine(raw: string): Line | null {
+  const m = SEVERITY.exec(unwrap(raw))
+  if (!m) return null
+  const severity = m[1] as Severity
+  const rest = m[2] as string
+  const none = NO_ANCHOR.exec(rest)
+  if (none) return { severity, anchor: null, also: [], whole: none[1] as string }
+  const sep = SEPARATOR.exec(rest)
+  if (!sep) return NOT_CHECKED.test(rest) ? { severity, anchor: null, also: [], whole: rest } : null
+  const head = rest.slice(0, sep.index)
+  const tokens = head
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[`*]/g, '')
+    .split(/\s+/)
+    .map((t) => t.replace(/,+$/, ''))
+    .filter((t) => t !== '' && !JOINERS.has(t.toLowerCase()))
+  const whole = rest.slice(sep.index + sep[0].length)
+  // A head that is not a place at all is a finding with no anchor, whole.
+  if (tokens.length === 0 || (tokens.length > 1 && !pathLike(tokens[0] as string)))
+    return { severity, anchor: null, also: [], whole: rest }
+  return { severity, anchor: tokens[0] as string, also: tokens.slice(1), whole }
+}
+
 // A mutation closes a finding line: ``mutate: `text` => `mutated` `` (an arrow works as
 // well); the mutated text is empty when the text is to be deleted.
 const MUTATION = /\s*;?\s*mutate:\s*`([^`]+)`\s*(?:=>|→)\s*`([^`]*)`\s*\.?\s*$/
@@ -157,26 +198,30 @@ function findingLines(text: string): string[] {
   return out
 }
 
-// Finding lines that do not read as `[severity] anchor — what — action`: a reply with
-// any of them is not a review that can be trusted whole.
+// Finding lines that do not read as `[severity] anchor — what — action`: they are
+// reported apart, in full, and the readable ones of the reply stand.
+export function unreadableLines(text: string): string[] {
+  return findingLines(text).filter((line) => !readLine(line))
+}
+
 export function unreadableFindings(text: string): number {
-  return findingLines(text).filter((line) => !FINDING.exec(unwrap(line))).length
+  return unreadableLines(text).length
 }
 
 export function parseFindings(text: string): Finding[] {
   const findings: Finding[] = []
   for (const raw of findingLines(text)) {
-    const line = unwrap(raw)
-    const m = FINDING.exec(line)
-    if (!m) continue
-    const [, severity, anchor, whole] = m as unknown as [string, Severity, string, string]
+    const line = readLine(raw)
+    if (!line) continue
+    const { severity, anchor, whole } = line
     const mutation = MUTATION.exec(whole)
     const rest = mutation ? whole.slice(0, mutation.index) : whole
     const split = LAST_SEPARATOR.exec(rest)
-    const what = split ? (split[1] as string) : rest
+    const said = split ? (split[1] as string) : rest
+    const what = line.also.length > 0 ? `${said.trim()} (also ${line.also.join(', ')})` : said
     const action = split ? (split[2] as string) : ''
     // A range, a column or a list of lines (`a.ts:12-15`, `:12:5`, `:12,14`) names its first.
-    const at = anchor === '(no anchor)' ? null : /^(.+?)(?::(\d+)(?:[-–,:]\d+)*)?$/.exec(anchor)
+    const at = anchor === null ? null : /^(.+?)(?::(\d+)(?:[-–,:]\d+)*)?$/.exec(anchor)
     findings.push({
       severity,
       path: at ? (at[1] as string) : null,
@@ -425,6 +470,17 @@ export interface Failure {
   lens: string
   agent: string
   error: string
+  // The whole reply of a reviewer whose reply could not be used.
+  reply?: string
+}
+
+// A lens whose reply had finding lines that could not be read: the readable ones are in
+// the round, these are not, and the person or the child reads them.
+export interface Partial {
+  lens: string
+  agent: string
+  lines: string[]
+  reply: string
 }
 
 export type Verdict = Outcome | 'unverified' | 'withdrawn'
@@ -445,6 +501,9 @@ export interface RoundResult {
   refuted: Checked[]
   // Agents that did not answer: a failure keeps the round from being clean.
   failed: Failure[]
+  // Lenses with finding lines that could not be read: the round is not clean until they
+  // are read, but the lens did answer.
+  partial: Partial[]
   // Optional agents that did not answer: reported, never blocking.
   skipped: Failure[]
   cost: number | null
@@ -455,7 +514,11 @@ export interface RoundResult {
 // Notes are reported, never blocking: a round is clean when no blocker or warning is
 // left open and no reviewer or verifier failed.
 export function roundClean(result: RoundResult): boolean {
-  return result.findings.every((f) => f.severity === 'note' || f.verdict === 'withdrawn') && result.failed.length === 0
+  return (
+    result.findings.every((f) => f.severity === 'note' || f.verdict === 'withdrawn') &&
+    result.failed.length === 0 &&
+    result.partial.length === 0
+  )
 }
 
 export type Ask = (questions: Question[]) => Promise<Answer[]>
@@ -506,6 +569,7 @@ export async function runRound(
     findings: [],
     refuted: [],
     failed: [],
+    partial: [],
     skipped: [],
     cost: null,
     tokens: null,
@@ -531,26 +595,31 @@ export async function runRound(
     const job = jobs[i] as (typeof jobs)[number]
     result.cost = addCost(result.cost, answer)
     result.tokens = addTokens(result.tokens, answer)
-    const failed = (error: string) =>
+    const failed = (error: string, reply?: string) =>
       (job.agent.optional ? result.skipped : result.failed).push({
         lens: job.lens,
         agent: agentLabel(job.agent),
         error,
+        ...(reply === undefined ? {} : { reply }),
       })
     if (!answer.ok) {
       failed(answer.error)
       continue
     }
     const findings = parseFindings(answer.reply.text)
-    // A reply in another shape is a review that did not happen, not a clean one; one
-    // finding line that cannot be read makes the whole reply unreadable.
-    const unreadable = unreadableFindings(answer.reply.text)
-    if (unreadable > 0 || (findings.length === 0 && !isNoFindings(answer.reply.text))) {
-      const why =
-        unreadable > 0 ? `${unreadable} finding lines that cannot be read` : 'no finding line and not "no findings"'
-      failed(`${why}: ${answer.reply.text.trim().slice(0, 160)}`)
+    // A reply in another shape is a review that did not happen, not a clean one. A line
+    // that cannot be read does not take the readable ones with it: it is reported apart.
+    if (findings.length === 0 && !isNoFindings(answer.reply.text)) {
+      const lines = unreadableLines(answer.reply.text).length
+      failed(
+        lines > 0 ? `${lines} finding lines that cannot be read` : 'no finding line and not "no findings"',
+        answer.reply.text,
+      )
       continue
     }
+    const lines = unreadableLines(answer.reply.text)
+    if (lines.length > 0)
+      result.partial.push({ lens: job.lens, agent: agentLabel(job.agent), lines, reply: answer.reply.text })
     reviewed.push({ ...job, session: answer.reply.session, findings })
   }
   // Fresh reviewers read only the delta, so a finding still open from the last round
