@@ -54,6 +54,23 @@ describe('findModuleMocks', () => {
     expect(found).toHaveLength(1)
     expect(found[0]).toMatchObject({ line, message: expect.stringMatching(reason) })
   })
+
+  it('wants the reset before the first of several doMocks, not before any of them', () => {
+    const twoTests = [
+      "it('reads a', async () => {",
+      "  vi.doMock('./a.ts', () => ({}))",
+      "  vi.doUnmock('./a.ts')",
+      '  vi.resetModules()',
+      '})',
+      "it('reads b', async () => {",
+      '  vi.resetModules()',
+      "  vi.doMock('./b.ts', () => ({}))",
+      "  vi.doUnmock('./b.ts')",
+      '  vi.resetModules()',
+      '})',
+    ].join('\n')
+    expect(findModuleMocks(twoTests)).toEqual([{ line: 2, message: expect.stringMatching(/before/) }])
+  })
 })
 
 describe('assertNoModuleMocks', () => {
