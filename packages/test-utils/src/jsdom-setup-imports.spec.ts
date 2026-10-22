@@ -29,13 +29,27 @@ describe('findJsdomSetupImports', () => {
     'packages/talker/package.json': pkg,
     'packages/talker/src/notes.ts':
       "// never import '@lntt/test-utils/jsdom-setup' here\nexport const tip = \"import '@lntt/test-utils/jsdom-setup'\"\n",
+    'packages/ui/src/Upper.tsx': "import '@lntt/test-utils/jsdom-setup'\n",
+    'packages/ui/src/kit.jsx': "import '@lntt/test-utils/jsdom-setup'\n",
+    'packages/ui/src/esm.mts': "import '@lntt/test-utils/jsdom-setup'\n",
+    'packages/ui/src/cjs.cts': "require('@lntt/test-utils/jsdom-setup')\n",
     'packages/talker/node_modules/dep/index.js': "import '@lntt/test-utils/jsdom-setup'\n",
+    // Generated or built: no source of the project's.
+    'packages/talker/dist/index.js': "import '@lntt/test-utils/jsdom-setup'\n",
+    'packages/talker/build/server.js': "import '@lntt/test-utils/jsdom-setup'\n",
+    'packages/talker/coverage/report.js': "import '@lntt/test-utils/jsdom-setup'\n",
+    'apps/web/.react-router/types/app.ts': "import '@lntt/test-utils/jsdom-setup'\n",
   })
 
   it('finds every import of the setup, by file and line, and none of the listings or mentions', () => {
+    // Sorted by code unit, on every machine: `Upper` before `cjs`, which a locale puts after.
     expect(findJsdomSetupImports(root)).toEqual([
       { file: 'apps/web/test/setup.ts', line: 2 },
+      { file: 'packages/ui/src/Upper.tsx', line: 1 },
+      { file: 'packages/ui/src/cjs.cts', line: 1 },
+      { file: 'packages/ui/src/esm.mts', line: 1 },
       { file: 'packages/ui/src/from.ts', line: 1 },
+      { file: 'packages/ui/src/kit.jsx', line: 1 },
       { file: 'packages/ui/src/require.cjs', line: 1 },
       { file: 'packages/ui/vitest.setup.mjs', line: 1 },
     ])

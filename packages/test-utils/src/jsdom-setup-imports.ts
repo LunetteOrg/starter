@@ -4,9 +4,11 @@ import { globSync } from 'glob'
 import { blankCommentsAndStrings } from './source-scan.ts'
 
 /**
- * An import of the jsdom setup in any form: side effect, `from`, dynamic, `require`.
- * Matched on the raw source, kept only when the keyword is code (comments and strings
- * blanked), so a listing in `setupFiles` (a string) or a mention is not an import.
+ * An import of the jsdom setup by its package name, in any syntax: side effect,
+ * `from`, dynamic, `require`. A relative path to the source or an alias is not
+ * matched. Matched on the raw source, kept only when the keyword is code (comments and
+ * strings blanked), so a listing in `setupFiles` (a string) or a mention is not an
+ * import.
  */
 const IMPORTS_SETUP = /\b(?:import|from|require)\s*\(?\s*(['"`])@lntt\/test-utils\/jsdom-setup\1/g
 
@@ -21,7 +23,10 @@ export interface JsdomSetupImport {
   line: number
 }
 
-/** Every import of `@lntt/test-utils/jsdom-setup` in the workspaces under `apps/*` and `packages/*`. */
+/**
+ * Every import of `@lntt/test-utils/jsdom-setup` by name in the workspaces under
+ * `apps/*` and `packages/*`, sorted by file (code-unit order) and line.
+ */
 export function findJsdomSetupImports(root: string): JsdomSetupImport[] {
   const workspaces = globSync(['apps/*/', 'packages/*/'], { cwd: root })
     .map((name) => name.replace(/\/$/, ''))
@@ -29,23 +34,26 @@ export function findJsdomSetupImports(root: string): JsdomSetupImport[] {
   if (workspaces.length === 0) {
     throw new Error(`findJsdomSetupImports: no workspace with a package.json under apps/* or packages/* of ${root}`)
   }
-  return workspaces
-    .flatMap((name) =>
-      globSync('**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}', {
-        cwd: join(root, name),
-        absolute: true,
-        nodir: true,
-        ignore: NOT_SOURCE,
-      }),
-    )
-    .flatMap((path) => {
-      const source = readFileSync(path, 'utf8')
-      const code = blankCommentsAndStrings(source)
-      return [...source.matchAll(IMPORTS_SETUP)]
-        .filter((match) => code.startsWith(match[0].slice(0, 4), match.index))
-        .map((match) => ({ file: relative(root, path), line: source.slice(0, match.index).split('\n').length }))
-    })
-    .sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line)
+  return (
+    workspaces
+      .flatMap((name) =>
+        globSync('**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}', {
+          cwd: join(root, name),
+          absolute: true,
+          nodir: true,
+          ignore: NOT_SOURCE,
+        }),
+      )
+      .flatMap((path) => {
+        const source = readFileSync(path, 'utf8')
+        const code = blankCommentsAndStrings(source)
+        return [...source.matchAll(IMPORTS_SETUP)]
+          .filter((match) => code.startsWith(match[0].slice(0, 4), match.index))
+          .map((match) => ({ file: relative(root, path), line: source.slice(0, match.index).split('\n').length }))
+      })
+      // Code-unit order, the same on every machine: localeCompare follows the locale.
+      .sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line))
+  )
 }
 
 /**
