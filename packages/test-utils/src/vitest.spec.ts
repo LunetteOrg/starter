@@ -72,8 +72,30 @@ describe('appTest', () => {
     ])
   })
 
-  it('refuses a heavy project with nothing to include, and the jsdom setup listed twice', () => {
+  it('refuses a heavy project with nothing to include', () => {
     expect(() => appTest({ last: { name: 'dev-server', include: [] } })).toThrow(/include/)
-    expect(() => appTest({ setupFiles: ['@lntt/test-utils/jsdom-setup'] })).toThrow(/jsdom-setup/)
+  })
+
+  it('refuses the jsdom setup listed twice, by name or by path', () => {
+    for (const listed of [
+      '@lntt/test-utils/jsdom-setup',
+      './node_modules/@lntt/test-utils/dist/jsdom-setup.js',
+      '../../packages/test-utils/src/jsdom-setup.ts',
+    ]) {
+      expect(() => appTest({ setupFiles: [listed] }), listed).toThrow(
+        `appTest() lists @lntt/test-utils/jsdom-setup itself: remove ${listed} from its setupFiles.`,
+      )
+    }
+  })
+
+  it('accepts an app setup file that is only named like it', () => {
+    for (const own of [
+      './test/jsdom-setup.ts',
+      './jsdom-setup.ts',
+      './my-jsdom-setup.ts',
+      '@acme/test-utils/jsdom-setup',
+    ]) {
+      expect(appTest({ setupFiles: [own] }).setupFiles, own).toEqual([own, JSDOM_SETUP_FILE])
+    }
   })
 })
