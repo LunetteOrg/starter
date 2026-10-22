@@ -21,6 +21,7 @@ batch for what is expensive ([delivery](./delivery.md) has the flow):
 | A push to `main` | the full CI, which gates a release |
 | A Dependabot pull request | the `ci` check red in seconds, until an owner, member or collaborator approves it; the approval runs the CI the base calls for, and a later push turns it red again ([Dependabot pull requests](#dependabot-pull-requests)) |
 | A merge into a candidate | nothing |
+| Every day at 04:23 UTC, or by hand (`workflow_dispatch`) | the [upstream check](#upstream-tools) of each new release of Orca, Herdr, claude and opencode |
 
 `ci.yml` is one job, so each run is billed once. The job is skipped on a draft, and
 `ready_for_review` starts it when the draft leaves draft. The tests run on every run:
@@ -145,6 +146,35 @@ Dependabot's pull requests stay on `main` and merge as hotfixes, when a person d
   approval run is the cloud's.
 - A Dependabot pull request moved onto a candidate keeps the gate, and its approval
   runs the minimal CI, as for any pull request into a candidate.
+
+## Upstream tools
+
+lntt drives tools it does not own, and its own tests run against fakes of them.
+`upstream.yml` reads the latest release of each one every day and checks lntt against
+each version it has not checked yet, in a job of its own on a throwaway runner:
+`scripts/upstream-install.sh` installs it, and `packages/lntt/test/upstream-<tool>.test.ts`
+runs with `UPSTREAM_SMOKE=<tool>` (the tests skip without it).
+
+| Tool | Where its version comes from | What the test checks |
+|---|---|---|
+| Orca | GitHub Releases of `stablyai/orca` (the `.deb`) | the flags lntt passes, against `orca agent-context --json`; on a headless `orca serve`, `startOrca` with the real `claude` not logged in (path, handle, model, effort, brief) and with opencode's shell launch, and the review's subagents through Orca's hook script |
+| Herdr | GitHub Releases of `herdrdev/herdr` | the flags, against each subcommand's `--help`; on a headless `herdr server`, `startHerdr` through `agent start` and through the shell command Herdr detects |
+| claude | npm `@anthropic-ai/claude-code` | the flags, against `claude --help`; with the `ANTHROPIC_API_KEY` secret, a one-line call on `haiku` whose JSON lntt parses |
+| opencode | Homebrew's `opencode` formula | the flags, against `opencode run --help` and `opencode --help`; a one-line call on a free model whose JSON lntt parses |
+
+A version counts as checked once its cache entry `upstream-<tool>-<version>` exists, which
+the job saves green or red. GitHub evicts an entry unused for seven days; the version is
+then checked again, and its issue, if any, stops a second one. `workflow_dispatch` takes
+one tool and `force`, to check a version again.
+
+A red opens the issue `<tool> <version> breaks lntt`, once per tool and version, with the
+failing step, the run and the end of the log. Whoever takes it reads the log, then fixes
+lntt's adapter (`packages/lntt/src/worktree.ts`, `headless.ts`, `orca-subagents.ts`) or
+records the tool's change in the decision that relies on it
+([worktree tooling](../adr/worktree-tooling.md), [review agents](../adr/review-agents.md)).
+A red that is the runner's (a download that failed, a timeout) closes the issue and runs
+the workflow again with that tool and `force`; that run opens no second issue, so its
+outcome is read in the run.
 
 ## Discarded directions
 

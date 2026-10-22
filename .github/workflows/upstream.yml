@@ -1,0 +1,182 @@
+name: Upstream tools
+
+# lntt drives tools it does not own (Orca, Herdr, claude, opencode), which release often;
+# lntt's own tests run against fakes and cannot see a real tool change. Every day this
+# reads each tool's latest version and, for each one not checked yet, installs it on a
+# throwaway runner and runs lntt's upstream test for it (packages/lntt/test/upstream-*);
+# a red opens an issue `<tool> <version> breaks lntt`, once per tool and version. What to
+# do with it: docs/process/ci.md.
+#
+# One workflow, one job per tool through a matrix: each tool gets its own log, its own
+# red and its own issue, while the install, the issue and the cache steps are written
+# once. A day with nothing new is one short job (GitHub bills each job rounded up to the
+# minute).
+on:
+  schedule:
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+    inputs:
+      tool:
+        description: The tool to check
+        type: choice
+        options: [all, orca, herdr, claude, opencode]
+        default: all
+      force:
+        description: Check again a version already checked
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  versions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      tools: ${{ steps.new.outputs.tools }}
+    steps:
+      # opencode from Homebrew: it follows upstream's tags (npm and GitHub Releases stay
+      # on an older line), and it is what the operators run; no template installs it.
+      - id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "orca=$(gh api repos/stablyai/orca/releases/latest --jq .tag_name | sed 's/^v//')"
+            echo "herdr=$(gh api repos/herdrdev/herdr/releases/latest --jq .tag_name | sed 's/^v//')"
+            echo "claude=$(npm view @anthropic-ai/claude-code version)"
+            echo "opencode=$(curl -fsSL https://formulae.brew.sh/api/formula/opencode.json | jq -r .versions.stable)"
+          } >> "$GITHUB_OUTPUT"
+      # A version counts as checked when its cache entry exists: the check job saves one
+      # whatever the outcome, so a red version is not checked again each day. GitHub
+      # evicts an entry unused for 7 days; the issue step then finds its issue and opens
+      # none.
+      - id: orca
+        uses: actions/cache/restore@v6
+        with:
+          path: .upstream-checked
+          key: upstream-orca-${{ steps.latest.outputs.orca }}
+          lookup-only: true
+      - id: herdr
+        uses: actions/cache/restore@v6
+        with:
+          path: .upstream-checked
+          key: upstream-herdr-${{ steps.latest.outputs.herdr }}
+          lookup-only: true
+      - id: claude
+        uses: actions/cache/restore@v6
+        with:
+          path: .upstream-checked
+          key: upstream-claude-${{ steps.latest.outputs.claude }}
+          lookup-only: true
+      - id: opencode
+        uses: actions/cache/restore@v6
+        with:
+          path: .upstream-checked
+          key: upstream-opencode-${{ steps.latest.outputs.opencode }}
+          lookup-only: true
+      - id: new
+        env:
+          ONLY: ${{ inputs.tool || 'all' }}
+          FORCE: ${{ inputs.force || false }}
+          ORCA: ${{ steps.latest.outputs.orca }} ${{ steps.orca.outputs.cache-hit }}
+          HERDR: ${{ steps.latest.outputs.herdr }} ${{ steps.herdr.outputs.cache-hit }}
+          CLAUDE: ${{ steps.latest.outputs.claude }} ${{ steps.claude.outputs.cache-hit }}
+          OPENCODE: ${{ steps.latest.outputs.opencode }} ${{ steps.opencode.outputs.cache-hit }}
+        run: |
+          tools='[]'
+          for pair in "orca $ORCA" "herdr $HERDR" "claude $CLAUDE" "opencode $OPENCODE"; do
+            read -r tool version hit <<< "$pair"
+            [ "$ONLY" = all ] || [ "$ONLY" = "$tool" ] || continue
+            if [ -z "$version" ]; then echo "::error::no latest version read for $tool"; exit 1; fi
+            if [ "$hit" = true ] && [ "$FORCE" != true ]; then echo "$tool $version: already checked"; continue; fi
+            echo "$tool $version: to check"
+            tools=$(echo "$tools" | jq -c --arg t "$tool" --arg v "$version" '. + [{tool: $t, version: $v}]')
+          done
+          echo "tools=$tools" >> "$GITHUB_OUTPUT"
+
+  check:
+    needs: versions
+    if: needs.versions.outputs.tools != '[]'
+    name: ${{ matrix.tool }} ${{ matrix.version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.versions.outputs.tools) }}
+    env:
+      TOOL: ${{ matrix.tool }}
+      VERSION: ${{ matrix.version }}
+    defaults:
+      run:
+        # pipefail: a step that tees into the log fails with the command, not with tee.
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+      # Only @lntt/lntt and what it depends on.
+      - id: install
+        run: pnpm install --frozen-lockfile --filter '@lntt/lntt...'
+      - id: tool
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh scripts/upstream-install.sh "$TOOL" "$VERSION" 2>&1 | tee -a upstream.log
+      # claude's JSON reply needs a real call: with no ANTHROPIC_API_KEY secret, that
+      # test skips with its reason and the flags check still runs.
+      - id: test
+        env:
+          UPSTREAM_SMOKE: ${{ matrix.tool }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: node --test "packages/lntt/test/upstream-$TOOL.test.ts" 2>&1 | tee -a upstream.log
+      # One issue per tool and version: an issue with that title, open or closed, also
+      # covers a forced run and a cache entry GitHub evicted.
+      - name: Open an issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          STEP: >-
+            ${{ steps.install.outcome == 'failure' && 'pnpm install' ||
+            steps.tool.outcome == 'failure' && 'scripts/upstream-install.sh' ||
+            steps.test.outcome == 'failure' && format('the upstream test (packages/lntt/test/upstream-{0}.test.ts)', matrix.tool) ||
+            'a setup step' }}
+        run: |
+          title="$TOOL $VERSION breaks lntt"
+          found=$(gh issue list --repo "$GITHUB_REPOSITORY" --state all --search "\"$title\" in:title" --json title --jq '.[].title')
+          if printf '%s\n' "$found" | grep -qxF "$title"; then
+            echo "an issue named \"$title\" exists; none opened"
+            exit 0
+          fi
+          {
+            echo "The scheduled check of lntt against $TOOL $VERSION failed at **$STEP**."
+            echo
+            echo "Run: $RUN_URL"
+            echo
+            echo "What to do: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/main/docs/process/ci.md#upstream-tools"
+            echo
+            echo '<details><summary>The end of the log</summary>'
+            echo
+            echo '```'
+            tail -n 80 upstream.log 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g'
+            echo '```'
+            echo
+            echo '</details>'
+          } > issue.md
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file issue.md
+      - if: ${{ !cancelled() }}
+        run: mkdir -p .upstream-checked && echo "$TOOL $VERSION ${{ job.status }}" > .upstream-checked/version
+      - if: ${{ !cancelled() }}
+        uses: actions/cache/save@v6
+        with:
+          path: .upstream-checked
+          key: upstream-${{ matrix.tool }}-${{ matrix.version }}
