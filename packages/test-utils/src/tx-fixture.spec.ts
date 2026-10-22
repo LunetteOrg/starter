@@ -42,7 +42,7 @@ describe('assertTestsUseTxFixture', () => {
       message = (error as Error).message
     }
     expect(message.match(/apps\/web\/\S+:\d+/g)).toEqual(['apps/web/app/seed-kit.ts:1', 'apps/web/app/users.test.ts:3'])
-    expect(message).toMatch(/txTest[\s\S]*\{ tx \}[\s\S]*docs\/adr\/test-guards\.md/)
+    expect(message).toMatch(/txTest[\s\S]*starter#90[\s\S]*\{ tx \}[\s\S]*docs\/adr\/test-guards\.md/)
   })
 
   it('passes a project whose tests take tx from the fixture, built from withTestDb by reference', () => {

@@ -25,7 +25,8 @@ from its own specs.
 The package exports one guard per rule. Each takes the project root (or a workspace),
 throws a message naming every offending `file:line` and pointing at this record, and
 fails when its scan finds nothing to check, so a moved folder cannot pass on an empty
-list. The scans read the workspaces under `apps/*` and `packages/*` that have a
+list. The messages cite this record by its URL on the starter's `main` branch, not by a
+path in the consuming project, whose records do not hold these rules. The scans read the workspaces under `apps/*` and `packages/*` that have a
 `package.json`, and in each the modules a test run loads: specs and tests, stories,
 `*-kit.ts(x)` helpers and any module under a `test/` directory. A helper shares the
 worker's registry with the spec that imports it, so it obeys the same rules. Build
@@ -87,10 +88,12 @@ needs it, and vitest 4 already installs it.
 ### The tx fixture
 
 `assertTestsUseTxFixture(root)` fails on every test module that calls `withTestDb(`
-itself. An integration test reaches the database through the `tx` fixture that
-`txTest` of `@lntt/test-utils` (#90) builds, `export const it = txTest(db.withTestDb)`,
-and asks for `tx` in its signature: the rollback around the test is the fixture's, so
-a test cannot open a second transaction beside it or forget to roll its own back.
+itself. It pairs with `txTest`, the tx fixture that #90 adds to `@lntt/test-utils`: a
+project turns the guard on once it builds the fixture with `txTest`. An integration
+test reaches the database through that fixture, `export const it =
+txTest(db.withTestDb)`, and asks for `tx` in its signature: the rollback around the
+test is the fixture's, so a test cannot open a second transaction beside it or forget
+to roll its own back.
 Passing the function by reference, as `txTest(db.withTestDb)` does, is no call. The
 scan blanks comments, strings and regex literals first, like the module-mocks scan,
 and reads the same modules.
