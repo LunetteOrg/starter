@@ -135,8 +135,9 @@ So:
   `@lntt/lntt` version in the project's lockfile; the file carries none.
   - It only grows: a new field or section is optional, never `required`, and its
     absence means the behaviour from before it existed. An enum only gains values.
-    A newer `lntt` therefore reads an older file; a test that validates a
-    configuration of each released version against the current schema holds it.
+    A newer `lntt` therefore reads an older file; the rule needs a test that
+    validates a configuration of each released version against the current schema
+    (accepted risks).
   - An older `lntt` rejects a field it does not know, as `additionalProperties: false`
     does: an unknown field is a typo until proven otherwise. A project writes a new
     field after bumping `@lntt/lntt` to a version that knows it, and `lntt validate`
@@ -144,8 +145,9 @@ So:
   - A missing file means the defaults (`NoConfigError` in
     `packages/lntt/src/files.ts`); a file that does not validate stops the command
     with the error, as `lntt review` does (`loaded` in
-    `packages/lntt/src/review-cli.ts`). A command answers an invalid file with an
-    error, never with its defaults; the accepted risks name the two that do not.
+    `packages/lntt/src/review-cli.ts`). The rule is that an invalid file gets an
+    error, not the defaults; two commands still answer it with their defaults
+    (accepted risks).
   - A removal or a rename is a breaking change, the one release where an older file
     stops validating: the release knows both names, the gate fails on the old one and
     names the new one while the agent tools still read it, and a later release drops
@@ -182,10 +184,11 @@ So:
 - A host's change reaches a project's agent tools only with a release and that
   project's bump, until the split's trigger fires.
 - `lntt worktree start` and the commitlint configuration answer a file that does not
-  validate with their defaults (`projectConfig` in `packages/lntt/src/worktree-cli.ts`,
-  `commits` in `packages/lntt/src/commitlint.ts`), against the compatibility rule, and no test
-  validates each released version's configuration: until the work that follows this
-  record closes both gaps, the rule rests on review.
+  validate with their defaults (`projectConfig` in
+  `packages/lntt/src/worktree-cli.ts`, `commits` in `packages/lntt/src/commitlint.ts`),
+  against the compatibility rule, and no test validates each released version's
+  configuration: until the work that follows this record closes both gaps, the rule
+  rests on review.
 
 ### When to deviate (revisit triggers)
 
