@@ -4,7 +4,15 @@ export {
   getImports,
   type LayerBoundaryOptions,
 } from './arch.ts'
-export { assertContainerUsersMountAPlugin, type ContainerUser, containerUsers } from './containers.ts'
+export {
+  assertContainerRules,
+  type ContainerRuleOptions,
+  ryukDisablers,
+  type SourceLocation,
+  type TestDbUser,
+  testDbUsers,
+  unlabelledContainers,
+} from './containers.ts'
 export {
   createTestDb,
   hasTestDatabase,
@@ -14,8 +22,6 @@ export {
   type TestDbOptions,
   type TestTransaction,
   txTest,
-  WORKSPACE_LABEL,
-  workspaceRoot,
 } from './db.ts'
 export { defineFixture } from './fixtures.ts'
 export {
@@ -37,3 +43,4 @@ export {
   type SourcePatternViolation,
   type SourceRule,
 } from './source-scan.ts'
+export { WORKSPACE_LABEL, workspaceRoot } from './workspace.ts'

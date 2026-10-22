@@ -8,10 +8,19 @@ const GLOBAL_SETUP = fileURLToPath(new URL(`./global-setup${extname(import.meta.
 /**
  * For every package whose tests touch the database. It registers the globalSetup that
  * starts ONE Postgres for the vitest process, publishes it as `TEST_DATABASE_URL` and
- * stops it at the end, and it disables the testcontainers reaper.
+ * stops it at the end. Nothing else: no environment variable, in this process or in
+ * the workers.
  *
- * Without it there is no globalSetup, and every worker that calls `createTestDb`
- * starts a Postgres of its own that nobody stops.
+ * Ryuk, the testcontainers reaper, stays on. The globalSetup runs in the MAIN vitest
+ * process, which holds Ryuk's connection from the first file to the last, and no
+ * worker starts a container; so Ryuk removes the Postgres only once the run itself is
+ * gone, which is what makes a `SIGKILL`ed run clean up after itself. A machine that
+ * cannot run Ryuk (offline without its image, a runtime that does not let it mount
+ * the Docker socket) sets `TESTCONTAINERS_RYUK_DISABLED=true` in its own shell; this
+ * plugin neither sets nor clears it.
+ *
+ * Without the plugin there is no globalSetup, and every worker that calls
+ * `createTestDb` starts a Postgres of its own.
  *
  * @example
  * ```ts
@@ -24,32 +33,7 @@ export function testDbPlugin(): Plugin {
   return {
     name: 'lntt-test-db',
     config() {
-      // HERE and in `test.env` below: `config()` runs in the MAIN process, where the
-      // globalSetup starts the container; `test.env` reaches the workers. Ryuk would
-      // kill the run's Postgres when its last connection drops, between two files.
-      process.env.TESTCONTAINERS_RYUK_DISABLED = 'true'
-      return {
-        test: {
-          globalSetup: [GLOBAL_SETUP],
-          env: { TESTCONTAINERS_RYUK_DISABLED: 'true' },
-        },
-      }
-    },
-  }
-}
-
-/**
- * The Ryuk half of `testDbPlugin()`, for a package that starts other containers and
- * no test database. Ryuk is a per-MACHINE singleton: one package that leaves it on
- * starts the reaper, and every later process adopts it. Such a package stops its
- * own containers.
- */
-export function ryukDisabledPlugin(): Plugin {
-  return {
-    name: 'lntt-ryuk-disabled',
-    config() {
-      process.env.TESTCONTAINERS_RYUK_DISABLED = 'true'
-      return { test: { env: { TESTCONTAINERS_RYUK_DISABLED: 'true' } } }
+      return { test: { globalSetup: [GLOBAL_SETUP] } }
     },
   }
 }

@@ -1,13 +1,22 @@
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
-// No dependency beyond Node: `lntt-clean-test` imports this module and must not load
+// No dependency beyond Node: `lntt-clean-test` imports this module, and so does a suite
+// that labels its own containers (`@lntt/test-utils/workspace`), and neither must load
 // testcontainers, postgres or the drizzle peer to find a label.
 
 /**
- * Label stamped on every Postgres this package starts, valued with the workspace it
- * belongs to. It is what makes a cleanup safe: culling by image would destroy other
- * projects' Postgres. `lntt-clean-test` culls by this label only.
+ * Label stamped on every container a project's tests start, valued with the workspace
+ * it belongs to: the Postgres this package starts, and any other container, which
+ * `assertContainerRules` requires to carry it in its builder chain. It is what makes a
+ * cleanup safe: culling by image would destroy other projects' containers.
+ * `lntt-clean-test` culls by this label only.
+ *
+ * @example
+ * ```ts
+ * import { WORKSPACE_LABEL, workspaceRoot } from '@lntt/test-utils/workspace'
+ * new GenericContainer('vault').withLabels({ [WORKSPACE_LABEL]: workspaceRoot() })
+ * ```
  */
 export const WORKSPACE_LABEL = 'com.lntt.workspace'
 

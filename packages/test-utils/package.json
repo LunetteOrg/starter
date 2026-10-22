@@ -19,6 +19,10 @@
     "./plugin": {
       "types": "./dist/plugin.d.ts",
       "default": "./dist/plugin.js"
+    },
+    "./workspace": {
+      "types": "./dist/workspace.d.ts",
+      "default": "./dist/workspace.js"
     }
   },
   "bin": {

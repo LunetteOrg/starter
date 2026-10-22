@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { assertNoSourcePattern, blankCommentsAndStrings, findSourceMatches } from './source-scan.ts'
+import { assertNoSourcePattern, blankComments, blankCommentsAndStrings, findSourceMatches } from './source-scan.ts'
 
 const FIXTURES = resolve(__dirname, '__fixtures__/source-scan')
 
@@ -19,6 +19,16 @@ describe('blankCommentsAndStrings', () => {
     expect(out).not.toMatch(/throw new Error/)
     expect(out.startsWith('a ')).toBe(true) // real code kept
     expect(out.trimEnd().endsWith('b')).toBe(true)
+  })
+})
+
+describe('blankComments', () => {
+  it('blanks comments and keeps string literals, escapes included, at the same length', () => {
+    const src = "a // NAME\n/* NAME */ env['NAME'] = 'it\\'s'\nb"
+    const out = blankComments(src)
+    expect(out).toHaveLength(src.length)
+    expect(out.split('\n')[0]).toBe('a        ')
+    expect(out.split('\n')[1]).toBe("           env['NAME'] = 'it\\'s'")
   })
 })
 
