@@ -9,8 +9,8 @@ tags: [testing, test-utils, vitest, biome, lint, guards]
 ## Context
 
 A project that runs its jsdom tests in worker threads with `isolate: false` loads the
-module registry once per worker and shares it with every file the worker runs, which
-roughly halves a jsdom-heavy suite. Sharing the registry makes some test code leak
+module registry once per worker and shares it with every file the worker runs, instead
+of once per file. Sharing the registry makes some test code leak
 from one file into the next, and the leak depends on the order files run in: a test
 passes alone and fails in the suite, or the reverse. Other drift in a suite goes
 unseen for the opposite reason: nothing fails. A lint domain switched off, a lint
@@ -26,8 +26,8 @@ The package exports one guard per rule. Each takes the project root (or a worksp
 throws a message naming every offending `file:line` and pointing at this record, and
 fails when its scan finds nothing to read (no test file, no lint script, no dependency
 with a domain, no test project into another package), so a moved folder cannot pass on
-an empty list. The messages cite this record by its URL on the starter's `main` branch, not by a
-path in the consuming project, whose records do not hold these rules. The scans read the workspaces under `apps/*` and `packages/*` that have a
+an empty list. The messages cite this record by its URL on the starter's `main`
+branch. The scans read the workspaces under `apps/*` and `packages/*` that have a
 `package.json`, and in each the modules a test run loads: specs and tests, stories,
 `*-kit.ts(x)` helpers and any module under a `test/` directory. A helper shares the
 worker's registry with the spec that imports it, so it obeys the same rules. Build
@@ -62,7 +62,7 @@ WAIT)`, `waitFor(callback, WAIT)`). A file declares `const WAIT = { timeout: 5_0
 
 - A global `configure({ asyncUtilTimeout })` is module state: under `isolate: false`
   it reaches every file the worker runs after it. A timeout on each call does not.
-- The identifier, not any options object, is what the guard accepts: one name says
+- The guard accepts the identifier `WAIT`: one name says
   "this wait declared its budget" and is found by a search.
 - The calls are found by parsing (`parseAst` from vite 8, which reads TypeScript and
   JSX), so a call in a comment or a string is no call. Only testing-library's query
@@ -83,7 +83,7 @@ around it. A project with test modules and no wait passes; one whose workspaces 
 test module fails. The guard sits in each workspace so that a wait without
 `WAIT` fails that workspace's own test task, which a task cache keys on the
 workspace's files. `vite` is an optional peer of the package: only this subpath
-needs it, and vitest 4 already installs it.
+needs it.
 
 ### Lint
 
@@ -102,15 +102,17 @@ needs it, and vitest 4 already installs it.
 ### The tx fixture
 
 `assertTestsUseTxFixture(root)` fails on every test module that calls `withTestDb(`
-itself. It pairs with `txTest`, the tx fixture that #90 adds to `@lntt/test-utils`: a
-project turns the guard on once it builds the fixture with `txTest`. An integration
+itself. It pairs with `txTest`, the tx fixture of `@lntt/test-utils`: a project turns
+the guard on once it builds the fixture with `txTest`. An integration
 test reaches the database through that fixture, `export const it =
 txTest(db.withTestDb)`, and asks for `tx` in its signature: the rollback around the
 test is the fixture's, so a test cannot open a second transaction beside it or forget
 to roll its own back.
 Passing the function by reference, as `txTest(db.withTestDb)` does, is no call. The
 scan blanks comments, strings and regex literals first, like the module-mocks scan,
-and reads the same modules.
+and reads the same modules. The package's own probe builder, `probe-kit.ts`, follows
+the `*-kit.ts` naming of a test helper, and `tsconfig.build.json` leaves `*-kit.ts`
+out of the published build.
 
 ### Test projects
 
@@ -151,7 +153,8 @@ pays.
 - The checks read source text and configs, not the running suite: a mock reached
   through an alias of `vi`, or a test project given as a path to another config, is
   not seen.
-- The module-mocks and tx-fixture scans tell a regex literal from a division by the
+- The module-mocks and tx-fixture scans, and the source-pattern guards that share
+  their blanking (`blankCommentsAndStrings`), tell a regex literal from a division by the
   token before the `/`, and do not read JSX: a regex right after `)` or `}`
   (`if (x) /'/.test(s)`, a regex opening the statement after a block) or an apostrophe
   in JSX text (`<p>Don't</p>`) is read as the start of a string, and the code after it
@@ -184,6 +187,8 @@ pays.
   scatters the budget across the file.
 - **Matching waits with a regular expression.** It cannot tell a call from a mention in
   a string or a template literal, and misses the argument position.
+- **Citing this record by a path in the consuming project.** The consuming project's
+  records do not hold these rules.
 - **Specs in this package that scan the consuming project.** The package is installed
   in other projects and does not know their root; the guards are functions their specs
   call, and `repo.spec.ts` is this repo calling them on itself.

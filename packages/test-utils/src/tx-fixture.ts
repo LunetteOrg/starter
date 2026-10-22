@@ -25,7 +25,7 @@ export function findDirectTestDbCalls(source: string): number[] {
  * itself instead of taking `tx` from the fixture `txTest(db.withTestDb)` builds, in
  * the specs, tests, stories and test helpers (`*-kit.ts(x)`, anything under `test/`)
  * of the workspaces under `apps/*` and `packages/*` of `root`. It pairs with `txTest`,
- * the tx fixture LunetteOrg/starter#90 adds to this package.
+ * the tx fixture of this package.
  *
  * @example
  * ```ts
@@ -45,7 +45,7 @@ export function assertTestsUseTxFixture(root: string, options: TxFixtureOptions 
   if (offenders.length > 0) {
     throw new Error(
       `These test modules call withTestDb directly:\n${offenders.join('\n')}\n` +
-        'This guard pairs with txTest, the tx fixture LunetteOrg/starter#90 adds to @lntt/test-utils: ' +
+        'This guard pairs with txTest, the tx fixture of @lntt/test-utils: ' +
         'build the fixture once, `export const it = txTest(db.withTestDb)`, ' +
         `and take the transaction in the test's signature: \`it('…', async ({ tx }) => …)\`. ` +
         `See ${TEST_GUARDS_RECORD} (tx fixture).`,

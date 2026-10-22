@@ -78,6 +78,11 @@ describe('testProjectPackages', () => {
     expect(testProjectPackages(workspace, negated)).toEqual([{ project: 'ui', include: 'src/**', pkg: '@acme/ui' }])
   })
 
+  it('skips an include that leaves the pnpm workspace root, which is no package of it', () => {
+    const workspace = join(project({}), 'apps/design-system')
+    expect(testProjectPackages(workspace, { test: { include: ['../../../outside/**/*.test.ts'] } })).toEqual([])
+  })
+
   it('names a package manifest that does not parse', () => {
     const root = probeProject({
       'pnpm-workspace.yaml': 'packages: ["apps/*", "packages/*"]\n',

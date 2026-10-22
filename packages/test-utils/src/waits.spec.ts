@@ -156,6 +156,8 @@ describe('assertWaitingWorkspacesRunTheGuard', () => {
     ],
     ['in it.todo', `${IMPORT}it.todo('w', () => assertWaitsDeclareTimeout(WORKSPACE))`],
     ['in it.skipIf', `${IMPORT}it.skipIf(ci)('w', () => assertWaitsDeclareTimeout(WORKSPACE))`],
+    ['in it.runIf', `${IMPORT}it.runIf(ci)('w', () => assertWaitsDeclareTimeout(WORKSPACE))`],
+    ['in it.fails', `${IMPORT}it.fails('w', () => assertWaitsDeclareTimeout(WORKSPACE))`],
     ['in xit', `${IMPORT}xit('w', () => assertWaitsDeclareTimeout(WORKSPACE))`],
     [
       'in a function never called',

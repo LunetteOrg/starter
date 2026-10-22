@@ -138,6 +138,11 @@ describe('assertLintFailsOnWarnings', () => {
     expect(() => assertLintFailsOnWarnings(root)).toThrow(/`biome lint src` needs --error-on-warnings/)
   })
 
+  it('reads biome ci as a Biome step', () => {
+    const root = probeProject({ 'package.json': manifest({ scripts: { lint: 'biome ci .' } }) })
+    expect(() => assertLintFailsOnWarnings(root)).toThrow(/`biome ci \.` needs --error-on-warnings/)
+  })
+
   it('fails naming a manifest that does not parse', () => {
     const root = probeProject({
       'package.json': manifest({ scripts: { lint: 'biome check --error-on-warnings' } }),

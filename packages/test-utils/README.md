@@ -213,7 +213,7 @@ then passes a project whose tests do not wait.
 | `assertWaitingWorkspacesRunTheGuard` (`@lntt/test-utils/waits`) | every workspace whose tests wait has a spec or test that imports `assertWaitsDeclareTimeout` from `@lntt/test-utils/waits` and calls it at its top level or in a test, suite or hook that is not skipped (`.skip`, `.todo`, `.skipIf`, `.runIf`, `.fails`, `x`-prefixed); a call inside another function does not count. The path it is given and a condition around it are not checked |
 | `assertBiomeDomainsDeclared`, `enabledBiomeDomains`, `BIOME_DOMAIN_OF_DEPENDENCY` | a dependency with a Biome rule domain (`vitest` → `test`, `react` → `react`…) finds it switched on in the project's Biome config |
 | `assertLintFailsOnWarnings` | every `lint` and `lint:*` script runs `biome check` with `--error-on-warnings` and `stylelint` with `--max-warnings 0` |
-| `assertTestsUseTxFixture`, `findDirectTestDbCalls` | no test module calls `withTestDb(` itself: integration tests take `tx` from the fixture `txTest(db.withTestDb)` builds. It pairs with `txTest`, the tx fixture [#90](https://github.com/LunetteOrg/starter/issues/90) adds to this package: turn it on once the project builds its fixture with `txTest` |
+| `assertTestsUseTxFixture`, `findDirectTestDbCalls` | no test module calls `withTestDb(` itself: integration tests take `tx` from the fixture `txTest(db.withTestDb)` builds. It pairs with `txTest`, the tx fixture of this package: turn it on once the project builds its fixture with `txTest` |
 | `assertTestProjectsAreDependencies`, `testProjectPackages` | every package a vitest test project includes files from, or points at with `root`, is a dependency of the workspace; the packages are found from the root holding `pnpm-workspace.yaml`, and an include into a directory that is no `apps/*` or `packages/*` package fails, naming it |
 
 The scans read `apps/*` and `packages/*` (directories with a `package.json`): specs and
@@ -263,8 +263,8 @@ it('every package a test project includes is a dependency', () => {
 })
 ```
 
-`@lntt/test-utils/waits` parses with `parseAst` from `vite` 8, an optional peer: vitest
-4 already installs it, and a project that declares it resolves it from the root.
+`@lntt/test-utils/waits` parses with `parseAst` from `vite` 8, an optional peer: a project
+that declares it resolves it from the root.
 `assertBiomeDomainsDeclared` reads `biome.json` or `biome.jsonc` at the root (comments
 allowed) and follows its `extends`; `config` and `domains` override the file and the
 dependency table.
