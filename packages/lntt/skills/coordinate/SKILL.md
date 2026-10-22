@@ -99,9 +99,9 @@ lntt ask --to orchestrator "<questions>"               # waits for the person's 
 - **A long wait is one background wait** with one notification, not repeated checks: every
   polling turn re-reads the whole context.
 - **A watcher is light.** One read every couple of minutes (150 seconds worked), a line only
-  when something changed, no heartbeat, no automatic restart: under memory pressure the host kills background shells
-  of an idle session, and a heavy watcher is the first to go. A watcher that died is
-  restarted by hand after looking at why.
+  when something changed, no heartbeat, no automatic restart: under memory pressure the
+  host kills background shells of an idle session, and a heavy watcher is the first to go.
+  A watcher that died is restarted by hand after looking at why.
 - **A child runs `ci:local` in the foreground,** within the timeout `ci.local` sets, not as
   a background shell: the host kills the background shells of an idle session and the run
   dies with no result. Say so in the child's context.
