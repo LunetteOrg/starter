@@ -136,10 +136,14 @@ pays.
   through an alias of `vi`, or a test project given as a path to another config, is
   not seen.
 - The module-mocks and tx-fixture scans tell a regex literal from a division by the
-  token before the `/`, and do not read JSX: a regex right after `)`
-  (`if (x) /'/.test(s)`) or an apostrophe in JSX text (`<p>Don't</p>`) is read as the
-  start of a string, and the code after it on the following lines is not scanned. The
-  waits scans parse the module and have neither miss.
+  token before the `/`, and do not read JSX: a regex right after `)` or `}`
+  (`if (x) /'/.test(s)`, a regex opening the statement after a block) or an apostrophe
+  in JSX text (`<p>Don't</p>`) is read as the start of a string, and the code after it
+  on the following lines is not scanned. The waits scans parse the module and have
+  neither miss.
+- A `waitFor` whose first argument is not an object counts as testing-library's: a
+  Playwright `locator.waitFor(options)` given its options as a variable, in a spec the
+  scan reads (outside `e2e/`), is reported as a wait without `WAIT`.
 - The wait guard requires vite 8; a project on an older vite cannot import
   `@lntt/test-utils/waits`.
 - Projects call the guards from their own specs; a project that never calls one is not

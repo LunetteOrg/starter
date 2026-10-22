@@ -27,11 +27,23 @@ describe('blankCommentsAndStrings', () => {
     "const r = /[/']/g; process.env.X",
     'if (!/`/.test(s)) process.env.X',
     "return /\\/'/\nprocess.env.X",
+    "const f = (s) => /'/.test(s)\nprocess.env.X",
   ])('reads a quote inside a regex literal as no string: %s', (src) => {
     expect(blankCommentsAndStrings(src)).toMatch(/process\.env\.X/)
   })
 
+  it('reads the / of a self-closing JSX tag after an attribute as no regex', () => {
+    expect(blankCommentsAndStrings("const el = <Foo a={1}/>; process.env.X; const p = './x'")).toMatch(
+      /process\.env\.X/,
+    )
+  })
+
+  it('leaves a / with no closing one on its line as code', () => {
+    expect(blankCommentsAndStrings("const r = a ? /\nprocess.env.X; const p = './x'")).toMatch(/process\.env\.X/)
+  })
+
   it('keeps division apart from a regex literal', () => {
+    expect(blankCommentsAndStrings("const half = xs[0] / 2; const s = 'process.env'")).not.toMatch(/process\.env/)
     expect(blankCommentsAndStrings("const half = total / 2 / count\nconst s = 'process.env'")).not.toMatch(
       /process\.env/,
     )

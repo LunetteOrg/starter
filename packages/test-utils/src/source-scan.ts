@@ -136,7 +136,7 @@ function blank(source: string, strings: boolean): string {
 }
 
 /** Tokens after which a `/` opens a regex literal rather than a division. */
-const BEFORE_REGEX = new Set('(,=:[!&|?{};+-*%~^'.split(''))
+const BEFORE_REGEX = new Set('(,=:[!&|?{;+-*%~^'.split(''))
 const KEYWORDS_BEFORE_REGEX = new Set([
   'return',
   'typeof',
@@ -155,9 +155,9 @@ const KEYWORDS_BEFORE_REGEX = new Set([
 ])
 
 /**
- * Whether a `/` opens a regex literal, from the code before it: an operator or the
- * start of the source does, an expression (an identifier, a number, `)`, `]`, `}`, a
- * JSX tag's `<`) is divided.
+ * Whether a `/` opens a regex literal, from the code before it: an operator, an arrow
+ * `=>` or the start of the source does, an expression (an identifier, a number, `)`,
+ * `]`, `}`, a JSX tag's `<`) is divided, as `<Foo a={1}/>` closes a tag.
  */
 function startsRegex(before: string[]): boolean {
   let j = before.length - 1
@@ -165,6 +165,7 @@ function startsRegex(before: string[]): boolean {
   if (j < 0) return true
   const last = before[j] as string
   if (BEFORE_REGEX.has(last)) return true
+  if (last === '>') return before[j - 1] === '='
   if (!/[\w$]/.test(last)) return false
   let word = ''
   while (j >= 0 && /[\w$]/.test(before[j] as string)) word = before[j--] + word
