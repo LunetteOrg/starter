@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { FAILURES, issueTitles, KEPT, KEYS_PER_RUN, LNTT_TIMEOUT_MS, WAIT_MS } from './issue-titles-hook.js'
+import { LOOKUPS_AT_ONCE } from '../../../packages/lntt/src/refs.ts'
 import { register } from './register.js'
 
 const TOP = '/repo'
@@ -204,6 +205,43 @@ describe('the issue titles hook', () => {
     for (let i = 0; i < 5; i++) await tick()
     await flush('m3', `${many}\n`)
     assert.deepEqual(lookups().slice(2), [second.keys])
+  })
+
+  test('KEYS_PER_RUN is what lntt refs looks up at once, so one run fits LNTT_TIMEOUT_MS', () => {
+    assert.equal(KEYS_PER_RUN, LOOKUPS_AT_ONCE)
+  })
+
+  test('a run that ends frees only its own references: the others stay pending', async () => {
+    const cached = (text) => ({
+      repository: 'o/r',
+      mentions: [...text.matchAll(/#(\d+)/g)].map((x) => ({
+        text: x[0],
+        ref: `o/r#${x[1]}`,
+        index: x.index,
+        after: x.index + x[0].length,
+      })),
+      refs: [],
+    })
+    const held = []
+    const { flush, lookups } = engine({
+      late: true,
+      lntt: (argv, init) => {
+        if (argv[2] === '--cached') return { exitCode: 0, stdout: JSON.stringify(cached(init.stdin)), stderr: '' }
+        return new Promise((resolve) => held.push({ keys: argv.slice(2), resolve }))
+      },
+    })
+    const many = Array.from({ length: 2 * KEYS_PER_RUN + 1 }, (_, i) => `#${i + 1}`).join(' ')
+    await flush('m1', `${many}\n`)
+    assert.equal(held.length, 3)
+    const out = {
+      repository: 'o/r',
+      mentions: [],
+      refs: held[0].keys.map((ref) => ({ ref, title: `T ${ref}`, url: `https://x/${ref.split('#')[1]}` })),
+    }
+    held[0].resolve({ exitCode: 0, stdout: JSON.stringify(out), stderr: '' })
+    for (let i = 0; i < 5; i++) await tick()
+    await flush('m2', `${many}\n`)
+    assert.equal(lookups().length, 3)
   })
 
   test("the project's lntt, else the lntt on PATH", async () => {

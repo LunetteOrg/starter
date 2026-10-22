@@ -129,8 +129,9 @@ reference held for a link that does not form gets its title in the box only.
   is whole), `#0` (GitHub numbers from 1), a reference `gh` answers with HTTP 404 or
   410 (a missing issue, or a repository the token cannot see), and one `gh` answers
   with an empty title or a URL that is not a plain `https` address.
-- **Nothing for the session** after `FAILURES` runs of `lntt` in a row that fail or
-  find no session repository, and at once from an `lntt` with no `refs` (its usage,
+- **Nothing for the session** after `FAILURES` failures in a row, a failure being a
+  call of `lntt` that fails or finds no session repository (the runs of one lookup
+  count as one call), and at once from an `lntt` with no `refs` (its usage,
   exit 2): the session then shows every number as written. A run fails when it cannot
   start, runs past `LNTT_TIMEOUT_MS` or answers no JSON with `mentions` and `refs`;
   it finds no repository when `gh repo view` fails or does not answer within
@@ -161,7 +162,7 @@ How a title is written is the `issues` skill's.
 ### Negative / accepted risks
 
 - A `gh repo view` slower than `GH_TIMEOUT_MS` (a slow network) counts as a failed
-  `lntt refs` run: `FAILURES` of them in a row turn the titles off for the session, and
+  `lntt refs` call: `FAILURES` of them in a row turn the titles off for the session, and
   they come back only in a new session.
 - Another repository's issue gets a title only when cited as `owner/repo#N`; a short
   `repo#N` from a session in another repository is shown as written.
