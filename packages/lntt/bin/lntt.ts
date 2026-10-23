@@ -49,6 +49,10 @@
 //     tests mutate <path:line> --text <on the line> --to <mutated>
 //                             applies the mutation in a scratch worktree, runs the tests that
 //                             import the file: PASS killed (failing test), FAIL survived
+//     body [--pr <n> | -]     the retrospective block of a pull request body (default: the
+//                             current branch's, with gh; -: stdin): FAIL for a missing block, a
+//                             missing, repeated or empty label; alone, lntt check does not run it
+//     body template           the pull request template holds the block lntt pr block prints
 //   lntt check cite <path:line>...
 //                             what is on those lines; FAIL for a line or file that does not exist
 //
@@ -62,6 +66,9 @@
 //                             follow the convention, with the name it should have
 //   lntt branch rename        rename the current branch to the convention, from the name a
 //                             tool gave it or, in Orca, from the linked issue; never fails
+//
+//   lntt pr block             the empty retrospective block of delivery.pullRequest.retrospective,
+//                             for the pull request template and the retrospective skill
 //
 //   lntt review [--base <branch>] [--plan]
 //                             one review round on the current branch: the lenses and agents of
@@ -135,6 +142,7 @@ import { argv } from 'node:process'
 const args = argv.slice(2)
 if (args[0] === 'ci') await (await import('../src/ci/cli.ts')).main(args.slice(1))
 else if (args[0] === 'branch') (await import('../src/branch-cli.ts')).main(args.slice(1))
+else if (args[0] === 'pr') (await import('../src/pull-request-cli.ts')).main(args.slice(1))
 else if (args[0] === 'refs') await (await import('../src/refs-cli.ts')).main(args.slice(1))
 else if (args[0] === 'check') (await import('../src/check-cli.ts')).main(args.slice(1))
 else if (args[0] === 'review') await (await import('../src/review-cli.ts')).main(args.slice(1))
