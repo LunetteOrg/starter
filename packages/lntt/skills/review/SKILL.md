@@ -30,7 +30,7 @@ In Claude Code the `lunette` plugin shows the round in a band above the prompt, 
 stdout is JSON: `findings` (`confirmed`, `undecided`, `unverified`; blockers and
 warnings block the round, notes do not),
 `refuted` (with the verifiers' proofs, or `lntt check cite`'s for a finding on a line past
-the end of its file; nothing to do), `failed` (a reviewer that did not answer). Exit 0: a clean round. Exit 1: findings or a failure. Exit 3: the limit (section 3).
+the end of its file; nothing to do), `failed` (a reviewer that did not answer; its `reply` is whole), `partial` (a lens whose reply had lines that could not be read: `lines`, and the whole `reply`). Exit 0: a clean round. Exit 1: findings or a failure. Exit 3: the limit (section 3).
 
 A round reads the whole branch the first time, then only the commits after the last
 reviewed one; findings still open go back to the verifiers on the new head.
@@ -49,6 +49,8 @@ reviewed one; findings still open go back to the verifiers on the new head.
   It resumes their sessions; `withdrawn: true` closes the finding. A reviewer that
   cannot be resumed makes it a question for the person.
 - **A note:** fix it if it is cheap, or list it in the pull request; it does not block.
+- **`partial`:** read the lines, fix or file what they say; the next round reads the
+  same range again.
 - **`failed`:** run the round again; a failure that repeats is reported to the person
   with its error.
 
