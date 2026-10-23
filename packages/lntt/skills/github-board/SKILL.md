@@ -157,7 +157,9 @@ the steps.
   from the field's configuration, never assumed.
 - **The horizon** (`fields.horizon`) says when a parent is taken up; it is set when the
   team decides to work on it, not at triage. The priority (`fields.priority`) says how
-  much it matters, with or without a horizon; inside one horizon, it is the order.
+  much an issue matters, with or without a horizon. When its `on` lets parents carry it,
+  it is also the order of the parents inside one horizon; otherwise the parents of one
+  horizon are ordered by the person, in the plan.
 - **A missing iteration** (the next one, for a blocked issue) is added in the Project's
   settings, by hand: the API's `updateProjectV2Field` rewrites the whole field.
 

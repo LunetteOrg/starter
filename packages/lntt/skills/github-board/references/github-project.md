@@ -27,6 +27,9 @@ variables. A configured field missing from the Project, or an option missing fro
 field, is a mismatch to report to the person, never one to fix silently. The current
 iteration is the one with `startDate ≤ today < startDate + duration`.
 
+Issue types and issue fields belong to an organization: a Project owned by a user has
+neither, and a configuration that names them for one is a mismatch to report.
+
 ```sh
 # issue types (when board.issueTypes): the GraphQL node ids, IT_…, not the REST numbers
 gh api graphql -f query='{ organization(login:"'"$OWNER"'"){ issueTypes(first:25){ nodes{ id name } } } }'
@@ -196,7 +199,8 @@ same reason.
   exceeded*.
 - **About 1.2 s between mutating calls**: the secondary rate limit does not show in
   `rate_limit`; 114 labels in a loop with no pause applied 5, with `sleep 1.2` all 114.
-- **Count the outcomes**: with `--silent` a failure is invisible.
+- **Count the outcomes**: with `--silent` a failure is invisible, and a failed alias
+  still has its key, with `null`: count the non-null ones.
 
 ```sh
 # writes.tsv: itemId<TAB>fieldId<TAB>optionId
@@ -205,7 +209,8 @@ for c in chunk_*; do
   awk -v proj="<PROJECT_NODE_ID>" 'BEGIN{print "mutation {"}
     { printf "  m%d: updateProjectV2ItemFieldValue(input:{projectId:\"%s\", itemId:\"%s\", fieldId:\"%s\", value:{singleSelectOptionId:\"%s\"}}){ projectV2Item{ id } }\n", NR, proj, $1, $2, $3 }
     END{print "}"}' FS='\t' "$c" > "$c.graphql"
-  gh api graphql -F query=@"$c.graphql" --jq '[.data | to_entries[]] | length'   # must print the chunk's line count
+  # must print the chunk's line count and no error: a failed alias comes back null
+  gh api graphql -F query=@"$c.graphql" --jq '[(.data // {})[] | select(. != null)] | length, (.errors // [] | .[].message)'
   sleep 1.2
 done
 ```

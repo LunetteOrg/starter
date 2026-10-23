@@ -253,9 +253,11 @@ describe('the shared skills', () => {
 // A Markdown link to a file next to the guide, or to a heading of its own.
 const RELATIVE_LINK = /\]\(((?:\.\.?\/|#)[^)\s]*)\)/g
 
-// The heading anchors of a Markdown file, as GitHub makes them.
+// The heading anchors of a Markdown file, as GitHub makes them; a `#` line inside a code
+// fence is a comment, not a heading.
 function anchors(file: string): string[] {
-  return [...readFileSync(file, 'utf8').matchAll(/^#+ (.+)$/gm)].map((m) =>
+  const prose = readFileSync(file, 'utf8').replace(/^```[\s\S]*?^```$/gm, '')
+  return [...prose.matchAll(/^#+ (.+)$/gm)].map((m) =>
     m[1]
       .toLowerCase()
       .replace(/[^\p{L}\p{N} -]/gu, '')
@@ -332,7 +334,9 @@ describe('the board skills', () => {
     }
   })
 
-  test("write no project's value: no issue type, field or option of the projects they were ported from", () => {
+  // A guard against values carried over from wai and pelion, not a proof that a guide is
+  // generic: a value of another project is not in the list.
+  test('carry over none of the issue types, fields or options of wai and pelion', () => {
     const values = [
       /\bFeature\b/,
       /\bTask\b/,

@@ -361,6 +361,7 @@ describe('the board section', () => {
   test('a field is carried by the parents or by the children, or by any issue when it says neither', () => {
     const size = { name: 'Size', type: 'singleSelect', options: ['S'], on: 'features' }
     assertRejected({ board: { fields: { size } } }, /\/board\/fields\/size\/on/)
+    for (const on of ['parents', 'children']) assertValid({ board: { fields: { size: { ...size, on } } } })
   })
 
   test('lntt validate: a permanent issue type is one of the parents', () => {
@@ -369,6 +370,12 @@ describe('the board section', () => {
       { board: { issueTypes: { parents: ['Feature'], children: ['Bug'], permanent: ['Ongoing'] } } },
       /board\.issueTypes\.permanent is "Ongoing", not one of: Feature/,
     )
+    assertBadReference(
+      { board: { issueTypes: { parents: ['Debt'], permanent: ['Debt', 'Ongoing', 'Chore'] } } },
+      /permanent is "Ongoing"/,
+      /permanent is "Chore"/,
+    )
+    assertRejected({ board: { issueTypes: { parents: ['Debt'], permanent: [] } } }, /\/board\/issueTypes\/permanent/)
     assertBadReference(
       { board: { issueTypes: { children: ['Bug'], permanent: ['Ongoing'] } } },
       /board\.issueTypes\.permanent is "Ongoing", not one of: $/m,

@@ -103,7 +103,8 @@ backlog, or **close it** as obsolete. New work and the backlog are planned toget
   in each child's body.
 - **Each field where the configuration puts it** (`on`). The horizon goes only on the
   parents this round takes up; a parent triaged but not chosen keeps none. When one
-  horizon holds several parents, the priority orders them. A field of the project's own
+  horizon holds several parents, the priority orders them when its `on` lets parents
+  carry it; otherwise the person orders them in the plan. A field of the project's own
   is set as `docs/process/board.md` says.
 - **A permanent parent** (`board.issueTypes.permanent`) holds work that never ends:
   its children are planned like any other, the parent itself never closes.

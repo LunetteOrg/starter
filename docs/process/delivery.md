@@ -123,7 +123,7 @@ candidate exists on a day without pull requests.
   serves overlapping candidates: the issue's comment says which candidate holds it. A
   hotfix merges into `main` and closes its issue at once, so it never has the status.
   The status is an option of the Project's Status field that the Project's owner adds
-  (the `github-board` skill, "Changing a field's options"); the automation never creates or
+  (the `github-board` skill, `references/github-project.md`, "Changing a field's options"); the automation never creates or
   renames one. A Project without it, an issue on no Project, or an app without the
   Projects permission leave the board as it is, and the run says so in a `::notice`; a
   refusal on one of an issue's Projects after another was written leaves it moved on
