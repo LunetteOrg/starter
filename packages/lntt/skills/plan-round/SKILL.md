@@ -128,7 +128,8 @@ backlog, or **close it** as obsolete. New work and the backlog are planned toget
   carry it; otherwise the person orders them in the plan. A field of the project's own
   is set as `docs/process/board.md` says.
 - **A permanent parent** (`board.issueTypes.permanent`) holds work that never ends:
-  its children are planned like any other, the parent itself never closes.
+  its children are planned like any other, the parent itself never closes, and it keeps
+  its horizon but gets no dates (`roadmap`, section 2).
 - **An undecided scope is not split.** A parent waiting on a decision gets one child,
   the work that produces the decision; the split follows the record.
 - **A bet becomes two children.** For each parent ask *what will we look at to know how

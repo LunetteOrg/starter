@@ -89,7 +89,7 @@
                   },
                   "filter": {
                     "type": "string",
-                    "description": "The view's filter, in the Project's filter syntax (is:open type:Bug); an empty string is no filter."
+                    "description": "The view's filter, in the Project's filter syntax (is:open type:Bug), written trimmed; an empty or blank string is no filter, and clears the view's."
                   },
                   "fields": {
                     "type": "array",

@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { applyStep, type BoardConfig, type BoardState, type Count, type Graphql, planBoard } from '../src/board.ts'
+import {
+  applyStep,
+  type BoardConfig,
+  type BoardState,
+  type Count,
+  describeStep,
+  type Graphql,
+  planBoard,
+} from '../src/board.ts'
 
 // A board as the configuration writes it, and a Project that already has part of it.
 const board = {
@@ -447,8 +455,26 @@ describe('planBoard: the views of board.github.views', () => {
   test('only the filter differs: only the filter is updated; an empty filter clears it', () => {
     const one = plan(withViews([{ name: 'Horizon', layout: 'table', filter: 'is:closed' }]), state({ views: [view()] }))
     assert.deepEqual(one.steps[0]?.kind === 'updateView' && one.steps[0].input, { filter: 'is:closed' })
-    const cleared = plan(withViews([{ name: 'Horizon', layout: 'table', filter: '' }]), state({ views: [view()] }))
-    assert.deepEqual(cleared.steps[0]?.kind === 'updateView' && cleared.steps[0].input, { filter: '' })
+    for (const blank of ['', '   ']) {
+      const cleared = plan(withViews([{ name: 'Horizon', layout: 'table', filter: blank }]), state({ views: [view()] }))
+      const [step] = cleared.steps
+      assert.deepEqual(step?.kind === 'updateView' && [step.input, step.changes], [{ filter: '' }, ['clear filter']])
+    }
+  })
+
+  test('a padded filter is written trimmed, on a new view and on an existing one', () => {
+    const config = withViews([{ name: 'Horizon', layout: 'table', filter: '  is:closed ' }])
+    const created = plan(config, state()).steps[0]
+    assert.deepEqual(created?.kind === 'createView' && created.filter, 'is:closed')
+    const updated = plan(config, state({ views: [view()] })).steps[0]
+    assert.deepEqual(updated?.kind === 'updateView' && updated.input, { filter: 'is:closed' })
+  })
+
+  test('a new view with a blank filter is planned with none, and printed with none', () => {
+    const [step] = plan(withViews([{ name: 'Blank', layout: 'table', filter: '  ' }]), state()).steps
+    assert.ok(step?.kind === 'createView')
+    assert.equal(step.filter, undefined)
+    assert.equal(describeStep(step), 'create view Blank (TABLE_LAYOUT)')
   })
 
   test('a filter that differs only in blanks is the same', () => {
@@ -479,7 +505,9 @@ describe('applyStep: the writes of a view', () => {
     const graphql: Graphql = (query, variables) => {
       calls.push({ query, variables })
       if (query.includes('field(name:')) return { node: { field: { id: `F_${variables.name}` } } }
-      return { createProjectV2View: { projectV2View: { id: 'V_new' } } }
+      if (query.includes('createProjectV2View')) return { createProjectV2View: { projectV2View: { id: 'V_new' } } }
+      if (query.includes('updateProjectV2View')) return { updateProjectV2View: { projectV2View: { id: 'V_1' } } }
+      throw new Error(`unexpected query: ${query}`)
     }
     return { calls, graphql }
   }
@@ -499,6 +527,10 @@ describe('applyStep: the writes of a view', () => {
     applyStep(graphql, live, { kind: 'createView', name: 'A', layout: 'TABLE_LAYOUT', fields: ['Status'] })
     applyStep(graphql, live, { kind: 'updateView', id: 'V_1', name: 'A', changes: [], input: { fields: ['Status'] } })
     assert.ok(!calls.some((c) => c.query.includes('field(name:')))
+    assert.deepEqual(
+      calls.map((c) => (c.query.includes('createProjectV2View') ? 'create' : 'update')),
+      ['create', 'update'],
+    )
     for (const c of calls) {
       const input = c.variables.input as { configuration: { visibleFieldIds: string[] } }
       assert.deepEqual(input.configuration.visibleFieldIds, ['F_status'])
@@ -511,6 +543,14 @@ describe('applyStep: the writes of a view', () => {
     assert.equal(calls.filter((c) => c.query.includes('field(name:')).length, 1)
     const input = calls.at(-1)?.variables.input as { configuration: { visibleFieldIds: string[] } }
     assert.deepEqual(input.configuration.visibleFieldIds, ['F_status', 'F_Size'])
+  })
+
+  test('an update naming a field the run created asks its id by name too', () => {
+    const { calls, graphql } = recorder()
+    applyStep(graphql, live, { kind: 'updateView', id: 'V_1', name: 'A', changes: [], input: { fields: ['Size'] } })
+    assert.equal(calls.filter((c) => c.query.includes('field(name:')).length, 1)
+    const input = calls.at(-1)?.variables.input as { configuration: { visibleFieldIds: string[] } }
+    assert.deepEqual(input.configuration.visibleFieldIds, ['F_Size'])
   })
 
   test('a Project that does not answer the field query: the error names the field', () => {

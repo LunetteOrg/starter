@@ -55,7 +55,8 @@ lntt ci local | candidate
   view the configuration does not name is left alone, and a key a view leaves out is
   not managed. Each live view answers one configured view, an exact name before one
   that differs only in case; a view may name a field the same run creates, its id
-  resolved when the view is written.
+  resolved when the view is written, and a field the Project does not return then
+  stops the run with its name, the writes before it applied.
   `--check` exits 1 on any difference, an entry left to a person included.
 - **What a person types is what an agent runs.** Skills, workflows, git hooks and
   `orca.yaml` call `lntt`, never a package's files by path, with one exception: the

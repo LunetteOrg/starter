@@ -471,9 +471,11 @@ describe('lntt board sync', () => {
     assert.match(lntt(['sync']).stdout, /create view Blank \(TABLE_LAYOUT\)\n/)
     assert.equal(lntt(['sync', '--apply']).status, 0)
     assert.ok(!io().includes('updateProjectV2View'))
-    assert.ok(
-      (live() as unknown as Views).views.some((v) => v.name === 'Blank'),
-      'created',
+    const blank = (live() as unknown as Views).views.filter((v) => v.name === 'Blank')
+    assert.deepEqual(
+      blank.map((v) => v.filter),
+      [''],
+      'created once, with no filter',
     )
   })
 

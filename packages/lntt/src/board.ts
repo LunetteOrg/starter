@@ -317,7 +317,8 @@ function planViews(views: ViewConfig[], state: BoardState, steps: Step[], manual
         kind: 'createView',
         name: view.name,
         layout,
-        ...(view.filter !== undefined ? { filter: view.filter } : {}),
+        // A new view has no filter: a blank one is none.
+        ...(view.filter?.trim() ? { filter: view.filter.trim() } : {}),
         ...(view.fields ? { fields: view.fields } : {}),
       })
     } else {
@@ -332,8 +333,10 @@ function planViews(views: ViewConfig[], state: BoardState, steps: Step[], manual
         input.layout = layout
       }
       if (view.filter !== undefined && filterOf(live.filter) !== filterOf(view.filter)) {
-        changes.push(`filter "${view.filter}"`)
-        input.filter = view.filter
+        // Written trimmed; a blank filter clears the view's.
+        const filter = view.filter.trim()
+        changes.push(filter ? `filter "${filter}"` : 'clear filter')
+        input.filter = filter
       }
       if (view.fields && live.fields.join('\n') !== view.fields.join('\n')) {
         changes.push(`fields ${view.fields.join(', ')}`)
