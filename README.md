@@ -35,7 +35,7 @@ pnpm create @lntt my-app --template react-router
 ## The shared skills
 
 The skills every Lunette project uses (`commit-message`, `coordinate`, `decisions`,
-`review`, `run-local`) ship inside `@lntt/lntt`, in
+`retrospective`, `review`, `run-local`) ship inside `@lntt/lntt`, in
 [`packages/lntt/skills/`](./packages/lntt/skills/), one version with the `lntt` they
 call. In a project, `pnpm exec lntt sync` writes a stub of each into `.agents/skills/`
 (Codex, OpenCode, Gemini CLI, Cursor) and `.claude/skills/` (Claude Code), committed;

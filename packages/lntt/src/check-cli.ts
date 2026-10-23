@@ -1,6 +1,8 @@
 // `lntt check`: every configured area, one area, or one of its checks; `cite` prints
 // what is on lines (usage: bin/lntt.ts).
 
+import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { cwd, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
@@ -19,7 +21,7 @@ import {
 } from './check.ts'
 import { ConfigError, loadConfig } from './index.ts'
 
-const USAGE = `usage: lntt check [agents-md | skills | decisions [structure | numbers [<file>...]] | tests [levels | focus | rules | touched]] [--base <ref>] [--json]
+const USAGE = `usage: lntt check [agents-md | skills | decisions [structure | numbers [<file>...]] | tests [levels | focus | rules | touched] | body [template | --pr <n> | -]] [--base <ref>] [--json]
        lntt check tests mutate <path:line> --text <on the line> --to <mutated> [--json]
        lntt check cite <path:line>... [--json]`
 
@@ -34,6 +36,21 @@ const CHECKS: Record<string, string[]> = {
   skills: [],
   decisions: ['structure', 'numbers'],
   tests: ['levels', 'focus', 'rules', 'touched', 'mutate'],
+  body: ['-', 'template'],
+}
+
+// The body the body area's retrospective check reads: stdin for `-`, else the pull request named, else the
+// current branch's, read with gh.
+function readBody(check: string | undefined, pr: string | undefined): { text: string; from: string } {
+  if (check === '-') return { text: readFileSync(0, 'utf8'), from: 'stdin' }
+  const view = ['pr', 'view', ...(pr === undefined ? [] : [pr]), '--json', 'body', '--jq', '.body']
+  try {
+    const text = execFileSync('gh', view, { cwd: cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+    return { text, from: pr === undefined ? "the current branch's pull request" : `pull request #${pr}` }
+  } catch (error) {
+    const said = (error as { stderr?: string }).stderr?.trim().split('\n')[0]
+    throw new CannotRunError(`gh ${view.join(' ')} failed${said ? `: ${said}` : ''}`)
+  }
 }
 
 function run(args: string[]): Result[] {
@@ -43,6 +60,7 @@ function run(args: string[]): Result[] {
     options: {
       base: { type: 'string' },
       json: { type: 'boolean', default: false },
+      pr: { type: 'string' },
       text: { type: 'string' },
       to: { type: 'string' },
     },
@@ -71,6 +89,12 @@ function run(args: string[]): Result[] {
       }
     } else if (values.text !== undefined || values.to !== undefined) usage('--text and --to are for tests mutate')
   }
+  if (values.pr !== undefined) {
+    if (area !== 'body') usage('--pr is for body')
+    if (check === '-') usage('give --pr <n> or -, not both')
+    if (check === 'template') usage('template reads the repository, not a pull request')
+    if (!/^[1-9]\d*$/.test(values.pr)) usage(`--pr takes a number, not ${values.pr}`)
+  }
   // The root of the project whose configuration is read, as `lntt sync` writes it.
   const loaded = loadConfig(cwd())
   const root = dirname(dirname(loaded.path))
@@ -80,6 +104,7 @@ function run(args: string[]): Result[] {
     data: loaded.data,
     ...(base === undefined ? {} : { base }),
     ...(values.text === undefined ? {} : { mutation: { text: values.text, to: values.to as string } }),
+    ...(area === 'body' && check !== 'template' ? { body: readBody(check, values.pr) } : {}),
   }
   if (area === undefined) return AREAS.flatMap((a) => runArea(a, undefined, [], options))
   return runArea(area as Area, check, rest, options)

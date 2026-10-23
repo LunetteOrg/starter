@@ -420,11 +420,11 @@ describe('lntt check cite', () => {
 })
 
 describe('lntt check', () => {
-  test('alone runs every area: the AGENTS.md block, the installed skills, the decision logs and the tests', () => {
+  test('alone runs every area: the AGENTS.md block, the installed skills, the decision logs, the tests and (not run, with no body) the pull request body', () => {
     project('clean')
     const r = results(['check'])
     assert.equal(r.status, 0)
-    assert.deepEqual([...new Set(r.results.map((x) => x.area))], ['agents-md', 'skills', 'decisions', 'tests'])
+    assert.deepEqual([...new Set(r.results.map((x) => x.area))], ['agents-md', 'skills', 'decisions', 'tests', 'body'])
   })
 
   test('the files every area reads leave out the stubs of the shared skills, not the project skills beside them', () => {

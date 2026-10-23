@@ -121,7 +121,10 @@ lntt ask --to orchestrator "<questions>"               # waits for the person's 
   can be refused by the host's safety check: run `docker ps` first and run the script only
   when containers exist.
 - The theme outlives its pull requests: the coordinator stays while the theme has open
-  issues, and is archived when the last child has merged.
+  issues, and is archived when the last child has merged. Before that, the theme's own
+  friction (the coordination, the machine, the account's limits) goes in a comment on the
+  candidate pull request holding the retrospective block (the `retrospective` skill,
+  section 3); each child's goes in its own pull request.
 
 ## 7. What a coordinator brief must say
 
