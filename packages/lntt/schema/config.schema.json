@@ -29,44 +29,57 @@
     },
     "board": {
       "type": "object",
-      "description": "The GitHub Project (v2) the work is planned on, read by the board skills (github-board, plan-round, roadmap): the Project, the issue types, its fields and their options, the track labels. How they are used is in docs/process/board.md, when the project has one.",
+      "description": "The board the work is planned on, read by the board skills (plan-round, roadmap, and the adapter of the provider: github-board for github): where the board lives, the issue types, the mechanisms the project uses, its fields and their options, the track labels. The keys of one provider sit under its name (github); the others are concepts every provider shares. What the section leaves out the project does not use, and the skills do without it. How they are used is in docs/process/board.md, when the project has one.",
       "additionalProperties": false,
       "properties": {
-        "project": {
+        "provider": {
+          "enum": ["github"],
+          "default": "github",
+          "description": "The platform the board lives on, and so the adapter skill that reads and writes it: github, the github-board skill. Default github. Another platform is another value, with its own key beside github and its own adapter."
+        },
+        "github": {
           "type": "object",
-          "description": "The Project, found by its owner and number.",
+          "description": "What only a board on GitHub has: the Project that holds it.",
           "additionalProperties": false,
-          "required": ["owner", "number"],
+          "required": ["project"],
           "properties": {
-            "owner": {
-              "type": "string",
-              "minLength": 1,
-              "description": "The login of the organization or user that owns it."
-            },
-            "ownerType": {
-              "enum": ["organization", "user"],
-              "description": "Whether the owner is an organization or a user: GitHub's queries differ. Default organization."
-            },
-            "number": {
-              "type": "integer",
-              "minimum": 1,
-              "description": "The Project's number, in its URL."
-            },
-            "title": {
-              "type": "string",
-              "minLength": 1,
-              "description": "Its title, for a person to recognise it; owner and number find it."
+            "project": {
+              "type": "object",
+              "description": "The GitHub Project (v2), found by its owner and number.",
+              "additionalProperties": false,
+              "required": ["owner", "number"],
+              "properties": {
+                "owner": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The login of the organization or user that owns it."
+                },
+                "ownerType": {
+                  "enum": ["organization", "user"],
+                  "description": "Whether the owner is an organization or a user: GitHub's queries differ. Default organization."
+                },
+                "number": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "The Project's number, in its URL."
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Its title, for a person to recognise it; owner and number find it."
+                }
+              }
             }
           }
         },
         "issueTypes": {
           "type": "object",
-          "description": "The native issue types (not labels) the board uses: a parent holds the sub-issues the work is done in.",
+          "description": "The issue types (a property of the issue, not a label) the board uses: a parent holds the work, a child is the work done in an iteration. Absent: the project sets no issue type.",
           "additionalProperties": false,
           "properties": {
             "parents": {
               "type": "array",
-              "description": "The types of the issues that hold sub-issues. Default Feature.",
+              "description": "The types of the issues that hold others (as sub-issues, when subIssues is true) and are never put in an iteration.",
               "items": {
                 "type": "string",
                 "minLength": 1
@@ -76,7 +89,17 @@
             },
             "children": {
               "type": "array",
-              "description": "The types of the issues that go in an iteration. Default Task, Bug.",
+              "description": "The types of the issues that are the work itself: the ones that go in an iteration.",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "permanent": {
+              "type": "array",
+              "description": "The parent types that never close (debt, ongoing work): they stay off the roadmap and out of the parents velocity counts; the children done under them count. Each is one of parents: lntt validate checks it.",
               "items": {
                 "type": "string",
                 "minLength": 1
@@ -86,9 +109,21 @@
             }
           }
         },
+        "subIssues": {
+          "type": "boolean",
+          "description": "true: the work of a parent is linked to it as its sub-issues, a parent-child relation the platform keeps. Absent or false: the project uses no sub-issues, and a child names its parent in its body."
+        },
+        "milestones": {
+          "type": "boolean",
+          "description": "true: issues are grouped in milestones, a release each unless docs/process/board.md says otherwise. Absent or false: the project uses no milestones."
+        },
+        "blockedBy": {
+          "type": "boolean",
+          "description": "true: a hard dependency between issues is a blocked-by relation the platform keeps. Absent or false: the project records none, and the skills write a dependency in the issue body."
+        },
         "fields": {
           "type": "object",
-          "description": "The Project's fields, by key: the ones the board skills know (status, priority, size, scope, iteration, and startDate and targetDate, the dates the roadmap reads) and the project's own, in camelCase (classe). A field missing here is one the project does not use.",
+          "description": "The board's fields, by key: the ones the board skills know (status; priority, its options most urgent first; size; horizon, when the work is taken up, its options nearest first; iteration; and startDate and targetDate, the dates the roadmap reads) and the project's own, in camelCase (classe). A field missing here is one the project does not use: the skills do without it, and never create it unasked.",
           "propertyNames": {
             "pattern": "^[a-z][a-zA-Z0-9]*$"
           },
@@ -102,7 +137,7 @@
             "size": {
               "$ref": "#/definitions/boardField"
             },
-            "scope": {
+            "horizon": {
               "$ref": "#/definitions/boardField"
             },
             "iteration": {
@@ -121,7 +156,7 @@
         },
         "tracks": {
           "type": "object",
-          "description": "The track labels: one label per track (an app, an area), each with one owner, a dimension an issue can take several values of. A label's name is free text and need not match a folder: `paths` ties it to the code it covers. The github-board skill proposes a label for a folder of `from` that no label's `paths` covers, and creates only the missing ones; `labels` records the known ones.",
+          "description": "The track labels: one label per track (an app, an area), each with one owner, a dimension an issue can take several values of. A label's name is free text and need not match a folder: `paths` ties it to the code it covers. The board skills propose a label for a folder of `from` that no label's `paths` covers, and create only the missing ones; `labels` records the known ones.",
           "additionalProperties": false,
           "properties": {
             "from": {
@@ -134,7 +169,7 @@
             },
             "labels": {
               "type": "object",
-              "description": "The known labels, by their name on GitHub.",
+              "description": "The known labels, by their name on the platform.",
               "propertyNames": {
                 "minLength": 1
               },
@@ -145,7 +180,7 @@
                   "owner": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9-]+$",
-                    "description": "The GitHub handle that owns the track, one of team.members: lntt validate checks it when team.members is present. The one place a track's owner is written."
+                    "description": "The handle that owns the track, one of team.members: lntt validate checks it when team.members is present. The one place a track's owner is written."
                   },
                   "paths": {
                     "type": "array",
@@ -945,19 +980,23 @@
         "name": {
           "type": "string",
           "minLength": 1,
-          "description": "The field's name on the Project."
+          "description": "The field's name on the board."
         },
         "kind": {
           "enum": ["project", "issue"],
-          "description": "project: a custom field of the Project, written on the Project item. issue: a field of the organization's issues that the Project shows, written on the issue (updateIssueFieldValue); writing it on the item fails, sometimes silently. Default project."
+          "description": "Where the value is written. project: a field of the board, written on the board's item. issue: a field of the issue that the board shows, written on the issue (on GitHub an organization's issue field, written with updateIssueFieldValue; writing it on the item fails, sometimes silently). Default project."
         },
         "type": {
           "enum": ["singleSelect", "iteration", "date", "number", "text"],
-          "description": "The field's type on GitHub."
+          "description": "The field's type: one value to pick from options, an iteration, a date, a number, free text."
+        },
+        "on": {
+          "enum": ["parents", "children"],
+          "description": "The issues that carry the field: the parents (board.issueTypes.parents, or the issues holding sub-issues) or the children. Absent: any issue."
         },
         "options": {
           "type": "array",
-          "description": "A single select's options, in the Project's order: required for a single select, and only there.",
+          "description": "A single select's options, in the board's order: required for a single select, and only there.",
           "items": {
             "type": "string",
             "minLength": 1
@@ -1009,7 +1048,7 @@
         },
         "type": {
           "const": "singleSelect",
-          "description": "The field's type on GitHub: the Status is a single select."
+          "description": "The Status is a single select."
         },
         "options": {
           "$ref": "#/definitions/boardField/properties/options"

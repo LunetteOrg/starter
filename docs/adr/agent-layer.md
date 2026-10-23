@@ -33,7 +33,11 @@ places a skill reads:
   of another list).
   Sections are named after fixed process areas (`recording`, `board`, `ci`,
   `delivery`, `cycle`, `spaces`, `team`, `local`); a section is added when a skill
-  needs it. A short reason for a value is a comment next to it.
+  needs it. A short reason for a value is a comment next to it. A section that a
+  platform serves names it (`board.provider`), keeps that platform's own keys under its
+  name (`board.github`) and the concepts every platform shares beside it; a skill of
+  that platform, its adapter, does the reads and writes (`github-board` for `github`),
+  and the other skills hand them to it.
 - **Prose** in `docs/process/<area>.md`: the mechanisms and longer reasons a value
   cannot express. Kept apart from technical decisions; it cites configuration keys and
   never repeats their values.
@@ -44,8 +48,9 @@ it never guesses.
 
 ### The shared skills come with `lntt`; a project holds their stubs
 
-The shared skills (`commit-message`, `coordinate`, `decisions`, `retrospective`,
-`review`, `run-local`) ship inside `@lntt/lntt`, in `packages/lntt/skills/`.
+The shared skills (`commit-message`, `coordinate`, `decisions`, `github-board`,
+`plan-round`, `retrospective`, `review`, `roadmap`, `run-local`) ship inside
+`@lntt/lntt`, in `packages/lntt/skills/`.
 `lntt guide <skill>` prints a skill's guide from the installed package, with the folder
 its relative links start from, so a skill and the `lntt` it calls are always one
 version: the project's lockfile.
@@ -144,7 +149,7 @@ reference held for a link that does not form gets its title in the box only.
   separators, variation selectors, the grapheme joiner) are dropped, and a URL is
   shown only when it is a plain `https` address, from `gh` or from the cache.
 
-How a title is written is the `issues` skill's.
+How a title is written is the `github-board` skill's.
 
 ## Consequences
 

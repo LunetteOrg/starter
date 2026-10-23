@@ -32,8 +32,8 @@ area's section of the configuration always.
 
 ## Rules
 
-- **Prose only.** A process description cites configuration keys (`board.scope`) and
-  never repeats their values: a value lives in one place.
+- **Prose only.** A process description cites configuration keys
+  (`board.fields.horizon`) and never repeats their values: a value lives in one place.
 - **Kept apart from ADRs.** A process rule inside an ADR is a finding.
 - **Corrected in place**, like every record ([`recording-rules.md`](./recording-rules.md)),
   with *Discarded directions* at the end.

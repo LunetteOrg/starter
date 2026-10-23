@@ -125,11 +125,11 @@ published without the person's go.
    - `discussion`: a GitHub Discussion in `category`, with the `createDiscussion`
      mutation; the repository and category ids are read with `gh api graphql`, never
      written down.
-   - `issue`: an issue with the proposals as a checklist, on the board (the `issues`
-     skill).
+   - `issue`: an issue with the proposals as a checklist, on the board (the
+     `github-board` skill).
 
-**Every proposal the person adopts becomes an issue** of its own (the `issues` skill),
-citing the retrospective and its cluster. A proposal left only in a retrospective is
+**Every proposal the person adopts becomes an issue** of its own (the `github-board`
+skill), citing the retrospective and its cluster. A proposal left only in a retrospective is
 never built.
 
 ## Guardrails

@@ -74,7 +74,8 @@ export default commitlintConfig()
 `lntt sync` writes the managed block of `AGENTS.md` from
 [`agents/block.md`](./agents/block.md), and a stub of each shared skill the package
 ships ([`skills/`](./skills/): `commit-message`, `coordinate`, `decisions`,
-`retrospective`, `review`, `run-local`) into `.agents/skills/` and `.claude/skills/`; commit them. A stub holds the
+`github-board`, `plan-round`, `retrospective`, `review`, `roadmap`, `run-local`) into
+`.agents/skills/` and `.claude/skills/`; commit them. A stub holds the
 skill's frontmatter, for discovery, and the instruction to load its guide:
 
 ```sh
