@@ -73,8 +73,9 @@ export default commitlintConfig()
 
 `lntt sync` writes the managed block of `AGENTS.md` from
 [`agents/block.md`](./agents/block.md), and a stub of each shared skill the package
-ships ([`skills/`](./skills/): `commit-message`, `coordinate`, `decisions`, `review`,
-`run-local`) into `.agents/skills/` and `.claude/skills/`; commit them. A stub holds the
+ships ([`skills/`](./skills/): `commit-message`, `coordinate`, `decisions`,
+`github-board`, `plan-round`, `retrospective`, `review`, `roadmap`, `run-local`) into
+`.agents/skills/` and `.claude/skills/`; commit them. A stub holds the
 skill's frontmatter, for discovery, and the instruction to load its guide:
 
 ```sh
@@ -182,6 +183,25 @@ else the labels `bug` and `documentation`, else `feat`). `rename` reads the conv
 back from a flattened name (Orca's `<user>/<type>-<issue>-<slug>`, the agent harness's
 `worktree-<type>+<issue>+<slug>`) or, inside Orca, builds it from the issue linked to the
 worktree (`orca worktree current`); it leaves an existing branch alone.
+
+## The pull request body
+
+```sh
+lntt pr block                        # the empty retrospective block, from the configuration
+lntt check body                      # FAIL on a missing block, a missing, repeated or empty label
+lntt check body --pr 171             # another pull request's body; `-` reads it on stdin
+lntt check body template             # the template holds the block lntt pr block prints
+```
+
+The block is `delivery.pullRequest.retrospective`: its heading and its labels, each
+written `- **<label>:** <value>` between `<!-- retro:start -->` and `<!-- retro:end -->`,
+the markers on lines of their own. A value may run on the lines below its label; an HTML
+comment is no value; the configured `none` is an answer. `lntt check body` is an area of
+`lntt check` whose input is not in the repository: it reads the current branch's pull
+request with `gh` unless told otherwise, and `lntt check` alone reports it `NOT RUN`.
+Its `template` check reads the repository: the template at `delivery.pullRequest.template`
+holds the block `lntt pr block` prints, so `lntt check` alone runs it. The `retrospective` skill fills the block and harvests the
+merged pull requests' blocks.
 
 ## Starting work on an issue
 

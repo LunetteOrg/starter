@@ -16,8 +16,8 @@ batch for what is expensive ([delivery](./delivery.md) has the flow):
 | Event | What runs |
 |---|---|
 | A draft, into any base | nothing in the cloud; `pnpm ci:local` on the machine |
-| A ready pull request into a candidate, or into any branch other than `main` (a stacked pull request) | the minimal CI: frozen install, lint, typecheck, `lntt check` (the AGENTS.md block, the installed skills, the decision logs), the branch name, the plugin version and `claude plugin validate`, the tests but the scaffold level, unless the change touches `packages/create` |
-| The candidate's pull request into `main`, ready; a hotfix | the full CI: the minimal CI plus the scaffold level (`packages/create`) and its smoke |
+| A ready pull request into a candidate, or into any branch other than `main` (a stacked pull request) | the minimal CI: frozen install, lint, typecheck, `lntt check` (the AGENTS.md block, the installed skills, the decision logs), the branch name, the plugin version and `claude plugin validate`, the tests but the scaffold level, unless the change touches `packages/create`; the retrospective block of the body, as a warning (not on a Dependabot pull request) |
+| The candidate's pull request into `main`, ready; a hotfix | the full CI: the minimal CI plus the scaffold level (`packages/create`) and its smoke; the body's retrospective block only on a hotfix (the candidate's theme block is a comment, [delivery](./delivery.md#the-retrospective)) |
 | A push to `main` | the full CI, which gates a release |
 | A Dependabot pull request | the `ci` check red in seconds, until an owner, member or collaborator approves it; the approval runs the CI the base calls for, and a later push turns it red again ([Dependabot pull requests](#dependabot-pull-requests)) |
 | A merge into a candidate | nothing |
@@ -95,6 +95,16 @@ No real secret runs locally, and ci:local never reads one from a password manage
   `/dev/tty` fails ([`lntt ci`](../../packages/lntt/README.md#parallel-runs-and-timeouts)).
 - A job's `services:` are not started locally: tests that need a database start their
   own (Testcontainers).
+
+## CircleCI needs the network
+
+On a CircleCI project, `ci:local` expands the configuration with `circleci config
+process`, which sends it to CircleCI's server: it needs the network, also for a dynamic
+configuration's continuation. Public orbs need no login; a private orb needs a valid
+one. A stored login that has expired or was revoked makes the CLI stop with "The API
+token was rejected by CircleCI", and `lntt` reports that the stored login is not valid:
+`circleci auth logout` (the anonymous call works for public orbs) or log in again. The
+CLI runs from the repository root, where a `mise.toml` pins its version.
 
 ## Container mode
 

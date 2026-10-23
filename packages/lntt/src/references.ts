@@ -50,6 +50,11 @@ export function checkReferences(data: Record<string, unknown>): string[] {
     }
   }
 
+  const types = at(data, 'board', 'issueTypes') as Tree
+  for (const type of (types?.permanent ?? []) as string[]) {
+    expect('board.issueTypes.permanent', type, (types?.parents ?? []) as string[])
+  }
+
   const members = at(data, 'team', 'members') as Tree
   if (members) {
     const labels = (at(data, 'board', 'tracks', 'labels') ?? {}) as Record<string, Tree>

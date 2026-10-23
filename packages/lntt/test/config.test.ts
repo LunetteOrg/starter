@@ -290,8 +290,12 @@ function assertBadReference(config: unknown, ...lines: RegExp[]): void {
 
 describe('the board section', () => {
   const board = {
-    project: { owner: 'DemoOrg', ownerType: 'organization', number: 1, title: 'Demo board' },
-    issueTypes: { parents: ['Feature'], children: ['Task', 'Bug'] },
+    provider: 'github',
+    github: { project: { owner: 'DemoOrg', ownerType: 'organization', number: 1, title: 'Demo board' } },
+    issueTypes: { parents: ['Feature', 'Debt'], children: ['Task', 'Bug'], permanent: ['Debt'] },
+    subIssues: true,
+    milestones: true,
+    blockedBy: true,
     fields: {
       status: {
         name: 'Status',
@@ -303,7 +307,8 @@ describe('the board section', () => {
         inReview: 'To review',
         done: 'Done',
       },
-      iteration: { name: 'Iteration', type: 'iteration' },
+      horizon: { name: 'Horizon', type: 'singleSelect', options: ['Now', 'Next', 'Later'], on: 'parents' },
+      iteration: { name: 'Iteration', type: 'iteration', on: 'children' },
       startDate: { name: 'Start date', kind: 'issue', type: 'date' },
       targetDate: { name: 'End Date', type: 'date' },
       classe: { name: 'Classe', type: 'singleSelect', options: ['Prodotto', 'Piattaforma', 'Debito'] },
@@ -329,12 +334,82 @@ describe('the board section', () => {
     assert.equal(getValue(data, 'board.fields.targetDate.name'), 'End Date')
     assert.equal(getValue(data, 'board.tracks.labels.community.owner'), 'developer-1')
     assert.deepEqual(getValue(data, 'board.tracks.labels.community.paths'), ['apps/community'])
+    assert.equal(getValue(data, 'board.fields.horizon.on'), 'parents')
+    assert.deepEqual(getValue(data, 'board.issueTypes.permanent'), ['Debt'])
   })
 
-  test('a Project is found by its owner and a number from 1, and its owner is an organization or a user', () => {
-    assertRejected({ board: { project: { title: 'Demo board' } } }, /owner|number/)
-    assertRejected({ board: { project: { owner: 'someone', ownerType: 'enterprise', number: 1 } } }, /ownerType/)
-    assertRejected({ board: { project: { owner: 'someone', number: 0 } } }, /\/board\/project\/number/)
+  test('the fields the board skills know are status, priority, size, horizon, iteration and the two dates', () => {
+    const schema = JSON.parse(readFileSync(resolve(dirname(BIN), '../schema/config.schema.json'), 'utf8'))
+    assert.deepEqual(Object.keys(schema.properties.board.properties.fields.properties), [
+      'status',
+      'priority',
+      'size',
+      'horizon',
+      'iteration',
+      'startDate',
+      'targetDate',
+    ])
+  })
+
+  test('sub-issues, milestones and blocked-by are used only when the board says so, with true or false', () => {
+    for (const key of ['subIssues', 'milestones', 'blockedBy']) {
+      assertRejected({ board: { [key]: 'yes' } }, new RegExp(`/board/${key}`))
+    }
+    write('.agents/config.jsonc', JSON.stringify({ board: { github: board.github } }))
+    assert.throws(() => getValue(loadConfig(root).data, 'board.subIssues'), /no board\.subIssues/, 'no default')
+  })
+
+  test('a field is carried by the parents or by the children, or by any issue when it says neither', () => {
+    const size = { name: 'Size', type: 'singleSelect', options: ['S'], on: 'features' }
+    assertRejected({ board: { fields: { size } } }, /\/board\/fields\/size\/on/)
+    for (const on of ['parents', 'children']) assertValid({ board: { fields: { size: { ...size, on } } } })
+  })
+
+  test('lntt validate: a permanent issue type is one of the parents', () => {
+    assertValid({ board: { issueTypes: board.issueTypes } })
+    assertBadReference(
+      { board: { issueTypes: { parents: ['Feature'], children: ['Bug'], permanent: ['Ongoing'] } } },
+      /board\.issueTypes\.permanent is "Ongoing", not one of: Feature/,
+    )
+    assertBadReference(
+      { board: { issueTypes: { parents: ['Debt'], permanent: ['Debt', 'Ongoing', 'Chore'] } } },
+      /permanent is "Ongoing"/,
+      /permanent is "Chore"/,
+    )
+    assertRejected({ board: { issueTypes: { parents: ['Debt'], permanent: [] } } }, /\/board\/issueTypes\/permanent/)
+    assertBadReference(
+      { board: { issueTypes: { children: ['Bug'], permanent: ['Ongoing'] } } },
+      /board\.issueTypes\.permanent is "Ongoing", not one of: $/m,
+    )
+  })
+
+  test('the board is on GitHub: the provider is github, also when absent, and no other value is accepted', () => {
+    const schema = JSON.parse(readFileSync(resolve(dirname(BIN), '../schema/config.schema.json'), 'utf8'))
+    const provider = schema.properties.board.properties.provider
+    assert.deepEqual(provider.enum, ['github'])
+    assert.equal(provider.default, 'github')
+    const { provider: _, ...noProvider } = board
+    assertValid({ board: noProvider })
+    assertRejected({ board: { ...board, provider: 'gitlab' } }, /\/board\/provider/)
+    assertRejected({ board: { ...board, provider: 'linear' } }, /\/board\/provider/)
+  })
+
+  test("the provider's own keys sit under its name, not beside the concepts every provider shares", () => {
+    assertRejected({ board: { project: board.github.project } }, /project/)
+    assertRejected({ board: { gitlab: {} } }, /gitlab/)
+    assertRejected({ board: { github: { projct: board.github.project } } }, /\/board\/github/)
+  })
+
+  test('a board on GitHub names its Project, and the rest of the board may come first', () => {
+    assertRejected({ board: { github: {} } }, /project/)
+    assertValid({ board: { provider: 'github', issueTypes: board.issueTypes } })
+  })
+
+  test('a GitHub Project is found by its owner and a number from 1, and its owner is an organization or a user', () => {
+    const project = (value: unknown) => ({ board: { github: { project: value } } })
+    assertRejected(project({ title: 'Demo board' }), /owner|number/)
+    assertRejected(project({ owner: 'someone', ownerType: 'enterprise', number: 1 }), /ownerType/)
+    assertRejected(project({ owner: 'someone', number: 0 }), /\/board\/github\/project\/number/)
   })
 
   test('the issue types are listed once each, and a list is never empty', () => {
@@ -349,8 +424,8 @@ describe('the board section', () => {
     assertRejected({ board: { fields: { size: { name: 'Size', type: 'tshirt' } } } }, /\/board\/fields\/size\/type/)
     assertRejected({ board: { fields: { estimate: { type: 'number' } } } }, /name/)
     assertRejected({ board: { fields: { estimate: { name: 'Estimate' } } } }, /type/)
-    const scope = { name: 'Scope', type: 'singleSelect', options: ['Now'], done: 'Now' }
-    assertRejected({ board: { fields: { scope } } }, /done/)
+    const horizon = { name: 'Horizon', type: 'singleSelect', options: ['Now'], done: 'Now' }
+    assertRejected({ board: { fields: { horizon } } }, /done/)
   })
 
   test('a field is a custom field of the Project or an issue field, nothing else', () => {
@@ -622,7 +697,7 @@ describe('the configurations of the projects the starter was ported from', () =>
       'delivery.pullRequest.outcome.done': '— fatto',
       'delivery.commits.longTrailers': ['Retro', 'Removed-section'],
       'ci.providers': ['github-actions'],
-      'board.fields.scope.options': ['Now', 'Next', 'Not now'],
+      'board.fields.horizon.options': ['Now', 'Next', 'Not now'],
       'board.fields.status.inReview': 'In review',
       'board.tracks.labels.Amministrazione.paths': ['apps/admin'],
     },
@@ -633,7 +708,7 @@ describe('the configurations of the projects the starter was ported from', () =>
       'delivery.pullRequest.outcome.done': '— done',
       'delivery.branches.types': ['feat', 'fix', 'chore', 'refactor', 'docs', 'test', 'ci'],
       'ci.providers': ['circleci', 'github-actions'],
-      'board.fields.scope.options': ['Now', 'Next', 'Later', 'Not now', 'Permanent'],
+      'board.fields.horizon.options': ['Now', 'Next', 'Later', 'Not now', 'Permanent'],
       'board.fields.classe.options': ['Prodotto', 'Piattaforma', 'Debito'],
       'board.fields.status.inReview': 'To review',
       'board.fields.targetDate.name': 'End Date',

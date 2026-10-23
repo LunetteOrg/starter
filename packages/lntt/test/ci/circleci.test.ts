@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { rmSync } from 'node:fs'
-import { afterEach, describe, test } from 'node:test'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { afterEach, describe, type TestContext, test } from 'node:test'
 import { parse } from 'yaml'
-import { circleciJobs, cliProcessor, type Processor } from '../../src/ci/circleci.ts'
+import {
+  CircleciLoginRejected,
+  circleciJobs,
+  circleciUnavailable,
+  cliProcessor,
+  type Processor,
+} from '../../src/ci/circleci.ts'
 import { emptyConfig } from '../../src/ci/config.ts'
 import { localEvent } from '../../src/ci/event.ts'
 import type { Job } from '../../src/ci/plan.ts'
@@ -19,6 +26,19 @@ function fakeProcessor(seen: Array<{ path: string; parameters: Record<string, un
     return { config: parse(text) }
   }
 }
+
+const PROBE = `
+version: 2.1
+jobs:
+  probe:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+workflows:
+  probe:
+    jobs: [probe]
+`
 
 const SIMPLE = `
 version: 2.1
@@ -216,7 +236,7 @@ describe('circleciJobs', () => {
     assert.equal(byKey(list, 'circleci/test').state.state, 'skipped')
   })
 
-  test('the real circleci CLI processes the same dynamic config', { skip: !hasCircleci() }, () => {
+  test('the real circleci CLI processes the same dynamic config', { skip: realCliSkip() }, () => {
     root = repo({
       '.circleci/config.yml': SETUP,
       '.circleci/full.yml': continuation('test'),
@@ -230,13 +250,76 @@ describe('circleciJobs', () => {
       ['checkout', 'run: pnpm test'],
     )
   })
+
+  test('a rejected token is named, not reported as a generic failure', (t) => {
+    root = repo({ '.circleci/config.yml': SIMPLE })
+    stubCircleci(t, root, 'echo "Error: The API token was rejected by CircleCI" >&2; exit 255')
+    assert.throws(() => cliProcessor(root)('.circleci/config.yml', SIMPLE, {}), CircleciLoginRejected)
+  })
+
+  test('any other failure of config process stays a generic one, with the CLI output', (t) => {
+    root = repo({ '.circleci/config.yml': SIMPLE })
+    stubCircleci(t, root, 'echo "Error: unknown orb" >&2; exit 1')
+    assert.throws(
+      () => cliProcessor(root)('.circleci/config.yml', SIMPLE, {}),
+      (error) =>
+        !(error instanceof CircleciLoginRejected) &&
+        /config process \.circleci\/config\.yml: .*unknown orb/.test(String(error)),
+    )
+  })
+
+  test('circleciUnavailable is null when the CLI runs', (t) => {
+    root = repo({})
+    stubCircleci(t, root, 'exit 0')
+    assert.equal(circleciUnavailable(root), null)
+  })
+
+  test('circleciUnavailable names the folder when the CLI does not run from it', (t) => {
+    root = repo({})
+    stubCircleci(t, root, 'echo "No version is set for shim: circleci" >&2; exit 126')
+    assert.ok(String(circleciUnavailable(root)).includes(`does not run from ${root}`))
+  })
+
+  test('a missing CLI is reported as not installed, by the probe and by the processor', (t) => {
+    root = repo({})
+    const path = process.env.PATH
+    process.env.PATH = join(root, 'empty')
+    t.after(() => {
+      process.env.PATH = path
+    })
+    assert.match(String(circleciUnavailable(root)), /not installed/)
+    assert.throws(() => cliProcessor(root)('.circleci/config.yml', SIMPLE, {}), /not installed/)
+  })
 })
 
-function hasCircleci(): boolean {
+// Puts a `circleci` script first on PATH for the test.
+function stubCircleci(t: TestContext, dir: string, body: string): void {
+  const bin = join(dir, 'bin')
+  mkdirSync(bin, { recursive: true })
+  writeFileSync(join(bin, 'circleci'), `#!/bin/sh\n${body}\n`, { mode: 0o755 })
+  const path = process.env.PATH
+  process.env.PATH = `${bin}:${path}`
+  t.after(() => {
+    process.env.PATH = path
+  })
+}
+
+// Why the real-CLI test cannot run on this machine, or false: the CLI does not run from
+// a temporary repo (where the test runs it), or the stored login is rejected, which a
+// trivial `config process` shows. It runs when the file loads, since `skip` is decided
+// at declaration; the call is one request to CircleCI, made only where the CLI is.
+function realCliSkip(): string | false {
+  const dir = repo({})
   try {
-    execFileSync('circleci', ['version'], { stdio: 'ignore' })
-    return true
-  } catch {
+    const unavailable = circleciUnavailable(dir)
+    if (unavailable) return unavailable
+    cliProcessor(dir)('probe.yml', PROBE, {})
     return false
+  } catch (error) {
+    if (error instanceof CircleciLoginRejected) return error.message
+    // Any other failure (the network, a regression) runs the test, which then fails with it.
+    return false
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
   }
 }

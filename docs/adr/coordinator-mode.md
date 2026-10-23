@@ -29,7 +29,9 @@ two.
 - **Coordinator:** one per theme, in a worktree of its own on a placeholder branch
   (`chore/no-issue/<theme>`) that is never committed or pushed. It writes no code and runs
   no workflow; its context holds briefs, summaries and the merge order, never diffs. It
-  starts one child per issue, or per separable part of one.
+  starts one child per issue, or per separable part of one. When the theme ends it
+  leaves the theme's own friction in a comment on the candidate pull request (the
+  `retrospective` skill).
 - **Child:** one per issue, in its own worktree and branch, started from `main` or, when it
   depends on a sibling, from the sibling's branch (`--base`). It follows the single-issue
   brief ([worktree tooling](./worktree-tooling.md)) and stops at a draft pull request.

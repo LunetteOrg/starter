@@ -652,6 +652,84 @@ describe('what the first real round taught', () => {
     assert.equal(roundClean(result), false)
   })
 
+  test('one unreadable line keeps the readable findings: the lens is partial, with the full reply', async () => {
+    const reply = '- [warning] a.ts:1 — x — y\n- [blocker] something went wrong\n\nclosing words'
+    const result = await runRound(
+      one,
+      input,
+      ask((p) => (reviewerFirst(p) ? reply : 'confirmed\nx')),
+    )
+    assert.deepEqual(result.failed, [])
+    assert.deepEqual(
+      result.findings.map((f) => f.path),
+      ['a.ts'],
+    )
+    assert.deepEqual(result.partial, [
+      { lens: 'code', agent: 'claude sonnet', lines: ['- [blocker] something went wrong'], reply },
+    ])
+    assert.equal(roundClean(result), false)
+  })
+
+  test('only unreadable lines and a note: the lens is partial and the round is not clean', async () => {
+    const reply = `- [note] a.ts:1 — x — y\n\n- [blocker] ${'z'.repeat(300)}`
+    const result = await runRound(
+      one,
+      input,
+      ask((p) => (reviewerFirst(p) ? reply : 'confirmed\nx')),
+    )
+    assert.deepEqual(result.failed, [])
+    assert.equal(result.partial[0]?.reply, reply)
+    assert.equal(roundClean(result), false)
+  })
+
+  test('a reply of only unreadable finding lines fails, with the whole reply', async () => {
+    const reply = `- [blocker] ${'z'.repeat(300)}`
+    const result = await runRound(
+      one,
+      input,
+      ask((p) => (reviewerFirst(p) ? reply : 'confirmed\nx')),
+    )
+    assert.match(result.failed[0]?.error ?? '', /1 finding lines that cannot be read/)
+    assert.equal(result.failed[0]?.reply, reply)
+    assert.deepEqual(result.partial, [])
+  })
+
+  test('a reply that fails keeps its full text, not 160 characters', async () => {
+    const reply = `Looks good overall. ${'x'.repeat(400)}`
+    const result = await runRound(
+      one,
+      input,
+      ask((p) => (reviewerFirst(p) ? reply : 'confirmed\nx')),
+    )
+    assert.equal(result.failed[0]?.reply, reply)
+  })
+
+  test('the reply that showed the problem in #170: all thirteen lines read, none dropped', async () => {
+    const reply = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'fixtures/review-reply-decisions-170.txt'),
+      'utf8',
+    )
+    assert.equal(unreadableFindings(reply), 0)
+    const found = parseFindings(reply)
+    assert.equal(found.length, 13)
+    assert.deepEqual(
+      found.slice(1, 2).map((f) => [f.path, f.line, f.what.endsWith('(also :34-37)')]),
+      [['docs/adr/lntt-command.md', 24, true]],
+    )
+    assert.deepEqual(
+      found.slice(-1).map((f) => [f.severity, f.path]),
+      [['note', null]],
+    )
+    const result = await runRound(
+      one,
+      input,
+      ask((p) => (reviewerFirst(p) ? reply : 'confirmed\nx')),
+    )
+    assert.deepEqual(result.failed, [])
+    assert.deepEqual(result.partial, [])
+    assert.equal(result.findings.length, 13)
+  })
+
   test('notes do not block a clean round; blockers and warnings do', async () => {
     const notes = await runRound(
       one,
@@ -935,6 +1013,51 @@ describe('what the fourth real round taught', () => {
   test('a finding line that cannot be read makes the reply unreadable, even beside readable ones', () => {
     assert.equal(unreadableFindings('- [warning] a.ts:1 — x — y\n- [blocker] something went wrong'), 1)
     assert.equal(unreadableFindings('- [warning] a.ts:1 — x — y\nSome closing words.'), 0)
+  })
+
+  test('a finding line may name several places: the first is the anchor, the others go with the finding', () => {
+    const lines = [
+      '- [warning] a.md:24-32 e :34-37 — what — act',
+      '- [warning] a.md:24-32, :34-37 — what — act',
+      '- [warning] a.md:24-32 and b.md:2 — what — act',
+      '- [warning] `a.md:24-32` e `:34-37` — what — act',
+    ]
+    for (const line of lines) assert.equal(unreadableFindings(line), 0, line)
+    assert.deepEqual(
+      parseFindings(lines.join('\n')).map((f) => [f.path, f.line, f.what, f.action]),
+      [
+        ['a.md', 24, 'what (also :34-37)', 'act'],
+        ['a.md', 24, 'what (also :34-37)', 'act'],
+        ['a.md', 24, 'what (also b.md:2)', 'act'],
+        ['a.md', 24, 'what (also :34-37)', 'act'],
+      ],
+    )
+  })
+
+  test('a line with no path-like token before the separator is a finding with no anchor', () => {
+    const line = '- [note] not checked: needs `pnpm ci:local --list`. Verify the step — it was not run.'
+    assert.equal(unreadableFindings(line), 0)
+    assert.deepEqual(
+      parseFindings(line).map((f) => [f.severity, f.path, f.line, f.what, f.action]),
+      [['note', null, null, 'not checked: needs `pnpm ci:local --list`. Verify the step', 'it was not run.']],
+    )
+  })
+
+  test('a head with one token that is no place has no anchor', () => {
+    assert.deepEqual(
+      parseFindings('- [blocker] something — x — y').map((f) => [f.path, f.what, f.action]),
+      [[null, 'something — x', 'y']],
+    )
+  })
+
+  test('a `not checked:` note with no separator is a finding with no anchor; other lines with none stay unreadable', () => {
+    const line = '- [note] not checked: needs `pnpm ci:local --list`. Verify the step.'
+    assert.equal(unreadableFindings(line), 0)
+    assert.deepEqual(
+      parseFindings(line).map((f) => [f.path, f.what, f.action]),
+      [[null, 'not checked: needs `pnpm ci:local --list`. Verify the step.', '']],
+    )
+    assert.equal(unreadableFindings('- [note] checked it, all fine'), 1)
   })
 
   test('the same agent finding an open finding again is not counted twice', async () => {

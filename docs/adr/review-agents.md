@@ -69,10 +69,15 @@ same way every time; the `review` skill keeps the judgement.
   failed; notes are reported, never blocking. A finding is a bullet with its severity,
   an anchor (a line as `:12`, a range, a column or a list, each naming its first line,
   and an optional parenthesis after it) and its text (the action after a last separator,
-  when there is one), wrapped over as many lines as the reviewer likes; a reply with a
-  finding line that has no anchor or no text, or with neither findings nor `no
-  findings`, counts as a failed reviewer, and a round with a failure does not move the
-  reviewed commit. A fresh finding at the anchor of an open one joins it. A round runs
+  when there is one), wrapped over as many lines as the reviewer likes. A finding may
+  name several places (`a.md:24-32 e :34-37`): the first is the anchor, checked and
+  cited; the others stay in the text, unchecked. A line with no path-like token before
+  the separator, and a `not checked: …` note, have no anchor. A reply with neither
+  findings nor `no findings` counts as a failed reviewer. A finding line with no text
+  does not drop the reply: the readable findings stand, the lines that cannot be read
+  are reported in `partial` with the whole reply, and the round is not clean. A round
+  with a failure or a `partial` lens does not move the reviewed commit; a failed reply
+  keeps its whole text in `failed`. A fresh finding at the anchor of an open one joins it. A round runs
   on a branch (a detached HEAD is refused) whose head does not move until it ends.
 - **A branch takes at most `maxRounds` rounds:** later rounds find ever smaller things,
   and most of a pull request's time and cost went into them. Every round counts, one

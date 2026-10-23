@@ -15,8 +15,14 @@
     }
   },
   "board": {
-    "project": { "owner": "DiscenTech", "ownerType": "organization", "number": 1, "title": "Discentis Tech Projects" },
+    // No provider: github, the default.
+    "github": {
+      "project": { "owner": "DiscenTech", "ownerType": "organization", "number": 1, "title": "Discentis Tech Projects" }
+    },
     "issueTypes": { "parents": ["Feature"], "children": ["Task", "Bug"] },
+    "subIssues": true,
+    "milestones": true,
+    "blockedBy": true,
     "fields": {
       "status": {
         "name": "Status",
@@ -30,18 +36,25 @@
         "done": "Done"
       },
       "priority": { "name": "Priority", "type": "singleSelect", "options": ["P0", "P1", "P2", "P3", "Not now"] },
-      "size": { "name": "Size", "type": "singleSelect", "options": ["XS", "S", "M", "L", "XL"] },
+      "size": { "name": "Size", "type": "singleSelect", "options": ["XS", "S", "M", "L", "XL"], "on": "children" },
       // The live field and docs/adr/ciclo-di-lavoro.md; the skills still list three.
-      "scope": {
+      "horizon": {
         "name": "Scope",
         "type": "singleSelect",
-        "options": ["Now", "Next", "Later", "Not now", "Permanent"]
+        "options": ["Now", "Next", "Later", "Not now", "Permanent"],
+        "on": "parents"
       },
       // On every Feature; Debito stays out of the roadmap and of velocity.
-      "classe": { "name": "Classe", "type": "singleSelect", "options": ["Prodotto", "Piattaforma", "Debito"] },
-      "iteration": { "name": "Iteration", "type": "iteration" }, // set when scheduling, never on a Feature
-      "startDate": { "name": "Start Date", "type": "date" },
-      "targetDate": { "name": "End Date", "type": "date" }
+      "classe": {
+        "name": "Classe",
+        "type": "singleSelect",
+        "options": ["Prodotto", "Piattaforma", "Debito"],
+        "on": "parents"
+      },
+      // set when scheduling, never on a Feature
+      "iteration": { "name": "Iteration", "type": "iteration", "on": "children" },
+      "startDate": { "name": "Start Date", "type": "date", "on": "parents" },
+      "targetDate": { "name": "End Date", "type": "date", "on": "parents" }
     },
     "tracks": {
       "from": ["apps/*"],
