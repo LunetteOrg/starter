@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, describe, test } from 'node:test'
+import { afterEach, describe, type TestContext, test } from 'node:test'
 import { parse } from 'yaml'
 import {
   CircleciLoginRejected,
@@ -248,20 +248,38 @@ describe('circleciJobs', () => {
 
   test('a rejected token is named, not reported as a generic failure', (t) => {
     root = repo({ '.circleci/config.yml': SIMPLE })
-    const bin = join(root, 'bin')
-    mkdirSync(bin)
-    writeFileSync(
-      join(bin, 'circleci'),
-      '#!/bin/sh\necho "Error: The API token was rejected by CircleCI" >&2\nexit 255\n',
-      {
-        mode: 0o755,
-      },
-    )
-    const path = process.env.PATH
-    process.env.PATH = `${bin}:${path}`
-    t.after(() => {
-      process.env.PATH = path
-    })
+    stubCircleci(t, root, 'echo "Error: The API token was rejected by CircleCI" >&2; exit 255')
     assert.throws(() => cliProcessor(root)('.circleci/config.yml', SIMPLE, {}), CircleciLoginRejected)
   })
+
+  test('any other failure of config process stays a generic one, with the CLI output', (t) => {
+    root = repo({ '.circleci/config.yml': SIMPLE })
+    stubCircleci(t, root, 'echo "Error: unknown orb" >&2; exit 1')
+    assert.throws(
+      () => cliProcessor(root)('.circleci/config.yml', SIMPLE, {}),
+      (error) => !(error instanceof CircleciLoginRejected) && /config process .*unknown orb/.test(String(error)),
+    )
+  })
+
+  test('circleciUnavailable: null when the CLI runs, a reason when it does not run or is missing', (t) => {
+    root = repo({})
+    stubCircleci(t, root, 'exit 0')
+    assert.equal(circleciUnavailable(root), null)
+    stubCircleci(t, root, 'echo "No version is set for shim: circleci" >&2; exit 126')
+    assert.match(String(circleciUnavailable(root)), /does not run from/)
+    process.env.PATH = join(root, 'empty')
+    assert.match(String(circleciUnavailable(root)), /not installed/)
+  })
 })
+
+// Puts a `circleci` script first on PATH for the test.
+function stubCircleci(t: TestContext, dir: string, body: string): void {
+  const bin = join(dir, 'bin')
+  mkdirSync(bin, { recursive: true })
+  writeFileSync(join(bin, 'circleci'), `#!/bin/sh\n${body}\n`, { mode: 0o755 })
+  const path = process.env.PATH
+  process.env.PATH = `${bin}:${path}`
+  t.after(() => {
+    process.env.PATH = path
+  })
+}

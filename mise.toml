@@ -1,4 +1,4 @@
-# Tools for `pnpm ci:local --container` (docs/process/ci.md#container-mode): `act` runs
+# Tools for `pnpm ci:local --container` (docs/process/ci.md): `act` runs
 # the GitHub Actions jobs and `circleci` the CircleCI ones, each inside a container.
 # Node is not pinned here: its version is in .nvmrc.
 [tools]
