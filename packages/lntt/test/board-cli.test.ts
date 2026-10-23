@@ -11,7 +11,9 @@ const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
 // A fake gh for `gh api graphql --input -`: the Project and the organization's issue
 // types live in the JSON file $GH_STATE, the read query answers from it, and the four
 // mutations lntt board sync sends change it as GitHub would (a new option without an id
-// gets a new one). Each call is logged: "read", or the mutation's name.
+// gets a new one, a name or a color given replaces the old). The items of the Project
+// are state.items ({ Status: "Archived" }), the issues of each type state.typeCounts.
+// Each call is logged: "read", "items", "search", or the mutation's name.
 const GH = `#!/usr/bin/env node
 const fs = require('node:fs')
 const state = JSON.parse(fs.readFileSync(process.env.GH_STATE, 'utf8'))
@@ -25,7 +27,8 @@ const name = (query.match(/(createProjectV2Field|updateProjectV2Field|createIssu
 if (process.env.GH_FAIL && name === process.env.GH_FAIL) {
   process.stderr.write('gh: Resource not accessible by integration\\n'); process.exit(1)
 }
-log(name || 'read')
+const kind = name || (query.includes('items(') ? 'items' : query.includes('search(') ? 'search' : 'read')
+log(kind)
 if (name) fs.appendFileSync(process.env.GH_LOG + '.times', Date.now() + '\\n')
 if (!name && process.env.GH_NO_ORG && query.includes('organization(')) {
   process.stderr.write("gh: Could not resolve to an Organization with the login of 'DemoOrg'.\\n"); process.exit(1)
@@ -33,10 +36,16 @@ if (!name && process.env.GH_NO_ORG && query.includes('organization(')) {
 if (name && name === process.env.GH_NOOP) { reply({ [name]: {} }); process.exit(0) }
 const withIds = (options) => options.map((o) => ({ id: o.id || id('o'), name: o.name, color: o.color, description: o.description }))
 const page = { hasNextPage: !!process.env.GH_MORE }
-if (!name && query.includes('user(')) {
-  reply({ user: { id: 'U_1', projectV2: { id: 'PVT_1', fields: { nodes: state.fields, pageInfo: page } } } })
+if (kind === 'items') {
+  const nodes = (state.items || []).map((values) => ({ v: values[v.field] ? { name: values[v.field] } : null }))
+  reply({ node: { items: { nodes, pageInfo: { hasNextPage: false, endCursor: null } } } })
+} else if (kind === 'search') {
+  const type = v.q.match(/type:"([^"]+)"/)[1]
+  reply({ search: { issueCount: (state.typeCounts || {})[type] || 0 } })
+} else if (!name && query.includes('user(')) {
+  reply({ user: { id: 'U_1', projectV2: { id: 'PVT_1', url: 'https://github.com/users/someone/projects/1', fields: { nodes: state.fields, pageInfo: page } } } })
 } else if (!name) {
-  reply({ organization: { id: 'O_1', projectV2: { id: 'PVT_1', fields: { nodes: state.fields, pageInfo: page } },
+  reply({ organization: { id: 'O_1', projectV2: { id: 'PVT_1', url: 'https://github.com/orgs/DemoOrg/projects/1', fields: { nodes: state.fields, pageInfo: page } },
     issueTypes: { nodes: state.issueTypes, pageInfo: { hasNextPage: false } } } })
 } else if (name === 'createProjectV2Field') {
   const f = { id: id('F'), name: v.input.name, dataType: v.input.dataType }
@@ -44,13 +53,17 @@ if (!name && query.includes('user(')) {
   state.fields.push(f); save(); reply({ createProjectV2Field: { projectV2Field: { id: f.id } } })
 } else if (name === 'updateProjectV2Field') {
   const f = state.fields.find((x) => x.id === v.input.fieldId)
-  f.options = withIds(v.input.singleSelectOptions); save(); reply({ updateProjectV2Field: { projectV2Field: { id: f.id } } })
+  if (v.input.name) f.name = v.input.name
+  if (v.input.singleSelectOptions) f.options = withIds(v.input.singleSelectOptions)
+  save(); reply({ updateProjectV2Field: { projectV2Field: { id: f.id } } })
 } else if (name === 'createIssueType') {
   state.issueTypes.push({ id: id('T'), name: v.input.name, description: v.input.description || null }); save()
   reply({ createIssueType: { issueType: { id: 'T' } } })
 } else {
   const t = state.issueTypes.find((x) => x.id === v.input.issueTypeId)
-  t.description = v.input.description; save(); reply({ updateIssueType: { issueType: { id: t.id } } })
+  if (v.input.name) t.name = v.input.name
+  if (v.input.description) t.description = v.input.description
+  save(); reply({ updateIssueType: { issueType: { id: t.id } } })
 }
 `
 
@@ -60,7 +73,13 @@ const CONFIG = {
     issueTypes: { parents: ['Feature', 'Debt'], children: ['Task'], descriptions: { Debt: 'A debt to pay back' } },
     fields: {
       status: { name: 'Status', type: 'singleSelect', options: ['Todo', 'Ready', 'Done'] },
-      horizon: { name: 'Horizon', type: 'singleSelect', options: ['Now', 'Next'], on: 'parents' },
+      horizon: {
+        name: 'Horizon',
+        type: 'singleSelect',
+        options: ['Now', 'Next'],
+        on: 'parents',
+        colors: { Now: 'GREEN', Next: 'BLUE' },
+      },
     },
   },
 }
@@ -69,6 +88,7 @@ const LIVE = {
   fields: [
     {
       id: 'F_status',
+      databaseId: 21,
       name: 'Status',
       dataType: 'SINGLE_SELECT',
       options: [
@@ -80,8 +100,11 @@ const LIVE = {
   ],
   issueTypes: [
     { id: 'T_feature', name: 'Feature', description: null },
-    { id: 'T_task', name: 'Task', description: null },
+    { id: 'T_task', name: 'task', description: null },
+    { id: 'T_chore', name: 'Chore', description: null },
   ],
+  items: [{ Status: 'Archived' }, { Status: 'Todo' }, { Status: 'Archived' }],
+  typeCounts: { Chore: 4 },
 }
 
 let tmp: string
@@ -115,15 +138,18 @@ function lntt(args: string[], env: Record<string, string> = {}) {
 }
 const calls = () => readFileSync(gh.log, 'utf8').trim().split('\n').filter(Boolean)
 const live = () => JSON.parse(readFileSync(gh.state, 'utf8')) as typeof LIVE
+// The reads and writes, without the counts of what a removal would touch.
+const io = () => calls().filter((c) => c !== 'items' && c !== 'search')
 
 describe('lntt board sync', () => {
   test('a dry run by default: prints the plan, writes nothing, and says how to apply it', () => {
     const r = lntt(['sync'])
     assert.equal(r.status, 0, r.stderr)
-    assert.deepEqual(calls(), ['read'])
+    assert.deepEqual(io(), ['read'])
     assert.match(r.stdout, /DemoOrg project 1 \(Demo\), dry run/)
-    assert.match(r.stdout, /add options to Status: Ready/)
-    assert.match(r.stdout, /create field Horizon \(single select\): Now, Next/)
+    assert.match(r.stdout, /update options of Status: add "Ready"/)
+    assert.match(r.stdout, /create field Horizon \(single select\): Now GREEN, Next BLUE/)
+    assert.match(r.stdout, /rename issue type "task" → "Task"/)
     assert.match(r.stdout, /create issue type Debt: A debt to pay back/)
     assert.match(r.stdout, /by hand, in GitHub's UI:\n {2}.*Archived/)
     assert.match(r.stdout, /--apply/)
@@ -132,7 +158,14 @@ describe('lntt board sync', () => {
   test('--apply makes the changes, keeps the ids of the existing options, and reads the board back', () => {
     const r = lntt(['sync', '--apply'])
     assert.equal(r.status, 0, r.stderr)
-    assert.deepEqual(calls(), ['read', 'updateProjectV2Field', 'createProjectV2Field', 'createIssueType', 'read'])
+    assert.deepEqual(io(), [
+      'read',
+      'updateProjectV2Field',
+      'createProjectV2Field',
+      'createIssueType',
+      'updateIssueType',
+      'read',
+    ])
     const after = live()
     const status = after.fields.find((f) => f.name === 'Status')
     assert.deepEqual(
@@ -145,11 +178,18 @@ describe('lntt board sync', () => {
       ],
     )
     assert.deepEqual(
-      after.fields.find((f) => f.name === 'Horizon')?.options.map((o) => o.name),
-      ['Now', 'Next'],
+      after.fields.find((f) => f.name === 'Horizon')?.options.map((o) => [o.name, o.color]),
+      [
+        ['Now', 'GREEN'],
+        ['Next', 'BLUE'],
+      ],
     )
     assert.ok(after.issueTypes.some((t) => t.name === 'Debt' && t.description === 'A debt to pay back'))
-    assert.match(r.stdout, /applied 3 changes/)
+    assert.ok(
+      after.issueTypes.some((t) => t.id === 'T_task' && t.name === 'Task'),
+      'renamed, same id',
+    )
+    assert.match(r.stdout, /applied 4 changes/)
     assert.match(r.stdout, /Archived/, 'what is left to the UI is still listed')
   })
 
@@ -158,7 +198,7 @@ describe('lntt board sync', () => {
     writeFileSync(gh.log, '')
     const r = lntt(['sync', '--apply'])
     assert.equal(r.status, 0, r.stderr)
-    assert.deepEqual(calls(), ['read', 'read'])
+    assert.deepEqual(io(), ['read', 'read'])
     assert.match(r.stdout, /nothing to change/)
   })
 
@@ -172,7 +212,7 @@ describe('lntt board sync', () => {
   test('the writes are 1.2 s apart: the secondary rate limit drops faster ones', () => {
     assert.equal(lntt(['sync', '--apply']).status, 0)
     const times = readFileSync(`${gh.log}.times`, 'utf8').trim().split('\n').map(Number)
-    assert.equal(times.length, 3)
+    assert.equal(times.length, 4)
     for (let i = 1; i < times.length; i++) assert.ok(times[i] - times[i - 1] >= 1100, `${times[i] - times[i - 1]} ms`)
   })
 
@@ -211,6 +251,34 @@ describe('lntt board sync', () => {
     assert.match(r.stdout, /Archived/)
   })
 
+  test('what is left to the UI says why, how many items or issues it touches, where to go and what to do', () => {
+    const r = lntt(['sync'])
+    assert.match(r.stdout, /Status: the option "Archived"[^\n]*2 items have it/)
+    assert.match(r.stdout, /https:\/\/github\.com\/orgs\/DemoOrg\/projects\/1\/settings\/fields\/21/)
+    assert.match(r.stdout, /Status:"Archived"/)
+    assert.match(r.stdout, /the issue type Chore[^\n]*4 issues have it/)
+    assert.match(r.stdout, /https:\/\/github\.com\/organizations\/DemoOrg\/settings\/issue-types/)
+  })
+
+  test('--check: exit 1 when the board differs, naming what differs, and nothing is written', () => {
+    const r = lntt(['sync', '--check'])
+    assert.equal(r.status, 1)
+    assert.match(r.stdout, /create field Horizon/)
+    assert.match(r.stderr, /the board differs from the configuration: 4 changes, 2 by hand/)
+    assert.deepEqual(io(), ['read'])
+  })
+
+  test('--check: exit 0 once the Project and the types are as the board declares them', () => {
+    assert.equal(lntt(['sync', '--apply']).status, 0)
+    const aligned = live()
+    aligned.fields[0].options = aligned.fields[0].options.filter((o) => o.name !== 'Archived')
+    aligned.issueTypes = aligned.issueTypes.filter((t) => t.name !== 'Chore')
+    writeFileSync(gh.state, JSON.stringify(aligned))
+    const r = lntt(['sync', '--check'])
+    assert.equal(r.status, 0, r.stderr)
+    assert.match(r.stdout, /nothing to change/)
+  })
+
   test('no board section: exit 1, and gh is not called', () => {
     writeFileSync(join(repo, '.agents/config.jsonc'), '{}')
     const r = lntt(['sync'])
@@ -222,5 +290,6 @@ describe('lntt board sync', () => {
   test('usage: an unknown subcommand or option is exit 2', () => {
     assert.equal(lntt(['pull']).status, 2)
     assert.equal(lntt(['sync', '--force']).status, 2)
+    assert.equal(lntt(['sync', '--check', '--apply']).status, 2)
   })
 })

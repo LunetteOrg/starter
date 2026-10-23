@@ -425,27 +425,37 @@ usage error, as with no text and a terminal on stdin.
 
 ```sh
 lntt board sync            # what the Project and the issue types lack, read from GitHub: a dry run
-lntt board sync --apply    # adds it, then reads the board back
+lntt board sync --apply    # makes those changes, then reads the board back
+lntt board sync --check    # exit 1 when the board differs from the configuration: for CI or a hook
 ```
 
 It brings the GitHub Project of `board.github.project` and its organization's issue
-types to what the `board` section declares, and only adds: a missing field of
-`board.fields` (single select with its options, date, number, text), a missing option
-(every existing option passed back with its id, so no item loses its value), a missing
-issue type of `board.issueTypes`, and the description `board.issueTypes.descriptions`
-gives a type. What it never does it lists under *by hand, in GitHub's UI*, with the
-reason: a rename (of a field, an option, a type), a removal (an option or a type the
-configuration lacks: removing it clears it from every item or issue), a field of another
-type, an iteration field (created with its iterations in the Project's settings). A
-field of `kind: issue` is the organization's, not the Project's, and is left alone. Run
-twice, the second run has nothing to change.
+types to what the `board` section declares. Through the API, each change keeping the
+id of what it changes, so no item or issue loses a value:
+
+- a missing field of `board.fields` (single select with its options, date, number, text);
+- a missing option, and the colors of `board.fields.<key>.colors` (an option left out
+  keeps its color, a new one is gray), every existing option passed back with its id;
+- a field, an option or an issue type whose name differs from the configuration's only
+  in case, renamed;
+- a missing issue type of `board.issueTypes`, and the description
+  `board.issueTypes.descriptions` gives a type.
+
+What the API cannot do, or what is risky, it lists under *by hand, in GitHub's UI*, each
+with the reason, the settings page and the steps: a field of another type (the API never
+changes a type), an iteration field (its iterations are not in the configuration), an
+option or a type the configuration lacks (removing it clears it from every item or
+issue: the entry says how many hold it, counted from the Project's items or a search of
+the organization's issues). A field of `kind: issue` is the organization's, not the
+Project's, and is left alone. Run twice, the second run has nothing to change.
 
 It writes through `gh api graphql`, one change at a time, 1.2 s apart (GitHub's
 secondary rate limit drops faster writes without a word); the token needs the `project`
-scope, and an organization owner to create an issue type. Exit codes: 0 the plan, or
-every change applied and read back; 1 a configuration error, a read or a write `gh`
-refuses (with the changes applied before it), or a change that does not show on the
-read-back; 2 a usage error.
+scope, and an organization owner to create or rename an issue type. Exit codes: 0 the
+plan, or every change applied and read back, or with `--check` a board as declared; 1 a
+configuration error, a read or a write `gh` refuses (with the changes applied before
+it), a change that does not show on the read-back, or with `--check` a board that
+differs (a change or an entry by hand); 2 a usage error.
 
 ## CI (`lntt ci`)
 

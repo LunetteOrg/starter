@@ -461,6 +461,16 @@ describe('the board section', () => {
     )
   })
 
+  test("a single select's colors are GitHub's, by option; lntt validate checks each names an option", () => {
+    const size = { name: 'Size', type: 'singleSelect', options: ['S', 'L'], colors: { S: 'GREEN', L: 'RED' } }
+    assertValid({ board: withHorizon({ fields: { size } }) })
+    assertRejected({ board: { fields: { size: { ...size, colors: { S: 'TEAL' } } } } }, /\/board\/fields\/size\/colors/)
+    assertBadReference(
+      { board: withHorizon({ fields: { size: { ...size, colors: { XL: 'RED' } } } }) },
+      /board\.fields\.size\.colors\.XL names no option of the field: S, L/,
+    )
+  })
+
   test('a single select lists its options, once each; another type has none', () => {
     assertRejected({ board: { fields: { priority: { name: 'Priority', type: 'singleSelect' } } } }, /options/)
     const twice = { name: 'Priority', type: 'singleSelect', options: ['P0', 'P0'] }

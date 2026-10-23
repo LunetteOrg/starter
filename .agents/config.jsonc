@@ -118,8 +118,20 @@
       },
       "priority": { "name": "Priority", "type": "singleSelect", "options": ["P0", "P1", "P2", "P3"] },
       // Read by coordinator.models.children, on whichever issue a child works.
-      "size": { "name": "Size", "type": "singleSelect", "options": ["XS", "S", "M", "L", "XL"] },
-      "horizon": { "name": "Horizon", "type": "singleSelect", "options": ["Now", "Next", "Later", "Backlog"], "on": "parents" }
+      // Colors run green to red as the work grows: XL is the one to split.
+      "size": {
+        "name": "Size",
+        "type": "singleSelect",
+        "options": ["XS", "S", "M", "L", "XL"],
+        "colors": { "XS": "GREEN", "S": "BLUE", "M": "YELLOW", "L": "ORANGE", "XL": "RED" }
+      },
+      "horizon": {
+        "name": "Horizon",
+        "type": "singleSelect",
+        "options": ["Now", "Next", "Later", "Backlog"],
+        "on": "parents",
+        "colors": { "Now": "GREEN", "Next": "BLUE", "Later": "YELLOW", "Backlog": "GRAY" }
+      }
     }
   },
   // Coordinator mode (docs/adr/coordinator-mode.md). The coordinator's work is mostly

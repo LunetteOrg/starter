@@ -175,18 +175,19 @@ existing option left out is removed, its value cleared from every item, on every
 repository the Project holds. Passing the same name without the id does not help: the
 link is the id.
 
-- **`lntt board sync`** adds what the configuration declares and the Project lacks: a
-  missing field with its options, a missing option (every existing one passed back with
-  its id, color and description), a missing issue type, a type's description. A dry run
-  by default; `--apply` only with the person's go. Renames and removals it lists for the
-  UI, with the reason.
-- A rename is done in the field's settings in the UI: it keeps the id.
+- **`lntt board sync`** brings the Project and the types to the configuration: a missing
+  field with its options, a missing option, the colors of `board.fields.<key>.colors`, a
+  case-only rename, a missing issue type, a type's description, every existing option
+  passed back with its id. A dry run by default; `--apply` only with the person's go;
+  `--check` exits 1 when the board differs. A removal it lists for the UI, with the items
+  it touches and the steps.
 - A **new** field touches no existing value: a new exclusive dimension belongs in a new
   field.
 
 ```sh
 lntt board sync            # the plan, read from GitHub; writes nothing
 lntt board sync --apply    # with the person's go: applies it, then reads the board back
+lntt board sync --check    # exit 1 when the board differs from the configuration
 ```
 
 By hand, the same update keeps every existing option by its id:

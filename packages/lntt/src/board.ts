@@ -1,15 +1,20 @@
 // `lntt board sync`: brings a GitHub Project and its organization's issue types to the
-// state the `board` section declares (usage: bin/lntt.ts). It only adds: a missing
-// field with its options, a missing option, a missing issue type, an issue type's
-// description. A rename or a removal is left to GitHub's UI, with the reason: a field
-// or a type the API renames is a new one to GitHub's readers, and a removal clears the
-// value from every item or issue that has it.
+// state the `board` section declares (usage: bin/lntt.ts). Through the API it adds a
+// missing field with its options, a missing option, a missing issue type; it sets the
+// colors of `board.fields.<key>.colors` and the descriptions of
+// `board.issueTypes.descriptions`; it renames a field, an option or a type that differs
+// only in case. Each keeps its id, so no item or issue loses a value: an option is
+// written back with its id, the input GitHub documents as "preserving the option's
+// identity during updates, preventing item field values from being cleared".
+//
+// What the API cannot do (change a field's type, create an iteration field without its
+// iterations) or what is risky (remove an option or a type: the value goes from every
+// item or issue that has it) is left to a person, with the reason, the count it
+// touches, the settings page and the steps.
 //
 // The plan is computed from what GitHub shows (readBoard) and the configuration
 // (planBoard), then applied one write at a time (applyStep), each through `gh api
-// graphql`. Adding options keeps every existing option by its id, the input GitHub
-// documents as "preserving the option's identity during updates, preventing item field
-// values from being cleared".
+// graphql`.
 
 import { spawnSync } from 'node:child_process'
 
@@ -22,9 +27,12 @@ export interface LiveOption {
 
 export interface BoardState {
   projectId: string
+  // The Project's page, which its settings pages start from.
+  url: string
+  owner: string
   // The organization's node id, which creates an issue type; null for a user's Project.
   ownerId: string | null
-  fields: { id: string; name: string; dataType: string; options?: LiveOption[] }[]
+  fields: { id: string; databaseId: number; name: string; dataType: string; options?: LiveOption[] }[]
   // null for a user's Project: issue types belong to an organization.
   issueTypes: { id: string; name: string; description: string | null }[] | null
 }
@@ -32,29 +40,39 @@ export interface BoardState {
 type NewOption = { name: string; color: string; description: string }
 
 export type Step =
-  | { kind: 'createField'; key: string; name: string; dataType: string; options?: string[] }
+  | { kind: 'createField'; key: string; name: string; dataType: string; options?: NewOption[] }
+  | { kind: 'renameField'; fieldId: string; from: string; to: string }
   | {
-      kind: 'addOptions'
+      kind: 'updateOptions'
       key: string
       fieldId: string
       name: string
-      add: string[]
+      // What the update does, one entry per option it adds, renames or recolors.
+      changes: string[]
       options: (LiveOption | NewOption)[]
     }
   | { kind: 'createIssueType'; name: string; description?: string }
+  | { kind: 'renameIssueType'; id: string; from: string; to: string }
   | { kind: 'describeIssueType'; id: string; name: string; description: string }
 
-// What the command leaves to a person, and why.
+// What the command leaves to a person: why, where and how.
 export interface Manual {
   what: string
   why: string
+  url: string | null
+  steps: string[]
 }
+
+// How many items of the Project hold an option, or how many issues of the organization
+// have a type: what a removal would touch.
+export type Count = (what: { field: string; option: string } | { type: string }) => number
 
 interface FieldConfig {
   name: string
   type: string
   kind?: string
   options?: string[]
+  colors?: Record<string, string>
 }
 
 export interface BoardConfig {
@@ -72,19 +90,27 @@ const DATA_TYPES: Record<string, string> = {
 }
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? ' has' : 's have'} it`
 
-export function planBoard(board: BoardConfig, state: BoardState): { steps: Step[]; manual: Manual[] } {
+export function planBoard(board: BoardConfig, state: BoardState, count: Count): { steps: Step[]; manual: Manual[] } {
   const steps: Step[] = []
   const manual: Manual[] = []
+  const fieldPage = (databaseId: number) => `${state.url}/settings/fields/${databaseId}`
 
   for (const [key, field] of Object.entries(board.fields ?? {})) {
     if (field.kind === 'issue') continue // an organization's issue field, not the Project's
+    const colors = field.colors ?? {}
     const live = state.fields.find((f) => f.name === field.name) ?? state.fields.find((f) => same(f.name, field.name))
     if (!live) {
       if (field.type === 'iteration') {
         manual.push({
           what: `create the field ${field.name} (iteration)`,
-          why: "an iteration field is created with its iterations, in the Project's settings",
+          why: 'an iteration field is created with its iterations (a start and a length) the configuration does not give',
+          url: `${state.url}/settings`,
+          steps: [
+            `New field, type Iteration, named "${field.name}"`,
+            'Set the start date and the length of the iterations, then Save',
+          ],
         })
       } else {
         steps.push({
@@ -92,56 +118,73 @@ export function planBoard(board: BoardConfig, state: BoardState): { steps: Step[
           key,
           name: field.name,
           dataType: DATA_TYPES[field.type],
-          ...(field.type === 'singleSelect' ? { options: field.options ?? [] } : {}),
+          ...(field.type === 'singleSelect'
+            ? {
+                options: (field.options ?? []).map((name) => ({
+                  name,
+                  color: colors[name] ?? 'GRAY',
+                  description: '',
+                })),
+              }
+            : {}),
         })
       }
       continue
     }
-    if (live.name !== field.name) {
-      manual.push({
-        what: `rename the field "${live.name}" → "${field.name}"`,
-        why: "board.fields names it so; rename it in the field's settings",
-      })
-      continue
-    }
     if (live.dataType !== DATA_TYPES[field.type]) {
       manual.push({
-        what: `the field ${field.name} is ${live.dataType} on the Project, ${field.type} in board.fields.${key}`,
-        why: 'a field never changes type: create it anew in the UI and move the values, or correct the configuration',
+        what: `the field ${live.name} is ${live.dataType} on the Project, ${field.type} in board.fields.${key}`,
+        why: "the API never changes a field's type: a new field takes the values by hand, or the configuration is corrected",
+        url: fieldPage(live.databaseId),
+        steps: [
+          `Create a field of type ${field.type} (the Project's settings, New field), then move each item's value to it`,
+          `Delete the old field, and give the new one the name "${field.name}"`,
+        ],
       })
       continue
     }
+    if (live.name !== field.name) steps.push({ kind: 'renameField', fieldId: live.id, from: live.name, to: field.name })
     if (field.type !== 'singleSelect') continue
 
     const options = live.options ?? []
     const matched = new Set<string>()
-    const add: string[] = []
+    const changes: string[] = []
     const next: (LiveOption | NewOption)[] = []
     for (const name of field.options ?? []) {
-      const exact = options.find((o) => o.name === name)
-      const cased = exact ?? options.find((o) => same(o.name, name))
-      if (cased) {
-        matched.add(cased.id)
-        next.push(cased)
-        if (!exact) {
-          manual.push({
-            what: `${field.name}: rename the option "${cased.name}" → "${name}"`,
-            why: "rename it in the field's settings, which keeps its id and every item's value",
-          })
-        }
-      } else {
-        add.push(name)
-        next.push({ name, color: 'GRAY', description: '' })
+      const found = options.find((o) => o.name === name) ?? options.find((o) => same(o.name, name))
+      if (!found) {
+        changes.push(`add "${name}"`)
+        next.push({ name, color: colors[name] ?? 'GRAY', description: '' })
+        continue
       }
+      matched.add(found.id)
+      const option = { ...found }
+      if (option.name !== name) {
+        changes.push(`rename "${option.name}" → "${name}"`)
+        option.name = name
+      }
+      if (colors[name] && option.color !== colors[name]) {
+        changes.push(`color "${name}" ${colors[name]}`)
+        option.color = colors[name]
+      }
+      next.push(option)
     }
     for (const option of options.filter((o) => !matched.has(o.id))) {
       next.push(option)
+      const held = count({ field: live.name, option: option.name })
       manual.push({
-        what: `${field.name}: the option "${option.name}" is not in board.fields.${key}`,
-        why: 'remove it in the UI only if no item needs it: removing an option clears it from every item that has it',
+        what: `${live.name}: the option "${option.name}" is not in board.fields.${key}`,
+        why: `removing it clears it from every item that has it, and ${plural(held, 'item')}: a person decides, or the configuration lists it`,
+        url: fieldPage(live.databaseId),
+        steps: [
+          `Filter the Project with ${live.name}:"${option.name}" and move each item to another option`,
+          `In the field's settings, delete the option "${option.name}"`,
+        ],
       })
     }
-    if (add.length > 0) steps.push({ kind: 'addOptions', key, fieldId: live.id, name: field.name, add, options: next })
+    if (changes.length > 0) {
+      steps.push({ kind: 'updateOptions', key, fieldId: live.id, name: field.name, changes, options: next })
+    }
   }
 
   const types = board.issueTypes
@@ -150,35 +193,38 @@ export function planBoard(board: BoardConfig, state: BoardState): { steps: Step[
     if (state.issueTypes === null) {
       manual.push({
         what: `the issue types ${wanted.join(', ')}`,
-        why: 'a Project owned by a user has no issue types: they belong to an organization',
+        why: 'a Project owned by a user has no issue types: they belong to an organization, so board.issueTypes cannot hold here',
+        url: null,
+        steps: ['Move the Project to an organization, or remove board.issueTypes from the configuration'],
       })
     } else {
       const live = state.issueTypes
       const matched = new Set<string>()
-      const describe: Step[] = []
+      const after: Step[] = []
       for (const name of wanted) {
-        const exact = live.find((t) => t.name === name)
-        const cased = exact ?? live.find((t) => same(t.name, name))
+        const found = live.find((t) => t.name === name) ?? live.find((t) => same(t.name, name))
         const description = types.descriptions?.[name]
-        if (!cased) {
+        if (!found) {
           steps.push({ kind: 'createIssueType', name, ...(description ? { description } : {}) })
           continue
         }
-        matched.add(cased.id)
-        if (!exact) {
-          manual.push({
-            what: `rename the issue type "${cased.name}" → "${name}"`,
-            why: "rename it in the organization's settings (Planning › Issue types), which keeps it on every issue",
-          })
-        } else if (description && (cased.description ?? '').trim() !== description.trim()) {
-          describe.push({ kind: 'describeIssueType', id: cased.id, name, description })
+        matched.add(found.id)
+        if (found.name !== name) after.push({ kind: 'renameIssueType', id: found.id, from: found.name, to: name })
+        if (description && (found.description ?? '').trim() !== description.trim()) {
+          after.push({ kind: 'describeIssueType', id: found.id, name, description })
         }
       }
-      steps.push(...describe)
+      steps.push(...after)
       for (const type of live.filter((t) => !matched.has(t.id))) {
+        const held = count({ type: type.name })
         manual.push({
           what: `the issue type ${type.name} is not in board.issueTypes`,
-          why: "disable or remove it in the organization's settings only if no issue uses it: removing a type takes it off every issue of the organization",
+          why: `removing it takes it off every issue of the organization, and ${plural(held, 'issue')}: a person decides, or the configuration lists it`,
+          url: `https://github.com/organizations/${state.owner}/settings/issue-types`,
+          steps: [
+            `Search the organization's issues with type:"${type.name}" and give each another type`,
+            `Disable or delete the type ${type.name}`,
+          ],
         })
       }
     }
@@ -202,7 +248,7 @@ export const ghGraphql: Graphql = (query, variables) => {
 }
 
 const FIELDS = `fields(first:100){ pageInfo{ hasNextPage } nodes{
-  ... on ProjectV2FieldCommon{ id name dataType }
+  ... on ProjectV2FieldCommon{ id databaseId name dataType }
   ... on ProjectV2SingleSelectField{ options{ id name color description } } } }`
 
 type Page<T> = { nodes: T[]; pageInfo?: { hasNextPage: boolean } }
@@ -213,14 +259,14 @@ export function readBoard(
 ): BoardState {
   const user = project.ownerType === 'user'
   const query = user
-    ? `query($owner:String!,$number:Int!){ user(login:$owner){ id projectV2(number:$number){ id ${FIELDS} } } }`
-    : `query($owner:String!,$number:Int!){ organization(login:$owner){ id projectV2(number:$number){ id ${FIELDS} }
+    ? `query($owner:String!,$number:Int!){ user(login:$owner){ id projectV2(number:$number){ id url ${FIELDS} } } }`
+    : `query($owner:String!,$number:Int!){ organization(login:$owner){ id projectV2(number:$number){ id url ${FIELDS} }
         issueTypes(first:50){ pageInfo{ hasNextPage } nodes{ id name description } } } }`
   const data = graphql(query, { owner: project.owner, number: project.number })
   const owner = data[user ? 'user' : 'organization'] as
     | {
         id: string
-        projectV2: { id: string; fields: Page<BoardState['fields'][number]> } | null
+        projectV2: { id: string; url: string; fields: Page<BoardState['fields'][number]> } | null
         issueTypes?: Page<NonNullable<BoardState['issueTypes']>[number]>
       }
     | undefined
@@ -232,6 +278,8 @@ export function readBoard(
     throw new Error('the organization has more than 50 issue types: not read whole')
   return {
     projectId: owner.projectV2.id,
+    url: owner.projectV2.url,
+    owner: project.owner,
     ownerId: user ? null : owner.id,
     // A field the token cannot see comes back as an empty object.
     fields: owner.projectV2.fields.nodes.filter((f) => f.id),
@@ -239,20 +287,70 @@ export function readBoard(
   }
 }
 
+// The counts of a removal, read only when the plan has one: the items of the Project
+// once per field (a full read, ~1 point per item), the issues of a type by a search.
+export function counter(graphql: Graphql, state: BoardState): Count {
+  const values = new Map<string, Map<string, number>>()
+  return (what) => {
+    if ('type' in what) {
+      const data = graphql('query($q:String!){ search(query:$q, type:ISSUE, first:1){ issueCount } }', {
+        q: `org:${state.owner} type:"${what.type}"`,
+      }) as { search: { issueCount: number } }
+      return data.search.issueCount
+    }
+    let held = values.get(what.field)
+    if (!held) {
+      held = new Map()
+      let after: string | null = null
+      do {
+        const data = graphql(
+          `query($p:ID!,$field:String!,$after:String){ node(id:$p){ ... on ProjectV2{ items(first:100, after:$after){
+            pageInfo{ hasNextPage endCursor }
+            nodes{ v: fieldValueByName(name:$field){ ... on ProjectV2ItemFieldSingleSelectValue{ name } } } } } } }`,
+          { p: state.projectId, field: what.field, after },
+        ) as {
+          node: {
+            items: {
+              pageInfo: { hasNextPage: boolean; endCursor: string | null }
+              nodes: { v: { name?: string } | null }[]
+            }
+          }
+        }
+        for (const item of data.node.items.nodes) {
+          if (item.v?.name) held.set(item.v.name, (held.get(item.v.name) ?? 0) + 1)
+        }
+        after = data.node.items.pageInfo.hasNextPage ? data.node.items.pageInfo.endCursor : null
+      } while (after)
+      values.set(what.field, held)
+    }
+    return held.get(what.option) ?? 0
+  }
+}
+
+const optionText = (o: { name: string; color: string }) => (o.color === 'GRAY' ? o.name : `${o.name} ${o.color}`)
+
 export function describeStep(step: Step): string {
   switch (step.kind) {
     case 'createField': {
       const type = { SINGLE_SELECT: 'single select', DATE: 'date', NUMBER: 'number', TEXT: 'text' }[step.dataType]
-      return `create field ${step.name} (${type})${step.options ? `: ${step.options.join(', ')}` : ''}`
+      return `create field ${step.name} (${type})${step.options ? `: ${step.options.map(optionText).join(', ')}` : ''}`
     }
-    case 'addOptions':
-      return `add options to ${step.name}: ${step.add.join(', ')}`
+    case 'renameField':
+      return `rename field "${step.from}" → "${step.to}"`
+    case 'updateOptions':
+      return `update options of ${step.name}: ${step.changes.join(', ')}`
     case 'createIssueType':
       return `create issue type ${step.name}${step.description ? `: ${step.description}` : ''}`
+    case 'renameIssueType':
+      return `rename issue type "${step.from}" → "${step.to}"`
     case 'describeIssueType':
       return `describe issue type ${step.name}: ${step.description}`
   }
 }
+
+const UPDATE_FIELD =
+  'mutation($input:UpdateProjectV2FieldInput!){ updateProjectV2Field(input:$input){ projectV2Field{ ... on ProjectV2FieldCommon{ id } } } }'
+const UPDATE_TYPE = 'mutation($input:UpdateIssueTypeInput!){ updateIssueType(input:$input){ issueType{ id } } }'
 
 export function applyStep(graphql: Graphql, state: BoardState, step: Step): void {
   switch (step.kind) {
@@ -264,18 +362,16 @@ export function applyStep(graphql: Graphql, state: BoardState, step: Step): void
             projectId: state.projectId,
             dataType: step.dataType,
             name: step.name,
-            ...(step.options
-              ? { singleSelectOptions: step.options.map((name) => ({ name, color: 'GRAY', description: '' })) }
-              : {}),
+            ...(step.options ? { singleSelectOptions: step.options } : {}),
           },
         },
       )
       break
-    case 'addOptions':
-      graphql(
-        'mutation($input:UpdateProjectV2FieldInput!){ updateProjectV2Field(input:$input){ projectV2Field{ ... on ProjectV2FieldCommon{ id } } } }',
-        { input: { fieldId: step.fieldId, singleSelectOptions: step.options } },
-      )
+    case 'renameField':
+      graphql(UPDATE_FIELD, { input: { fieldId: step.fieldId, name: step.to } })
+      break
+    case 'updateOptions':
+      graphql(UPDATE_FIELD, { input: { fieldId: step.fieldId, singleSelectOptions: step.options } })
       break
     case 'createIssueType':
       if (!state.ownerId) throw new Error('a Project owned by a user has no issue types')
@@ -289,10 +385,11 @@ export function applyStep(graphql: Graphql, state: BoardState, step: Step): void
         },
       })
       break
+    case 'renameIssueType':
+      graphql(UPDATE_TYPE, { input: { issueTypeId: step.id, name: step.to } })
+      break
     case 'describeIssueType':
-      graphql('mutation($input:UpdateIssueTypeInput!){ updateIssueType(input:$input){ issueType{ id } } }', {
-        input: { issueTypeId: step.id, description: step.description },
-      })
+      graphql(UPDATE_TYPE, { input: { issueTypeId: step.id, description: step.description } })
       break
   }
 }

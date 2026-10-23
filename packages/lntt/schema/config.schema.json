@@ -1011,6 +1011,13 @@
           },
           "minItems": 1,
           "uniqueItems": true
+        },
+        "colors": {
+          "type": "object",
+          "description": "A single select's option colors on GitHub, by option name: lntt board sync sets each on its option, keeping the option's id. An option left out keeps its color, a new one is gray. Each name is one of options: lntt validate checks it.",
+          "additionalProperties": {
+            "enum": ["GRAY", "BLUE", "GREEN", "YELLOW", "ORANGE", "RED", "PINK", "PURPLE"]
+          }
         }
       },
       "if": {

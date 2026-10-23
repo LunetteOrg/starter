@@ -1,12 +1,13 @@
-// `lntt board sync [--apply]`: the Project and the issue types brought to the board
-// section (src/board.ts; usage: bin/lntt.ts). A dry run unless --apply.
+// `lntt board sync [--apply | --check]`: the Project and the issue types brought to the
+// board section (src/board.ts; usage: bin/lntt.ts). A dry run unless --apply; --check
+// exits 1 when the board differs, for CI or a hook.
 
 import { cwd, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
-import { applyStep, type BoardState, describeStep, ghGraphql, type Manual, planBoard, readBoard } from './board.ts'
+import { applyStep, counter, describeStep, ghGraphql, type Manual, planBoard, readBoard } from './board.ts'
 import { ConfigError, getValue, loadConfig } from './index.ts'
 
-const USAGE = 'usage: lntt board sync [--apply]'
+const USAGE = 'usage: lntt board sync [--apply | --check]'
 // Between two writes: GitHub's secondary rate limit drops writes sent faster, and does
 // not show in rate_limit.
 const PAUSE_MS = 1200
@@ -26,15 +27,22 @@ const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(
 
 function printManual(manual: Manual[]): void {
   if (manual.length === 0) return
-  stdout.write(`by hand, in GitHub's UI:\n${manual.map((m) => `  ${m.what}: ${m.why}\n`).join('')}`)
+  const entry = (m: Manual) =>
+    `  ${m.what}: ${m.why}\n${m.url ? `    ${m.url}\n` : ''}${m.steps.map((s, i) => `    ${i + 1}. ${s}\n`).join('')}`
+  stdout.write(`by hand, in GitHub's UI:\n${manual.map(entry).join('')}`)
 }
 
 export function main(args: string[]): void {
-  let apply: boolean
+  let mode: 'dry run' | 'apply' | 'check'
   try {
-    const { values, positionals } = parseArgs({ args, options: { apply: { type: 'boolean' } }, allowPositionals: true })
+    const { values, positionals } = parseArgs({
+      args,
+      options: { apply: { type: 'boolean' }, check: { type: 'boolean' } },
+      allowPositionals: true,
+    })
     if (positionals.length !== 1 || positionals[0] !== 'sync') usage()
-    apply = values.apply ?? false
+    if (values.apply && values.check) usage('--apply and --check do not go together')
+    mode = values.apply ? 'apply' : values.check ? 'check' : 'dry run'
   } catch (error) {
     usage((error as Error).message)
   }
@@ -50,9 +58,10 @@ export function main(args: string[]): void {
     throw error
   }
 
-  const read = (): BoardState => {
+  // Any read of GitHub: a failure ends the run with gh's message.
+  const guarded = <T>(f: () => T): T => {
     try {
-      return readBoard(ghGraphql, project)
+      return f()
     } catch (error) {
       const message = (error as Error).message
       const hint = /resolve to an Organization/.test(message)
@@ -61,15 +70,23 @@ export function main(args: string[]): void {
       fail(`reading the board: ${message}${hint}`)
     }
   }
-  const state = read()
-  const { steps, manual } = planBoard(board, state)
+  const plan = () =>
+    guarded(() => {
+      const state = readBoard(ghGraphql, project)
+      return { state, ...planBoard(board, state, counter(ghGraphql, state)) }
+    })
+
+  const { state, steps, manual } = plan()
   const title = project.title ? ` (${project.title})` : ''
-  stdout.write(`lntt board sync: ${project.owner} project ${project.number}${title}, ${apply ? 'apply' : 'dry run'}\n`)
+  stdout.write(`lntt board sync: ${project.owner} project ${project.number}${title}, ${mode}\n`)
   stdout.write(steps.length ? steps.map((s) => `  ${describeStep(s)}\n`).join('') : '  nothing to change\n')
 
-  if (!apply) {
+  if (mode !== 'apply') {
     printManual(manual)
-    if (steps.length) stdout.write('run with --apply to make these changes\n')
+    if (mode === 'check' && (steps.length || manual.length)) {
+      fail(`the board differs from the configuration: ${steps.length} changes, ${manual.length} by hand`)
+    }
+    if (mode === 'dry run' && steps.length) stdout.write('run with --apply to make these changes\n')
     return
   }
 
@@ -84,7 +101,7 @@ export function main(args: string[]): void {
   })
   if (steps.length) stdout.write(`applied ${steps.length} changes\n`)
   // Read back: every change must show, or the run says what still differs.
-  const after = planBoard(board, read())
+  const after = plan()
   if (after.steps.length)
     fail(
       `still differs after --apply:\n${after.steps.map((s) => `  ${describeStep(s)}`).join('\n')}\n` +

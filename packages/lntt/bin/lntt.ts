@@ -20,11 +20,12 @@
 //                             worktree: the driver, why, and each operation as a shell
 //                             command or a tool call; <app> may be omitted when there is one
 //
-//   lntt board sync [--apply]
+//   lntt board sync [--apply | --check]
 //                             the GitHub Project and the organization's issue types brought to
-//                             the board section: missing fields, options, types and type
-//                             descriptions added; renames and removals listed for the UI.
-//                             A dry run unless --apply
+//                             the board section: missing fields, options and types added,
+//                             colors and descriptions set, case-only renames made; what the
+//                             API cannot do or is risky listed for the UI, with the steps.
+//                             A dry run unless --apply; --check exits 1 when the board differs
 //
 //   lntt refs [--cached] [<text>...]
 //                             the issue and pull request references of the text (the arguments,

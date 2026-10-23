@@ -63,6 +63,15 @@ export function checkReferences(data: Record<string, unknown>): string[] {
     expect('board.fields.iteration.on', iteration.on ?? 'children', ['children'])
   }
 
+  for (const [key, field] of Object.entries((at(data, 'board', 'fields') ?? {}) as Record<string, Tree>)) {
+    const options = (field?.options ?? []) as string[]
+    for (const name of Object.keys((field?.colors ?? {}) as Record<string, string>)) {
+      if (!options.includes(name)) {
+        wrong.push(`board.fields.${key}.colors.${name} names no option of the field: ${options.join(', ')}`)
+      }
+    }
+  }
+
   const types = at(data, 'board', 'issueTypes') as Tree
   for (const type of (types?.permanent ?? []) as string[]) {
     expect('board.issueTypes.permanent', type, (types?.parents ?? []) as string[])
