@@ -27,6 +27,19 @@ function fakeProcessor(seen: Array<{ path: string; parameters: Record<string, un
   }
 }
 
+const PROBE = `
+version: 2.1
+jobs:
+  probe:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+workflows:
+  probe:
+    jobs: [probe]
+`
+
 const SIMPLE = `
 version: 2.1
 jobs:
@@ -223,21 +236,13 @@ describe('circleciJobs', () => {
     assert.equal(byKey(list, 'circleci/test').state.state, 'skipped')
   })
 
-  test('the real circleci CLI processes the same dynamic config', (t) => {
+  test('the real circleci CLI processes the same dynamic config', { skip: realCliSkip() }, () => {
     root = repo({
       '.circleci/config.yml': SETUP,
       '.circleci/full.yml': continuation('test'),
       '.circleci/minimal.yml': continuation('lint'),
     })
-    const unavailable = circleciUnavailable(root)
-    if (unavailable) return t.skip(unavailable)
-    let list: Job[]
-    try {
-      list = circleciJobs(root, localEvent(root, 'pull_request', 'main'), emptyConfig(), cliProcessor(root))
-    } catch (error) {
-      if (error instanceof CircleciLoginRejected) return t.skip(error.message)
-      throw error
-    }
+    const list = circleciJobs(root, localEvent(root, 'pull_request', 'main'), emptyConfig(), cliProcessor(root))
     const job = byKey(list, 'circleci/test')
     assert.deepEqual(job.state, { state: 'run' })
     assert.deepEqual(
@@ -282,4 +287,22 @@ function stubCircleci(t: TestContext, dir: string, body: string): void {
   t.after(() => {
     process.env.PATH = path
   })
+}
+
+// Why the real-CLI test cannot run on this machine, or false. It probes in a folder
+// outside the repo, as the test runs the CLI in one, and processes a trivial config,
+// which is what a stored login that CircleCI rejects fails.
+function realCliSkip(): string | false {
+  const dir = repo({})
+  try {
+    const unavailable = circleciUnavailable(dir)
+    if (unavailable) return unavailable
+    cliProcessor(dir)('probe.yml', PROBE, {})
+    return false
+  } catch (error) {
+    if (error instanceof CircleciLoginRejected) return error.message
+    return `circleci config process does not run here: ${String(error)}`
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 }
