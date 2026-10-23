@@ -426,7 +426,7 @@ usage error, as with no text and a terminal on stdin.
 ```sh
 lntt board sync            # what the Project and the issue types lack, read from GitHub: a dry run
 lntt board sync --apply    # makes those changes, then reads the board back
-lntt board sync --check    # exit 1 when the board differs from the configuration: for CI or a hook
+lntt board sync --check    # exit 1 when the board differs from the configuration: for a hook or a scheduled job
 ```
 
 It brings the GitHub Project of `board.github.project` and its organization's issue
@@ -447,7 +447,9 @@ changes a type), an iteration field (its iterations are not in the configuration
 option or a type the configuration lacks (removing it clears it from every item or
 issue: the entry says how many hold it, counted from the Project's items or a search of
 the organization's issues). A field of `kind: issue` is the organization's, not the
-Project's, and is left alone. Run twice, the second run has nothing to change.
+Project's, and is left alone. A field renamed other than by case is not recognised: the
+command would create the new name beside the old one, so that rename is done in the UI
+first. Run twice, the second run has nothing to change.
 
 It writes through `gh api graphql`, one change at a time, 1.2 s apart (GitHub's
 secondary rate limit drops faster writes without a word); the token needs the `project`

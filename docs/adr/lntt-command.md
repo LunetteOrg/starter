@@ -40,6 +40,13 @@ lntt ci local | candidate
   `answer`) and `src/ci/cli.ts`.
   A group loads only when it runs. What a script needs as a library, `@lntt/lntt`
   exports too (`resolveRefs` and `mentions` for `lntt refs`).
+- **`lntt board sync` writes only what keeps an id.** It adds, sets colors and
+  descriptions, and renames by case through GitHub's GraphQL API, passing every
+  existing option back with its id so no item loses its value
+  (`packages/lntt/src/board.ts`). A change the API cannot make, or a removal, is
+  printed for a person with its reason, settings page, steps and, for a removal, the
+  items or issues it touches. Writes are 1.2 s apart (GitHub's secondary rate limit
+  drops faster ones without an error), and `--apply` reads the board back.
 - **What a person types is what an agent runs.** Skills, workflows, git hooks and
   `orca.yaml` call `lntt`, never a package's files by path, with one exception: the
   candidate workflow runs `node packages/lntt/bin/lntt.ts`, because it installs only
@@ -106,9 +113,10 @@ rests on these criteria:
    `ci:local`; `decisions` calls `lntt check decisions` and is a lens of `lntt review`;
    `coordinate` calls `lntt worktree start`, the mailbox and `lntt get`; `run-local`
    calls `lntt get`, `lntt local app` and `lntt viewer`; `retrospective` calls `lntt get`,
-   `lntt pr block` and `lntt check body`; `commit-message` (`lntt get`, commitlint) and
-   the board skills (`github-board`, `plan-round`, `roadmap`: `lntt get`, `lntt set`)
-   stay on the gate side, but for `github-board`'s `lntt board sync`. In the code, `lntt review` imports the check
+   `lntt pr block` and `lntt check body`; `github-board` calls `lntt get` and `lntt set`
+   (gates) and `lntt board sync` (an agent tool); `commit-message` (`lntt get`,
+   commitlint), `plan-round` and `roadmap` (`lntt get`, `lntt set`) stay on the gate
+   side. In the code, `lntt review` imports the check
    areas and the mutations and runs them in-process (`packages/lntt/src/review-cli.ts`
    imports `runArea` and `mutateAll`), and `lntt worktree start` names branches with
    the gate's code (`packages/lntt/src/worktree-cli.ts` imports `branchName` and
@@ -137,7 +145,7 @@ So:
   | `lntt branch check`, and `branch name` and `branch rename`, so the name an agent gets is the one the gate accepts | `lntt ask \| inbox \| answer` |
   | `lntt validate \| get \| set \| path`: they hold the schema; `set` writes a tracked file | `lntt guide`: it prints the skills |
   | `lntt sync`: it writes tracked files (the `AGENTS.md` block, the skill stubs) that `lntt check` verifies | `lntt operator`: personal context, read by no gate; `lntt pr block`: the empty retrospective block, for the template and the skill |
-  | the commitlint configuration (the `@lntt/lntt` export) | `lntt local app`, `lntt viewer`; `lntt board sync`: it writes to GitHub, not to the commit, and no CI runs it |
+  | the commitlint configuration (the `@lntt/lntt` export) | `lntt local app`, `lntt viewer`; `lntt board sync`: it reads and writes GitHub, not the commit, so its `--check` is a verdict on the board's state that a hook or a scheduled job runs, never a pull request's gate |
   | the configuration schema | the plugin's hooks; once they exist, `lntt refs` (#144) and `lntt doctor` (#124) |
 
 - **The configuration schema follows one compatibility rule.** Its version is the
@@ -149,7 +157,7 @@ So:
     ([accepted risks](#negative--accepted-risks)). What the schema cannot say, and
     what every reader would fail on if the schema required it, `lntt validate` checks
     (`packages/lntt/src/references.ts`): those checks may grow, since they fail the
-    gate and never a read, and the release that adds one says so.
+    gate and never a read.
   - An older `lntt` rejects a field it does not know, as `additionalProperties: false`
     does: an unknown field is a typo until proven otherwise. A project writes a new
     field after bumping `@lntt/lntt` to a version that knows it, and `lntt validate`

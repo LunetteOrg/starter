@@ -16,7 +16,7 @@ decisions) is in [`docs/process/`](../process/README.md).
 | [test-database](./test-database.md) | `@lntt/test-utils`: one Postgres per vitest run, owned by a globalSetup; Ryuk on; required `databaseName`; container rules; cleanup by label | accepted |
 | [e2e-helpers](./e2e-helpers.md) | `@lntt/test-utils/playwright`: `test` with hydration delayed on demand, `repeatUntil`, `expectFetchMetadata`, the lint plugin; `./e2e-port`, a stable port per checkout apart from `lntt`'s slots | accepted |
 | [agent-layer](./agent-layer.md) | Installed skills are never edited; their guides come with `lntt`, a project holds stubs; project values in `.agents/config.*`; operator context; issue titles on screen | accepted |
-| [lntt-command](./lntt-command.md) | One package, `@lntt/lntt`, with one command, `lntt`, for configuration, agent files, branches, worktrees and CI; its gates and agent tools, and the configuration's compatibility rule | accepted |
+| [lntt-command](./lntt-command.md) | One package, `@lntt/lntt`, with one command, `lntt`, for configuration, agent files, branches, worktrees, the board and CI; its gates and agent tools, and the configuration's compatibility rule | accepted |
 | [review-agents](./review-agents.md) | Reviews by agents with no context, per-project lenses, agents and models; adversarial verification; `lntt review` | accepted |
 | [test-guards](./test-guards.md) | `@lntt/test-utils` guards of a project's test suite: module mocks, waits, Biome domains and lint warnings, the tx fixture, test projects as dependencies | accepted |
 | [test-checks](./test-checks.md) | `lntt check tests`: the test levels, `focus`, `rules`, `touched`, and the mutations a reviewer proposes and `lntt` runs | accepted |

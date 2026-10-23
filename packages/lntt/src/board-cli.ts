@@ -1,6 +1,6 @@
 // `lntt board sync [--apply | --check]`: the Project and the issue types brought to the
 // board section (src/board.ts; usage: bin/lntt.ts). A dry run unless --apply; --check
-// exits 1 when the board differs, for CI or a hook.
+// exits 1 when the board differs, for a hook or a scheduled job.
 
 import { cwd, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'

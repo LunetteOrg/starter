@@ -37,8 +37,12 @@ if (name && name === process.env.GH_NOOP) { reply({ [name]: {} }); process.exit(
 const withIds = (options) => options.map((o) => ({ id: o.id || id('o'), name: o.name, color: o.color, description: o.description }))
 const page = { hasNextPage: !!process.env.GH_MORE }
 if (kind === 'items') {
-  const nodes = (state.items || []).map((values) => ({ v: values[v.field] ? { name: values[v.field] } : null }))
-  reply({ node: { items: { nodes, pageInfo: { hasNextPage: false, endCursor: null } } } })
+  // GH_PAGES=2 serves the items in two pages, the second after the cursor "p2".
+  const all = (state.items || []).map((values) => ({ v: values[v.field] ? { name: values[v.field] } : null }))
+  const half = process.env.GH_PAGES ? Math.ceil(all.length / 2) : all.length
+  const nodes = v.after === 'p2' ? all.slice(half) : all.slice(0, half)
+  const more = !!process.env.GH_PAGES && v.after !== 'p2'
+  reply({ node: { items: { nodes, pageInfo: { hasNextPage: more, endCursor: more ? 'p2' : null } } } })
 } else if (kind === 'search') {
   const type = v.q.match(/type:"([^"]+)"/)[1]
   reply({ search: { issueCount: (state.typeCounts || {})[type] || 0 } })
@@ -46,7 +50,7 @@ if (kind === 'items') {
   reply({ user: { id: 'U_1', projectV2: { id: 'PVT_1', url: 'https://github.com/users/someone/projects/1', fields: { nodes: state.fields, pageInfo: page } } } })
 } else if (!name) {
   reply({ organization: { id: 'O_1', projectV2: { id: 'PVT_1', url: 'https://github.com/orgs/DemoOrg/projects/1', fields: { nodes: state.fields, pageInfo: page } },
-    issueTypes: { nodes: state.issueTypes, pageInfo: { hasNextPage: false } } } })
+    issueTypes: { nodes: state.issueTypes, pageInfo: { hasNextPage: !!process.env.GH_MORE_TYPES } } } })
 } else if (name === 'createProjectV2Field') {
   const f = { id: id('F'), name: v.input.name, dataType: v.input.dataType }
   if (v.input.singleSelectOptions) f.options = withIds(v.input.singleSelectOptions)
@@ -244,6 +248,26 @@ describe('lntt board sync', () => {
     assert.equal(r.status, 1)
     assert.match(r.stderr, /more than 100 fields/)
     assert.deepEqual(calls(), ['read'])
+  })
+
+  test('an organization with more issue types than one page: stop, rather than create one that exists', () => {
+    const r = lntt(['sync', '--apply'], { GH_MORE_TYPES: '1' })
+    assert.equal(r.status, 1)
+    assert.match(r.stderr, /more than 50 issue types/)
+  })
+
+  test('the items an option holds are counted across every page of the Project', () => {
+    const r = lntt(['sync'], { GH_PAGES: '2' })
+    assert.equal(calls().filter((c) => c === 'items').length, 2)
+    assert.match(r.stdout, /"Archived"[^\n]*2 items have it/)
+  })
+
+  test('--check: a removal left to the UI is a difference too, with no change to make', () => {
+    assert.equal(lntt(['sync', '--apply']).status, 0)
+    const r = lntt(['sync', '--check'])
+    assert.equal(r.status, 1)
+    assert.match(r.stdout, /nothing to change/)
+    assert.match(r.stderr, /0 changes, 2 by hand/)
   })
 
   test('a write refused after others prints what is left to the UI too', () => {

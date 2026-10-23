@@ -37,8 +37,8 @@ places a skill reads:
   needs it. A short reason for a value is a comment next to it. A section that a
   platform serves names it (`board.provider`), keeps that platform's own keys under its
   name (`board.github`) and the concepts every platform shares beside it; a skill of
-  that platform, its adapter, does the reads and writes (`github-board` for `github`),
-  and the other skills hand them to it.
+  that platform, its adapter, does the reads and writes (`github-board` for `github`,
+  through `gh` and `lntt board sync`), and the other skills hand them to it.
 - **Prose** in `docs/process/<area>.md`: the mechanisms and longer reasons a value
   cannot express. Kept apart from technical decisions; it cites configuration keys and
   never repeats their values.

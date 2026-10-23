@@ -202,6 +202,24 @@ describe('planBoard: what lntt board sync would change', () => {
     assert.deepEqual(plan(board, live).steps, [])
   })
 
+  test('a configured description with surrounding blanks is the same as the trimmed one', () => {
+    const blanks = {
+      ...board,
+      issueTypes: { ...board.issueTypes, descriptions: { Platform: 'What the product runs on\n' } },
+    }
+    assert.deepEqual(plan(blanks, state()).steps, [])
+  })
+
+  test('an option renamed by case and recolored is one entry of the update, with both changes', () => {
+    const live = state()
+    live.fields[2].options = [option('h1', 'now'), option('h2', 'Next')]
+    const horizon = { ...board.fields.horizon, colors: { Now: 'BLUE' } }
+    const [step] = plan(withFields({ ...board.fields, horizon }), live).steps
+    assert.ok(step?.kind === 'updateOptions')
+    assert.deepEqual(step.changes, ['rename "now" → "Now"', 'color "Now" BLUE'])
+    assert.deepEqual(step.options[0], { ...option('h1', 'now'), name: 'Now', color: 'BLUE' })
+  })
+
   test('a field of another type on the Project is left to the UI: the API never changes a type', () => {
     const live = state()
     live.fields[2] = { id: 'F_horizon', databaseId: 3, name: 'Horizon', dataType: 'TEXT' }
