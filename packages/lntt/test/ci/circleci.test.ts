@@ -262,18 +262,33 @@ describe('circleciJobs', () => {
     stubCircleci(t, root, 'echo "Error: unknown orb" >&2; exit 1')
     assert.throws(
       () => cliProcessor(root)('.circleci/config.yml', SIMPLE, {}),
-      (error) => !(error instanceof CircleciLoginRejected) && /config process .*unknown orb/.test(String(error)),
+      (error) =>
+        !(error instanceof CircleciLoginRejected) &&
+        /config process \.circleci\/config\.yml: .*unknown orb/.test(String(error)),
     )
   })
 
-  test('circleciUnavailable: null when the CLI runs, a reason when it does not run or is missing', (t) => {
+  test('circleciUnavailable is null when the CLI runs', (t) => {
     root = repo({})
     stubCircleci(t, root, 'exit 0')
     assert.equal(circleciUnavailable(root), null)
+  })
+
+  test('circleciUnavailable names the folder when the CLI does not run from it', (t) => {
+    root = repo({})
     stubCircleci(t, root, 'echo "No version is set for shim: circleci" >&2; exit 126')
-    assert.match(String(circleciUnavailable(root)), /does not run from/)
+    assert.ok(String(circleciUnavailable(root)).includes(`does not run from ${root}`))
+  })
+
+  test('a missing CLI is reported as not installed, by the probe and by the processor', (t) => {
+    root = repo({})
+    const path = process.env.PATH
     process.env.PATH = join(root, 'empty')
+    t.after(() => {
+      process.env.PATH = path
+    })
     assert.match(String(circleciUnavailable(root)), /not installed/)
+    assert.throws(() => cliProcessor(root)('.circleci/config.yml', SIMPLE, {}), /not installed/)
   })
 })
 
@@ -289,9 +304,10 @@ function stubCircleci(t: TestContext, dir: string, body: string): void {
   })
 }
 
-// Why the real-CLI test cannot run on this machine, or false. It probes in a folder
-// outside the repo, as the test runs the CLI in one, and processes a trivial config,
-// which is what a stored login that CircleCI rejects fails.
+// Why the real-CLI test cannot run on this machine, or false: the CLI does not run from
+// a temporary repo (where the test runs it), or the stored login is rejected, which a
+// trivial `config process` shows. It runs when the file loads, since `skip` is decided
+// at declaration; the call is one request to CircleCI, made only where the CLI is.
 function realCliSkip(): string | false {
   const dir = repo({})
   try {
@@ -301,7 +317,8 @@ function realCliSkip(): string | false {
     return false
   } catch (error) {
     if (error instanceof CircleciLoginRejected) return error.message
-    return `circleci config process does not run here: ${String(error)}`
+    // Any other failure (the network, a regression) runs the test, which then fails with it.
+    return false
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
