@@ -430,6 +430,49 @@ describe('lntt board sync', () => {
     assert.equal(r.status, 0, r.stdout + r.stderr)
   })
 
+  test('views: the ids of fields read before the run are not asked again', () => {
+    withViews(
+      [{ name: 'Old', layout: 'table', fields: ['Status'], filter: 'is:open' }],
+      [liveView({ fields: { nodes: [] } })],
+    )
+    assert.equal(lntt(['sync', '--apply']).status, 0)
+    assert.ok(!calls().includes('field'), calls().join(' '))
+  })
+
+  test('views: an update naming a field this run creates resolves its id too', () => {
+    withViews([{ name: 'Old', layout: 'table', fields: ['Horizon'] }], [liveView()])
+    assert.equal(lntt(['sync', '--apply']).status, 0)
+    assert.ok(calls().includes('field'))
+    assert.deepEqual(
+      (live() as unknown as Views).views[0].fields.nodes.map((f) => f.name),
+      ['Horizon'],
+    )
+  })
+
+  test('views: a field that does not come back once created stops the run, naming it', () => {
+    withViews([{ name: 'Plan', layout: 'table', fields: ['Horizon'] }])
+    const r = lntt(['sync', '--apply'], { GH_NOOP: 'createProjectV2Field' })
+    assert.equal(r.status, 1)
+    assert.match(r.stderr, /no field Horizon on the Project/)
+  })
+
+  test('views: a view with more visible fields than one read stops a board that declares views', () => {
+    withViews(
+      [{ name: 'Old', layout: 'table' }],
+      [liveView({ fields: { nodes: [], pageInfo: { hasNextPage: true } } })],
+    )
+    const r = lntt(['sync'])
+    assert.equal(r.status, 1)
+    assert.match(r.stderr, /more than 50 visible fields/)
+  })
+
+  test('views: a new view with an empty filter takes no second write', () => {
+    withViews([{ name: 'Blank', layout: 'table', filter: '' }])
+    assert.match(lntt(['sync']).stdout, /create view Blank \(TABLE_LAYOUT\)\n/)
+    assert.equal(lntt(['sync', '--apply']).status, 0)
+    assert.ok(!io().includes('updateProjectV2View'))
+  })
+
   test('views: more than one page of views stops the run only when the board declares views', () => {
     assert.equal(lntt(['sync'], { GH_MORE_VIEWS: '1' }).status, 0)
     withViews([{ name: 'Old', layout: 'table' }])

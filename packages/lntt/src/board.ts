@@ -511,7 +511,7 @@ export function describeStep(step: Step): string {
       return `describe issue type ${step.name}: ${step.description}`
     case 'createView': {
       const parts = [
-        ...(step.filter !== undefined ? [`filter "${step.filter}"`] : []),
+        ...(step.filter ? [`filter "${step.filter}"`] : []),
         ...(step.fields ? [`fields ${step.fields.join(', ')}`] : []),
       ]
       return `create view ${step.name} (${step.layout})${parts.length ? `: ${parts.join(', ')}` : ''}`
@@ -532,8 +532,8 @@ function fieldIds(graphql: Graphql, state: BoardState, names: string[]): string[
     const data = graphql(
       'query($p:ID!,$name:String!){ node(id:$p){ ... on ProjectV2{ field(name:$name){ ... on ProjectV2FieldCommon{ id } } } } }',
       { p: state.projectId, name },
-    ) as { node: { field: { id: string } | null } }
-    if (!data.node.field) throw new Error(`no field ${name} on the Project`)
+    ) as { node: { field: { id: string } | null } | null }
+    if (!data.node?.field) throw new Error(`no field ${name} on the Project`)
     return data.node.field.id
   })
 }
@@ -599,7 +599,8 @@ export function applyStep(graphql: Graphql, state: BoardState, step: Step): void
           },
         },
       ) as { createProjectV2View: { projectV2View: { id: string } } }
-      if (step.filter !== undefined) {
+      // A new view has no filter: an empty one needs no write.
+      if (step.filter) {
         pause(PAUSE_MS)
         graphql(UPDATE_VIEW, { input: { viewId: data.createProjectV2View.projectV2View.id, filter: step.filter } })
       }

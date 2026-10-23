@@ -53,7 +53,9 @@ lntt ci local | candidate
   more visible fields (50): what it did not read would look missing and be created
   again. These are the page sizes it reads with, revised if GitHub's limits change. A
   view the configuration does not name is left alone, and a key a view leaves out is
-  not managed.
+  not managed. Each live view answers one configured view, an exact name before one
+  that differs only in case; a view may name a field the same run creates, its id
+  resolved when the view is written.
   `--check` exits 1 on any difference, an entry left to a person included.
 - **What a person types is what an agent runs.** Skills, workflows, git hooks and
   `orca.yaml` call `lntt`, never a package's files by path, with one exception: the

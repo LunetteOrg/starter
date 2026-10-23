@@ -430,6 +430,18 @@ describe('planBoard: the views of board.github.views', () => {
     )
   })
 
+  test('a view named exactly is never taken by another configured view that differs in case', () => {
+    const live = state({ views: [view({ id: 'V_b', name: 'Horizon' })] })
+    const config = withViews([
+      { name: 'HORIZON', layout: 'table' },
+      { name: 'Horizon', layout: 'table' },
+    ])
+    assert.deepEqual(
+      plan(config, live).steps.map((s) => s.kind),
+      ['createView'],
+    )
+  })
+
   test('only the filter differs: only the filter is updated; an empty filter clears it', () => {
     const one = plan(withViews([{ name: 'Horizon', layout: 'table', filter: 'is:closed' }]), state({ views: [view()] }))
     assert.deepEqual(one.steps[0]?.kind === 'updateView' && one.steps[0].input, { filter: 'is:closed' })

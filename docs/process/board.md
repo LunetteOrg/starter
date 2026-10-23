@@ -60,7 +60,9 @@ and takes the parent's kind; a **Bug** is something that does not work as it sho
 under a parent or alone. Any other issue that stands alone, with no parent and no
 children, takes the parent type of its kind of work. A bug that stands alone stays a
 Bug: it gets no horizon, and its milestone and priority say when it is fixed. An
-Ongoing parent stays off the roadmap; the children done under it count.
+Ongoing parent gets no dates from the `roadmap` skill, which leaves it out of its
+forecast; it still has a horizon and shows in the Horizon view, and the children done
+under it count.
 
 ## Status
 
