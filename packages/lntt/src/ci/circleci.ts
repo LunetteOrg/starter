@@ -29,6 +29,30 @@ export interface Processed {
 // Expands a configuration's text, with these pipeline parameters.
 export type Processor = (path: string, text: string, parameters: Record<string, unknown>) => Processed
 
+// `config process` sends the configuration to CircleCI's server, which expands it;
+// public orbs need no login, but a stored token that was revoked or has expired
+// stops the CLI before it falls back to the anonymous call.
+export class CircleciLoginRejected extends Error {
+  constructor() {
+    super(
+      'the stored CircleCI login is not valid (The API token was rejected by CircleCI). `config process` does not need a login for public orbs: run `circleci auth logout`, or log in again',
+    )
+  }
+}
+
+// Whether the CLI runs from `cwd`, the folder `cliProcessor` runs it in (a version
+// manager's shim resolves per folder), and why not. Null when it does.
+export function circleciUnavailable(cwd: string): string | null {
+  try {
+    execFileSync('circleci', ['--skip-update-check', 'version'], { cwd, stdio: 'ignore' })
+    return null
+  } catch (error) {
+    if ((error as { code?: string }).code === 'ENOENT')
+      return 'the circleci CLI is not installed (brew install circleci)'
+    return `the circleci CLI does not run from ${cwd}`
+  }
+}
+
 export function cliProcessor(root: string): Processor {
   const dir = mkdtempSync(join(tmpdir(), 'lntt-ci-circleci-'))
   let n = 0
@@ -51,6 +75,7 @@ export function cliProcessor(root: string): Processor {
     } catch (error) {
       const e = error as { code?: string; stderr?: string }
       if (e.code === 'ENOENT') throw new Error('the circleci CLI is not installed (brew install circleci)')
+      if (/API token was rejected/i.test(e.stderr ?? '')) throw new CircleciLoginRejected()
       throw new Error(`circleci config process ${path}: ${e.stderr?.trim() ?? String(error)}`)
     }
     const file = join(dir, `processed-${n}.yml`)
