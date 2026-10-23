@@ -343,6 +343,17 @@ describe('the board skills', () => {
     }
   })
 
+  test('an issue that stands alone takes the type docs/process/board.md says, a child type when it says nothing', () => {
+    const guide = readFileSync(resolve(HERE, '../skills/github-board/SKILL.md'), 'utf8')
+    assert.match(guide, /stands alone[^.]*`docs\/process\/board\.md`[^.]*child type when it says nothing/)
+  })
+
+  test('views are created through the API, and grouped by hand', () => {
+    const reference = readFileSync(resolve(HERE, '../skills/github-board/references/github-project.md'), 'utf8')
+    assert.doesNotMatch(reference, /no API to create or edit a saved view/)
+    assert.match(reference, /createProjectV2View/)
+  })
+
   // A guard against values carried over from wai and pelion, not a proof that a guide is
   // generic: a value of another project is not in the list.
   test('carry over none of the issue types, fields or options of wai and pelion', () => {

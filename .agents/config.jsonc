@@ -81,6 +81,35 @@
       }
     }
   },
+  // The board (docs/process/board.md): the lunette roadmap Project, shared with
+  // LunetteOrg's other repositories. Issue types belong to the organization.
+  "board": {
+    "github": {
+      "project": { "owner": "LunetteOrg", "ownerType": "organization", "number": 1, "title": "lunette roadmap" }
+    },
+    // Task is the work under a parent; standing alone, an issue takes its kind of work.
+    "issueTypes": {
+      "parents": ["Feature", "Platform", "Debt", "Ongoing"],
+      "children": ["Task", "Bug"],
+      "permanent": ["Debt", "Ongoing"]
+    },
+    "subIssues": true,
+    // A milestone is a release, one per version (vX.Y.Z).
+    "milestones": true,
+    "blockedBy": true,
+    "fields": {
+      "status": {
+        "name": "Status",
+        "type": "singleSelect",
+        // In release: squashed into the open candidate, set by its automation (delivery).
+        "options": ["Todo", "Ready", "In progress", "In review", "In release", "Done"]
+      },
+      "priority": { "name": "Priority", "type": "singleSelect", "options": ["P0", "P1", "P2", "P3"] },
+      // Read by coordinator.models.children, on whichever issue a child works.
+      "size": { "name": "Size", "type": "singleSelect", "options": ["XS", "S", "M", "L", "XL"] },
+      "horizon": { "name": "Horizon", "type": "singleSelect", "options": ["Now", "Next", "Later", "Backlog"], "on": "parents" }
+    }
+  },
   // Coordinator mode (docs/adr/coordinator-mode.md). The coordinator's work is mostly
   // mechanical (starting children, reading their reports), so it runs on sonnet; a child
   // by the Size of its issue, the top model for M and up.

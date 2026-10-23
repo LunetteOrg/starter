@@ -742,3 +742,19 @@ describe('the configurations of the projects the starter was ported from', () =>
     assert.equal(Object.hasOwn(commits, 'longTrailers'), false)
   })
 })
+
+describe("the starter's own configuration", () => {
+  const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
+
+  test('lntt validate accepts it, and its board is the lunette roadmap Project', () => {
+    const valid = spawnSync(process.execPath, [BIN, 'validate'], { cwd: REPO, encoding: 'utf8' })
+    assert.equal(valid.status, 0, valid.stderr)
+    const data = loadConfig(REPO).data
+    assert.deepEqual(getValue(data, 'board.github.project'), {
+      owner: 'LunetteOrg',
+      ownerType: 'organization',
+      number: 1,
+      title: 'lunette roadmap',
+    })
+  })
+})

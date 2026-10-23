@@ -116,8 +116,9 @@ the steps.
    owner as assignee (`board.tracks`), and the milestone when `board.milestones`.
    REST creates it with its type in one call
    ([reference, *REST*](./references/github-project.md#rest-a-separate-budget-and-fewer-steps)).
-3. **Type**, when `board.issueTypes`: a child type for work, a parent type only for an
-   issue that will hold others.
+3. **Type**, when `board.issueTypes`: a child type for work under a parent, a parent
+   type for an issue that will hold others. An issue that stands alone takes the type
+   `docs/process/board.md` says, a child type when it says nothing.
 4. **On the Project**: an organization workflow may already have added it (`item-add`
    then fails as a duplicate: go on). Get its item id from the issue (1 point).
 5. **Fields**: the status role `initial` unless the person says otherwise, and every

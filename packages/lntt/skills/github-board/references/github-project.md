@@ -263,8 +263,20 @@ iteration from the saved file.
 
 ## Views
 
-Projects v2 has no API to create or edit a saved view: the filters are prepared, and a
-person creates the view in the UI. With *Show hierarchy* on, an item sits in the group
+A view is created with its name and layout, then given its filter; the grouping, the
+sort and *Show hierarchy* have no input and are set by a person in the UI. A new view
+is a change to the Project: only with the person's go.
+
+```sh
+view=$(gh api graphql -f query='mutation($p:ID!,$n:String!){
+  createProjectV2View(input:{projectId:$p, name:$n, layout:TABLE_LAYOUT}){ projectV2View{ id } } }' \
+  -f p=<PROJECT_NODE_ID> -f n="<view name>" --jq .data.createProjectV2View.projectV2View.id)  # or BOARD_LAYOUT, ROADMAP_LAYOUT
+gh api graphql -f query='mutation($v:ID!,$f:String!){
+  updateProjectV2View(input:{viewId:$v, filter:$f}){ projectV2View{ name filter } } }' -f v="$view" -f f="<filter>"
+# read back: projectV2{ views(first:20){ nodes{ id name layout filter groupByFields(first:3){ nodes{ ... on ProjectV2FieldCommon{ name } } } } } }
+```
+
+With *Show hierarchy* on, an item sits in the group
 of its root ancestor, so a view of children by iteration keeps hierarchy off. The
 Project's built-in workflows (auto-add, the status on close, on a linked pull request)
 are listed by the API (`workflows{ name enabled }`) but their values are read in the UI.
