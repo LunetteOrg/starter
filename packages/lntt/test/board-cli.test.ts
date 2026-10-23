@@ -471,6 +471,10 @@ describe('lntt board sync', () => {
     assert.match(lntt(['sync']).stdout, /create view Blank \(TABLE_LAYOUT\)\n/)
     assert.equal(lntt(['sync', '--apply']).status, 0)
     assert.ok(!io().includes('updateProjectV2View'))
+    assert.ok(
+      (live() as unknown as Views).views.some((v) => v.name === 'Blank'),
+      'created',
+    )
   })
 
   test('views: more than one page of views stops the run only when the board declares views', () => {

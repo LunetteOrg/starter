@@ -143,7 +143,7 @@
             },
             "permanent": {
               "type": "array",
-              "description": "The parent types that never close (debt, ongoing work): they stay off the roadmap and out of the parents velocity counts; the children done under them count. Each is one of parents: lntt validate checks it.",
+              "description": "The parent types that never close (ongoing work): the roadmap gives them no dates and leaves them out of its forecast and of the parents velocity counts; they keep their horizon, and the children done under them count. Each is one of parents: lntt validate checks it.",
               "items": {
                 "type": "string",
                 "minLength": 1

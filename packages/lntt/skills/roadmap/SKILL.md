@@ -59,8 +59,8 @@ label, owner, the horizon when this round of planning decides it, **no iteration
 
 **Permanent parents stay out** (`board.issueTypes.permanent`, or the field of the
 project's own that `docs/process/board.md` names for it): they hold work with no end, so
-a date would promise one that never comes. Filter them out whenever reading the parents
-for the roadmap.
+a date would promise one that never comes. Give them no dates and leave them out of the
+forecast; the base view still lists them, apart, with their horizon.
 
 ## 3. Measure velocity (with iterations) — after the fact, never estimated ahead
 

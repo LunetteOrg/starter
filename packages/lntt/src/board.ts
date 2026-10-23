@@ -511,7 +511,7 @@ export function describeStep(step: Step): string {
       return `describe issue type ${step.name}: ${step.description}`
     case 'createView': {
       const parts = [
-        ...(step.filter ? [`filter "${step.filter}"`] : []),
+        ...(step.filter?.trim() ? [`filter "${step.filter}"`] : []),
         ...(step.fields ? [`fields ${step.fields.join(', ')}`] : []),
       ]
       return `create view ${step.name} (${step.layout})${parts.length ? `: ${parts.join(', ')}` : ''}`
@@ -599,8 +599,8 @@ export function applyStep(graphql: Graphql, state: BoardState, step: Step): void
           },
         },
       ) as { createProjectV2View: { projectV2View: { id: string } } }
-      // A new view has no filter: an empty one needs no write.
-      if (step.filter) {
+      // A new view has no filter: a blank one needs no write.
+      if (step.filter?.trim()) {
         pause(PAUSE_MS)
         graphql(UPDATE_VIEW, { input: { viewId: data.createProjectV2View.projectV2View.id, filter: step.filter } })
       }

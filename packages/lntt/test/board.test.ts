@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { type BoardConfig, type BoardState, type Count, planBoard } from '../src/board.ts'
+import { applyStep, type BoardConfig, type BoardState, type Count, type Graphql, planBoard } from '../src/board.ts'
 
 // A board as the configuration writes it, and a Project that already has part of it.
 const board = {
@@ -436,9 +436,11 @@ describe('planBoard: the views of board.github.views', () => {
       { name: 'HORIZON', layout: 'table' },
       { name: 'Horizon', layout: 'table' },
     ])
+    const { steps } = plan(config, live)
     assert.deepEqual(
-      plan(config, live).steps.map((s) => s.kind),
-      ['createView'],
+      steps.map((s) => s.kind === 'createView' && s.name),
+      ['HORIZON'],
+      'HORIZON is created; the live Horizon is kept, with no rename',
     )
   })
 
@@ -467,5 +469,61 @@ describe('planBoard: the views of board.github.views', () => {
     const live = state({ views: [view()], viewsComplete: false })
     assert.throws(() => plan(withViews([{ name: 'Horizon', layout: 'table' }]), live), /more than 50 views/)
     assert.deepEqual(plan(board, live), { steps: [], manual: [] })
+  })
+})
+
+describe('applyStep: the writes of a view', () => {
+  // A graphql stub that records each request and answers the field query.
+  function recorder() {
+    const calls: { query: string; variables: Record<string, unknown> }[] = []
+    const graphql: Graphql = (query, variables) => {
+      calls.push({ query, variables })
+      if (query.includes('field(name:')) return { node: { field: { id: `F_${variables.name}` } } }
+      return { createProjectV2View: { projectV2View: { id: 'V_new' } } }
+    }
+    return { calls, graphql }
+  }
+  const live: BoardState = {
+    projectId: 'PVT_1',
+    url: 'https://github.com/orgs/DemoOrg/projects/1',
+    owner: 'DemoOrg',
+    ownerId: 'O_1',
+    fields: [{ id: 'F_status', databaseId: 2, name: 'Status', dataType: 'SINGLE_SELECT', options: [] }],
+    issueTypes: [],
+    viewsComplete: true,
+    views: [],
+  }
+
+  test('a known field is written by the id read before the run, with no query', () => {
+    const { calls, graphql } = recorder()
+    applyStep(graphql, live, { kind: 'createView', name: 'A', layout: 'TABLE_LAYOUT', fields: ['Status'] })
+    applyStep(graphql, live, { kind: 'updateView', id: 'V_1', name: 'A', changes: [], input: { fields: ['Status'] } })
+    assert.ok(!calls.some((c) => c.query.includes('field(name:')))
+    for (const c of calls) {
+      const input = c.variables.input as { configuration: { visibleFieldIds: string[] } }
+      assert.deepEqual(input.configuration.visibleFieldIds, ['F_status'])
+    }
+  })
+
+  test('a field the run created is asked of the Project by name', () => {
+    const { calls, graphql } = recorder()
+    applyStep(graphql, live, { kind: 'createView', name: 'A', layout: 'TABLE_LAYOUT', fields: ['Status', 'Size'] })
+    assert.equal(calls.filter((c) => c.query.includes('field(name:')).length, 1)
+    const input = calls.at(-1)?.variables.input as { configuration: { visibleFieldIds: string[] } }
+    assert.deepEqual(input.configuration.visibleFieldIds, ['F_status', 'F_Size'])
+  })
+
+  test('a Project that does not answer the field query: the error names the field', () => {
+    const graphql: Graphql = () => ({ node: null })
+    assert.throws(
+      () => applyStep(graphql, live, { kind: 'createView', name: 'A', layout: 'TABLE_LAYOUT', fields: ['Size'] }),
+      /no field Size on the Project/,
+    )
+  })
+
+  test('a blank filter on a new view takes no second write', () => {
+    const { calls, graphql } = recorder()
+    applyStep(graphql, live, { kind: 'createView', name: 'A', layout: 'TABLE_LAYOUT', filter: '  ' })
+    assert.equal(calls.length, 1, 'the create only')
   })
 })
