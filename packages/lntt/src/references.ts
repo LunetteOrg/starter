@@ -75,8 +75,9 @@ export function checkReferences(data: Record<string, unknown>): string[] {
   const views = (at(data, 'board', 'github', 'views') ?? []) as { name: string; layout: string; columns?: string }[]
   const named = new Set<string>()
   for (const view of views) {
-    if (named.has(view.name)) wrong.push(`board.github.views names the view ${view.name} twice`)
-    named.add(view.name)
+    // GitHub matches a view by name, case aside: Board and board are one view.
+    if (named.has(view.name.toLowerCase())) wrong.push(`board.github.views names the view ${view.name} twice`)
+    named.add(view.name.toLowerCase())
     if (view.columns !== undefined && view.layout !== 'board') {
       wrong.push(`board.github.views.${view.name}.columns is for a board layout, not ${view.layout}`)
     }

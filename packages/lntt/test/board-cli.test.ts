@@ -27,7 +27,7 @@ const name = (query.match(/(createProjectV2Field|updateProjectV2Field|createIssu
 if (process.env.GH_FAIL && name === process.env.GH_FAIL) {
   process.stderr.write('gh: Resource not accessible by integration\\n'); process.exit(1)
 }
-const kind = name || (query.includes('items(') ? 'items' : query.includes('search(') ? 'search' : 'read')
+const kind = name || (query.includes('items(') ? 'items' : query.includes('search(') ? 'search' : query.includes('field(name:') ? 'field' : 'read')
 log(kind)
 if (name) fs.appendFileSync(process.env.GH_LOG + '.times', Date.now() + '\\n')
 if (!name && process.env.GH_NO_ORG && query.includes('organization(')) {
@@ -36,7 +36,10 @@ if (!name && process.env.GH_NO_ORG && query.includes('organization(')) {
 if (name && name === process.env.GH_NOOP) { reply({ [name]: {} }); process.exit(0) }
 const withIds = (options) => options.map((o) => ({ id: o.id || id('o'), name: o.name, color: o.color, description: o.description }))
 const page = { hasNextPage: !!process.env.GH_MORE }
-if (kind === 'items') {
+if (kind === 'field') {
+  const f = state.fields.find((x) => x.name === v.name)
+  reply({ node: { field: f ? { id: f.id } : null } })
+} else if (kind === 'items') {
   // GH_PAGES=2 serves the items in two pages, the second after the cursor "p2".
   const all = (state.items || []).map((values) => ({ v: values[v.field] ? { name: values[v.field] } : null }))
   const half = process.env.GH_PAGES ? Math.ceil(all.length / 2) : all.length
@@ -49,12 +52,12 @@ if (kind === 'items') {
 } else if (!name && query.includes('user(')) {
   reply({ user: { id: 'U_1', projectV2: { id: 'PVT_1', url: 'https://github.com/users/someone/projects/1', fields: { nodes: state.fields, pageInfo: page }, views: { nodes: state.views, pageInfo: { hasNextPage: false } } } } })
 } else if (!name) {
-  reply({ organization: { id: 'O_1', projectV2: { id: 'PVT_1', url: 'https://github.com/orgs/DemoOrg/projects/1', fields: { nodes: state.fields, pageInfo: page }, views: { nodes: state.views, pageInfo: { hasNextPage: false } } },
+  reply({ organization: { id: 'O_1', projectV2: { id: 'PVT_1', url: 'https://github.com/orgs/DemoOrg/projects/1', fields: { nodes: state.fields, pageInfo: page }, views: { nodes: state.views, pageInfo: { hasNextPage: !!process.env.GH_MORE_VIEWS } } },
     issueTypes: { nodes: state.issueTypes, pageInfo: { hasNextPage: !!process.env.GH_MORE_TYPES } } } })
 } else if (name === 'createProjectV2View') {
   const view = { id: id('V'), number: state.views.length + 1, name: v.input.name, layout: v.input.layout, filter: '',
     fields: { nodes: (v.input.configuration?.visibleFieldIds || []).map((f) => ({ name: state.fields.find((x) => x.id === f).name })) },
-    groupByFields: { nodes: [] }, verticalGroupByFields: { nodes: [] } }
+    groupByFields: { nodes: [] }, verticalGroupByFields: { nodes: [] }, configured: !!v.input.configuration }
   state.views.push(view); save(); reply({ createProjectV2View: { projectV2View: { id: view.id } } })
 } else if (name === 'updateProjectV2View') {
   const view = state.views.find((x) => x.id === v.input.viewId)
@@ -338,6 +341,101 @@ describe('lntt board sync', () => {
       /the view Open groups by \(none\), board\.github\.views says Status[^\n]*\n {4}https:\/\/github\.com\/orgs\/DemoOrg\/projects\/1\/views\/1/,
     )
     assert.equal(lntt(['sync', '--check']).status, 1, 'the grouping is still a difference')
+  })
+
+  // The configuration with these views; the fake's views replaced when `live` is given.
+  function withViews(views: unknown[], live?: unknown[]) {
+    const config = structuredClone(CONFIG) as typeof CONFIG & { board: { github: { views?: unknown[] } } }
+    config.board.github.views = views
+    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify(config))
+    if (live) writeFileSync(gh.state, JSON.stringify({ ...LIVE, views: live }))
+  }
+  const liveView = (over: Record<string, unknown> = {}) => ({
+    id: 'V_old',
+    number: 7,
+    name: 'Old',
+    layout: 'TABLE_LAYOUT',
+    filter: '',
+    fields: { nodes: [{ name: 'Status' }] },
+    groupByFields: { nodes: [] },
+    verticalGroupByFields: { nodes: [] },
+    ...over,
+  })
+  type Views = {
+    views: {
+      name: string
+      layout: string
+      filter: string
+      configured?: boolean
+      fields: { nodes: { name: string }[] }
+    }[]
+  }
+
+  test('views: a view naming a field this run creates gets its id once the field exists', () => {
+    withViews([{ name: 'Plan', layout: 'table', fields: ['Status', 'Horizon'] }])
+    const r = lntt(['sync', '--apply'])
+    assert.equal(r.status, 0, r.stderr)
+    const plan = (live() as unknown as Views).views.find((v) => v.name === 'Plan')
+    assert.deepEqual(
+      plan?.fields.nodes.map((f) => f.name),
+      ['Status', 'Horizon'],
+    )
+  })
+
+  test('views: one with no filter and no fields is created alone, with no update and no configuration', () => {
+    withViews([{ name: 'Plain', layout: 'table' }])
+    assert.match(lntt(['sync']).stdout, /create view Plain \(TABLE_LAYOUT\)\n/)
+    assert.equal(lntt(['sync', '--apply']).status, 0)
+    assert.ok(!io().includes('updateProjectV2View'))
+    assert.equal((live() as unknown as Views).views[0].configured, false)
+  })
+
+  test('views: the filter of a new view is written 1.2 s after its create', () => {
+    withViews([{ name: 'Open', layout: 'table', filter: 'is:open' }])
+    assert.equal(lntt(['sync', '--apply']).status, 0)
+    const names = calls().filter((c) => !['read', 'items', 'search', 'field'].includes(c))
+    const times = readFileSync(`${gh.log}.times`, 'utf8').trim().split('\n').map(Number)
+    const at = names.indexOf('createProjectV2View')
+    assert.equal(names[at + 1], 'updateProjectV2View')
+    assert.ok(times[at + 1] - times[at] >= 1100, `${times[at + 1] - times[at]} ms`)
+  })
+
+  test('views: an existing view that differs is updated, its layout, filter and fields', () => {
+    withViews([{ name: 'Old', layout: 'board', filter: 'is:open', fields: ['Status', 'Horizon'] }], [liveView()])
+    assert.equal(lntt(['sync', '--apply']).status, 0)
+    const old = (live() as unknown as Views).views[0]
+    assert.deepEqual(
+      [old.layout, old.filter, old.fields.nodes.map((f) => f.name)],
+      ['BOARD_LAYOUT', 'is:open', ['Status', 'Horizon']],
+    )
+  })
+
+  test("views: a board's columns are read from the view: a different field is left to the UI", () => {
+    withViews(
+      [{ name: 'Old', layout: 'board', columns: 'Horizon' }],
+      [liveView({ layout: 'BOARD_LAYOUT', verticalGroupByFields: { nodes: [{ name: 'Status' }] } })],
+    )
+    assert.match(lntt(['sync']).stdout, /the view Old has columns by Status, board\.github\.views says Horizon/)
+  })
+
+  test('views: --check exits 0 when every declared view is as declared', () => {
+    withViews([{ name: 'Old', layout: 'table', filter: '', fields: ['Status'] }])
+    assert.equal(lntt(['sync', '--apply']).status, 0)
+    const aligned = live() as unknown as typeof LIVE & Views
+    aligned.fields[0].options = aligned.fields[0].options.filter((o) => o.name !== 'Archived')
+    aligned.issueTypes = aligned.issueTypes.filter((t) => t.name !== 'Chore')
+    aligned.views = [liveView() as unknown as Views['views'][number]]
+    writeFileSync(gh.state, JSON.stringify(aligned))
+    const r = lntt(['sync', '--check'])
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+  })
+
+  test('views: more than one page of views stops the run only when the board declares views', () => {
+    assert.equal(lntt(['sync'], { GH_MORE_VIEWS: '1' }).status, 0)
+    withViews([{ name: 'Old', layout: 'table' }])
+    const r = lntt(['sync'], { GH_MORE_VIEWS: '1' })
+    assert.equal(r.status, 1)
+    assert.match(r.stderr, /more than 50 views/)
   })
 
   test('no board section: exit 1, and gh is not called', () => {

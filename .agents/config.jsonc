@@ -88,7 +88,7 @@
       "project": { "owner": "LunetteOrg", "ownerType": "organization", "number": 1, "title": "lunette roadmap" },
       // docs/process/board.md says what each view is for; the groupings are set in the UI.
       "views": [
-        { "name": "All", "layout": "table" },
+        { "name": "All", "layout": "table", "filter": "" },
         { "name": "Board", "layout": "board", "filter": "is:open", "columns": "Status" },
         { "name": "Horizon", "layout": "table", "filter": "is:open type:Feature,Platform,Debt,Ongoing", "groupBy": "Horizon" },
         { "name": "Release", "layout": "table", "filter": "is:open", "groupBy": "Milestone" }

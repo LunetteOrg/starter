@@ -52,6 +52,7 @@ function state(over: Partial<BoardState> = {}): BoardState {
       { id: 'T_platform', name: 'Platform', description: 'What the product runs on' },
     ],
     views: [],
+    viewsComplete: true,
     ...over,
   }
 }
@@ -316,7 +317,6 @@ describe('planBoard: the views of board.github.views', () => {
         layout: 'BOARD_LAYOUT',
         filter: 'is:open',
         fields: ['Title', 'Status'],
-        fieldIds: ['F_title', 'F_status'],
       },
     ])
   })
@@ -345,7 +345,7 @@ describe('planBoard: the views of board.github.views', () => {
           'filter "is:open type:Feature"',
           'fields Title',
         ],
-        input: { name: 'Horizon', layout: 'ROADMAP_LAYOUT', filter: 'is:open type:Feature', fieldIds: ['F_title'] },
+        input: { name: 'Horizon', layout: 'ROADMAP_LAYOUT', filter: 'is:open type:Feature', fields: ['Title'] },
       },
     ])
   })
@@ -388,5 +388,72 @@ describe('planBoard: the views of board.github.views', () => {
 
   test('a view the configuration does not name is left alone', () => {
     assert.deepEqual(plan(withViews([]), state({ views: [view({ name: 'Mine' })] })), { steps: [], manual: [] })
+  })
+
+  test('a view naming a field this run creates is planned too: its id is resolved when it is applied', () => {
+    const size = { name: 'Size', type: 'singleSelect', options: ['S'] }
+    const config = withViews([{ name: 'Sized', layout: 'table', fields: ['Title', 'Size'], groupBy: 'Size' }])
+    const { steps, manual } = plan({ ...config, fields: { ...board.fields, size } } as BoardConfig, state())
+    assert.deepEqual(
+      steps.map((s) => s.kind),
+      ['createField', 'createView'],
+    )
+    assert.ok(!manual.some((m) => /does not have/.test(m.what)))
+  })
+
+  test('an unknown field as the grouping, the columns, or in a new view: left to the person, no step', () => {
+    const cases = [
+      [{ name: 'Horizon', layout: 'table', groupBy: 'Effort' }, [view()]],
+      [{ name: 'Board', layout: 'board', columns: 'Effort' }, [view({ name: 'Board', layout: 'BOARD_LAYOUT' })]],
+      [{ name: 'New', layout: 'table', fields: ['Effort'] }, []],
+    ] as const
+    for (const [config, views] of cases) {
+      const { steps, manual } = plan(withViews([config]), state({ views: [...views] }))
+      assert.deepEqual(steps, [], config.name)
+      assert.match(manual[0].what, /names the field Effort/, config.name)
+    }
+  })
+
+  test('two views named alike in case: each live view is matched once, the exact name first', () => {
+    const live = state({ views: [view({ id: 'V_a', name: 'horizon' }), view({ id: 'V_b', name: 'Horizon' })] })
+    assert.deepEqual(plan(withViews([{ name: 'Horizon', layout: 'table' }]), live), { steps: [], manual: [] })
+    const both = plan(
+      withViews([
+        { name: 'Horizon', layout: 'table' },
+        { name: 'HORIZON', layout: 'table' },
+      ]),
+      live,
+    )
+    assert.deepEqual(
+      both.steps.map((s) => s.kind === 'updateView' && [s.id, s.changes]),
+      [['V_a', ['rename "horizon" → "HORIZON"']]],
+    )
+  })
+
+  test('only the filter differs: only the filter is updated; an empty filter clears it', () => {
+    const one = plan(withViews([{ name: 'Horizon', layout: 'table', filter: 'is:closed' }]), state({ views: [view()] }))
+    assert.deepEqual(one.steps[0]?.kind === 'updateView' && one.steps[0].input, { filter: 'is:closed' })
+    const cleared = plan(withViews([{ name: 'Horizon', layout: 'table', filter: '' }]), state({ views: [view()] }))
+    assert.deepEqual(cleared.steps[0]?.kind === 'updateView' && cleared.steps[0].input, { filter: '' })
+  })
+
+  test('a filter that differs only in blanks is the same', () => {
+    const live = state({ views: [view({ filter: 'is:open  type:Bug ' })] })
+    assert.deepEqual(
+      plan(withViews([{ name: 'Horizon', layout: 'table', filter: 'is:open type:Bug' }]), live).steps,
+      [],
+    )
+  })
+
+  test('the same visible fields in another order: the order is updated', () => {
+    const live = state({ views: [view({ fields: ['Status', 'Title'] })] })
+    const [step] = plan(withViews([{ name: 'Horizon', layout: 'table', fields: ['Title', 'Status'] }]), live).steps
+    assert.deepEqual(step?.kind === 'updateView' && step.input, { fields: ['Title', 'Status'] })
+  })
+
+  test('a Project with more views than one page: an error only when the board declares views', () => {
+    const live = state({ views: [view()], viewsComplete: false })
+    assert.throws(() => plan(withViews([{ name: 'Horizon', layout: 'table' }]), live), /more than 50 views/)
+    assert.deepEqual(plan(board, live), { steps: [], manual: [] })
   })
 })

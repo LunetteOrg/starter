@@ -17,7 +17,8 @@ Project changes every item on it. Both go through the person who owns the
 organization, as the `github-board` skill says for any field or option: the
 configuration changes first, then `lntt board sync` shows what the Project and the
 types lack, and `--apply` makes it once that person agrees: it adds, sets the colors
-and descriptions, and renames what differs only in case. A rename of any other kind is
+and descriptions, creates and updates the views of `board.github.views`, and renames
+what differs only in case. A rename of any other kind is
 done in GitHub's UI (the command would create the new name beside the old one), and so
 is a removal, by the steps the command prints.
 
@@ -121,7 +122,9 @@ layout, filter and visible fields, and `--check` reports a grouping that differs
 grouping is set in the UI only. What each view is for:
 
 - **Board**: the open work by status, a column each; where the day's work is picked.
-- **Horizon**: the open parents grouped by horizon, the order work is taken up in.
+- **Horizon**: the open parents grouped by horizon, the order work is taken up in. Its
+  filter names each type of `board.issueTypes.parents`: a parent type added there is
+  added to the filter in the same change.
 - **Release**: the open issues grouped by milestone, what each release still holds.
 - **All**: every item, closed ones and other repositories' included.
 

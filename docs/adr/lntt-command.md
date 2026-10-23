@@ -49,7 +49,11 @@ lntt ci local | candidate
   items or issues it touches. Writes are 1.2 s apart (GitHub's secondary rate limit
   drops faster ones without an error), and `--apply` reads the board back. It stops on
   a Project or an organization with more fields (100) or issue types (50) than one
-  page, since a field or type it did not read would look missing and be created again.
+  page, and, when the configuration declares views, more views (50) or a view with
+  more visible fields (50): what it did not read would look missing and be created
+  again. These are the page sizes it reads with, revised if GitHub's limits change. A
+  view the configuration does not name is left alone, and a key a view leaves out is
+  not managed.
   `--check` exits 1 on any difference, an entry left to a person included.
 - **What a person types is what an agent runs.** Skills, workflows, git hooks and
   `orca.yaml` call `lntt`, never a package's files by path, with one exception: the

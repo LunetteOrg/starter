@@ -35,6 +35,9 @@ export interface BoardState {
   fields: { id: string; databaseId: number; name: string; dataType: string; options?: LiveOption[] }[]
   // null for a user's Project: issue types belong to an organization.
   issueTypes: { id: string; name: string; description: string | null }[] | null
+  // false when the Project has more views (or a view more visible fields) than one read
+  // holds: a board that declares views stops rather than recreate one it did not see.
+  viewsComplete: boolean
   // The Project's views; fields, groupBy and columns by field name, in their order.
   views: {
     id: string
@@ -65,13 +68,15 @@ export type Step =
   | { kind: 'createIssueType'; name: string; description?: string }
   | { kind: 'renameIssueType'; id: string; from: string; to: string }
   | { kind: 'describeIssueType'; id: string; name: string; description: string }
-  | { kind: 'createView'; name: string; layout: string; filter?: string; fields?: string[]; fieldIds?: string[] }
+  | { kind: 'createView'; name: string; layout: string; filter?: string; fields?: string[] }
   | {
       kind: 'updateView'
       id: string
       name: string
       changes: string[]
-      input: { name?: string; layout?: string; filter?: string; fieldIds?: string[] }
+      // fields by name: their ids are resolved when the step is applied, so a field the
+      // same run creates can be named.
+      input: { name?: string; layout?: string; filter?: string; fields?: string[] }
     }
 
 // What the command leaves to a person: why, where and how.
@@ -269,11 +274,29 @@ const LAYOUTS: Record<string, string> = { table: 'TABLE_LAYOUT', board: 'BOARD_L
 // A key a view leaves out is not managed; a view the configuration does not name is
 // left alone.
 function planViews(views: ViewConfig[], state: BoardState, steps: Step[], manual: Manual[]): void {
-  const ids = new Map(state.fields.map((f) => [f.name, f.id]))
+  if (views.length > 0 && !state.viewsComplete) {
+    throw new Error('the Project has more than 50 views, or a view more than 50 visible fields: not read whole')
+  }
+  // The fields the Project has, and those this run creates before the views.
+  const known = new Set([
+    ...state.fields.map((f) => f.name),
+    ...steps.flatMap((s) => (s.kind === 'createField' ? [s.name] : [])),
+  ])
+  const filterOf = (filter: string) => filter.trim().replace(/\s+/g, ' ')
+  const used = new Set<string>()
+  // Each live view answers one configured view, an exact name before a case match.
+  const claim = (name: string) => {
+    const free = state.views.filter((v) => !used.has(v.id))
+    const live = free.find((v) => v.name === name) ?? free.find((v) => same(v.name, name))
+    if (live) used.add(live.id)
+    return live
+  }
+  for (const view of views) used.add(state.views.find((v) => v.name === view.name)?.id ?? '')
+  used.delete('')
   for (const view of views) {
     const layout = LAYOUTS[view.layout]
     const unknown = [view.groupBy, view.columns, ...(view.fields ?? [])].filter(
-      (name): name is string => name !== undefined && !ids.has(name),
+      (name): name is string => name !== undefined && !known.has(name),
     )
     if (unknown.length > 0) {
       for (const name of unknown) {
@@ -286,8 +309,8 @@ function planViews(views: ViewConfig[], state: BoardState, steps: Step[], manual
       }
       continue
     }
-    const fieldIds = view.fields?.map((name) => ids.get(name) as string)
-    const live = state.views.find((v) => v.name === view.name) ?? state.views.find((v) => same(v.name, view.name))
+    const exact = state.views.find((v) => v.name === view.name)
+    const live = exact ?? claim(view.name)
     const page = live ? `${state.url}/views/${live.number}` : `${state.url}/views`
     if (!live) {
       steps.push({
@@ -295,7 +318,7 @@ function planViews(views: ViewConfig[], state: BoardState, steps: Step[], manual
         name: view.name,
         layout,
         ...(view.filter !== undefined ? { filter: view.filter } : {}),
-        ...(view.fields && fieldIds ? { fields: view.fields, fieldIds } : {}),
+        ...(view.fields ? { fields: view.fields } : {}),
       })
     } else {
       const changes: string[] = []
@@ -308,13 +331,13 @@ function planViews(views: ViewConfig[], state: BoardState, steps: Step[], manual
         changes.push(`layout ${layout}`)
         input.layout = layout
       }
-      if (view.filter !== undefined && live.filter !== view.filter) {
+      if (view.filter !== undefined && filterOf(live.filter) !== filterOf(view.filter)) {
         changes.push(`filter "${view.filter}"`)
         input.filter = view.filter
       }
-      if (view.fields && fieldIds && live.fields.join('\n') !== view.fields.join('\n')) {
+      if (view.fields && live.fields.join('\n') !== view.fields.join('\n')) {
         changes.push(`fields ${view.fields.join(', ')}`)
-        input.fieldIds = fieldIds
+        input.fields = view.fields
       }
       if (changes.length > 0) steps.push({ kind: 'updateView', id: live.id, name: view.name, changes, input })
     }
@@ -359,10 +382,11 @@ const FIELDS = `fields(first:100){ pageInfo{ hasNextPage } nodes{
 
 const NAMES = 'nodes{ ... on ProjectV2FieldCommon{ name } }'
 const VIEWS = `views(first:50){ pageInfo{ hasNextPage } nodes{ id number name layout filter
-  fields(first:50){ ${NAMES} } groupByFields(first:5){ ${NAMES} } verticalGroupByFields(first:5){ ${NAMES} } } }`
+  fields(first:50){ pageInfo{ hasNextPage } ${NAMES} } groupByFields(first:5){ ${NAMES} }
+  verticalGroupByFields(first:5){ ${NAMES} } } }`
 
 type Page<T> = { nodes: T[]; pageInfo?: { hasNextPage: boolean } }
-type Names = { nodes: { name?: string }[] }
+type Names = { nodes: { name?: string }[]; pageInfo?: { hasNextPage: boolean } }
 type LiveView = {
   id: string
   number: number
@@ -401,8 +425,6 @@ export function readBoard(
   // One page each: past it, a field or a type that exists would look missing, and be created again.
   if (owner.projectV2.fields.pageInfo?.hasNextPage)
     throw new Error('the Project has more than 100 fields: not read whole')
-  if (owner.projectV2.views?.pageInfo?.hasNextPage)
-    throw new Error('the Project has more than 50 views: not read whole')
   if (owner.issueTypes?.pageInfo?.hasNextPage)
     throw new Error('the organization has more than 50 issue types: not read whole')
   return {
@@ -413,6 +435,9 @@ export function readBoard(
     // A field the token cannot see comes back as an empty object.
     fields: owner.projectV2.fields.nodes.filter((f) => f.id),
     issueTypes: user ? null : (owner.issueTypes?.nodes ?? []),
+    viewsComplete:
+      !owner.projectV2.views?.pageInfo?.hasNextPage &&
+      !(owner.projectV2.views?.nodes ?? []).some((v) => v.fields?.pageInfo?.hasNextPage),
     views: (owner.projectV2.views?.nodes ?? []).map((v) => ({
       id: v.id,
       number: v.number,
@@ -498,6 +523,21 @@ export function describeStep(step: Step): string {
 
 const UPDATE_FIELD =
   'mutation($input:UpdateProjectV2FieldInput!){ updateProjectV2Field(input:$input){ projectV2Field{ ... on ProjectV2FieldCommon{ id } } } }'
+// The ids of fields by name: from the state read before the run, or asked of the
+// Project for a field this run created.
+function fieldIds(graphql: Graphql, state: BoardState, names: string[]): string[] {
+  return names.map((name) => {
+    const known = state.fields.find((f) => f.name === name)?.id
+    if (known) return known
+    const data = graphql(
+      'query($p:ID!,$name:String!){ node(id:$p){ ... on ProjectV2{ field(name:$name){ ... on ProjectV2FieldCommon{ id } } } } }',
+      { p: state.projectId, name },
+    ) as { node: { field: { id: string } | null } }
+    if (!data.node.field) throw new Error(`no field ${name} on the Project`)
+    return data.node.field.id
+  })
+}
+
 const UPDATE_VIEW =
   'mutation($input:UpdateProjectV2ViewInput!){ updateProjectV2View(input:$input){ projectV2View{ id } } }'
 // Between two writes: GitHub's secondary rate limit drops writes sent faster, and does
@@ -555,7 +595,7 @@ export function applyStep(graphql: Graphql, state: BoardState, step: Step): void
             projectId: state.projectId,
             name: step.name,
             layout: step.layout,
-            ...(step.fieldIds ? { configuration: { visibleFieldIds: step.fieldIds } } : {}),
+            ...(step.fields ? { configuration: { visibleFieldIds: fieldIds(graphql, state, step.fields) } } : {}),
           },
         },
       ) as { createProjectV2View: { projectV2View: { id: string } } }
@@ -566,9 +606,13 @@ export function applyStep(graphql: Graphql, state: BoardState, step: Step): void
       break
     }
     case 'updateView': {
-      const { fieldIds, ...rest } = step.input
+      const { fields, ...rest } = step.input
       graphql(UPDATE_VIEW, {
-        input: { viewId: step.id, ...rest, ...(fieldIds ? { configuration: { visibleFieldIds: fieldIds } } : {}) },
+        input: {
+          viewId: step.id,
+          ...rest,
+          ...(fields ? { configuration: { visibleFieldIds: fieldIds(graphql, state, fields) } } : {}),
+        },
       })
       break
     }

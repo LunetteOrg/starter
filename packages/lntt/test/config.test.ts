@@ -437,6 +437,10 @@ describe('the board section', () => {
       /board\.github\.views names the view Board twice/,
     )
     assertBadReference(
+      { board: withHorizon({ github: { ...board.github, views: [...views, { name: 'board', layout: 'table' }] } }) },
+      /board\.github\.views names the view board twice/,
+    )
+    assertBadReference(
       {
         board: withHorizon({ github: { ...board.github, views: [{ name: 'T', layout: 'table', columns: 'Status' }] } }),
       },
