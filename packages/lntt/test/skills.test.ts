@@ -322,6 +322,51 @@ describe('the board skills', () => {
     }
   })
 
+  test('stop and propose the horizon when the board has none: it is the base they plan on', () => {
+    for (const name of BOARD) {
+      const guide = readFileSync(join(SKILLS, name, 'SKILL.md'), 'utf8')
+      assert.match(guide, /\*\*No `board\.fields\.horizon`:\*\* stop/, name)
+    }
+  })
+
+  // The layers: the base (horizon, status, priority, issue type), then milestones and
+  // iterations as add-ons, each switched on by its key.
+  test('github-board describes the base and the two add-ons, and the incoherences between them', () => {
+    const guide = readFileSync(join(SKILLS, 'github-board', 'SKILL.md'), 'utf8').replace(/\s+/g, ' ')
+    assert.match(guide, /\*\*The base\*\*/)
+    assert.match(guide, /only parents carry it; a child takes its parent's/)
+    assert.match(
+      guide,
+      /children at `board\.fields\.status\.ready` of the parents in\s+the nearest horizon, by priority/,
+    )
+    assert.match(guide, /\*\*Milestones\*\* \(`board\.milestones`\)[^-]*never replaces the horizon/)
+    assert.match(
+      guide,
+      /\*\*Iterations\*\* \(`board\.fields\.iteration`\)[^-]*only the children of\s+parents in the nearest horizon/,
+    )
+    // the three incoherences
+    assert.match(guide, /a child in an open milestone whose parent is past the next horizon/)
+    assert.match(guide, /a parent in the nearest horizon with no child in an open milestone/)
+    assert.match(guide, /a child in the current iteration whose parent is not in the nearest horizon/)
+  })
+
+  test('plan-round produces the base, and with each add-on what enters the next release or iteration', () => {
+    const guide = readFileSync(join(SKILLS, 'plan-round', 'SKILL.md'), 'utf8').replace(/\s+/g, ' ')
+    assert.match(
+      guide,
+      /\*\*The base:\*\* the parents to bring to the nearest horizon, and their children to make\s+ready/,
+    )
+    assert.match(guide, /\*\*With milestones:\*\* also what enters the next release/)
+    assert.match(guide, /\*\*With iterations:\*\* also what enters the next iteration/)
+  })
+
+  test('roadmap shows the parents by horizon, and with each add-on the release or the iteration', () => {
+    const guide = readFileSync(join(SKILLS, 'roadmap', 'SKILL.md'), 'utf8').replace(/\s+/g, ' ')
+    assert.match(guide, /\*\*The base:\*\* the parents by horizon/)
+    assert.match(guide, /\*\*With milestones:\*\* how each open release is advancing/)
+    assert.match(guide, /\*\*With iterations:\*\* the current iteration/)
+  })
+
   test('plan-round and roadmap hand the board to the adapter board.provider names, and stop when it has none', () => {
     for (const name of ['plan-round', 'roadmap']) {
       const guide = readFileSync(join(SKILLS, name, 'SKILL.md'), 'utf8')
@@ -341,6 +386,33 @@ describe('the board skills', () => {
         }
       }
     }
+  })
+
+  test('an issue that stands alone takes the type docs/process/board.md says, a child type when it says nothing', () => {
+    const guide = readFileSync(resolve(HERE, '../skills/github-board/SKILL.md'), 'utf8')
+    assert.match(guide, /stands alone[^.]*`docs\/process\/board\.md`[^.]*child type when it says nothing/)
+  })
+
+  test('github-board adds what the configuration declares with lntt board sync: a dry run, --apply on the go', () => {
+    const guide = readFileSync(join(SKILLS, 'github-board', 'SKILL.md'), 'utf8').replace(/\s+/g, ' ')
+    assert.match(
+      guide,
+      /`lntt board sync` shows what it would add \(a dry run\), and `lntt board sync --apply` adds it, with the person's go/,
+    )
+    const reference = readFileSync(resolve(HERE, '../skills/github-board/references/github-project.md'), 'utf8')
+    assert.match(reference, /An option passed with its `id`\s+keeps it, and every item keeps its value/)
+  })
+
+  test('views are created through the API, and grouped by hand', () => {
+    const reference = readFileSync(resolve(HERE, '../skills/github-board/references/github-project.md'), 'utf8')
+    assert.doesNotMatch(reference, /no API to create or edit a saved view/)
+    assert.match(reference, /createProjectV2View/)
+    assert.match(reference, /updateProjectV2View\(input:\{viewId:\$v, filter:\$f\}\)/)
+    assert.match(
+      reference,
+      /the grouping, the\s+sort and \*Show hierarchy\* have no input and are set by a person in the UI/,
+    )
+    assert.match(reference, /A new view\s+is a change to the Project: only with the person's go/)
   })
 
   // A guard against values carried over from wai and pelion, not a proof that a guide is

@@ -23,6 +23,7 @@ command, so a reader who sees `lntt` in a script knows which package provides it
 
 ```
 lntt path | validate | get | set | operator | sync | guide | local app | viewer | browser | refs
+lntt board sync
 lntt check [agents-md | skills | decisions [structure | numbers] | tests [levels | focus | rules | touched | mutate] | body] | check cite
 lntt branch name | check | rename
 lntt pr block
@@ -35,10 +36,28 @@ lntt ci local | candidate
 - **One entry point, one module per command group.** `bin/lntt.ts` dispatches to
   `src/cli.ts` (configuration, operator, `AGENTS.md`, local apps, viewer, browser),
   `src/check-cli.ts`, `src/branch-cli.ts`, `src/review-cli.ts`, `src/worktree-cli.ts`,
-  `src/refs-cli.ts`, `src/pull-request-cli.ts`, `src/messages-cli.ts` (`ask`, `inbox`,
+  `src/refs-cli.ts`, `src/board-cli.ts`, `src/pull-request-cli.ts`, `src/messages-cli.ts` (`ask`, `inbox`,
   `answer`) and `src/ci/cli.ts`.
   A group loads only when it runs. What a script needs as a library, `@lntt/lntt`
   exports too (`resolveRefs` and `mentions` for `lntt refs`).
+- **`lntt board sync` writes only what keeps an id.** It adds, sets colors and
+  descriptions, renames by case, and creates and updates the declared views (name,
+  layout, filter, visible fields: the inputs the API has) through GitHub's GraphQL API, passing every
+  existing option back with its id so no item loses its value
+  (`packages/lntt/src/board.ts`). A change the API cannot make, or a removal, is
+  printed for a person with its reason, settings page, steps and, for a removal, the
+  items or issues it touches. Writes are 1.2 s apart (GitHub's secondary rate limit
+  drops faster ones without an error), and `--apply` reads the board back. It stops on
+  a Project or an organization with more fields (100) or issue types (50) than one
+  page, and, when the configuration declares views, more views (50) or a view with
+  more visible fields (50): what it did not read would look missing and be created
+  again. These are the page sizes it reads with, revised if GitHub's limits change. A
+  view the configuration does not name is left alone, and a key a view leaves out is
+  not managed. Each live view answers one configured view, an exact name before one
+  that differs only in case; a view may name a field the same run creates, its id
+  resolved when the view is written, and a field the Project does not return then
+  stops the run with its name, the writes before it applied.
+  `--check` exits 1 on any difference, an entry left to a person included.
 - **What a person types is what an agent runs.** Skills, workflows, git hooks and
   `orca.yaml` call `lntt`, never a package's files by path, with one exception: the
   candidate workflow runs `node packages/lntt/bin/lntt.ts`, because it installs only
@@ -105,9 +124,10 @@ rests on these criteria:
    `ci:local`; `decisions` calls `lntt check decisions` and is a lens of `lntt review`;
    `coordinate` calls `lntt worktree start`, the mailbox and `lntt get`; `run-local`
    calls `lntt get`, `lntt local app` and `lntt viewer`; `retrospective` calls `lntt get`,
-   `lntt pr block` and `lntt check body`; `commit-message` (`lntt get`, commitlint) and
-   the board skills (`github-board`, `plan-round`, `roadmap`: `lntt get`, `lntt set`)
-   stay on the gate side. In the code, `lntt review` imports the check
+   `lntt pr block` and `lntt check body`; `github-board` calls `lntt get` and `lntt set`
+   (gates) and `lntt board sync` (an agent tool); `commit-message` (`lntt get`,
+   commitlint), `plan-round` and `roadmap` (`lntt get`, `lntt set`) stay on the gate
+   side. In the code, `lntt review` imports the check
    areas and the mutations and runs them in-process (`packages/lntt/src/review-cli.ts`
    imports `runArea` and `mutateAll`), and `lntt worktree start` names branches with
    the gate's code (`packages/lntt/src/worktree-cli.ts` imports `branchName` and
@@ -136,7 +156,7 @@ So:
   | `lntt branch check`, and `branch name` and `branch rename`, so the name an agent gets is the one the gate accepts | `lntt ask \| inbox \| answer` |
   | `lntt validate \| get \| set \| path`: they hold the schema; `set` writes a tracked file | `lntt guide`: it prints the skills |
   | `lntt sync`: it writes tracked files (the `AGENTS.md` block, the skill stubs) that `lntt check` verifies | `lntt operator`: personal context, read by no gate; `lntt pr block`: the empty retrospective block, for the template and the skill |
-  | the commitlint configuration (the `@lntt/lntt` export) | `lntt local app`, `lntt viewer` |
+  | the commitlint configuration (the `@lntt/lntt` export) | `lntt local app`, `lntt viewer`; `lntt board sync`: it reads and writes GitHub, not the commit, so its `--check` is a verdict on the board's state that a hook or a scheduled job runs, never a pull request's gate |
   | the configuration schema | the plugin's hooks; once they exist, `lntt refs` (#144) and `lntt doctor` (#124) |
 
 - **The configuration schema follows one compatibility rule.** Its version is the
@@ -145,7 +165,11 @@ So:
     absence means the behaviour from before it existed. An enum only gains values.
     A newer `lntt` therefore reads an older file; the rule needs a test that
     validates a configuration of each released version against the current schema
-    ([accepted risks](#negative--accepted-risks)).
+    ([accepted risks](#negative--accepted-risks)). What the schema cannot say, and
+    what every reader would fail on if the schema required it, `lntt validate` checks
+    (`packages/lntt/src/references.ts`): those checks may grow, since they fail the
+    gate and never a read; the release notes name each new one
+    ([delivery](../process/delivery.md#releasing)).
   - An older `lntt` rejects a field it does not know, as `additionalProperties: false`
     does: an unknown field is a typo until proven otherwise. A project writes a new
     field after bumping `@lntt/lntt` to a version that knows it, and `lntt validate`

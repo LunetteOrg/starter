@@ -50,9 +50,48 @@ export function checkReferences(data: Record<string, unknown>): string[] {
     }
   }
 
+  // Only parents carry the horizon, and only children an iteration: checked here, not
+  // by the schema, so a file an older lntt accepted still loads.
+  const horizon = at(data, 'board', 'fields', 'horizon') as Tree
+  if (horizon) {
+    expect('board.fields.horizon.type', horizon.type, ['singleSelect'])
+    expect('board.fields.horizon.on', horizon.on ?? 'parents', ['parents'])
+  }
+  const iteration = at(data, 'board', 'fields', 'iteration') as Tree
+  if (iteration) {
+    expect('board.fields.iteration.type', iteration.type, ['iteration'])
+    expect('board.fields.iteration.on', iteration.on ?? 'children', ['children'])
+  }
+
+  for (const [key, field] of Object.entries((at(data, 'board', 'fields') ?? {}) as Record<string, Tree>)) {
+    const options = (field?.options ?? []) as string[]
+    for (const name of Object.keys((field?.colors ?? {}) as Record<string, string>)) {
+      if (!options.includes(name)) {
+        wrong.push(`board.fields.${key}.colors.${name} names no option of the field: ${options.join(', ')}`)
+      }
+    }
+  }
+
+  const views = (at(data, 'board', 'github', 'views') ?? []) as { name: string; layout: string; columns?: string }[]
+  const named = new Set<string>()
+  for (const view of views) {
+    // GitHub matches a view by name, case aside: Board and board are one view.
+    if (named.has(view.name.toLowerCase())) wrong.push(`board.github.views names the view ${view.name} twice`)
+    named.add(view.name.toLowerCase())
+    if (view.columns !== undefined && view.layout !== 'board') {
+      wrong.push(`board.github.views.${view.name}.columns is for a board layout, not ${view.layout}`)
+    }
+  }
+
   const types = at(data, 'board', 'issueTypes') as Tree
   for (const type of (types?.permanent ?? []) as string[]) {
     expect('board.issueTypes.permanent', type, (types?.parents ?? []) as string[])
+  }
+
+  const listed = [...((types?.parents ?? []) as string[]), ...((types?.children ?? []) as string[])]
+  for (const name of Object.keys((types?.descriptions ?? {}) as Record<string, string>)) {
+    if (!listed.includes(name))
+      wrong.push(`board.issueTypes.descriptions.${name} names no type of the board: ${listed.join(', ')}`)
   }
 
   const members = at(data, 'team', 'members') as Tree
@@ -72,4 +111,17 @@ export function checkReferences(data: Record<string, unknown>): string[] {
     )
 
   return wrong
+}
+
+// One line per key the board skills need and the configuration lacks, empty when none
+// is missing. Checked here and not by the schema, so a board written in steps still
+// loads for every other reader.
+export function checkMissing(data: Record<string, unknown>): string[] {
+  const missing: string[] = []
+  if (at(data, 'board') !== undefined && at(data, 'board', 'fields', 'horizon') === undefined) {
+    missing.push(
+      'board.fields.horizon is missing: every board plans on its horizon, with the status, the priority and the issue type',
+    )
+  }
+  return missing
 }

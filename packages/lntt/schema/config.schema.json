@@ -39,7 +39,7 @@
         },
         "github": {
           "type": "object",
-          "description": "What only a board on GitHub has: the Project that holds it.",
+          "description": "What only a board on GitHub has: the Project that holds it, and its views.",
           "additionalProperties": false,
           "required": ["project"],
           "properties": {
@@ -67,6 +67,50 @@
                   "type": "string",
                   "minLength": 1,
                   "description": "Its title, for a person to recognise it; owner and number find it."
+                }
+              }
+            },
+            "views": {
+              "type": "array",
+              "description": "The Project's views lntt board sync keeps, by name; a view it does not name is left alone. A key a view leaves out is not managed. The name, the layout, the filter and the visible fields are set through the API; the grouping and the columns are not, and a difference is printed for a person. Each name once: lntt validate checks it.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "layout"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The view's name, its tab on the Project."
+                  },
+                  "layout": {
+                    "enum": ["table", "board", "roadmap"],
+                    "description": "A table, a board (columns), or a roadmap (dates)."
+                  },
+                  "filter": {
+                    "type": "string",
+                    "description": "The view's filter, in the Project's filter syntax (is:open type:Bug), written trimmed; an empty or blank string is no filter, and clears the view's."
+                  },
+                  "fields": {
+                    "type": "array",
+                    "description": "The visible fields, by name, in their order: fields of the Project, built-in ones (Title, Assignees, Milestone) included.",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "uniqueItems": true
+                  },
+                  "groupBy": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The field the view groups its items by (in a board, its swimlanes); set in the UI, checked by lntt board sync."
+                  },
+                  "columns": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "A board's columns, by field; set in the UI, checked by lntt board sync. A board layout only: lntt validate checks it."
+                  }
                 }
               }
             }
@@ -99,13 +143,21 @@
             },
             "permanent": {
               "type": "array",
-              "description": "The parent types that never close (debt, ongoing work): they stay off the roadmap and out of the parents velocity counts; the children done under them count. Each is one of parents: lntt validate checks it.",
+              "description": "The parent types that never close (ongoing work): the roadmap gives them no dates and leaves them out of its forecast and of the parents velocity counts; they keep their horizon, and the children done under them count. Each is one of parents: lntt validate checks it.",
               "items": {
                 "type": "string",
                 "minLength": 1
               },
               "minItems": 1,
               "uniqueItems": true
+            },
+            "descriptions": {
+              "type": "object",
+              "description": "Each type's description, by its name, as the organization's issue types show it: lntt board sync creates a missing type with it and writes it on a type that has another. Each name is one of parents or children: lntt validate checks it.",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           }
         },
@@ -115,7 +167,7 @@
         },
         "milestones": {
           "type": "boolean",
-          "description": "true: issues are grouped in milestones, a release each unless docs/process/board.md says otherwise. Absent or false: the project uses no milestones."
+          "description": "true: the milestones add-on. A milestone is a release unless docs/process/board.md says otherwise, carried by parents and children alike: it says what ships in which release and never replaces the horizon. Absent or false: the project uses no milestones."
         },
         "blockedBy": {
           "type": "boolean",
@@ -123,7 +175,7 @@
         },
         "fields": {
           "type": "object",
-          "description": "The board's fields, by key: the ones the board skills know (status; priority, its options most urgent first; size; horizon, when the work is taken up, its options nearest first; iteration; and startDate and targetDate, the dates the roadmap reads) and the project's own, in camelCase (classe). A field missing here is one the project does not use: the skills do without it, and never create it unasked.",
+          "description": "The board's fields, by key: the ones the board skills know (status; priority, its options most urgent first; size; horizon, when a parent is taken up, a single select carried by the parents, its options nearest first; iteration, the iterations add-on, carried by the children of the parents in the nearest horizon; and startDate and targetDate, the dates the roadmap reads) and the project's own, in camelCase (classe). For horizon and iteration an absent `on` means parents and children. Every board plans on the base: the horizon with the status, the priority and the issue type; lntt validate requires the horizon and checks where horizon and iteration sit, and the skills stop and propose a missing horizon. Any other field missing here is one the project does not use: the skills do without it, and never create it unasked.",
           "propertyNames": {
             "pattern": "^[a-z][a-zA-Z0-9]*$"
           },
@@ -1003,6 +1055,13 @@
           },
           "minItems": 1,
           "uniqueItems": true
+        },
+        "colors": {
+          "type": "object",
+          "description": "A single select's option colors on GitHub, by option name: lntt board sync sets each on its option, keeping the option's id. An option left out keeps its color, a new one is gray. Each name is one of options: lntt validate checks it.",
+          "additionalProperties": {
+            "enum": ["GRAY", "BLUE", "GREEN", "YELLOW", "ORANGE", "RED", "PINK", "PURPLE"]
+          }
         }
       },
       "if": {
