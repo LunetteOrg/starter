@@ -25,7 +25,7 @@ import {
   syncSkills,
   type Viewer,
 } from './index.ts'
-import { checkReferences } from './references.ts'
+import { checkMissing, checkReferences } from './references.ts'
 
 const USAGE = [
   'usage: lntt path | validate | get <key> | set <key> <json> | operator [get <key> | sources]',
@@ -67,12 +67,17 @@ function run(command: string | undefined, key: string | undefined, raw: string |
       stdout.write(`${findConfig(cwd()).path}\n`)
       break
     case 'validate': {
-      // The schema on load, then the references it cannot express (./references.ts).
+      // The schema on load, then what it cannot express (./references.ts): the
+      // references between lists, and the keys the board skills need.
       const { path, data } = loadConfig(cwd())
+      const indent = (lines: string[]) => lines.map((l) => `  ${l}`).join('\n')
       const wrong = checkReferences(data)
-      if (wrong.length > 0) {
-        throw new ConfigError(`${path}: a value names no entry of its list:\n${wrong.map((l) => `  ${l}`).join('\n')}`)
-      }
+      const missing = checkMissing(data)
+      const parts = [
+        ...(wrong.length > 0 ? [`a value names no entry of its list:\n${indent(wrong)}`] : []),
+        ...(missing.length > 0 ? [`a key the board skills need is missing:\n${indent(missing)}`] : []),
+      ]
+      if (parts.length > 0) throw new ConfigError(`${path}: ${parts.join('\n')}`)
       break
     }
     case 'get':

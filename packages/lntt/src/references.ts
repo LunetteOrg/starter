@@ -73,3 +73,16 @@ export function checkReferences(data: Record<string, unknown>): string[] {
 
   return wrong
 }
+
+// One line per key the board skills need and the configuration lacks, empty when none
+// is missing. Checked here and not by the schema, so a board written in steps still
+// loads for every other reader.
+export function checkMissing(data: Record<string, unknown>): string[] {
+  const missing: string[] = []
+  if (at(data, 'board') !== undefined && at(data, 'board', 'fields', 'horizon') === undefined) {
+    missing.push(
+      'board.fields.horizon is missing: every board plans on its horizon, with the status, the priority and the issue type',
+    )
+  }
+  return missing
+}

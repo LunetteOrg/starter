@@ -42,17 +42,19 @@ The parent types (`board.issueTypes.parents`) say what kind of work an issue is:
   the templates, the plugin, the shared packages.
 - **Platform**: what the starter itself runs on: its CI, the release and candidate
   automation, its board.
-- **Debt**: a technical debt to pay back.
-- **Ongoing**: recurring work with no end (maintenance, support).
+- **Debt**: a technical debt to pay back. A parent like the others: its tasks, its
+  horizon, and it closes when the debt is paid.
+- **Ongoing**: recurring work with no end (maintenance, support), the one type that
+  never closes (`board.issueTypes.permanent`). Kept for work that truly has no end:
+  work that ends is Platform or Debt, so it gets a horizon and a close.
 
 A parent holds its work as sub-issues (`board.subIssues`), and its children are the
 child types (`board.issueTypes.children`): a **Task** is a piece of its parent's work
 and takes the parent's kind; a **Bug** is something that does not work as it should,
 under a parent or alone. Any other issue that stands alone, with no parent and no
 children, takes the parent type of its kind of work. A bug that stands alone stays a
-Bug: it gets no horizon, and its milestone and priority say when it is fixed. Debt and Ongoing never close
-(`board.issueTypes.permanent`): they stay off the roadmap, and the children done under
-them count.
+Bug: it gets no horizon, and its milestone and priority say when it is fixed. An
+Ongoing parent stays off the roadmap; the children done under it count.
 
 ## Status
 
@@ -76,16 +78,25 @@ settings.
 
 ## Horizon and milestones
 
-A milestone is a release (`board.milestones`), one per version and named after it
-(`vX.Y.Z`), its description saying what the release carries; how a release is cut is
-[delivery](./delivery.md#releasing). The horizon (`board.fields.horizon`) is set on
-parents, when the team decides when to take them up. Its options run nearest first:
-the first is the release being built, the second the releases after it, the third what
-is wanted with no release yet, the last what is not planned. A triaged issue has
-its type, priority and parent, and no horizon until that decision.
+The starter plans on the base and the milestones add-on (the layers of the
+`github-board` skill, section 5), with no iterations: it plans by release, not by time
+box, and velocity, which the `roadmap` skill reads from closed iterations, is not
+measured here.
 
-The starter has no iterations: it plans by release, not by time box. Velocity, which
-the `roadmap` skill reads from closed iterations, is not measured here.
+- **The horizon** (`board.fields.horizon`) says when a parent is taken up, and is set
+  when the team decides it. Its options run nearest first: the first is what is being
+  worked on, the second what comes after it, the third what is wanted with no time yet,
+  the last what is not planned. Only parents carry it; a child takes its parent's. A
+  triaged issue has its type, priority and parent, and no horizon until that decision.
+  What to do now is the Ready children of the parents in the first horizon, by
+  priority.
+- **A milestone** is a release (`board.milestones`), one per version and named after it
+  (`vX.Y.Z`), its description saying what the release carries; how a release is cut is
+  [delivery](./delivery.md#releasing). Parents and children carry it. It says what
+  ships in which release, and the horizon still says when a parent is taken up.
+- **What `plan-round` and `roadmap` flag:** a child in an open milestone whose parent
+  is past the second horizon, and a parent in the first horizon with no child in an open
+  milestone. Either is brought to the person, who decides which side moves.
 
 ## Size
 
@@ -123,3 +134,7 @@ The API creates a view with its name, layout and filter; grouping is set in the 
 - **Scope or When for the horizon.** A scope reads as a work's perimeter, a when as a
   date; the horizon is a relative band.
 - **A Not now priority.** It answers *when*, which is the horizon's question.
+- **Debt as a permanent type.** A debt has an end, when it is paid: kept open forever,
+  it would sit off the roadmap with no horizon, and nobody would plan its payment.
+- **Iterations in the starter.** One operator and agents work by release; a time box
+  would add a field to fill and a velocity nobody reads.

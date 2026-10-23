@@ -29,6 +29,11 @@ built from what GitHub shows (the Project with `gh project list`, its fields wit
 `gh project field-list`, the organization's issue types, the labels): the person decides
 and writes it (`lntt set`). Never carry on with guessed values.
 
+**No `board.fields.horizon`:** stop. The horizon is the base every board plans on
+(section 5): propose the field (a single select on the parents, its options nearest
+first), and carry on once the person has written it. `lntt validate` reports the same
+gap.
+
 Then read `docs/process/board.md` when it exists.
 
 **What the section leaves out, the project does not use**, and the skill does without
@@ -38,8 +43,9 @@ it instead of failing or creating it:
 |---|---|---|
 | `board.issueTypes` | set one of its types on every issue; `parents` hold work and never enter an iteration, `children` are the work | set no issue type |
 | `board.subIssues: true` | link the work to its parent as a sub-issue | no sub-issues: name the parent in the body |
-| `board.milestones: true` | set the milestone (a release, unless the process says otherwise) | no milestone |
+| `board.milestones: true` | the milestones add-on (section 5): set the milestone on parents and children | no milestone |
 | `board.blockedBy: true` | a hard dependency is a blocked-by relation | write it in the body |
+| `board.fields.iteration` | the iterations add-on (section 5) | no iteration |
 | `board.fields.<key>` | set it, on the issues its `on` names (`parents`, `children`, any when absent), with one of its `options` | leave it alone |
 | `board.tracks` | a track label and its owner on every issue | no track label |
 | `team.members` | assignees are members | assign whom the person names |
@@ -122,11 +128,13 @@ the steps.
 4. **On the Project**: an organization workflow may already have added it (`item-add`
    then fails as a duplicate: go on). Get its item id from the issue (1 point).
 5. **Fields**: the status role `initial` unless the person says otherwise, and every
-   configured field whose `on` fits the issue and whose value is known now. A field of
+   configured field whose `on` fits the issue and whose value is known now (never the
+   horizon on a child: it takes its parent's). A field of
    `kind: issue` is written on the issue, never on the item, or it fails, sometimes
    silently ([reference, *Issue fields*](./references/github-project.md#issue-fields)).
 6. **Parent**, when `board.subIssues` and a parent holds it.
-7. **Iteration**: only for a child chosen for an iteration now (section 5).
+7. **Iteration**: only for a child chosen for an iteration now, whose parent is in the
+   nearest horizon (section 5).
 8. **Read it back** from GitHub, aimed at the item (`node(id:…)`, not a list), and show
    it: number, type, fields, parent. The check closes the step; never assume it went
    through.
@@ -143,27 +151,45 @@ the steps.
   open children**: past that its grouped view reads as one long list again, and the
   signal is to split it along a real seam (an area, or the nature of the work).
 - **Report** (read-only unless asked): group by iteration, milestone, priority or
-  horizon; surface the untriaged: no type, no parent, a missing configured field, not on
-  the Project. List with an explicit `--limit` sized just above the board: without one
+  horizon; surface the untriaged (no type, no parent, a missing configured field, not on
+  the Project) and the incoherences between the layers (section 5). List with an explicit `--limit` sized just above the board: without one
   the list truncates silently, and "nothing to do" may be a truncated read.
 - **Writes in bulk** fail silently three ways: about 20 aliased mutations per call (more
   exceed the resource limit), ~1.2 s between mutations (the secondary rate limit does not
   show in `rate_limit`), and a `--silent` that hides each failure. Count the outcomes and
   read the result back ([reference, *Writing in bulk*](./references/github-project.md#writing-in-bulk)).
 
-## 5. Iterations and horizons (when configured)
+## 5. The layers: horizon, milestones, iterations
 
-- **Only children go in an iteration** (`fields.iteration`, `on: children`); a parent is
-  never scheduled. The iteration is set when a child is **chosen** for one, never at
-  triage. The current iteration is the one whose start ≤ today < start + duration, read
-  from the field's configuration, never assumed.
-- **The horizon** (`fields.horizon`) says when a parent is taken up; it is set when the
-  team decides to work on it, not at triage. The priority (`fields.priority`) says how
-  much an issue matters, with or without a horizon. When its `on` lets parents carry it,
-  it is also the order of the parents inside one horizon; otherwise the parents of one
-  horizon are ordered by the person, in the plan.
-- **A missing iteration** (the next one, for a blocked issue) is added in the Project's
-  settings, by hand: the API's `updateProjectV2Field` rewrites the whole field.
+Every board plans on **the base**; milestones and iterations are add-ons, each switched
+on by its key, and each adds to the base without replacing it.
+
+- **The base**: the horizon (`board.fields.horizon`) with the status, the priority and
+  the issue type. The horizon says when a parent is taken up; only parents carry it; a
+  child takes its parent's, and is never given one of its own. It is set when the team
+  decides to take a parent up, not at triage. The priority (`fields.priority`) says how
+  much an issue matters, with or without a horizon; inside one horizon it orders the
+  parents when its `on` lets parents carry it, otherwise the person orders them in the
+  plan. **What to do now** is the children at `board.fields.status.ready` of the parents in
+  the nearest horizon, by priority.
+- **Milestones** (`board.milestones`): a milestone is a release unless
+  `docs/process/board.md` says otherwise, carried by parents and children alike. It
+  says what ships in which release, never when work is taken up: it never replaces the horizon.
+- **Iterations** (`board.fields.iteration`): only children go in an iteration, and only the children of
+  parents in the nearest horizon. The iteration is set when a child is **chosen** for
+  one, never at triage. The current iteration is the one whose start ≤ today < start +
+  duration, read from the field's configuration, never assumed. A missing iteration (the
+  next one, for a blocked issue) is added in the Project's settings, by hand: the API's
+  `updateProjectV2Field` rewrites the whole field.
+
+**The incoherences** between the layers are reported (section 4, and by `plan-round` at
+triage), never fixed silently; the person decides which side moves:
+
+| With | Incoherence |
+|---|---|
+| milestones | a child in an open milestone whose parent is past the next horizon (beyond the second option) |
+| milestones | a parent in the nearest horizon with no child in an open milestone |
+| iterations | a child in the current iteration whose parent is not in the nearest horizon |
 
 ## 6. Dependencies
 
@@ -221,8 +247,9 @@ has no multi-select field). Prefix a label that carries a dimension (`lever:grow
   configuration leaves out assumed or created.
 - Confirm before any batch, and before creating a Project, field, option, milestone or
   label.
-- Parents never in an iteration; iteration and horizon set when scheduling, not at
-  triage.
+- The horizon on parents only, children take it; parents never in an iteration, and an
+  iteration only for children of the nearest horizon; both set when scheduling, not at
+  triage. Incoherences between the layers reported, never fixed silently.
 - Hard dependencies blocked-by (when configured), soft ones priority and a cross
   reference.
 - One full board read per need, the fields once per session, a targeted query for one

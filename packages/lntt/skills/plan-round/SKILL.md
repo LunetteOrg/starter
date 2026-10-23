@@ -24,9 +24,22 @@ roadmap dates (`board.fields.startDate`, `targetDate`).
 The values are the project's (`lntt get board`, `lntt get cycle`); `docs/process/board.md`
 and `docs/process/cycle.md`, when they exist, say how the team plans. **No `board`
 section:** stop, say what the plan needs from it, and propose the section
-(`github-board`, section 0). What the section leaves out, the plan does without: no
-issue types, no sub-issues, no iterations, no milestones means the plan is shaped and
-written with the mechanisms the project has.
+(`github-board`, section 0). **No `board.fields.horizon`:** stop, and propose it
+(`github-board`, section 0): the horizon is the base every plan stands on. What else
+the section leaves out, the plan does without: no issue types, no sub-issues, no
+iterations, no milestones means the plan is shaped and written with the mechanisms the
+project has.
+
+## What a round produces
+
+The board's layers (`github-board`, section 5) decide what a round decides:
+
+- **The base:** the parents to bring to the nearest horizon, and their children to make
+  ready (`board.fields.status.ready`), each with its priority.
+- **With milestones:** also what enters the next release: the open milestone the
+  parents and children are set in.
+- **With iterations:** also what enters the next iteration: children only, of the
+  parents in the nearest horizon.
 
 ## Principles
 
@@ -46,8 +59,9 @@ current iteration when `fields.iteration` is set, the issue types, labels, membe
 is the scope: plan those, and say what is left out rather than widening the round.
 Without a focus, the candidates are the parents whose horizon is the nearest option of
 `fields.horizon`, or whose roadmap window opens now: propose them and let the person cut.
-**Name the iteration** the round lands in, when the board has iterations: the current
-one and the next are different commitments.
+**Name what the round lands in**: the next release, when the board has milestones; the
+iteration, when it has iterations (the current one and the next are different
+commitments).
 
 ## 1. Explore
 
@@ -96,7 +110,8 @@ Weave the answers into the plan and the bodies.
 ## 4. Triage the backlog
 
 **Always** read the open issues before creating new ones: those with no parent, no
-iteration, or a configured field unset. For each, with the person where they would want
+iteration, or a configured field unset, and the incoherences between the layers
+(`github-board`, section 5), each brought to the person. For each, with the person where they would want
 a say: **fold it into this round** (under a parent, scheduled), **leave it** in the
 backlog, or **close it** as obsolete. New work and the backlog are planned together.
 
@@ -107,7 +122,8 @@ backlog, or **close it** as obsolete. New work and the backlog are planned toget
   each. Without issue types or sub-issues, the tree is still written: the parent named
   in each child's body.
 - **Each field where the configuration puts it** (`on`). The horizon goes only on the
-  parents this round takes up; a parent triaged but not chosen keeps none. When one
+  parents this round takes up, never on a child (it takes its parent's); a parent
+  triaged but not chosen keeps none. When one
   horizon holds several parents, the priority orders them when its `on` lets parents
   carry it; otherwise the person orders them in the plan. A field of the project's own
   is set as `docs/process/board.md` says.
@@ -146,7 +162,9 @@ After the approval, through `github-board`: create or edit the issues with full 
 set the types, link the children, wire the hard dependencies, assign the owners, apply
 the track labels, set each configured field on the issues its `on` names (the priority
 by the dependency waves, the most urgent option to the roots that unblock the most), and
-put **only the children** chosen for the round in the iteration. A blocked child whose
+set the milestone on the parents and children of the next release (with milestones), and
+put **only the children** chosen for the round, of parents in the nearest horizon, in the
+iteration (with iterations). A blocked child whose
 assignee differs from its blocker's goes in the iteration after the blocker's
 (`github-board`, section 6).
 
@@ -191,7 +209,8 @@ material is handled.
 - Every value from the configuration, every id at runtime (`github-board`); nothing the
   `board` section leaves out assumed or created.
 - Confirm the tree before the batch; renames listed explicitly.
-- Parents never in an iteration; the horizon only on the parents the round takes up.
+- The horizon only on the parents the round takes up, never on a child; parents never
+  in an iteration, and an iteration only for children of the nearest horizon.
 - Exploration agents are read-only, and each returns its friction for the
   retrospective (the `retrospective` skill).
 - Review and decision records live inside the child that owns them.

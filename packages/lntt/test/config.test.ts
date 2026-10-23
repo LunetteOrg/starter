@@ -288,6 +288,16 @@ function assertBadReference(config: unknown, ...lines: RegExp[]): void {
   for (const line of lines) assert.match(run.stderr, line)
 }
 
+// Asserts that the configuration loads but `lntt validate` exits 1 naming each missing
+// key of `lines`: a key the skills need is checked there, so a board set up in steps loads.
+function assertIncomplete(config: unknown, ...lines: RegExp[]): void {
+  const run = validateCli(config)
+  assert.doesNotThrow(() => loadConfig(root))
+  assert.equal(run.status, 1, run.stderr)
+  assert.match(run.stderr, /a key the board skills need is missing:\n {2}\S/)
+  for (const line of lines) assert.match(run.stderr, line)
+}
+
 describe('the board section', () => {
   const board = {
     provider: 'github',
@@ -321,8 +331,14 @@ describe('the board section', () => {
       },
     },
   }
+  const horizon = board.fields.horizon
   const withStatus = (status: Record<string, unknown>) => ({
-    board: { fields: { status: { ...board.fields.status, ...status } } },
+    board: { fields: { horizon, status: { ...board.fields.status, ...status } } },
+  })
+  // A board lntt validate accepts has a horizon: `partial` with board.fields.horizon added.
+  const withHorizon = (partial: Record<string, unknown>) => ({
+    ...partial,
+    fields: { horizon, ...(partial.fields as Record<string, unknown> | undefined) },
   })
 
   test('the Project, the issue types, its fields with their options, and the track labels', () => {
@@ -362,11 +378,11 @@ describe('the board section', () => {
   test('a field is carried by the parents or by the children, or by any issue when it says neither', () => {
     const size = { name: 'Size', type: 'singleSelect', options: ['S'], on: 'features' }
     assertRejected({ board: { fields: { size } } }, /\/board\/fields\/size\/on/)
-    for (const on of ['parents', 'children']) assertValid({ board: { fields: { size: { ...size, on } } } })
+    for (const on of ['parents', 'children']) assertValid({ board: withHorizon({ fields: { size: { ...size, on } } }) })
   })
 
   test('lntt validate: a permanent issue type is one of the parents', () => {
-    assertValid({ board: { issueTypes: board.issueTypes } })
+    assertValid({ board: withHorizon({ issueTypes: board.issueTypes }) })
     assertBadReference(
       { board: { issueTypes: { parents: ['Feature'], children: ['Bug'], permanent: ['Ongoing'] } } },
       /board\.issueTypes\.permanent is "Ongoing", not one of: Feature/,
@@ -402,7 +418,7 @@ describe('the board section', () => {
 
   test('a board on GitHub names its Project, and the rest of the board may come first', () => {
     assertRejected({ board: { github: {} } }, /project/)
-    assertValid({ board: { provider: 'github', issueTypes: board.issueTypes } })
+    assertValid({ board: withHorizon({ provider: 'github', issueTypes: board.issueTypes }) })
   })
 
   test('a GitHub Project is found by its owner and a number from 1, and its owner is an organization or a user', () => {
@@ -445,6 +461,34 @@ describe('the board section', () => {
     assertRejected({ board: { fields: { startDate: dated } } }, /\/board\/fields\/startDate/)
   })
 
+  test('lntt validate: every board has a horizon, the base the board skills plan by; the file still loads without it', () => {
+    assertIncomplete({ board: { github: board.github } }, /board\.fields\.horizon is missing/)
+    assertIncomplete({ board: { fields: { status: board.fields.status } } }, /board\.fields\.horizon is missing/)
+    assertValid({ board: withHorizon({ github: board.github }) })
+    assertValid({})
+  })
+
+  test("the horizon is a single select carried by the parents: a child takes its parent's", () => {
+    for (const wrong of [
+      { ...horizon, on: 'children' },
+      { name: 'Horizon', type: 'singleSelect', options: ['Now'] },
+      { name: 'Horizon', type: 'text', on: 'parents' },
+    ]) {
+      assertRejected({ board: { fields: { horizon: wrong } } }, /\/board\/fields\/horizon/)
+    }
+  })
+
+  test('the iteration is carried by the children, never by a parent', () => {
+    const iteration = board.fields.iteration
+    assertValid({ board: withHorizon({ fields: { iteration } }) })
+    assertRejected({ board: { fields: { iteration: { ...iteration, on: 'parents' } } } }, /\/board\/fields\/iteration/)
+    assertRejected(
+      { board: { fields: { iteration: { name: 'Iteration', type: 'iteration' } } } },
+      /\/board\/fields\/iteration/,
+    )
+    assertRejected({ board: { fields: { iteration: { ...iteration, type: 'date' } } } }, /\/board\/fields\/iteration/)
+  })
+
   test('the status is a single select with its options', () => {
     assertRejected(withStatus({ type: 'text' }), /\/board\/fields\/status\/type/)
     const { options: _, ...noOptions } = board.fields.status
@@ -464,10 +508,10 @@ describe('the board section', () => {
 
   test('lntt validate: a role left unset is checked by its default, and the defaults pass when they are options', () => {
     const options = ['Backlog', 'Ready', 'In progress', 'In review', 'Done']
-    assertValid({ board: { fields: { status: { name: 'Status', type: 'singleSelect', options } } } })
+    assertValid({ board: withHorizon({ fields: { status: { name: 'Status', type: 'singleSelect', options } } }) })
     const noReview = options.filter((option) => option !== 'In review')
     assertBadReference(
-      { board: { fields: { status: { name: 'Status', type: 'singleSelect', options: noReview } } } },
+      { board: withHorizon({ fields: { status: { name: 'Status', type: 'singleSelect', options: noReview } } }) },
       /board\.fields\.status\.inReview is "In review"/,
     )
   })
@@ -519,10 +563,13 @@ describe('the board section', () => {
 
   test('lntt validate: a track owner is one of team.members, when the team lists them', () => {
     const tracks = { labels: { admin: { owner: 'developer-2' } } }
-    assertValid({ board: { tracks } })
+    assertValid({ board: withHorizon({ tracks }) })
     const team = { members: { 'developer-1': { role: 'developer' } } }
-    assertBadReference({ board: { tracks }, team }, /board\.tracks\.labels\.admin\.owner is "developer-2".*developer-1/)
-    assertValid({ board: { tracks: { labels: { admin: { owner: 'developer-1' } } } }, team })
+    assertBadReference(
+      { board: withHorizon({ tracks }), team },
+      /board\.tracks\.labels\.admin\.owner is "developer-2".*developer-1/,
+    )
+    assertValid({ board: withHorizon({ tracks: { labels: { admin: { owner: 'developer-1' } } } }), team })
   })
 
   test('track paths are relative to the repository root and never leave it', () => {
@@ -757,5 +804,12 @@ describe("the starter's own configuration", () => {
       number: 1,
       title: 'lunette roadmap',
     })
+  })
+
+  test('the starter plans on the base and milestones: no iterations, and only Ongoing never closes', () => {
+    const data = loadConfig(REPO).data
+    assert.equal(getValue(data, 'board.milestones'), true)
+    assert.deepEqual(getValue(data, 'board.issueTypes.permanent'), ['Ongoing'])
+    assert.throws(() => getValue(data, 'board.fields.iteration'), /no board\.fields\.iteration/)
   })
 })

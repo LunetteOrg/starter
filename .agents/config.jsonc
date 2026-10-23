@@ -87,15 +87,17 @@
     "github": {
       "project": { "owner": "LunetteOrg", "ownerType": "organization", "number": 1, "title": "lunette roadmap" }
     },
-    // Task is the work under a parent; standing alone, an issue takes its kind of work.
+    // Task is the work under a parent; standing alone, an issue takes its kind of work
+    // (docs/process/board.md). Only Ongoing never closes: a debt closes when paid.
     "issueTypes": {
       "parents": ["Feature", "Platform", "Debt", "Ongoing"],
       "children": ["Task", "Bug"],
-      "permanent": ["Debt", "Ongoing"]
+      "permanent": ["Ongoing"]
     },
     // A parent's work is its sub-issues, and the Project adds them on its own.
     "subIssues": true,
-    // A milestone is a release, one per version (vX.Y.Z).
+    // The milestones add-on: a milestone is a release, one per version (vX.Y.Z). No
+    // iterations: the starter plans on the horizon and the releases.
     "milestones": true,
     // A hard dependency is a blocked-by, so "unblocked work" is a filter.
     "blockedBy": true,
