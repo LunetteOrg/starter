@@ -352,6 +352,12 @@ describe('the board skills', () => {
     const reference = readFileSync(resolve(HERE, '../skills/github-board/references/github-project.md'), 'utf8')
     assert.doesNotMatch(reference, /no API to create or edit a saved view/)
     assert.match(reference, /createProjectV2View/)
+    assert.match(reference, /updateProjectV2View\(input:\{viewId:\$v, filter:\$f\}\)/)
+    assert.match(
+      reference,
+      /the grouping, the\s+sort and \*Show hierarchy\* have no input and are set by a person in the UI/,
+    )
+    assert.match(reference, /A new view\s+is a change to the Project: only with the person's go/)
   })
 
   // A guard against values carried over from wai and pelion, not a proof that a guide is

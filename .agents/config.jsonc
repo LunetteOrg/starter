@@ -93,9 +93,11 @@
       "children": ["Task", "Bug"],
       "permanent": ["Debt", "Ongoing"]
     },
+    // A parent's work is its sub-issues, and the Project adds them on its own.
     "subIssues": true,
     // A milestone is a release, one per version (vX.Y.Z).
     "milestones": true,
+    // A hard dependency is a blocked-by, so "unblocked work" is a filter.
     "blockedBy": true,
     "fields": {
       "status": {

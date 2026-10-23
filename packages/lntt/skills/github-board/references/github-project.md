@@ -276,8 +276,9 @@ gh api graphql -f query='mutation($v:ID!,$f:String!){
 # read back: projectV2{ views(first:20){ nodes{ id name layout filter groupByFields(first:3){ nodes{ ... on ProjectV2FieldCommon{ name } } } } } }
 ```
 
-With *Show hierarchy* on, an item sits in the group
-of its root ancestor, so a view of children by iteration keeps hierarchy off. The
+The filter is not checked when it is written: read the view back and open it once. With
+*Show hierarchy* on, an item sits in the group of its root ancestor, so a view of
+children by iteration keeps hierarchy off. The
 Project's built-in workflows (auto-add, the status on close, on a linked pull request)
 are listed by the API (`workflows{ name enabled }`) but their values are read in the UI.
 

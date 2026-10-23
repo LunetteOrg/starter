@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -746,7 +746,8 @@ describe('the configurations of the projects the starter was ported from', () =>
 describe("the starter's own configuration", () => {
   const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 
-  test('lntt validate accepts it, and its board is the lunette roadmap Project', () => {
+  test('the file passes lntt validate, and its board is the lunette roadmap Project', () => {
+    assert.ok(existsSync(join(REPO, '.agents/config.jsonc')), REPO)
     const valid = spawnSync(process.execPath, [BIN, 'validate'], { cwd: REPO, encoding: 'utf8' })
     assert.equal(valid.status, 0, valid.stderr)
     const data = loadConfig(REPO).data

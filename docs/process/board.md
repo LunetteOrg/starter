@@ -48,8 +48,9 @@ The parent types (`board.issueTypes.parents`) say what kind of work an issue is:
 A parent holds its work as sub-issues (`board.subIssues`), and its children are the
 child types (`board.issueTypes.children`): a **Task** is a piece of its parent's work
 and takes the parent's kind; a **Bug** is something that does not work as it should,
-under a parent or alone. An issue that stands alone, with no parent and no children,
-takes the parent type of its kind of work. Debt and Ongoing never close
+under a parent or alone. Any other issue that stands alone, with no parent and no
+children, takes the parent type of its kind of work. A bug that stands alone stays a
+Bug: it gets no horizon, and its milestone and priority say when it is fixed. Debt and Ongoing never close
 (`board.issueTypes.permanent`): they stay off the roadmap, and the children done under
 them count.
 
@@ -75,11 +76,12 @@ settings.
 
 ## Horizon and milestones
 
-A milestone is a release (`board.milestones`), one per version, named after it
-(`v0.6.4`), its description saying what the release carries. The horizon
-(`board.fields.horizon`) is set on parents, when the team decides when to take them
-up: **Now** is the release being built, **Next** the releases after it, **Later** what
-is wanted with no release yet, **Backlog** what is not planned. A triaged issue has
+A milestone is a release (`board.milestones`), one per version and named after it
+(`vX.Y.Z`), its description saying what the release carries; how a release is cut is
+[delivery](./delivery.md#releasing). The horizon (`board.fields.horizon`) is set on
+parents, when the team decides when to take them up. Its options run nearest first:
+the first is the release being built, the second the releases after it, the third what
+is wanted with no release yet, the last what is not planned. A triaged issue has
 its type, priority and parent, and no horizon until that decision.
 
 The starter has no iterations: it plans by release, not by time box. Velocity, which
@@ -101,7 +103,7 @@ are no track labels (`board.tracks`): one repository, with one owner.
 | View | Layout | Filter | By hand in the Project's UI |
 |---|---|---|---|
 | Board | board, a column per status | `is:open` | |
-| Horizon | table | `is:open type:Feature,Platform,Debt,Ongoing` | group by Horizon |
+| Horizon | table | `is:open`, and a `type:` of each of `board.issueTypes.parents` | group by Horizon |
 | Release | table | `is:open` | group by Milestone |
 | All | table | none | |
 
@@ -110,8 +112,8 @@ The API creates a view with its name, layout and filter; grouping is set in the 
 ## Discarded directions
 
 - **Removing the Task type.** Every issue type would be a kind of work, and the board
-  would have no child type for the work under a parent; Task is also the type of
-  closed issues across the organization, which would lose it.
+  would have no child type for the work under a parent, and every issue of the
+  organization typed Task, in any repository, would lose its type.
 - **A Status with no In release.** The candidate automation sets it on the issues a
   candidate holds, and `lntt validate` rejects a `delivery.candidate.status` that is
   not an option of the Status.
