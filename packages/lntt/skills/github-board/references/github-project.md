@@ -210,7 +210,7 @@ for c in chunk_*; do
     { printf "  m%d: updateProjectV2ItemFieldValue(input:{projectId:\"%s\", itemId:\"%s\", fieldId:\"%s\", value:{singleSelectOptionId:\"%s\"}}){ projectV2Item{ id } }\n", NR, proj, $1, $2, $3 }
     END{print "}"}' FS='\t' "$c" > "$c.graphql"
   # must print the chunk's line count and no error: a failed alias comes back null
-  gh api graphql -F query=@"$c.graphql" --jq '[(.data // {})[] | select(. != null)] | length, (.errors // [] | .[].message)'
+  gh api graphql -F query=@"$c.graphql" --jq '([(.data // {})[] | select(. != null)] | length), (.errors // [] | .[].message)'
   sleep 1.2
 done
 ```

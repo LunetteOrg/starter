@@ -41,6 +41,7 @@
           "type": "object",
           "description": "What only a board on GitHub has: the Project that holds it.",
           "additionalProperties": false,
+          "required": ["project"],
           "properties": {
             "project": {
               "type": "object",

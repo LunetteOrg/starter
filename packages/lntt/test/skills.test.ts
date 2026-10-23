@@ -327,9 +327,8 @@ describe('the board skills', () => {
       const guide = readFileSync(join(SKILLS, name, 'SKILL.md'), 'utf8')
       assert.match(guide, /`board\.provider`/, name)
       assert.match(guide, /\*\*No adapter for the\s+provider:\*\* stop/, name)
+      assert.match(guide, /`github-board`[^.]*`github`[^.]*default|`github` \(the default\): `github-board`/, name)
     }
-    const adapters = readFileSync(join(SKILLS, 'plan-round', 'SKILL.md'), 'utf8')
-    assert.match(adapters, /`github` \(the default\): `github-board`/)
   })
 
   test('every configuration key they cite is a key of the schema', () => {

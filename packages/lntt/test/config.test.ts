@@ -397,6 +397,12 @@ describe('the board section', () => {
   test("the provider's own keys sit under its name, not beside the concepts every provider shares", () => {
     assertRejected({ board: { project: board.github.project } }, /project/)
     assertRejected({ board: { gitlab: {} } }, /gitlab/)
+    assertRejected({ board: { github: { projct: board.github.project } } }, /\/board\/github/)
+  })
+
+  test('a board on GitHub names its Project, and the rest of the board may come first', () => {
+    assertRejected({ board: { github: {} } }, /project/)
+    assertValid({ board: { provider: 'github', issueTypes: board.issueTypes } })
   })
 
   test('a GitHub Project is found by its owner and a number from 1, and its owner is an organization or a user', () => {
