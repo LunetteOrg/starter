@@ -46,7 +46,10 @@ lntt ci local | candidate
   (`packages/lntt/src/board.ts`). A change the API cannot make, or a removal, is
   printed for a person with its reason, settings page, steps and, for a removal, the
   items or issues it touches. Writes are 1.2 s apart (GitHub's secondary rate limit
-  drops faster ones without an error), and `--apply` reads the board back.
+  drops faster ones without an error), and `--apply` reads the board back. It stops on
+  a Project or an organization with more fields (100) or issue types (50) than one
+  page, since a field or type it did not read would look missing and be created again.
+  `--check` exits 1 on any difference, an entry left to a person included.
 - **What a person types is what an agent runs.** Skills, workflows, git hooks and
   `orca.yaml` call `lntt`, never a package's files by path, with one exception: the
   candidate workflow runs `node packages/lntt/bin/lntt.ts`, because it installs only
@@ -157,7 +160,8 @@ So:
     ([accepted risks](#negative--accepted-risks)). What the schema cannot say, and
     what every reader would fail on if the schema required it, `lntt validate` checks
     (`packages/lntt/src/references.ts`): those checks may grow, since they fail the
-    gate and never a read.
+    gate and never a read; the release notes name each new one
+    ([delivery](../process/delivery.md#releasing)).
   - An older `lntt` rejects a field it does not know, as `additionalProperties: false`
     does: an unknown field is a typo until proven otherwise. A project writes a new
     field after bumping `@lntt/lntt` to a version that knows it, and `lntt validate`

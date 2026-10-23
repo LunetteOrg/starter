@@ -202,6 +202,21 @@ describe('planBoard: what lntt board sync would change', () => {
     assert.deepEqual(plan(board, live).steps, [])
   })
 
+  test('an exact name wins over one that differs only in case: no rename, the exact one kept', () => {
+    const live = state()
+    live.fields[2].options = [option('h0', 'now'), option('h1', 'Now'), option('h2', 'Next')]
+    live.issueTypes?.push({ id: 'T_platform2', name: 'platform', description: null })
+    const { steps, manual } = plan(board, live)
+    assert.deepEqual(steps, [])
+    assert.deepEqual(
+      manual.map((m) => m.what),
+      [
+        'Horizon: the option "now" is not in board.fields.horizon',
+        'the issue type platform is not in board.issueTypes',
+      ],
+    )
+  })
+
   test('a configured description with surrounding blanks is the same as the trimmed one', () => {
     const blanks = {
       ...board,

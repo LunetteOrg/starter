@@ -263,7 +263,9 @@ ends.
 3. Add by hand what the generator misses: it lists merged pull requests only, so a
    user-facing change that landed as a direct commit (`git log vPREV..vX.Y.Z
    --no-merges`) goes in with `gh release edit vX.Y.Z --notes …`. The release bump
-   and repo-internal commits stay out.
+   and repo-internal commits stay out. A new check of `lntt validate` beyond the
+   schema (a reference, a key the skills need) is named in the notes, with what a
+   project's configuration needs to pass it: a file that passed before may not.
 
 Publishing the GitHub Release starts `.github/workflows/release.yml`: it checks that
 the tag is every package's version, runs lint, typecheck and the tests with the
