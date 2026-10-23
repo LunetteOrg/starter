@@ -4,13 +4,20 @@
 
 import { cwd, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
-import { applyStep, counter, describeStep, ghGraphql, type Manual, planBoard, readBoard } from './board.ts'
+import {
+  applyStep,
+  counter,
+  describeStep,
+  ghGraphql,
+  type Manual,
+  PAUSE_MS,
+  pause,
+  planBoard,
+  readBoard,
+} from './board.ts'
 import { ConfigError, getValue, loadConfig } from './index.ts'
 
 const USAGE = 'usage: lntt board sync [--apply | --check]'
-// Between two writes: GitHub's secondary rate limit drops writes sent faster, and does
-// not show in rate_limit.
-const PAUSE_MS = 1200
 
 function usage(message?: string): never {
   if (message) stderr.write(`lntt board: ${message}\n`)
@@ -22,8 +29,6 @@ function fail(message: string): never {
   stderr.write(`lntt board sync: ${message}\n`)
   exit(1)
 }
-
-const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 
 function printManual(manual: Manual[]): void {
   if (manual.length === 0) return

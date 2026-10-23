@@ -275,7 +275,10 @@ iteration from the saved file.
 
 A view is created with its name and layout, then given its filter; the grouping, the
 sort and *Show hierarchy* have no input and are set by a person in the UI. A new view
-is a change to the Project: only with the person's go.
+is a change to the Project: only with the person's go. The views the configuration
+declares (`board.github.views`) are kept by `lntt board sync`, which creates and updates
+them and prints a grouping that differs, with the view's page and the steps; the recipe
+below is for a view the configuration does not hold.
 
 ```sh
 view=$(gh api graphql -f query='mutation($p:ID!,$n:String!){

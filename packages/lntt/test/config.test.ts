@@ -421,6 +421,29 @@ describe('the board section', () => {
     assertValid({ board: withHorizon({ provider: 'github', issueTypes: board.issueTypes }) })
   })
 
+  test("the Project's views: a name and a layout, and the filter, fields, grouping and columns they manage", () => {
+    const views = [
+      { name: 'Board', layout: 'board', filter: 'is:open', columns: 'Status' },
+      { name: 'Horizon', layout: 'table', fields: ['Title', 'Horizon'], groupBy: 'Horizon' },
+    ]
+    assertValid({ board: withHorizon({ github: { ...board.github, views } }) })
+    assertRejected(
+      { board: { github: { ...board.github, views: [{ name: 'A', layout: 'gantt' }] } } },
+      /\/views\/0\/layout/,
+    )
+    assertRejected({ board: { github: { ...board.github, views: [{ layout: 'table' }] } } }, /name/)
+    assertBadReference(
+      { board: withHorizon({ github: { ...board.github, views: [...views, { name: 'Board', layout: 'table' }] } }) },
+      /board\.github\.views names the view Board twice/,
+    )
+    assertBadReference(
+      {
+        board: withHorizon({ github: { ...board.github, views: [{ name: 'T', layout: 'table', columns: 'Status' }] } }),
+      },
+      /board\.github\.views\.T\.columns is for a board layout, not table/,
+    )
+  })
+
   test('a GitHub Project is found by its owner and a number from 1, and its owner is an organization or a user', () => {
     const project = (value: unknown) => ({ board: { github: { project: value } } })
     assertRejected(project({ title: 'Demo board' }), /owner|number/)

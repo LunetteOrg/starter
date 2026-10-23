@@ -116,14 +116,14 @@ are no track labels (`board.tracks`): one repository, with one owner.
 
 ## Views
 
-| View | Layout | Filter | By hand in the Project's UI |
-|---|---|---|---|
-| Board | board, a column per status | `is:open` | |
-| Horizon | table | `is:open`, and a `type:` of each of `board.issueTypes.parents` | group by Horizon |
-| Release | table | `is:open` | group by Milestone |
-| All | table | none | |
+The views are `board.github.views`, which `lntt board sync` keeps: it sets their
+layout, filter and visible fields, and `--check` reports a grouping that differs, since
+grouping is set in the UI only. What each view is for:
 
-The API creates a view with its name, layout and filter; grouping is set in the UI.
+- **Board**: the open work by status, a column each; where the day's work is picked.
+- **Horizon**: the open parents grouped by horizon, the order work is taken up in.
+- **Release**: the open issues grouped by milestone, what each release still holds.
+- **All**: every item, closed ones and other repositories' included.
 
 ## Discarded directions
 

@@ -72,6 +72,16 @@ export function checkReferences(data: Record<string, unknown>): string[] {
     }
   }
 
+  const views = (at(data, 'board', 'github', 'views') ?? []) as { name: string; layout: string; columns?: string }[]
+  const named = new Set<string>()
+  for (const view of views) {
+    if (named.has(view.name)) wrong.push(`board.github.views names the view ${view.name} twice`)
+    named.add(view.name)
+    if (view.columns !== undefined && view.layout !== 'board') {
+      wrong.push(`board.github.views.${view.name}.columns is for a board layout, not ${view.layout}`)
+    }
+  }
+
   const types = at(data, 'board', 'issueTypes') as Tree
   for (const type of (types?.permanent ?? []) as string[]) {
     expect('board.issueTypes.permanent', type, (types?.parents ?? []) as string[])

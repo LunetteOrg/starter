@@ -51,6 +51,7 @@ function state(over: Partial<BoardState> = {}): BoardState {
       { id: 'T_bug', name: 'Bug', description: null },
       { id: 'T_platform', name: 'Platform', description: 'What the product runs on' },
     ],
+    views: [],
     ...over,
   }
 }
@@ -289,5 +290,103 @@ describe('planBoard: what lntt board sync would change', () => {
     const live = state()
     live.issueTypes?.push({ id: 'T_debt', name: 'Debt', description: null })
     assert.deepEqual(plan(noTypes, live), { steps: [], manual: [] })
+  })
+})
+
+describe('planBoard: the views of board.github.views', () => {
+  const view = (over: Partial<BoardState['views'][number]> = {}): BoardState['views'][number] => ({
+    id: 'V_1',
+    number: 3,
+    name: 'Horizon',
+    layout: 'TABLE_LAYOUT',
+    filter: 'is:open',
+    fields: ['Title', 'Status'],
+    groupBy: [],
+    columns: [],
+    ...over,
+  })
+  const withViews = (views: unknown[]): BoardConfig => ({ ...board, github: { ...board.github, views } }) as BoardConfig
+
+  test('a view the Project lacks is created with its layout, filter and visible fields', () => {
+    const config = withViews([{ name: 'Board', layout: 'board', filter: 'is:open', fields: ['Title', 'Status'] }])
+    assert.deepEqual(plan(config, state()).steps, [
+      {
+        kind: 'createView',
+        name: 'Board',
+        layout: 'BOARD_LAYOUT',
+        filter: 'is:open',
+        fields: ['Title', 'Status'],
+        fieldIds: ['F_title', 'F_status'],
+      },
+    ])
+  })
+
+  test('a view as declared: nothing to do, the keys it leaves out included', () => {
+    const live = state({ views: [view({ groupBy: ['Horizon'] })] })
+    assert.deepEqual(plan(withViews([{ name: 'Horizon', layout: 'table', groupBy: 'Horizon' }]), live), {
+      steps: [],
+      manual: [],
+    })
+  })
+
+  test('a layout, a filter, the visible fields or a name differing in case are updated, only what differs', () => {
+    const live = state({ views: [view({ name: 'horizon' })] })
+    const config = withViews([
+      { name: 'Horizon', layout: 'roadmap', filter: 'is:open type:Feature', fields: ['Title'] },
+    ])
+    assert.deepEqual(plan(config, live).steps, [
+      {
+        kind: 'updateView',
+        id: 'V_1',
+        name: 'Horizon',
+        changes: [
+          'rename "horizon" → "Horizon"',
+          'layout ROADMAP_LAYOUT',
+          'filter "is:open type:Feature"',
+          'fields Title',
+        ],
+        input: { name: 'Horizon', layout: 'ROADMAP_LAYOUT', filter: 'is:open type:Feature', fieldIds: ['F_title'] },
+      },
+    ])
+  })
+
+  test('a grouping the API cannot set: left to the UI with the view page and the steps', () => {
+    const { steps, manual } = plan(
+      withViews([{ name: 'Horizon', layout: 'table', groupBy: 'Horizon' }]),
+      state({ views: [view()] }),
+    )
+    assert.deepEqual(steps, [])
+    assert.equal(manual.length, 1)
+    assert.match(manual[0].what, /the view Horizon groups by \(none\), board\.github\.views says Horizon/)
+    assert.match(manual[0].why, /API/)
+    assert.equal(manual[0].url, `${PROJECT}/views/3`)
+    assert.ok(manual[0].steps.some((s) => /Group by.*Horizon/.test(s)))
+  })
+
+  test("a board's columns the API cannot set: left to the UI too", () => {
+    const live = state({ views: [view({ name: 'Board', layout: 'BOARD_LAYOUT', columns: ['Status'] })] })
+    const { manual } = plan(withViews([{ name: 'Board', layout: 'board', columns: 'Horizon' }]), live)
+    assert.match(manual[0].what, /the view Board has columns by Status, board\.github\.views says Horizon/)
+    assert.ok(manual[0].steps.some((s) => /Column by.*Horizon/.test(s)))
+  })
+
+  test('a new view with a grouping: created, and its grouping left to the UI after --apply', () => {
+    const { steps, manual } = plan(withViews([{ name: 'Release', layout: 'table', groupBy: 'Status' }]), state())
+    assert.equal(steps[0]?.kind, 'createView')
+    assert.match(manual[0].what, /the view Release groups by \(none\)/)
+    assert.equal(manual[0].url, `${PROJECT}/views`)
+  })
+
+  test('a field the Project does not have, named by a view: left to the person, no update', () => {
+    const { steps, manual } = plan(
+      withViews([{ name: 'Horizon', layout: 'table', fields: ['Title', 'Effort'] }]),
+      state({ views: [view()] }),
+    )
+    assert.deepEqual(steps, [])
+    assert.match(manual[0].what, /the view Horizon names the field Effort, which the Project does not have/)
+  })
+
+  test('a view the configuration does not name is left alone', () => {
+    assert.deepEqual(plan(withViews([]), state({ views: [view({ name: 'Mine' })] })), { steps: [], manual: [] })
   })
 })

@@ -41,7 +41,8 @@ lntt ci local | candidate
   A group loads only when it runs. What a script needs as a library, `@lntt/lntt`
   exports too (`resolveRefs` and `mentions` for `lntt refs`).
 - **`lntt board sync` writes only what keeps an id.** It adds, sets colors and
-  descriptions, and renames by case through GitHub's GraphQL API, passing every
+  descriptions, renames by case, and creates and updates the declared views (name,
+  layout, filter, visible fields: the inputs the API has) through GitHub's GraphQL API, passing every
   existing option back with its id so no item loses its value
   (`packages/lntt/src/board.ts`). A change the API cannot make, or a removal, is
   printed for a person with its reason, settings page, steps and, for a removal, the

@@ -439,11 +439,16 @@ id of what it changes, so no item or issue loses a value:
 - a field, an option or an issue type whose name differs from the configuration's only
   in case, renamed;
 - a missing issue type of `board.issueTypes`, and the description
-  `board.issueTypes.descriptions` gives a type.
+  `board.issueTypes.descriptions` gives a type;
+- the views of `board.github.views`: a missing one created, and the name, layout, filter
+  and visible fields of each set as declared (a key a view leaves out is not managed; a
+  view it does not name is left alone).
 
 What the API cannot do, or what is risky, it lists under *by hand, in GitHub's UI*, each
-with the reason, the settings page and the steps: a field of another type (the API never
-changes a type), an iteration field (its iterations are not in the configuration), an
+with the reason, the settings page and the steps: a view's grouping or a board's columns
+that differ from `groupBy` or `columns` (read from the view, set only in the UI), a
+field of another type (the API never changes a type), an iteration field (its iterations
+are not in the configuration), an
 option or a type the configuration lacks (removing it clears it from every item or
 issue: the entry says how many hold it, counted from the Project's items or a search of
 the organization's issues). A field of `kind: issue` is the organization's, not the

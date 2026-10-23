@@ -35,6 +35,17 @@ export interface BoardState {
   fields: { id: string; databaseId: number; name: string; dataType: string; options?: LiveOption[] }[]
   // null for a user's Project: issue types belong to an organization.
   issueTypes: { id: string; name: string; description: string | null }[] | null
+  // The Project's views; fields, groupBy and columns by field name, in their order.
+  views: {
+    id: string
+    number: number
+    name: string
+    layout: string
+    filter: string
+    fields: string[]
+    groupBy: string[]
+    columns: string[]
+  }[]
 }
 
 type NewOption = { name: string; color: string; description: string }
@@ -54,6 +65,14 @@ export type Step =
   | { kind: 'createIssueType'; name: string; description?: string }
   | { kind: 'renameIssueType'; id: string; from: string; to: string }
   | { kind: 'describeIssueType'; id: string; name: string; description: string }
+  | { kind: 'createView'; name: string; layout: string; filter?: string; fields?: string[]; fieldIds?: string[] }
+  | {
+      kind: 'updateView'
+      id: string
+      name: string
+      changes: string[]
+      input: { name?: string; layout?: string; filter?: string; fieldIds?: string[] }
+    }
 
 // What the command leaves to a person: why, where and how.
 export interface Manual {
@@ -75,7 +94,17 @@ interface FieldConfig {
   colors?: Record<string, string>
 }
 
+interface ViewConfig {
+  name: string
+  layout: 'table' | 'board' | 'roadmap'
+  filter?: string
+  fields?: string[]
+  groupBy?: string
+  columns?: string
+}
+
 export interface BoardConfig {
+  github?: { project?: unknown; views?: ViewConfig[] }
   issueTypes?: { parents?: string[]; children?: string[]; descriptions?: Record<string, string> }
   fields?: Record<string, FieldConfig>
 }
@@ -229,7 +258,84 @@ export function planBoard(board: BoardConfig, state: BoardState, count: Count): 
       }
     }
   }
+  planViews(board.github?.views ?? [], state, steps, manual)
   return { steps, manual }
+}
+
+const LAYOUTS: Record<string, string> = { table: 'TABLE_LAYOUT', board: 'BOARD_LAYOUT', roadmap: 'ROADMAP_LAYOUT' }
+
+// The views the configuration names: what the API sets (name, layout, filter, visible
+// fields) as steps, the grouping and the columns it cannot set as entries for a person.
+// A key a view leaves out is not managed; a view the configuration does not name is
+// left alone.
+function planViews(views: ViewConfig[], state: BoardState, steps: Step[], manual: Manual[]): void {
+  const ids = new Map(state.fields.map((f) => [f.name, f.id]))
+  for (const view of views) {
+    const layout = LAYOUTS[view.layout]
+    const unknown = [view.groupBy, view.columns, ...(view.fields ?? [])].filter(
+      (name): name is string => name !== undefined && !ids.has(name),
+    )
+    if (unknown.length > 0) {
+      for (const name of unknown) {
+        manual.push({
+          what: `the view ${view.name} names the field ${name}, which the Project does not have`,
+          why: 'a view shows or groups by fields of its Project only: the configuration names another one',
+          url: `${state.url}/settings`,
+          steps: [`Correct board.github.views, or create the field ${name}`],
+        })
+      }
+      continue
+    }
+    const fieldIds = view.fields?.map((name) => ids.get(name) as string)
+    const live = state.views.find((v) => v.name === view.name) ?? state.views.find((v) => same(v.name, view.name))
+    const page = live ? `${state.url}/views/${live.number}` : `${state.url}/views`
+    if (!live) {
+      steps.push({
+        kind: 'createView',
+        name: view.name,
+        layout,
+        ...(view.filter !== undefined ? { filter: view.filter } : {}),
+        ...(view.fields && fieldIds ? { fields: view.fields, fieldIds } : {}),
+      })
+    } else {
+      const changes: string[] = []
+      const input: Extract<Step, { kind: 'updateView' }>['input'] = {}
+      if (live.name !== view.name) {
+        changes.push(`rename "${live.name}" → "${view.name}"`)
+        input.name = view.name
+      }
+      if (live.layout !== layout) {
+        changes.push(`layout ${layout}`)
+        input.layout = layout
+      }
+      if (view.filter !== undefined && live.filter !== view.filter) {
+        changes.push(`filter "${view.filter}"`)
+        input.filter = view.filter
+      }
+      if (view.fields && fieldIds && live.fields.join('\n') !== view.fields.join('\n')) {
+        changes.push(`fields ${view.fields.join(', ')}`)
+        input.fieldIds = fieldIds
+      }
+      if (changes.length > 0) steps.push({ kind: 'updateView', id: live.id, name: view.name, changes, input })
+    }
+    const grouping = (key: 'groupBy' | 'columns', verb: string, menu: string) => {
+      const wanted = view[key]
+      const has = live?.[key] ?? []
+      if (wanted === undefined || (has.length === 1 && has[0] === wanted)) return
+      manual.push({
+        what: `the view ${view.name} ${verb} ${has.length ? has.join(', ') : '(none)'}, board.github.views says ${wanted}`,
+        why: `the API sets no view's ${key === 'groupBy' ? 'grouping' : 'columns'}: it is set in the view, in the UI`,
+        url: page,
+        steps: [
+          `Open the view ${view.name}${live ? '' : ' (after --apply creates it)'}, then its menu (the arrow beside its name)`,
+          `${menu} → ${wanted}`,
+          'Save the changes to the view',
+        ],
+      })
+    }
+    grouping('groupBy', 'groups by', 'Group by')
+    if (view.layout === 'board') grouping('columns', 'has columns by', 'Column by')
+  }
 }
 
 // One request to GitHub's GraphQL API: its data, or an error with gh's message.
@@ -251,7 +357,23 @@ const FIELDS = `fields(first:100){ pageInfo{ hasNextPage } nodes{
   ... on ProjectV2FieldCommon{ id databaseId name dataType }
   ... on ProjectV2SingleSelectField{ options{ id name color description } } } }`
 
+const NAMES = 'nodes{ ... on ProjectV2FieldCommon{ name } }'
+const VIEWS = `views(first:50){ pageInfo{ hasNextPage } nodes{ id number name layout filter
+  fields(first:50){ ${NAMES} } groupByFields(first:5){ ${NAMES} } verticalGroupByFields(first:5){ ${NAMES} } } }`
+
 type Page<T> = { nodes: T[]; pageInfo?: { hasNextPage: boolean } }
+type Names = { nodes: { name?: string }[] }
+type LiveView = {
+  id: string
+  number: number
+  name: string
+  layout: string
+  filter: string | null
+  fields?: Names
+  groupByFields?: Names
+  verticalGroupByFields?: Names
+}
+const names = (list?: Names) => (list?.nodes ?? []).flatMap((n) => (n.name ? [n.name] : []))
 
 export function readBoard(
   graphql: Graphql,
@@ -259,14 +381,19 @@ export function readBoard(
 ): BoardState {
   const user = project.ownerType === 'user'
   const query = user
-    ? `query($owner:String!,$number:Int!){ user(login:$owner){ id projectV2(number:$number){ id url ${FIELDS} } } }`
-    : `query($owner:String!,$number:Int!){ organization(login:$owner){ id projectV2(number:$number){ id url ${FIELDS} }
+    ? `query($owner:String!,$number:Int!){ user(login:$owner){ id projectV2(number:$number){ id url ${FIELDS} ${VIEWS} } } }`
+    : `query($owner:String!,$number:Int!){ organization(login:$owner){ id projectV2(number:$number){ id url ${FIELDS} ${VIEWS} }
         issueTypes(first:50){ pageInfo{ hasNextPage } nodes{ id name description } } } }`
   const data = graphql(query, { owner: project.owner, number: project.number })
   const owner = data[user ? 'user' : 'organization'] as
     | {
         id: string
-        projectV2: { id: string; url: string; fields: Page<BoardState['fields'][number]> } | null
+        projectV2: {
+          id: string
+          url: string
+          fields: Page<BoardState['fields'][number]>
+          views?: Page<LiveView>
+        } | null
         issueTypes?: Page<NonNullable<BoardState['issueTypes']>[number]>
       }
     | undefined
@@ -274,6 +401,8 @@ export function readBoard(
   // One page each: past it, a field or a type that exists would look missing, and be created again.
   if (owner.projectV2.fields.pageInfo?.hasNextPage)
     throw new Error('the Project has more than 100 fields: not read whole')
+  if (owner.projectV2.views?.pageInfo?.hasNextPage)
+    throw new Error('the Project has more than 50 views: not read whole')
   if (owner.issueTypes?.pageInfo?.hasNextPage)
     throw new Error('the organization has more than 50 issue types: not read whole')
   return {
@@ -284,6 +413,16 @@ export function readBoard(
     // A field the token cannot see comes back as an empty object.
     fields: owner.projectV2.fields.nodes.filter((f) => f.id),
     issueTypes: user ? null : (owner.issueTypes?.nodes ?? []),
+    views: (owner.projectV2.views?.nodes ?? []).map((v) => ({
+      id: v.id,
+      number: v.number,
+      name: v.name,
+      layout: v.layout,
+      filter: v.filter ?? '',
+      fields: names(v.fields),
+      groupBy: names(v.groupByFields),
+      columns: names(v.verticalGroupByFields),
+    })),
   }
 }
 
@@ -345,11 +484,26 @@ export function describeStep(step: Step): string {
       return `rename issue type "${step.from}" → "${step.to}"`
     case 'describeIssueType':
       return `describe issue type ${step.name}: ${step.description}`
+    case 'createView': {
+      const parts = [
+        ...(step.filter !== undefined ? [`filter "${step.filter}"`] : []),
+        ...(step.fields ? [`fields ${step.fields.join(', ')}`] : []),
+      ]
+      return `create view ${step.name} (${step.layout})${parts.length ? `: ${parts.join(', ')}` : ''}`
+    }
+    case 'updateView':
+      return `update view ${step.name}: ${step.changes.join(', ')}`
   }
 }
 
 const UPDATE_FIELD =
   'mutation($input:UpdateProjectV2FieldInput!){ updateProjectV2Field(input:$input){ projectV2Field{ ... on ProjectV2FieldCommon{ id } } } }'
+const UPDATE_VIEW =
+  'mutation($input:UpdateProjectV2ViewInput!){ updateProjectV2View(input:$input){ projectV2View{ id } } }'
+// Between two writes: GitHub's secondary rate limit drops writes sent faster, and does
+// not show in rate_limit.
+export const PAUSE_MS = 1200
+export const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 const UPDATE_TYPE = 'mutation($input:UpdateIssueTypeInput!){ updateIssueType(input:$input){ issueType{ id } } }'
 
 export function applyStep(graphql: Graphql, state: BoardState, step: Step): void {
@@ -391,5 +545,32 @@ export function applyStep(graphql: Graphql, state: BoardState, step: Step): void
     case 'describeIssueType':
       graphql(UPDATE_TYPE, { input: { issueTypeId: step.id, description: step.description } })
       break
+    case 'createView': {
+      // The create takes the name, the layout and the visible fields; the filter is
+      // set by an update of the new view.
+      const data = graphql(
+        'mutation($input:CreateProjectV2ViewInput!){ createProjectV2View(input:$input){ projectV2View{ id } } }',
+        {
+          input: {
+            projectId: state.projectId,
+            name: step.name,
+            layout: step.layout,
+            ...(step.fieldIds ? { configuration: { visibleFieldIds: step.fieldIds } } : {}),
+          },
+        },
+      ) as { createProjectV2View: { projectV2View: { id: string } } }
+      if (step.filter !== undefined) {
+        pause(PAUSE_MS)
+        graphql(UPDATE_VIEW, { input: { viewId: data.createProjectV2View.projectV2View.id, filter: step.filter } })
+      }
+      break
+    }
+    case 'updateView': {
+      const { fieldIds, ...rest } = step.input
+      graphql(UPDATE_VIEW, {
+        input: { viewId: step.id, ...rest, ...(fieldIds ? { configuration: { visibleFieldIds: fieldIds } } : {}) },
+      })
+      break
+    }
   }
 }

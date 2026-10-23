@@ -85,7 +85,14 @@
   // LunetteOrg's other repositories. Issue types belong to the organization.
   "board": {
     "github": {
-      "project": { "owner": "LunetteOrg", "ownerType": "organization", "number": 1, "title": "lunette roadmap" }
+      "project": { "owner": "LunetteOrg", "ownerType": "organization", "number": 1, "title": "lunette roadmap" },
+      // docs/process/board.md says what each view is for; the groupings are set in the UI.
+      "views": [
+        { "name": "All", "layout": "table" },
+        { "name": "Board", "layout": "board", "filter": "is:open", "columns": "Status" },
+        { "name": "Horizon", "layout": "table", "filter": "is:open type:Feature,Platform,Debt,Ongoing", "groupBy": "Horizon" },
+        { "name": "Release", "layout": "table", "filter": "is:open", "groupBy": "Milestone" }
+      ]
     },
     // Task is the work under a parent; standing alone, an issue takes its kind of work
     // (docs/process/board.md). Only Ongoing never closes: a debt closes when paid.
