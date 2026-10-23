@@ -105,7 +105,9 @@ rests on these criteria:
    `ci:local`; `decisions` calls `lntt check decisions` and is a lens of `lntt review`;
    `coordinate` calls `lntt worktree start`, the mailbox and `lntt get`; `run-local`
    calls `lntt get`, `lntt local app` and `lntt viewer`; `retrospective` calls `lntt get`,
-   `lntt pr block` and `lntt check body`; only `commit-message` stays on the gate side (`lntt get`, commitlint). In the code, `lntt review` imports the check
+   `lntt pr block` and `lntt check body`; `commit-message` (`lntt get`, commitlint) and
+   the board skills (`github-board`, `plan-round`, `roadmap`: `lntt get`, `lntt set`)
+   stay on the gate side. In the code, `lntt review` imports the check
    areas and the mutations and runs them in-process (`packages/lntt/src/review-cli.ts`
    imports `runArea` and `mutateAll`), and `lntt worktree start` names branches with
    the gate's code (`packages/lntt/src/worktree-cli.ts` imports `branchName` and

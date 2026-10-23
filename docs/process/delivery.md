@@ -93,7 +93,7 @@ checks the proposals of the previous retrospectives and proposes one mechanism p
 cluster. The person reads the draft before it is published.
 
 It is published where `cycle.retrospective.target` says. Each proposal the person
-adopts becomes an issue of its own (the `issues` skill), citing the retrospective and
+adopts becomes an issue of its own (the `github-board` skill), citing the retrospective and
 its cluster, so the board holds only the work a retrospective adopts.
 
 ## The candidate
@@ -123,7 +123,7 @@ candidate exists on a day without pull requests.
   serves overlapping candidates: the issue's comment says which candidate holds it. A
   hotfix merges into `main` and closes its issue at once, so it never has the status.
   The status is an option of the Project's Status field that the Project's owner adds
-  (the `issues` skill, "Changing a field's options"); the automation never creates or
+  (the `github-board` skill, `references/github-project.md`, "Changing a field's options"); the automation never creates or
   renames one. A Project without it, an issue on no Project, or an app without the
   Projects permission leave the board as it is, and the run says so in a `::notice`; a
   refusal on one of an issue's Projects after another was written leaves it moved on
