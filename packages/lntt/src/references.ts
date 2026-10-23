@@ -50,6 +50,19 @@ export function checkReferences(data: Record<string, unknown>): string[] {
     }
   }
 
+  // Only parents carry the horizon, and only children an iteration: checked here, not
+  // by the schema, so a file an older lntt accepted still loads.
+  const horizon = at(data, 'board', 'fields', 'horizon') as Tree
+  if (horizon) {
+    expect('board.fields.horizon.type', horizon.type, ['singleSelect'])
+    expect('board.fields.horizon.on', horizon.on ?? 'parents', ['parents'])
+  }
+  const iteration = at(data, 'board', 'fields', 'iteration') as Tree
+  if (iteration) {
+    expect('board.fields.iteration.type', iteration.type, ['iteration'])
+    expect('board.fields.iteration.on', iteration.on ?? 'children', ['children'])
+  }
+
   const types = at(data, 'board', 'issueTypes') as Tree
   for (const type of (types?.permanent ?? []) as string[]) {
     expect('board.issueTypes.permanent', type, (types?.parents ?? []) as string[])

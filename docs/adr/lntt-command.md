@@ -23,6 +23,7 @@ command, so a reader who sees `lntt` in a script knows which package provides it
 
 ```
 lntt path | validate | get | set | operator | sync | guide | local app | viewer | browser | refs
+lntt board sync
 lntt check [agents-md | skills | decisions [structure | numbers] | tests [levels | focus | rules | touched | mutate] | body] | check cite
 lntt branch name | check | rename
 lntt pr block
@@ -35,7 +36,7 @@ lntt ci local | candidate
 - **One entry point, one module per command group.** `bin/lntt.ts` dispatches to
   `src/cli.ts` (configuration, operator, `AGENTS.md`, local apps, viewer, browser),
   `src/check-cli.ts`, `src/branch-cli.ts`, `src/review-cli.ts`, `src/worktree-cli.ts`,
-  `src/refs-cli.ts`, `src/pull-request-cli.ts`, `src/messages-cli.ts` (`ask`, `inbox`,
+  `src/refs-cli.ts`, `src/board-cli.ts`, `src/pull-request-cli.ts`, `src/messages-cli.ts` (`ask`, `inbox`,
   `answer`) and `src/ci/cli.ts`.
   A group loads only when it runs. What a script needs as a library, `@lntt/lntt`
   exports too (`resolveRefs` and `mentions` for `lntt refs`).
@@ -107,7 +108,7 @@ rests on these criteria:
    calls `lntt get`, `lntt local app` and `lntt viewer`; `retrospective` calls `lntt get`,
    `lntt pr block` and `lntt check body`; `commit-message` (`lntt get`, commitlint) and
    the board skills (`github-board`, `plan-round`, `roadmap`: `lntt get`, `lntt set`)
-   stay on the gate side. In the code, `lntt review` imports the check
+   stay on the gate side, but for `github-board`'s `lntt board sync`. In the code, `lntt review` imports the check
    areas and the mutations and runs them in-process (`packages/lntt/src/review-cli.ts`
    imports `runArea` and `mutateAll`), and `lntt worktree start` names branches with
    the gate's code (`packages/lntt/src/worktree-cli.ts` imports `branchName` and
@@ -136,7 +137,7 @@ So:
   | `lntt branch check`, and `branch name` and `branch rename`, so the name an agent gets is the one the gate accepts | `lntt ask \| inbox \| answer` |
   | `lntt validate \| get \| set \| path`: they hold the schema; `set` writes a tracked file | `lntt guide`: it prints the skills |
   | `lntt sync`: it writes tracked files (the `AGENTS.md` block, the skill stubs) that `lntt check` verifies | `lntt operator`: personal context, read by no gate; `lntt pr block`: the empty retrospective block, for the template and the skill |
-  | the commitlint configuration (the `@lntt/lntt` export) | `lntt local app`, `lntt viewer` |
+  | the commitlint configuration (the `@lntt/lntt` export) | `lntt local app`, `lntt viewer`; `lntt board sync`: it writes to GitHub, not to the commit, and no CI runs it |
   | the configuration schema | the plugin's hooks; once they exist, `lntt refs` (#144) and `lntt doctor` (#124) |
 
 - **The configuration schema follows one compatibility rule.** Its version is the
@@ -145,7 +146,10 @@ So:
     absence means the behaviour from before it existed. An enum only gains values.
     A newer `lntt` therefore reads an older file; the rule needs a test that
     validates a configuration of each released version against the current schema
-    ([accepted risks](#negative--accepted-risks)).
+    ([accepted risks](#negative--accepted-risks)). What the schema cannot say, and
+    what every reader would fail on if the schema required it, `lntt validate` checks
+    (`packages/lntt/src/references.ts`): those checks may grow, since they fail the
+    gate and never a read, and the release that adds one says so.
   - An older `lntt` rejects a field it does not know, as `additionalProperties: false`
     does: an unknown field is a typo until proven otherwise. A project writes a new
     field after bumping `@lntt/lntt` to a version that knows it, and `lntt validate`

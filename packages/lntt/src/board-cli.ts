@@ -54,7 +54,11 @@ export function main(args: string[]): void {
     try {
       return readBoard(ghGraphql, project)
     } catch (error) {
-      fail(`reading the board: ${(error as Error).message}`)
+      const message = (error as Error).message
+      const hint = /resolve to an Organization/.test(message)
+        ? '\n(board.github.project.ownerType defaults to organization: a Project of a user says "user")'
+        : ''
+      fail(`reading the board: ${message}${hint}`)
     }
   }
   const state = read()
@@ -74,6 +78,7 @@ export function main(args: string[]): void {
     try {
       applyStep(ghGraphql, state, step)
     } catch (error) {
+      printManual(manual)
       fail(`${describeStep(step)}: ${(error as Error).message}\napplied ${i} changes before it`)
     }
   })
@@ -81,6 +86,9 @@ export function main(args: string[]): void {
   // Read back: every change must show, or the run says what still differs.
   const after = planBoard(board, read())
   if (after.steps.length)
-    fail(`still differs after --apply:\n${after.steps.map((s) => `  ${describeStep(s)}`).join('\n')}`)
+    fail(
+      `still differs after --apply:\n${after.steps.map((s) => `  ${describeStep(s)}`).join('\n')}\n` +
+        '(a read right after a write can lag: run it again before changing anything)',
+    )
   printManual(after.manual)
 }

@@ -46,7 +46,7 @@ it instead of failing or creating it:
 | `board.milestones: true` | the milestones add-on (section 5): set the milestone on parents and children | no milestone |
 | `board.blockedBy: true` | a hard dependency is a blocked-by relation | write it in the body |
 | `board.fields.iteration` | the iterations add-on (section 5) | no iteration |
-| `board.fields.<key>` | set it, on the issues its `on` names (`parents`, `children`, any when absent), with one of its `options` | leave it alone |
+| `board.fields.<key>` | set it, on the issues its `on` names (`parents`, `children`; absent, any issue, but the horizon's is parents and the iteration's children), with one of its `options` | leave it alone |
 | `board.tracks` | a track label and its owner on every issue | no track label |
 | `team.members` | assignees are members | assign whom the person names |
 

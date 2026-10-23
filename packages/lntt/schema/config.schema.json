@@ -131,7 +131,7 @@
         },
         "fields": {
           "type": "object",
-          "description": "The board's fields, by key: the ones the board skills know (status; priority, its options most urgent first; size; horizon, required, when a parent is taken up, its options nearest first; iteration, the iterations add-on; and startDate and targetDate, the dates the roadmap reads) and the project's own, in camelCase (classe). Every board plans on the base: the horizon with the status, the priority and the issue type; lntt validate reports a board with no horizon, and the skills stop and propose it. Any other field missing here is one the project does not use: the skills do without it, and never create it unasked.",
+          "description": "The board's fields, by key: the ones the board skills know (status; priority, its options most urgent first; size; horizon, when a parent is taken up, a single select carried by the parents, its options nearest first; iteration, the iterations add-on, carried by the children of the parents in the nearest horizon; and startDate and targetDate, the dates the roadmap reads) and the project's own, in camelCase (classe). For horizon and iteration an absent `on` means parents and children. Every board plans on the base: the horizon with the status, the priority and the issue type; lntt validate requires the horizon and checks where horizon and iteration sit, and the skills stop and propose a missing horizon. Any other field missing here is one the project does not use: the skills do without it, and never create it unasked.",
           "propertyNames": {
             "pattern": "^[a-z][a-zA-Z0-9]*$"
           },
@@ -146,10 +146,10 @@
               "$ref": "#/definitions/boardField"
             },
             "horizon": {
-              "$ref": "#/definitions/horizonField"
+              "$ref": "#/definitions/boardField"
             },
             "iteration": {
-              "$ref": "#/definitions/iterationField"
+              "$ref": "#/definitions/boardField"
             },
             "startDate": {
               "$ref": "#/definitions/boardField"
@@ -1085,53 +1085,6 @@
           "type": "string",
           "minLength": 1,
           "description": "The status that counts as done, for velocity. Default Done."
-        }
-      }
-    },
-    "horizonField": {
-      "type": "object",
-      "description": "The horizon, the base every board plans on: when a parent is taken up, its options nearest first. Only parents carry it; a child takes its parent's. What to do now is the children at the status role ready of the parents in the nearest horizon, by priority.",
-      "additionalProperties": false,
-      "required": ["name", "type", "options", "on"],
-      "properties": {
-        "name": {
-          "$ref": "#/definitions/boardField/properties/name"
-        },
-        "kind": {
-          "$ref": "#/definitions/boardField/properties/kind"
-        },
-        "type": {
-          "const": "singleSelect",
-          "description": "The horizon is a single select."
-        },
-        "on": {
-          "const": "parents",
-          "description": "Only the parents carry the horizon: a child takes its parent's."
-        },
-        "options": {
-          "$ref": "#/definitions/boardField/properties/options"
-        }
-      }
-    },
-    "iterationField": {
-      "type": "object",
-      "description": "The iterations add-on, active when the field is listed: only children go in an iteration, and only the children of parents in the nearest horizon.",
-      "additionalProperties": false,
-      "required": ["name", "type", "on"],
-      "properties": {
-        "name": {
-          "$ref": "#/definitions/boardField/properties/name"
-        },
-        "kind": {
-          "$ref": "#/definitions/boardField/properties/kind"
-        },
-        "type": {
-          "const": "iteration",
-          "description": "An iteration field."
-        },
-        "on": {
-          "const": "children",
-          "description": "Only the children go in an iteration; a parent never does."
         }
       }
     },

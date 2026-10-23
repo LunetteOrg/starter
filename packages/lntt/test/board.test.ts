@@ -139,6 +139,27 @@ describe('planBoard: what lntt board sync would change', () => {
     assert.match(manual[0].what, /"In Progress" → "In progress"/)
   })
 
+  test('a field whose name differs only in case is a rename, left to the UI', () => {
+    const live = state()
+    live.fields[2] = { ...live.fields[2], name: 'horizon' }
+    const { steps, manual } = planBoard(board, live)
+    assert.deepEqual(steps, [])
+    assert.match(manual[0].what, /rename the field "horizon" → "Horizon"/)
+  })
+
+  test('an iteration field on the Project, as the board declares it: nothing to do', () => {
+    const live = state()
+    live.fields.push({ id: 'F_it', name: 'Iteration', dataType: 'ITERATION' })
+    const fields = { ...board.fields, iteration: { name: 'Iteration', type: 'iteration', on: 'children' } }
+    assert.deepEqual(planBoard(withFields(fields), live), { steps: [], manual: [] })
+  })
+
+  test('a description that differs only by surrounding blanks is the same', () => {
+    const live = state()
+    live.issueTypes?.splice(3, 1, { id: 'T_platform', name: 'Platform', description: ' What the product runs on\n' })
+    assert.deepEqual(planBoard(board, live).steps, [])
+  })
+
   test('a field of another type on the Project is left to the UI: a field never changes type', () => {
     const live = state()
     live.fields[2] = { id: 'F_horizon', name: 'Horizon', dataType: 'TEXT' }

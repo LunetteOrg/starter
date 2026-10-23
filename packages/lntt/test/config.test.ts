@@ -478,25 +478,37 @@ describe('the board section', () => {
     assertValid({})
   })
 
-  test("the horizon is a single select carried by the parents: a child takes its parent's", () => {
-    for (const wrong of [
-      { ...horizon, on: 'children' },
-      { name: 'Horizon', type: 'singleSelect', options: ['Now'] },
-      { name: 'Horizon', type: 'text', on: 'parents' },
-    ]) {
-      assertRejected({ board: { fields: { horizon: wrong } } }, /\/board\/fields\/horizon/)
-    }
+  test("lntt validate: the horizon is a single select carried by the parents, absent on included: a child takes its parent's", () => {
+    assertValid({ board: { fields: { horizon: { name: 'Horizon', type: 'singleSelect', options: ['Now'] } } } })
+    assertBadReference(
+      { board: { fields: { horizon: { ...horizon, on: 'children' } } } },
+      /board\.fields\.horizon\.on is "children", not one of: parents/,
+    )
+    assertBadReference(
+      { board: { fields: { horizon: { name: 'Horizon', type: 'text' } } } },
+      /board\.fields\.horizon\.type is "text", not one of: singleSelect/,
+    )
   })
 
-  test('the iteration is carried by the children, never by a parent', () => {
+  test('lntt validate: the iteration is carried by the children, never by a parent', () => {
     const iteration = board.fields.iteration
     assertValid({ board: withHorizon({ fields: { iteration } }) })
-    assertRejected({ board: { fields: { iteration: { ...iteration, on: 'parents' } } } }, /\/board\/fields\/iteration/)
-    assertRejected(
-      { board: { fields: { iteration: { name: 'Iteration', type: 'iteration' } } } },
-      /\/board\/fields\/iteration/,
+    assertValid({ board: withHorizon({ fields: { iteration: { name: 'Iteration', type: 'iteration' } } }) })
+    assertBadReference(
+      { board: withHorizon({ fields: { iteration: { ...iteration, on: 'parents' } } }) },
+      /board\.fields\.iteration\.on is "parents", not one of: children/,
     )
-    assertRejected({ board: { fields: { iteration: { ...iteration, type: 'date' } } } }, /\/board\/fields\/iteration/)
+    assertBadReference(
+      { board: withHorizon({ fields: { iteration: { ...iteration, type: 'date' } } }) },
+      /board\.fields\.iteration\.type is "date"/,
+    )
+  })
+
+  test('lntt validate: a bad reference and a missing horizon are both in the one message', () => {
+    const run = validateCli({ board: { fields: { status: { ...board.fields.status, done: 'Closed' } } } })
+    assert.equal(run.status, 1)
+    assert.match(run.stderr, /a value names no entry of its list:\n {2}board\.fields\.status\.done is "Closed"/)
+    assert.match(run.stderr, /a key the board skills need is missing:\n {2}board\.fields\.horizon is missing/)
   })
 
   test('the status is a single select with its options', () => {

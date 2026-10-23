@@ -170,7 +170,7 @@ export function planBoard(board: BoardConfig, state: BoardState): { steps: Step[
             what: `rename the issue type "${cased.name}" → "${name}"`,
             why: "rename it in the organization's settings (Planning › Issue types), which keeps it on every issue",
           })
-        } else if (description && cased.description !== description) {
+        } else if (description && (cased.description ?? '').trim() !== description.trim()) {
           describe.push({ kind: 'describeIssueType', id: cased.id, name, description })
         }
       }
@@ -201,9 +201,11 @@ export const ghGraphql: Graphql = (query, variables) => {
   return body.data ?? {}
 }
 
-const FIELDS = `fields(first:100){ nodes{
+const FIELDS = `fields(first:100){ pageInfo{ hasNextPage } nodes{
   ... on ProjectV2FieldCommon{ id name dataType }
   ... on ProjectV2SingleSelectField{ options{ id name color description } } } }`
+
+type Page<T> = { nodes: T[]; pageInfo?: { hasNextPage: boolean } }
 
 export function readBoard(
   graphql: Graphql,
@@ -213,16 +215,21 @@ export function readBoard(
   const query = user
     ? `query($owner:String!,$number:Int!){ user(login:$owner){ id projectV2(number:$number){ id ${FIELDS} } } }`
     : `query($owner:String!,$number:Int!){ organization(login:$owner){ id projectV2(number:$number){ id ${FIELDS} }
-        issueTypes(first:50){ nodes{ id name description } } } }`
+        issueTypes(first:50){ pageInfo{ hasNextPage } nodes{ id name description } } } }`
   const data = graphql(query, { owner: project.owner, number: project.number })
   const owner = data[user ? 'user' : 'organization'] as
     | {
         id: string
-        projectV2: { id: string; fields: { nodes: BoardState['fields'] } } | null
-        issueTypes?: { nodes: NonNullable<BoardState['issueTypes']> }
+        projectV2: { id: string; fields: Page<BoardState['fields'][number]> } | null
+        issueTypes?: Page<NonNullable<BoardState['issueTypes']>[number]>
       }
     | undefined
   if (!owner?.projectV2) throw new Error(`no Project ${project.number} of ${project.owner}`)
+  // One page each: past it, a field or a type that exists would look missing, and be created again.
+  if (owner.projectV2.fields.pageInfo?.hasNextPage)
+    throw new Error('the Project has more than 100 fields: not read whole')
+  if (owner.issueTypes?.pageInfo?.hasNextPage)
+    throw new Error('the organization has more than 50 issue types: not read whole')
   return {
     projectId: owner.projectV2.id,
     ownerId: user ? null : owner.id,

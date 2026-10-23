@@ -81,24 +81,24 @@ settings.
 
 ## Horizon and milestones
 
-The starter plans on the base and the milestones add-on (the layers of the
-`github-board` skill, section 5), with no iterations: it plans by release, not by time
-box, and velocity, which the `roadmap` skill reads from closed iterations, is not
-measured here.
+The starter plans on the layers of the `github-board` skill (section 5) that its
+`board` section switches on: the base, and the milestones of `board.milestones`. With no
+`board.fields.iteration` it plans by release, not by time box, and velocity, which the
+`roadmap` skill reads from closed iterations, is not measured here.
 
 - **The horizon** (`board.fields.horizon`) says when a parent is taken up, and is set
-  when the team decides it. Its options run nearest first: the first is what is being
-  worked on, the second what comes after it, the third what is wanted with no time yet,
-  the last what is not planned. Only parents carry it; a child takes its parent's. A
-  triaged issue has its type, priority and parent, and no horizon until that decision.
-  What to do now is the Ready children of the parents in the first horizon, by
+  when the team decides it. Its options run nearest first, from what is being worked on
+  to what is not planned; the ones between are what comes next and what is wanted with
+  no time yet. Only parents carry it; a child takes its parent's. A triaged issue has
+  its type, priority and parent, and no horizon until that decision. What to do now is
+  the children at `board.fields.status.ready` of the parents in the nearest horizon, by
   priority.
 - **A milestone** is a release (`board.milestones`), one per version and named after it
   (`vX.Y.Z`), its description saying what the release carries; how a release is cut is
   [delivery](./delivery.md#releasing). Parents and children carry it. It says what
   ships in which release, and the horizon still says when a parent is taken up.
 - **What `plan-round` and `roadmap` flag:** a child in an open milestone whose parent
-  is past the second horizon, and a parent in the first horizon with no child in an open
+  is past the next horizon, and a parent in the nearest horizon with no child in an open
   milestone. Either is brought to the person, who decides which side moves.
 
 ## Size
