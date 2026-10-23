@@ -96,6 +96,16 @@ No real secret runs locally, and ci:local never reads one from a password manage
 - A job's `services:` are not started locally: tests that need a database start their
   own (Testcontainers).
 
+## CircleCI needs the network
+
+On a CircleCI project, `ci:local` expands the configuration with `circleci config
+process`, which sends it to CircleCI's server: it needs the network, also for a dynamic
+configuration's continuation. Public orbs need no login; a private orb needs a valid
+one. A stored login that has expired or was revoked makes the CLI stop with "The API
+token was rejected by CircleCI", and `lntt` reports that the stored login is not valid:
+`circleci auth logout` (the anonymous call works for public orbs) or log in again. The
+CLI runs from the repository root, where a `mise.toml` pins its version.
+
 ## Container mode
 
 `pnpm ci:local --container` runs each job whole in `act` (GitHub Actions) or

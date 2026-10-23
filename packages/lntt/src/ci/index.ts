@@ -3,7 +3,14 @@
 
 export { actionName, localAction, versionMatches } from './actions.ts'
 export * as candidate from './candidate.ts'
-export { circleciJobs, cliProcessor, mappingParameters, type Processor } from './circleci.ts'
+export {
+  CircleciLoginRejected,
+  circleciJobs,
+  circleciUnavailable,
+  cliProcessor,
+  mappingParameters,
+  type Processor,
+} from './circleci.ts'
 export { evaluateWhen } from './circleci-when.ts'
 export { type CiConfig, candidateConfig, ciConfig, emptyConfig } from './config.ts'
 export { containerCommand, missingTools } from './container.ts'

@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { rmSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, describe, test } from 'node:test'
 import { parse } from 'yaml'
-import { circleciJobs, cliProcessor, type Processor } from '../../src/ci/circleci.ts'
+import {
+  CircleciLoginRejected,
+  circleciJobs,
+  circleciUnavailable,
+  cliProcessor,
+  type Processor,
+} from '../../src/ci/circleci.ts'
 import { emptyConfig } from '../../src/ci/config.ts'
 import { localEvent } from '../../src/ci/event.ts'
 import type { Job } from '../../src/ci/plan.ts'
@@ -216,13 +223,21 @@ describe('circleciJobs', () => {
     assert.equal(byKey(list, 'circleci/test').state.state, 'skipped')
   })
 
-  test('the real circleci CLI processes the same dynamic config', { skip: !hasCircleci() }, () => {
+  test('the real circleci CLI processes the same dynamic config', (t) => {
     root = repo({
       '.circleci/config.yml': SETUP,
       '.circleci/full.yml': continuation('test'),
       '.circleci/minimal.yml': continuation('lint'),
     })
-    const list = circleciJobs(root, localEvent(root, 'pull_request', 'main'), emptyConfig(), cliProcessor(root))
+    const unavailable = circleciUnavailable(root)
+    if (unavailable) return t.skip(unavailable)
+    let list: Job[]
+    try {
+      list = circleciJobs(root, localEvent(root, 'pull_request', 'main'), emptyConfig(), cliProcessor(root))
+    } catch (error) {
+      if (error instanceof CircleciLoginRejected) return t.skip(error.message)
+      throw error
+    }
     const job = byKey(list, 'circleci/test')
     assert.deepEqual(job.state, { state: 'run' })
     assert.deepEqual(
@@ -230,13 +245,23 @@ describe('circleciJobs', () => {
       ['checkout', 'run: pnpm test'],
     )
   })
-})
 
-function hasCircleci(): boolean {
-  try {
-    execFileSync('circleci', ['version'], { stdio: 'ignore' })
-    return true
-  } catch {
-    return false
-  }
-}
+  test('a rejected token is named, not reported as a generic failure', (t) => {
+    root = repo({ '.circleci/config.yml': SIMPLE })
+    const bin = join(root, 'bin')
+    mkdirSync(bin)
+    writeFileSync(
+      join(bin, 'circleci'),
+      '#!/bin/sh\necho "Error: The API token was rejected by CircleCI" >&2\nexit 255\n',
+      {
+        mode: 0o755,
+      },
+    )
+    const path = process.env.PATH
+    process.env.PATH = `${bin}:${path}`
+    t.after(() => {
+      process.env.PATH = path
+    })
+    assert.throws(() => cliProcessor(root)('.circleci/config.yml', SIMPLE, {}), CircleciLoginRejected)
+  })
+})
