@@ -7,10 +7,10 @@ in: a name from the configuration, or an id resolved above it.
 ## Discovery
 
 ```sh
-OWNER=$(lntt get board.project.owner | jq -r .)
-NUMBER=$(lntt get board.project.number)
-# organization, unless board.project.ownerType says user: GraphQL's root field differs
-ROOT=$( (lntt get board.project.ownerType 2>/dev/null || echo '"organization"') | jq -r .)
+OWNER=$(lntt get board.github.project.owner | jq -r .)
+NUMBER=$(lntt get board.github.project.number)
+# organization, unless board.github.project.ownerType says user: GraphQL's root field differs
+ROOT=$( (lntt get board.github.project.ownerType 2>/dev/null || echo '"organization"') | jq -r .)
 REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 
 # the Project's node id, its fields with their ids and options: once per session
@@ -233,7 +233,7 @@ gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){ repository(owner:
 ```
 
 The iteration of every open issue and of its blockers, in one paginated query (an issue
-has one item per Project: take the item whose project number is `board.project.number`).
+has one item per Project: take the item whose project number is `board.github.project.number`).
 `--paginate` needs the variable named `$endCursor` and prints one document per page:
 
 ```sh

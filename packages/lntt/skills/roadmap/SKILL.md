@@ -1,6 +1,6 @@
 ---
 name: roadmap
-description: Plan beyond one iteration — split a broad objective into parent issues, date them on the Project's roadmap paced by the velocity measured on closed iterations, and re-forecast when an iteration closes — as the `board` section of `.agents/config.*` describes the board. Use when planning past the next round, turning a big goal into a roadmap, checking whether a plan fits its timeline, or re-forecasting after an iteration closes. `roadmap` creates and dates the parents; `plan-round` breaks the due ones into children.
+description: Plan beyond one iteration — split a broad objective into parent issues, date them on the board's roadmap paced by the velocity measured on closed iterations, and re-forecast when an iteration closes — as the `board` section of `.agents/config.*` describes the board. Use when planning past the next round, turning a big goal into a roadmap, checking whether a plan fits its timeline, or re-forecasting after an iteration closes. `roadmap` creates and dates the parents; `plan-round` breaks the due ones into children.
 ---
 
 # Roadmap — the long horizon
@@ -12,8 +12,13 @@ Two tiers of planning, kept apart:
 - **`plan-round`**: **parents → children** for the round coming up. *Exactly what we
   build now.*
 
-The cycle: objective → `roadmap` → `plan-round` → `github-board` (every write) →
+The cycle: objective → `roadmap` → `plan-round` → the adapter (every write) →
 `retrospective` → velocity → `roadmap` again.
+
+Every read and write on the board goes through the **adapter**, the skill of the platform
+`board.provider` names: `github-board` for `github`, the default. **No adapter for the
+provider:** stop, and say which provider has none. The adapter's sections cited below
+are `github-board`'s.
 
 ## 0. Read the board
 

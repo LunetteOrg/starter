@@ -15,7 +15,10 @@
     }
   },
   "board": {
-    "project": { "owner": "DiscenTech", "ownerType": "organization", "number": 1, "title": "Discentis Tech Projects" },
+    // No provider: github, the default.
+    "github": {
+      "project": { "owner": "DiscenTech", "ownerType": "organization", "number": 1, "title": "Discentis Tech Projects" }
+    },
     "issueTypes": { "parents": ["Feature"], "children": ["Task", "Bug"] },
     "subIssues": true,
     "milestones": true,

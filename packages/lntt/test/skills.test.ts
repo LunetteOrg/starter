@@ -322,6 +322,16 @@ describe('the board skills', () => {
     }
   })
 
+  test('plan-round and roadmap hand the board to the adapter board.provider names, and stop when it has none', () => {
+    for (const name of ['plan-round', 'roadmap']) {
+      const guide = readFileSync(join(SKILLS, name, 'SKILL.md'), 'utf8')
+      assert.match(guide, /`board\.provider`/, name)
+      assert.match(guide, /\*\*No adapter for the\s+provider:\*\* stop/, name)
+    }
+    const adapters = readFileSync(join(SKILLS, 'plan-round', 'SKILL.md'), 'utf8')
+    assert.match(adapters, /`github` \(the default\): `github-board`/)
+  })
+
   test('every configuration key they cite is a key of the schema', () => {
     for (const name of BOARD) {
       for (const content of text(name)) {

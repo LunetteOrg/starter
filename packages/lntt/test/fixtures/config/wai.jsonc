@@ -15,11 +15,14 @@
     }
   },
   "board": {
-    "project": {
-      "owner": "Welcome-Association-Italy",
-      "ownerType": "organization",
-      "number": 1,
-      "title": "Wai Remake"
+    "provider": "github",
+    "github": {
+      "project": {
+        "owner": "Welcome-Association-Italy",
+        "ownerType": "organization",
+        "number": 1,
+        "title": "Wai Remake"
+      }
     },
     // Platform holds containers of platform work (#201), beside the documented Feature.
     "issueTypes": { "parents": ["Feature", "Platform"], "children": ["Task", "Bug"] },

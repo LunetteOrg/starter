@@ -290,7 +290,8 @@ function assertBadReference(config: unknown, ...lines: RegExp[]): void {
 
 describe('the board section', () => {
   const board = {
-    project: { owner: 'DemoOrg', ownerType: 'organization', number: 1, title: 'Demo board' },
+    provider: 'github',
+    github: { project: { owner: 'DemoOrg', ownerType: 'organization', number: 1, title: 'Demo board' } },
     issueTypes: { parents: ['Feature', 'Debt'], children: ['Task', 'Bug'], permanent: ['Debt'] },
     subIssues: true,
     milestones: true,
@@ -354,7 +355,7 @@ describe('the board section', () => {
     for (const key of ['subIssues', 'milestones', 'blockedBy']) {
       assertRejected({ board: { [key]: 'yes' } }, new RegExp(`/board/${key}`))
     }
-    write('.agents/config.jsonc', JSON.stringify({ board: { project: board.project } }))
+    write('.agents/config.jsonc', JSON.stringify({ board: { github: board.github } }))
     assert.throws(() => getValue(loadConfig(root).data, 'board.subIssues'), /no board\.subIssues/, 'no default')
   })
 
@@ -382,10 +383,27 @@ describe('the board section', () => {
     )
   })
 
-  test('a Project is found by its owner and a number from 1, and its owner is an organization or a user', () => {
-    assertRejected({ board: { project: { title: 'Demo board' } } }, /owner|number/)
-    assertRejected({ board: { project: { owner: 'someone', ownerType: 'enterprise', number: 1 } } }, /ownerType/)
-    assertRejected({ board: { project: { owner: 'someone', number: 0 } } }, /\/board\/project\/number/)
+  test('the board is on GitHub: the provider is github, also when absent, and no other value is accepted', () => {
+    const schema = JSON.parse(readFileSync(resolve(dirname(BIN), '../schema/config.schema.json'), 'utf8'))
+    const provider = schema.properties.board.properties.provider
+    assert.deepEqual(provider.enum, ['github'])
+    assert.equal(provider.default, 'github')
+    const { provider: _, ...noProvider } = board
+    assertValid({ board: noProvider })
+    assertRejected({ board: { ...board, provider: 'gitlab' } }, /\/board\/provider/)
+    assertRejected({ board: { ...board, provider: 'linear' } }, /\/board\/provider/)
+  })
+
+  test("the provider's own keys sit under its name, not beside the concepts every provider shares", () => {
+    assertRejected({ board: { project: board.github.project } }, /project/)
+    assertRejected({ board: { gitlab: {} } }, /gitlab/)
+  })
+
+  test('a GitHub Project is found by its owner and a number from 1, and its owner is an organization or a user', () => {
+    const project = (value: unknown) => ({ board: { github: { project: value } } })
+    assertRejected(project({ title: 'Demo board' }), /owner|number/)
+    assertRejected(project({ owner: 'someone', ownerType: 'enterprise', number: 1 }), /ownerType/)
+    assertRejected(project({ owner: 'someone', number: 0 }), /\/board\/github\/project\/number/)
   })
 
   test('the issue types are listed once each, and a list is never empty', () => {

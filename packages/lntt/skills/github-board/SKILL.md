@@ -5,8 +5,9 @@ description: Open, write, triage, prioritize, organize and link GitHub issues on
 
 # GitHub board
 
-This skill owns the **mechanics** of issues and of the Project: how an issue is written,
-typed, placed and linked. `plan-round` (a round of work) and `roadmap` (the long
+This skill is the **adapter of the `github` provider** (`board.provider`, the default):
+it owns the **mechanics** of issues and of the Project on GitHub, how an issue is
+written, typed, placed and linked. `plan-round` (a round of work) and `roadmap` (the long
 horizon) decide *what* goes on the board and defer here for *how*. The `gh` and GraphQL
 recipes are in [`references/github-project.md`](./references/github-project.md): read
 the sections a step names before running it.
@@ -63,7 +64,7 @@ then for the Project.
 
 The configuration names things; GitHub wants ids. Resolve them once and keep them in
 variables ([reference, *Discovery*](./references/github-project.md#discovery)): the
-Project's node id (from `board.project.owner`, `ownerType` and `number`), each
+Project's node id (from `board.github.project`: `owner`, `ownerType` and `number`), each
 configured field's id and option ids, the current iteration when `fields.iteration` is
 set, the issue types' node ids when `issueTypes` is set, the labels.
 
