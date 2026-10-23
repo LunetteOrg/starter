@@ -661,7 +661,7 @@ describe('setBoardStatus', () => {
     assert.deepEqual(moved, [])
     assert.deepEqual(skipped, [69])
     assert.deepEqual(board.writes, [])
-    assert.match(out.lines.join('\n'), /::notice .*In release.*not an option.*issues skill/s)
+    assert.match(out.lines.join('\n'), /::notice .*In release.*not an option.*github-board skill/s)
   })
 
   test('a project without a Status field is skipped with a notice', () => {

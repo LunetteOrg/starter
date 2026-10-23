@@ -44,8 +44,9 @@ it never guesses.
 
 ### The shared skills come with `lntt`; a project holds their stubs
 
-The shared skills (`commit-message`, `coordinate`, `decisions`, `retrospective`,
-`review`, `run-local`) ship inside `@lntt/lntt`, in `packages/lntt/skills/`.
+The shared skills (`commit-message`, `coordinate`, `decisions`, `github-board`,
+`plan-round`, `retrospective`, `review`, `roadmap`, `run-local`) ship inside
+`@lntt/lntt`, in `packages/lntt/skills/`.
 `lntt guide <skill>` prints a skill's guide from the installed package, with the folder
 its relative links start from, so a skill and the `lntt` it calls are always one
 version: the project's lockfile.
@@ -144,7 +145,7 @@ reference held for a link that does not form gets its title in the box only.
   separators, variation selectors, the grapheme joiner) are dropped, and a URL is
   shown only when it is a plain `https` address, from `gh` or from the cache.
 
-How a title is written is the `issues` skill's.
+How a title is written is the `github-board` skill's.
 
 ## Consequences
 

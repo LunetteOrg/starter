@@ -725,7 +725,7 @@ export function setBoardStatus(run: Run, issues: number[], status: string) {
       const option = field.options?.find((o) => o.name.toLowerCase() === status.toLowerCase())
       if (!option) {
         log(
-          `::notice title=Board not moved::"${status}" is not an option of the Status field of project "${node.project.title}" (${(field.options ?? []).map((o) => o.name).join(', ')}): #${number} is not moved. Check delivery.candidate.status, or add it from the project's web UI (field menu, edit), never with updateProjectV2Field, which resets every item's status (the issues skill, "Changing a field's options").`,
+          `::notice title=Board not moved::"${status}" is not an option of the Status field of project "${node.project.title}" (${(field.options ?? []).map((o) => o.name).join(', ')}): #${number} is not moved. Check delivery.candidate.status, or add it from the project's web UI (field menu, edit), never with updateProjectV2Field, which resets every item's status (the github-board skill, "Changing a field's options").`,
         )
         continue
       }

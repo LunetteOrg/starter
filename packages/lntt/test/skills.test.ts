@@ -249,3 +249,104 @@ describe('the shared skills', () => {
     assert.match(missing.stderr, /^lntt guide: no skill nope; the skills are commit-message, /)
   })
 })
+
+// A Markdown link to a file next to the guide, or to a heading of its own.
+const RELATIVE_LINK = /\]\(((?:\.\.?\/|#)[^)\s]*)\)/g
+
+// The heading anchors of a Markdown file, as GitHub makes them.
+function anchors(file: string): string[] {
+  return [...readFileSync(file, 'utf8').matchAll(/^#+ (.+)$/gm)].map((m) =>
+    m[1]
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N} -]/gu, '')
+      .replaceAll(' ', '-'),
+  )
+}
+
+// Every Markdown file of a skill's folder.
+function guideFiles(name: string): string[] {
+  const folder = join(SKILLS, name)
+  return readdirSync(folder, { recursive: true, encoding: 'utf8' })
+    .filter((f) => f.endsWith('.md'))
+    .map((f) => join(folder, f))
+}
+
+describe('the guides', () => {
+  test('every relative link resolves inside the package, to a file and a heading that exist', () => {
+    for (const name of sharedSkills()) {
+      for (const file of guideFiles(name)) {
+        for (const [, target] of readFileSync(file, 'utf8').matchAll(RELATIVE_LINK)) {
+          const [path, anchor] = target.split('#')
+          const linked = path ? resolve(dirname(file), path) : file
+          assert.ok(linked.startsWith(`${SKILLS}/`), `${file}: ${target} leaves the package`)
+          assert.ok(existsSync(linked), `${file}: ${target}`)
+          if (anchor) assert.ok(anchors(linked).includes(anchor), `${file}: ${target} names no heading`)
+        }
+      }
+    }
+  })
+})
+
+describe('the board skills', () => {
+  const BOARD = ['github-board', 'plan-round', 'roadmap']
+  const schema = JSON.parse(readFileSync(resolve(HERE, '../schema/config.schema.json'), 'utf8'))
+  const text = (name: string) => guideFiles(name).map((f) => readFileSync(f, 'utf8'))
+
+  // The schema node a dotted key names, following $ref and the open maps; `<key>` is any key.
+  function node(key: string): Record<string, unknown> | undefined {
+    let at = schema as Record<string, unknown> | undefined
+    for (const part of key.split('.')) {
+      while (at && typeof at.$ref === 'string') {
+        at = (at.$ref as string)
+          .slice(2)
+          .split('/')
+          .reduce((n: Record<string, unknown>, k) => n[k] as Record<string, unknown>, schema)
+      }
+      const properties = at?.properties as Record<string, Record<string, unknown>> | undefined
+      at = part === '<key>' ? (at?.additionalProperties as Record<string, unknown>) : properties?.[part]
+    }
+    return at
+  }
+
+  test('ship in the package beside the other shared skills', () => {
+    for (const name of BOARD) assert.ok(sharedSkills().includes(name), name)
+  })
+
+  test('read the board section, and stop and propose it when it is missing', () => {
+    for (const name of BOARD) {
+      const guide = readFileSync(join(SKILLS, name, 'SKILL.md'), 'utf8')
+      assert.match(guide, /lntt get board/, name)
+      assert.match(guide, /\*\*No `board`\s+section:\*\* stop/, name)
+    }
+  })
+
+  test('every configuration key they cite is a key of the schema', () => {
+    for (const name of BOARD) {
+      for (const content of text(name)) {
+        for (const [key] of content.matchAll(
+          /(?<![\w/])(?:board|cycle|team|delivery|recording)(?:\.(?:[a-zA-Z]+|<key>))+/g,
+        )) {
+          assert.ok(node(key), `${name}: ${key} is not in the schema`)
+        }
+      }
+    }
+  })
+
+  test("write no project's value: no issue type, field or option of the projects they were ported from", () => {
+    const values = [
+      /\bFeature\b/,
+      /\bTask\b/,
+      /\bP[0-3]\b/,
+      /\bNot now\b/,
+      /\bScope\b/,
+      /\bClasse\b|\bDebito\b/,
+      /\bwai\b|discent|\bpelion\b/i,
+      /\bIn review\b|\bBacklog\b/,
+    ]
+    for (const name of BOARD) {
+      for (const content of text(name)) {
+        for (const value of values) assert.ok(!value.test(content), `${name}: ${value}`)
+      }
+    }
+  })
+})

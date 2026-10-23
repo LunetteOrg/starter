@@ -23,6 +23,9 @@
     },
     // Platform holds containers of platform work (#201), beside the documented Feature.
     "issueTypes": { "parents": ["Feature", "Platform"], "children": ["Task", "Bug"] },
+    "subIssues": true,
+    "milestones": true, // a release each
+    "blockedBy": true, // hard dependencies; soft ones are a higher priority
     "fields": {
       "status": {
         "name": "Status",
@@ -35,14 +38,14 @@
         "done": "Done"
       },
       // The project field; the organization's issue field Priority (Urgent…Low) is not the board's.
-      "priority": { "name": "Priority", "type": "singleSelect", "options": ["P0", "P1", "P2", "P3"] },
-      "size": { "name": "Size", "type": "singleSelect", "options": ["XS", "S", "M", "L", "XL"] },
-      "scope": { "name": "Scope", "type": "singleSelect", "options": ["Now", "Next", "Not now"] }, // Features only
-      "iteration": { "name": "Iteration", "type": "iteration" },
+      "priority": { "name": "Priority", "type": "singleSelect", "options": ["P0", "P1", "P2", "P3"], "on": "children" },
+      "size": { "name": "Size", "type": "singleSelect", "options": ["XS", "S", "M", "L", "XL"], "on": "children" },
+      "horizon": { "name": "Scope", "type": "singleSelect", "options": ["Now", "Next", "Not now"], "on": "parents" },
+      "iteration": { "name": "Iteration", "type": "iteration", "on": "children" },
       "estimate": { "name": "Estimate", "type": "number" },
       // Issue fields of the organization: written with updateIssueFieldValue, never on the item.
-      "startDate": { "name": "Start date", "kind": "issue", "type": "date" },
-      "targetDate": { "name": "Target date", "kind": "issue", "type": "date" },
+      "startDate": { "name": "Start date", "kind": "issue", "type": "date", "on": "parents" },
+      "targetDate": { "name": "Target date", "kind": "issue", "type": "date", "on": "parents" },
       "effort": { "name": "Effort", "kind": "issue", "type": "singleSelect", "options": ["High", "Medium", "Low"] }
     },
     "tracks": {

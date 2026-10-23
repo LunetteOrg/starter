@@ -29,7 +29,7 @@
     },
     "board": {
       "type": "object",
-      "description": "The GitHub Project (v2) the work is planned on, read by the board skills (github-board, plan-round, roadmap): the Project, the issue types, its fields and their options, the track labels. How they are used is in docs/process/board.md, when the project has one.",
+      "description": "The GitHub Project (v2) the work is planned on, read by the board skills (github-board, plan-round, roadmap): the Project, the issue types, the GitHub mechanisms the project uses, its fields and their options, the track labels. What the section leaves out the project does not use, and the skills do without it. How they are used is in docs/process/board.md, when the project has one.",
       "additionalProperties": false,
       "properties": {
         "project": {
@@ -61,12 +61,12 @@
         },
         "issueTypes": {
           "type": "object",
-          "description": "The native issue types (not labels) the board uses: a parent holds the sub-issues the work is done in.",
+          "description": "The native issue types (not labels) the board uses, from the organization's issue types: a parent holds the work, a child is the work done in an iteration. Absent: the project sets no issue type.",
           "additionalProperties": false,
           "properties": {
             "parents": {
               "type": "array",
-              "description": "The types of the issues that hold sub-issues. Default Feature.",
+              "description": "The types of the issues that hold others (as sub-issues, when subIssues is true) and are never put in an iteration.",
               "items": {
                 "type": "string",
                 "minLength": 1
@@ -76,7 +76,17 @@
             },
             "children": {
               "type": "array",
-              "description": "The types of the issues that go in an iteration. Default Task, Bug.",
+              "description": "The types of the issues that are the work itself: the ones that go in an iteration.",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "permanent": {
+              "type": "array",
+              "description": "The parent types that never close (debt, ongoing work): they stay off the roadmap and out of the parents velocity counts; the children done under them count. Each is one of parents: lntt validate checks it.",
               "items": {
                 "type": "string",
                 "minLength": 1
@@ -86,9 +96,21 @@
             }
           }
         },
+        "subIssues": {
+          "type": "boolean",
+          "description": "true: the work of a parent is linked to it as GitHub sub-issues. Absent or false: the project uses no sub-issues."
+        },
+        "milestones": {
+          "type": "boolean",
+          "description": "true: issues are grouped in GitHub milestones, a release each unless docs/process/board.md says otherwise. Absent or false: the project uses no milestones."
+        },
+        "blockedBy": {
+          "type": "boolean",
+          "description": "true: a hard dependency between issues is GitHub's blocked-by relation. Absent or false: the project records none, and the skills write a dependency in the issue body."
+        },
         "fields": {
           "type": "object",
-          "description": "The Project's fields, by key: the ones the board skills know (status, priority, size, scope, iteration, and startDate and targetDate, the dates the roadmap reads) and the project's own, in camelCase (classe). A field missing here is one the project does not use.",
+          "description": "The Project's fields, by key: the ones the board skills know (status; priority, its options most urgent first; size; horizon, when the work is taken up, its options nearest first; iteration; and startDate and targetDate, the dates the roadmap reads) and the project's own, in camelCase (classe). A field missing here is one the project does not use: the skills do without it, and never create it unasked.",
           "propertyNames": {
             "pattern": "^[a-z][a-zA-Z0-9]*$"
           },
@@ -102,7 +124,7 @@
             "size": {
               "$ref": "#/definitions/boardField"
             },
-            "scope": {
+            "horizon": {
               "$ref": "#/definitions/boardField"
             },
             "iteration": {
@@ -954,6 +976,10 @@
         "type": {
           "enum": ["singleSelect", "iteration", "date", "number", "text"],
           "description": "The field's type on GitHub."
+        },
+        "on": {
+          "enum": ["parents", "children"],
+          "description": "The issues that carry the field: the parents (board.issueTypes.parents, or the issues holding sub-issues) or the children. Absent: any issue."
         },
         "options": {
           "type": "array",
