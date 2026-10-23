@@ -20,6 +20,12 @@
 //                             worktree: the driver, why, and each operation as a shell
 //                             command or a tool call; <app> may be omitted when there is one
 //
+//   lntt board sync [--apply]
+//                             the GitHub Project and the organization's issue types brought to
+//                             the board section: missing fields, options, types and type
+//                             descriptions added; renames and removals listed for the UI.
+//                             A dry run unless --apply
+//
 //   lntt refs [--cached] [<text>...]
 //                             the issue and pull request references of the text (the arguments,
 //                             else stdin) with their titles, from gh, cached for a day: one JSON
@@ -144,6 +150,7 @@ if (args[0] === 'ci') await (await import('../src/ci/cli.ts')).main(args.slice(1
 else if (args[0] === 'branch') (await import('../src/branch-cli.ts')).main(args.slice(1))
 else if (args[0] === 'pr') (await import('../src/pull-request-cli.ts')).main(args.slice(1))
 else if (args[0] === 'refs') await (await import('../src/refs-cli.ts')).main(args.slice(1))
+else if (args[0] === 'board') (await import('../src/board-cli.ts')).main(args.slice(1))
 else if (args[0] === 'check') (await import('../src/check-cli.ts')).main(args.slice(1))
 else if (args[0] === 'review') await (await import('../src/review-cli.ts')).main(args.slice(1))
 else if (args[0] === 'worktree') (await import('../src/worktree-cli.ts')).main(args.slice(1))

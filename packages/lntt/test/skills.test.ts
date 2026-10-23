@@ -393,6 +393,16 @@ describe('the board skills', () => {
     assert.match(guide, /stands alone[^.]*`docs\/process\/board\.md`[^.]*child type when it says nothing/)
   })
 
+  test('github-board adds what the configuration declares with lntt board sync: a dry run, --apply on the go', () => {
+    const guide = readFileSync(join(SKILLS, 'github-board', 'SKILL.md'), 'utf8').replace(/\s+/g, ' ')
+    assert.match(
+      guide,
+      /`lntt board sync` shows what it would add \(a dry run\), and `lntt board sync --apply` adds it, with the person's go/,
+    )
+    const reference = readFileSync(resolve(HERE, '../skills/github-board/references/github-project.md'), 'utf8')
+    assert.match(reference, /An option passed with its `id`\s+keeps it, and every item keeps its value/)
+  })
+
   test('views are created through the API, and grouped by hand', () => {
     const reference = readFileSync(resolve(HERE, '../skills/github-board/references/github-project.md'), 'utf8')
     assert.doesNotMatch(reference, /no API to create or edit a saved view/)

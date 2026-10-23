@@ -169,23 +169,32 @@ gh api graphql -f query='mutation($i:ID!,$f:ID!,$d:String!){
 
 ## Changing a field's options
 
-`updateProjectV2Field` **rewrites the whole option set and regenerates every id**: each
-item that had a value in the field loses it, on every repository the Project holds.
-Passing the same names again does not help: the link is the id.
+`updateProjectV2Field` **rewrites the whole option set**. An option passed with its `id`
+keeps it, and every item keeps its value; an option passed without one is new, and an
+existing option left out is removed, its value cleared from every item, on every
+repository the Project holds. Passing the same name without the id does not help: the
+link is the id.
 
-- Add an option from the Project's web UI (the field's menu, *Edit*): it keeps the ids.
-- A **new** field (`gh project field-create`) touches no existing value: a new exclusive
-  dimension belongs in a new field.
-- A field with **no options yet** can be given its options with the mutation, after the
-  person confirms them and they are in the configuration.
-- To use the mutation on a field in use anyway, with the person's go: save every item's
-  value first, run it, then write the values back in batches against the new ids.
+- **`lntt board sync`** adds what the configuration declares and the Project lacks: a
+  missing field with its options, a missing option (every existing one passed back with
+  its id, color and description), a missing issue type, a type's description. A dry run
+  by default; `--apply` only with the person's go. Renames and removals it lists for the
+  UI, with the reason.
+- A rename is done in the field's settings in the UI: it keeps the id.
+- A **new** field touches no existing value: a new exclusive dimension belongs in a new
+  field.
 
 ```sh
-gh project item-list "$NUMBER" --owner "$OWNER" --limit <sized> --format json \
-  --jq '.items[] | select(.<field key> != null) | [.id, .<field key>] | @tsv' > before.tsv
+lntt board sync            # the plan, read from GitHub; writes nothing
+lntt board sync --apply    # with the person's go: applies it, then reads the board back
+```
+
+By hand, the same update keeps every existing option by its id:
+
+```sh
 gh api graphql -f query='mutation($f:ID!){ updateProjectV2Field(input:{ fieldId:$f,
-  singleSelectOptions:[ {name:"<existing>", color:GRAY, description:""}, {name:"<new>", color:BLUE, description:""} ] }){
+  singleSelectOptions:[ {id:"<existing id>", name:"<existing>", color:GREEN, description:"<its description>"},
+    {name:"<new>", color:GRAY, description:""} ] }){
   projectV2Field{ ... on ProjectV2SingleSelectField{ options{ id name } } } } }' -f f=<FIELD_ID>
 ```
 

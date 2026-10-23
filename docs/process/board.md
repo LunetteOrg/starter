@@ -14,7 +14,10 @@ holds the issues of the organization's other repositories too (the closed issues
 starter. The issue types are the organization's: a type added, renamed or removed
 changes every repository of LunetteOrg, and an option changed on a field of the
 Project changes every item on it. Both go through the person who owns the
-organization, as the `github-board` skill says for any field or option.
+organization, as the `github-board` skill says for any field or option: the
+configuration changes first, then `lntt board sync` shows what the Project and the
+types lack, and `--apply` adds it once that person agrees. Renames and removals are
+done in GitHub's UI.
 
 The organization also has issue fields of its own (a priority, an effort, a start and
 a target date). They are not the board's: `board.fields` names only fields of the

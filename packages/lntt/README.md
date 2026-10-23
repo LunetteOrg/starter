@@ -421,6 +421,32 @@ with the JSON, also when `gh` is missing or not logged in (each reference's `why
 `off`); 1 when the text cannot be read or the command fails, one line on stderr; 2 a
 usage error, as with no text and a terminal on stdin.
 
+## The board (`lntt board sync`)
+
+```sh
+lntt board sync            # what the Project and the issue types lack, read from GitHub: a dry run
+lntt board sync --apply    # adds it, then reads the board back
+```
+
+It brings the GitHub Project of `board.github.project` and its organization's issue
+types to what the `board` section declares, and only adds: a missing field of
+`board.fields` (single select with its options, date, number, text), a missing option
+(every existing option passed back with its id, so no item loses its value), a missing
+issue type of `board.issueTypes`, and the description `board.issueTypes.descriptions`
+gives a type. What it never does it lists under *by hand, in GitHub's UI*, with the
+reason: a rename (of a field, an option, a type), a removal (an option or a type the
+configuration lacks: removing it clears it from every item or issue), a field of another
+type, an iteration field (created with its iterations in the Project's settings). A
+field of `kind: issue` is the organization's, not the Project's, and is left alone. Run
+twice, the second run has nothing to change.
+
+It writes through `gh api graphql`, one change at a time, 1.2 s apart (GitHub's
+secondary rate limit drops faster writes without a word); the token needs the `project`
+scope, and an organization owner to create an issue type. Exit codes: 0 the plan, or
+every change applied and read back; 1 a configuration error, a read or a write `gh`
+refuses (with the changes applied before it), or a change that does not show on the
+read-back; 2 a usage error.
+
 ## CI (`lntt ci`)
 
 Runs a project's CI on the local machine, and moves pull requests through the

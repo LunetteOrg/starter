@@ -92,7 +92,15 @@
     "issueTypes": {
       "parents": ["Feature", "Platform", "Debt", "Ongoing"],
       "children": ["Task", "Bug"],
-      "permanent": ["Ongoing"]
+      "permanent": ["Ongoing"],
+      // Written on the organization's types by lntt board sync.
+      "descriptions": {
+        "Feature": "Functionality for the people who use the product",
+        "Bug": "Something that does not work as it should",
+        "Platform": "Infrastructure and tools the product runs on",
+        "Debt": "Technical debt to pay back",
+        "Ongoing": "Recurring work with no end: maintenance, support"
+      }
     },
     // A parent's work is its sub-issues, and the Project adds them on its own.
     "subIssues": true,

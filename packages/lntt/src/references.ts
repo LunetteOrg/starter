@@ -55,6 +55,12 @@ export function checkReferences(data: Record<string, unknown>): string[] {
     expect('board.issueTypes.permanent', type, (types?.parents ?? []) as string[])
   }
 
+  const listed = [...((types?.parents ?? []) as string[]), ...((types?.children ?? []) as string[])]
+  for (const name of Object.keys((types?.descriptions ?? {}) as Record<string, string>)) {
+    if (!listed.includes(name))
+      wrong.push(`board.issueTypes.descriptions.${name} names no type of the board: ${listed.join(', ')}`)
+  }
+
   const members = at(data, 'team', 'members') as Tree
   if (members) {
     const labels = (at(data, 'board', 'tracks', 'labels') ?? {}) as Record<string, Tree>

@@ -60,11 +60,12 @@ nearest first. The status roles (`board.fields.status.initial`, `ready`, `inProg
 default, which `lntt validate` has checked against the options. Statuses the automation
 sets (`delivery.candidate.status`) are never set by hand.
 
-**Never add an option to a field, nor create a field, without the person's go**:
-changing the options of an existing single select rewrites every item's value
+**Never add an option to a field, nor create a field or an issue type, without the
+person's go**: an option set rewritten without its ids clears every item's value
 ([reference, *Changing a field's options*](./references/github-project.md#changing-a-fields-options)).
 A value the board needs and the configuration lacks is a proposal for the configuration,
-then for the Project.
+then for the Project: once it is in the configuration, `lntt board sync` shows what it
+would add (a dry run), and `lntt board sync --apply` adds it, with the person's go.
 
 ## 1. Resolve the ids, once per session
 
@@ -126,7 +127,9 @@ the steps.
    type for an issue that will hold others. An issue that stands alone takes the type
    `docs/process/board.md` says, a child type when it says nothing.
 4. **On the Project**: an organization workflow may already have added it (`item-add`
-   then fails as a duplicate: go on). Get its item id from the issue (1 point).
+   then fails as a duplicate: go on). Get its item id from the issue (1 point). A
+   workflow of the Project may also write the status after you (on an item added, on a
+   linked pull request): the read-back of step 8 catches it; set it again.
 5. **Fields**: the status role `initial` unless the person says otherwise, and every
    configured field whose `on` fits the issue and whose value is known now (never the
    horizon on a child: it takes its parent's). A field of

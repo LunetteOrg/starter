@@ -106,6 +106,14 @@
               },
               "minItems": 1,
               "uniqueItems": true
+            },
+            "descriptions": {
+              "type": "object",
+              "description": "Each type's description, by its name, as the organization's issue types show it: lntt board sync creates a missing type with it and writes it on a type that has another. Each name is one of parents or children: lntt validate checks it.",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           }
         },

@@ -428,6 +428,16 @@ describe('the board section', () => {
     assertRejected(project({ owner: 'someone', number: 0 }), /\/board\/github\/project\/number/)
   })
 
+  test('lntt validate: an issue type has a description only when the board lists it', () => {
+    const descriptions = { Feature: 'For the people who use it', Ongoing: 'Never ends' }
+    assertValid({ board: withHorizon({ issueTypes: { ...board.issueTypes, descriptions: { Feature: 'x' } } }) })
+    assertBadReference(
+      { board: withHorizon({ issueTypes: { ...board.issueTypes, descriptions } }) },
+      /board\.issueTypes\.descriptions\.Ongoing names no type of the board: Feature, Debt, Task, Bug/,
+    )
+    assertRejected({ board: { issueTypes: { descriptions: { Feature: '' } } } }, /\/board\/issueTypes\/descriptions/)
+  })
+
   test('the issue types are listed once each, and a list is never empty', () => {
     assertRejected({ board: { issueTypes: { parents: [], children: ['Task'] } } }, /\/board\/issueTypes\/parents/)
     assertRejected(
