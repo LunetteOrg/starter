@@ -169,23 +169,33 @@ gh api graphql -f query='mutation($i:ID!,$f:ID!,$d:String!){
 
 ## Changing a field's options
 
-`updateProjectV2Field` **rewrites the whole option set and regenerates every id**: each
-item that had a value in the field loses it, on every repository the Project holds.
-Passing the same names again does not help: the link is the id.
+`updateProjectV2Field` **rewrites the whole option set**. An option passed with its `id`
+keeps it, and every item keeps its value; an option passed without one is new, and an
+existing option left out is removed, its value cleared from every item, on every
+repository the Project holds. Passing the same name without the id does not help: the
+link is the id.
 
-- Add an option from the Project's web UI (the field's menu, *Edit*): it keeps the ids.
-- A **new** field (`gh project field-create`) touches no existing value: a new exclusive
-  dimension belongs in a new field.
-- A field with **no options yet** can be given its options with the mutation, after the
-  person confirms them and they are in the configuration.
-- To use the mutation on a field in use anyway, with the person's go: save every item's
-  value first, run it, then write the values back in batches against the new ids.
+- **`lntt board sync`** brings the Project and the types to the configuration: a missing
+  field with its options, a missing option, the colors of `board.fields.<key>.colors`, a
+  case-only rename, a missing issue type, a type's description, every existing option
+  passed back with its id. A dry run by default; `--apply` only with the person's go;
+  `--check` exits 1 when the board differs. A removal it lists for the UI, with the items
+  it touches and the steps.
+- A **new** field touches no existing value: a new exclusive dimension belongs in a new
+  field.
 
 ```sh
-gh project item-list "$NUMBER" --owner "$OWNER" --limit <sized> --format json \
-  --jq '.items[] | select(.<field key> != null) | [.id, .<field key>] | @tsv' > before.tsv
+lntt board sync            # the plan, read from GitHub; writes nothing
+lntt board sync --apply    # with the person's go: applies it, then reads the board back
+lntt board sync --check    # exit 1 when the board differs from the configuration
+```
+
+By hand, the same update keeps every existing option by its id:
+
+```sh
 gh api graphql -f query='mutation($f:ID!){ updateProjectV2Field(input:{ fieldId:$f,
-  singleSelectOptions:[ {name:"<existing>", color:GRAY, description:""}, {name:"<new>", color:BLUE, description:""} ] }){
+  singleSelectOptions:[ {id:"<existing id>", name:"<existing>", color:GREEN, description:"<its description>"},
+    {name:"<new>", color:GRAY, description:""} ] }){
   projectV2Field{ ... on ProjectV2SingleSelectField{ options{ id name } } } } }' -f f=<FIELD_ID>
 ```
 
@@ -263,9 +273,25 @@ iteration from the saved file.
 
 ## Views
 
-Projects v2 has no API to create or edit a saved view: the filters are prepared, and a
-person creates the view in the UI. With *Show hierarchy* on, an item sits in the group
-of its root ancestor, so a view of children by iteration keeps hierarchy off. The
+A view is created with its name and layout, then given its filter; the grouping, the
+sort and *Show hierarchy* have no input and are set by a person in the UI. A new view
+is a change to the Project: only with the person's go. The views the configuration
+declares (`board.github.views`) are kept by `lntt board sync`, which creates and updates
+them and prints a grouping that differs, with the view's page and the steps; the recipe
+below is for a view the configuration does not hold.
+
+```sh
+view=$(gh api graphql -f query='mutation($p:ID!,$n:String!){
+  createProjectV2View(input:{projectId:$p, name:$n, layout:TABLE_LAYOUT}){ projectV2View{ id } } }' \
+  -f p=<PROJECT_NODE_ID> -f n="<view name>" --jq .data.createProjectV2View.projectV2View.id)  # or BOARD_LAYOUT, ROADMAP_LAYOUT
+gh api graphql -f query='mutation($v:ID!,$f:String!){
+  updateProjectV2View(input:{viewId:$v, filter:$f}){ projectV2View{ name filter } } }' -f v="$view" -f f="<filter>"
+# read back: projectV2{ views(first:20){ nodes{ id name layout filter groupByFields(first:3){ nodes{ ... on ProjectV2FieldCommon{ name } } } } } }
+```
+
+The filter is not checked when it is written: read the view back and open it once. With
+*Show hierarchy* on, an item sits in the group of its root ancestor, so a view of
+children by iteration keeps hierarchy off. The
 Project's built-in workflows (auto-add, the status on close, on a linked pull request)
 are listed by the API (`workflows{ name enabled }`) but their values are read in the UI.
 
