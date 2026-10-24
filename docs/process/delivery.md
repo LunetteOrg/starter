@@ -263,7 +263,9 @@ ends.
 3. Add by hand what the generator misses: it lists merged pull requests only, so a
    user-facing change that landed as a direct commit (`git log vPREV..vX.Y.Z
    --no-merges`) goes in with `gh release edit vX.Y.Z --notes …`. The release bump
-   and repo-internal commits stay out.
+   and repo-internal commits stay out. A new check of `lntt validate` beyond the
+   schema (a reference, a key the skills need) is named in the notes, with what a
+   project's configuration needs to pass it: a file that passed before may not.
 
 Publishing the GitHub Release starts `.github/workflows/release.yml`: it checks that
 the tag is every package's version, runs lint, typecheck and the tests with the
@@ -348,10 +350,10 @@ because npm configures a trusted publisher only on a package that exists:
   automation closes issues whatever the method, and the messages stay as the net.
 - **`GITHUB_TOKEN` with *Allow GitHub Actions to create and approve pull requests*.**
   The same setting lets any workflow approve a pull request.
-- **Creating the `In release` option from the automation.** Adding an option to a
-  single-select field with `updateProjectV2Field` rewrites the whole option set and
-  regenerates every option id, so every item of the Project, on every repository that
-  shares it, loses its Status. A missing option is a notice.
+- **Creating the `In release` option from the automation.** The automation runs on
+  every candidate event with the app's token; an option it added would change the
+  Project of every repository that shares it, with no person looking. A missing option
+  is a notice, and `lntt board sync` adds it with the person's go.
 - **One status per candidate** (`In candidate 3`). The options would multiply with the
   candidates and every move would rewrite one; the candidate's number is already in the
   issue's comment.
