@@ -215,13 +215,14 @@ With no comment holding the block, it writes one. On a candidate, `lntt check bo
 reads that comment instead of the body: the first comment holding the start marker on a
 line of its own.
 
-An item whose friction comes from Lunette itself (`lntt`, a shared skill, the
-scaffolder, a template) starts with the upstream repository,
-`cycle.retrospective.upstream.repository`, in brackets and followed by a space:
-`- **Friction:** [LunetteOrg/starter] lntt review …`, or a sub-bullet
-`  - [LunetteOrg/starter] …`. `lntt check body` fails a marker with no sentence after
-it, and a bracketed `owner/name` at an item's start that is not the upstream, naming it
-(or the key, when the configuration does not set it).
+An item whose friction comes from another repository starts with it, as
+`[upstream:<owner/name>]` followed by a space: `cycle.retrospective.upstream.repository`
+for Lunette itself (`lntt`, a shared skill, the scaffolder, a template),
+`- **Friction:** [upstream:LunetteOrg/starter] lntt review …`, or a library's own
+repository, `  - [upstream:remix-run/react-router] …`. Only an item starting
+`[upstream:` is a marker: `[src/app] …` is plain text. `lntt check body` fails a marker
+whose repository is not `owner/name` or that is joined to what follows, and a marker with
+no sentence after it.
 
 ## Reports on Lunette itself
 
@@ -231,6 +232,7 @@ lntt issue search <words>...         # the open issues upstream that match: one 
 lntt issue draft.md                  # the whole issue, dump included; nothing sent
 lntt issue draft.md --send           # opened with gh; prints its URL
 lntt issue draft.md --comment 7 --send   # a comment on an existing issue instead
+lntt issue draft.md --repo remix-run/react-router   # another repository: printed, never sent
 ```
 
 `lntt dump` prints, in Markdown (`--json`: one object), what a report on Lunette needs:
@@ -250,7 +252,8 @@ no configuration file is the defaults, exit 0. The failing command is stopped af
 `lntt issue <draft | ->` reads a draft (`# <title>`, then `## What happened`,
 `## Pull requests`, `## Proposal`) and writes the report's fields, each a `### <field>`
 heading as GitHub writes a submitted issue form: the project
-(`--project`, default the `name` of its `package.json`), the harness, the model and the
+(`--project`, default the `name` of its `package.json`) with its template and version (the
+`lunette` key, when it is set), the harness, the model and the
 versions from the dump (`--dump <file>` from `lntt dump --json`, else collected now),
 the whole dump folded at the end. Without `--send` it is a dry run: it prints the issue
 and sends nothing, so the operator reads exactly what will be sent; the draft and the
@@ -258,7 +261,10 @@ project's name are redacted as the dump is, and a body or a title past GitHub's 
 is a warning there and a refusal with `--send`. It sends with `gh`, under the account
 `gh` uses (`GH_TOKEN` when it is set, else the operator's login), to
 `cycle.retrospective.upstream.repository`; without it, `lntt issue` (and `search`) exits
-1 naming the key. `--harness` and `--model` beside `--dump` replace the dump's. The
+1 naming the key. `--repo <owner/name>` names another repository: its report is printed
+for the operator to file by hand, and `--send` is refused. When the upstream is the
+repository `lntt issue` runs in (`gh repo view`), there is nothing to send: it says so
+and exits 0. `--harness` and `--model` beside `--dump` replace the dump's. The
 `retrospective` skill drafts these reports from the items marked with the upstream and calls
 `lntt issue`, never `gh`.
 

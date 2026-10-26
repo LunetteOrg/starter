@@ -170,6 +170,8 @@ describe('lntt issue', () => {
       join(bin, 'gh'),
       [
         '#!/bin/sh',
+        // The repository it runs in, unlogged: acme/app, or the one written in current.
+        `[ "$1 $2" = "repo view" ] && { cat ${join(root, 'current')} 2>/dev/null || echo acme/app; exit 0; }`,
         `printf '%s\\n' "$*" >> ${log}`,
         `cat >> ${log}`,
         'case "$2" in',
@@ -310,6 +312,47 @@ describe('lntt issue', () => {
     assert.match(lntt(['draft.md']).stdout, /^To acme\/lunette-fork:/)
   })
 
+  test("the project's template and version, from the lunette key, in the Project field", () => {
+    writeFileSync(
+      join(root, '.agents/config.jsonc'),
+      UPSTREAM.replace(/^\{/, '{ "lunette": { "template": "react-router", "version": "0.4.1" },'),
+    )
+    const run = lntt(['draft.md'])
+    assert.equal(run.status, 0, run.stderr)
+    assert.match(run.stdout, /### Project\n\nacme-app, template react-router, @lntt\/create 0\.4\.1\n/)
+    assert.match(run.stdout, /- template: react-router, @lntt\/create 0\.4\.1/)
+  })
+
+  test('another repository (--repo): printed for the operator to file by hand, never sent', () => {
+    const dry = lntt(['draft.md', '--repo', 'remix-run/react-router'])
+    assert.equal(dry.status, 0, dry.stderr)
+    assert.match(dry.stdout, /^To remix-run\/react-router: /)
+    assert.match(dry.stderr, /nothing sent: remix-run\/react-router is not the upstream, the operator files it by hand/)
+    for (const args of [['--send'], ['--comment', '7', '--send']]) {
+      const send = lntt(['draft.md', '--repo', 'remix-run/react-router', ...args])
+      assert.equal(send.status, 1, args.join(' '))
+      assert.match(
+        send.stderr,
+        /is not cycle\.retrospective\.upstream\.repository \(LunetteOrg\/starter\): only that one is sent/,
+      )
+    }
+    const search = lntt(['search', '--repo', 'remix-run/react-router', 'hmr'])
+    assert.equal(search.status, 0, search.stderr)
+    assert.match(sent(), /^issue list --repo remix-run\/react-router --state open --search hmr/)
+    assert.doesNotMatch(sent(), /issue (create|comment)/)
+  })
+
+  test('the upstream is the repository it runs in: nothing to send, the harvest handles its items here', () => {
+    writeFileSync(join(root, 'current'), 'LunetteOrg/starter\n')
+    for (const args of [['draft.md'], ['draft.md', '--send'], ['draft.md', '--comment', '7', '--send']]) {
+      const run = lntt(args)
+      assert.equal(run.status, 0, run.stderr)
+      assert.equal(run.stdout, '', args.join(' '))
+      assert.match(run.stderr, /nothing to send: LunetteOrg\/starter is this repository/, args.join(' '))
+    }
+    assert.equal(sent(), '')
+  })
+
   test('search prints one JSON line per open issue that matches', () => {
     const run = lntt(['search', 'review', 'state'])
     assert.equal(run.status, 0, run.stderr)
@@ -331,6 +374,8 @@ describe('lntt issue', () => {
       ['draft.md', '--', 'ls'],
       ['search'],
       ['search', 'x', '--send'],
+      ['draft.md', '--repo', 'starter'],
+      ['draft.md', '--repo', 'a/b/c'],
     ]) {
       const run = lntt(args)
       assert.equal(run.status, 2, args.join(' '))

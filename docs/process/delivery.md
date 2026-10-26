@@ -98,17 +98,21 @@ It is published where `cycle.retrospective.target` says. Each proposal the perso
 adopts becomes an issue of its own (the `github-board` skill), citing the retrospective and
 its cluster, so the board holds only the work a retrospective adopts.
 
-Friction that comes from Lunette itself (`lntt`, a shared skill, the scaffolder, a
-template) is marked with the upstream repository, `cycle.retrospective.upstream.repository`,
-in brackets at the start of its item: the label's own value
-(`- **Friction:** [<upstream>] …`), or an item on a line below the label
-(`  - [<upstream>] …`). At the end of a harvest or of a theme, each such cluster
-becomes a report for that repository: the agent searches it for the same subject, drafts
-the report, collects the environment with `lntt dump` and shows the operator the whole
-report with `lntt issue`; only a report the operator
-approves is sent, with `lntt issue --send`. A report is an issue of that repository,
-not a retrospective: it asks for work there, as an adopted proposal does
-here.
+Friction that comes from a repository other than the project's own is marked with it at
+the start of its item, `[upstream:<owner/name>]`: the label's own value
+(`- **Friction:** [upstream:<owner/name>] …`), or an item on a line below the label
+(`  - [upstream:<owner/name>] …`). Lunette itself (`lntt`, a shared skill, the
+scaffolder, a template) is `cycle.retrospective.upstream.repository`; a library the
+project uses is its own repository. At the end of a harvest or of a theme, the harvest
+lists the marked items by repository. Each cluster for Lunette becomes a report there:
+the agent searches it for the same subject, drafts the report, collects the environment
+with `lntt dump` and shows the operator the whole report with `lntt issue`; only a
+report the operator approves is sent, with `lntt issue --send`. A report for another
+repository is printed the same way (`lntt issue --repo`) and never sent: the operator
+files it by hand. When the upstream is the project's own repository, as in the
+repository that publishes Lunette, there is nothing to send: the harvest handles those
+items here. A report is an issue of that repository, not a retrospective: it asks for
+work there, as an adopted proposal does here.
 
 ## The candidate
 

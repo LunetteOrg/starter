@@ -102,7 +102,10 @@ lntt ci local | candidate
   fields as they are. The repository is never written in a skill nor guessed: it is
   `cycle.retrospective.upstream.repository`, which every template sets
   ([provenance](./scaffolding-contract.md#provenance)), and `lntt issue` fails naming the
-  key when it is missing. A configuration that does not validate stops `lntt dump` as
+  key when it is missing. Only that repository is sent to: a report for another one
+  (`--repo`, a library the project uses) is printed for the operator to file by hand,
+  and when the upstream is the repository `lntt issue` runs in, there is nothing to
+  send. A configuration that does not validate stops `lntt dump` as
   it stops every command, exit 1, after the dump is printed with the error in it.
 - **No aliases for old names.** A renamed command answers only to its new name, so its
   callers (workflows, skills, the README) change with it, in the same release: the

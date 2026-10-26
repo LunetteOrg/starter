@@ -9,8 +9,8 @@
   },
 
   // Friction that comes from Lunette itself (lntt, a shared skill, the template) starts
-  // with [LunetteOrg/starter] in the retrospective blocks, and the retrospective skill
-  // reports it there with lntt issue, on the operator's approval.
+  // with [upstream:LunetteOrg/starter] in the retrospective blocks, and the retrospective
+  // skill reports it there with lntt issue, on the operator's approval.
   "cycle": {
     "retrospective": {
       "upstream": { "repository": "LunetteOrg/starter" }

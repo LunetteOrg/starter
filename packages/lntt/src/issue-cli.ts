@@ -12,18 +12,20 @@ import { findConfig, loadConfig, NoConfigError } from './index.ts'
 import {
   bodyTooLong,
   commentIssue,
+  currentRepository,
   fileIssue,
   issueBody,
   parseDraft,
+  REPOSITORY,
   searchIssues,
   upstreamRepository,
 } from './issue.ts'
 
 const USAGE = [
   'usage: lntt dump [--json] [--harness <name>] [--model <id>] [-- <failing command>...]',
-  '       lntt issue <draft.md | -> [--dump <dump.json>] [--harness <name>] [--model <id>] [--project <name>]',
-  '                  [--comment <n>] [--send]',
-  '       lntt issue search <words>...',
+  '       lntt issue <draft.md | -> [--repo <owner/name>] [--dump <dump.json>] [--harness <name>] [--model <id>]',
+  '                  [--project <name>] [--comment <n>] [--send]',
+  '       lntt issue search [--repo <owner/name>] <words>...',
 ].join('\n')
 
 function usage(message?: string): never {
@@ -74,7 +76,7 @@ function dump({ values, positionals }: Parsed): void {
   const root = projectRoot()
   const failing = values.failing
   if (failing === undefined && positionals.length > 0) usage('the failing command goes after --')
-  for (const flag of ['dump', 'project', 'comment', 'send'] as const) {
+  for (const flag of ['repo', 'dump', 'project', 'comment', 'send'] as const) {
     if (values[flag] !== undefined && values[flag] !== false) usage(`--${flag} is an option of lntt issue`)
   }
   const result = collectDump({
@@ -105,7 +107,11 @@ function issue({ values, positionals }: Parsed): void {
       usage(`--comment takes an issue number, not ${values.comment}`)
     }
   }
-  const repo = upstreamRepository(projectConfig())
+  if (values.repo !== undefined && !REPOSITORY.test(values.repo)) usage(`--repo takes owner/name, not ${values.repo}`)
+  // Lunette's repository, where reports are sent; --repo names another one (a library the
+  // project uses), whose report is only printed, for the operator to file by hand.
+  const upstream = upstreamRepository(projectConfig())
+  const repo = values.repo ?? upstream
   const gh = makeGh({ dryRun: false, log: (line) => stderr.write(`${line}\n`) })
   if (first === 'search') {
     for (const found of searchIssues(gh, repo, rest.join(' '))) stdout.write(`${JSON.stringify(found)}\n`)
@@ -113,6 +119,16 @@ function issue({ values, positionals }: Parsed): void {
   }
 
   const draft = parseDraft(readFileSync(first === '-' ? stdin.fd : (first as string), 'utf8'))
+  if (values.send && repo !== upstream) {
+    throw new Error(
+      `${repo} is not cycle.retrospective.upstream.repository (${upstream}): only that one is sent; the operator files this report by hand`,
+    )
+  }
+  // Lunette's own repository reports to itself: its items are handled here, by the harvest.
+  if (repo === upstream && currentRepository(gh, env) === upstream) {
+    stderr.write(`lntt issue: nothing to send: ${upstream} is this repository, the harvest handles its items here\n`)
+    return
+  }
   const root = projectRoot()
   const given = {
     ...(values.harness === undefined ? {} : { harness: values.harness }),
@@ -132,7 +148,11 @@ function issue({ values, positionals }: Parsed): void {
     const where = comment === undefined ? `To ${repo}: ${title}` : `To ${repo}#${comment}, as a comment`
     stdout.write(`${where}\n\n${body}`)
     if (tooLong) stderr.write(`lntt issue: ${tooLong}\n`)
-    stderr.write('lntt issue: nothing sent: --send opens it, once the operator has read it\n')
+    stderr.write(
+      repo === upstream
+        ? 'lntt issue: nothing sent: --send opens it, once the operator has read it\n'
+        : `lntt issue: nothing sent: ${repo} is not the upstream, the operator files it by hand\n`,
+    )
     return
   }
   if (tooLong) throw new Error(tooLong)
@@ -169,6 +189,7 @@ function parse(args: string[]) {
     allowPositionals: true,
     options: {
       json: { type: 'boolean', default: false },
+      repo: { type: 'string' },
       harness: { type: 'string' },
       model: { type: 'string' },
       dump: { type: 'string' },

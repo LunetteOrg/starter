@@ -335,6 +335,7 @@ describe('lntt dump', () => {
       ['--send'],
       ['--comment', '7'],
       ['--dump', 'x'],
+      ['--repo', 'a/b'],
       ['--project', 'p'],
       ['ls'],
       ['--'],

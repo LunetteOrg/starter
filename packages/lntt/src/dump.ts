@@ -236,6 +236,10 @@ function projectLines(root: string): { lines: string[]; configError?: string } {
 
   try {
     const config = loadConfig(root)
+    // Where the project came from (the lunette key, written by @lntt/create): a report on a
+    // template names it.
+    const lunette = (config.data as { lunette?: { template: string; version: string } }).lunette
+    lines.push(`template: ${lunette ? `${lunette.template}, @lntt/create ${lunette.version}` : 'none'}`)
     lines.push(`configuration: ${relative(root, config.path)}`, '```json', JSON.stringify(config.data, null, 2), '```')
   } catch (error) {
     const message = (error as Error).message

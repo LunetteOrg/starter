@@ -1,7 +1,7 @@
 // `lntt issue`: a report on Lunette itself (lntt, a shared skill, the scaffolder, a
 // template), filed on the upstream repository from a draft the agent wrote and the dump
 // of lntt dump. The retrospective skill drafts it from the items of a harvest marked with
-// that repository (`[LunetteOrg/starter] …`); the operator reads the whole issue (a dry
+// that repository (`[upstream:LunetteOrg/starter] …`); the operator reads the whole issue (a dry
 // run, the default) and approves it, and only then is it sent (--send). The skill calls
 // lntt issue, never gh, so another way to send it is added here without changing the
 // skill (#184).
@@ -38,6 +38,19 @@ export function upstreamRepository(config: {
   }
   return configured
 }
+
+// The repository the command runs in (GITHUB_REPOSITORY in Actions, else gh), or null when
+// gh cannot tell: a report to it is no report, its items are handled here.
+export function currentRepository(gh: Gh, env: Record<string, string | undefined>): string | null {
+  if (env.GITHUB_REPOSITORY) return env.GITHUB_REPOSITORY
+  try {
+    return gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']).trim() || null
+  } catch {
+    return null
+  }
+}
+
+export const REPOSITORY = /^[\w.-]+\/[\w.-]+$/
 
 export interface Draft {
   title: string
@@ -90,6 +103,7 @@ function facts(dump: Dump, title: string): Record<string, string> {
 }
 
 export function issueBody(draft: Draft, dump: Dump, project: string): string {
+  const template = facts(dump, 'Project').template
   const lntt = facts(dump, 'lntt')
   const runtime = facts(dump, 'Runtime')
   const versions = [
@@ -99,7 +113,7 @@ export function issueBody(draft: Draft, dump: Dump, project: string): string {
       .filter((v) => v !== undefined),
   ].join(', ')
   const values: Record<(typeof ISSUE_SECTIONS)[number], string> = {
-    Project: project,
+    Project: template === undefined || template === 'none' ? project : `${project}, template ${template}`,
     'What happened': draft.whatHappened,
     'Pull requests': draft.pullRequests,
     Proposal: draft.proposal,

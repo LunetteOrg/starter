@@ -708,7 +708,7 @@
             },
             "upstream": {
               "type": "object",
-              "description": "The repository friction that comes from Lunette itself is reported to: its items start with it in brackets ([LunetteOrg/starter] …), lntt check body checks the marker, and lntt issue files the reports there on the operator's approval. lntt issue needs it; a scaffolded project has it.",
+              "description": "The repository friction that comes from Lunette itself is reported to: its items start with [upstream:<it>] (another repository's with [upstream:<owner/name>]), and lntt issue files the reports there on the operator's approval; nothing is sent when it is the project's own repository. lntt issue needs it; a scaffolded project has it.",
               "additionalProperties": false,
               "required": ["repository"],
               "properties": {

@@ -11,9 +11,6 @@ export interface RetrospectiveRules {
   heading: string
   lines: string[]
   none: string
-  // cycle.retrospective.upstream.repository: `[<it>]` at the start of an item marks
-  // friction that comes from upstream. Null when the configuration does not set it.
-  upstream: string | null
 }
 
 interface Retrospective {
@@ -25,7 +22,6 @@ interface Retrospective {
 // The defaults are the ones the schema documents.
 export function retrospectiveRules(config: {
   delivery?: { pullRequest?: { retrospective?: Retrospective } }
-  cycle?: { retrospective?: { upstream?: { repository?: string } } }
 }): RetrospectiveRules {
   const retrospective = config.delivery?.pullRequest?.retrospective ?? {}
   return {
@@ -37,7 +33,6 @@ export function retrospectiveRules(config: {
       'Rework cause',
     ],
     none: retrospective.none ?? 'none',
-    upstream: config.cycle?.retrospective?.upstream?.repository ?? null,
   }
 }
 
@@ -64,13 +59,16 @@ function blockLines(text: string): string[] | null {
     .split('\n')
 }
 
-// The marker of an item whose friction comes from upstream, Lunette itself (lntt, a
-// shared skill, the scaffolder, a template): the upstream repository in brackets,
-// `[LunetteOrg/starter]`, at the start of the item and followed by a space or nothing,
-// never inside a sentence. The harvest drafts an issue for that repository from it (the
-// retrospective skill). Any bracketed `owner/name` there is read as a marker, so the
-// check names one that is not the upstream.
-const MARKER = /^\[([\w.-]+\/[\w.-]+)\](?=\s|$)/
+// The marker of an item whose friction comes from upstream, from a repository other
+// than the project's own: `[upstream:<owner/name>]` at the start of the item, never
+// inside a sentence. Lunette itself (lntt, a shared skill, the scaffolder, a template) is
+// cycle.retrospective.upstream.repository; a library the project uses is its own
+// repository. Only an item starting `[upstream:` is read as a marker, `[src/app] …` is
+// plain text; one that starts so and is not `[upstream:<owner/name>]` followed by a space
+// or nothing is reported. The harvest groups the marked items by repository (the
+// retrospective skill).
+const MARKED = '[upstream:'
+const MARKER = /^\[upstream:([\w.-]+\/[\w.-]+)\](?=\s|$)/
 
 // Each item of the block with its label: a label's value on its own line, and each bullet
 // below it, indented or not; a line that is no bullet continues the item above it.
@@ -95,13 +93,15 @@ function blockItems(block: string[]): { label: string; text: string }[] {
   return items
 }
 
-// The items marked with the upstream repository, the marker taken off: what the harvest
-// drafts issues from. A marker with no sentence after it is no item (checkBody reports it).
-export function upstreamItems(text: string, upstream: string): { label: string; item: string }[] {
-  return blockItems(blockLines(text) ?? [])
-    .filter((i) => MARKER.exec(i.text)?.[1] === upstream)
-    .map((i) => ({ label: i.label, item: i.text.slice(upstream.length + 2).trim() }))
-    .filter((i) => i.item !== '')
+// The marked items, the marker taken off, with their repository: what the harvest lists
+// and drafts issues from. A marker checkBody reports (no owner/name, no sentence) is no item.
+export function upstreamItems(text: string): { label: string; repository: string; item: string }[] {
+  return blockItems(blockLines(text) ?? []).flatMap(({ label, text }) => {
+    const marker = MARKER.exec(text)
+    if (marker === null) return []
+    const item = text.slice(marker[0].length).trim()
+    return item === '' ? [] : [{ label, repository: marker[1] as string, item }]
+  })
 }
 
 export function checkBody(body: string, rules: RetrospectiveRules): string[] {
@@ -132,14 +132,14 @@ export function checkBody(body: string, rules: RetrospectiveRules): string[] {
     else if (value === '') problems.push(`retrospective: "${line}" is empty: write ${rules.none} when nothing applies`)
   }
   for (const { label, text } of blockItems(block)) {
-    const repository = MARKER.exec(text)?.[1]
-    if (repository === undefined) continue
-    const at = `retrospective: "${label}" has an item starting with [${repository}]`
-    if (rules.upstream === null)
-      problems.push(`${at}, and cycle.retrospective.upstream.repository is not set: set it to mark upstream friction`)
-    else if (repository !== rules.upstream) problems.push(`${at}: the upstream is [${rules.upstream}]`)
-    else if (text.slice(repository.length + 2).trim() === '')
-      problems.push(`retrospective: "${label}" has a [${repository}] item with no sentence after the marker`)
+    if (!text.startsWith(MARKED)) continue
+    const marker = MARKER.exec(text)
+    if (marker === null)
+      problems.push(
+        `retrospective: "${label}" has an item starting ${text.split(/\s/)[0]}: write [upstream:<owner/name>], a space, then the sentence`,
+      )
+    else if (text.slice(marker[0].length).trim() === '')
+      problems.push(`retrospective: "${label}" has a ${marker[0]} item with no sentence after the marker`)
   }
   return problems
 }

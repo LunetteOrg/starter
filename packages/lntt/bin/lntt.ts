@@ -86,16 +86,19 @@
 //                             what a report on Lunette needs, redacted (home, remotes, emails,
 //                             tokens, secrets): lntt and how it is installed, Node, the
 //                             package manager, the OS, the harness, the model, the project's
-//                             skills, hooks, @lntt packages and configuration, and the failing
-//                             command run again with its output; Markdown, or one JSON object
-//   lntt issue <draft.md | -> [--dump <dump.json>] [--harness <name>] [--model <id>]
-//              [--project <name>] [--comment <n>] [--send]
+//                             skills, template, hooks, @lntt packages and configuration, and the
+//                             failing command run again with its output; Markdown, or one JSON
+//                             object
+//   lntt issue <draft.md | -> [--repo <owner/name>] [--dump <dump.json>] [--harness <name>]
+//              [--model <id>] [--project <name>] [--comment <n>] [--send]
 //                             the draft (# title, ## What happened, ## Pull requests,
 //                             ## Proposal) and the dump as the report's fields, for
 //                             cycle.retrospective.upstream.repository (exit 1 naming it when
 //                             missing); printed, nothing sent, unless --send, which opens
-//                             it (or comments on issue <n>) with gh and prints the URL
-//   lntt issue search <words>...
+//                             it (or comments on issue <n>) with gh and prints the URL.
+//                             --repo: another repository, printed only, --send refused; an
+//                             upstream that is the repository it runs in: nothing to send
+//   lntt issue search [--repo <owner/name>] <words>...
 //                             the open issues of that repository that match, one JSON line each
 //
 //   lntt review [--base <branch>] [--plan]
