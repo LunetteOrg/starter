@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, join, relative } from 'node:path'
 import { checkAgentsBlock } from './agents.ts'
-import { checkDecisions, decisionFigures } from './check-decisions.ts'
+import { checkDecisions, decisionBoardRefs, decisionFigures } from './check-decisions.ts'
 import { runTests } from './check-tests.ts'
 import { checkBody, RETRO_START, retrospectiveBlock, retrospectiveRules } from './pull-request.ts'
 import { checkSkills, stubFolders } from './skills.ts'
@@ -174,7 +174,7 @@ function bodyTemplate(options: CheckOptions): Result {
   return result('PASS', 'the retrospective block is the one lntt pr block prints')
 }
 
-// One area, or one of its checks: `structure` and `numbers` for the decisions, `levels`,
+// One area, or one of its checks: `structure`, `board-refs` and `numbers` for the decisions, `levels`,
 // `focus`, `rules`, `touched` and `mutate` for the tests.
 export function runArea(area: Area, check: string | undefined, files: string[], options: CheckOptions): Result[] {
   if (area === 'agents-md') return agentsMd(options.root)
@@ -182,6 +182,7 @@ export function runArea(area: Area, check: string | undefined, files: string[], 
   if (area === 'tests') return runTests(check, files, options)
   if (area === 'body') return body(check, options)
   if (check === 'numbers') return decisionFigures(options, files)
+  if (check === 'board-refs') return decisionBoardRefs(options, files)
   return checkDecisions(options, { figures: check === undefined })
 }
 
