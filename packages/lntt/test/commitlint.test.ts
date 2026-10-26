@@ -81,3 +81,17 @@ describe('the commitlint configuration built from delivery.commits', () => {
     assert.deepEqual(await check('docs: explain the block'), [])
   })
 })
+
+describe('the configuration file', () => {
+  test('a missing file gives the defaults', () => {
+    rmSync(join(root, '.agents'), { recursive: true })
+    assert.doesNotThrow(() => commitlintConfig(root))
+  })
+
+  test('an invalid file stops with its error', () => {
+    writeFileSync(join(root, '.agents/config.jsonc'), '{ "delivery": ')
+    assert.throws(() => commitlintConfig(root), /config\.jsonc/)
+    configure({ maxLineLength: 'long' })
+    assert.throws(() => commitlintConfig(root), /schema/)
+  })
+})
