@@ -31,6 +31,7 @@ import {
   recordMerges,
   retarget,
   retargetDecision,
+  retrospectiveComment,
   setBoardStatus,
   sweep,
   sweepDecision,
@@ -41,6 +42,7 @@ const config: CandidateConfig = {
   prefix: 'candidate/',
   hotfix: { prefix: 'hotfix/', label: 'hotfix' },
   status: { inRelease: 'In release', done: 'Done' },
+  retrospective: '## 🔁 Retro\n<!-- retro:start -->\n- **Friction:**\n<!-- retro:end -->\n',
 }
 // pelion's shape: release/<N>, same base and hotfix markers.
 const pelion: CandidateConfig = { ...config, prefix: 'release/' }
@@ -222,8 +224,24 @@ describe('retarget', () => {
     assert.match(writes[0], /git\/commits -f message=chore: open candidate 6 .*parents\[\]=abc12345/)
     assert.match(writes[1], /ref=refs\/heads\/candidate\/6 -f sha=c0ffee/)
     assert.match(writes[2], /pr create --repo o\/r --draft --base main --head candidate\/6 --title candidate 6/)
-    assert.equal(writes[3], 'pr edit 70 --repo o/r --base candidate/6')
-    assert.match(gh.writes[4].input ?? '', /#42/)
+    assert.equal(writes[3], 'pr comment 42 --repo o/r --body-file -')
+    assert.equal(writes[4], 'pr edit 70 --repo o/r --base candidate/6')
+    assert.match(gh.writes[5].input ?? '', /#42/)
+  })
+
+  test('a new candidate opens with a comment holding the empty retrospective block', () => {
+    const gh = fakeGh({
+      '--state open': [],
+      'matching-refs': [],
+      '--state all': [],
+      'commits/main': { sha: 'abc12345', commit: { tree: { sha: 'tree1' } } },
+    })
+    retarget(run(gh), pr)
+    const comment = gh.writes.find((w) => w.args === 'pr comment 42 --repo o/r --body-file -')
+    assert.ok(comment, 'no comment on the new candidate')
+    assert.equal(comment.input, retrospectiveComment(config))
+    assert.ok((comment.input ?? '').endsWith(`\n\n${config.retrospective}`))
+    assert.match(comment.input ?? '', /lntt retro add --label/)
   })
 
   test("pelion's release/<N> works the same", () => {
@@ -235,7 +253,8 @@ describe('retarget', () => {
     })
     retarget(run(gh, pelion), pr)
     assert.match(gh.writes[2].args, /--head release\/8 --title release 8/)
-    assert.equal(gh.writes[3].args, 'pr edit 70 --repo o/r --base release/8')
+    assert.match(gh.writes[3].input ?? '', /The retrospective of this release/)
+    assert.equal(gh.writes[4].args, 'pr edit 70 --repo o/r --base release/8')
   })
 
   test('a branch left without its pull request is reused, pull request only', () => {
@@ -246,7 +265,8 @@ describe('retarget', () => {
     })
     retarget(run(gh), pr)
     assert.match(gh.writes[0].args, /pr create .*--head candidate\/6 --title candidate 6/)
-    assert.equal(gh.writes[1].args, 'pr edit 70 --repo o/r --base candidate/6')
+    assert.equal(gh.writes[1].args, 'pr comment 42 --repo o/r --body-file -')
+    assert.equal(gh.writes[2].args, 'pr edit 70 --repo o/r --base candidate/6')
   })
 
   test('a hotfix is neither moved nor read about', () => {
@@ -416,7 +436,8 @@ describe('carryOver', () => {
     const writes = gh.writes.map((w) => w.args)
     assert.match(writes[1], /ref=refs\/heads\/candidate\/5 /)
     assert.match(writes[2], /pr create .*--head candidate\/5/)
-    assert.deepEqual(writes.slice(3), [
+    assert.equal(writes[3], 'pr comment 42 --repo o/r --body-file -')
+    assert.deepEqual(writes.slice(4), [
       'pr edit 11 --repo o/r --base candidate/5',
       'pr comment 11 --repo o/r --body-file -',
       'pr edit 12 --repo o/r --base candidate/5',

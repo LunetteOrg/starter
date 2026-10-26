@@ -7,7 +7,8 @@
 // - `opened` / `ready_for_review` on a pull request into the base: unless it is a
 //   candidate or a hotfix (branch prefix or label from delivery.candidate.hotfix),
 //   find the open candidate, or create `<prefix><N+1>` from the base with a draft
-//   pull request, then move the pull request onto it and comment.
+//   pull request and a comment holding the empty retrospective block, then move the
+//   pull request onto it and comment.
 // - `closed` and merged into a candidate: rebuild the two lists of the candidate's
 //   body from every pull request merged into it, and tell each open issue they close,
 //   once per candidate, that the candidate's merge will close it.
@@ -42,6 +43,9 @@ export interface CandidateConfig {
   // The board statuses the automation sets: `inRelease` when a pull request is squashed
   // into a candidate, `done` when the candidate merges.
   status: { inRelease: string; done: string }
+  // The empty retrospective block (`lntt pr block`): the comment a new candidate opens
+  // with, which `lntt retro add` fills as the batch goes.
+  retrospective: string
 }
 
 export interface PullRequest {
@@ -244,6 +248,17 @@ export function candidateBody(config: CandidateConfig, n: number): string {
   ].join('\n')
 }
 
+// The comment a new candidate opens with: the batch's retrospective block, empty, filled
+// with `lntt retro add` as friction is met and checked by `lntt check body` before the
+// candidate is marked ready. The automation never rewrites it, unlike the body.
+export function retrospectiveComment(config: CandidateConfig): string {
+  return [
+    `The retrospective of this ${candidateName(config)}: the friction that belongs to the batch and to no single pull request, appended as it is met with \`lntt retro add --label <label> "<one sentence>"\` (the \`retrospective\` skill). Every label holds a value or none before the ${candidateName(config)} is marked ready (\`lntt check body --pr <n>\`).`,
+    '',
+    config.retrospective,
+  ].join('\n')
+}
+
 // The two lists rebuilt from `prs`, in the order given (merge order): `- #<pr> <title>`
 // per pull request, then the `Closes <ref>` lines they bring. A line no pull request
 // accounts for (written by hand) stays, after the rebuilt ones.
@@ -372,7 +387,7 @@ interface CandidatePr {
   body?: string
 }
 
-function openCandidates({ gh, repo, config }: Run): CandidatePr[] {
+function openCandidates({ gh, repo, config }: Pick<Run, 'gh' | 'repo' | 'config'>): CandidatePr[] {
   const prs = JSON.parse(
     gh.read([
       'pr',
@@ -394,7 +409,7 @@ function openCandidates({ gh, repo, config }: Run): CandidatePr[] {
     .sort((a, b) => (candidateNumber(config, a.headRefName) ?? 0) - (candidateNumber(config, b.headRefName) ?? 0))
 }
 
-function openCandidate(run: Run): CandidatePr | null {
+export function openCandidate(run: Pick<Run, 'gh' | 'repo' | 'config'>): CandidatePr | null {
   return openCandidates(run)[0] ?? null
 }
 
@@ -424,9 +439,10 @@ function candidateNames({ gh, repo, config }: Run) {
   }
 }
 
-// Creates `<prefix><n>` from the base with a draft pull request. GitHub refuses a pull
-// request between identical branches, so the branch starts with an empty commit. A
-// branch an earlier run left without its pull request is reused, pull request only.
+// Creates `<prefix><n>` from the base with a draft pull request and its retrospective
+// comment. GitHub refuses a pull request between identical branches, so the branch
+// starts with an empty commit. A branch an earlier run left without its pull request is
+// reused, pull request only.
 function createCandidate(run: Run): CandidatePr {
   const { gh, repo, config, log } = run
   const names = candidateNames(run)
@@ -484,6 +500,10 @@ function createCandidate(run: Run): CandidatePr {
     candidateBody(config, n),
   )
   const number = Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0)
+  gh.write(
+    ['pr', 'comment', number ? String(number) : '<new>', '--repo', repo, '--body-file', '-'],
+    retrospectiveComment(config),
+  )
   return { number, headRefName: branch }
 }
 

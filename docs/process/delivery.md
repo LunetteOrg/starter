@@ -53,7 +53,9 @@ stops at the draft pull request.
    leaves a comment saying where it went. Marking it ready starts the minimal CI.
 5. **Squash into the candidate**, with the review closed, `ci:local` and the minimal
    CI green, and the person's go. The squash message keeps the pull request's
-   `Closes #N` lines.
+   `Closes #N` lines. Whoever squashes appends to the candidate's retrospective comment
+   what the squash cost beyond the pull request's own block (a rebase, a CI run again, a
+   step done by hand), or nothing ([the candidate](#the-candidate)).
 
 **Merge methods are enforced** by repository rulesets: candidate branches
 (`refs/heads/candidate/*`) take squash merges only, `main` takes rebase merges only, and
@@ -88,7 +90,7 @@ and is written in `delivery.pullRequest.language`:
 **A harvest runs when a release's last candidate merges into `main`**, and when a theme
 run by a coordinator ends, on the pull requests of that theme. The `retrospective`
 skill reads the blocks of the window's merged pull requests (bodies and comments; a
-theme's coordinator leaves its block as a comment on the candidate), clusters them,
+candidate's block is its retrospective comment), clusters them,
 checks the proposals of the previous retrospectives and proposes one mechanism per
 cluster. The person reads the draft before it is published.
 
@@ -108,8 +110,18 @@ candidate exists on a day without pull requests.
   order: one line per pull request, and one `Closes` line per issue they close. A line
   written by hand that no pull request accounts for stays. Each open issue gets one
   comment saying that the candidate's merge will close it.
+- **Its retrospective is a comment.** The automation opens every candidate with a
+  comment holding the empty retrospective block (`lntt pr block`), and never rewrites
+  it. The friction of the batch, which belongs to no single pull request (a review
+  that does not converge, a full CI that fails, an app missing a permission, a step
+  worked around by hand), goes into it one sentence at a time, when it is met:
+  `lntt retro add --label <label> "<one sentence>"` appends under that label of the
+  open candidate's comment. The orchestrator, a coordinator, whoever squashes: each
+  writes what it met then, not from memory when the batch is complete. Before the
+  candidate is marked ready every label holds a value or the configured `none`.
 - **Into `main`**, once a day or when the batch is worth it: `pnpm ci:local` on the
-  candidate's head; with it green, the candidate pull request is marked ready and the
+  candidate's head and `lntt check body --pr <candidate>` clean (on a candidate it
+  reads the retrospective comment); with both green, the candidate pull request is marked ready and the
   full CI runs once on the whole batch; with the full CI green and the person's go,
   it merges with a **rebase**, so `main` gets one commit per pull request and one push.
   Squashes into the candidate happen before it is marked ready: a push to a ready
@@ -325,6 +337,13 @@ because npm configures a trusted publisher only on a package that exists:
   same decision.
 - **The body's retrospective block as a gate in CI.** Editing a body starts no run, so
   a red check would stay red after the block is filled, until the next push.
+- **The candidate's retrospective block in its body.** The automation rebuilds the body
+  at every squash; the block would have to survive a rewrite by a script that does not
+  own it. A comment is written by the automation once and edited only by people and
+  `lntt retro add`.
+- **The candidate's retrospective written when the batch is complete.** By then the
+  orchestrator's context may be compacted or its session gone, and the block is rebuilt
+  from the pull request bodies and a summary (candidate 7, #176).
 - **A retrospective published as an issue.** The board would hold the report beside
   the work it proposes; the report is a Discussion, and only the adopted proposals are
   issues.

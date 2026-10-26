@@ -19,7 +19,9 @@ import {
   type Result,
   runArea,
 } from './check.ts'
+import { candidateConfig } from './ci/config.ts'
 import { ConfigError, loadConfig } from './index.ts'
+import { comments, isCandidate, retroComment } from './retro.ts'
 
 const USAGE = `usage: lntt check [agents-md | skills | decisions [structure | numbers [<file>...]] | tests [levels | focus | rules | touched] | body [template | --pr <n> | -]] [--base <ref>] [--json]
        lntt check tests mutate <path:line> --text <on the line> --to <mutated> [--json]
@@ -39,17 +41,32 @@ const CHECKS: Record<string, string[]> = {
   body: ['-', 'template'],
 }
 
-// The body the body area's retrospective check reads: stdin for `-`, else the pull request named, else the
-// current branch's, read with gh.
+// The text the body area's retrospective check reads: stdin for `-`, else the pull request
+// named, else the current branch's, read with gh. A candidate's block is not in its body,
+// which the automation rebuilds at every squash, but in its retrospective comment.
 function readBody(check: string | undefined, pr: string | undefined): { text: string; from: string } {
   if (check === '-') return { text: readFileSync(0, 'utf8'), from: 'stdin' }
-  const view = ['pr', 'view', ...(pr === undefined ? [] : [pr]), '--json', 'body', '--jq', '.body']
-  try {
-    const text = execFileSync('gh', view, { cwd: cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-    return { text, from: pr === undefined ? "the current branch's pull request" : `pull request #${pr}` }
-  } catch (error) {
-    const said = (error as { stderr?: string }).stderr?.trim().split('\n')[0]
-    throw new CannotRunError(`gh ${view.join(' ')} failed${said ? `: ${said}` : ''}`)
+  const view = ['pr', 'view', ...(pr === undefined ? [] : [pr]), '--json', 'number,body,headRefName']
+  const read = (args: string[]) => {
+    try {
+      return execFileSync('gh', args, { cwd: cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+    } catch (error) {
+      const said = (error as { stderr?: string }).stderr?.trim().split('\n')[0]
+      throw new CannotRunError(`gh ${args.join(' ')} failed${said ? `: ${said}` : ''}`)
+    }
+  }
+  const found = JSON.parse(read(view)) as { number: number; body: string | null; headRefName: string }
+  if (isCandidate(candidateConfig(cwd()), found.headRefName)) {
+    const gh = { read: (args: string[]) => read(args).trim(), write: () => '' }
+    const comment = retroComment(comments(gh, '{owner}/{repo}', found.number))
+    return {
+      text: comment?.body ?? '',
+      from: `${comment === null ? 'the comments' : 'the retrospective comment'} of candidate #${found.number}`,
+    }
+  }
+  return {
+    text: found.body ?? '',
+    from: pr === undefined ? "the current branch's pull request" : `pull request #${pr}`,
   }
 }
 

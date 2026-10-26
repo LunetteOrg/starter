@@ -1,7 +1,8 @@
 name: Candidate
 
 # Moves every pull request into the default branch onto the open candidate (created
-# on the fly when none is open); when a pull request is merged into a candidate,
+# on the fly when none is open, with a comment holding the empty retrospective block,
+# never rewritten); when a pull request is merged into a candidate,
 # rebuilds from every pull request merged into it the list and the `Closes` lines of
 # the candidate's body, tells each open issue they close, once, that the candidate will
 # close it, and moves it to the board status delivery.candidate.status.inRelease. When

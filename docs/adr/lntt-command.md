@@ -76,8 +76,8 @@ lntt ci local | candidate
   Ctrl-C); a defect of `lntt` itself exits 1 with its stack trace.
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
   `decisions` and `tests`, whose results their review lenses read, and `agents-md`,
-  `skills` and `body` (the retrospective block of a pull request body and of the
-  template), which no lens needs; a lens's checks are the area named after it. Alone it runs every
+  `skills` and `body` (the retrospective block of a pull request body, of a candidate's
+  retrospective comment and of the template), which no lens needs; a lens's checks are the area named after it. Alone it runs every
   area, which is what CI runs. Every check reports `PASS`, `FAIL` or `NOT RUN` with its
   reason, so a check that did not run is never read as one that passed, and `INFO` for
   what it prints
@@ -124,7 +124,7 @@ rests on these criteria:
    `ci:local`; `decisions` calls `lntt check decisions` and is a lens of `lntt review`;
    `coordinate` calls `lntt worktree start`, the mailbox and `lntt get`; `run-local`
    calls `lntt get`, `lntt local app` and `lntt viewer`; `retrospective` calls `lntt get`,
-   `lntt pr block` and `lntt check body`; `github-board` calls `lntt get` and `lntt set`
+   `lntt pr block` and `lntt check body` (gates) and `lntt retro add` (an agent tool); `github-board` calls `lntt get` and `lntt set`
    (gates) and `lntt board sync` (an agent tool); `commit-message` (`lntt get`,
    commitlint), `plan-round` and `roadmap` (`lntt get`, `lntt set`) stay on the gate
    side. In the code, `lntt review` imports the check
@@ -151,11 +151,11 @@ So:
 
   | Pinned by the project: gates and what CI runs | Agent tools |
   |---|---|
-  | `lntt check [area]`, `lntt check cite`: deterministic, read only the commit, or for `body` the pull request body they are given | `lntt review [reply \| allow]`: its outcome is an opinion, wired into no CI |
+  | `lntt check [area]`, `lntt check cite`: deterministic, read only the commit, or for `body` the pull request body (a candidate's retrospective comment) they are given | `lntt review [reply \| allow]`: its outcome is an opinion, wired into no CI |
   | `lntt ci local`: CI's jobs on the machine; `lntt ci candidate`: what the candidate workflow runs on GitHub, at the default branch's version, which the workflow checks out ([delivery](../process/delivery.md#the-candidate-automation)) | `lntt worktree start`: the Orca and Herdr adapters |
   | `lntt branch check`, and `branch name` and `branch rename`, so the name an agent gets is the one the gate accepts | `lntt ask \| inbox \| answer` |
   | `lntt validate \| get \| set \| path`: they hold the schema; `set` writes a tracked file | `lntt guide`: it prints the skills |
-  | `lntt sync`: it writes tracked files (the `AGENTS.md` block, the skill stubs) that `lntt check` verifies | `lntt operator`: personal context, read by no gate; `lntt pr block`: the empty retrospective block, for the template and the skill |
+  | `lntt sync`: it writes tracked files (the `AGENTS.md` block, the skill stubs) that `lntt check` verifies | `lntt operator`: personal context, read by no gate; `lntt pr block`: the empty retrospective block, for the template and the skill; `lntt retro add`: it writes a comment on GitHub, not the commit |
   | the commitlint configuration (the `@lntt/lntt` export) | `lntt local app`, `lntt viewer`; `lntt board sync`: it reads and writes GitHub, not the commit, so its `--check` is a verdict on the board's state that a hook or a scheduled job runs, never a pull request's gate |
   | the configuration schema | the plugin's hooks; once they exist, `lntt refs` (#144) and `lntt doctor` (#124) |
 

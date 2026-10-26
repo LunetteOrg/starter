@@ -84,6 +84,12 @@ lntt ask --to orchestrator "<questions>"               # waits for the person's 
 
 - **A child's report** is one line: the pull request link, its head SHA, its checks, its
   friction. The long description is for when it is asked.
+- **The theme's friction goes on the candidate as it happens,** one sentence each, with
+  `lntt retro add --label <label> "<one sentence>"` (the `retrospective` skill, section 3):
+  when a child reports friction that is the theme's and not its own pull request's, when a
+  review round or a CI run costs more than expected, when you work around something by
+  hand, and at each squash into the candidate. Not at the end, from memory: by then the
+  context may be compacted.
 - **Check on the pull request itself before saying a check passed or is pending**
   (`gh pr checks`, or the API): a check reported "without outcome" from memory has to be
   re-read before every merge.
@@ -121,10 +127,10 @@ lntt ask --to orchestrator "<questions>"               # waits for the person's 
   can be refused by the host's safety check: run `docker ps` first and run the script only
   when containers exist.
 - The theme outlives its pull requests: the coordinator stays while the theme has open
-  issues, and is archived when the last child has merged. Before that, the theme's own
-  friction (the coordination, the machine, the account's limits) goes in a comment on the
-  candidate pull request holding the retrospective block (the `retrospective` skill,
-  section 3); each child's goes in its own pull request.
+  issues, and is archived when the last child has merged. Before that, read the
+  candidate's retrospective comment (`lntt check body --pr <candidate>`) and write
+  `none` where nothing applies; each child's friction about its own issue goes in its own
+  pull request.
 
 ## 7. What a coordinator brief must say
 

@@ -89,7 +89,8 @@ jobs:
       # The retrospective block of the body is filled (the retrospective skill): a
       # warning, not a gate. A body edit starts no run, so a red step would stay red
       # after the fix; each FAIL is an annotation on the pull request until the next push.
-      # The candidate and Dependabot write no block of their own. ci:local has no body
+      # Dependabot writes no block; a candidate's is its retrospective comment, which
+      # lntt check body --pr <n> reads before it is marked ready. ci:local has no body
       # and reports the step as not run; the skill runs lntt check body before ready.
       - if: >-
           github.event_name == 'pull_request' &&
