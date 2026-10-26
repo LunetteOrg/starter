@@ -82,6 +82,22 @@
 //                             comment of the open candidate, or of pull request <n>; creates
 //                             the comment when there is none; exit 1 with no open candidate
 //
+//   lntt dump [--json] [--harness <name>] [--model <id>] [-- <failing command>...]
+//                             what a report on Lunette needs, redacted (home, remotes, emails,
+//                             tokens, secrets): lntt and how it is installed, Node, the
+//                             package manager, the OS, the harness, the model, the project's
+//                             skills, hooks, @lntt packages and configuration, and the failing
+//                             command run again with its output; Markdown, or one JSON object
+//   lntt issue <draft.md | -> [--dump <dump.json>] [--harness <name>] [--model <id>]
+//              [--project <name>] [--comment <n>] [--send]
+//                             the draft (# title, ## What happened, ## Pull requests,
+//                             ## Proposal) and the dump as the report form's fields, for
+//                             cycle.retrospective.upstream.repository (default: the repository
+//                             of @lntt/lntt); printed, nothing sent, unless --send, which opens
+//                             it (or comments on issue <n>) with gh and prints the URL
+//   lntt issue search <words>...
+//                             the open issues of that repository that match, one JSON line each
+//
 //   lntt review [--base <branch>] [--plan]
 //                             one review round on the current branch: the lenses and agents of
 //                             delivery.review, headless and read-only, then verifiers that try to
@@ -161,6 +177,8 @@ else if (args[0] === 'board') (await import('../src/board-cli.ts')).main(args.sl
 else if (args[0] === 'check') (await import('../src/check-cli.ts')).main(args.slice(1))
 else if (args[0] === 'review') await (await import('../src/review-cli.ts')).main(args.slice(1))
 else if (args[0] === 'worktree') (await import('../src/worktree-cli.ts')).main(args.slice(1))
-else if (args[0] === 'ask' || args[0] === 'inbox' || args[0] === 'answer') {
+else if (args[0] === 'dump' || args[0] === 'issue') {
+  ;(await import('../src/issue-cli.ts')).main(args[0], args.slice(1))
+} else if (args[0] === 'ask' || args[0] === 'inbox' || args[0] === 'answer') {
   ;(await import('../src/messages-cli.ts')).main(args[0], args.slice(1))
 } else (await import('../src/cli.ts')).main(args)

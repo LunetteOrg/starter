@@ -215,6 +215,44 @@ With no comment holding the block, it writes one. On a candidate, `lntt check bo
 reads that comment instead of the body: the first comment holding the start marker on a
 line of its own.
 
+An item whose friction comes from Lunette itself (`lntt`, a shared skill, the
+scaffolder, a template) starts with `[lunette]`: `- **Friction:** [lunette] lntt review
+…`, or a sub-bullet `  - [lunette] …`. `lntt check body` fails a marker with no sentence
+after it, and one spelled otherwise at an item's start (`[Lunette]`, `[lntt]`,
+`[upstream]`), naming `[lunette]`.
+
+## Reports on Lunette itself
+
+```sh
+lntt dump [--json] [--harness <name>] [--model <id>] [-- <failing command>...]
+lntt issue search <words>...         # the open issues upstream that match: one JSON line each
+lntt issue draft.md                  # the whole issue, dump included; nothing sent
+lntt issue draft.md --send           # opened with gh; prints its URL
+lntt issue draft.md --comment 7 --send   # a comment on an existing issue instead
+```
+
+`lntt dump` prints, in Markdown (`--json`: one object), what a report on Lunette needs:
+the `lntt` version and how it is installed, Node, the package manager and the OS, the
+harness and its version (detected from the environment; `--harness` overrides) and the
+model (`--model`: the agent knows it, the environment does not), the project's skills,
+git and agent hooks, plugins, `@lntt/*` packages and configuration, and, after `--`, the
+failing command, run again, with its exit code and the last 200 lines of its output. It
+is redacted before it is printed: the home path becomes `~`, the project's git remotes
+`<remote>`, a URL with credentials, an email, a token by its shape (GitHub, Anthropic,
+OpenAI, Slack, AWS, npm, a JWT, a bearer), the value of a key that names a secret and the
+value of every secret-named environment variable `<redacted>` or `<token>`.
+
+`lntt issue <draft | ->` reads a draft (`# <title>`, then `## What happened`,
+`## Pull requests`, `## Proposal`) and fills the fields of the report form
+(`.github/ISSUE_TEMPLATE/lunette-report.yml` in the Lunette repository): the project
+(`--project`, default the `name` of its `package.json`), the harness, the model and the
+versions from the dump (`--dump <file>` from `lntt dump --json`, else collected now),
+the whole dump folded at the end. Without `--send` it is a dry run: it prints the issue
+and sends nothing, so the operator reads exactly what will be sent. It sends with `gh`,
+under the operator's account, to `cycle.retrospective.upstream.repository`, by default
+the `repository` of the installed `@lntt/lntt`. The `retrospective` skill drafts these
+reports from the `[lunette]` items and calls `lntt issue`, never `gh`.
+
 ## Starting work on an issue
 
 ```sh

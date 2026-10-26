@@ -44,20 +44,59 @@ export function retrospectiveBlock(rules: RetrospectiveRules): string {
 // bold item is part of the value above it.
 const LABEL = /^[-*]\s+\*\*(.+?):\*\*(.*)$/
 
-export function checkBody(body: string, rules: RetrospectiveRules): string[] {
-  const lines = body.replaceAll('\r\n', '\n').split('\n')
-  // The markers count only on a line of their own: quoted in prose they are not the block.
+// The lines between the markers, HTML comments removed (on one line or across several: a
+// placeholder is not an answer); null when the text has no block. The markers count only
+// on a line of their own: quoted in prose they are not the block.
+function blockLines(text: string): string[] | null {
+  const lines = text.replaceAll('\r\n', '\n').split('\n')
   const start = lines.findIndex((l) => l.trim() === RETRO_START)
   const end = start === -1 ? -1 : lines.findIndex((l, i) => i > start && l.trim() === RETRO_END)
-  if (start === -1 || end === -1) return [`retrospective: no ${RETRO_START} … ${RETRO_END} block`]
-
-  // HTML comments are no value, on one line or across several: a placeholder is not an
-  // answer.
-  const block = lines
+  if (start === -1 || end === -1) return null
+  return lines
     .slice(start + 1, end)
     .join('\n')
     .replace(/<!--[\s\S]*?(?:-->|$)/g, '')
     .split('\n')
+}
+
+// The marker of an item whose friction comes from Lunette itself (lntt, a shared skill,
+// the scaffolder, a template): the harvest drafts an issue for the Lunette repository from
+// it (the retrospective skill). At the start of an item, never inside a sentence.
+export const LUNETTE = '[lunette]'
+// What a marker misspelled at the start of an item looks like: the check names the right one.
+const NEAR_LUNETTE = /^\[(?:lunette|lntt|upstream)\](?=\s|$)/i
+
+// Each item of the block with its label: a label's value on its own line, and each
+// sub-bullet below it.
+function blockItems(block: string[]): { label: string; text: string }[] {
+  const items: { label: string; text: string }[] = []
+  let current: string | null = null
+  for (const line of block) {
+    const label = LABEL.exec(line)
+    if (label) {
+      current = (label[1] as string).trim()
+      const value = (label[2] as string).trim()
+      if (value !== '') items.push({ label: current, text: value })
+    } else if (current !== null) {
+      const sub = /^\s+[-*]\s+(.*)$/.exec(line)
+      if (sub) items.push({ label: current, text: (sub[1] as string).trim() })
+    }
+  }
+  return items
+}
+
+// The items marked [lunette], with the marker taken off: what the harvest drafts issues
+// from.
+export function lunetteItems(text: string): { label: string; item: string }[] {
+  return blockItems(blockLines(text) ?? [])
+    .filter((i) => i.text.startsWith(LUNETTE))
+    .map((i) => ({ label: i.label, item: i.text.slice(LUNETTE.length).trim() }))
+    .filter((i) => i.item !== '')
+}
+
+export function checkBody(body: string, rules: RetrospectiveRules): string[] {
+  const block = blockLines(body)
+  if (block === null) return [`retrospective: no ${RETRO_START} … ${RETRO_END} block`]
 
   // Each label with its value: the rest of its line, and the lines below it up to the
   // next label.
@@ -81,6 +120,14 @@ export function checkBody(body: string, rules: RetrospectiveRules): string[] {
     if (value === undefined) problems.push(`retrospective: no "${line}" line in the block`)
     else if (repeated.has(line)) problems.push(`retrospective: "${line}" is in the block more than once: keep one`)
     else if (value === '') problems.push(`retrospective: "${line}" is empty: write ${rules.none} when nothing applies`)
+  }
+  for (const { label, text } of blockItems(block)) {
+    const marker = NEAR_LUNETTE.exec(text)?.[0]
+    if (marker === undefined) continue
+    if (marker !== LUNETTE)
+      problems.push(`retrospective: "${label}" has an item starting with ${marker}: the marker is ${LUNETTE}`)
+    else if (text.slice(LUNETTE.length).trim() === '')
+      problems.push(`retrospective: "${label}" has a ${LUNETTE} item with no sentence after the marker`)
   }
   return problems
 }

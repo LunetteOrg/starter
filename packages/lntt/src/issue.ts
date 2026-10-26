@@ -1,0 +1,158 @@
+// `lntt issue`: a report on Lunette itself (lntt, a shared skill, the scaffolder, a
+// template), filed on the Lunette repository from a draft the agent wrote and the dump of
+// lntt dump. The retrospective skill drafts it from the [lunette] items of a harvest; the
+// operator reads the whole issue (a dry run, the default) and approves it, and only then
+// is it sent (--send). The skill calls lntt issue, never gh, so another way to send it is
+// added here without changing the skill (#184).
+
+import type { Gh } from './ci/candidate.ts'
+import { type Dump, renderDump } from './dump.ts'
+
+// The fields of the issue form (.github/ISSUE_TEMPLATE/lunette-report.yml in the Lunette
+// repository), in its order: the body is written as GitHub writes a submitted form.
+export const ISSUE_SECTIONS = [
+  'Project',
+  'What happened',
+  'Pull requests',
+  'Proposal',
+  'Harness',
+  'Model',
+  'Versions',
+  'lntt dump',
+] as const
+
+// A refusal with a reason the person can act on: a draft missing a section, no upstream.
+export class IssueError extends Error {}
+
+// `owner/name` from the forms a package.json `repository` or a configuration gives:
+// a GitHub URL (git+https, https, ssh), `github:owner/name`, or `owner/name` itself.
+export function parseRepository(value: string): string | null {
+  const match =
+    /^(?:git\+)?(?:https?|ssh|git):\/\/(?:[^@/]+@)?github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/.exec(value) ??
+    /^git@github\.com:([\w.-]+)\/([\w.-]+?)(?:\.git)?$/.exec(value) ??
+    /^(?:github:)?([\w.-]+)\/([\w.-]+)$/.exec(value)
+  return match ? `${match[1]}/${match[2]}` : null
+}
+
+// Where a report goes: cycle.retrospective.upstream.repository, so a fork or a private
+// mirror works; by default the repository of the installed @lntt/lntt.
+export function upstreamRepository(
+  config: { cycle?: { retrospective?: { upstream?: { repository?: string } } } },
+  pkg: { repository?: string | { url?: string } },
+): string {
+  const configured = config.cycle?.retrospective?.upstream?.repository
+  if (configured !== undefined) return configured
+  const url = typeof pkg.repository === 'string' ? pkg.repository : pkg.repository?.url
+  const repo = url === undefined ? null : parseRepository(url)
+  if (repo === null) {
+    throw new IssueError(
+      'no upstream repository: the installed @lntt/lntt names none on GitHub; set cycle.retrospective.upstream.repository',
+    )
+  }
+  return repo
+}
+
+export interface Draft {
+  title: string
+  whatHappened: string
+  pullRequests: string
+  proposal: string
+}
+
+const DRAFT_SECTIONS: [keyof Omit<Draft, 'title'>, string][] = [
+  ['whatHappened', 'What happened'],
+  ['pullRequests', 'Pull requests'],
+  ['proposal', 'Proposal'],
+]
+
+// The draft: `# <title>`, then `## What happened`, `## Pull requests`, `## Proposal`.
+export function parseDraft(text: string): Draft {
+  const lines = text.replaceAll('\r\n', '\n').split('\n')
+  const first = lines.findIndex((l) => l.trim() !== '')
+  const title = /^#\s+(.+)$/.exec(lines[first] ?? '')?.[1]?.trim()
+  if (!title) throw new IssueError('the draft has no title: a first line "# <title>"')
+  const sections = new Map<string, string[]>()
+  let current: string[] | null = null
+  for (const line of lines.slice(first + 1)) {
+    const heading = /^##\s+(.+?)\s*$/.exec(line)
+    if (heading) {
+      current = []
+      sections.set((heading[1] as string).toLowerCase(), current)
+    } else current?.push(line)
+  }
+  const draft: Partial<Draft> = { title }
+  for (const [key, heading] of DRAFT_SECTIONS) {
+    const body = sections.get(heading.toLowerCase())
+    if (body === undefined) throw new IssueError(`the draft has no "## ${heading}" section`)
+    const value = body.join('\n').trim()
+    if (value === '') throw new IssueError(`"## ${heading}" is empty in the draft`)
+    draft[key] = value
+  }
+  return draft as Draft
+}
+
+// The facts of a dump section, without their `key: ` prefix.
+function facts(dump: Dump, title: string): Record<string, string> {
+  const section = dump.sections.find((s) => s.title === title)
+  return Object.fromEntries(
+    (section?.lines ?? [])
+      .map((l) => /^([\w ]+): (.*)$/.exec(l))
+      .filter((m) => m !== null)
+      .map((m) => [m[1] as string, m[2] as string]),
+  )
+}
+
+export function issueBody(draft: Draft, dump: Dump, project: string): string {
+  const lntt = facts(dump, 'lntt')
+  const runtime = facts(dump, 'Runtime')
+  const versions = [
+    `lntt ${lntt.version ?? dump.lntt}${lntt.installed ? ` (${lntt.installed})` : ''}`,
+    ...(['Node', 'package manager', 'OS'] as const)
+      .map((key) => (key === 'Node' && runtime[key] ? `Node ${runtime[key]}` : runtime[key]))
+      .filter((v) => v !== undefined),
+  ].join(', ')
+  const values: Record<(typeof ISSUE_SECTIONS)[number], string> = {
+    Project: project,
+    'What happened': draft.whatHappened,
+    'Pull requests': draft.pullRequests,
+    Proposal: draft.proposal,
+    Harness: dump.harness,
+    Model: dump.model,
+    Versions: versions,
+    'lntt dump': `<details><summary>lntt dump</summary>\n\n${renderDump(dump)}\n</details>`,
+  }
+  return ISSUE_SECTIONS.map((name) => `### ${name}\n\n${values[name]}\n`).join('\n')
+}
+
+export interface FoundIssue {
+  number: number
+  title: string
+  url: string
+}
+
+// The open issues of the repository that match: before a draft, the one it would repeat.
+export function searchIssues(gh: Gh, repo: string, words: string): FoundIssue[] {
+  const out = gh.read([
+    'issue',
+    'list',
+    '--repo',
+    repo,
+    '--state',
+    'open',
+    '--search',
+    words,
+    '--json',
+    'number,title,url',
+    '--limit',
+    '20',
+  ])
+  return out === '' ? [] : (JSON.parse(out) as FoundIssue[])
+}
+
+export function fileIssue(gh: Gh, repo: string, title: string, body: string): string {
+  return gh.write(['issue', 'create', '--repo', repo, '--title', title, '--body-file', '-'], body)
+}
+
+export function commentIssue(gh: Gh, repo: string, number: number, body: string): string {
+  return gh.write(['issue', 'comment', String(number), '--repo', repo, '--body-file', '-'], body)
+}

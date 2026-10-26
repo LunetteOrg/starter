@@ -1,0 +1,50 @@
+# A report on Lunette itself (lntt, a shared skill, the scaffolder, a template) from a
+# project that uses it. `lntt issue` fills these fields from the retrospective's draft and
+# from `lntt dump`, in this order: packages/lntt/src/issue.ts (ISSUE_SECTIONS) keeps the two
+# in step, and a test checks it.
+name: Report from a Lunette project
+description: Friction a project met in lntt, a shared skill, the scaffolder or a template
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Usually filed by `lntt issue`, after the operator read it. `lntt dump` collects the
+        environment below, redacted; by hand, paste its output in the last field.
+  - type: input
+    attributes:
+      label: Project
+      description: The project the friction was met in.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: What happened
+      description: The friction, as the retrospective blocks describe it.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Pull requests
+      description: The pull requests it was met in.
+  - type: textarea
+    attributes:
+      label: Proposal
+      description: What lntt, the skill or the template could do instead.
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Harness
+      description: The agent's harness and its version (Claude Code, Codex, OpenCode, …).
+  - type: input
+    attributes:
+      label: Model
+      description: The model the agent ran on.
+  - type: input
+    attributes:
+      label: Versions
+      description: lntt and how it is installed, Node, the package manager, the OS.
+  - type: textarea
+    attributes:
+      label: lntt dump
+      description: The whole output of `lntt dump`.

@@ -1,0 +1,206 @@
+import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
+import { afterEach, beforeEach, describe, test } from 'node:test'
+import { fileURLToPath } from 'node:url'
+import { collectDump, detectHarness, installKind, redact, renderDump } from '../src/dump.ts'
+
+const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
+
+describe('redact', () => {
+  const context = { home: '/Users/ada', remotes: ['git@github.com:acme/secret-app.git'], secrets: ['s3cr3t-value'] }
+
+  test('the home path becomes ~', () => {
+    assert.equal(
+      redact('/Users/ada/Developer/app/.agents/config.jsonc', context),
+      '~/Developer/app/.agents/config.jsonc',
+    )
+    assert.equal(redact('/Users/adam/x', context), '/Users/adam/x', 'another user whose name starts the same')
+  })
+
+  test("the project's remotes, and any URL carrying credentials", () => {
+    assert.equal(redact('origin git@github.com:acme/secret-app.git (fetch)', context), 'origin <remote> (fetch)')
+    assert.equal(redact('see https://ada:pw@git.example.com/x.git', context), 'see <url with credentials>')
+    assert.equal(redact('git@gitlab.com:acme/other.git', context), '<remote>')
+  })
+
+  test('emails', () => {
+    assert.equal(redact('author ada.lovelace+x@example.co.uk wrote', context), 'author <email> wrote')
+    assert.equal(redact('pnpm@10.16.1 and @lntt/lntt@0.6.2', context), 'pnpm@10.16.1 and @lntt/lntt@0.6.2')
+  })
+
+  test('tokens by their shape, and the values of secret-looking keys', () => {
+    for (const token of [
+      `ghp_${'a'.repeat(36)}`,
+      `github_pat_${'B'.repeat(40)}`,
+      `sk-ant-api03-${'c'.repeat(40)}`,
+      `xoxb-${'1'.repeat(12)}-abc`,
+      'AKIAABCDEFGHIJKLMNOP',
+      `eyJ${'a'.repeat(10)}.${'b'.repeat(10)}.${'c'.repeat(10)}`,
+    ]) {
+      assert.equal(redact(`x ${token} y`, context), 'x <token> y', token)
+    }
+    assert.equal(redact('Authorization: Bearer abc.def', context), 'Authorization: Bearer <token>')
+    assert.equal(redact('"apiKey": "abc123"', context), '"apiKey": "<redacted>"')
+    assert.equal(redact('DB_PASSWORD=hunter2 next', context), 'DB_PASSWORD=<redacted> next')
+    assert.equal(redact('"tokens": 1200', context), '"tokens": 1200', 'a count is no secret')
+  })
+
+  test('a secret held in the environment, wherever it appears', () => {
+    assert.equal(redact('the value s3cr3t-value leaked', context), 'the value <redacted> leaked')
+  })
+})
+
+describe('detectHarness', () => {
+  test('Claude Code, Codex and OpenCode by their variables; unknown otherwise', () => {
+    assert.equal(detectHarness({ CLAUDECODE: '1' }), 'Claude Code')
+    assert.equal(detectHarness({ CODEX_SANDBOX: 'seatbelt' }), 'Codex')
+    assert.equal(detectHarness({ OPENCODE: '1' }), 'OpenCode')
+    assert.equal(detectHarness({}), null)
+  })
+})
+
+describe('installKind', () => {
+  test('from source, a dependency of the project, or from outside it', () => {
+    assert.equal(installKind('/r/packages/lntt', '/r'), 'from source (a workspace package)')
+    assert.equal(
+      installKind('/r/node_modules/.pnpm/@lntt+lntt@0.6.2/node_modules/@lntt/lntt', '/r'),
+      'a dependency of the project',
+    )
+    assert.equal(installKind('/home/u/.npm/_npx/abc/node_modules/@lntt/lntt', '/r'), 'npx')
+    assert.equal(installKind('/opt/homebrew/lib/node_modules/@lntt/lntt', '/r'), 'outside the project (global)')
+  })
+})
+
+describe('collectDump', () => {
+  let root: string
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-dump-')))
+    mkdirSync(join(root, '.agents/skills/review'), { recursive: true })
+    mkdirSync(join(root, '.claude/skills/review'), { recursive: true })
+    mkdirSync(join(root, '.claude/skills/deploy'), { recursive: true })
+    mkdirSync(join(root, 'node_modules/@lntt/biome-config'), { recursive: true })
+    writeFileSync(join(root, '.agents/config.jsonc'), '{ "delivery": { "commits": { "language": "en" } } }\n')
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify({
+        name: 'app',
+        packageManager: 'pnpm@10.16.1',
+        devDependencies: { '@lntt/biome-config': '^0.6.0' },
+      }),
+    )
+    writeFileSync(join(root, 'node_modules/@lntt/biome-config/package.json'), JSON.stringify({ version: '0.6.2' }))
+    writeFileSync(
+      join(root, 'lefthook.yml'),
+      'pre-push:\n  commands: {}\ncommit-msg:\n  commands: {}\nskip_output: [meta]\n',
+    )
+    writeFileSync(
+      join(root, '.claude/settings.json'),
+      JSON.stringify({
+        hooks: { PostToolUse: [], Stop: [] },
+        enabledPlugins: { 'lunette@lunette': true, 'x@y': false },
+      }),
+    )
+  })
+  afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+  test('the sections, read from the project and the environment', () => {
+    const dump = collectDump({ root, env: { CLAUDECODE: '1' }, model: 'claude-opus-5-5', version: () => '2.3.4' })
+    const get = (title: string) => dump.sections.find((s) => s.title === title)?.lines ?? []
+    assert.deepEqual(
+      dump.sections.map((s) => s.title),
+      ['lntt', 'Runtime', 'Harness', 'Project'],
+    )
+    assert.match(get('lntt').join('\n'), /version: \d+\.\d+\.\d+/)
+    assert.ok(get('Runtime').includes(`Node: ${process.version}`))
+    assert.ok(get('Runtime').includes('package manager: pnpm@10.16.1'))
+    assert.deepEqual(get('Harness'), ['harness: Claude Code 2.3.4', 'model: claude-opus-5-5'])
+    const project = get('Project').join('\n')
+    assert.match(project, /skills: \.agents\/skills: review; \.claude\/skills: deploy, review/)
+    assert.match(project, /git hooks \(lefthook\): commit-msg, pre-push/)
+    assert.match(project, /agent hooks \(\.claude\/settings\.json\): PostToolUse, Stop/)
+    assert.match(project, /plugins: lunette@lunette/)
+    assert.match(project, /@lntt\/biome-config: \^0\.6\.0, installed 0\.6\.2/)
+    assert.match(project, /"language": "en"/)
+    assert.equal(dump.harness, 'Claude Code 2.3.4')
+    assert.equal(dump.model, 'claude-opus-5-5')
+  })
+
+  test('with no harness detected and no model given, each says how to give it', () => {
+    const dump = collectDump({ root, env: {}, version: () => null })
+    assert.deepEqual(dump.sections.find((s) => s.title === 'Harness')?.lines, [
+      'harness: not detected (--harness)',
+      'model: not given (--model)',
+    ])
+  })
+
+  test('the failing command and its output, the tail of a long one', () => {
+    const output = Array.from({ length: 300 }, (_, i) => `line ${i}`).join('\n')
+    const dump = collectDump({
+      root,
+      env: {},
+      version: () => null,
+      command: { argv: ['pnpm', 'test'], status: 1, output },
+    })
+    const lines = dump.sections.find((s) => s.title === 'Command')?.lines ?? []
+    assert.equal(lines[0], 'command: pnpm test')
+    assert.equal(lines[1], 'exit: 1')
+    assert.match(lines.join('\n'), /100 lines above left out/)
+    assert.match(lines.join('\n'), /line 299\n```$/)
+  })
+
+  test('a configuration that does not validate is reported, not thrown', () => {
+    writeFileSync(join(root, '.agents/config.jsonc'), '{ "nope": 1 }\n')
+    const project = collectDump({ root, env: {}, version: () => null }).sections.find((s) => s.title === 'Project')
+    assert.match(project?.lines.join('\n') ?? '', /configuration: .*does not match the schema/)
+  })
+
+  test('rendered as Markdown, one heading per section', () => {
+    const text = renderDump(collectDump({ root, env: {}, version: () => null }))
+    assert.match(text, /^### lntt\n\n- version: /)
+    assert.match(text, /\n### Project\n/)
+  })
+})
+
+describe('lntt dump', () => {
+  let root: string
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-dump-cli-')))
+    mkdirSync(join(root, '.agents'))
+    writeFileSync(join(root, '.agents/config.jsonc'), '{}\n')
+    writeFileSync(join(root, 'package.json'), '{"name":"app"}')
+  })
+  afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+  const lntt = (args: string[], env: NodeJS.ProcessEnv = {}) =>
+    spawnSync(process.execPath, [BIN, 'dump', ...args], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH, HOME: root, ...env },
+    })
+
+  test('runs the failing command after --, and redacts the home path and the secrets of the environment', () => {
+    const run = lntt(['--model', 'm1', '--', 'sh', '-c', 'echo "in $HOME with $MY_TOKEN"; exit 3'], {
+      MY_TOKEN: 'abcdefghijkl',
+    })
+    assert.equal(run.status, 0, run.stderr)
+    assert.match(run.stdout, /- model: m1/)
+    assert.match(run.stdout, /- exit: 3/)
+    assert.match(run.stdout, /in ~ with <redacted>/)
+    assert.ok(!run.stdout.includes(root), 'the home path is gone')
+  })
+
+  test('--json gives the same dump as one object', () => {
+    const run = lntt(['--json', '--harness', 'Codex 1.0'])
+    assert.equal(run.status, 0, run.stderr)
+    const dump = JSON.parse(run.stdout)
+    assert.equal(dump.harness, 'Codex 1.0')
+    assert.ok(Array.isArray(dump.sections))
+  })
+
+  test('a usage error exits 2', () => {
+    assert.equal(lntt(['--nope']).status, 2)
+  })
+})

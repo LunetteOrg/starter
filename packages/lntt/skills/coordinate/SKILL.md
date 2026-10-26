@@ -131,6 +131,10 @@ lntt ask --to orchestrator "<questions>"               # waits for the person's 
   candidate's retrospective comment (`lntt check body --pr <candidate>`) and write
   `none` where nothing applies; each child's friction about its own issue goes in its own
   pull request.
+- **At the end of the theme**, the `[lunette]` items of its pull requests and of the
+  candidate's comment go upstream as the `retrospective` skill says (section 5): drafts,
+  `lntt dump`, each report shown to the operator, sent with `lntt issue --send` only once
+  approved.
 
 ## 7. What a coordinator brief must say
 

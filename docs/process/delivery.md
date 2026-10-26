@@ -98,6 +98,13 @@ It is published where `cycle.retrospective.target` says. Each proposal the perso
 adopts becomes an issue of its own (the `github-board` skill), citing the retrospective and
 its cluster, so the board holds only the work a retrospective adopts.
 
+Friction that comes from Lunette itself (`lntt`, a shared skill, the scaffolder, a
+template) is marked `[lunette]` at the start of its item. At the end of a harvest or of a
+theme, each such cluster becomes a report for the Lunette repository: the agent searches
+it for the same subject, drafts the report, collects the environment with `lntt dump`
+and shows the operator the whole report with `lntt issue`; only a report the operator
+approves is sent, with `lntt issue --send`.
+
 ## The candidate
 
 The candidate is `<prefix><N>`, with N incremental. The automation creates it when a

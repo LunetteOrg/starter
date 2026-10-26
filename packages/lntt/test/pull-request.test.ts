@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { checkBody, retrospectiveBlock, retrospectiveRules } from '../src/pull-request.ts'
+import { checkBody, lunetteItems, retrospectiveBlock, retrospectiveRules } from '../src/pull-request.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
 
@@ -158,6 +158,52 @@ describe('checkBody', () => {
 
   test('CRLF line endings, as a body edited on GitHub has them', () => {
     assert.deepEqual(checkBody(body(...FILLED).replaceAll('\n', '\r\n'), DEFAULTS), [])
+  })
+})
+
+describe('the [lunette] marker', () => {
+  test('an item that starts with it, on the label line or as a sub-bullet, is well formed', () => {
+    const lines = [
+      '- **Friction:**',
+      '  - [lunette] lntt review lost its state when the worktree changed branch',
+      '  - the usage limit stopped a round',
+      '- **To automate (hook/skill/agent):** [lunette] lntt check body could read the comments too',
+      ...FILLED.slice(2),
+    ]
+    assert.deepEqual(checkBody(body(...lines), DEFAULTS), [])
+    assert.deepEqual(lunetteItems(body(...lines)), [
+      { label: 'Friction', item: 'lntt review lost its state when the worktree changed branch' },
+      { label: 'To automate (hook/skill/agent)', item: 'lntt check body could read the comments too' },
+    ])
+  })
+
+  test('a marker with no sentence after it', () => {
+    const lines = ['- **Friction:** [lunette]', ...FILLED.slice(1)]
+    assert.deepEqual(checkBody(body(...lines), DEFAULTS), [
+      'retrospective: "Friction" has a [lunette] item with no sentence after the marker',
+    ])
+  })
+
+  test('a marker spelled otherwise at the start of an item names the right spelling', () => {
+    for (const marker of ['[Lunette]', '[LUNETTE]', '[lntt]', '[upstream]']) {
+      const lines = ['- **Friction:**', `  - ${marker} the scaffolder pins an old Node`, ...FILLED.slice(1)]
+      assert.deepEqual(checkBody(body(...lines), DEFAULTS), [
+        `retrospective: "Friction" has an item starting with ${marker}: the marker is [lunette]`,
+      ])
+    }
+  })
+
+  test('a marker in the middle of a sentence, or outside the block, is no marker', () => {
+    const lines = ['- **Friction:** the [lunette] marker was new to me', ...FILLED.slice(1)]
+    assert.deepEqual(checkBody(body(...lines), DEFAULTS), [])
+    assert.deepEqual(lunetteItems(body(...lines)), [])
+    assert.deepEqual(lunetteItems(`- [lunette] outside\n${body(...FILLED)}`), [])
+  })
+
+  test('a marker inside an HTML comment is no item', () => {
+    const lines = ['- **Friction:** none <!-- [lunette] -->', ...FILLED.slice(1)]
+    assert.deepEqual(checkBody(body(...lines), DEFAULTS), [])
+    assert.deepEqual(lunetteItems(body(...lines)), [])
   })
 })
 
