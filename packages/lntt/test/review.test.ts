@@ -7,6 +7,8 @@ import {
   type Ask,
   agentLabel,
   type Checked,
+  type Closed,
+  closeRound,
   type Found,
   isNoFindings,
   lensApplies,
@@ -17,6 +19,7 @@ import {
   type ReviewState,
   renderReviewPrompt,
   reviewConfig,
+  reviewedAfter,
   roundClean,
   roundLimit,
   roundRange,
@@ -42,6 +45,7 @@ describe('the configuration', () => {
       optionalGraceMinutes: 2,
       roundTimeoutMinutes: 60,
       maxRounds: 4,
+      warningRounds: 2,
     })
   })
 
@@ -541,7 +545,7 @@ describe('a round', () => {
 
   test('an empty delta asks nobody and carries the open findings of the last round', async () => {
     const { ask, asked } = asker(() => 'no findings')
-    const open = [{ id: 'f1', verdict: 'confirmed' }] as never
+    const open = [{ id: 'f1', severity: 'warning', verdict: 'confirmed' }] as never
     const result = await runRound(config, { ...input, files: [], diff: '' }, ask, open)
     assert.deepEqual(asked, [])
     assert.deepEqual(result.findings, open)
@@ -1146,5 +1150,241 @@ describe('how many rounds a branch may take', () => {
     const allowed = { ...state, allowed: 2 }
     assert.equal(roundLimit(allowed, 'feat/1/x', 4), 6)
     assert.equal(roundLimit(allowed, 'feat/2/y', 4), 4)
+  })
+})
+
+describe('what the branch already closed, and the rounds where a warning blocks', () => {
+  const config = reviewConfig({
+    delivery: {
+      review: {
+        reviewers: {
+          decisions: { with: [] },
+          tests: { with: [] },
+          code: { with: [{ kind: 'claude', model: 'haiku' }] },
+        },
+        verify: { with: [{ kind: 'claude', model: 'sonnet' }] },
+      },
+    },
+  })
+  const roundAt = (n: number) =>
+    roundRange(
+      n === 1 ? null : ({ branch: 'b', round: n - 1, reviewed: 'h0' } as ReviewState),
+      'b',
+      'h',
+      'mb',
+      () => true,
+    )
+  const input = (n: number, lines: Record<number, string>) => ({
+    base: 'mb',
+    head: `h${n}`,
+    files: ['a.ts'],
+    diff: 'D',
+    records: '',
+    range: roundAt(n),
+    cite: (_path: string, line: number | null) => ({ text: lines[line ?? 0] ?? null }),
+  })
+  function asker(review: string, verify: (prompt: string) => string) {
+    const prompts: string[] = []
+    const ask: Ask = async (qs) =>
+      qs.map((q) => {
+        prompts.push(q.prompt)
+        const text = q.prompt.startsWith('You are reviewing') ? review : verify(q.prompt)
+        return { ok: true as const, reply: { text, session: 's', cost: null, tokens: null } }
+      })
+    return { ask, prompts }
+  }
+
+  test('warningRounds is read from delivery.review, and is 2 by default', () => {
+    assert.equal(reviewConfig({}).warningRounds, 2)
+    assert.equal(reviewConfig({ delivery: { review: { warningRounds: 5 } } }).warningRounds, 5)
+  })
+
+  test('a refuted finding is not reported again on an unchanged line, and is on a changed one', async () => {
+    const lines = { 3: 'const x = a ?? b' }
+    const one = asker('- [warning] a.ts:3 — x may be null — guard it', () => 'refuted\na.ts:2 sets a')
+    const first = await runRound(config, input(1, lines), one.ask)
+    const ledger = closeRound([], first, [], config.warningRounds)
+    assert.deepEqual(
+      ledger.map((c) => [c.id, c.outcome, c.cited, c.proof]),
+      [['f1', 'refuted', 'const x = a ?? b', 'claude sonnet: a.ts:2 sets a']],
+    )
+
+    const two = asker('- [warning] a.ts:3 — x may be null — guard it', () => 'confirmed\nyes')
+    const second = await runRound(config, { ...input(2, lines), closed: ledger }, two.ask, first.findings)
+    assert.equal(two.prompts.length, 1, 'no verifier is asked for a repeat')
+    assert.match(two.prompts[0] as string, /## Findings this branch already closed/)
+    assert.match(
+      two.prompts[0] as string,
+      /- f1 \(warning\) `a\.ts:3` — x may be null — refuted: claude sonnet: a\.ts:2 sets a/,
+    )
+    assert.deepEqual(
+      second.closed.map((f) => [f.id, f.closedBy]),
+      [['f2', 'f1']],
+    )
+    assert.deepEqual(second.findings, [])
+    assert.equal(roundClean(second), true)
+
+    const changed = asker('- [warning] a.ts:3 — x may be null — guard it', () => 'confirmed\nyes')
+    const third = await runRound(config, { ...input(2, { 3: 'const x = a' }), closed: ledger }, changed.ask)
+    assert.deepEqual(third.closed, [])
+    assert.deepEqual(
+      third.findings.map((f) => [f.id, f.verdict]),
+      [['f2', 'confirmed']],
+      'numbered after the ledger',
+    )
+  })
+
+  test('a repeat at a higher severity than the closed finding is a new finding', async () => {
+    const lines = { 3: 'same' }
+    const ledger = closeRound(
+      [],
+      await runRound(config, input(1, lines), asker('- [note] a.ts:3 — n — a', () => '').ask),
+      [],
+      2,
+    )
+    assert.deepEqual(
+      ledger.map((c) => [c.outcome, c.reason]),
+      [['accepted', 'a note: reported once, it does not block']],
+    )
+    const again = await runRound(
+      config,
+      { ...input(2, lines), closed: ledger },
+      asker('- [blocker] a.ts:3 — b — a', () => 'confirmed\ny').ask,
+    )
+    assert.deepEqual(
+      again.findings.map((f) => [f.severity, f.verdict]),
+      [['blocker', 'confirmed']],
+    )
+  })
+
+  test('the verifier reads what was closed on the finding’s file', async () => {
+    const ledger = [
+      {
+        id: 'f1',
+        round: 1,
+        severity: 'warning',
+        path: 'a.ts',
+        line: 9,
+        what: 'old',
+        cited: 'x',
+        outcome: 'refuted',
+        proof: 'p',
+      },
+      {
+        id: 'f2',
+        round: 1,
+        severity: 'warning',
+        path: 'b.ts',
+        line: 1,
+        what: 'elsewhere',
+        cited: 'y',
+        outcome: 'refuted',
+        proof: 'q',
+      },
+    ] as Closed[]
+    const { ask, prompts } = asker('- [warning] a.ts:3 — w — a', () => 'confirmed\ny')
+    await runRound(config, { ...input(2, { 3: 'z' }), closed: ledger }, ask)
+    const verify = prompts.find((p) => p.startsWith('You are checking')) as string
+    assert.match(verify, /- f1 \(warning\) `a\.ts:9` — old — refuted: p/)
+    assert.doesNotMatch(verify, /elsewhere/)
+  })
+
+  test('a finding carried from an earlier round and refuted on a later head is fixed, with that head', async () => {
+    const lines = { 3: 'before' }
+    const first = await runRound(config, input(1, lines), asker('- [warning] a.ts:3 — w — a', () => 'confirmed\ny').ask)
+    const second = await runRound(
+      config,
+      input(2, { 3: 'after' }),
+      asker('no findings', () => 'refuted\na.ts:3 guards it now').ask,
+      first.findings,
+    )
+    assert.deepEqual(
+      closeRound([], second, first.findings, 2).map((c) => [c.id, c.outcome, c.commit]),
+      [['f1', 'fixed', 'h2']],
+    )
+  })
+
+  test('past warningRounds only a blocker blocks; the warning is accepted open and not carried', async () => {
+    const lines = { 3: 'w', 4: 'b' }
+    const third = await runRound(config, input(3, lines), asker('- [warning] a.ts:3 — w — a', () => 'confirmed\ny').ask)
+    assert.deepEqual(third.blocking, ['blocker'])
+    assert.equal(roundClean(third), true, 'a confirmed warning past round 2')
+    const ledger = closeRound([], third, [], 2)
+    assert.deepEqual(
+      ledger.map((c) => [c.id, c.outcome, c.reason]),
+      [['f1', 'accepted', 'a warning past round 2: an open item of the pull request']],
+    )
+    const { ask, prompts } = asker('no findings', () => 'confirmed\ny')
+    const fourth = await runRound(config, { ...input(4, lines), closed: ledger }, ask, third.findings)
+    assert.equal(prompts.length, 1, 'the accepted warning goes to no verifier')
+    assert.deepEqual(fourth.findings, [])
+
+    const blocker = await runRound(
+      config,
+      input(3, lines),
+      asker('- [blocker] a.ts:4 — b — a', () => 'confirmed\ny').ask,
+    )
+    assert.equal(roundClean(blocker), false)
+    const second = await runRound(
+      config,
+      input(2, lines),
+      asker('- [warning] a.ts:3 — w — a', () => 'confirmed\ny').ask,
+    )
+    assert.deepEqual(second.blocking, ['blocker', 'warning'])
+    assert.equal(roundClean(second), false)
+    assert.deepEqual(closeRound([], second, [], 2), [], 'a warning up to round 2 stays open')
+  })
+
+  test('an optional agent never widens the next range: neither its failure nor an unreadable line', async () => {
+    const optional = reviewConfig({
+      delivery: {
+        review: {
+          reviewers: {
+            decisions: { with: [] },
+            tests: { with: [] },
+            code: {
+              with: [
+                { kind: 'claude', model: 'haiku' },
+                { kind: 'opencode', model: 'x/free', optional: true },
+              ],
+            },
+          },
+          verify: false,
+        },
+      },
+    })
+    const ask: Ask = async (qs) =>
+      qs.map((q) =>
+        q.agent.optional
+          ? {
+              ok: true as const,
+              reply: {
+                text: '- [warning] a.ts:3 — w — a\n- [warning] nonsense',
+                session: 's',
+                cost: null,
+                tokens: null,
+              },
+            }
+          : { ok: true as const, reply: { text: 'no findings', session: 's', cost: null, tokens: null } },
+      )
+    const result = await runRound(optional, input(1, { 3: 'x' }), ask)
+    assert.deepEqual(result.partial, [])
+    assert.deepEqual(
+      result.skipped.map((s) => [s.agent, s.error]),
+      [['opencode x/free', '1 finding lines that cannot be read']],
+    )
+    assert.equal(result.findings.length, 1, 'its readable findings stand')
+    assert.equal(reviewedAfter(result, 'h0', 'h1'), 'h1')
+
+    const quota = await runRound(optional, input(1, {}), async (qs) =>
+      qs.map((q) =>
+        q.agent.optional
+          ? { ok: false as const, error: 'opencode exited 1: 429 Too Many Requests' }
+          : { ok: true as const, reply: { text: 'no findings', session: 's', cost: null, tokens: null } },
+      ),
+    )
+    assert.equal(quota.skipped.length, 1)
+    assert.equal(reviewedAfter(quota, 'h0', 'h1'), 'h1')
+    assert.equal(reviewedAfter({ ...quota, failed: [{ lens: 'code', agent: 'a', error: 'e' }] }, 'h0', 'h1'), 'h0')
   })
 })

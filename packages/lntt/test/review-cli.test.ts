@@ -335,6 +335,7 @@ describe('lntt review, end to end with a fake agent', () => {
     const r = lntt(['--base', 'main'], { FAKE_FAIL_REVIEW_opus: '1' })
     assert.equal(r.code, 0, r.err)
     assert.equal(JSON.parse(r.out).skipped[0].agent, 'claude opus')
+    assert.equal(state().reviewed, git('rev-parse', '--short', 'HEAD'), 'the next round reads only what comes after')
     assert.match(r.err, /lntt review: skipped code · claude opus/)
     const starts = readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8')
       .trim()
@@ -390,7 +391,10 @@ describe('lntt review, end to end with a fake agent', () => {
     const env = { FAKE_REVIEW: '- [blocker] a.ts:1 — wrong — fix', FAKE_VERIFY: 'confirmed\\nshown' }
     const r = lntt(['--base', 'main'], env)
     assert.match(r.err, /lntt review: done code · claude sonnet in \d+s \(1\.5k tokens\)/)
-    assert.match(r.err, /round 1 done in \d+s: 1 findings, 0 refuted, 0 failed, 0 partial, 0 skipped, 3k tokens/)
+    assert.match(
+      r.err,
+      /round 1 done in \d+s: 1 findings, 0 refuted, 0 failed, 0 partial, 0 skipped, 0 closed, 3k tokens/,
+    )
     assert.doesNotMatch(r.err, /\$/)
     const events = readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8')
       .trim()
@@ -716,6 +720,101 @@ describe('lntt review, end to end with a fake agent', () => {
     assert.equal(lntt(['--base', 'main']).code, 0)
     writeFileSync(join(repo, '.git/lntt-review.lock'), String(process.pid))
     assert.match(lntt(['reply', 'f99', 'x']).err, /no open finding f99/)
+  })
+})
+
+describe('lntt review, with the findings the branch already closed', () => {
+  const ledger = () => JSON.parse(readFileSync(join(repo, '.git/lntt-review-ledger.json'), 'utf8'))
+  const verifies = () => readFileSync(log, 'utf8').match(/^VERIFY /gm)?.length ?? 0
+
+  test('a refuted finding is kept with its proof; repeated on the unchanged line, it is dropped and asks no verifier', () => {
+    const prompts = join(repo, '.git/prompts')
+    const env = { FAKE_REVIEW: '- [warning] a.ts:1 — a may be 2 — check it', FAKE_PROMPTS: prompts }
+    const first = lntt(['--base', 'main'], { ...env, FAKE_VERIFY: 'refuted\\na.ts:1 is the point' })
+    assert.equal(first.code, 0, first.err)
+    assert.deepEqual(
+      ledger().closed.map((c: { id: string; outcome: string; cited: string; proof: string }) => [
+        c.id,
+        c.outcome,
+        c.cited,
+        c.proof,
+      ]),
+      [['f1', 'refuted', 'export const a = 2', 'claude opus: a.ts:1 is the point']],
+    )
+    assert.equal(ledger().branch, 'feat/1/x')
+
+    writeFileSync(join(repo, 'b.ts'), 'export const b = 1\n')
+    git('add', 'b.ts')
+    git('commit', '-qm', 'b')
+    const second = lntt(['--base', 'main'], { ...env, FAKE_VERIFY: 'confirmed\\nyes' })
+    assert.equal(second.code, 0, second.err)
+    const out = JSON.parse(second.out)
+    assert.deepEqual(
+      out.closed.map((f: { id: string; closedBy: string }) => [f.id, f.closedBy]),
+      [['f2', 'f1']],
+    )
+    assert.match(second.err, /round 2 done in \d+s: 0 findings, 0 refuted, 0 failed, 0 partial, 0 skipped, 1 closed/)
+    assert.equal(verifies(), 1, 'only the first round asked a verifier')
+    assert.match(
+      readFileSync(prompts, 'utf8'),
+      /## Findings this branch already closed[\s\S]*- f1 \(warning\) `a\.ts:1`/,
+    )
+  })
+
+  test('a finding its reviewers withdraw is closed, with the answer as the proof', () => {
+    lntt(['--base', 'main'], { FAKE_REVIEW: '- [blocker] a.ts:1 — wrong — fix', FAKE_VERIFY: 'confirmed\\nshown' })
+    assert.deepEqual(ledger().closed, [])
+    assert.equal(lntt(['reply', 'f1', 'line 1 is the point'], { FAKE_REPLY: 'withdrawn\\nfair' }).code, 0)
+    assert.deepEqual(
+      ledger().closed.map((c: { id: string; outcome: string; proof: string }) => [c.id, c.outcome, c.proof]),
+      [['f1', 'refuted', 'withdrawn by its reviewers after the answer: line 1 is the point']],
+    )
+  })
+
+  test('past delivery.review.warningRounds a confirmed warning does not block, and is accepted open', () => {
+    const config = JSON.parse(CONFIG)
+    config.delivery.review.warningRounds = 1
+    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify(config))
+    git('commit', '-qam', 'warningRounds 1')
+    const env = { FAKE_REVIEW: '- [warning] a.ts:1 — w — a', FAKE_VERIFY: 'confirmed\\nshown' }
+    const first = lntt(['--base', 'main'], env)
+    assert.equal(first.code, 1, 'round 1: a warning blocks')
+    assert.deepEqual(JSON.parse(first.out).blocking, ['blocker', 'warning'])
+
+    writeFileSync(join(repo, 'a.ts'), 'export const a = 3\n')
+    git('commit', '-qam', 'more')
+    const second = lntt(['--base', 'main'], env)
+    assert.equal(second.code, 0, second.err)
+    assert.deepEqual(JSON.parse(second.out).blocking, ['blocker'])
+    assert.deepEqual(
+      JSON.parse(second.out).findings.map((f: { id: string; verdict: string }) => [f.id, f.verdict]),
+      [['f1', 'confirmed']],
+      'the warning is still listed, for the pull request',
+    )
+    assert.match(second.err, /round 2 is past delivery\.review\.warningRounds \(1\): only blockers block/)
+    assert.deepEqual(
+      ledger().closed.map((c: { id: string; outcome: string }) => [c.id, c.outcome]),
+      [['f1', 'accepted']],
+    )
+  })
+
+  test('a warningRounds not below maxRounds is said in the plan, and at the start of a round', () => {
+    const config = JSON.parse(CONFIG)
+    Object.assign(config.delivery.review, { maxRounds: 2, warningRounds: 2 })
+    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify(config))
+    git('commit', '-qam', 'warningRounds 2 of 2')
+    const warning =
+      /^ {2}warning: delivery\.review\.warningRounds \(2\) is not below delivery\.review\.maxRounds \(2\)/m
+    assert.match(lntt(['--base', 'main', '--plan']).err, warning)
+    assert.match(lntt(['--base', 'main']).err, warning)
+  })
+
+  test('a warningRounds below 1 does not validate', () => {
+    writeFileSync(join(repo, '.agents/config.jsonc'), '{"delivery":{"review":{"warningRounds":0}}}')
+    git('commit', '-qam', 'bad')
+    const r = lntt(['--base', 'main'])
+    assert.equal(r.code, 1)
+    assert.match(r.err, /warningRounds must be >= 1/)
   })
 })
 

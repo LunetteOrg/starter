@@ -34,6 +34,10 @@ import { orcaSubagents, type Subagents } from './orca-subagents.ts'
 import {
   agentLabel,
   type Checked,
+  type Closed,
+  closedEntry,
+  closeRound,
+  type Ledger,
   lensApplies,
   type MutationAnswer,
   parseWithdrawal,
@@ -41,6 +45,8 @@ import {
   type ReviewState,
   renderReplyPrompt,
   reviewConfig,
+  reviewedAfter,
+  reviewWarnings,
   roundClean,
   roundLimit,
   roundRange,
@@ -105,6 +111,23 @@ function statePath(): string {
 function readState(): ReviewState | null {
   const path = statePath()
   return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as ReviewState) : null
+}
+
+// The findings the branch closed, round after round, next to the state: the reviewers and
+// verifiers of every round read it. Another branch's ledger is none.
+function ledgerPath(): string {
+  return join(git('rev-parse', '--absolute-git-dir'), 'lntt-review-ledger.json')
+}
+
+function readLedger(branch: string): Closed[] {
+  const path = ledgerPath()
+  if (!existsSync(path)) return []
+  const ledger = JSON.parse(readFileSync(path, 'utf8')) as Ledger
+  return ledger.branch === branch ? ledger.closed : []
+}
+
+function writeLedger(branch: string, closed: Closed[]): void {
+  writeFileSync(ledgerPath(), `${JSON.stringify({ branch, closed } satisfies Ledger, null, 2)}\n`)
 }
 
 // The round past the limit does not start: the person decides on what the last round
@@ -516,6 +539,7 @@ async function round(args: string[]): Promise<number> {
     )
   }
   plan.push(`  the diff goes to: ${destinations(agents)}`)
+  for (const warning of reviewWarnings(config)) plan.push(`  warning: ${warning}`)
   stderr.write(`lntt review: ${plan.join('\n')}\n`)
   const problems = agentProblems(agents)
   if (values.plan) {
@@ -525,6 +549,7 @@ async function round(args: string[]): Promise<number> {
   if (problems.length > 0) throw new Error(`cannot start ${problems.join('; ')}`)
 
   const open = state?.branch === branch ? state.result.findings : []
+  const ledger = readLedger(branch)
   keepAwake()
   const stop = deadline(config.roundTimeoutMinutes)
   emit({
@@ -555,6 +580,7 @@ async function round(args: string[]): Promise<number> {
       range,
       readBrief: (path) => readFileSync(join(root, path), 'utf8'),
       checks,
+      closed: ledger,
       cite: (path, line) => cite(root, path, line),
       mutate: async (mutations) => runMutations(root, data, mutations),
     },
@@ -579,16 +605,23 @@ async function round(args: string[]): Promise<number> {
   const saved: ReviewState = {
     branch,
     round: files.length > 0 ? range.round : (state?.round ?? 1),
-    reviewed: result.failed.length > 0 || result.partial.length > 0 ? previous : head,
+    reviewed: reviewedAfter(result, previous, head),
     result,
     ...(state?.branch === branch && state.allowed ? { allowed: state.allowed } : {}),
   }
   writeFileSync(statePath(), `${JSON.stringify(saved, null, 2)}\n`)
+  if (files.length > 0) writeLedger(branch, closeRound(ledger, result, open, config.warningRounds))
   report.stop()
   const tokens = result.tokens === null ? '' : `, ${formatTokens(result.tokens)}`
   stderr.write(
-    `lntt review: round ${saved.round} done in ${duration(Date.now() - began)}: ${result.findings.length} findings, ${result.refuted.length} refuted, ${result.failed.length} failed, ${result.partial.length} partial, ${result.skipped.length} skipped${tokens}\n`,
+    `lntt review: round ${saved.round} done in ${duration(Date.now() - began)}: ${result.findings.length} findings, ${result.refuted.length} refuted, ${result.failed.length} failed, ${result.partial.length} partial, ${result.skipped.length} skipped, ${result.closed.length} closed${tokens}\n`,
   )
+  // Past delivery.review.warningRounds a warning does not block: it goes in the pull
+  // request as an open item.
+  if (!result.blocking.includes('warning'))
+    stderr.write(
+      `lntt review: round ${saved.round} is past delivery.review.warningRounds (${config.warningRounds}): only blockers block; warnings and notes go in the pull request as open items\n`,
+    )
   emit({
     type: 'done',
     round: saved.round,
@@ -646,7 +679,14 @@ async function reply(args: string[]): Promise<number> {
     ...(a.ok ? parseWithdrawal(a.reply.text) : { withdrawn: false, reason: a.error }),
   }))
   const withdrawn = replies.every((r) => r.withdrawn)
-  if (withdrawn) (finding as Checked).verdict = 'withdrawn'
+  if (withdrawn) {
+    ;(finding as Checked).verdict = 'withdrawn'
+    const proof = `withdrawn by its reviewers after the answer: ${words.join(' ')}`
+    writeLedger(state.branch, [
+      ...readLedger(state.branch).filter((c) => c.id !== id),
+      closedEntry(finding, state.round, 'refuted', { proof }),
+    ])
+  }
   writeFileSync(statePath(), `${JSON.stringify(state, null, 2)}\n`)
   stdout.write(`${JSON.stringify({ id, withdrawn, replies }, null, 2)}\n`)
   return withdrawn ? 0 : 1

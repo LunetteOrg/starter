@@ -35,6 +35,13 @@ the end of its file; nothing to do), `failed` (a reviewer that did not answer; i
 A round reads the whole branch the first time, then only the commits after the last
 reviewed one; findings still open go back to the verifiers on the new head.
 
+The branch keeps a ledger of the findings it closed (fixed, refuted, accepted open),
+which every round's reviewers and verifiers read. stdout's `closed` lists the fresh
+findings that repeat one of them on a line that did not change: nothing to do.
+
+`blocking` says which severities keep the round from being clean: blockers and warnings
+in the first `delivery.review.warningRounds` rounds, blockers alone after them.
+
 ## 2. Each finding
 
 - **`confirmed`:** fix it with a local commit. No push.
@@ -49,6 +56,9 @@ reviewed one; findings still open go back to the verifiers on the new head.
   It resumes their sessions; `withdrawn: true` closes the finding. A reviewer that
   cannot be resumed makes it a question for the person.
 - **A note:** fix it if it is cheap, or list it in the pull request; it does not block.
+- **A warning past `warningRounds`** (`blocking` is only `blocker`): fix it if it is
+  cheap; otherwise it goes in the pull request body as an open item. It does not block,
+  and the next rounds do not carry it.
 - **`partial`:** read the lines, fix or file what they say; the next round reads the
   same range again.
 - **`failed`:** run the round again; a failure that repeats is reported to the person
