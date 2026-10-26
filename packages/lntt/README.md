@@ -191,6 +191,7 @@ lntt pr block                        # the empty retrospective block, from the c
 lntt check body                      # FAIL on a missing block, a missing, repeated or empty label
 lntt check body --pr 171             # another pull request's body; `-` reads it on stdin
 lntt check body template             # the template holds the block lntt pr block prints
+lntt retro add --label friction "…"  # one item under a label of the open candidate's retrospective comment
 ```
 
 The block is `delivery.pullRequest.retrospective`: its heading and its labels, each
@@ -202,6 +203,17 @@ request with `gh` unless told otherwise, and `lntt check` alone reports it `NOT 
 Its `template` check reads the repository: the template at `delivery.pullRequest.template`
 holds the block `lntt pr block` prints, so `lntt check` alone runs it. The `retrospective` skill fills the block and harvests the
 merged pull requests' blocks.
+
+A candidate's block is a comment, not its body: the candidate automation opens every
+candidate with a comment holding the empty block, and never rewrites it as it rewrites
+the body. `lntt retro add --label <label> "<one sentence>"` appends one item under that
+label, on the open candidate unless `--pr <n>` names another pull request: the label is
+the configured one equal to it ignoring case, or the only one it starts (`--label to`
+is `To automate (hook/skill/agent)`); an empty label or `none` takes the item on its
+line, a label with a value gets sub-bullets; the markers and the other labels stay.
+With no comment holding the block, it writes one. On a candidate, `lntt check body`
+reads that comment instead of the body: the first comment holding the start marker on a
+line of its own.
 
 ## Starting work on an issue
 

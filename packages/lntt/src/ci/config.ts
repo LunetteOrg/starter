@@ -4,6 +4,7 @@
 // it: no candidate).
 
 import { ConfigError, loadConfig } from '../index.ts'
+import { retrospectiveBlock, retrospectiveRules } from '../pull-request.ts'
 import type { CandidateConfig } from './candidate.ts'
 import type { LockScope } from './lock.ts'
 
@@ -61,7 +62,8 @@ export const CANDIDATE_STATUS = Object.freeze({ inRelease: 'In release', done: '
 
 // delivery.candidate with its defaults, or null when the project has no candidate.
 export function candidateConfig(cwd: string): CandidateConfig | null {
-  const section = (data(cwd).delivery as { candidate?: Partial<CandidateConfig> & { prefix: string } } | undefined)
+  const config = data(cwd)
+  const section = (config.delivery as { candidate?: Partial<CandidateConfig> & { prefix: string } } | undefined)
     ?.candidate
   if (!section) return null
   return {
@@ -69,5 +71,6 @@ export function candidateConfig(cwd: string): CandidateConfig | null {
     prefix: section.prefix,
     hotfix: { prefix: section.hotfix?.prefix ?? 'hotfix/', label: section.hotfix?.label ?? 'hotfix' },
     status: { ...CANDIDATE_STATUS, ...section.status },
+    retrospective: retrospectiveBlock(retrospectiveRules(config)),
   }
 }

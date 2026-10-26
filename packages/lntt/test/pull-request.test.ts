@@ -127,9 +127,7 @@ describe('checkBody', () => {
 
   test('an end marker above the start marker closes nothing', () => {
     const text = ['<!-- retro:end -->', '<!-- retro:start -->', ...FILLED].join('\n')
-    assert.deepEqual(checkBody(text, DEFAULTS), [
-      'retrospective: no <!-- retro:start --> … <!-- retro:end --> block in the body',
-    ])
+    assert.deepEqual(checkBody(text, DEFAULTS), ['retrospective: no <!-- retro:start --> … <!-- retro:end --> block'])
   })
 
   test('a missing label is named', () => {
@@ -140,7 +138,7 @@ describe('checkBody', () => {
 
   test('a body without the markers says the block is missing', () => {
     assert.deepEqual(checkBody('## Why\n\nBecause.\n', DEFAULTS), [
-      'retrospective: no <!-- retro:start --> … <!-- retro:end --> block in the body',
+      'retrospective: no <!-- retro:start --> … <!-- retro:end --> block',
     ])
   })
 
@@ -237,13 +235,14 @@ describe('lntt pr block and lntt check body', () => {
   })
 
   test("--pr reads that pull request with gh; with neither, the current branch's", () => {
-    gh('<!-- retro:start -->\n- **Friction:**\n- **Review cost:** none\n<!-- retro:end -->')
+    const body = '<!-- retro:start -->\n- **Friction:**\n- **Review cost:** none\n<!-- retro:end -->'
+    gh(JSON.stringify({ number: 171, body, headRefName: 'feat/171/x' }))
     const r = lntt(['check', 'body', '--pr', '171'])
     assert.equal(r.status, 1)
     assert.match(r.stdout, /FAIL +body\/retrospective — pull request #171: retrospective: "Friction" is empty/)
-    assert.equal(ghArgs(), 'pr view 171 --json body --jq .body\n')
+    assert.equal(ghArgs(), 'pr view 171 --json number,body,headRefName\n')
     assert.equal(lntt(['check', 'body']).status, 1)
-    assert.equal(ghArgs(), 'pr view --json body --jq .body\n')
+    assert.equal(ghArgs(), 'pr view --json number,body,headRefName\n')
   })
 
   test('a gh that fails is a check that cannot run: one line, exit 1, no stack', () => {
@@ -251,7 +250,7 @@ describe('lntt pr block and lntt check body', () => {
     const r = lntt(['check', 'body'])
     assert.equal(r.status, 1)
     assert.equal(r.stdout, '')
-    assert.match(r.stderr, /^lntt: error: gh pr view --json body --jq \.body failed\n$/)
+    assert.match(r.stderr, /^lntt: error: gh pr view --json number,body,headRefName failed\n$/)
   })
 
   function bodyResults(args: string[]) {
