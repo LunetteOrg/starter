@@ -224,7 +224,11 @@
         "category": "Ideas",
         "title": "Retrospective — {window}",
         "targetedTitle": "Targeted retrospective — {subject}"
-      }
+      },
+      // Friction that comes from Lunette itself starts with [upstream:LunetteOrg/starter]
+      // in the retrospective blocks. This repo is its own upstream: lntt issue sends
+      // nothing, the harvest handles those items here.
+      "upstream": { "repository": "LunetteOrg/starter" }
     }
   }
 }

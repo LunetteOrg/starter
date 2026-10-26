@@ -53,6 +53,11 @@ template and holding the placeholder `__LNTT_CREATE_VERSION__`; the CLI rewrites
 to its own version. The section is written once and read when a template update is
 computed for the project (#24).
 
+The same file sets `cycle.retrospective.upstream.repository` to the repository that
+publishes the template, where the project reports the friction that comes from Lunette
+itself (`lntt issue`). The CLI copies it as it is: a fork that publishes its own
+templates writes its own repository there.
+
 ### After the copy
 
 After copying and rewriting, the CLI runs `git init -b main` and an initial commit

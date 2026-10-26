@@ -28,6 +28,7 @@ lntt check [agents-md | skills | decisions [structure | board-refs | numbers] | 
 lntt branch name | check | rename
 lntt pr block
 lntt retro add
+lntt dump | issue [search]
 lntt review [reply | allow]
 lntt worktree start
 lntt ask | inbox | answer
@@ -37,7 +38,7 @@ lntt ci local | candidate
 - **One entry point, one module per command group.** `bin/lntt.ts` dispatches to
   `src/cli.ts` (configuration, operator, `AGENTS.md`, local apps, viewer, browser),
   `src/check-cli.ts`, `src/branch-cli.ts`, `src/review-cli.ts`, `src/worktree-cli.ts`,
-  `src/refs-cli.ts`, `src/board-cli.ts`, `src/pull-request-cli.ts`, `src/retro-cli.ts`, `src/messages-cli.ts` (`ask`, `inbox`,
+  `src/refs-cli.ts`, `src/board-cli.ts`, `src/pull-request-cli.ts`, `src/retro-cli.ts`, `src/issue-cli.ts` (`dump`, `issue`), `src/messages-cli.ts` (`ask`, `inbox`,
   `answer`) and `src/ci/cli.ts`.
   A group loads only when it runs. What a script needs as a library, `@lntt/lntt`
   exports too (`resolveRefs` and `mentions` for `lntt refs`).
@@ -89,6 +90,25 @@ lntt ci local | candidate
   names those files with the reason, and a glob that matches nothing fails. A new
   deterministic check is a check of an area, or a new area, never a script beside a
   skill.
+- **A report on Lunette itself goes upstream through `lntt issue`, on the operator's
+  approval.** The flow and the marker are in
+  [delivery](../process/delivery.md#the-retrospective). The `retrospective` skill calls
+  `lntt issue`, never `gh`: another way to send it (#184) is added behind the command,
+  the skill unchanged. `lntt issue` sends nothing without `--send`, so what the operator
+  approves is the issue it printed, redacted as `lntt dump` redacts what it collects,
+  and refused before sending when GitHub would refuse it (`BODY_LIMIT` and `TITLE_LIMIT`
+  in `packages/lntt/src/issue.ts`). Its body is one `### <field>` heading per field (the fields in
+  `ISSUE_SECTIONS`, `packages/lntt/src/issue.ts`; Project carries the template and version
+  of the `lunette` key), as
+  GitHub writes a submitted issue form, so an issue form added upstream later takes the
+  fields as they are. The repository is never written in a skill nor guessed: it is
+  `cycle.retrospective.upstream.repository`, which every template sets
+  ([provenance](./scaffolding-contract.md#provenance)), and `lntt issue` fails naming the
+  key when it is missing. Only that repository is sent to: a report for another one
+  (`--repo`, a library the project uses) is printed for the operator to file by hand,
+  and when the upstream is the repository `lntt issue` runs in, there is nothing to
+  send. A configuration that does not validate stops `lntt dump` as
+  it stops every command, exit 1, after the dump is printed with the error in it.
 - **No aliases for old names.** A renamed command answers only to its new name, so its
   callers (workflows, skills, the README) change with it, in the same release: the
   shared skills ship in `@lntt/lntt` with the command they call.
@@ -129,7 +149,7 @@ rests on these criteria:
    `ci:local`; `decisions` calls `lntt check decisions` and is a lens of `lntt review`;
    `coordinate` calls `lntt worktree start`, the mailbox and `lntt get`; `run-local`
    calls `lntt get`, `lntt local app` and `lntt viewer`; `retrospective` calls `lntt get`,
-   `lntt pr block` and `lntt check body` (gates) and `lntt retro add` (an agent tool); `github-board` calls `lntt get` and `lntt set`
+   `lntt pr block` and `lntt check body` (gates) and `lntt retro add`, `lntt dump` and `lntt issue` (agent tools); `github-board` calls `lntt get` and `lntt set`
    (gates) and `lntt board sync` (an agent tool); `commit-message` (`lntt get`,
    commitlint), `plan-round` and `roadmap` (`lntt get`, `lntt set`) stay on the gate
    side. In the code, `lntt review` imports the check
@@ -160,7 +180,7 @@ So:
   | `lntt ci local`: CI's jobs on the machine; `lntt ci candidate`: what the candidate workflow runs on GitHub, at the default branch's version, which the workflow checks out ([delivery](../process/delivery.md#the-candidate-automation)) | `lntt worktree start`: the Orca and Herdr adapters |
   | `lntt branch check`, and `branch name` and `branch rename`, so the name an agent gets is the one the gate accepts | `lntt ask \| inbox \| answer` |
   | `lntt validate \| get \| set \| path`: they hold the schema; `set` writes a tracked file | `lntt guide`: it prints the skills |
-  | `lntt sync`: it writes tracked files (the `AGENTS.md` block, the skill stubs) that `lntt check` verifies | `lntt operator`: personal context, read by no gate; `lntt pr block`: the empty retrospective block, for the template and the skill; `lntt retro add`: it writes a comment on GitHub, not the commit |
+  | `lntt sync`: it writes tracked files (the `AGENTS.md` block, the skill stubs) that `lntt check` verifies | `lntt operator`: personal context, read by no gate; `lntt pr block`: the empty retrospective block, for the template and the skill; `lntt retro add`: it writes a comment on GitHub, not the commit; `lntt dump` and `lntt issue`: a report on Lunette, filed upstream on the operator's approval |
   | the commitlint configuration (the `@lntt/lntt` export) | `lntt local app`, `lntt viewer`; `lntt board sync`: it reads and writes GitHub, not the commit, so its `--check` is a verdict on the board's state that a hook or a scheduled job runs, never a pull request's gate |
   | the configuration schema | the plugin's hooks; once they exist, `lntt refs` (#144) and `lntt doctor` (#124) |
 

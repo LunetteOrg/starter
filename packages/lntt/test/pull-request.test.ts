@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { checkBody, retrospectiveBlock, retrospectiveRules } from '../src/pull-request.ts'
+import { checkBody, retrospectiveBlock, retrospectiveRules, upstreamItems } from '../src/pull-request.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
 
@@ -53,7 +53,11 @@ describe('the retrospective rules', () => {
     const rules = retrospectiveRules({
       delivery: { pullRequest: { retrospective: { lines: ['Attrito', 'Causa di rilavoro'], none: 'nessuno' } } },
     })
-    assert.deepEqual(rules, { heading: '🔁 Retrospective', lines: ['Attrito', 'Causa di rilavoro'], none: 'nessuno' })
+    assert.deepEqual(rules, {
+      heading: '🔁 Retrospective',
+      lines: ['Attrito', 'Causa di rilavoro'],
+      none: 'nessuno',
+    })
     const heading = retrospectiveRules({
       delivery: { pullRequest: { retrospective: { heading: '🔁 Retrospettiva' } } },
     })
@@ -158,6 +162,107 @@ describe('checkBody', () => {
 
   test('CRLF line endings, as a body edited on GitHub has them', () => {
     assert.deepEqual(checkBody(body(...FILLED).replaceAll('\n', '\r\n'), DEFAULTS), [])
+  })
+})
+
+describe('the upstream marker', () => {
+  test('an item that starts with [upstream:<owner/name>], on the label line or as a sub-bullet, is well formed', () => {
+    const lines = [
+      '- **Friction:**',
+      '  - [upstream:LunetteOrg/starter] lntt review lost its state when the worktree changed branch',
+      '  - the usage limit stopped a round',
+      '- **To automate (hook/skill/agent):** [upstream:remix-run/react-router] the dev server drops HMR',
+      ...FILLED.slice(2),
+    ]
+    assert.deepEqual(checkBody(body(...lines), DEFAULTS), [])
+    assert.deepEqual(upstreamItems(body(...lines)), [
+      {
+        label: 'Friction',
+        repository: 'LunetteOrg/starter',
+        item: 'lntt review lost its state when the worktree changed branch',
+      },
+      {
+        label: 'To automate (hook/skill/agent)',
+        repository: 'remix-run/react-router',
+        item: 'the dev server drops HMR',
+      },
+    ])
+  })
+
+  test('a marker with no sentence after it is reported, and is no item', () => {
+    const lines = ['- **Friction:** [upstream:LunetteOrg/starter]', ...FILLED.slice(1)]
+    assert.deepEqual(checkBody(body(...lines), DEFAULTS), [
+      'retrospective: "Friction" has a [upstream:LunetteOrg/starter] item with no sentence after the marker',
+    ])
+    assert.deepEqual(upstreamItems(body(...lines)), [])
+  })
+
+  test('a marker whose repository is not owner/name, or joined to what follows, is reported, and is no item', () => {
+    for (const marker of [
+      '[upstream:starter]',
+      '[upstream:]',
+      '[upstream:a/b/c]',
+      '[upstream:a/b]:',
+      '[upstream:a b]',
+    ]) {
+      const lines = ['- **Friction:**', `  - ${marker} the scaffolder pins an old Node`, ...FILLED.slice(1)]
+      const [problem, ...rest] = checkBody(body(...lines), DEFAULTS)
+      assert.match(problem ?? '', /^retrospective: "Friction" has an item starting \[upstream:/, marker)
+      assert.match(problem ?? '', /write \[upstream:<owner\/name>\], a space, then the sentence$/, marker)
+      assert.deepEqual(rest, [], marker)
+      assert.deepEqual(upstreamItems(body(...lines)), [], marker)
+    }
+  })
+
+  test('the repository is kept as written, case included', () => {
+    const lines = ['- **Friction:** [upstream:lunetteorg/Starter] a', ...FILLED.slice(1)]
+    assert.deepEqual(upstreamItems(body(...lines)), [
+      { label: 'Friction', repository: 'lunetteorg/Starter', item: 'a' },
+    ])
+  })
+
+  test('a bracketed path or owner/name with no upstream: is plain text', () => {
+    for (const text of ['[src/app] fix the loader', '[LunetteOrg/starter] lntt review', 'the [upstream:a/b] repo']) {
+      const lines = ['- **Friction:**', `  - ${text}`, ...FILLED.slice(1)]
+      assert.deepEqual(checkBody(body(...lines), DEFAULTS), [], text)
+      assert.deepEqual(upstreamItems(body(...lines)), [], text)
+    }
+    assert.deepEqual(upstreamItems(`- [upstream:LunetteOrg/starter] outside\n${body(...FILLED)}`), [])
+  })
+
+  test('several markers, a bullet nested deeper or not indented, an item wrapped on two lines', () => {
+    const lines = [
+      '- **Friction:**',
+      '  - [upstream:LunetteOrg/starter] lntt review lost its state',
+      '    - [upstream:LunetteOrg/starter] nested deeper',
+      '- [upstream:LunetteOrg/starter] not indented',
+      '  - [upstream:LunetteOrg/starter] a long item',
+      '    wrapped on the next line',
+      ...FILLED.slice(1),
+    ]
+    assert.deepEqual(checkBody(body(...lines), DEFAULTS), [])
+    assert.deepEqual(
+      upstreamItems(body(...lines)).map((i) => i.item),
+      ['lntt review lost its state', 'nested deeper', 'not indented', 'a long item wrapped on the next line'],
+    )
+  })
+
+  test('a line that is no bullet under a label left empty on its line is an item of that label', () => {
+    const lines = [
+      '- **Friction:** none',
+      '- **To automate (hook/skill/agent):**',
+      '[upstream:LunetteOrg/starter] a hook',
+      ...FILLED.slice(2),
+    ]
+    assert.deepEqual(upstreamItems(body(...lines)), [
+      { label: 'To automate (hook/skill/agent)', repository: 'LunetteOrg/starter', item: 'a hook' },
+    ])
+  })
+
+  test('a marker inside an HTML comment is no item', () => {
+    const lines = ['- **Friction:** none <!-- [upstream:LunetteOrg/starter] -->', ...FILLED.slice(1)]
+    assert.deepEqual(checkBody(body(...lines), DEFAULTS), [])
+    assert.deepEqual(upstreamItems(body(...lines)), [])
   })
 })
 

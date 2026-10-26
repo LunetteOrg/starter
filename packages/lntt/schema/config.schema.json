@@ -664,7 +664,7 @@
         },
         "retrospective": {
           "type": "object",
-          "description": "What the harvest of the pull requests' retrospective blocks (delivery.pullRequest.retrospective) produces: where it is published, and when it proposes a targeted review.",
+          "description": "What the harvest of the pull requests' retrospective blocks (delivery.pullRequest.retrospective) produces: where it is published, when it proposes a targeted review, and where the friction that comes from Lunette itself is reported.",
           "additionalProperties": false,
           "properties": {
             "target": {
@@ -704,6 +704,19 @@
                   "category": true
                 },
                 "required": ["category"]
+              }
+            },
+            "upstream": {
+              "type": "object",
+              "description": "The repository friction that comes from Lunette itself is reported to: its items start with [upstream:<it>] (another repository's with [upstream:<owner/name>]), and lntt issue files the reports there on the operator's approval; nothing is sent when it is the project's own repository. lntt issue needs it; a scaffolded project has it.",
+              "additionalProperties": false,
+              "required": ["repository"],
+              "properties": {
+                "repository": {
+                  "type": "string",
+                  "pattern": "^[\\w.-]+/[\\w.-]+$",
+                  "description": "owner/name on GitHub: LunetteOrg/starter, or a fork or a private mirror of it."
+                }
               }
             },
             "targetedReview": {

@@ -224,6 +224,59 @@ With no comment holding the block, it writes one. On a candidate, `lntt check bo
 reads that comment instead of the body: the first comment holding the start marker on a
 line of its own.
 
+An item whose friction comes from another repository starts with it, as
+`[upstream:<owner/name>]` followed by a space: `cycle.retrospective.upstream.repository`
+for Lunette itself (`lntt`, a shared skill, the scaffolder, a template),
+`- **Friction:** [upstream:LunetteOrg/starter] lntt review …`, or a library's own
+repository, `  - [upstream:remix-run/react-router] …`. Only an item starting
+`[upstream:` is a marker: `[src/app] …` is plain text. `lntt check body` fails a marker
+whose repository is not `owner/name` or that is joined to what follows, and a marker with
+no sentence after it.
+
+## Reports on Lunette itself
+
+```sh
+lntt dump [--json] [--harness <name>] [--model <id>] [-- <failing command>...]
+lntt issue search <words>...         # the open issues upstream that match: one JSON line each
+lntt issue draft.md                  # the whole issue, dump included; nothing sent
+lntt issue draft.md --send           # opened with gh; prints its URL
+lntt issue draft.md --comment 7 --send   # a comment on an existing issue instead
+lntt issue draft.md --repo remix-run/react-router   # another repository: printed, never sent
+```
+
+`lntt dump` prints, in Markdown (`--json`: one object), what a report on Lunette needs:
+the `lntt` version and how it is installed, Node, the package manager and the OS, the
+harness and its version (detected from the environment; `--harness` overrides) and the
+model (`--model`: the agent knows it, the environment does not), the project's skills,
+git and agent hooks, plugins, `@lntt/*` packages and configuration, and, after `--`, the
+failing command, run again, with its exit code and the last 200 lines of its output. It
+is redacted before it is printed: the home path becomes `~`, the project's git remotes
+`<remote>`, a URL with credentials, an email, a token by its shape (GitHub, Anthropic,
+OpenAI, Slack, AWS, npm, a JWT, a bearer), the value of a key that names a secret and the
+value of every secret-named environment variable of 8 characters or more `<redacted>` or
+`<token>`. A configuration that does not validate is reported in the dump (with `--json`, in its
+`configuration` line and its `configError` field), printed whole, and `lntt dump` exits 1;
+no configuration file is the defaults, exit 0. The failing command is stopped after 10 minutes.
+
+`lntt issue <draft | ->` reads a draft (`# <title>`, then `## What happened`,
+`## Pull requests`, `## Proposal`) and writes the report's fields, each a `### <field>`
+heading as GitHub writes a submitted issue form: the project
+(`--project`, default the `name` of its `package.json`) with its template and version (the
+`lunette` key, when it is set), the harness, the model and the
+versions from the dump (`--dump <file>` from `lntt dump --json`, else collected now),
+the whole dump folded at the end. Without `--send` it is a dry run: it prints the issue
+and sends nothing, so the operator reads exactly what will be sent; the draft and the
+project's name are redacted as the dump is, and a body or a title past GitHub's limits
+is a warning there and a refusal with `--send`. It sends with `gh`, under the account
+`gh` uses (`GH_TOKEN` when it is set, else the operator's login), to
+`cycle.retrospective.upstream.repository`; without it, `lntt issue` (and `search`) exits
+1 naming the key. `--repo <owner/name>` names another repository: its report is printed
+for the operator to file by hand, and `--send` is refused. When the upstream is the
+repository `lntt issue` runs in (`GITHUB_REPOSITORY`, else the `origin` remote; names
+compared ignoring case, as GitHub does), there is nothing to send: it says so and exits 0. `--harness` and `--model` beside `--dump` replace the dump's. The
+`retrospective` skill drafts these reports from the items marked with the upstream and calls
+`lntt issue`, never `gh`.
+
 ## Starting work on an issue
 
 ```sh

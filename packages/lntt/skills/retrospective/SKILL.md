@@ -1,6 +1,6 @@
 ---
 name: retrospective
-description: Carry the friction met while working to where it gets fixed — a `Retro:` trailer on the commit, the retrospective block of the pull request body (between `<!-- retro:start -->` and `<!-- retro:end -->`), the candidate's retrospective comment for the batch's friction (`lntt retro add`), and a harvest of the merged pull requests' blocks into proposals, published where `cycle.retrospective` says. Use when opening a pull request (to fill the block), before marking one ready (`lntt check body`), when an orchestrator or a coordinator meets friction that belongs to the batch or squashes into the candidate, and when a theme or a release ends (the harvest).
+description: Carry the friction met while working to where it gets fixed — a `Retro:` trailer on the commit, the retrospective block of the pull request body (between `<!-- retro:start -->` and `<!-- retro:end -->`), the candidate's retrospective comment for the batch's friction (`lntt retro add`), a harvest of the merged pull requests' blocks into proposals, published where `cycle.retrospective` says, and the friction that comes from Lunette itself (items marked `[upstream:<owner/name>]`) reported upstream with `lntt dump` and `lntt issue`, on the operator's approval. Use when opening a pull request (to fill the block), before marking one ready (`lntt check body`), when an orchestrator or a coordinator meets friction that belongs to the batch or squashes into the candidate, and when a theme or a release ends (the harvest and the upstream reports).
 ---
 
 # Retrospective
@@ -17,7 +17,7 @@ fit one project.
 ```sh
 lntt pr block                      # the empty block: heading, markers, one label per line
 lntt get delivery.pullRequest      # the template, the language of the body's prose
-lntt get cycle.retrospective       # where a harvest is published, the targeted review
+lntt get cycle.retrospective       # where a harvest is published, the targeted review, the upstream
 lntt get delivery.commits          # whether Retro is one of the trailers
 ```
 
@@ -27,7 +27,9 @@ configuration does not have. Without `cycle.retrospective.target`, a harvest sto
 before publishing and proposes the section to the person (`kind`, `category` for a
 Discussion, `title` with `{window}`); it never picks a place to publish. Labels are
 written exactly as the configuration gives them, in its language; the values in the
-language of `delivery.pullRequest.language`.
+language of `delivery.pullRequest.language`. `cycle.retrospective.upstream.repository`
+is the upstream repository, `<upstream>` below (`LunetteOrg/starter` in a project
+scaffolded from Lunette).
 
 ## 1. Capture, while working
 
@@ -43,6 +45,14 @@ language of `delivery.pullRequest.language`.
   lntt retro add --label <label> "<one sentence>"     # the open candidate; --pr <n> for another
   ```
 
+- **Friction that comes from another repository** (what the project cannot fix on its
+  own) starts with that repository, `[upstream:<owner/name>]`, in the trailer and in the
+  block. Lunette itself (`lntt`, a shared skill, the scaffolder, a template) is
+  `lntt get cycle.retrospective.upstream.repository`:
+  `Retro: [upstream:LunetteOrg/starter] lntt review lost its state on git switch`; a
+  library the project uses is its own repository. It is fixed upstream (section 5), never
+  worked around in silence.
+
 ## 2. Absorb, when the pull request opens
 
 The body comes from the template (`delivery.pullRequest.template`, default
@@ -57,6 +67,9 @@ such as `Refs #91`, has no colon.)
 
 - Each trailer, and each item a subagent returned, goes under the label it fits. Several
   items under one label are sub-bullets on the lines below it.
+- **An item from upstream keeps its `[upstream:<owner/name>]`** at the start, followed by
+  a space: `- **Friction:** [upstream:<owner/name>] …`, or a sub-bullet
+  `  - [upstream:<owner/name>] …`. In the middle of a sentence it is no marker.
 - **`none` is an answer** (the configured `none`): write it where nothing applies. A label
   left empty means the block was not filled in, and the harvest counts it apart.
 - **A line about the review's cost**, when the configuration has one: the rounds of
@@ -71,7 +84,9 @@ Before the pull request is marked ready:
 lntt check body          # the current branch's pull request; --pr <n>, or - for stdin
 ```
 
-It fails naming a missing block, or a label missing, written twice or left empty. CI
+It fails naming a missing block, or a label missing, written twice or left empty, or a
+marker with no sentence after it, or a bracketed `owner/name` at an item's start that is
+not the upstream (or with no upstream configured). CI
 reports the same on the pull request. The template's block is the one `lntt pr block`
 prints (`lntt check body template`): a label added to the configuration goes into the
 template in the same change.
@@ -163,9 +178,72 @@ published without the person's go.
    - `issue`: an issue with the proposals as a checklist, on the board (the
      `github-board` skill).
 
+A cluster made of `[upstream:<owner/name>]` items is not built in the project: the
+harvest lists them by repository, and section 5 takes them upstream.
+
 **Every proposal the person adopts becomes an issue** of its own (the `github-board`
 skill), citing the retrospective and its cluster. A proposal left only in a retrospective is
 never built.
+
+## 5. Report upstream what comes from Lunette
+
+At the end of a harvest, and at the end of a coordinator's theme, each cluster of
+`[upstream:<owner/name>]` items becomes a report for its repository. **Nothing is sent
+without the operator's approval, report by report.**
+
+1. **The repository** decides what happens to the report:
+   - **Lunette's**, `cycle.retrospective.upstream.repository`: the steps below, sent with
+     `--send` once approved. `lntt issue` reads the key, never written here, and fails
+     naming it when the configuration does not set it; its dry run names the repository
+     on its first line.
+   - **Another one** (a library the project uses): the same steps with
+     `--repo <owner/name>`, up to the dry run. It is never sent: the harvest lists these
+     reports by repository, and the operator files them by hand.
+   - **The project's own** (the upstream is the repository you are in): nothing to send,
+     `lntt issue` says so; the harvest handles those items here, as proposals.
+2. **No duplicates.** Search the open issues there for the cluster's subject:
+
+   ```sh
+   lntt issue search [--repo <owner/name>] <a few words of the subject>
+   ```
+
+   When one is the same subject, the report is a comment on it (`--comment <n>`), not a
+   new issue.
+3. **The draft**, one file per cluster, in English (the Lunette repository's language):
+
+   ```markdown
+   # <what fails, in one line>
+
+   ## What happened
+   <the friction, from the items, in English>
+
+   ## Pull requests
+   <the pull requests the items come from>
+
+   ## Proposal
+   <what lntt, the skill or the template could do instead>
+   ```
+
+4. **The dump**, the environment collected by the command, never by hand:
+
+   ```sh
+   lntt dump --json --model <the model you run on> [-- <the failing command>] > <dump.json>
+   ```
+
+   `--` runs the failing command again, when there is one and running it again is
+   harmless. The dump is redacted (home path, remotes, emails, tokens, secrets); read it
+   anyway, and take out what the project would not publish.
+5. **Show the operator each report whole**, as it would be sent:
+
+   ```sh
+   lntt issue <draft.md> --dump <dump.json> [--repo <owner/name>] [--comment <n>]
+   ```
+
+   The dry run prints everything that leaves the machine. The operator approves each
+   report on its own, or changes it; one not approved stays in the retrospective.
+6. **Send the approved ones**, the same command with `--send`. It opens the issue (or
+   the comment) with `gh`, under the operator's account, and prints its URL: write the URL
+   beside the cluster in the retrospective.
 
 ## Guardrails
 
@@ -174,3 +252,5 @@ never built.
 - Keep the markers exactly `<!-- retro:start -->` and `<!-- retro:end -->`, each on a line
   of its own: the check and the harvest read them as text.
 - A harvest creates no skill, hook or issue by itself: it proposes.
+- An upstream report goes through `lntt issue`, never `gh` directly, and only with
+  `--send` after the operator approved that report.
