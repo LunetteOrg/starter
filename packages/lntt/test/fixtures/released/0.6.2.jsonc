@@ -30,9 +30,7 @@
   },
   "delivery": {
     "branches": {
-      "types": [
-        "example"
-      ]
+      "types": ["example"]
     },
     "candidate": {
       "base": "example",
@@ -48,13 +46,9 @@
     },
     "commits": {
       "language": "en",
-      "scopes": [
-        "example"
-      ],
+      "scopes": ["example"],
       "maxLineLength": 50,
-      "longTrailers": [
-        "Example"
-      ]
+      "longTrailers": ["Example"]
     },
     "review": {
       "reviewers": {
@@ -68,9 +62,7 @@
             }
           ],
           "brief": "example",
-          "paths": [
-            "example"
-          ]
+          "paths": ["example"]
         }
       },
       "verify": {
@@ -82,9 +74,7 @@
             "optional": true
           }
         ],
-        "severities": [
-          "blocker"
-        ]
+        "severities": ["blocker"]
       },
       "timeoutMinutes": 1,
       "perProvider": 1,
@@ -111,16 +101,10 @@
     "levels": [
       {
         "name": "example",
-        "files": [
-          "example"
-        ],
-        "exclude": [
-          "example"
-        ],
+        "files": ["example"],
+        "exclude": ["example"],
         "environment": "example",
-        "harness": [
-          "example"
-        ],
+        "harness": ["example"],
         "run": "example",
         "coverage": "example",
         "cwd": "example",
@@ -132,20 +116,14 @@
       {
         "name": "example",
         "pattern": "example",
-        "files": [
-          "example"
-        ],
+        "files": ["example"],
         "message": "example",
         "anchor": "example",
         "assertedBy": "example"
       }
     ],
-    "ignore": [
-      "example"
-    ],
-    "assertions": [
-      "example"
-    ]
+    "ignore": ["example"],
+    "assertions": ["example"]
   },
   "local": {
     "infra": {
