@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import jsonc from 'jsonc-parser'
-import { ConfigError, loadConfig } from '../src/index.ts'
+import { loadConfig } from '../src/index.ts'
 
 // One configuration per released version of @lntt/lntt, written with every field that
 // version knew. The schema only grows (the compatibility rule in docs/adr/lntt-command.md):
@@ -31,11 +31,12 @@ const versions = readdirSync(RELEASED)
 
 type Node = Record<string, unknown>
 
-// The schema's fields that `value` does not set. Free-form maps (`additionalProperties`
-// as a schema) are covered by any one entry; of a `oneOf`, by the closest branch.
+// The schema's fields that `value` does not set. An array or a free-form map
+// (`additionalProperties` as a schema) is covered by what any of its items sets; of a
+// `oneOf`, by the closest branch.
 function missing(schema: Node, root: Node, value: unknown, at = ''): string[] {
   const s = schema.$ref
-    ? ((root.definitions as Record<string, Node>)[String(schema.$ref).split('/').pop() as string] as Node)
+    ? (root.definitions as Record<string, Node>)[String(schema.$ref).split('/').pop() as string]
     : schema
   if (Array.isArray(s.oneOf)) {
     return (s.oneOf as Node[])
@@ -43,24 +44,26 @@ function missing(schema: Node, root: Node, value: unknown, at = ''): string[] {
       .sort((a, b) => a.length - b.length)[0] as string[]
   }
   if (s.type === 'array') {
-    return Array.isArray(value) && value.length > 0 && s.items
-      ? missing(s.items as Node, root, value[0], `${at}[]`)
-      : Array.isArray(value)
-        ? []
-        : [at]
+    if (!Array.isArray(value) || value.length === 0) return [`${at}[]`]
+    return s.items ? absentFromAll(value.map((item) => missing(s.items as Node, root, item, `${at}[]`))) : []
   }
   if (s.type !== 'object') return value === undefined ? [at] : []
-  const object = value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Node) : undefined
-  if (!object) return [at]
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return [at]
+  const object = value as Node
   const props = (s.properties ?? {}) as Record<string, Node>
-  const own = Object.entries(props).flatMap(([key, child]) =>
+  if (s.additionalProperties && typeof s.additionalProperties === 'object' && !Object.keys(props).length) {
+    const entries = Object.values(object)
+    if (entries.length === 0) return [`${at}.*`]
+    return absentFromAll(entries.map((entry) => missing(s.additionalProperties as Node, root, entry, `${at}.*`)))
+  }
+  return Object.entries(props).flatMap(([key, child]) =>
     key in object ? missing(child, root, object[key], `${at}.${key}`) : [`${at}.${key}`],
   )
-  const entries = Object.values(object)
-  if (s.additionalProperties && typeof s.additionalProperties === 'object' && !Object.keys(props).length) {
-    return entries.length ? missing(s.additionalProperties as Node, root, entries[0], `${at}.*`) : [`${at}.*`]
-  }
-  return own
+}
+
+// What every item lacks: a field set by any one of them is set.
+function absentFromAll(lists: string[][]): string[] {
+  return (lists[0] as string[]).filter((path) => lists.every((list) => list.includes(path)))
 }
 
 function inTree(root: string, content: string): string {
@@ -120,28 +123,54 @@ describe('the configuration of each released version', () => {
     })
   }
 
-  test('a fixture cut down to its version is reported incomplete', () => {
+  test('missing reports what a value leaves unset', () => {
+    const schema: Node = {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        list: {
+          type: 'array',
+          items: { type: 'object', properties: { a: { type: 'string' }, b: { type: 'string' } } },
+        },
+        map: { type: 'object', additionalProperties: { type: 'object', properties: { x: { type: 'string' } } } },
+        nested: { type: 'object', properties: { deep: { type: 'object', properties: { leaf: { type: 'string' } } } } },
+        either: { oneOf: [{ const: false }, { type: 'object', properties: { with: { type: 'string' } } }] },
+      },
+    }
+    const full = {
+      name: 'n',
+      list: [{ a: '1' }, { b: '2' }],
+      map: { k: { x: '1' } },
+      nested: { deep: { leaf: 'l' } },
+      either: false,
+    }
+    assert.deepEqual(missing(schema, schema, full), [])
+    assert.deepEqual(missing(schema, schema, {}), ['.name', '.list', '.map', '.nested', '.either'])
+    assert.deepEqual(missing(schema, schema, { ...full, list: [{ a: '1' }] }), ['.list[].b'])
+    assert.deepEqual(missing(schema, schema, { ...full, list: [] }), ['.list[]'])
+    assert.deepEqual(missing(schema, schema, { ...full, map: {} }), ['.map.*'])
+    assert.deepEqual(missing(schema, schema, { ...full, map: { k: {} } }), ['.map.*.x'])
+    assert.deepEqual(missing(schema, schema, { ...full, nested: { deep: {} } }), ['.nested.deep.leaf'])
+    assert.deepEqual(missing(schema, schema, { ...full, either: { with: 'w' } }), [])
+  })
+
+  test('a fixture cut down to its version is incomplete against the current schema', () => {
     const schema = JSON.parse(readFileSync(resolve(HERE, '../schema/config.schema.json'), 'utf8')) as Node
-    const cut = { lunette: { template: 'react-router', version: '0.6.2' } }
-    const absent = missing(schema, schema, cut)
+    const absent = missing(schema, schema, { lunette: { template: 'react-router', version: '0.6.2' } })
     assert.ok(absent.includes('.delivery'))
     assert.ok(absent.includes('.ci'))
-    assert.deepEqual(
-      missing(schema, schema, cut).filter((path) => path.startsWith('.lunette')),
-      [],
-    )
   })
 
   test('a fixture with an unknown field or an invalid value is rejected', () => {
     setup()
     try {
-      const fixture = read(current)
+      const fixture = read('0.6.2')
       const unknown = fixture.replace('"lunette": {', '"lunette": {\n    "renamed": "x",')
-      assert.notEqual(unknown, fixture)
-      assert.throws(() => loadConfig(inTree(root, unknown)), ConfigError)
+      assert.match(unknown, /"renamed"/)
+      assert.throws(() => loadConfig(inTree(root, unknown)), /renamed/)
       const invalid = fixture.replace(/"maxRounds": \d+/, '"maxRounds": 0')
-      assert.notEqual(invalid, fixture)
-      assert.throws(() => loadConfig(inTree(root, invalid)), ConfigError)
+      assert.match(invalid, /"maxRounds": 0/)
+      assert.throws(() => loadConfig(inTree(root, invalid)), /maxRounds/)
     } finally {
       teardown()
     }

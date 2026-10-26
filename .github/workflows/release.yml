@@ -22,6 +22,10 @@ jobs:
       DRY_RUN: ${{ github.event.release.prerelease && '--dry-run --tag next' || '' }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The tags of the earlier releases: the configuration fixtures are checked
+          # against the schema of their tag.
+          fetch-depth: 0
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
