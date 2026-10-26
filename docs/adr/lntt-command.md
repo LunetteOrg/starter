@@ -181,9 +181,9 @@ So:
   - A missing file means the defaults (`NoConfigError` in
     `packages/lntt/src/files.ts`); a file that does not validate stops the command
     with the error, as `lntt review` does (`loaded` in
-    `packages/lntt/src/review-cli.ts`). The rule is that an invalid file gets an
-    error, not the defaults; two commands still answer it with their defaults
-    ([accepted risks](#negative--accepted-risks)).
+    `packages/lntt/src/review-cli.ts`). An invalid file gets an error, not the
+    defaults, in every command that reads the configuration, `lntt worktree start`
+    (`projectConfig`) and the commitlint configuration (`commits`) included.
   - A removal or a rename is a breaking change, the one release where an older file
     stops validating: the release knows both names, the gate fails on the old one and
     names the new one while the agent tools still read it, and a later release drops
@@ -219,12 +219,8 @@ So:
   `npx @lntt/lntt`, never in daily use.
 - A host's change reaches a project's agent tools only with a release and that
   project's bump, until the split's trigger fires.
-- `lntt worktree start` and the commitlint configuration answer a file that does not
-  validate with their defaults (`projectConfig` in
-  `packages/lntt/src/worktree-cli.ts`, `commits` in `packages/lntt/src/commitlint.ts`),
-  against the compatibility rule, and no test validates each released version's
-  configuration: until the work that follows this record closes both gaps, the rule
-  rests on review.
+- No test validates each released version's configuration against the next
+  release's schema: the compatibility rule rests on review.
 
 ### When to deviate (revisit triggers)
 
