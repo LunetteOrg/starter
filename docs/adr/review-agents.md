@@ -106,8 +106,9 @@ same way every time; the `review` skill keeps the judgement.
   being clean (the round's `blocking` says which severities do); the warnings and notes
   left go in the pull request as open items. A confirmed warning enters the ledger as
   accepted open and is no longer carried; an undecided or unverified one stays carried,
-  to be verified again, without blocking. A run with no new commit blocks as the round
-  whose number it keeps. A `warningRounds` not below `maxRounds` leaves no round where only
+  to be verified again, without blocking. A run with no new commit, which is not a round
+  and does not count toward `maxRounds`, blocks as the round whose number it keeps. A
+  `warningRounds` not below `maxRounds` leaves no round where only
   blockers block: the schema cannot compare two keys, so `lntt validate` says it as a
   warning (the file stays valid), and so do `lntt review --plan` and every round.
 - **A branch takes at most `maxRounds` rounds:** later rounds find ever smaller things,
@@ -199,6 +200,10 @@ same way every time; the `review` skill keeps the judgement.
   of `lntt check` named after the lens, and its brief drops them.
 
 ## Discarded directions
+
+- **A repeat of a closed finding matched by its wording.** A reviewer words the same
+  finding differently every round, so a match on the text would almost never hold; the
+  place and the line's text decide, and the author reads the entry's text beside it.
 
 - **The harness's own subagents** (Claude Code's Agent tool, opencode's agents). Claude
   Code takes only a few model aliases there and opencode fixes the model in the agent's

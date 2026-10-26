@@ -407,7 +407,8 @@ and do not block, nor are they carried to the next round. From the round after
 `delivery.review.warningRounds` a warning does not block either: the round's `blocking`
 names only `blocker`, and the warnings left go in the pull request as open items. The
 branch keeps a ledger of the findings it closed (fixed, refuted, accepted open) in
-`<git dir>/lntt-review-ledger.json`, read by every round's reviewers and verifiers; a
+`<git dir>/lntt-review-ledger.json`: each round's reviewers read the entries on the files of
+the change, each verifier those on its finding's file; a
 fresh finding that repeats one on a line that did not change goes to `closed`, not
 verified and not blocking. A reply that is neither
 finding lines nor `no findings` counts as a failed reviewer; after a failure the next

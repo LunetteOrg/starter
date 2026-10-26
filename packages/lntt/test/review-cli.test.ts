@@ -790,6 +790,14 @@ describe('lntt review, with the findings the branch already closed', () => {
     assert.equal(cut.code, 0, cut.err)
     assert.match(cut.err, /lntt-review-ledger\.json cannot be read: the branch starts a new ledger/)
     assert.deepEqual(ledger().closed, [])
+
+    writeFileSync(path, '{"branch": "feat/1/x"}')
+    writeFileSync(join(repo, 'a.ts'), 'export const a = 4\n')
+    git('commit', '-qam', 'again')
+    const shapeless = lntt(['--base', 'main'])
+    assert.equal(shapeless.code, 0, shapeless.err)
+    assert.match(shapeless.err, /lntt-review-ledger\.json cannot be read/, 'valid JSON with no closed list')
+    assert.deepEqual(ledger().closed, [])
   })
 
   test('a round that failed, or an empty delta, closes nothing', () => {
@@ -850,6 +858,15 @@ describe('lntt review, with the findings the branch already closed', () => {
       ledger().closed.map((c: { id: string; outcome: string }) => [c.id, c.outcome]),
       [['f1', 'accepted']],
     )
+
+    writeFileSync(join(repo, 'a.ts'), 'export const a = 4\n')
+    git('commit', '-qam', 'again')
+    const blockers = lntt(['--base', 'main'], {
+      FAKE_REVIEW: '- [blocker] a.ts:1 — b — a',
+      FAKE_VERIFY: 'confirmed\\nshown',
+    })
+    assert.equal(blockers.code, 1, 'a blocker blocks past warningRounds too')
+    assert.doesNotMatch(blockers.err, /past delivery\.review\.warningRounds/, 'no warning or note is left')
   })
 
   test('a warningRounds not below maxRounds is said in the plan, and at the start of a round', () => {
