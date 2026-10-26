@@ -271,8 +271,8 @@ function referencesCheck(root: string, logs: Log[], files: string[], external: R
 
 // A board reference: a bare issue number (not an anchor like `#1-scope` or `](#12)`, an
 // entity like `&#39;`, the tail of a path like `./x.md#3`), or an issue or pull request
-// URL (not a path like `docs/issues/12-notes.md`). Adapted from wai's
-// meta-product-docs-no-board-refs.spec.ts.
+// URL (not a path like `docs/issues/12-notes.md`, so not `/pull/7.diff` either).
+// Adapted from wai's meta-product-docs-no-board-refs.spec.ts.
 const BOARD = /(?<![\w&/#])(?<!\]\()#\d+(?![\w-])|\/(?:issues|pull)\/\d+(?![\w-]|\.\w)/g
 
 // The Markdown files of the logs whose `boardReferences` is false, at any depth and the

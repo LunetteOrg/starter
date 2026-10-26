@@ -31,9 +31,9 @@ That a template ships its logs in this shape is part of the shared base
 
 A record of this repo names the issue or pull request that holds its evidence when it
 rests on an event (the host adapters' release cadence in
-[the `lntt` command](../adr/lntt-command.md)). So neither log sets
-`boardReferences: false`, and the `pre-commit` hook that runs
-`lntt check decisions board-refs` reads no file here.
+[the `lntt` command](../adr/lntt-command.md)). `recording.logs.<log>.boardReferences`
+follows this rule for every log, and the `pre-commit` hook runs
+`lntt check decisions board-refs` on the staged files of a log it closes to the board.
 
 ## What ships cites the records of the project it ships to
 

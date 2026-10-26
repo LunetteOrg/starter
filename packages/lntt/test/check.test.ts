@@ -475,7 +475,16 @@ describe('lntt check decisions board-refs', () => {
     writeFileSync(join(repo, 'docs/process/review.md'), '# Review\n\nSee #3.\n')
     appendFileSync(join(repo, 'docs/process/README.md'), '\nOpened in #4.\n')
     appendFileSync(join(repo, 'docs/adr/storage.md'), '\nDecided in #12.\n')
-    const r = results(['check', 'decisions', 'board-refs', 'docs/process/review.md', 'docs/adr/storage.md', 'gone.md'])
+    // A file gone from a log (staged for deletion) is not read.
+    const r = results([
+      'check',
+      'decisions',
+      'board-refs',
+      'docs/process/review.md',
+      'docs/adr/storage.md',
+      'gone.md',
+      'docs/process/gone.md',
+    ])
     assert.equal(r.status, 1)
     assert.deepEqual(fails(r.results), ['board-refs docs/process/review.md:3'])
     // A path is read from where lntt runs, as a shell gives it.
