@@ -245,6 +245,18 @@ describe('delivery.candidate', () => {
     assert.deepEqual(candidateConfig(root)?.status, { inRelease: 'To release', done: 'Done' })
   })
 
+  test('the candidate carries the empty retrospective block of the configuration, for its comment', () => {
+    const retrospective = { heading: 'Retro', lines: ['Attrito'] }
+    write(
+      '.agents/config.jsonc',
+      JSON.stringify({ delivery: { candidate: { prefix: 'release/' }, pullRequest: { retrospective } } }),
+    )
+    assert.equal(
+      candidateConfig(root)?.retrospective,
+      '## Retro\n<!-- retro:start -->\n- **Attrito:**\n<!-- retro:end -->\n',
+    )
+  })
+
   test("pelion's release/ is a prefix like any other; only the prefix is required", () => {
     write('.agents/config.jsonc', JSON.stringify({ delivery: { candidate: { prefix: 'release/' } } }))
     assert.equal(getValue(loadConfig(root).data, 'delivery.candidate.prefix'), 'release/')

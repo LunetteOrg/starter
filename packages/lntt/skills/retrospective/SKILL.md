@@ -1,6 +1,6 @@
 ---
 name: retrospective
-description: Carry the friction met while working to where it gets fixed — a `Retro:` trailer on the commit, the retrospective block of the pull request body (between `<!-- retro:start -->` and `<!-- retro:end -->`), and a harvest of the merged pull requests' blocks into proposals, published where `cycle.retrospective` says. Use when opening a pull request (to fill the block), before marking one ready (`lntt check body`), when a coordinator closes a theme, and when a theme or a release ends (the harvest).
+description: Carry the friction met while working to where it gets fixed — a `Retro:` trailer on the commit, the retrospective block of the pull request body (between `<!-- retro:start -->` and `<!-- retro:end -->`), the candidate's retrospective comment for the batch's friction (`lntt retro add`), and a harvest of the merged pull requests' blocks into proposals, published where `cycle.retrospective` says. Use when opening a pull request (to fill the block), before marking one ready (`lntt check body`), when an orchestrator or a coordinator meets friction that belongs to the batch or squashes into the candidate, and when a theme or a release ends (the harvest).
 ---
 
 # Retrospective
@@ -35,8 +35,13 @@ language of `delivery.pullRequest.language`.
   was harder than it should be, what a hook, a skill or a check could do instead. It is
   a capture aid: a squash collapses the commits, and the pull request body is the store.
 - **A subagent or a child** returns its friction in its final report, one line per item.
-  Whoever opens the pull request writes it into the block; a coordinator collects its
-  children's in the theme's notes for the end of the theme (section 3).
+  Whoever opens the pull request writes it into the block.
+- **The batch's friction**, which belongs to no single pull request, goes into the
+  candidate's retrospective comment the moment it is met (section 3):
+
+  ```sh
+  lntt retro add --label <label> "<one sentence>"     # the open candidate; --pr <n> for another
+  ```
 
 ## 2. Absorb, when the pull request opens
 
@@ -71,15 +76,44 @@ reports the same on the pull request. The template's block is the one `lntt pr b
 prints (`lntt check body template`): a label added to the configuration goes into the
 template in the same change.
 
-## 3. A coordinator, when the theme ends
+## 3. The candidate's retrospective comment
 
-The children's friction about their own issue is in their pull requests. What belongs
-to the theme (the coordination, the machine, the account's limits, siblings that
-conflicted) the coordinator writes, when the last child's pull request is merged, as a
-**comment on the candidate pull request** holding the block (`lntt pr block`, filled).
-A comment, not the candidate's body: the candidate automation rewrites that body at
-every squash into it. A theme with no candidate puts the comment on its last pull
-request.
+The friction of an orchestrator or a coordinator belongs to the batch: the coordination,
+the machine, the account's limits, siblings that conflicted, a candidate whose full CI
+fails. It goes in the **candidate's retrospective comment**, which the candidate
+automation opens every candidate with (the empty block of `lntt pr block`) and never
+rewrites, unlike the body it rebuilds at every squash. Written at the end, it would be
+written from memory, after the context was compacted or the session gone; so it is
+written as it happens, one sentence each:
+
+```sh
+lntt retro add --label friction "the full CI failed on a runner out of disk; rerun"
+```
+
+`--label` is the configured label, or the start of only one (`to` for `To automate
+(hook/skill/agent)`). An empty label or `none` takes the item on its line, a label with
+a value gets sub-bullets; the markers and the other labels stay. With no candidate open,
+it fails: name the pull request with `--pr <n>` (a theme with no candidate writes on its
+last pull request). A candidate opened before the comment existed gets one at the first
+`lntt retro add`.
+
+**When to append:**
+
+- a child reports friction that is the theme's, not its own pull request's;
+- a review round or a CI run costs more than expected (a review that does not converge,
+  a full CI run again);
+- the orchestrator or the coordinator works around something by hand (a permission, a
+  step a tool did not do);
+- at each squash into the candidate: what the squash cost beyond the pull request's own
+  block (a rebase, a conflict, a run again), or nothing.
+
+**Before the candidate is marked ready**, every label holds a value or `none`:
+
+```sh
+lntt check body --pr <candidate>    # on a candidate it reads the retrospective comment
+```
+
+It fails on a missing comment, a label missing, written twice or left empty.
 
 ## 4. Harvest, when a theme or a release ends
 
@@ -98,7 +132,8 @@ published without the person's go.
    gh pr view <n> --json comments --jq '.comments[].body'
    ```
 
-   A label with a value is a signal; `none` is an answer with no signal; an empty label,
+   A candidate's block is its retrospective comment (section 3). A label with a value
+   is a signal; `none` is an answer with no signal; an empty label,
    or a pull request with no block, is counted apart and the count is reported. Friction
    collected outside the bodies (an issue gathering a theme's friction) is read with them
    and cited.
@@ -134,8 +169,8 @@ never built.
 
 ## Guardrails
 
-- The pull request body is the store; commit trailers and reports are how friction gets
-  there.
+- The pull request body is the store, and a candidate's retrospective comment; commit
+  trailers, reports and `lntt retro add` are how friction gets there.
 - Keep the markers exactly `<!-- retro:start -->` and `<!-- retro:end -->`, each on a line
   of its own: the check and the harvest read them as text.
 - A harvest creates no skill, hook or issue by itself: it proposes.

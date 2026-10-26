@@ -76,6 +76,11 @@
 //
 //   lntt pr block             the empty retrospective block of delivery.pullRequest.retrospective,
 //                             for the pull request template and the retrospective skill
+//   lntt retro add --label <label> [--pr <n>] [--dry-run] <one sentence>
+//                             append the item under the label (the configured one equal to it
+//                             ignoring case, or the only one it starts) of the retrospective
+//                             comment of the open candidate, or of pull request <n>; creates
+//                             the comment when there is none; exit 1 with no open candidate
 //
 //   lntt review [--base <branch>] [--plan]
 //                             one review round on the current branch: the lenses and agents of
@@ -150,6 +155,7 @@ const args = argv.slice(2)
 if (args[0] === 'ci') await (await import('../src/ci/cli.ts')).main(args.slice(1))
 else if (args[0] === 'branch') (await import('../src/branch-cli.ts')).main(args.slice(1))
 else if (args[0] === 'pr') (await import('../src/pull-request-cli.ts')).main(args.slice(1))
+else if (args[0] === 'retro') (await import('../src/retro-cli.ts')).main(args.slice(1))
 else if (args[0] === 'refs') await (await import('../src/refs-cli.ts')).main(args.slice(1))
 else if (args[0] === 'board') (await import('../src/board-cli.ts')).main(args.slice(1))
 else if (args[0] === 'check') (await import('../src/check-cli.ts')).main(args.slice(1))
