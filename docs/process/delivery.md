@@ -275,9 +275,12 @@ milestone, and the milestone is named after the version it ships. 1.0.0 is decla
 only after months of intensive use across several projects, not when a piece of work
 ends.
 
-1. `node scripts/packages-version.mts set X.Y.Z` and commit
-   `chore(release): X.Y.Z` directly on `main`; a release does not go through a pull
-   request.
+1. `node scripts/packages-version.mts set X.Y.Z`, and add the release's configuration
+   fixture, `packages/lntt/test/fixtures/released/X.Y.Z.jsonc`: a file written with
+   every field the schema knows at that release, which
+   `packages/lntt/test/released-configs.test.ts` validates against the current schema
+   from then on. Commit both as `chore(release): X.Y.Z` directly on `main`; a release
+   does not go through a pull request.
 2. `gh release create vX.Y.Z --generate-notes`. The tag matches the packages'
    version, and every release ships the generated notes (the merged pull requests
    since the previous tag).

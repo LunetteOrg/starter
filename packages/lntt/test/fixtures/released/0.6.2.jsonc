@@ -1,0 +1,220 @@
+// Every field @lntt/lntt 0.6.2 knew, from its schema (tag v0.6.2). Values are placeholders;
+// the test validates this file against the current schema.
+{
+  "$schema": "https://github.com/LunetteOrg/starter/packages/lntt/schema/config.schema.json",
+  "lunette": {
+    "template": "example",
+    "version": "0.6.2"
+  },
+  "ci": {
+    "local": {
+      "cloudOnly": {
+        "example": "example"
+      },
+      "fake": {
+        "secrets": {
+          "example": "example"
+        },
+        "vars": {
+          "example": "example"
+        }
+      },
+      "actions": {
+        "example": {
+          "skip": "example"
+        }
+      },
+      "lock": "machine",
+      "timeoutMinutes": 1
+    }
+  },
+  "delivery": {
+    "branches": {
+      "types": [
+        "example"
+      ]
+    },
+    "candidate": {
+      "base": "example",
+      "prefix": "feat/",
+      "hotfix": {
+        "prefix": "example",
+        "label": "example"
+      },
+      "status": {
+        "inRelease": "example",
+        "done": "example"
+      }
+    },
+    "commits": {
+      "language": "en",
+      "scopes": [
+        "example"
+      ],
+      "maxLineLength": 50,
+      "longTrailers": [
+        "Example"
+      ]
+    },
+    "review": {
+      "reviewers": {
+        "example": {
+          "with": [
+            {
+              "kind": "claude",
+              "model": "example",
+              "effort": "example",
+              "optional": true
+            }
+          ],
+          "brief": "example",
+          "paths": [
+            "example"
+          ]
+        }
+      },
+      "verify": {
+        "with": [
+          {
+            "kind": "claude",
+            "model": "example",
+            "effort": "example",
+            "optional": true
+          }
+        ],
+        "severities": [
+          "blocker"
+        ]
+      },
+      "timeoutMinutes": 1,
+      "perProvider": 1,
+      "optionalGraceMinutes": 0,
+      "roundTimeoutMinutes": 1,
+      "maxRounds": 1
+    }
+  },
+  "recording": {
+    "language": "en",
+    "logs": {
+      "example": {
+        "path": "example",
+        "index": "example",
+        "template": "example",
+        "scope": "example"
+      }
+    },
+    "externalReferences": {
+      "example": "example"
+    }
+  },
+  "tests": {
+    "levels": [
+      {
+        "name": "example",
+        "files": [
+          "example"
+        ],
+        "exclude": [
+          "example"
+        ],
+        "environment": "example",
+        "harness": [
+          "example"
+        ],
+        "run": "example",
+        "coverage": "example",
+        "cwd": "example",
+        "repeat": 1,
+        "timeoutSeconds": 1
+      }
+    ],
+    "rules": [
+      {
+        "name": "example",
+        "pattern": "example",
+        "files": [
+          "example"
+        ],
+        "message": "example",
+        "anchor": "example",
+        "assertedBy": "example"
+      }
+    ],
+    "ignore": [
+      "example"
+    ],
+    "assertions": [
+      "example"
+    ]
+  },
+  "local": {
+    "infra": {
+      "up": "example",
+      "check": "example"
+    },
+    "apps": {
+      "example": {
+        "description": "example",
+        "port": 1024,
+        "url": "http://localhost:3000",
+        "readyPath": "/health",
+        "commands": {
+          "start": {
+            "run": "example",
+            "description": "example"
+          }
+        },
+        "env": {
+          "example": "example"
+        },
+        "signIn": {
+          "test": "example",
+          "doc": "example"
+        },
+        "users": {
+          "example": {
+            "login": "example",
+            "role": "example"
+          }
+        }
+      }
+    }
+  },
+  "coordinator": {
+    "gate": "propose",
+    "models": {
+      "coordinator": {
+        "kind": "example",
+        "model": "example",
+        "effort": "example"
+      },
+      "children": {
+        "XS": {
+          "kind": "example",
+          "model": "example",
+          "effort": "example"
+        },
+        "S": {
+          "kind": "example",
+          "model": "example",
+          "effort": "example"
+        },
+        "M": {
+          "kind": "example",
+          "model": "example",
+          "effort": "example"
+        },
+        "L": {
+          "kind": "example",
+          "model": "example",
+          "effort": "example"
+        },
+        "XL": {
+          "kind": "example",
+          "model": "example",
+          "effort": "example"
+        }
+      }
+    }
+  }
+}
