@@ -7,8 +7,8 @@
 // - `opened` / `ready_for_review` on a pull request into the base: unless it is a
 //   candidate or a hotfix (branch prefix or label from delivery.candidate.hotfix),
 //   find the open candidate, or create `<prefix><N+1>` from the base with a draft
-//   pull request and a comment holding the empty retrospective block, then move the
-//   pull request onto it and comment.
+//   pull request, then move the pull request onto it and comment. A candidate without
+//   its retrospective comment (the empty block) gets it before anything moves onto it.
 // - `closed` and merged into a candidate: rebuild the two lists of the candidate's
 //   body from every pull request merged into it, and tell each open issue they close,
 //   once per candidate, that the candidate's merge will close it.
@@ -31,6 +31,7 @@
 // prefix, base and hotfix markers come from the configuration.
 
 import { spawnSync } from 'node:child_process'
+import { retroComment } from '../pull-request.ts'
 
 export interface CandidateConfig {
   // The branch candidates merge into (main).
@@ -385,6 +386,8 @@ interface CandidatePr {
   number: number
   headRefName: string
   body?: string
+  // Created by this run: it has no comment yet.
+  created?: boolean
 }
 
 function openCandidates({ gh, repo, config }: Pick<Run, 'gh' | 'repo' | 'config'>): CandidatePr[] {
@@ -439,10 +442,9 @@ function candidateNames({ gh, repo, config }: Run) {
   }
 }
 
-// Creates `<prefix><n>` from the base with a draft pull request and its retrospective
-// comment. GitHub refuses a pull request between identical branches, so the branch
-// starts with an empty commit. A branch an earlier run left without its pull request is
-// reused, pull request only.
+// Creates `<prefix><n>` from the base with a draft pull request. GitHub refuses a pull
+// request between identical branches, so the branch starts with an empty commit. A
+// branch an earlier run left without its pull request is reused, pull request only.
 function createCandidate(run: Run): CandidatePr {
   const { gh, repo, config, log } = run
   const names = candidateNames(run)
@@ -500,11 +502,34 @@ function createCandidate(run: Run): CandidatePr {
     candidateBody(config, n),
   )
   const number = Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0)
+  return { number, headRefName: branch, created: true }
+}
+
+export interface Comment {
+  id: number
+  body: string
+}
+
+// Every comment of a pull request, in order, read page by page.
+export function comments(gh: Gh, repo: string, number: number): Comment[] {
+  return gh
+    .read(['api', '--paginate', `repos/${repo}/issues/${number}/comments`, '--jq', '.[] | {id, body}'])
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .map((line) => JSON.parse(line) as Comment)
+}
+
+// The candidate's retrospective comment, written when it has none: on the candidate just
+// created, and on one a run left without it (a write that failed after `pr create`), so
+// the next run repairs it.
+function ensureRetrospective(run: Run, candidate: CandidatePr) {
+  const { gh, repo, config, log } = run
+  if (!candidate.created && retroComment(comments(gh, repo, candidate.number)) !== null) return
+  if (!candidate.created) log(`candidate: ${candidate.headRefName} has no retrospective comment: writing it.`)
   gh.write(
-    ['pr', 'comment', number ? String(number) : '<new>', '--repo', repo, '--body-file', '-'],
+    ['pr', 'comment', candidate.number ? String(candidate.number) : '<new>', '--repo', repo, '--body-file', '-'],
     retrospectiveComment(config),
   )
-  return { number, headRefName: branch }
 }
 
 function moveOnto({ gh, repo, config }: Run, number: number, candidate: CandidatePr) {
@@ -523,6 +548,7 @@ export function retarget(run: Run, pr: PullRequest) {
   if (!decision.move) return decision
   const candidate = openCandidate(run) ?? createCandidate(run)
   run.log(`candidate: open candidate ${candidate.headRefName} (#${candidate.number || '<new>'}).`)
+  ensureRetrospective(run, candidate)
   moveOnto(run, pr.number, candidate)
   return decision
 }
@@ -611,6 +637,7 @@ export function carryOver(run: Run, pr: PullRequest) {
   run.log(
     `candidate: ${candidateBranch} merged, moving ${move.map((n) => `#${n}`).join(', ')} onto ${candidate.headRefName}.`,
   )
+  ensureRetrospective(run, candidate)
   for (const number of move) moveOnto(run, number, candidate)
   return { move }
 }
@@ -947,6 +974,7 @@ export function sweep(run: Run) {
   run.log(
     `candidate: ${move.map((n) => `#${n}`).join(', ')} stranded on a closed candidate: moving onto ${candidate.headRefName}.`,
   )
+  ensureRetrospective(run, candidate)
   for (const number of move) moveOnto(run, number, candidate)
   return { move }
 }

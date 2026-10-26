@@ -19,9 +19,11 @@ import {
   type Result,
   runArea,
 } from './check.ts'
+import { comments } from './ci/candidate.ts'
 import { candidateConfig } from './ci/config.ts'
 import { ConfigError, loadConfig } from './index.ts'
-import { comments, isCandidate, retroComment } from './retro.ts'
+import { retroComment } from './pull-request.ts'
+import { isCandidate } from './retro.ts'
 
 const USAGE = `usage: lntt check [agents-md | skills | decisions [structure | numbers [<file>...]] | tests [levels | focus | rules | touched] | body [template | --pr <n> | -]] [--base <ref>] [--json]
        lntt check tests mutate <path:line> --text <on the line> --to <mutated> [--json]
@@ -55,7 +57,13 @@ function readBody(check: string | undefined, pr: string | undefined): { text: st
       throw new CannotRunError(`gh ${args.join(' ')} failed${said ? `: ${said}` : ''}`)
     }
   }
-  const found = JSON.parse(read(view)) as { number: number; body: string | null; headRefName: string }
+  let found: { number: number; body: string | null; headRefName: string }
+  try {
+    found = JSON.parse(read(view))
+  } catch (error) {
+    if (error instanceof CannotRunError) throw error
+    throw new CannotRunError(`gh ${view.join(' ')} printed no JSON`)
+  }
   if (isCandidate(candidateConfig(cwd()), found.headRefName)) {
     const gh = { read: (args: string[]) => read(args).trim(), write: () => '' }
     const comment = retroComment(comments(gh, '{owner}/{repo}', found.number))

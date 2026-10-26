@@ -36,7 +36,7 @@ export function main(args: string[]): void {
     const gh = makeGh({ dryRun: values['dry-run'], log })
     const repo = env.GITHUB_REPOSITORY ?? gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])
     const { pr, label, created } = retroAdd(
-      { gh, repo, config: candidateConfig(cwd()), rules },
+      { gh, repo, config: candidateConfig(cwd()), rules, dryRun: values['dry-run'] },
       {
         ...(values.pr === undefined ? {} : { pr: Number(values.pr) }),
         label: values.label,

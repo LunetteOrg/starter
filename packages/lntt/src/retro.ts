@@ -4,13 +4,15 @@
 // candidate checks that comment instead of the body, which the automation rebuilds at
 // every squash. docs/process/delivery.md has the flow.
 
-import { type CandidateConfig, candidateNumber, type Gh, openCandidate, retrospectiveComment } from './ci/candidate.ts'
-import { appendRetro, findLabel, RETRO_START, type RetrospectiveRules, retrospectiveBlock } from './pull-request.ts'
-
-export interface Comment {
-  id: number
-  body: string
-}
+import {
+  type CandidateConfig,
+  candidateNumber,
+  comments,
+  type Gh,
+  openCandidate,
+  retrospectiveComment,
+} from './ci/candidate.ts'
+import { appendRetro, findLabel, type RetrospectiveRules, retroComment, retrospectiveBlock } from './pull-request.ts'
 
 export interface RetroRun {
   gh: Gh
@@ -18,33 +20,27 @@ export interface RetroRun {
   // delivery.candidate; without it there is no open candidate to find, only --pr.
   config: CandidateConfig | null
   rules: RetrospectiveRules
+  // A dry run writes nothing, so there is nothing to read back.
+  dryRun?: boolean
 }
 
-// A refusal with a reason the person can act on: no label, no open candidate.
+// A refusal with a reason the person can act on: no label, no open candidate, an item
+// that did not stay in the comment.
 export class RetroError extends Error {}
+
+// How many times an append is written when reading it back does not find it.
+const ATTEMPTS = 3
 
 export function isCandidate(config: CandidateConfig | null, headRef: string): boolean {
   return config !== null && candidateNumber(config, headRef) !== null
 }
 
-// Every comment of the pull request, in order, read page by page.
-export function comments(gh: Gh, repo: string, number: number): Comment[] {
-  return gh
-    .read(['api', '--paginate', `repos/${repo}/issues/${number}/comments`, '--jq', '.[] | {id, body}'])
-    .split('\n')
-    .filter((line) => line.trim() !== '')
-    .map((line) => JSON.parse(line) as Comment)
-}
-
-// The retrospective comment: the first one holding the start marker on a line of its own,
-// the one the automation wrote. A comment quoting the marker in prose is not it.
-export function retroComment(all: Comment[]): Comment | null {
-  return all.find((c) => (c.body ?? '').split(/\r?\n/).some((l) => l.trim() === RETRO_START)) ?? null
-}
-
 // Appends `item` under the label `wanted` names, on the pull request `pr` or the open
 // candidate. A candidate opened before the automation wrote the comment gets one, with
-// the item in it. Returns the pull request, the label and whether the comment was created.
+// the item in it. The comment is rewritten whole, so two appends at the same moment
+// could drop one: the comment is read back after the write and the append done again
+// when the item is not in it. Returns the pull request, the label and whether the
+// comment was created.
 export function retroAdd(
   run: RetroRun,
   { pr, label: wanted, item }: { pr?: number; label: string; item: string },
@@ -53,28 +49,35 @@ export function retroAdd(
   if (label === null) throw new RetroError(`no label "${wanted}": one of ${run.rules.lines.join(', ')}`)
   const sentence = item.replace(/\s*\r?\n\s*/g, ' ').trim()
   if (sentence === '') throw new RetroError('the item is empty: one sentence')
-  const { config } = run
+  const { gh, repo, config } = run
   const number = pr ?? (config === null ? undefined : openCandidate({ ...run, config })?.number)
   if (number === undefined) {
     const where = config === null ? 'no delivery.candidate' : `${config.prefix}<N> into ${config.base}`
     throw new RetroError(`no open candidate (${where}): give the pull request with --pr <n>`)
   }
-  const found = retroComment(comments(run.gh, run.repo, number))
-  if (found === null) {
-    run.gh.write(
-      ['pr', 'comment', String(number), '--repo', run.repo, '--body-file', '-'],
-      appendRetro(
-        config === null ? retrospectiveBlock(run.rules) : retrospectiveComment(config),
-        label,
-        sentence,
-        run.rules,
-      ),
+  // The item as appendRetro writes it: on the label's line, or a sub-bullet.
+  const holds = (body: string) =>
+    body.split(/\r?\n/).some((l) => l.endsWith(`**${label}:** ${sentence}`) || l.trim() === `- ${sentence}`)
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    const found = retroComment(comments(gh, repo, number))
+    if (found === null) {
+      const empty = config === null ? retrospectiveBlock(run.rules) : retrospectiveComment(config)
+      gh.write(
+        ['pr', 'comment', String(number), '--repo', repo, '--body-file', '-'],
+        appendRetro(empty, label, sentence, run.rules),
+      )
+      return { pr: number, label, created: true }
+    }
+    gh.write(
+      ['api', '-X', 'PATCH', `repos/${repo}/issues/comments/${found.id}`, '--input', '-'],
+      JSON.stringify({ body: appendRetro(found.body, label, sentence, run.rules) }),
     )
-    return { pr: number, label, created: true }
+    if (run.dryRun) return { pr: number, label, created: false }
+    if (holds(gh.read(['api', `repos/${repo}/issues/comments/${found.id}`, '--jq', '.body']))) {
+      return { pr: number, label, created: false }
+    }
   }
-  run.gh.write(
-    ['api', '-X', 'PATCH', `repos/${run.repo}/issues/comments/${found.id}`, '--input', '-'],
-    JSON.stringify({ body: appendRetro(found.body, label, sentence, run.rules) }),
+  throw new RetroError(
+    `the item is not in the retrospective comment of #${number} after ${ATTEMPTS} writes: another append ran at the same time; run it again`,
   )
-  return { pr: number, label, created: false }
 }

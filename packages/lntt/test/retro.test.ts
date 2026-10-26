@@ -5,9 +5,16 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { type CandidateConfig, type Gh, retrospectiveComment } from '../src/ci/candidate.ts'
-import { appendRetro, checkBody, findLabel, retrospectiveBlock, retrospectiveRules } from '../src/pull-request.ts'
-import { type Comment, retroAdd, retroComment } from '../src/retro.ts'
+import { type CandidateConfig, type Comment, type Gh, retrospectiveComment } from '../src/ci/candidate.ts'
+import {
+  appendRetro,
+  checkBody,
+  findLabel,
+  retroComment,
+  retrospectiveBlock,
+  retrospectiveRules,
+} from '../src/pull-request.ts'
+import { retroAdd } from '../src/retro.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
 
@@ -62,6 +69,18 @@ describe('appendRetro', () => {
     assert.match(appendRetro(placeholder, 'Friction', 'x', RULES), /- \*\*Friction:\*\* x\n/)
   })
 
+  test('a placeholder comment across lines, or left open, is no value either', () => {
+    for (const placeholder of ['- **Friction:** <!--\n  what was hard\n  -->', '- **Friction:** <!-- what was hard']) {
+      const text = EMPTY.replace('- **Friction:**', placeholder)
+      assert.match(appendRetro(text, 'Friction', 'x', RULES), /- \*\*Friction:\*\* x\n- \*\*To automate/)
+    }
+  })
+
+  test('a value on the label line with more below: the value becomes the first sub-bullet', () => {
+    const text = EMPTY.replace('- **Friction:**', '- **Friction:** first\n  - second')
+    assert.match(appendRetro(text, 'Friction', 'third', RULES), /:\*\*\n {2}- first\n {2}- second\n {2}- third\n/)
+  })
+
   test('text around the block, and CRLF line endings, are kept', () => {
     const text = `Lead.\r\n\r\n${EMPTY.replaceAll('\n', '\r\n')}After.`
     const next = appendRetro(text, 'Friction', 'x', RULES)
@@ -102,9 +121,14 @@ const config: CandidateConfig = {
 }
 
 // A gh double: reads answered by the first key the command line contains (a string is
-// returned as is, anything else as JSON), writes recorded.
-function fakeGh(answers: Record<string, unknown>): Gh & { writes: Array<{ args: string; input?: string }> } {
+// returned as is, anything else as JSON), writes recorded. A PATCH of a comment is what
+// reading that comment back returns, unless `lost` drops it (another append won).
+function fakeGh(
+  answers: Record<string, unknown>,
+  { lost = 0 } = {},
+): Gh & { writes: Array<{ args: string; input?: string }> } {
   const writes: Array<{ args: string; input?: string }> = []
+  let drop = lost
   return {
     writes,
     read: (args) => {
@@ -116,6 +140,10 @@ function fakeGh(answers: Record<string, unknown>): Gh & { writes: Array<{ args: 
     },
     write: (args, input) => {
       writes.push({ args: args.join(' '), input })
+      const patched = /issues\/comments\/(\d+)$/.exec(args[3] ?? '')
+      if (args[2] === 'PATCH' && patched) {
+        answers[`issues/comments/${patched[1]} --jq`] = drop-- > 0 ? EMPTY : JSON.parse(input ?? '').body
+      }
       return ''
     },
   }
@@ -133,7 +161,7 @@ describe('retroAdd', () => {
     })
     const result = retroAdd({ gh, repo: 'o/r', config, rules: RULES }, { label: 'friction', item: 'a CI run\n failed' })
     assert.deepEqual(result, { pr: 80, label: 'Friction', created: false })
-    assert.equal(gh.writes.length, 1)
+    assert.equal(gh.writes.length, 1, 'read back, the item is there: one write')
     assert.equal(gh.writes[0]?.args, 'api -X PATCH repos/o/r/issues/comments/7 --input -')
     const body = JSON.parse(gh.writes[0]?.input ?? '').body as string
     assert.ok(body.startsWith('The retrospective of this candidate'))
@@ -155,6 +183,36 @@ describe('retroAdd', () => {
     assert.equal(result.created, true)
     assert.equal(gh.writes[0]?.args, 'pr comment 80 --repo o/r --body-file -')
     assert.equal(gh.writes[0]?.input, appendRetro(retrospectiveComment(config), 'Friction', 'x', RULES))
+  })
+
+  test('an append another writer dropped is written again; one never kept is refused', () => {
+    const comment = { 'issues/80/comments': lines({ id: 7, body: EMPTY }) }
+    const once = fakeGh({ ...open, ...comment }, { lost: 1 })
+    retroAdd({ gh: once, repo: 'o/r', config, rules: RULES }, { label: 'friction', item: 'x' })
+    assert.equal(once.writes.length, 2)
+    const never = fakeGh({ ...open, ...comment }, { lost: 9 })
+    assert.throws(
+      () => retroAdd({ gh: never, repo: 'o/r', config, rules: RULES }, { label: 'friction', item: 'x' }),
+      /not in the retrospective comment of #80 after 3 writes/,
+    )
+  })
+
+  test('a dry run writes once and reads nothing back', () => {
+    const gh = fakeGh({ ...open, 'issues/80/comments': lines({ id: 7, body: EMPTY }) }, { lost: 9 })
+    retroAdd({ gh, repo: 'o/r', config, rules: RULES, dryRun: true }, { label: 'friction', item: 'x' })
+    assert.equal(gh.writes.length, 1)
+  })
+
+  test('a comment with the start marker and no end marker is refused, nothing written', () => {
+    const gh = fakeGh({
+      ...open,
+      'issues/80/comments': lines({ id: 7, body: '<!-- retro:start -->\n- **Friction:**' }),
+    })
+    assert.throws(
+      () => retroAdd({ gh, repo: 'o/r', config, rules: RULES }, { label: 'friction', item: 'x' }),
+      /no <!-- retro:start --> … <!-- retro:end --> block/,
+    )
+    assert.deepEqual(gh.writes, [])
   })
 
   test('no open candidate: refused, naming --pr, nothing written', () => {
@@ -189,12 +247,15 @@ describe('lntt retro add and lntt check body on a candidate', () => {
   let stubs: string
   let repo: string
 
-  function lntt(args: string[]) {
-    return spawnSync(process.execPath, [BIN, ...args], {
-      cwd: repo,
-      encoding: 'utf8',
-      env: { ...process.env, PATH: `${stubs}:${process.env.PATH}`, GITHUB_REPOSITORY: 'o/r' },
-    })
+  function lntt(args: string[], env: Record<string, string> = {}) {
+    const vars: NodeJS.ProcessEnv = {
+      ...process.env,
+      PATH: `${stubs}:${process.env.PATH}`,
+      GITHUB_REPOSITORY: 'o/r',
+      ...env,
+    }
+    if (vars.GITHUB_REPOSITORY === '') delete vars.GITHUB_REPOSITORY
+    return spawnSync(process.execPath, [BIN, ...args], { cwd: repo, encoding: 'utf8', env: vars })
   }
 
   // A fake gh: each call's arguments appended to gh-args; `pr view` prints view.json, the
@@ -272,20 +333,50 @@ describe('lntt retro add and lntt check body on a candidate', () => {
     assert.equal(readFileSync(join(tmp, 'gh-args'), 'utf8'), 'pr view 81 --json number,body,headRefName\n')
   })
 
-  test('lntt retro add edits the open candidate’s comment and says where', () => {
+  // The gh of `lntt retro add`: the open candidate #80, its comment, `repo view`, and a
+  // PATCH saved to patch.json, which reading the comment back returns.
+  function retroGh(): void {
     gh({}, [{ id: 2, body: EMPTY }])
+    const patch = join(tmp, 'patch.json')
     writeFileSync(
       join(stubs, 'gh'),
       readFileSync(join(stubs, 'gh'), 'utf8').replace(
         'esac',
-        `  "pr list"*) echo '[{"number":80,"headRefName":"candidate/8","body":""}]' ;;\n  "api -X PATCH"*) cat > "${join(tmp, 'patch.json')}" ;;\nesac`,
+        [
+          `  "pr list"*) echo '[{"number":80,"headRefName":"candidate/8","body":""}]' ;;`,
+          `  "repo view"*) echo 'me/mine' ;;`,
+          `  "api -X PATCH"*) cat > "${patch}" ;;`,
+          `  "api repos/"*"/issues/comments/"*) jq -r .body "${patch}" ;;`,
+          'esac',
+        ].join('\n'),
       ),
     )
+  }
+
+  test('lntt retro add edits the open candidate’s comment and says where', () => {
+    retroGh()
     const r = lntt(['retro', 'add', '--label', 'rework', 'the', 'squash', 'order'])
     assert.equal(r.status, 0, r.stderr)
     assert.equal(r.stdout, 'retro: added under "Rework cause" on #80.\n')
     const body = JSON.parse(readFileSync(join(tmp, 'patch.json'), 'utf8')).body as string
     assert.match(body, /- \*\*Rework cause:\*\* the squash order/)
+    assert.match(readFileSync(join(tmp, 'gh-args'), 'utf8'), /^api -X PATCH repos\/o\/r\/issues\/comments\/2 /m)
+  })
+
+  test('without GITHUB_REPOSITORY the repository comes from gh repo view', () => {
+    retroGh()
+    const r = lntt(['retro', 'add', '--label', 'friction', 'x'], { GITHUB_REPOSITORY: '' })
+    assert.equal(r.status, 0, r.stderr)
+    assert.match(readFileSync(join(tmp, 'gh-args'), 'utf8'), /^api -X PATCH repos\/me\/mine\/issues\/comments\/2 /m)
+  })
+
+  test('--dry-run writes nothing and says what it would add', () => {
+    retroGh()
+    const r = lntt(['retro', 'add', '--dry-run', '--label', 'friction', 'x'])
+    assert.equal(r.status, 0, r.stderr)
+    assert.match(r.stdout, /^\[dry-run\] gh api -X PATCH repos\/o\/r\/issues\/comments\/2 --input -\n/)
+    assert.match(r.stdout, /retro: would add under "Friction" on #80\.\n$/)
+    assert.doesNotMatch(readFileSync(join(tmp, 'gh-args'), 'utf8'), /PATCH|pr comment/)
   })
 
   test('lntt retro: usage errors exit 2, a refusal exits 1 with one line', () => {

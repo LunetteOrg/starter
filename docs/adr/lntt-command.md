@@ -27,6 +27,7 @@ lntt board sync
 lntt check [agents-md | skills | decisions [structure | numbers] | tests [levels | focus | rules | touched | mutate] | body] | check cite
 lntt branch name | check | rename
 lntt pr block
+lntt retro add
 lntt review [reply | allow]
 lntt worktree start
 lntt ask | inbox | answer
@@ -36,7 +37,7 @@ lntt ci local | candidate
 - **One entry point, one module per command group.** `bin/lntt.ts` dispatches to
   `src/cli.ts` (configuration, operator, `AGENTS.md`, local apps, viewer, browser),
   `src/check-cli.ts`, `src/branch-cli.ts`, `src/review-cli.ts`, `src/worktree-cli.ts`,
-  `src/refs-cli.ts`, `src/board-cli.ts`, `src/pull-request-cli.ts`, `src/messages-cli.ts` (`ask`, `inbox`,
+  `src/refs-cli.ts`, `src/board-cli.ts`, `src/pull-request-cli.ts`, `src/retro-cli.ts`, `src/messages-cli.ts` (`ask`, `inbox`,
   `answer`) and `src/ci/cli.ts`.
   A group loads only when it runs. What a script needs as a library, `@lntt/lntt`
   exports too (`resolveRefs` and `mentions` for `lntt refs`).
@@ -116,7 +117,10 @@ rests on these criteria:
    `delivery.review` (`reviewConfig` in `packages/lntt/src/review.ts`), `coordinator`
    (`gateOf` in `packages/lntt/src/coordinator.ts`) and `local` (`localApp` in
    `packages/lntt/src/local.ts`); `lntt worktree start` reads `delivery.candidate`
-   and `delivery.branches` through the gate's branch code. Every read validates the
+   and `delivery.branches` through the gate's branch code; `lntt retro add` reads
+   `delivery.candidate` and `delivery.pullRequest.retrospective` (`candidateConfig` in
+   `packages/lntt/src/ci/config.ts`, `retrospectiveRules` in
+   `packages/lntt/src/pull-request.ts`). Every read validates the
    whole file with Ajv (`loadConfig` in `packages/lntt/src/index.ts`) against a schema
    that rejects unknown fields (`additionalProperties: false` in
    `packages/lntt/schema/config.schema.json`), so the contract is the whole file.

@@ -111,14 +111,17 @@ candidate exists on a day without pull requests.
   written by hand that no pull request accounts for stays. Each open issue gets one
   comment saying that the candidate's merge will close it.
 - **Its retrospective is a comment.** The automation opens every candidate with a
-  comment holding the empty retrospective block (`lntt pr block`), and never rewrites
-  it. The friction of the batch, which belongs to no single pull request (a review
+  comment holding the empty retrospective block (`lntt pr block`), writes it on an open
+  candidate that lacks it before moving a pull request onto it, and never rewrites it. The friction of the batch, which belongs to no single pull request (a review
   that does not converge, a full CI that fails, an app missing a permission, a step
   worked around by hand), goes into it one sentence at a time, when it is met:
   `lntt retro add --label <label> "<one sentence>"` appends under that label of the
   open candidate's comment. The orchestrator, a coordinator, whoever squashes: each
-  writes what it met then, not from memory when the batch is complete. Before the
-  candidate is marked ready every label holds a value or the configured `none`.
+  writes what it met then, not from memory when the batch is complete. The comment is
+  rewritten whole at each append, so `lntt retro add` reads it back and appends again
+  when another append ran at the same moment. A theme with no candidate writes on its
+  last pull request (`--pr <n>`). Before the candidate is marked ready every label holds
+  a value or the configured `none`.
 - **Into `main`**, once a day or when the batch is worth it: `pnpm ci:local` on the
   candidate's head and `lntt check body --pr <candidate>` clean (on a candidate it
   reads the retrospective comment); with both green, the candidate pull request is marked ready and the
@@ -331,7 +334,7 @@ because npm configures a trusted publisher only on a package that exists:
   nothing would check that the tests ran on the published code.
 - **Staged publishing for every release** (leave *Allow npm publish* unchecked, as npm
   recommends). Each release would wait for a maintainer's 2FA approval on npmjs.com,
-  and `release.yml` would publish with `npm stage publish` (npm ≥ 11.15) instead of
+  and `release.yml` would publish with `npm stage publish` (an npm that has it) instead of
   `npm publish`. A release is already gated by the tag, the tests and the person's go
   to publish the GitHub Release, and the approval would only add a second wait on the
   same decision.

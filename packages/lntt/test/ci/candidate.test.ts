@@ -161,7 +161,7 @@ describe('recordMerges', () => {
 })
 
 // A gh double: reads answered from `answers` by the first key the command line
-// contains, writes recorded.
+// contains (a string as is, anything else as JSON), writes recorded.
 function fakeGh(answers: Record<string, unknown>): Gh & { writes: Array<{ args: string; input?: string }> } {
   const writes: Array<{ args: string; input?: string }> = []
   return {
@@ -170,7 +170,8 @@ function fakeGh(answers: Record<string, unknown>): Gh & { writes: Array<{ args: 
       const line = args.join(' ')
       const key = Object.keys(answers).find((k) => line.includes(k))
       if (key === undefined) throw new Error(`unexpected read: ${line}`)
-      return JSON.stringify(answers[key])
+      const answer = answers[key]
+      return typeof answer === 'string' ? answer : JSON.stringify(answer)
     },
     write: (args, input) => {
       writes.push({ args: args.join(' '), input })
@@ -198,11 +199,15 @@ const pr: PullRequest = {
   merged: false,
 }
 const silent = () => {}
+// The comments of an open candidate that has its retrospective comment.
+const hasRetro = (number: number) => ({
+  [`issues/${number}/comments`]: JSON.stringify({ id: 1, body: retrospectiveComment(config) }),
+})
 const run = (gh: Gh, c: CandidateConfig = config): Run => ({ gh, repo: 'o/r', config: c, log: silent })
 
 describe('retarget', () => {
   test('moves the pull request onto the open candidate and comments', () => {
-    const gh = fakeGh({ '--state open': [{ number: 40, headRefName: 'candidate/4', body: '' }] })
+    const gh = fakeGh({ '--state open': [{ number: 40, headRefName: 'candidate/4', body: '' }], ...hasRetro(40) })
     retarget(run(gh), pr)
     assert.deepEqual(
       gh.writes.map((w) => w.args),
@@ -267,6 +272,23 @@ describe('retarget', () => {
     assert.match(gh.writes[0].args, /pr create .*--head candidate\/6 --title candidate 6/)
     assert.equal(gh.writes[1].args, 'pr comment 42 --repo o/r --body-file -')
     assert.equal(gh.writes[2].args, 'pr edit 70 --repo o/r --base candidate/6')
+  })
+
+  test('an open candidate a run left without its retrospective comment gets it, then the move', () => {
+    const gh = fakeGh({
+      '--state open': [{ number: 40, headRefName: 'candidate/4', body: '' }],
+      'issues/40/comments': JSON.stringify({ id: 1, body: 'Moved onto candidate/4.' }),
+    })
+    retarget(run(gh), pr)
+    assert.deepEqual(
+      gh.writes.map((w) => w.args),
+      [
+        'pr comment 40 --repo o/r --body-file -',
+        'pr edit 70 --repo o/r --base candidate/4',
+        'pr comment 70 --repo o/r --body-file -',
+      ],
+    )
+    assert.equal(gh.writes[0]?.input, retrospectiveComment(config))
   })
 
   test('a hotfix is neither moved nor read about', () => {
@@ -553,6 +575,7 @@ describe('candidateMerged', () => {
     const gh = fakeGh({
       'api graphql': [node(12, { baseRefName: 'candidate/4' })],
       '--state open': [{ number: 50, headRefName: 'candidate/5', body: '' }],
+      ...hasRetro(50),
     })
     assert.throws(() => candidateMerged(run(gh), candidate), /issues\/69/)
     assert.deepEqual(
@@ -606,6 +629,7 @@ describe('sweep', () => {
     const gh = fakeGh({
       'api graphql': [node(12, { baseRefName: 'candidate/3' })],
       '--state open': [{ number: 50, headRefName: 'candidate/5', body: '' }],
+      ...hasRetro(50),
     })
     assert.deepEqual(sweep(run(gh)).move, [12])
     assert.deepEqual(
@@ -624,6 +648,7 @@ describe('sweep', () => {
     const gh = fakeGh({
       'api graphql': [node(12, { baseRefName: 'candidate/3' })],
       '--state open': [{ number: 50, headRefName: 'candidate/5', body: '' }],
+      ...hasRetro(50),
     })
     handle(run(gh), 'opened', pr)
     assert.deepEqual(

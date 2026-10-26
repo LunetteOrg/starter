@@ -97,9 +97,9 @@ export function findLabel(rules: RetrospectiveRules, wanted: string): string | n
 }
 
 // Appends `item` under `label` in the block of `text`, keeping the markers, the other
-// labels and every line outside the block. An empty label (or one holding a placeholder
-// comment, or `none`) takes the item on its own line; a label with a value gets its
-// items as sub-bullets, the value on its line becoming the first. Throws on a text with
+// labels and every line outside the block. An empty label (or one holding only a
+// placeholder comment, or `none`) takes the item on its line; a label with a value gets
+// its items as sub-bullets, a value on the label's line becoming the first. Throws on a text with
 // no block, or a block without the label.
 export function appendRetro(text: string, label: string, item: string, rules: RetrospectiveRules): string {
   const crlf = text.includes('\r\n')
@@ -117,13 +117,23 @@ export function appendRetro(text: string, label: string, item: string, rules: Re
   }
   const head = lines[at] as string
   const bullet = head.slice(0, head.indexOf('**'))
-  const value = (LABEL.exec(head)?.[2] ?? '').replace(/<!--.*?-->/g, '').trim()
-  const below = last > at
-  const blank = value === '' || value === rules.none
+  // The label's value as checkBody reads it: HTML comments, closed or not, are none.
+  const value = (text: string) => text.replace(/<!--[\s\S]*?(?:-->|$)/g, '').trim()
+  const inline = value(LABEL.exec(head)?.[2] ?? '')
+  const all = value([LABEL.exec(head)?.[2] ?? '', ...lines.slice(at + 1, last + 1)].join('\n'))
   let next: string[]
-  if (blank && !below) next = [`${bullet}**${label}:** ${item}`]
-  else if (below) next = [...lines.slice(at, last + 1), `  - ${item}`]
-  else next = [`${bullet}**${label}:**`, `  - ${value}`, `  - ${item}`]
+  if (all === '' || all === rules.none) next = [`${bullet}**${label}:** ${item}`]
+  else if (last > at && inline === '') next = [...lines.slice(at, last + 1), `  - ${item}`]
+  else if (last > at)
+    next = [`${bullet}**${label}:**`, `  - ${inline}`, ...lines.slice(at + 1, last + 1), `  - ${item}`]
+  else next = [`${bullet}**${label}:**`, `  - ${inline}`, `  - ${item}`]
   const out = [...lines.slice(0, at), ...next, ...lines.slice(last + 1)].join('\n')
   return crlf ? out.replaceAll('\n', '\r\n') : out
+}
+
+// The retrospective comment among a pull request's comments: the first holding the start
+// marker on a line of its own, the one the candidate automation wrote. A comment quoting
+// the marker in prose is not it.
+export function retroComment<T extends { body: string | null }>(comments: T[]): T | null {
+  return comments.find((c) => (c.body ?? '').split(/\r?\n/).some((l) => l.trim() === RETRO_START)) ?? null
 }
