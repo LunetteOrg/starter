@@ -225,7 +225,8 @@ So:
   against the compatibility rule: until the work that follows this record closes that
   gap, the rule rests on review for those two readers. Every other read is covered by
   `packages/lntt/test/released-configs.test.ts`, which validates a configuration of
-  each released version against the schema.
+  each released version against the schema, and checks it sets every field the schema of
+  its tag knew.
 
 ### When to deviate (revisit triggers)
 

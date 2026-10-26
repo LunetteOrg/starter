@@ -126,7 +126,10 @@ describe('the configuration of each released version', () => {
   test('missing reports what a value leaves unset', () => {
     const schema: Node = {
       type: 'object',
+      definitions: { leaf: { type: 'object', properties: { value: { type: 'string' } } } },
       properties: {
+        ref: { $ref: '#/definitions/leaf' },
+        shaped: { type: 'object', properties: { a: { type: 'string' } }, additionalProperties: { type: 'string' } },
         name: { type: 'string' },
         list: {
           type: 'array',
@@ -138,6 +141,8 @@ describe('the configuration of each released version', () => {
       },
     }
     const full = {
+      ref: { value: 'v' },
+      shaped: { a: '1' },
       name: 'n',
       list: [{ a: '1' }, { b: '2' }],
       map: { k: { x: '1' } },
@@ -145,7 +150,10 @@ describe('the configuration of each released version', () => {
       either: false,
     }
     assert.deepEqual(missing(schema, schema, full), [])
-    assert.deepEqual(missing(schema, schema, {}), ['.name', '.list', '.map', '.nested', '.either'])
+    assert.deepEqual(missing(schema, schema, {}), ['.ref', '.shaped', '.name', '.list', '.map', '.nested', '.either'])
+    assert.deepEqual(missing(schema, schema, { ...full, ref: {} }), ['.ref.value'])
+    assert.deepEqual(missing(schema, schema, { ...full, shaped: {} }), ['.shaped.a'])
+    assert.deepEqual(missing(schema, schema, { ...full, nested: [] }), ['.nested'])
     assert.deepEqual(missing(schema, schema, { ...full, list: [{ a: '1' }] }), ['.list[].b'])
     assert.deepEqual(missing(schema, schema, { ...full, list: [] }), ['.list[]'])
     assert.deepEqual(missing(schema, schema, { ...full, map: {} }), ['.map.*'])
@@ -159,6 +167,7 @@ describe('the configuration of each released version', () => {
     const absent = missing(schema, schema, { lunette: { template: 'react-router', version: '0.6.2' } })
     assert.ok(absent.includes('.delivery'))
     assert.ok(absent.includes('.ci'))
+    assert.ok(!absent.some((path) => path.startsWith('.lunette')))
   })
 
   test('a fixture with an unknown field or an invalid value is rejected', () => {
