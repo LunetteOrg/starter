@@ -97,8 +97,7 @@ same way every time; the `review` skill keeps the judgement.
   code it cites changed. A fresh finding at the place of a refuted or accepted entry, on
   a line that reads the same and at a severity no higher, goes to the round's `closed`
   list with the entry it repeats and that entry's text: shown, never verified, never
-  blocking. The match is by place, since a reviewer words the same finding differently
-  every round, so the author reads each against the entry's text. A finding on a
+  blocking. The match is by place, so the author reads each against the entry's text. A finding on a
   changed line, or at a higher severity, is a new finding.
 - **A warning blocks only in the first `warningRounds` rounds:** later rounds find
   the edge cases of the fixes before them, and a round that must find nothing has no
