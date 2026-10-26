@@ -521,15 +521,22 @@ export function comments(gh: Gh, repo: string, number: number): Comment[] {
 
 // The candidate's retrospective comment, written when it has none: on the candidate just
 // created, and on one a run left without it (a write that failed after `pr create`), so
-// the next run repairs it.
+// the next run repairs it. A failure is a notice, never a reason not to move the pull
+// request: `lntt retro add` writes the comment too, and `lntt check body` reports it.
 function ensureRetrospective(run: Run, candidate: CandidatePr) {
   const { gh, repo, config, log } = run
-  if (!candidate.created && retroComment(comments(gh, repo, candidate.number)) !== null) return
-  if (!candidate.created) log(`candidate: ${candidate.headRefName} has no retrospective comment: writing it.`)
-  gh.write(
-    ['pr', 'comment', candidate.number ? String(candidate.number) : '<new>', '--repo', repo, '--body-file', '-'],
-    retrospectiveComment(config),
-  )
+  try {
+    if (!candidate.created && retroComment(comments(gh, repo, candidate.number)) !== null) return
+    if (!candidate.created) log(`candidate: ${candidate.headRefName} has no retrospective comment: writing it.`)
+    gh.write(
+      ['pr', 'comment', candidate.number ? String(candidate.number) : '<new>', '--repo', repo, '--body-file', '-'],
+      retrospectiveComment(config),
+    )
+  } catch (error) {
+    log(
+      `::notice title=Retrospective comment::${candidate.headRefName}: ${(error as Error).message}; lntt retro add writes it`,
+    )
+  }
 }
 
 function moveOnto({ gh, repo, config }: Run, number: number, candidate: CandidatePr) {

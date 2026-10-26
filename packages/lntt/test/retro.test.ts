@@ -76,6 +76,19 @@ describe('appendRetro', () => {
     }
   })
 
+  test('none on the label line with sub-bullets below: none goes, the sub-bullets stay, one more', () => {
+    const text = EMPTY.replace('- **Friction:**', '- **Friction:** none\n  - first')
+    assert.match(appendRetro(text, 'Friction', 'x', RULES), /- \*\*Friction:\*\*\n {2}- first\n {2}- x\n/)
+  })
+
+  test('an empty label line with a value on the lines below: the item after them', () => {
+    const text = EMPTY.replace('- **Friction:**', '- **Friction:**\n  the review stalled\n  twice')
+    assert.match(
+      appendRetro(text, 'Friction', 'x', RULES),
+      /:\*\*\n {2}the review stalled\n {2}twice\n {2}- x\n- \*\*To/,
+    )
+  })
+
   test('a value on the label line with more below: the value becomes the first sub-bullet', () => {
     const text = EMPTY.replace('- **Friction:**', '- **Friction:** first\n  - second')
     assert.match(appendRetro(text, 'Friction', 'third', RULES), /:\*\*\n {2}- first\n {2}- second\n {2}- third\n/)
@@ -121,14 +134,22 @@ const config: CandidateConfig = {
 }
 
 // A gh double: reads answered by the first key the command line contains (a string is
-// returned as is, anything else as JSON), writes recorded. A PATCH of a comment is what
-// reading that comment back returns, unless `lost` drops it (another append won).
+// returned as is, anything else as JSON), writes recorded. Comments are state: a PATCH
+// changes the comment in its `issues/<n>/comments` answer and `pr comment <n>` adds one,
+// unless `lost` drops the write (another append won the race).
 function fakeGh(
   answers: Record<string, unknown>,
   { lost = 0 } = {},
 ): Gh & { writes: Array<{ args: string; input?: string }> } {
   const writes: Array<{ args: string; input?: string }> = []
   let drop = lost
+  const edit = (key: string, change: (all: Comment[]) => Comment[]) => {
+    const all = String(answers[key] ?? '')
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as Comment)
+    answers[key] = lines(...change(all))
+  }
   return {
     writes,
     read: (args) => {
@@ -140,9 +161,16 @@ function fakeGh(
     },
     write: (args, input) => {
       writes.push({ args: args.join(' '), input })
+      if (drop-- > 0) return ''
       const patched = /issues\/comments\/(\d+)$/.exec(args[3] ?? '')
       if (args[2] === 'PATCH' && patched) {
-        answers[`issues/comments/${patched[1]} --jq`] = drop-- > 0 ? EMPTY : JSON.parse(input ?? '').body
+        const body = JSON.parse(input ?? '').body as string
+        for (const key of Object.keys(answers).filter((k) => /^issues\/\d+\/comments$/.test(k))) {
+          edit(key, (all) => all.map((c) => (c.id === Number(patched[1]) ? { ...c, body } : c)))
+        }
+      }
+      if (args[0] === 'pr' && args[1] === 'comment') {
+        edit(`issues/${args[2]}/comments`, (all) => [...all, { id: 100 + all.length, body: input ?? '' }])
       }
       return ''
     },
@@ -161,7 +189,7 @@ describe('retroAdd', () => {
     })
     const result = retroAdd({ gh, repo: 'o/r', config, rules: RULES }, { label: 'friction', item: 'a CI run\n failed' })
     assert.deepEqual(result, { pr: 80, label: 'Friction', created: false })
-    assert.equal(gh.writes.length, 1, 'read back, the item is there: one write')
+    assert.equal(gh.writes.length, 1, 'read again, the item is there: one write')
     assert.equal(gh.writes[0]?.args, 'api -X PATCH repos/o/r/issues/comments/7 --input -')
     const body = JSON.parse(gh.writes[0]?.input ?? '').body as string
     assert.ok(body.startsWith('The retrospective of this candidate'))
@@ -195,6 +223,45 @@ describe('retroAdd', () => {
       () => retroAdd({ gh: never, repo: 'o/r', config, rules: RULES }, { label: 'friction', item: 'x' }),
       /not in the retrospective comment of #80 after 3 writes/,
     )
+  })
+
+  test('a sub-bullet append another writer dropped is written again', () => {
+    const body = EMPTY.replace('- **Friction:**', '- **Friction:** first')
+    const gh = fakeGh({ ...open, 'issues/80/comments': lines({ id: 7, body }) }, { lost: 1 })
+    retroAdd({ gh, repo: 'o/r', config, rules: RULES }, { label: 'friction', item: 'second' })
+    assert.equal(gh.writes.length, 2)
+    assert.match(JSON.parse(gh.writes[1]?.input ?? '').body, /:\*\*\n {2}- first\n {2}- second\n/)
+  })
+
+  test('an item already in the comment, dropped once, is still written again', () => {
+    const body = EMPTY.replace('- **Friction:**', '- **Friction:** x')
+    const gh = fakeGh({ ...open, 'issues/80/comments': lines({ id: 7, body }) }, { lost: 1 })
+    retroAdd({ gh, repo: 'o/r', config, rules: RULES }, { label: 'friction', item: 'x' })
+    assert.equal(gh.writes.length, 2)
+  })
+
+  test('two comments created at once: the item goes into the first, the retrospective one', () => {
+    let listed = ''
+    const gh: Gh & { writes: string[] } = {
+      writes: [],
+      read: (args) => {
+        const line = args.join(' ')
+        if (line.includes('issues/80/comments')) return listed
+        return JSON.stringify(open['--state open'])
+      },
+      write: (args, input) => {
+        gh.writes.push(args.join(' '))
+        if (args[1] === 'comment') listed = lines({ id: 50, body: EMPTY }, { id: 51, body: input ?? '' })
+        if (args[2] === 'PATCH') listed = lines({ id: 50, body: JSON.parse(input ?? '').body }, { id: 51, body: '' })
+        return ''
+      },
+    }
+    const result = retroAdd({ gh, repo: 'o/r', config, rules: RULES }, { label: 'friction', item: 'x' })
+    assert.equal(result.created, false)
+    assert.deepEqual(gh.writes, [
+      'pr comment 80 --repo o/r --body-file -',
+      'api -X PATCH repos/o/r/issues/comments/50 --input -',
+    ])
   })
 
   test('a dry run writes once and reads nothing back', () => {
@@ -326,6 +393,14 @@ describe('lntt retro add and lntt check body on a candidate', () => {
     )
   })
 
+  test('a gh pr view that prints no JSON is a check that cannot run: one line, exit 1', () => {
+    gh({}, [])
+    writeFileSync(join(tmp, 'view.json'), 'not json')
+    const r = lntt(['check', 'body', '--pr', '80'])
+    assert.equal(r.status, 1)
+    assert.equal(r.stderr, 'lntt: error: gh pr view 80 --json number,body,headRefName printed no JSON\n')
+  })
+
   test('any other pull request is checked on its body, and its comments are not read', () => {
     gh({ number: 81, body: filled, headRefName: 'feat/1/x' }, [])
     const r = lntt(['check', 'body', '--pr', '81'])
@@ -333,23 +408,23 @@ describe('lntt retro add and lntt check body on a candidate', () => {
     assert.equal(readFileSync(join(tmp, 'gh-args'), 'utf8'), 'pr view 81 --json number,body,headRefName\n')
   })
 
-  // The gh of `lntt retro add`: the open candidate #80, its comment, `repo view`, and a
-  // PATCH saved to patch.json, which reading the comment back returns.
+  // The gh of `lntt retro add`: the open candidate #80, its comment #2, `repo view`, and a
+  // PATCH saved to patch.json, which the comments read after it return.
   function retroGh(): void {
     gh({}, [{ id: 2, body: EMPTY }])
     const patch = join(tmp, 'patch.json')
     writeFileSync(
       join(stubs, 'gh'),
-      readFileSync(join(stubs, 'gh'), 'utf8').replace(
+      [
+        '#!/bin/sh',
+        `echo "$*" >> "${join(tmp, 'gh-args')}"`,
+        'case "$*" in',
+        `  "pr list"*) echo '[{"number":80,"headRefName":"candidate/8","body":""}]' ;;`,
+        `  "repo view"*) echo 'me/mine' ;;`,
+        `  "api -X PATCH"*) cat > "${patch}" ;;`,
+        `  *"/comments --jq"*) if [ -f "${patch}" ]; then jq -c '{id: 2, body}' "${patch}"; else cat "${join(tmp, 'comments.jsonl')}"; fi ;;`,
         'esac',
-        [
-          `  "pr list"*) echo '[{"number":80,"headRefName":"candidate/8","body":""}]' ;;`,
-          `  "repo view"*) echo 'me/mine' ;;`,
-          `  "api -X PATCH"*) cat > "${patch}" ;;`,
-          `  "api repos/"*"/issues/comments/"*) jq -r .body "${patch}" ;;`,
-          'esac',
-        ].join('\n'),
-      ),
+      ].join('\n'),
     )
   }
 

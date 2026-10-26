@@ -124,6 +124,9 @@ export function appendRetro(text: string, label: string, item: string, rules: Re
   let next: string[]
   if (all === '' || all === rules.none) next = [`${bullet}**${label}:** ${item}`]
   else if (last > at && inline === '') next = [...lines.slice(at, last + 1), `  - ${item}`]
+  // `none` beside items below it is no item: it goes.
+  else if (last > at && inline === rules.none)
+    next = [`${bullet}**${label}:**`, ...lines.slice(at + 1, last + 1), `  - ${item}`]
   else if (last > at)
     next = [`${bullet}**${label}:**`, `  - ${inline}`, ...lines.slice(at + 1, last + 1), `  - ${item}`]
   else next = [`${bullet}**${label}:**`, `  - ${inline}`, `  - ${item}`]

@@ -638,6 +638,31 @@ describe('sweep', () => {
     )
   })
 
+  test('a candidate without its retrospective comment gets it before the stranded move', () => {
+    const gh = fakeGh({
+      'api graphql': [node(12, { baseRefName: 'candidate/3' })],
+      '--state open': [{ number: 50, headRefName: 'candidate/5', body: '' }],
+      'issues/50/comments': '',
+    })
+    sweep(run(gh))
+    assert.deepEqual(
+      gh.writes.map((w) => w.args),
+      [
+        'pr comment 50 --repo o/r --body-file -',
+        'pr edit 12 --repo o/r --base candidate/5',
+        'pr comment 12 --repo o/r --body-file -',
+      ],
+    )
+  })
+
+  test('a failure writing the retrospective comment is a notice: the pull request still moves', () => {
+    const lines: string[] = []
+    const gh = fakeGh({ '--state open': [{ number: 40, headRefName: 'candidate/4', body: '' }] })
+    retarget({ ...run(gh), log: (l) => lines.push(l) }, pr)
+    assert.ok(gh.writes.some((w) => w.args === 'pr edit 70 --repo o/r --base candidate/4'))
+    assert.ok(lines.some((l) => l.startsWith('::notice title=Retrospective comment::candidate/4: unexpected read')))
+  })
+
   test('nothing stranded: nothing read beyond the lists, nothing written', () => {
     const gh = fakeGh({ 'api graphql': [node(1)], '--state open': [] })
     assert.deepEqual(sweep(run(gh)).move, [])

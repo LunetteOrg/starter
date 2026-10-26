@@ -342,8 +342,8 @@ because npm configures a trusted publisher only on a package that exists:
   a red check would stay red after the block is filled, until the next push.
 - **The candidate's retrospective block in its body.** The automation rebuilds the body
   at every squash; the block would have to survive a rewrite by a script that does not
-  own it. A comment is written by the automation once and edited only by people and
-  `lntt retro add`.
+  own it. A comment is written by the automation only when the candidate lacks it, and
+  edited only by people and `lntt retro add`.
 - **The candidate's retrospective written when the batch is complete.** By then the
   orchestrator's context may be compacted or its session gone, and the block is rebuilt
   from the pull request bodies and a summary (candidate 7, #176).
