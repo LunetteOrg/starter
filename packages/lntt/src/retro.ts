@@ -76,7 +76,6 @@ export function retroAdd(
       created = true
       before = 0
     } else {
-      created = false
       before = count(found.body)
       gh.write(
         ['api', '-X', 'PATCH', `repos/${repo}/issues/comments/${found.id}`, '--input', '-'],

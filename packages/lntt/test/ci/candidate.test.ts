@@ -655,12 +655,16 @@ describe('sweep', () => {
     )
   })
 
-  test('a failure writing the retrospective comment is a notice: the pull request still moves', () => {
+  test('a failure writing the retrospective comment is a warning: the pull request still moves', () => {
     const lines: string[] = []
     const gh = fakeGh({ '--state open': [{ number: 40, headRefName: 'candidate/4', body: '' }] })
     retarget({ ...run(gh), log: (l) => lines.push(l) }, pr)
     assert.ok(gh.writes.some((w) => w.args === 'pr edit 70 --repo o/r --base candidate/4'))
-    assert.ok(lines.some((l) => l.startsWith('::notice title=Retrospective comment::candidate/4: unexpected read')))
+    assert.ok(
+      lines.some((l) =>
+        l.startsWith('::warning title=Retrospective comment::candidate/4: not written (unexpected read'),
+      ),
+    )
   })
 
   test('nothing stranded: nothing read beyond the lists, nothing written', () => {

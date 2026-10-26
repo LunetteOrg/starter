@@ -521,7 +521,7 @@ export function comments(gh: Gh, repo: string, number: number): Comment[] {
 
 // The candidate's retrospective comment, written when it has none: on the candidate just
 // created, and on one a run left without it (a write that failed after `pr create`), so
-// the next run repairs it. A failure is a notice, never a reason not to move the pull
+// the next run repairs it. A failure is a warning, never a reason not to move the pull
 // request: `lntt retro add` writes the comment too, and `lntt check body` reports it.
 function ensureRetrospective(run: Run, candidate: CandidatePr) {
   const { gh, repo, config, log } = run
@@ -533,8 +533,10 @@ function ensureRetrospective(run: Run, candidate: CandidatePr) {
       retrospectiveComment(config),
     )
   } catch (error) {
+    // One line: a workflow command ends at the first newline, and `%` starts an escape.
+    const message = (error as Error).message.replaceAll('%', '%25').replace(/\r?\n/g, ' ')
     log(
-      `::notice title=Retrospective comment::${candidate.headRefName}: ${(error as Error).message}; lntt retro add writes it`,
+      `::warning title=Retrospective comment::${candidate.headRefName}: not written (${message}); lntt retro add writes it`,
     )
   }
 }

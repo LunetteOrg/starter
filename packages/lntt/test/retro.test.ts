@@ -223,6 +223,7 @@ describe('retroAdd', () => {
       () => retroAdd({ gh: never, repo: 'o/r', config, rules: RULES }, { label: 'friction', item: 'x' }),
       /not in the retrospective comment of #80 after 3 writes/,
     )
+    assert.equal(never.writes.length, 3)
   })
 
   test('a sub-bullet append another writer dropped is written again', () => {
@@ -257,7 +258,7 @@ describe('retroAdd', () => {
       },
     }
     const result = retroAdd({ gh, repo: 'o/r', config, rules: RULES }, { label: 'friction', item: 'x' })
-    assert.equal(result.created, false)
+    assert.equal(result.created, true, 'this run created a comment, though not the one that holds the item')
     assert.deepEqual(gh.writes, [
       'pr comment 80 --repo o/r --body-file -',
       'api -X PATCH repos/o/r/issues/comments/50 --input -',

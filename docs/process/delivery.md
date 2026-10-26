@@ -112,16 +112,22 @@ candidate exists on a day without pull requests.
   comment saying that the candidate's merge will close it.
 - **Its retrospective is a comment.** The automation opens every candidate with a
   comment holding the empty retrospective block (`lntt pr block`), writes it on an open
-  candidate that lacks it before moving a pull request onto it, and never rewrites it. The friction of the batch, which belongs to no single pull request (a review
+  candidate that lacks it before moving a pull request onto it, and never rewrites it.
+  A failure to write it is a warning in the run, and the pull request moves anyway:
+  `lntt retro add` writes the comment when it finds none, and the ready step's
+  `lntt check body` fails on a candidate without it.
+  The friction of the batch, which belongs to no single pull request (a review
   that does not converge, a full CI that fails, an app missing a permission, a step
   worked around by hand), goes into it one sentence at a time, when it is met:
   `lntt retro add --label <label> "<one sentence>"` appends under that label of the
   open candidate's comment. The orchestrator, a coordinator, whoever squashes: each
   writes what it met then, not from memory when the batch is complete. The comment is
-  rewritten whole at each append, so `lntt retro add` reads it back and appends again
-  when another append ran at the same moment. A theme with no candidate writes on its
-  last pull request (`--pr <n>`). Before the candidate is marked ready every label holds
-  a value or the configured `none`.
+  rewritten whole at each append, so `lntt retro add` reads the comments again after
+  each write and appends again when another append ran at the same moment; when two
+  comments were created at once, the first is the retrospective one and gets the item.
+  An item under a label that holds `none` replaces it. A theme with no candidate writes
+  on its last pull request (`--pr <n>`). Before the candidate is marked ready every
+  label holds a value or the configured `none`.
 - **Into `main`**, once a day or when the batch is worth it: `pnpm ci:local` on the
   candidate's head and `lntt check body --pr <candidate>` clean (on a candidate it
   reads the retrospective comment); with both green, the candidate pull request is marked ready and the
@@ -342,8 +348,7 @@ because npm configures a trusted publisher only on a package that exists:
   a red check would stay red after the block is filled, until the next push.
 - **The candidate's retrospective block in its body.** The automation rebuilds the body
   at every squash; the block would have to survive a rewrite by a script that does not
-  own it. A comment is written by the automation only when the candidate lacks it, and
-  edited only by people and `lntt retro add`.
+  own it.
 - **The candidate's retrospective written when the batch is complete.** By then the
   orchestrator's context may be compacted or its session gone, and the block is rebuilt
   from the pull request bodies and a summary (candidate 7, #176).
