@@ -298,7 +298,8 @@ scaffold smoke, and publishes each package through npm trusted publishing (OIDC,
 packed with `pnpm pack`, so its `publishConfig` applies, and npm publishes the tarball.
 
 **A dry run** is a pre-release: set a pre-release version on a branch
-(`node scripts/packages-version.mts set X.Y.Z-rc.N`, commit, push), then
+(`node scripts/packages-version.mts set X.Y.Z-rc.N`, add the fixture of X.Y.Z as
+step 1 of the release does, commit, push), then
 `gh release create vX.Y.Z-rc.N --prerelease --target <branch>`. The workflow runs every
 check, packs each package and passes the tarball to `npm publish --dry-run`; nothing
 reaches npm. Delete the pre-release, its
