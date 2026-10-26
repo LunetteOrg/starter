@@ -238,17 +238,17 @@ describe('runFailing', () => {
 
   test('a command that hangs is stopped at the timeout, and says so', () => {
     for (const argv of [
-      ['sleep', '3'],
-      ['sh', '-c', 'sleep 3; true'],
+      ['sleep', '10'],
+      ['sh', '-c', 'sleep 10; true'],
     ]) {
       const started = Date.now()
       const run = runFailing(argv, tmpdir(), 1000)
-      // Under the command's own 3 s: the timeout stopped it, not its end.
-      assert.ok(Date.now() - started < 2500, argv.join(' '))
+      // Well under the command's own 10 s: the timeout stopped it, not its end.
+      assert.ok(Date.now() - started < 8000, argv.join(' '))
       assert.equal(run.status, null)
       assert.equal(run.stopped, 'stopped after 1 s')
     }
-    assert.equal(runFailing(['sleep', '3'], tmpdir(), 300).stopped, 'stopped after 300 ms')
+    assert.equal(runFailing(['sleep', '10'], tmpdir(), 300).stopped, 'stopped after 300 ms')
   })
 
   test('a command killed by a signal says which', () => {

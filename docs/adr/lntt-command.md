@@ -97,7 +97,9 @@ lntt ci local | candidate
   the skill unchanged. `lntt issue` sends nothing without `--send`, so what the operator
   approves is the issue it printed, redacted as `lntt dump` redacts what it collects,
   and refused before sending when GitHub would refuse it (`BODY_LIMIT` and `TITLE_LIMIT`
-  in `packages/lntt/src/issue.ts`). Its body is one `### <field>` heading per field, as
+  in `packages/lntt/src/issue.ts`). Its body is one `### <field>` heading per field (the fields in
+  `ISSUE_SECTIONS`, `packages/lntt/src/issue.ts`; Project carries the template and version
+  of the `lunette` key), as
   GitHub writes a submitted issue form, so an issue form added upstream later takes the
   fields as they are. The repository is never written in a skill nor guessed: it is
   `cycle.retrospective.upstream.repository`, which every template sets

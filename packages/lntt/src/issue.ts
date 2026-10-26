@@ -6,7 +6,9 @@
 // lntt issue, never gh, so another way to send it is added here without changing the
 // skill (#184).
 
+import { spawnSync } from 'node:child_process'
 import type { Gh } from './ci/candidate.ts'
+import { repositoryOf } from './ci/event.ts'
 import { type Dump, renderDump } from './dump.ts'
 
 // The fields of a report, in their order, each a `### <field>` heading as GitHub writes
@@ -39,15 +41,19 @@ export function upstreamRepository(config: {
   return configured
 }
 
-// The repository the command runs in (GITHUB_REPOSITORY in Actions, else gh), or null when
-// gh cannot tell: a report to it is no report, its items are handled here.
-export function currentRepository(gh: Gh, env: Record<string, string | undefined>): string | null {
+// The repository the command runs in: GITHUB_REPOSITORY in Actions, else the origin
+// remote's, read from git with no network call (gh repo view would follow gh's default
+// repository, the upstream in a fork). Null when neither tells: a report to it is no
+// report, its items are handled here.
+export function currentRepository(root: string, env: Record<string, string | undefined>): string | null {
   if (env.GITHUB_REPOSITORY) return env.GITHUB_REPOSITORY
-  try {
-    return gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']).trim() || null
-  } catch {
-    return null
-  }
+  const origin = spawnSync('git', ['-C', root, 'remote', 'get-url', 'origin'], { encoding: 'utf8' })
+  return origin.status === 0 ? repositoryOf(origin.stdout.trim()) : null
+}
+
+// GitHub names a repository ignoring case: LunetteOrg/starter is lunetteorg/starter.
+export function sameRepository(a: string | null, b: string | null): boolean {
+  return a !== null && b !== null && a.toLowerCase() === b.toLowerCase()
 }
 
 export const REPOSITORY = /^[\w.-]+\/[\w.-]+$/

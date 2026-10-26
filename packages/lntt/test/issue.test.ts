@@ -170,8 +170,6 @@ describe('lntt issue', () => {
       join(bin, 'gh'),
       [
         '#!/bin/sh',
-        // The repository it runs in, unlogged: acme/app, or the one written in current.
-        `[ "$1 $2" = "repo view" ] && { cat ${join(root, 'current')} 2>/dev/null || echo acme/app; exit 0; }`,
         `printf '%s\\n' "$*" >> ${log}`,
         `cat >> ${log}`,
         'case "$2" in',
@@ -185,13 +183,19 @@ describe('lntt issue', () => {
   })
   afterEach(() => rmSync(root, { recursive: true, force: true }))
 
-  const lntt = (args: string[], input?: string) =>
+  const lntt = (args: string[], input?: string, extra: Record<string, string> = {}) =>
     spawnSync(process.execPath, [BIN, 'issue', ...args], {
       cwd: root,
       encoding: 'utf8',
       input,
-      env: { PATH: `${bin}:${process.env.PATH}`, HOME: root },
+      env: { PATH: `${bin}:${process.env.PATH}`, HOME: root, ...extra },
     })
+  // The repository it runs in, from the origin remote.
+  const origin = (url: string) => {
+    spawnSync('git', ['init', '-q', root])
+    spawnSync('git', ['-C', root, 'remote', 'remove', 'origin'])
+    spawnSync('git', ['-C', root, 'remote', 'add', 'origin', url])
+  }
   const sent = () => {
     try {
       return readFileSync(log, 'utf8')
@@ -343,14 +347,53 @@ describe('lntt issue', () => {
   })
 
   test('the upstream is the repository it runs in: nothing to send, the harvest handles its items here', () => {
-    writeFileSync(join(root, 'current'), 'LunetteOrg/starter\n')
+    origin('git@github.com:lunetteorg/Starter.git')
     for (const args of [['draft.md'], ['draft.md', '--send'], ['draft.md', '--comment', '7', '--send']]) {
       const run = lntt(args)
       assert.equal(run.status, 0, run.stderr)
       assert.equal(run.stdout, '', args.join(' '))
-      assert.match(run.stderr, /nothing to send: LunetteOrg\/starter is this repository/, args.join(' '))
+      assert.match(
+        run.stderr,
+        /nothing to send: LunetteOrg\/starter is this repository \(lunetteorg\/Starter\)/,
+        args.join(' '),
+      )
     }
     assert.equal(sent(), '')
+  })
+
+  test('another repository asked for, in the upstream itself: printed, not dropped', () => {
+    origin('https://github.com/LunetteOrg/starter')
+    const run = lntt(['draft.md', '--repo', 'remix-run/react-router'])
+    assert.equal(run.status, 0, run.stderr)
+    assert.match(run.stdout, /^To remix-run\/react-router: /)
+    assert.doesNotMatch(run.stderr, /nothing to send/)
+  })
+
+  test('GITHUB_REPOSITORY, in Actions, wins over the origin remote', () => {
+    origin('git@github.com:acme/app.git')
+    const actions = lntt(['draft.md'], undefined, { GITHUB_REPOSITORY: 'LunetteOrg/starter' })
+    assert.equal(actions.stdout, '')
+    assert.match(actions.stderr, /nothing to send/)
+    origin('git@github.com:LunetteOrg/starter.git')
+    const fork = lntt(['draft.md'], undefined, { GITHUB_REPOSITORY: 'acme/app' })
+    assert.match(fork.stdout, /^To LunetteOrg\/starter: /)
+  })
+
+  test('the upstream compared ignoring case: --repo lunetteorg/starter is the upstream, and sent', () => {
+    const run = lntt(['draft.md', '--repo', 'lunetteorg/starter', '--send'])
+    assert.equal(run.status, 0, run.stderr)
+    assert.match(sent(), /^issue create --repo lunetteorg\/starter /)
+  })
+
+  test('--repo needs no upstream to print or search; --send still names the key', () => {
+    writeFileSync(join(root, '.agents/config.jsonc'), '{}\n')
+    const dry = lntt(['draft.md', '--repo', 'remix-run/react-router'])
+    assert.equal(dry.status, 0, dry.stderr)
+    assert.match(dry.stdout, /^To remix-run\/react-router: /)
+    assert.equal(lntt(['search', '--repo', 'remix-run/react-router', 'hmr']).status, 0)
+    const send = lntt(['draft.md', '--repo', 'remix-run/react-router', '--send'])
+    assert.equal(send.status, 1)
+    assert.match(send.stderr, /no cycle\.retrospective\.upstream\.repository in the configuration/)
   })
 
   test('search prints one JSON line per open issue that matches', () => {

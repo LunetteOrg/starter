@@ -14,9 +14,11 @@ import {
   commentIssue,
   currentRepository,
   fileIssue,
+  IssueError,
   issueBody,
   parseDraft,
   REPOSITORY,
+  sameRepository,
   searchIssues,
   upstreamRepository,
 } from './issue.ts'
@@ -109,9 +111,11 @@ function issue({ values, positionals }: Parsed): void {
   }
   if (values.repo !== undefined && !REPOSITORY.test(values.repo)) usage(`--repo takes owner/name, not ${values.repo}`)
   // Lunette's repository, where reports are sent; --repo names another one (a library the
-  // project uses), whose report is only printed, for the operator to file by hand.
-  const upstream = upstreamRepository(projectConfig())
-  const repo = values.repo ?? upstream
+  // project uses), whose report is only printed, for the operator to file by hand: that
+  // one needs no upstream, --send does.
+  const upstream = upstreamOrNone(projectConfig(), values.repo !== undefined && !values.send)
+  const repo = values.repo ?? (upstream as string)
+  const toUpstream = sameRepository(repo, upstream)
   const gh = makeGh({ dryRun: false, log: (line) => stderr.write(`${line}\n`) })
   if (first === 'search') {
     for (const found of searchIssues(gh, repo, rest.join(' '))) stdout.write(`${JSON.stringify(found)}\n`)
@@ -119,17 +123,20 @@ function issue({ values, positionals }: Parsed): void {
   }
 
   const draft = parseDraft(readFileSync(first === '-' ? stdin.fd : (first as string), 'utf8'))
-  if (values.send && repo !== upstream) {
+  if (values.send && !toUpstream) {
     throw new Error(
       `${repo} is not cycle.retrospective.upstream.repository (${upstream}): only that one is sent; the operator files this report by hand`,
     )
   }
+  const root = projectRoot()
   // Lunette's own repository reports to itself: its items are handled here, by the harvest.
-  if (repo === upstream && currentRepository(gh, env) === upstream) {
-    stderr.write(`lntt issue: nothing to send: ${upstream} is this repository, the harvest handles its items here\n`)
+  const current = currentRepository(root, env)
+  if (toUpstream && sameRepository(current, upstream)) {
+    stderr.write(
+      `lntt issue: nothing to send: ${upstream} is this repository (${current}), the harvest handles its items here\n`,
+    )
     return
   }
-  const root = projectRoot()
   const given = {
     ...(values.harness === undefined ? {} : { harness: values.harness }),
     ...(values.model === undefined ? {} : { model: values.model }),
@@ -149,7 +156,7 @@ function issue({ values, positionals }: Parsed): void {
     stdout.write(`${where}\n\n${body}`)
     if (tooLong) stderr.write(`lntt issue: ${tooLong}\n`)
     stderr.write(
-      repo === upstream
+      toUpstream
         ? 'lntt issue: nothing sent: --send opens it, once the operator has read it\n'
         : `lntt issue: nothing sent: ${repo} is not the upstream, the operator files it by hand\n`,
     )
@@ -158,6 +165,16 @@ function issue({ values, positionals }: Parsed): void {
   if (tooLong) throw new Error(tooLong)
   const url = comment === undefined ? fileIssue(gh, repo, title, body) : commentIssue(gh, repo, comment, body)
   stdout.write(`${url}\n`)
+}
+
+// The configured upstream; null instead of the refusal when it may be missing.
+function upstreamOrNone(config: Record<string, unknown>, lenient: boolean): string | null {
+  try {
+    return upstreamRepository(config)
+  } catch (error) {
+    if (lenient && error instanceof IssueError) return null
+    throw error
+  }
 }
 
 function readDump(path: string): Dump {

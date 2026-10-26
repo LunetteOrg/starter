@@ -263,8 +263,8 @@ is a warning there and a refusal with `--send`. It sends with `gh`, under the ac
 `cycle.retrospective.upstream.repository`; without it, `lntt issue` (and `search`) exits
 1 naming the key. `--repo <owner/name>` names another repository: its report is printed
 for the operator to file by hand, and `--send` is refused. When the upstream is the
-repository `lntt issue` runs in (`gh repo view`), there is nothing to send: it says so
-and exits 0. `--harness` and `--model` beside `--dump` replace the dump's. The
+repository `lntt issue` runs in (`GITHUB_REPOSITORY`, else the `origin` remote; names
+compared ignoring case, as GitHub does), there is nothing to send: it says so and exits 0. `--harness` and `--model` beside `--dump` replace the dump's. The
 `retrospective` skill drafts these reports from the items marked with the upstream and calls
 `lntt issue`, never `gh`.
 
