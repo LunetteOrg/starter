@@ -168,11 +168,11 @@ So:
   `@lntt/lntt` version in the project's lockfile; the file carries none.
   - It only grows: a new field or section is optional, never `required`, and its
     absence means the behaviour from before it existed. An enum only gains values.
-    A newer `lntt` therefore reads an older file; 
+    A newer `lntt` therefore reads an older file;
     `packages/lntt/test/released-configs.test.ts` validates a configuration of each
     released version against the current schema, and checks that it sets every field
-    the schema of its tag knew. What the schema cannot say, and
-    what every reader would fail on if the schema required it, `lntt validate` checks
+    the schema of its tag knew. What the schema cannot say, and what every reader
+    would fail on if the schema required it, `lntt validate` checks
     (`packages/lntt/src/references.ts`): those checks may grow, since they fail the
     gate and never a read; the release notes name each new one
     ([delivery](../process/delivery.md#releasing)).
