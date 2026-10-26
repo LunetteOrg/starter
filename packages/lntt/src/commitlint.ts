@@ -2,7 +2,7 @@
 // `.agents/config.*` so the tool and the `commit-message` skill read one list. Every
 // rule that rejects a message says what to write instead and names the skill.
 
-import { ConfigError } from './files.ts'
+import { NoConfigError } from './files.ts'
 import { loadConfig } from './index.ts'
 
 interface Commits {
@@ -32,12 +32,13 @@ const IDENTIFIER = [
   /^[A-Z][A-Za-z0-9_-]*\.[a-z0-9]+$/,
 ]
 
+// No configuration file: the defaults. A file that does not validate is an error.
 function commits(cwd: string): Commits {
   try {
     const delivery = loadConfig(cwd).data.delivery as { commits?: Commits } | undefined
     return delivery?.commits ?? {}
   } catch (e) {
-    if (e instanceof ConfigError) return {}
+    if (e instanceof NoConfigError) return {}
     throw e
   }
 }

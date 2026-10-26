@@ -24,7 +24,7 @@ command, so a reader who sees `lntt` in a script knows which package provides it
 ```
 lntt path | validate | get | set | operator | sync | guide | local app | viewer | browser | refs
 lntt board sync
-lntt check [agents-md | skills | decisions [structure | numbers] | tests [levels | focus | rules | touched | mutate] | body] | check cite
+lntt check [agents-md | skills | decisions [structure | board-refs | numbers] | tests [levels | focus | rules | touched | mutate] | body] | check cite
 lntt branch name | check | rename
 lntt pr block
 lntt retro add
@@ -103,8 +103,9 @@ rests on these criteria:
 
 1. **A gate is reproducible on the same commit.** The CI workflow runs
    `pnpm exec lntt check` and `lntt branch check` (`.github/workflows/ci.yml`), the
-   git hooks run `lntt branch check --pre-push` and commitlint with `@lntt/lntt`'s
-   configuration (`lefthook.yml`, `pre-push` and `commit-msg`). Their answer is fixed
+   git hooks run `lntt check decisions board-refs` on the staged files,
+   `lntt branch check --pre-push` and commitlint with `@lntt/lntt`'s configuration
+   (`lefthook.yml`, `pre-commit`, `pre-push` and `commit-msg`). Their answer is fixed
    only by the project's lockfile. A red of `lntt ci local` for a timeout is the
    machine's, never a verdict on the code (`packages/lntt/src/ci/report.ts`).
 2. **The host adapters follow the hosts' release cadence** (#137): Orca 1.4.229 moved
@@ -167,9 +168,10 @@ So:
   `@lntt/lntt` version in the project's lockfile; the file carries none.
   - It only grows: a new field or section is optional, never `required`, and its
     absence means the behaviour from before it existed. An enum only gains values.
-    A newer `lntt` therefore reads an older file; the rule needs a test that
-    validates a configuration of each released version against the current schema
-    ([accepted risks](#negative--accepted-risks)). What the schema cannot say, and
+    A newer `lntt` therefore reads an older file; 
+    `packages/lntt/test/released-configs.test.ts` validates a configuration of each
+    released version against the current schema, and checks that it sets every field
+    the schema of its tag knew. What the schema cannot say, and
     what every reader would fail on if the schema required it, `lntt validate` checks
     (`packages/lntt/src/references.ts`): those checks may grow, since they fail the
     gate and never a read; the release notes name each new one
@@ -181,9 +183,9 @@ So:
   - A missing file means the defaults (`NoConfigError` in
     `packages/lntt/src/files.ts`); a file that does not validate stops the command
     with the error, as `lntt review` does (`loaded` in
-    `packages/lntt/src/review-cli.ts`). The rule is that an invalid file gets an
-    error, not the defaults; two commands still answer it with their defaults
-    ([accepted risks](#negative--accepted-risks)).
+    `packages/lntt/src/review-cli.ts`). An invalid file gets an error, not the
+    defaults, in every command that reads the configuration, `lntt worktree start`
+    (`projectConfig`) and the commitlint configuration (`commits`) included.
   - A removal or a rename is a breaking change, the one release where an older file
     stops validating: the release knows both names, the gate fails on the old one and
     names the new one while the agent tools still read it, and a later release drops
@@ -219,14 +221,6 @@ So:
   `npx @lntt/lntt`, never in daily use.
 - A host's change reaches a project's agent tools only with a release and that
   project's bump, until the split's trigger fires.
-- `lntt worktree start` and the commitlint configuration answer a file that does not
-  validate with their defaults (`projectConfig` in
-  `packages/lntt/src/worktree-cli.ts`, `commits` in `packages/lntt/src/commitlint.ts`),
-  against the compatibility rule: until the work that follows this record closes that
-  gap, the rule rests on review for those two readers. Every other read is covered by
-  `packages/lntt/test/released-configs.test.ts`, which validates a configuration of
-  each released version against the schema, and checks it sets every field the schema of
-  its tag knew.
 
 ### When to deviate (revisit triggers)
 

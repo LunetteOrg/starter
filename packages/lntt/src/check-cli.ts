@@ -25,7 +25,7 @@ import { ConfigError, loadConfig } from './index.ts'
 import { retroComment } from './pull-request.ts'
 import { isCandidate } from './retro.ts'
 
-const USAGE = `usage: lntt check [agents-md | skills | decisions [structure | numbers [<file>...]] | tests [levels | focus | rules | touched] | body [template | --pr <n> | -]] [--base <ref>] [--json]
+const USAGE = `usage: lntt check [agents-md | skills | decisions [structure | board-refs [<file>...] | numbers [<file>...]] | tests [levels | focus | rules | touched] | body [template | --pr <n> | -]] [--base <ref>] [--json]
        lntt check tests mutate <path:line> --text <on the line> --to <mutated> [--json]
        lntt check cite <path:line>... [--json]`
 
@@ -38,7 +38,7 @@ function usage(message?: string): never {
 const CHECKS: Record<string, string[]> = {
   'agents-md': [],
   skills: [],
-  decisions: ['structure', 'numbers'],
+  decisions: ['structure', 'board-refs', 'numbers'],
   tests: ['levels', 'focus', 'rules', 'touched', 'mutate'],
   body: ['-', 'template'],
 }
@@ -105,7 +105,8 @@ function run(args: string[]): Result[] {
     if (check !== undefined && !(CHECKS[area] as string[]).includes(check)) {
       usage(`no check ${check} in ${area}${CHECKS[area]?.length ? `: ${CHECKS[area]?.join(', ')}` : ''}`)
     }
-    if (rest.length > 0 && check !== 'numbers' && check !== 'mutate') usage(`${check ?? area} takes no file`)
+    if (rest.length > 0 && check !== 'numbers' && check !== 'board-refs' && check !== 'mutate')
+      usage(`${check ?? area} takes no file`)
     if (check === 'numbers' && rest.length === 0 && base === undefined) usage('numbers needs files or --base')
     if (check === 'mutate') {
       if (rest.length !== 1 || !ANCHOR_LINE.test(rest[0] as string)) usage('mutate needs one path:line')

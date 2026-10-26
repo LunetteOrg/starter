@@ -17,7 +17,7 @@ import {
   gateOf,
   isApproval,
 } from './coordinator.ts'
-import { ConfigError } from './files.ts'
+import { NoConfigError } from './files.ts'
 import { loadConfig } from './index.ts'
 import { send, waitForAnswer } from './messages.ts'
 import { messagesRoot, pollInterval, systemMailbox } from './messages-cli.ts'
@@ -91,12 +91,14 @@ function mainCheckout(): string {
   return common.replace(/\/\.git$/, '')
 }
 
-// The project's configuration; a project without one has the defaults.
-function projectConfig(): Config & { delivery?: { candidate?: { base?: string } } } {
+// The project's configuration; a project without one has the defaults. A file that does
+// not validate is an error: a child on the default gate and models would pass for the one
+// the project configured.
+export function projectConfig(dir: string = cwd()): Config & { delivery?: { candidate?: { base?: string } } } {
   try {
-    return loadConfig(cwd()).data as Config & { delivery?: { candidate?: { base?: string } } }
+    return loadConfig(dir).data as Config & { delivery?: { candidate?: { base?: string } } }
   } catch (error) {
-    if (error instanceof ConfigError) return {}
+    if (error instanceof NoConfigError) return {}
     throw error
   }
 }
