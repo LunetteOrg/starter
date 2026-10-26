@@ -41,7 +41,7 @@ export function defaultBranch(cwd: string): string {
   return head?.replace(/^origin\//, '') || 'main'
 }
 
-function repositoryOf(url: string | null): string | null {
+export function repositoryOf(url: string | null): string | null {
   const match = /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/.exec(url ?? '')
   return match ? match[1] : null
 }

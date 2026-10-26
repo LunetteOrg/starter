@@ -75,8 +75,10 @@ test('a scaffolded project records the template and the CLI version it came from
   try {
     const version = JSON.parse(readFileSync(resolve(dirname(BIN), '../package.json'), 'utf8')).version
     const config = readFileSync(join(app, '.agents/config.jsonc'), 'utf8')
-    const lunette = JSON.parse(config.replace(/^\s*\/\/.*$/gm, '')).lunette
-    assert.deepEqual(lunette, { template: 'react-router', version })
+    const parsed = JSON.parse(config.replace(/^\s*\/\/.*$/gm, ''))
+    assert.deepEqual(parsed.lunette, { template: 'react-router', version })
+    // Where friction that comes from Lunette itself is reported (lntt issue).
+    assert.deepEqual(parsed.cycle.retrospective.upstream, { repository: 'LunetteOrg/starter' })
     const subject = execFileSync('git', ['log', '-1', '--format=%s'], { cwd: app, encoding: 'utf8' }).trim()
     assert.equal(subject, `chore: scaffold my-app from @lntt/create ${version} (template react-router)`)
   } finally {
