@@ -81,6 +81,14 @@ describe('appendRetro', () => {
     assert.match(appendRetro(text, 'Friction', 'x', RULES), /- \*\*Friction:\*\*\n {2}- first\n {2}- x\n/)
   })
 
+  test('none on the label line with free text and a placeholder below: none goes, the text stays', () => {
+    const text = EMPTY.replace('- **Friction:**', '- **Friction:** none\n  the review stalled\n  <!-- more -->')
+    assert.match(
+      appendRetro(text, 'Friction', 'x', RULES),
+      /- \*\*Friction:\*\*\n {2}the review stalled\n {2}<!-- more -->\n {2}- x\n- \*\*To/,
+    )
+  })
+
   test('an empty label line with a value on the lines below: the item after them', () => {
     const text = EMPTY.replace('- **Friction:**', '- **Friction:**\n  the review stalled\n  twice')
     assert.match(
