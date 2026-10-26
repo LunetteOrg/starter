@@ -276,8 +276,8 @@ only after months of intensive use across several projects, not when a piece of 
 ends.
 
 1. `node scripts/packages-version.mts set X.Y.Z`, and add the release's configuration
-   fixture, `packages/lntt/test/fixtures/released/X.Y.Z.jsonc`: a file written with
-   every field the schema knows at that release, which
+   fixture, `packages/lntt/test/fixtures/released/X.Y.Z.jsonc`: a file written by hand
+   from the schema, with every field it knows at that release, which
    `packages/lntt/test/released-configs.test.ts` validates against the current schema
    from then on. Commit both as `chore(release): X.Y.Z` directly on `main`; a release
    does not go through a pull request.

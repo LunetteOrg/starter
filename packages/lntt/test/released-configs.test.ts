@@ -11,15 +11,17 @@ import { loadConfig } from '../src/index.ts'
 // a newer lntt must read each of them. A release adds its fixture (docs/process/delivery.md).
 const HERE = dirname(fileURLToPath(import.meta.url))
 const RELEASED = resolve(HERE, 'fixtures/released')
-const current = (JSON.parse(readFileSync(resolve(HERE, '../package.json'), 'utf8')) as { version: string }).version
+// A dry run of a release (X.Y.Z-rc.N) carries the fixture of the release it rehearses.
+const current = (
+  JSON.parse(readFileSync(resolve(HERE, '../package.json'), 'utf8')) as { version: string }
+).version.split('-')[0]
 
 const versions = readdirSync(RELEASED)
   .filter((file) => file.endsWith('.jsonc'))
   .map((file) => file.slice(0, -'.jsonc'.length))
 
 describe('the configuration of each released version', () => {
-  // A pre-release (a dry run of the release) is not a release: it adds no fixture.
-  test('the version in package.json has its fixture', { skip: current.includes('-') }, () => {
+  test('the version in package.json has its fixture', () => {
     assert.ok(versions.includes(current), `add packages/lntt/test/fixtures/released/${current}.jsonc`)
   })
 
