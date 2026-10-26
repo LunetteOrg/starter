@@ -11,7 +11,7 @@ import { arch, homedir, release, type } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseDocument } from 'yaml'
-import { loadConfig } from './index.ts'
+import { loadConfig, NoConfigError } from './index.ts'
 
 export interface DumpSection {
   title: string
@@ -240,7 +240,8 @@ function projectLines(root: string): { lines: string[]; configError?: string } {
   } catch (error) {
     const message = (error as Error).message
     lines.push(`configuration: ${message}`)
-    return { lines, configError: message }
+    // No file is the defaults, as for every command; a file that does not validate is an error.
+    return error instanceof NoConfigError ? { lines } : { lines, configError: message }
   }
   return { lines }
 }
@@ -338,7 +339,8 @@ export function renderDump(dump: Dump): string {
 // It is stopped after `timeoutMs` (default 10 minutes), so a command that hangs does not
 // hang the dump.
 export function runFailing(argv: string[], cwd: string, timeoutMs = 10 * 60 * 1000): FailedCommand {
-  // exec: the command takes the shell's place, so the timeout stops the command itself.
+  // exec: the command takes the shell's place, so the timeout stops the command itself; a
+  // process it started may outlive it.
   const run = spawnSync('sh', ['-c', 'exec "$@" 2>&1', 'sh', ...argv], {
     cwd,
     encoding: 'utf8',

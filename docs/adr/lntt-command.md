@@ -96,7 +96,8 @@ lntt ci local | candidate
   behind the command, the skill unchanged. `lntt issue` sends nothing without `--send`,
   so what the operator approves is the issue it printed: the dump, the draft and the
   title, redacted as `lntt dump` redacts what it collects, and refused before sending
-  when GitHub would refuse it (a body past 65536 characters, a title past 256). The repository is read, never written in a skill:
+  when GitHub would refuse it (`BODY_LIMIT` and `TITLE_LIMIT` in
+  `packages/lntt/src/issue.ts`). The repository is read, never written in a skill:
   `cycle.retrospective.upstream.repository`, by default the `repository` of the
   installed `@lntt/lntt` (`packages/lntt/src/issue.ts`). The report form,
   `.github/ISSUE_TEMPLATE/lunette-report.yml`, lives in this repository only: the

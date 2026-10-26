@@ -125,7 +125,8 @@ function issue({ values, positionals }: Parsed): void {
   const title = redact(draft.title, redaction)
   const body = redact(issueBody(draft, result, values.project ?? projectName(root)), redaction)
   const comment = values.comment === undefined ? undefined : Number(values.comment)
-  const tooLong = bodyTooLong(title, body)
+  // A comment has no title.
+  const tooLong = bodyTooLong(comment === undefined ? title : '', body)
 
   if (!values.send) {
     const where = comment === undefined ? `To ${repo}: ${title}` : `To ${repo}#${comment}, as a comment`

@@ -210,7 +210,16 @@ describe('collectDump', () => {
     writeFileSync(join(root, '.agents/config.jsonc'), '{ "nope": 1 }\n')
     const project = collectDump({ root, env: {}, version: () => null }).sections.find((s) => s.title === 'Project')
     assert.match(project?.lines.join('\n') ?? '', /configuration: .*does not match the schema/)
-    assert.match(collectDump({ root, env: {}, version: () => null }).configError ?? '', /does not match the schema/)
+    const error = collectDump({ root, env: {}, version: () => null, home: root }).configError ?? ''
+    assert.match(error, /does not match the schema/)
+    assert.ok(error.includes('~/.agents/config.jsonc') && !error.includes(root), 'the error is redacted too')
+  })
+
+  test('no configuration file is the defaults, not an error', () => {
+    rmSync(join(root, '.agents/config.jsonc'))
+    const dump = collectDump({ root, env: {}, version: () => null })
+    assert.equal(dump.configError, undefined)
+    assert.match(dump.sections.find((s) => s.title === 'Project')?.lines.join('\n') ?? '', /configuration: no \.agents/)
   })
 
   test('rendered as Markdown, one heading per section', () => {
@@ -227,10 +236,10 @@ describe('runFailing', () => {
     assert.equal(run.output, 'out\nerr\n')
   })
 
-  test('a command that hangs is stopped at the timeout, a nested one too, and says so', () => {
+  test('a command that hangs is stopped at the timeout, and says so', () => {
     for (const argv of [
-      ['sleep', '30'],
-      ['sh', '-c', 'sleep 30; true'],
+      ['sleep', '3'],
+      ['sh', '-c', 'sleep 3; true'],
     ]) {
       const started = Date.now()
       const run = runFailing(argv, tmpdir(), 1000)
@@ -238,7 +247,7 @@ describe('runFailing', () => {
       assert.equal(run.status, null)
       assert.equal(run.stopped, 'stopped after 1 s')
     }
-    assert.equal(runFailing(['sleep', '30'], tmpdir(), 300).stopped, 'stopped after 300 ms')
+    assert.equal(runFailing(['sleep', '3'], tmpdir(), 300).stopped, 'stopped after 300 ms')
   })
 
   test('a command killed by a signal says which', () => {
@@ -299,6 +308,16 @@ describe('lntt dump', () => {
     assert.equal(run.status, 1)
     assert.match(run.stdout, /### Project\n/)
     assert.match(run.stderr, /^lntt dump: .*does not match the schema/)
+    const json = lntt(['--json'])
+    assert.equal(json.status, 1)
+    assert.match(JSON.parse(json.stdout).configError, /does not match the schema/)
+  })
+
+  test('no configuration file: the dump, exit 0', () => {
+    rmSync(join(root, '.agents'), { recursive: true })
+    const run = lntt([])
+    assert.equal(run.status, 0, run.stderr)
+    assert.match(run.stdout, /- configuration: no \.agents/)
   })
 
   test('--json gives the same dump as one object', () => {

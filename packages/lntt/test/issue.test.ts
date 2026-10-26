@@ -272,6 +272,26 @@ describe('lntt issue', () => {
     assert.equal(bodyTooLong('t', '😀'.repeat(65536)), null)
     assert.match(bodyTooLong('t', 'x'.repeat(65537)) ?? '', /the body is 65537 characters/)
     assert.match(bodyTooLong('x'.repeat(257), 'b') ?? '', /the title is 257 characters, GitHub takes 256/)
+    assert.equal(bodyTooLong('x'.repeat(256), 'b'), null)
+    assert.equal(bodyTooLong('😀'.repeat(256), 'b'), null)
+  })
+
+  test('a title past what GitHub takes: a warning, a refusal with --send, nothing for a comment', () => {
+    writeFileSync(join(root, 'draft.md'), DRAFT.replace(/^# .*/, `# ${'t'.repeat(257)}`))
+    assert.match(lntt(['draft.md']).stderr, /the title is 257 characters/)
+    const send = lntt(['draft.md', '--send'])
+    assert.equal(send.status, 1)
+    assert.equal(sent(), '')
+    const comment = lntt(['draft.md', '--comment', '7', '--send'])
+    assert.equal(comment.status, 0, comment.stderr)
+    assert.match(sent(), /^issue comment 7/)
+  })
+
+  test('a draft that does not parse fails before the dump is read', () => {
+    writeFileSync(join(root, 'draft.md'), '# t\n')
+    const run = lntt(['draft.md', '--dump', 'missing.json'])
+    assert.equal(run.status, 1)
+    assert.match(run.stderr, /no "## What happened" section/)
   })
 
   test('a body past what GitHub takes: a warning in the dry run, a refusal with --send', () => {
