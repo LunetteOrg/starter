@@ -181,6 +181,16 @@ describe('collectDump', () => {
     assert.match(lines.join('\n'), /line 299\n```$/)
   })
 
+  test('a command stopped with no exit code says why', () => {
+    const dump = collectDump({
+      root,
+      env: {},
+      version: () => null,
+      command: { argv: ['x'], status: null, output: '', stopped: 'stopped after 5 s' },
+    })
+    assert.ok(dump.sections.find((s) => s.title === 'Command')?.lines.includes('exit: stopped after 5 s'))
+  })
+
   test('an output holding a fence of its own stays inside the block', () => {
     const output = 'before\n```\ninside\n```\nafter'
     const dump = collectDump({ root, env: {}, version: () => null, command: { argv: ['x'], status: 1, output } })
@@ -200,6 +210,7 @@ describe('collectDump', () => {
     writeFileSync(join(root, '.agents/config.jsonc'), '{ "nope": 1 }\n')
     const project = collectDump({ root, env: {}, version: () => null }).sections.find((s) => s.title === 'Project')
     assert.match(project?.lines.join('\n') ?? '', /configuration: .*does not match the schema/)
+    assert.match(collectDump({ root, env: {}, version: () => null }).configError ?? '', /does not match the schema/)
   })
 
   test('rendered as Markdown, one heading per section', () => {
@@ -216,10 +227,23 @@ describe('runFailing', () => {
     assert.equal(run.output, 'out\nerr\n')
   })
 
-  test('a command that hangs is stopped at the timeout, and says so', () => {
-    const run = runFailing(['sleep', '5'], tmpdir(), 200)
-    assert.equal(run.status, null)
-    assert.equal(run.stopped, 'stopped after 0 s')
+  test('a command that hangs is stopped at the timeout, a nested one too, and says so', () => {
+    for (const argv of [
+      ['sleep', '30'],
+      ['sh', '-c', 'sleep 30; true'],
+    ]) {
+      const started = Date.now()
+      const run = runFailing(argv, tmpdir(), 1000)
+      assert.ok(Date.now() - started < 10_000, argv.join(' '))
+      assert.equal(run.status, null)
+      assert.equal(run.stopped, 'stopped after 1 s')
+    }
+    assert.equal(runFailing(['sleep', '30'], tmpdir(), 300).stopped, 'stopped after 300 ms')
+  })
+
+  test('a command killed by a signal says which', () => {
+    const run = runFailing(['sh', '-c', 'kill -TERM $$'], tmpdir())
+    assert.equal(run.stopped, 'killed by SIGTERM')
   })
 })
 
@@ -235,6 +259,9 @@ describe('withAgent', () => {
     assert.equal(next.model, 'm2')
     assert.equal(next.harness, 'a')
     assert.deepEqual(next.sections[0]?.lines, ['harness: a', 'model: m2'])
+    const harness = withAgent(dump, { harness: 'h2' })
+    assert.deepEqual(harness.sections[0]?.lines, ['harness: h2', 'model: b'])
+    assert.equal(withAgent(dump, {}), dump, 'nothing given: the dump as it was read')
   })
 })
 
@@ -264,6 +291,14 @@ describe('lntt dump', () => {
     assert.match(run.stdout, /- exit: 3/)
     assert.match(run.stdout, /in ~ with <redacted>/)
     assert.ok(!run.stdout.includes(root), 'the home path is gone')
+  })
+
+  test('a configuration that does not validate: the whole dump printed, then exit 1', () => {
+    writeFileSync(join(root, '.agents/config.jsonc'), '{ "nope": 1 }\n')
+    const run = lntt([])
+    assert.equal(run.status, 1)
+    assert.match(run.stdout, /### Project\n/)
+    assert.match(run.stderr, /^lntt dump: .*does not match the schema/)
   })
 
   test('--json gives the same dump as one object', () => {

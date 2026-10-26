@@ -241,8 +241,8 @@ is redacted before it is printed: the home path becomes `~`, the project's git r
 `<remote>`, a URL with credentials, an email, a token by its shape (GitHub, Anthropic,
 OpenAI, Slack, AWS, npm, a JWT, a bearer), the value of a key that names a secret and the
 value of every secret-named environment variable of 8 characters or more `<redacted>` or
-`<token>`. A configuration that does not validate is reported in the dump, which still
-exits 0. The failing command is stopped after 10 minutes.
+`<token>`. A configuration that does not validate is reported in the dump, printed whole,
+and `lntt dump` exits 1. The failing command is stopped after 10 minutes.
 
 `lntt issue <draft | ->` reads a draft (`# <title>`, then `## What happened`,
 `## Pull requests`, `## Proposal`) and fills the fields of the report form

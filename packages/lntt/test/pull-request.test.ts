@@ -230,6 +230,16 @@ describe('the [lunette] marker', () => {
     )
   })
 
+  test('a line that is no bullet under a label left empty on its line is an item of that label', () => {
+    const lines = [
+      '- **Friction:** none',
+      '- **To automate (hook/skill/agent):**',
+      '[lunette] a hook',
+      ...FILLED.slice(2),
+    ]
+    assert.deepEqual(lunetteItems(body(...lines)), [{ label: 'To automate (hook/skill/agent)', item: 'a hook' }])
+  })
+
   test('a marker inside an HTML comment is no item', () => {
     const lines = ['- **Friction:** none <!-- [lunette] -->', ...FILLED.slice(1)]
     assert.deepEqual(checkBody(body(...lines), DEFAULTS), [])

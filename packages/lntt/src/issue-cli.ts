@@ -85,6 +85,8 @@ function dump({ values, positionals }: Parsed): void {
     ...(failing === undefined ? {} : { command: runFailing(failing, cwd()) }),
   })
   stdout.write(values.json ? `${JSON.stringify(result)}\n` : renderDump(result))
+  // Printed whole, then red: a configuration that does not validate is an error.
+  if (result.configError !== undefined) throw new Error(result.configError)
 }
 
 function issue({ values, positionals }: Parsed): void {
@@ -110,6 +112,7 @@ function issue({ values, positionals }: Parsed): void {
     return
   }
 
+  const draft = parseDraft(readFileSync(first === '-' ? stdin.fd : (first as string), 'utf8'))
   const root = projectRoot()
   const given = {
     ...(values.harness === undefined ? {} : { harness: values.harness }),
@@ -117,13 +120,12 @@ function issue({ values, positionals }: Parsed): void {
   }
   const result: Dump =
     values.dump === undefined ? collectDump({ root, env, ...given }) : withAgent(readDump(values.dump), given)
-  const draft = parseDraft(readFileSync(first === '-' ? stdin.fd : (first as string), 'utf8'))
   // The draft and the project's name leave the machine too: redacted as the dump is.
   const redaction = redactionFor(root, env)
   const title = redact(draft.title, redaction)
   const body = redact(issueBody(draft, result, values.project ?? projectName(root)), redaction)
   const comment = values.comment === undefined ? undefined : Number(values.comment)
-  const tooLong = bodyTooLong(body)
+  const tooLong = bodyTooLong(title, body)
 
   if (!values.send) {
     const where = comment === undefined ? `To ${repo}: ${title}` : `To ${repo}#${comment}, as a comment`

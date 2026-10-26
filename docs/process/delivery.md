@@ -99,7 +99,8 @@ adopts becomes an issue of its own (the `github-board` skill), citing the retros
 its cluster, so the board holds only the work a retrospective adopts.
 
 Friction that comes from Lunette itself (`lntt`, a shared skill, the scaffolder, a
-template) is marked `[lunette]` at the start of its item. At the end of a harvest or of a
+template) is marked `[lunette]` at the start of its item, followed by a space: a bullet
+under a label, or the label's own value (`[lunette]:` or `[lunette]foo` is no marker). At the end of a harvest or of a
 theme, each such cluster becomes a report for the Lunette repository: the agent searches
 it for the same subject, drafts the report, collects the environment with `lntt dump`
 and shows the operator the whole report with `lntt issue`; only a report the operator

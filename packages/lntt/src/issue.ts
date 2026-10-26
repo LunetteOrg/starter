@@ -127,10 +127,16 @@ export function issueBody(draft: Draft, dump: Dump, project: string): string {
 // The longest body GitHub takes, in characters: past it, --send would fail after the
 // operator approved the report.
 export const BODY_LIMIT = 65536
+export const TITLE_LIMIT = 256
 
-export function bodyTooLong(body: string): string | null {
-  if (body.length <= BODY_LIMIT) return null
-  return `the body is ${body.length} characters, GitHub takes ${BODY_LIMIT}: shorten the draft, or dump without the failing command`
+// Counted in characters, not UTF-16 units: an emoji is one.
+export function bodyTooLong(title: string, body: string): string | null {
+  const titleLength = [...title].length
+  if (titleLength > TITLE_LIMIT)
+    return `the title is ${titleLength} characters, GitHub takes ${TITLE_LIMIT}: shorten it`
+  const length = [...body].length
+  if (length <= BODY_LIMIT) return null
+  return `the body is ${length} characters, GitHub takes ${BODY_LIMIT}: shorten the draft, or dump without the failing command`
 }
 
 export interface FoundIssue {

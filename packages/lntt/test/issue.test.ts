@@ -9,6 +9,7 @@ import { parseDocument } from 'yaml'
 import type { Gh } from '../src/ci/candidate.ts'
 import type { Dump } from '../src/dump.ts'
 import {
+  bodyTooLong,
   commentIssue,
   fileIssue,
   ISSUE_SECTIONS,
@@ -265,6 +266,12 @@ describe('lntt issue', () => {
     assert.equal(run.status, 0, run.stderr)
     assert.match(run.stdout, /^To LunetteOrg\/starter#7, as a comment\n/)
     assert.equal(sent(), '')
+  })
+
+  test('bodyTooLong counts characters, not UTF-16 units, and checks the title', () => {
+    assert.equal(bodyTooLong('t', '😀'.repeat(65536)), null)
+    assert.match(bodyTooLong('t', 'x'.repeat(65537)) ?? '', /the body is 65537 characters/)
+    assert.match(bodyTooLong('x'.repeat(257), 'b') ?? '', /the title is 257 characters, GitHub takes 256/)
   })
 
   test('a body past what GitHub takes: a warning in the dry run, a refusal with --send', () => {

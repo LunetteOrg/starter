@@ -94,14 +94,15 @@ lntt ci local | candidate
   approval.** The `retrospective` skill drafts one from the `[lunette]` items of the
   blocks and calls `lntt issue`, never `gh`: another way to send it (#184) is added
   behind the command, the skill unchanged. `lntt issue` sends nothing without `--send`,
-  so what the operator approves is the issue it printed; `lntt dump` redacts what it
-  collects before printing it. The repository is read, never written in a skill:
+  so what the operator approves is the issue it printed: the dump, the draft and the
+  title, redacted as `lntt dump` redacts what it collects, and refused before sending
+  when GitHub would refuse it (a body past 65536 characters, a title past 256). The repository is read, never written in a skill:
   `cycle.retrospective.upstream.repository`, by default the `repository` of the
   installed `@lntt/lntt` (`packages/lntt/src/issue.ts`). The report form,
   `.github/ISSUE_TEMPLATE/lunette-report.yml`, lives in this repository only: the
-  reports come here, never to a scaffolded project. `lntt dump` is a diagnostic: a
-  configuration that does not validate is one more fact in the dump, printed with
-  exit 0, not the stop the compatibility rule asks of the other commands.
+  reports come here, never to a scaffolded project. A configuration that does not
+  validate stops `lntt dump` as it stops every command, exit 1, after the dump is
+  printed with the error in it.
 - **No aliases for old names.** A renamed command answers only to its new name, so its
   callers (workflows, skills, the README) change with it, in the same release: the
   shared skills ship in `@lntt/lntt` with the command they call.

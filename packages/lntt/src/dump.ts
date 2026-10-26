@@ -25,6 +25,9 @@ export interface Dump {
   harness: string
   model: string
   lntt: string
+  // The configuration's error when it does not validate: the dump reports it and lntt
+  // dump exits 1 after printing it.
+  configError?: string
 }
 
 export interface FailedCommand {
@@ -189,7 +192,7 @@ function dirs(path: string): string[] {
   }
 }
 
-function projectLines(root: string): string[] {
+function projectLines(root: string): { lines: string[]; configError?: string } {
   const lines: string[] = []
   const pkg = readJson(join(root, 'package.json'))
 
@@ -235,9 +238,11 @@ function projectLines(root: string): string[] {
     const config = loadConfig(root)
     lines.push(`configuration: ${relative(root, config.path)}`, '```json', JSON.stringify(config.data, null, 2), '```')
   } catch (error) {
-    lines.push(`configuration: ${(error as Error).message}`)
+    const message = (error as Error).message
+    lines.push(`configuration: ${message}`)
+    return { lines, configError: message }
   }
-  return lines
+  return { lines }
 }
 
 export function collectDump(input: DumpInput): Dump {
@@ -253,6 +258,7 @@ export function collectDump(input: DumpInput): Dump {
   // ANTHROPIC_MODEL is Claude Code's: under another harness it names no model of its.
   const model = input.model ?? (detected?.name === 'Claude Code' ? env.ANTHROPIC_MODEL : undefined) ?? null
 
+  const project = projectLines(root)
   const sections: DumpSection[] = [
     { title: 'lntt', lines: [`version: ${lntt}`, `installed: ${installKind(dir, root)}`, `path: ${dir}`] },
     {
@@ -267,7 +273,7 @@ export function collectDump(input: DumpInput): Dump {
       title: 'Harness',
       lines: [`harness: ${harness ?? 'not detected (--harness)'}`, `model: ${model ?? 'not given (--model)'}`],
     },
-    { title: 'Project', lines: projectLines(root) },
+    { title: 'Project', lines: project.lines },
   ]
   if (input.command) {
     const all = input.command.output.replace(/\n+$/, '').split('\n')
@@ -293,6 +299,7 @@ export function collectDump(input: DumpInput): Dump {
     harness: clean(harness ?? 'not detected'),
     model: clean(model ?? 'not given'),
     lntt,
+    ...(project.configError === undefined ? {} : { configError: clean(project.configError) }),
   }
 }
 
@@ -331,7 +338,8 @@ export function renderDump(dump: Dump): string {
 // It is stopped after `timeoutMs` (default 10 minutes), so a command that hangs does not
 // hang the dump.
 export function runFailing(argv: string[], cwd: string, timeoutMs = 10 * 60 * 1000): FailedCommand {
-  const run = spawnSync('sh', ['-c', '"$@" 2>&1', 'sh', ...argv], {
+  // exec: the command takes the shell's place, so the timeout stops the command itself.
+  const run = spawnSync('sh', ['-c', 'exec "$@" 2>&1', 'sh', ...argv], {
     cwd,
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
@@ -340,7 +348,7 @@ export function runFailing(argv: string[], cwd: string, timeoutMs = 10 * 60 * 10
   const code = (run.error as NodeJS.ErrnoException | undefined)?.code
   const stopped =
     code === 'ETIMEDOUT'
-      ? `stopped after ${Math.round(timeoutMs / 1000)} s`
+      ? `stopped after ${timeoutMs < 1000 ? `${timeoutMs} ms` : `${Math.round(timeoutMs / 1000)} s`}`
       : code === 'ENOBUFS'
         ? 'stopped: its output passed 64 MB'
         : run.signal
@@ -351,6 +359,7 @@ export function runFailing(argv: string[], cwd: string, timeoutMs = 10 * 60 * 10
 
 // The harness and the model the agent gives, over those of a dump read from a file.
 export function withAgent(dump: Dump, given: { harness?: string; model?: string }): Dump {
+  if (given.harness === undefined && given.model === undefined) return dump
   const harness = given.harness ?? dump.harness
   const model = given.model ?? dump.model
   return {
@@ -358,7 +367,18 @@ export function withAgent(dump: Dump, given: { harness?: string; model?: string 
     harness,
     model,
     sections: dump.sections.map((s) =>
-      s.title === 'Harness' ? { title: s.title, lines: [`harness: ${harness}`, `model: ${model}`] } : s,
+      s.title === 'Harness'
+        ? {
+            title: s.title,
+            lines: s.lines.map((l) =>
+              l.startsWith('harness: ') && given.harness !== undefined
+                ? `harness: ${harness}`
+                : l.startsWith('model: ') && given.model !== undefined
+                  ? `model: ${model}`
+                  : l,
+            ),
+          }
+        : s,
     ),
   }
 }
