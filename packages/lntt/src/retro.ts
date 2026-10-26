@@ -40,7 +40,8 @@ export function isCandidate(config: CandidateConfig | null, headRef: string): bo
 // the item in it. The comment is rewritten whole, so two appends at the same moment
 // could drop one, and two creations make two comments: the comments are read again after
 // the write, and the append done again on the retrospective comment when the item is
-// not in it. Returns the pull request, the label and whether the comment was created.
+// not in it. Returns the pull request, the label and whether the comment that holds the
+// item is one this run created.
 export function retroAdd(
   run: RetroRun,
   { pr, label: wanted, item }: { pr?: number; label: string; item: string },
@@ -76,6 +77,7 @@ export function retroAdd(
       created = true
       before = 0
     } else {
+      created = false
       before = count(found.body)
       gh.write(
         ['api', '-X', 'PATCH', `repos/${repo}/issues/comments/${found.id}`, '--input', '-'],

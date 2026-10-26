@@ -667,6 +667,24 @@ describe('sweep', () => {
     )
   })
 
+  test('the warning is one workflow command: newlines flattened, % escaped', () => {
+    const lines: string[] = []
+    const gh = fakeGh({ '--state open': [{ number: 40, headRefName: 'candidate/4', body: '' }] })
+    const failing: Gh = {
+      ...gh,
+      read: (args) => {
+        if (args.includes('--paginate')) throw new Error('quota 100% used\r\nretry later')
+        return gh.read(args)
+      },
+    }
+    retarget({ ...run(failing), log: (l) => lines.push(l) }, pr)
+    const warning = lines.find((l) => l.startsWith('::warning'))
+    assert.equal(
+      warning,
+      '::warning title=Retrospective comment::candidate/4: not written (quota 100%25 used retry later); lntt retro add writes it',
+    )
+  })
+
   test('nothing stranded: nothing read beyond the lists, nothing written', () => {
     const gh = fakeGh({ 'api graphql': [node(1)], '--state open': [] })
     assert.deepEqual(sweep(run(gh)).move, [])

@@ -258,10 +258,34 @@ describe('retroAdd', () => {
       },
     }
     const result = retroAdd({ gh, repo: 'o/r', config, rules: RULES }, { label: 'friction', item: 'x' })
-    assert.equal(result.created, true, 'this run created a comment, though not the one that holds the item')
+    assert.equal(result.created, false, 'the item is in the comment another run created')
     assert.deepEqual(gh.writes, [
       'pr comment 80 --repo o/r --body-file -',
       'api -X PATCH repos/o/r/issues/comments/50 --input -',
+    ])
+  })
+
+  test('a comment gone between two passes: the new one is judged on its own count', () => {
+    const had = EMPTY.replace('- **Friction:**', '- **Friction:** x')
+    const reads = [lines({ id: 7, body: had }), '']
+    let listed = ''
+    const gh: Gh & { writes: string[] } = {
+      writes: [],
+      read: (args) => {
+        if (!args.join(' ').includes('issues/80/comments')) return JSON.stringify(open['--state open'])
+        return reads.length > 0 ? (reads.shift() as string) : listed
+      },
+      write: (args, input) => {
+        gh.writes.push(args.join(' '))
+        if (args[1] === 'comment') listed = lines({ id: 9, body: input ?? '' })
+        return ''
+      },
+    }
+    const result = retroAdd({ gh, repo: 'o/r', config, rules: RULES }, { label: 'friction', item: 'x' })
+    assert.equal(result.created, true)
+    assert.deepEqual(gh.writes, [
+      'api -X PATCH repos/o/r/issues/comments/7 --input -',
+      'pr comment 80 --repo o/r --body-file -',
     ])
   })
 
