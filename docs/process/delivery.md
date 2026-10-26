@@ -275,9 +275,15 @@ milestone, and the milestone is named after the version it ships. 1.0.0 is decla
 only after months of intensive use across several projects, not when a piece of work
 ends.
 
-1. `node scripts/packages-version.mts set X.Y.Z` and commit
-   `chore(release): X.Y.Z` directly on `main`; a release does not go through a pull
-   request.
+1. `node scripts/packages-version.mts set X.Y.Z`, and add the release's configuration
+   fixture, `packages/lntt/test/fixtures/released/X.Y.Z.jsonc`: a file written by hand
+   from the schema, with every field it knows at that release (the test checks it
+   against the schema of the tag `vX.Y.Z`, so the completeness check runs when that tag
+   exists in the checkout: in the release workflow, never in a dry run of a version not
+   yet tagged), which
+   `packages/lntt/test/released-configs.test.ts` validates against the current schema
+   from then on. Commit both as `chore(release): X.Y.Z` directly on `main`; a release
+   does not go through a pull request.
 2. `gh release create vX.Y.Z --generate-notes`. The tag matches the packages'
    version, and every release ships the generated notes (the merged pull requests
    since the previous tag).
@@ -295,7 +301,8 @@ scaffold smoke, and publishes each package through npm trusted publishing (OIDC,
 packed with `pnpm pack`, so its `publishConfig` applies, and npm publishes the tarball.
 
 **A dry run** is a pre-release: set a pre-release version on a branch
-(`node scripts/packages-version.mts set X.Y.Z-rc.N`, commit, push), then
+(`node scripts/packages-version.mts set X.Y.Z-rc.N`, add the fixture of X.Y.Z as
+step 1 of the release does, commit, push), then
 `gh release create vX.Y.Z-rc.N --prerelease --target <branch>`. The workflow runs every
 check, packs each package and passes the tarball to `npm publish --dry-run`; nothing
 reaches npm. Delete the pre-release, its
