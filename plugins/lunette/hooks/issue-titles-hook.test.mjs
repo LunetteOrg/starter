@@ -581,6 +581,9 @@ describe('the issue titles hook with the real lntt refs', () => {
             if (error && typeof error.code !== 'number') reject(error)
             else resolve({ exitCode: error ? error.code : 0, stdout, stderr })
           })
+          // A command may exit before reading its stdin: the write then fails with EPIPE,
+          // which says nothing about the hook.
+          child.stdin.on('error', () => {})
           child.stdin.end(init.stdin ?? '')
         })
       const $ = {
