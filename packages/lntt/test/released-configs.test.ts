@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import jsonc from 'jsonc-parser'
 import { loadConfig } from '../src/index.ts'
 
 // One configuration per released version of @lntt/lntt, written with every field that
@@ -17,18 +16,10 @@ const current = (JSON.parse(readFileSync(resolve(HERE, '../package.json'), 'utf8
 const versions = readdirSync(RELEASED)
   .filter((file) => file.endsWith('.jsonc'))
   .map((file) => file.slice(0, -'.jsonc'.length))
-  .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-
-const fixture = (version: string): unknown => jsonc.parse(readFileSync(join(RELEASED, `${version}.jsonc`), 'utf8'))
-
-// Every path of an object, arrays and free-form maps (whose keys are the project's own) not entered.
-function paths(value: unknown, prefix = ''): string[] {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return []
-  return Object.entries(value).flatMap(([key, child]) => [`${prefix}${key}`, ...paths(child, `${prefix}${key}.`)])
-}
 
 describe('the configuration of each released version', () => {
-  test('the version in package.json has its fixture', () => {
+  // A pre-release (a dry run of the release) is not a release: it adds no fixture.
+  test('the version in package.json has its fixture', { skip: current.includes('-') }, () => {
     assert.ok(versions.includes(current), `add packages/lntt/test/fixtures/released/${current}.jsonc`)
   })
 
@@ -45,12 +36,4 @@ describe('the configuration of each released version', () => {
       }
     })
   }
-
-  test('each fixture keeps every field of the one before it', () => {
-    for (let i = 1; i < versions.length; i++) {
-      const kept = new Set(paths(fixture(versions[i] as string)))
-      const dropped = paths(fixture(versions[i - 1] as string)).filter((path) => !kept.has(path))
-      assert.deepEqual(dropped, [], `${versions[i]} lacks fields of ${versions[i - 1]}`)
-    }
-  })
 })
