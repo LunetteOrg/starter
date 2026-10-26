@@ -1,7 +1,7 @@
 // Every field @lntt/lntt 0.6.2 knew, from its schema (tag v0.6.2). Values are placeholders;
 // the test validates this file against the current schema.
 {
-  "$schema": "https://github.com/LunetteOrg/starter/packages/lntt/schema/config.schema.json",
+  "$schema": "./node_modules/@lntt/lntt/schema/config.schema.json",
   "lunette": {
     "template": "example",
     "version": "0.6.2"

@@ -222,9 +222,10 @@ So:
 - `lntt worktree start` and the commitlint configuration answer a file that does not
   validate with their defaults (`projectConfig` in
   `packages/lntt/src/worktree-cli.ts`, `commits` in `packages/lntt/src/commitlint.ts`),
-  against the compatibility rule, and no test validates each released version's
-  configuration: until the work that follows this record closes both gaps, the rule
-  rests on review.
+  against the compatibility rule: until the work that follows this record closes that
+  gap, the rule rests on review for those two readers. Every other read is covered by
+  `packages/lntt/test/released-configs.test.ts`, which validates a configuration of
+  each released version against the schema.
 
 ### When to deviate (revisit triggers)
 

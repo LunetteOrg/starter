@@ -1,22 +1,35 @@
 import assert from 'node:assert/strict'
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import jsonc from 'jsonc-parser'
 import { loadConfig } from '../src/index.ts'
 
 // One configuration per released version of @lntt/lntt, written with every field that
-// version knew. The schema only grows ([the compatibility rule](../../../docs/adr/lntt-command.md)):
-// a newer lntt must read each of them.
-const RELEASED = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures/released')
+// version knew. The schema only grows (the compatibility rule in docs/adr/lntt-command.md):
+// a newer lntt must read each of them. A release adds its fixture (docs/process/delivery.md).
+const HERE = dirname(fileURLToPath(import.meta.url))
+const RELEASED = resolve(HERE, 'fixtures/released')
+const current = (JSON.parse(readFileSync(resolve(HERE, '../package.json'), 'utf8')) as { version: string }).version
+
 const versions = readdirSync(RELEASED)
   .filter((file) => file.endsWith('.jsonc'))
   .map((file) => file.slice(0, -'.jsonc'.length))
+  .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+
+const fixture = (version: string): unknown => jsonc.parse(readFileSync(join(RELEASED, `${version}.jsonc`), 'utf8'))
+
+// Every path of an object, arrays and free-form maps (whose keys are the project's own) not entered.
+function paths(value: unknown, prefix = ''): string[] {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return []
+  return Object.entries(value).flatMap(([key, child]) => [`${prefix}${key}`, ...paths(child, `${prefix}${key}.`)])
+}
 
 describe('the configuration of each released version', () => {
-  test('there is a fixture for every supported version', () => {
-    assert.ok(versions.length > 0)
+  test('the version in package.json has its fixture', () => {
+    assert.ok(versions.includes(current), `add packages/lntt/test/fixtures/released/${current}.jsonc`)
   })
 
   for (const version of versions) {
@@ -25,10 +38,19 @@ describe('the configuration of each released version', () => {
       try {
         mkdirSync(join(root, '.agents'))
         copyFileSync(join(RELEASED, `${version}.jsonc`), join(root, '.agents/config.jsonc'))
-        assert.doesNotThrow(() => loadConfig(root))
+        const { data } = loadConfig(root)
+        assert.equal((data.lunette as { version: string }).version, version)
       } finally {
         rmSync(root, { recursive: true, force: true })
       }
     })
   }
+
+  test('each fixture keeps every field of the one before it', () => {
+    for (let i = 1; i < versions.length; i++) {
+      const kept = new Set(paths(fixture(versions[i] as string)))
+      const dropped = paths(fixture(versions[i - 1] as string)).filter((path) => !kept.has(path))
+      assert.deepEqual(dropped, [], `${versions[i]} lacks fields of ${versions[i - 1]}`)
+    }
+  })
 })
