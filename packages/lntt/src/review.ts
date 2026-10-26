@@ -451,8 +451,10 @@ function proofText(f: Checked): string {
 }
 
 // What a round closes, after the ledger it read: its refuted findings (fixed when carried
-// from an earlier round), its notes, and past delivery.review.warningRounds its warnings,
-// which go in the pull request as open items. Withdrawn findings are closed by the reply.
+// from an earlier round), its notes, and past delivery.review.warningRounds its confirmed
+// warnings, which go in the pull request as open items; an undecided or unverified one
+// stays carried, to be verified again. Withdrawn findings are closed by the reply. The
+// caller closes only a round with no failure: what a failed round found is read again.
 export function closeRound(ledger: Closed[], result: RoundResult, open: Checked[], warningRounds: number): Closed[] {
   const known = new Set(ledger.map((c) => c.id))
   const carried = new Set(open.map((f) => f.id))
@@ -469,7 +471,7 @@ export function closeRound(ledger: Closed[], result: RoundResult, open: Checked[
     if (known.has(f.id) || f.verdict === 'withdrawn') continue
     if (f.severity === 'note') {
       closed.push(closedEntry(f, result.round, 'accepted', { reason: 'a note: reported once, it does not block' }))
-    } else if (f.severity === 'warning' && result.round > warningRounds) {
+    } else if (f.severity === 'warning' && f.verdict === 'confirmed' && result.round > warningRounds) {
       const reason = `a warning past round ${warningRounds}: an open item of the pull request`
       closed.push(closedEntry(f, result.round, 'accepted', { reason }))
     }
@@ -478,7 +480,8 @@ export function closeRound(ledger: Closed[], result: RoundResult, open: Checked[
 }
 
 // The closed finding a fresh one repeats: the same place, a line that reads as it did
-// when it was closed, a severity no higher. A fixed one is never repeated: its line
+// when it was closed, a severity no higher. By place, not by wording: a reviewer words
+// the same finding differently every round. A fixed one is never repeated: its line
 // changed, or the fix went away and the finding is new again.
 export function repeats(f: Found, ledger: Closed[]): Closed | undefined {
   if (f.path === null || f.line === null || typeof f.cited !== 'string') return undefined
@@ -502,15 +505,18 @@ function closedLine(c: Closed): string {
   return `- ${c.id} (${c.severity}) \`${anchorOf(c)}\` — ${c.what} — ${why}`
 }
 
-function closedSection(ledger: Closed[] | undefined): string {
-  if (!ledger || ledger.length === 0) return ''
+// The reviewers read the entries on the files of the change, and those with no anchor:
+// a closed finding elsewhere is not one they could report again.
+function closedSection(ledger: Closed[] | undefined, files: string[]): string {
+  const mine = (ledger ?? []).filter((c) => c.path === null || files.includes(c.path))
+  if (mine.length === 0) return ''
   return [
     '## Findings this branch already closed',
     '',
     'Earlier rounds closed these. Do not report one again unless the code it cites changed',
     'since; a finding on an unchanged line that repeats one of them is dropped.',
     '',
-    ...ledger.map(closedLine),
+    ...mine.map(closedLine),
     '',
   ].join('\n')
 }
@@ -574,7 +580,7 @@ export function renderReviewPrompt(lens: string, values: PromptValues, brief?: s
     files: values.files.map((f) => `- ${f}`).join('\n') || '(none)',
     records: values.records || '(none configured)',
     checks: checksSection(lens, values),
-    closed: closedSection(values.closed),
+    closed: closedSection(values.closed, values.files),
     diff: values.diff,
   })
 }
@@ -659,8 +665,9 @@ export interface RoundResult {
   // read: reported, never blocking.
   skipped: Failure[]
   // Fresh findings that repeat one the ledger closed, on a line that did not change:
-  // shown, never acted on.
-  closed: (Found & { closedBy: string })[]
+  // shown with the entry's text, never verified, never blocking. The match is by place,
+  // not by wording: the author reads each against `closedWhat`.
+  closed: (Found & { closedBy: string; closedWhat: string })[]
   // The severities that keep the round from being clean: a warning blocks up to
   // delivery.review.warningRounds, a blocker always.
   blocking: Severity[]
@@ -719,6 +726,7 @@ export async function runRound(
   ask: Ask,
   open: Checked[] = [],
 ): Promise<RoundResult> {
+  const round = input.files.length === 0 ? Math.max(1, input.range.round - 1) : input.range.round
   const result: RoundResult = {
     round: input.range.round,
     base: input.base,
@@ -731,7 +739,8 @@ export async function runRound(
     partial: [],
     skipped: [],
     closed: [],
-    blocking: input.range.round > config.warningRounds ? ['blocker'] : ['blocker', 'warning'],
+    // An empty delta is no round more: it blocks as the round it keeps the number of.
+    blocking: round > config.warningRounds ? ['blocker'] : ['blocker', 'warning'],
     cost: null,
     tokens: null,
   }
@@ -819,8 +828,8 @@ export async function runRound(
     } else {
       const read = cited ? { ...f, cited: cited.text } : f
       // A fresh finding that repeats a closed one on an unchanged line asks no verifier.
-      const repeated = carried.includes(f as Checked) ? undefined : repeats(read, ledger)
-      if (repeated) result.closed.push({ ...read, closedBy: repeated.id })
+      const repeated = carried.some((c) => c.id === f.id) ? undefined : repeats(read, ledger)
+      if (repeated) result.closed.push({ ...read, closedBy: repeated.id, closedWhat: repeated.what })
       else found.push(read)
     }
   }

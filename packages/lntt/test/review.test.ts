@@ -1218,8 +1218,8 @@ describe('what the branch already closed, and the rounds where a warning blocks'
       /- f1 \(warning\) `a\.ts:3` — x may be null — refuted: claude sonnet: a\.ts:2 sets a/,
     )
     assert.deepEqual(
-      second.closed.map((f) => [f.id, f.closedBy]),
-      [['f2', 'f1']],
+      second.closed.map((f) => [f.id, f.closedBy, f.closedWhat]),
+      [['f2', 'f1', 'x may be null']],
     )
     assert.deepEqual(second.findings, [])
     assert.equal(roundClean(second), true)
@@ -1232,6 +1232,73 @@ describe('what the branch already closed, and the rounds where a warning blocks'
       [['f2', 'confirmed']],
       'numbered after the ledger',
     )
+  })
+
+  test('a fixed finding is never repeated: one on its line again is new, and verified', async () => {
+    const ledger = [
+      {
+        id: 'f1',
+        round: 1,
+        severity: 'warning',
+        path: 'a.ts',
+        line: 3,
+        what: 'w',
+        cited: 'same',
+        outcome: 'fixed',
+        commit: 'h1',
+      },
+    ] as Closed[]
+    const { ask, prompts } = asker('- [warning] a.ts:3 — w — a', () => 'confirmed\ny')
+    const result = await runRound(config, { ...input(2, { 3: 'same' }), closed: ledger }, ask)
+    assert.deepEqual(result.closed, [])
+    assert.deepEqual(
+      result.findings.map((f) => [f.id, f.verdict]),
+      [['f2', 'confirmed']],
+    )
+    assert.equal(prompts.length, 2)
+  })
+
+  test('the reviewers read the entries on the files of the change, and those with no anchor', async () => {
+    const ledger = [
+      {
+        id: 'f1',
+        round: 1,
+        severity: 'warning',
+        path: 'a.ts',
+        line: 9,
+        what: 'here',
+        cited: 'x',
+        outcome: 'refuted',
+        proof: 'p',
+      },
+      {
+        id: 'f2',
+        round: 1,
+        severity: 'warning',
+        path: 'b.ts',
+        line: 1,
+        what: 'elsewhere',
+        cited: 'y',
+        outcome: 'refuted',
+        proof: 'q',
+      },
+      {
+        id: 'f3',
+        round: 1,
+        severity: 'note',
+        path: null,
+        line: null,
+        what: 'loose',
+        cited: null,
+        outcome: 'accepted',
+        reason: 'r',
+      },
+    ] as Closed[]
+    const { ask, prompts } = asker('no findings', () => '')
+    await runRound(config, { ...input(2, {}), closed: ledger }, ask)
+    assert.match(prompts[0] as string, /here/)
+    assert.match(prompts[0] as string, /loose/)
+    assert.doesNotMatch(prompts[0] as string, /elsewhere/)
   })
 
   test('a repeat at a higher severity than the closed finding is a new finding', async () => {
@@ -1318,6 +1385,17 @@ describe('what the branch already closed, and the rounds where a warning blocks'
     const fourth = await runRound(config, { ...input(4, lines), closed: ledger }, ask, third.findings)
     assert.equal(prompts.length, 1, 'the accepted warning goes to no verifier')
     assert.deepEqual(fourth.findings, [])
+
+    const undecided = await runRound(
+      config,
+      input(3, lines),
+      asker('- [warning] a.ts:3 — w — a', () => 'undecided\n?').ask,
+    )
+    assert.equal(roundClean(undecided), true)
+    assert.deepEqual(closeRound([], undecided, [], 2), [], 'an undecided warning stays carried, to be verified again')
+
+    const empty = await runRound(config, { ...input(3, lines), files: [] }, asker('', () => '').ask, [])
+    assert.deepEqual(empty.blocking, ['blocker', 'warning'], 'an empty delta after round 2 is still round 2')
 
     const blocker = await runRound(
       config,

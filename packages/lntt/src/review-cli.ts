@@ -119,11 +119,18 @@ function ledgerPath(): string {
   return join(git('rev-parse', '--absolute-git-dir'), 'lntt-review-ledger.json')
 }
 
+// A ledger that cannot be read (a write cut short) costs the reviewers what it told them,
+// not the round: it is said, and the branch starts a new one.
 function readLedger(branch: string): Closed[] {
   const path = ledgerPath()
   if (!existsSync(path)) return []
-  const ledger = JSON.parse(readFileSync(path, 'utf8')) as Ledger
-  return ledger.branch === branch ? ledger.closed : []
+  try {
+    const ledger = JSON.parse(readFileSync(path, 'utf8')) as Partial<Ledger>
+    if (ledger.branch !== branch) return []
+    if (Array.isArray(ledger.closed)) return ledger.closed
+  } catch {}
+  stderr.write(`lntt review: ${path} cannot be read: the branch starts a new ledger\n`)
+  return []
 }
 
 function writeLedger(branch: string, closed: Closed[]): void {
@@ -610,7 +617,9 @@ async function round(args: string[]): Promise<number> {
     ...(state?.branch === branch && state.allowed ? { allowed: state.allowed } : {}),
   }
   writeFileSync(statePath(), `${JSON.stringify(saved, null, 2)}\n`)
-  if (files.length > 0) writeLedger(branch, closeRound(ledger, result, open, config.warningRounds))
+  // Only a round that read its range whole closes anything: the next one reads it again.
+  if (files.length > 0 && result.failed.length === 0 && result.partial.length === 0)
+    writeLedger(branch, closeRound(ledger, result, open, config.warningRounds))
   report.stop()
   const tokens = result.tokens === null ? '' : `, ${formatTokens(result.tokens)}`
   stderr.write(
@@ -618,7 +627,7 @@ async function round(args: string[]): Promise<number> {
   )
   // Past delivery.review.warningRounds a warning does not block: it goes in the pull
   // request as an open item.
-  if (!result.blocking.includes('warning'))
+  if (!result.blocking.includes('warning') && result.findings.some((f) => f.severity !== 'blocker'))
     stderr.write(
       `lntt review: round ${saved.round} is past delivery.review.warningRounds (${config.warningRounds}): only blockers block; warnings and notes go in the pull request as open items\n`,
     )

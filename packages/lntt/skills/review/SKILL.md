@@ -37,7 +37,9 @@ reviewed one; findings still open go back to the verifiers on the new head.
 
 The branch keeps a ledger of the findings it closed (fixed, refuted, accepted open),
 which every round's reviewers and verifiers read. stdout's `closed` lists the fresh
-findings that repeat one of them on a line that did not change: nothing to do.
+findings that repeat one of them on a line that did not change, matched by place: read
+each against the entry's text (`closedWhat`, entry `closedBy`); when it names another
+problem, treat it as a finding of this round, otherwise there is nothing to do.
 
 `blocking` says which severities keep the round from being clean: blockers and warnings
 in the first `delivery.review.warningRounds` rounds, blockers alone after them.
