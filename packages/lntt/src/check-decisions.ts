@@ -6,7 +6,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { join, matchesGlob, posix } from 'node:path'
+import { join, matchesGlob, posix, relative, resolve } from 'node:path'
 import { type CheckOptions, projectFiles, type Result } from './check.ts'
 
 interface Log {
@@ -271,8 +271,9 @@ function referencesCheck(root: string, logs: Log[], files: string[], external: R
 
 // A board reference: a bare issue number (not an anchor like `#1-scope` or `](#12)`, an
 // entity like `&#39;`, the tail of a path like `./x.md#3`), or an issue or pull request
-// URL. Adapted from wai's meta-product-docs-no-board-refs.spec.ts.
-const BOARD = /(?<![\w&/#])(?<!\]\()#\d+(?![\w-])|\/(?:issues|pull)\/\d+/g
+// URL (not a path like `docs/issues/12-notes.md`). Adapted from wai's
+// meta-product-docs-no-board-refs.spec.ts.
+const BOARD = /(?<![\w&/#])(?<!\]\()#\d+(?![\w-])|\/(?:issues|pull)\/\d+(?![\w-]|\.\w)/g
 
 // The Markdown files of the logs whose `boardReferences` is false, at any depth and the
 // index included, or those of the files given (what pre-commit stages): none cites the
@@ -291,7 +292,7 @@ function boardRefsCheck(root: string, logs: Log[], files: string[], given: strin
     ]
   }
   const known = new Set(files)
-  const read = given === null ? files : given.map((f) => trimSlash(f)).filter((f) => known.has(f))
+  const read = given === null ? files : given.filter((f) => known.has(f))
   const logOf = (file: string) =>
     /\.mdx?$/.test(file) ? strict.find((log) => file.startsWith(`${log.path}/`)) : undefined
   const scope = read.filter((f) => logOf(f) !== undefined)
@@ -611,5 +612,7 @@ export function decisionFigures(options: CheckOptions, paths: string[]): Result[
 export function decisionBoardRefs(options: CheckOptions, paths: string[]): Result[] {
   const logs = logsOf(options.data)
   if (logs === null) return [NO_RECORDING]
-  return withArea(boardRefsCheck(options.root, logs, projectFiles(options.root), paths.length > 0 ? paths : null))
+  // A path given is read from where lntt runs, as a shell gives it.
+  const given = paths.map((p) => relative(options.root, resolve(p)))
+  return withArea(boardRefsCheck(options.root, logs, projectFiles(options.root), given.length > 0 ? given : null))
 }

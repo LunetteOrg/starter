@@ -402,6 +402,8 @@ describe('lntt check decisions board-refs', () => {
         'Section [1](#1-the-boundaries) is linked by anchor, and so is',
         '[storage](../adr/storage.md#3-two-problems) and [a heading](#12). An entity like &#39; is',
         `not an issue, a color like \`#123456\` is code, and so is \`PDR #${8}\`.`,
+        'Nor is #12abc, a bare anchor #1-scope, or a folder like docs/issues/12-notes.md and',
+        'a file like docs/pull/7.md.',
         '',
         '```sh',
         'gh issue view #12',
@@ -409,8 +411,12 @@ describe('lntt check decisions board-refs', () => {
         '',
       ].join('\n'),
     )
-    // The adr log allows them: its #12 is not read.
+    // The adr log allows them: its #12 is not read; nor is a folder beside the log's, or
+    // a file in it that is not Markdown.
     appendFileSync(join(repo, 'docs/adr/storage.md'), '\nDecided in #12.\n')
+    mkdirSync(join(repo, 'docs/process-old'))
+    writeFileSync(join(repo, 'docs/process-old/notes.md'), '# Notes\n\nSee #3.\n')
+    writeFileSync(join(repo, 'docs/process/owners.txt'), 'See #3.\n')
     const r = results(['check', 'decisions'])
     assert.equal(r.status, 0)
     assert.deepEqual(boardRefs(r.results), [
@@ -418,15 +424,50 @@ describe('lntt check decisions board-refs', () => {
     ])
   })
 
-  test('a file below the log folder is read too, the index included', () => {
+  test('a file below the log folder is read too, the index and .mdx included, its line counted past code', () => {
     strict()
     mkdirSync(join(repo, 'docs/process/guides'))
-    writeFileSync(join(repo, 'docs/process/guides/setup.md'), '# Setup\n\nSee #3.\n')
+    writeFileSync(join(repo, 'docs/process/guides/setup.md'), '# Setup\n\n```sh\nmake\n```\n\n`a` then #3.\n')
+    writeFileSync(join(repo, 'docs/process/guides/page.mdx'), '# Page\n\nSee #5.\n')
     appendFileSync(join(repo, 'docs/process/README.md'), '\nOpened in #4.\n')
     assert.deepEqual(fails(results(['check', 'decisions', 'board-refs']).results), [
       'board-refs docs/process/README.md:7',
-      'board-refs docs/process/guides/setup.md:3',
+      'board-refs docs/process/guides/page.mdx:3',
+      'board-refs docs/process/guides/setup.md:7',
     ])
+  })
+
+  test('two logs that forbid them: each reference names its own log', () => {
+    strict()
+    const config = join(repo, '.agents/config.jsonc')
+    writeFileSync(
+      config,
+      JSON.stringify({
+        recording: {
+          logs: {
+            adr: {
+              path: 'docs/adr',
+              index: 'docs/adr/README.md',
+              template: 'docs/adr/template.md',
+              boardReferences: false,
+            },
+            process: { path: 'docs/process', index: 'docs/process/README.md', boardReferences: false },
+          },
+        },
+      }),
+    )
+    appendFileSync(join(repo, 'docs/adr/storage.md'), '\nDecided in #12.\n')
+    appendFileSync(join(repo, 'docs/process/review.md'), '\nSee #3.\n')
+    assert.deepEqual(
+      results(['check', 'decisions', 'board-refs'])
+        .results.filter((x) => x.status === 'FAIL')
+        .map((x) => `${x.path} ${x.message}`)
+        .sort(),
+      [
+        'docs/adr/storage.md cites the board (#12): a record of adr cites documents, not issues or pull requests',
+        'docs/process/review.md cites the board (#3): a record of process cites documents, not issues or pull requests',
+      ],
+    )
   })
 
   test('with files, only those in a log that forbids them: what pre-commit passes', () => {
@@ -437,6 +478,22 @@ describe('lntt check decisions board-refs', () => {
     const r = results(['check', 'decisions', 'board-refs', 'docs/process/review.md', 'docs/adr/storage.md', 'gone.md'])
     assert.equal(r.status, 1)
     assert.deepEqual(fails(r.results), ['board-refs docs/process/review.md:3'])
+    // A path is read from where lntt runs, as a shell gives it.
+    const from = (cwd: string, files: string[]) =>
+      spawnSync(process.execPath, [BIN, 'check', 'decisions', 'board-refs', ...files], {
+        cwd: join(repo, cwd),
+        encoding: 'utf8',
+        env: { ...process.env, GIT_CEILING_DIRECTORIES: dirname(repo) },
+      })
+    for (const [cwd, file] of [
+      ['.', './docs/process/review.md'],
+      ['docs', 'process/review.md'],
+      ['docs', join(repo, 'docs/process/review.md')],
+    ] as const) {
+      const run = from(cwd, [file])
+      assert.equal(run.status, 1, `${cwd} ${file}`)
+      assert.match(run.stdout, /board-refs {2}docs\/process\/review\.md:3 /, `${cwd} ${file}`)
+    }
     const clean = results(['check', 'decisions', 'board-refs', 'docs/adr/storage.md'])
     assert.equal(clean.status, 0)
     assert.deepEqual(boardRefs(clean.results), [

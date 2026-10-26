@@ -27,6 +27,14 @@ Both levels keep their logs the same way: one file per subject, corrected in pla
 That a template ships its logs in this shape is part of the shared base
 ([template model](../adr/template-model.md#the-shared-base)).
 
+## Records may cite the board
+
+A record of this repo names the issue or pull request that holds its evidence when it
+rests on an event (the host adapters' release cadence in
+[the `lntt` command](../adr/lntt-command.md)). So neither log sets
+`boardReferences: false`, and the `pre-commit` hook that runs
+`lntt check decisions board-refs` reads no file here.
+
 ## What ships cites the records of the project it ships to
 
 `lntt check` (CI runs it) checks that every path to a record resolves in this repo.

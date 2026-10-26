@@ -65,8 +65,9 @@ apply fixes: output findings and recommended actions only.
    Every `FAIL` is a finding, at its `path:line`, as it is; every `PASS` a passing
    check; every `NOT RUN` is printed with its reason. Do not redo what it checks
    (index and files, references, board references, append-only residues, file names,
-   titles, statuses), and copy its counts instead of counting again. The `inventory` lines (with
-   `--base`) say which records the change touches: name them first in the report.
+   titles, statuses), and copy its counts instead of counting again. The `inventory`
+   lines (with `--base`) say which records the change touches: name them first in the
+   report.
 2. **Load the records now.** Read each log's index and the `##` sections of every
    record. Build the checks from what they say today; never recite from memory.
 3. **Derive the checks from the records.** Each decision that can be checked in code
