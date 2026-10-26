@@ -243,7 +243,8 @@ describe('runFailing', () => {
     ]) {
       const started = Date.now()
       const run = runFailing(argv, tmpdir(), 1000)
-      assert.ok(Date.now() - started < 10_000, argv.join(' '))
+      // Under the command's own 3 s: the timeout stopped it, not its end.
+      assert.ok(Date.now() - started < 2500, argv.join(' '))
       assert.equal(run.status, null)
       assert.equal(run.stopped, 'stopped after 1 s')
     }

@@ -2,8 +2,9 @@
 // template), filed on the upstream repository from a draft the agent wrote and the dump
 // of lntt dump. The retrospective skill drafts it from the items of a harvest marked with
 // that repository (`[LunetteOrg/starter] …`); the operator reads the whole issue (a dry
-// run, the default) and approves it, and only then is it sent (--send). The skill calls lntt issue, never gh, so another way to send it is
-// added here without changing the skill (#184).
+// run, the default) and approves it, and only then is it sent (--send). The skill calls
+// lntt issue, never gh, so another way to send it is added here without changing the
+// skill (#184).
 
 import type { Gh } from './ci/candidate.ts'
 import { type Dump, renderDump } from './dump.ts'

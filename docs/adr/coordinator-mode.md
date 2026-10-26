@@ -31,9 +31,9 @@ two.
   no workflow; its context holds briefs, summaries and the merge order, never diffs. It
   starts one child per issue, or per separable part of one. When the theme ends it
   leaves the theme's own friction in a comment on the candidate pull request (the
-  `retrospective` skill), and drafts a report for the Lunette repository from each
-  cluster of items marked with the upstream repository, sent with `lntt issue` only once the operator approves it
-  ([delivery](../process/delivery.md#the-retrospective)).
+  `retrospective` skill), and drafts a report for the upstream repository from each
+  cluster of items marked with it, sent with `lntt issue` only once the operator
+  approves it ([delivery](../process/delivery.md#the-retrospective)).
 - **Child:** one per issue, in its own worktree and branch, started from `main` or, when it
   depends on a sibling, from the sibling's branch (`--base`). It follows the single-issue
   brief ([worktree tooling](./worktree-tooling.md)) and stops at a draft pull request.
