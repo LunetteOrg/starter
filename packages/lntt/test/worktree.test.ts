@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -17,7 +17,7 @@ import {
   toolFailure,
   worktreeHost,
 } from '../src/index.ts'
-import { runTool } from '../src/worktree-cli.ts'
+import { projectConfig, runTool } from '../src/worktree-cli.ts'
 
 describe('the host that creates the worktree', () => {
   test('Orca, Herdr, or plain git', () => {
@@ -498,5 +498,27 @@ describe('a coordinator’s worktree and its children', () => {
     assert.equal(git.issue, null)
     assert.ok(!('parent' in git))
     assert.equal(startGit({ ...CHILD, agent: null }, recorder().runner, () => null).parent, 'current')
+  })
+})
+
+describe('the project configuration', () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-worktree-config-')))
+  })
+
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  test('a missing file gives the defaults', () => {
+    assert.deepEqual(projectConfig(dir), {})
+  })
+
+  test('an invalid file stops with its error', () => {
+    mkdirSync(join(dir, '.agents'))
+    writeFileSync(join(dir, '.agents/config.jsonc'), '{ "delivery": ')
+    assert.throws(() => projectConfig(dir), /config\.jsonc/)
+    writeFileSync(join(dir, '.agents/config.jsonc'), JSON.stringify({ delivery: { candidate: { base: 3 } } }))
+    assert.throws(() => projectConfig(dir), /schema/)
   })
 })
