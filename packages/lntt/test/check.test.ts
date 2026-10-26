@@ -374,6 +374,8 @@ describe('lntt check decisions board-refs', () => {
         '',
         'See https://github.com/example/repo/issues/258 and https://github.com/example/repo/pull/301.',
         '',
+        'Its diff is https://github.com/example/repo/pull/302.diff.',
+        '',
       ].join('\n'),
     )
     const r = results(['check', 'decisions'])
@@ -387,6 +389,7 @@ describe('lntt check decisions board-refs', () => {
       cites(7, '#241'),
       cites(9, '/issues/258'),
       cites(9, '/pull/301'),
+      cites(11, '/pull/302'),
     ])
   })
 
@@ -475,7 +478,7 @@ describe('lntt check decisions board-refs', () => {
     writeFileSync(join(repo, 'docs/process/review.md'), '# Review\n\nSee #3.\n')
     appendFileSync(join(repo, 'docs/process/README.md'), '\nOpened in #4.\n')
     appendFileSync(join(repo, 'docs/adr/storage.md'), '\nDecided in #12.\n')
-    // A file gone from a log (staged for deletion) is not read.
+    // A path given that is not on disk is not read.
     const r = results([
       'check',
       'decisions',

@@ -130,10 +130,10 @@ error. `--json` prints one line per result: `area`, `check`, `status`, `path`, `
 - **board-refs:** in a log whose `boardReferences` is `false`, no Markdown file under
   its folder (`.md` or `.mdx`, the index, the frontmatter and subfolders included)
   cites the board: no bare issue number (`#123`; an anchor, an entity like `&#39;` or a
-  path's tail like `x.md#3` is not one) and no `/issues/N` or `/pull/N` URL, outside
-  code. Each one fails at its `path:line` with the reference. With files
-  (`board-refs <file>...`, paths from where it runs, as a `pre-commit` hook passes the
-  staged files) it reads those of them that are in such a log. No log with
+  path's tail like `x.md#3` is not one) and no `/issues/N` or `/pull/N` of an
+  `http(s)://` URL, outside code. Each one fails at its `path:line` with the reference.
+  With files (`board-refs <file>...`, paths from where it runs, as a `pre-commit` hook
+  passes the staged files) it reads those of them that are in such a log. No log with
   `boardReferences: false` is `NOT RUN`.
 - **residues:** no append-only marker in a record (`Superseded by`, `Supersedes`,
   `Amended by`, `## Update`, `## Addendum`, struck-through text, their Italian forms),
