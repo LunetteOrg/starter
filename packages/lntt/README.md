@@ -101,6 +101,7 @@ lntt check agents-md                                    # the managed block of A
 lntt check skills                                       # the stubs of the shared skills
 lntt check decisions                                    # the decision logs of recording
 lntt check decisions --base main                        # … and what the diff from main touches
+lntt check decisions board-refs docs/product/pricing.md # the board references of those files
 lntt check decisions numbers docs/adr/review-agents.md  # every line carrying a figure
 lntt check tests                                        # levels, focus, rules (touched needs --base)
 lntt check tests touched --base main                    # the changed lines and the tests that run them
@@ -126,6 +127,13 @@ error. `--json` prints one line per result: `area`, `check`, `status`, `path`, `
   Files that cite the records of the project they ship to, not this one's, are listed
   in `recording.externalReferences` with their reason; a glob that matches no file
   fails.
+- **board-refs:** in a log whose `boardReferences` is `false`, no Markdown file under
+  its folder (the index and subfolders included) cites the board: no bare issue number
+  (`#123`; an anchor, an entity like `&#39;` or a path's tail like `x.md#3` is not one)
+  and no `/issues/N` or `/pull/N` URL, outside code. Each one fails at its `path:line`
+  with the reference. With files (`board-refs <file>...`, what a `pre-commit` hook
+  passes as the staged files) it reads those of them that are in such a log. No log
+  with `boardReferences: false` is `NOT RUN`.
 - **residues:** no append-only marker in a record (`Superseded by`, `Supersedes`,
   `Amended by`, `## Update`, `## Addendum`, struck-through text, their Italian forms),
   outside code spans.

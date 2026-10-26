@@ -74,7 +74,13 @@ describe('lntt check decisions structure', () => {
     assert.equal(r.status, 0)
     assert.deepEqual(
       r.results.map((x) => `${x.status} ${x.area}/${x.check}`),
-      ['PASS decisions/index', 'PASS decisions/references', 'PASS decisions/residues', 'PASS decisions/names'],
+      [
+        'PASS decisions/index',
+        'PASS decisions/references',
+        'NOT RUN decisions/board-refs',
+        'PASS decisions/residues',
+        'PASS decisions/names',
+      ],
     )
     const index = r.results.find((x) => x.check === 'index') as Result
     assert.match(index.message, /adr: 2 records, 2 rows/)
@@ -122,7 +128,7 @@ describe('lntt check decisions structure', () => {
     const r = lntt(['check', 'decisions'])
     assert.equal(r.status, 1)
     assert.match(r.stdout, /^FAIL {5}decisions\/index {2}docs\/adr\/README\.md:6 — /m)
-    assert.match(r.stdout, /lntt check: \d+ PASS, 17 FAIL, 0 NOT RUN\n$/)
+    assert.match(r.stdout, /lntt check: \d+ PASS, 17 FAIL, 1 NOT RUN\n$/)
   })
 
   test('a log with no index is NOT RUN for the index check, never a silent pass', () => {
@@ -330,6 +336,122 @@ describe('lntt check decisions --base', () => {
     const inventory = r.results.find((x) => x.check === 'inventory') as Result
     assert.equal(inventory.status, 'NOT RUN')
     assert.match(inventory.message, /nowhere/)
+  })
+})
+
+describe('lntt check decisions board-refs', () => {
+  // The clean fixture, with its process log forbidding board references.
+  function strict(): void {
+    project('clean')
+    writeFileSync(
+      join(repo, '.agents/config.jsonc'),
+      JSON.stringify({
+        recording: {
+          logs: {
+            adr: { path: 'docs/adr', index: 'docs/adr/README.md', template: 'docs/adr/template.md' },
+            process: { path: 'docs/process', index: 'docs/process/README.md', boardReferences: false },
+          },
+        },
+      }),
+    )
+  }
+
+  const boardRefs = (list: Result[]) =>
+    list.filter((x) => x.check === 'board-refs').map((x) => `${x.status} ${x.path}:${x.line} ${x.message}`)
+
+  test('finds every form of board reference in a log that forbids them, with its line and the reference', () => {
+    strict()
+    writeFileSync(
+      join(repo, 'docs/process/review.md'),
+      [
+        '# Review',
+        '',
+        '- Issue: #168',
+        '',
+        'Whether a round is repeated is decided by #172.',
+        '',
+        'The open questions wait in **#244**, and the answer is due in (#241).',
+        '',
+        'See https://github.com/example/repo/issues/258 and https://github.com/example/repo/pull/301.',
+        '',
+      ].join('\n'),
+    )
+    const r = results(['check', 'decisions'])
+    assert.equal(r.status, 1)
+    const cites = (line: number, ref: string) =>
+      `FAIL docs/process/review.md:${line} cites the board (${ref}): a record of process cites documents, not issues or pull requests`
+    assert.deepEqual(boardRefs(r.results), [
+      cites(3, '#168'),
+      cites(5, '#172'),
+      cites(7, '#244'),
+      cites(7, '#241'),
+      cites(9, '/issues/258'),
+      cites(9, '/pull/301'),
+    ])
+  })
+
+  test('anchors, entities, path tails and code are not board references; a log that allows them is not read', () => {
+    strict()
+    writeFileSync(
+      join(repo, 'docs/process/review.md'),
+      [
+        '# Review',
+        '',
+        '## 1. The boundaries',
+        '',
+        'Section [1](#1-the-boundaries) is linked by anchor, and so is',
+        '[storage](../adr/storage.md#3-two-problems) and [a heading](#12). An entity like &#39; is',
+        `not an issue, a color like \`#123456\` is code, and so is \`PDR #${8}\`.`,
+        '',
+        '```sh',
+        'gh issue view #12',
+        '```',
+        '',
+      ].join('\n'),
+    )
+    // The adr log allows them: its #12 is not read.
+    appendFileSync(join(repo, 'docs/adr/storage.md'), '\nDecided in #12.\n')
+    const r = results(['check', 'decisions'])
+    assert.equal(r.status, 0)
+    assert.deepEqual(boardRefs(r.results), [
+      'PASS null:null no board reference in the 2 files of process (boardReferences: false)',
+    ])
+  })
+
+  test('a file below the log folder is read too, the index included', () => {
+    strict()
+    mkdirSync(join(repo, 'docs/process/guides'))
+    writeFileSync(join(repo, 'docs/process/guides/setup.md'), '# Setup\n\nSee #3.\n')
+    appendFileSync(join(repo, 'docs/process/README.md'), '\nOpened in #4.\n')
+    assert.deepEqual(fails(results(['check', 'decisions', 'board-refs']).results), [
+      'board-refs docs/process/README.md:7',
+      'board-refs docs/process/guides/setup.md:3',
+    ])
+  })
+
+  test('with files, only those in a log that forbids them: what pre-commit passes', () => {
+    strict()
+    writeFileSync(join(repo, 'docs/process/review.md'), '# Review\n\nSee #3.\n')
+    appendFileSync(join(repo, 'docs/process/README.md'), '\nOpened in #4.\n')
+    appendFileSync(join(repo, 'docs/adr/storage.md'), '\nDecided in #12.\n')
+    const r = results(['check', 'decisions', 'board-refs', 'docs/process/review.md', 'docs/adr/storage.md', 'gone.md'])
+    assert.equal(r.status, 1)
+    assert.deepEqual(fails(r.results), ['board-refs docs/process/review.md:3'])
+    const clean = results(['check', 'decisions', 'board-refs', 'docs/adr/storage.md'])
+    assert.equal(clean.status, 0)
+    assert.deepEqual(boardRefs(clean.results), [
+      'PASS null:null no board reference in the files given: 0 of 1 in process (boardReferences: false)',
+    ])
+  })
+
+  test('no log forbids them: NOT RUN, never a silent pass', () => {
+    project('clean')
+    appendFileSync(join(repo, 'docs/process/review.md'), '\nSee #3.\n')
+    const r = results(['check', 'decisions', 'board-refs'])
+    assert.equal(r.status, 0)
+    assert.deepEqual(boardRefs(r.results), [
+      'NOT RUN null:null no log of recording.logs sets boardReferences: false: no file is read for board references',
+    ])
   })
 })
 

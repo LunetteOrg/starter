@@ -22,8 +22,8 @@ lntt get recording        # or: pnpm exec lntt get recording
 ```
 
 It returns `language` and `logs`: one entry per log (`adr`, `product`, `process`, …)
-with its `path`, and optionally `index`, `template` and `scope`. `scope` says what
-belongs in that log; use it to file a decision in the right one.
+with its `path`, and optionally `index`, `template`, `scope` and `boardReferences`.
+`scope` says what belongs in that log; use it to file a decision in the right one.
 
 - **No configuration file, or no `recording` section:** stop. Propose the section to
   add (the logs you can see in the repo, their paths, the language their records are
@@ -44,6 +44,8 @@ Follow [`references/recording-rules.md`](./references/recording-rules.md). In sh
 - **Write the state, not the history.** The file says what holds now; git keeps how it
   got there. No `superseded by`, no struck-through text, no amendment sections.
 - **Options not taken** go in *Discarded directions* at the end, each with its reason.
+- **A log with `boardReferences: false` cites documents only:** no issue number, no
+  issue or pull request link. What the record does not settle yet is said in words.
 - **Copy the log's `template`** for a new file, and add it to the log's `index`.
 - Write in the configured `language`.
 - Show the person the record (or the diff of a rewritten one) before saving it.
@@ -62,8 +64,8 @@ apply fixes: output findings and recommended actions only.
 
    Every `FAIL` is a finding, at its `path:line`, as it is; every `PASS` a passing
    check; every `NOT RUN` is printed with its reason. Do not redo what it checks
-   (index and files, references, append-only residues, file names, titles, statuses),
-   and copy its counts instead of counting again. The `inventory` lines (with
+   (index and files, references, board references, append-only residues, file names,
+   titles, statuses), and copy its counts instead of counting again. The `inventory` lines (with
    `--base`) say which records the change touches: name them first in the report.
 2. **Load the records now.** Read each log's index and the `##` sections of every
    record. Build the checks from what they say today; never recite from memory.

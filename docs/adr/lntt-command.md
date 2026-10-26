@@ -24,7 +24,7 @@ command, so a reader who sees `lntt` in a script knows which package provides it
 ```
 lntt path | validate | get | set | operator | sync | guide | local app | viewer | browser | refs
 lntt board sync
-lntt check [agents-md | skills | decisions [structure | numbers] | tests [levels | focus | rules | touched | mutate] | body] | check cite
+lntt check [agents-md | skills | decisions [structure | board-refs | numbers] | tests [levels | focus | rules | touched | mutate] | body] | check cite
 lntt branch name | check | rename
 lntt pr block
 lntt retro add
@@ -103,8 +103,9 @@ rests on these criteria:
 
 1. **A gate is reproducible on the same commit.** The CI workflow runs
    `pnpm exec lntt check` and `lntt branch check` (`.github/workflows/ci.yml`), the
-   git hooks run `lntt branch check --pre-push` and commitlint with `@lntt/lntt`'s
-   configuration (`lefthook.yml`, `pre-push` and `commit-msg`). Their answer is fixed
+   git hooks run `lntt check decisions board-refs` on the staged files,
+   `lntt branch check --pre-push` and commitlint with `@lntt/lntt`'s configuration
+   (`lefthook.yml`, `pre-commit`, `pre-push` and `commit-msg`). Their answer is fixed
    only by the project's lockfile. A red of `lntt ci local` for a timeout is the
    machine's, never a verdict on the code (`packages/lntt/src/ci/report.ts`).
 2. **The host adapters follow the hosts' release cadence** (#137): Orca 1.4.229 moved

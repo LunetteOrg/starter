@@ -14,6 +14,8 @@ interface Log {
   path: string
   index?: string
   template?: string
+  // false: the log's files cite documents, never the board.
+  boardReferences?: boolean
 }
 
 type Draft = Omit<Result, 'area'>
@@ -262,6 +264,61 @@ function referencesCheck(root: string, logs: Log[], files: string[], external: R
       path: null,
       line: null,
       message: `every reference to a record resolves (${scanned} files read${elsewhere > 0 ? `, ${elsewhere} citing another project's records by recording.externalReferences` : ''})`,
+    })
+  }
+  return out
+}
+
+// A board reference: a bare issue number (not an anchor like `#1-scope` or `](#12)`, an
+// entity like `&#39;`, the tail of a path like `./x.md#3`), or an issue or pull request
+// URL. Adapted from wai's meta-product-docs-no-board-refs.spec.ts.
+const BOARD = /(?<![\w&/#])(?<!\]\()#\d+(?![\w-])|\/(?:issues|pull)\/\d+/g
+
+// The Markdown files of the logs whose `boardReferences` is false, at any depth and the
+// index included, or those of the files given (what pre-commit stages): none cites the
+// board.
+function boardRefsCheck(root: string, logs: Log[], files: string[], given: string[] | null): Draft[] {
+  const strict = logs.filter((log) => log.boardReferences === false)
+  if (strict.length === 0) {
+    return [
+      {
+        check: 'board-refs',
+        status: 'NOT RUN',
+        path: null,
+        line: null,
+        message: 'no log of recording.logs sets boardReferences: false: no file is read for board references',
+      },
+    ]
+  }
+  const known = new Set(files)
+  const read = given === null ? files : given.map((f) => trimSlash(f)).filter((f) => known.has(f))
+  const logOf = (file: string) =>
+    /\.mdx?$/.test(file) ? strict.find((log) => file.startsWith(`${log.path}/`)) : undefined
+  const scope = read.filter((f) => logOf(f) !== undefined)
+  const out: Draft[] = []
+  for (const file of scope) {
+    const body = prose(readFileSync(join(root, file), 'utf8'))
+    for (const m of body.matchAll(BOARD)) {
+      out.push({
+        check: 'board-refs',
+        status: 'FAIL',
+        path: file,
+        line: lineOf(body, m.index),
+        message: `cites the board (${m[0]}): a record of ${logOf(file)?.name} cites documents, not issues or pull requests`,
+      })
+    }
+  }
+  if (out.length === 0) {
+    const names = `${strict.map((log) => log.name).join(', ')} (boardReferences: false)`
+    out.push({
+      check: 'board-refs',
+      status: 'PASS',
+      path: null,
+      line: null,
+      message:
+        given === null
+          ? `no board reference in the ${scope.length} files of ${names}`
+          : `no board reference in the files given: ${scope.length} of ${given.length} in ${names}`,
     })
   }
   return out
@@ -521,6 +578,7 @@ export function checkDecisions(options: CheckOptions, { figures: withFigures }: 
   return withArea([
     ...indexCheck(root, logs, files),
     ...referencesCheck(root, logs, files, externalOf(options.data)),
+    ...boardRefsCheck(root, logs, files, null),
     ...residuesCheck(root, records, only),
     ...namesCheck(root, logs, files, only),
     ...extra,
@@ -546,4 +604,12 @@ export function decisionFigures(options: CheckOptions, paths: string[]): Result[
     ])
   }
   return withArea(figures(options.root, [...touchedRecords(logs, diff)].sort()))
+}
+
+// `lntt check decisions board-refs [<file>...]`: the board references of the files
+// given, else of every log that forbids them.
+export function decisionBoardRefs(options: CheckOptions, paths: string[]): Result[] {
+  const logs = logsOf(options.data)
+  if (logs === null) return [NO_RECORDING]
+  return withArea(boardRefsCheck(options.root, logs, projectFiles(options.root), paths.length > 0 ? paths : null))
 }

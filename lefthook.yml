@@ -15,6 +15,11 @@ pre-commit:
       stage_fixed: true
     typecheck:
       run: pnpm typecheck
+    # A record of a log with boardReferences: false cites no issue: found at the commit,
+    # not at ci:local after the history is written.
+    decisions-board-refs:
+      glob: "**/*.{md,mdx}"
+      run: pnpm exec lntt check decisions board-refs {staged_files}
 
 pre-push:
   commands:

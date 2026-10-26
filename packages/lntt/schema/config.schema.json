@@ -1199,6 +1199,11 @@
         "scope": {
           "type": "string",
           "description": "What this log records, in one sentence, so a decision is filed in the right one."
+        },
+        "boardReferences": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the log's files may cite the board. false: they cite documents only, and lntt check decisions board-refs fails on a bare issue number (#123) or an issue or pull request URL in any Markdown file under the log's folder, outside code."
         }
       }
     },
