@@ -224,7 +224,10 @@
         "category": "Ideas",
         "title": "Retrospective — {window}",
         "targetedTitle": "Targeted retrospective — {subject}"
-      }
+      },
+      // Friction that comes from Lunette itself starts with [LunetteOrg/starter] in the
+      // retrospective blocks; lntt issue reports it here. This repo is its own upstream.
+      "upstream": { "repository": "LunetteOrg/starter" }
     }
   }
 }

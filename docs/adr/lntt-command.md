@@ -91,17 +91,17 @@ lntt ci local | candidate
   deterministic check is a check of an area, or a new area, never a script beside a
   skill.
 - **A report on Lunette itself goes upstream through `lntt issue`, on the operator's
-  approval.** The `retrospective` skill drafts one from the `[lunette]` items of the
-  blocks and calls `lntt issue`, never `gh`: another way to send it (#184) is added
+  approval.** The `retrospective` skill drafts one from the items of the blocks marked
+  with the upstream repository (`[LunetteOrg/starter] …`) and calls `lntt issue`, never `gh`: another way to send it (#184) is added
   behind the command, the skill unchanged. `lntt issue` sends nothing without `--send`,
   so what the operator approves is the issue it printed: the dump, the draft and the
   title, redacted as `lntt dump` redacts what it collects, and refused before sending
   when GitHub would refuse it (`BODY_LIMIT` and `TITLE_LIMIT` in
-  `packages/lntt/src/issue.ts`). The repository is read, never written in a skill:
-  `cycle.retrospective.upstream.repository`, by default the `repository` of the
-  installed `@lntt/lntt` (`packages/lntt/src/issue.ts`). The report form,
-  `.github/ISSUE_TEMPLATE/lunette-report.yml`, lives in this repository only: the
-  reports come here, never to a scaffolded project. A configuration that does not
+  `packages/lntt/src/issue.ts`). The repository is read, never written in a skill
+  nor guessed: `cycle.retrospective.upstream.repository`, set in this repository's
+  configuration and in every template's, and the marker is that repository in
+  brackets; `lntt issue` fails naming the key when it is missing
+  (`packages/lntt/src/issue.ts`). A configuration that does not
   validate stops `lntt dump` as it stops every command, exit 1, after the dump is
   printed with the error in it.
 - **No aliases for old names.** A renamed command answers only to its new name, so its

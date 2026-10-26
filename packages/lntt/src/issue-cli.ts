@@ -7,7 +7,7 @@ import { basename, dirname } from 'node:path'
 import { cwd, env, exit, stderr, stdin, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { makeGh } from './ci/candidate.ts'
-import { collectDump, type Dump, packageJson, redact, redactionFor, renderDump, runFailing, withAgent } from './dump.ts'
+import { collectDump, type Dump, redact, redactionFor, renderDump, runFailing, withAgent } from './dump.ts'
 import { findConfig, loadConfig, NoConfigError } from './index.ts'
 import {
   bodyTooLong,
@@ -105,7 +105,7 @@ function issue({ values, positionals }: Parsed): void {
       usage(`--comment takes an issue number, not ${values.comment}`)
     }
   }
-  const repo = upstreamRepository(projectConfig(), packageJson())
+  const repo = upstreamRepository(projectConfig())
   const gh = makeGh({ dryRun: false, log: (line) => stderr.write(`${line}\n`) })
   if (first === 'search') {
     for (const found of searchIssues(gh, repo, rest.join(' '))) stdout.write(`${JSON.stringify(found)}\n`)

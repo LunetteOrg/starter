@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { checkBody, lunetteItems, retrospectiveBlock, retrospectiveRules } from '../src/pull-request.ts'
+import { checkBody, retrospectiveBlock, retrospectiveRules, upstreamItems } from '../src/pull-request.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
 
@@ -46,6 +46,7 @@ describe('the retrospective rules', () => {
       heading: '🔁 Retrospective',
       lines: ['Friction', 'To automate (hook/skill/agent)', 'Rule rediscovered (→ ADR/AGENTS.md)', 'Rework cause'],
       none: 'none',
+      upstream: null,
     })
   })
 
@@ -53,7 +54,12 @@ describe('the retrospective rules', () => {
     const rules = retrospectiveRules({
       delivery: { pullRequest: { retrospective: { lines: ['Attrito', 'Causa di rilavoro'], none: 'nessuno' } } },
     })
-    assert.deepEqual(rules, { heading: '🔁 Retrospective', lines: ['Attrito', 'Causa di rilavoro'], none: 'nessuno' })
+    assert.deepEqual(rules, {
+      heading: '🔁 Retrospective',
+      lines: ['Attrito', 'Causa di rilavoro'],
+      none: 'nessuno',
+      upstream: null,
+    })
     const heading = retrospectiveRules({
       delivery: { pullRequest: { retrospective: { heading: '🔁 Retrospettiva' } } },
     })
@@ -62,7 +68,7 @@ describe('the retrospective rules', () => {
 
   test('the empty block: the heading, the markers, one label per line with no value', () => {
     assert.equal(
-      retrospectiveBlock({ heading: '🔁 Retro', lines: ['Friction', 'Rework cause'], none: 'none' }),
+      retrospectiveBlock({ heading: '🔁 Retro', lines: ['Friction', 'Rework cause'], none: 'none', upstream: null }),
       '## 🔁 Retro\n<!-- retro:start -->\n- **Friction:**\n- **Rework cause:**\n<!-- retro:end -->\n',
     )
   })
@@ -161,71 +167,82 @@ describe('checkBody', () => {
   })
 })
 
-describe('the [lunette] marker', () => {
-  test('an item that starts with it, on the label line or as a sub-bullet, is well formed', () => {
+describe('the upstream marker', () => {
+  const RULES = { ...DEFAULTS, upstream: 'LunetteOrg/starter' }
+
+  test('an item that starts with the upstream in brackets, on the label line or as a sub-bullet, is well formed', () => {
     const lines = [
       '- **Friction:**',
-      '  - [lunette] lntt review lost its state when the worktree changed branch',
+      '  - [LunetteOrg/starter] lntt review lost its state when the worktree changed branch',
       '  - the usage limit stopped a round',
-      '- **To automate (hook/skill/agent):** [lunette] lntt check body could read the comments too',
+      '- **To automate (hook/skill/agent):** [LunetteOrg/starter] lntt check body could read the comments too',
       ...FILLED.slice(2),
     ]
-    assert.deepEqual(checkBody(body(...lines), DEFAULTS), [])
-    assert.deepEqual(lunetteItems(body(...lines)), [
+    assert.deepEqual(checkBody(body(...lines), RULES), [])
+    assert.deepEqual(upstreamItems(body(...lines), 'LunetteOrg/starter'), [
       { label: 'Friction', item: 'lntt review lost its state when the worktree changed branch' },
       { label: 'To automate (hook/skill/agent)', item: 'lntt check body could read the comments too' },
     ])
   })
 
-  test('a marker with no sentence after it', () => {
-    const lines = ['- **Friction:** [lunette]', ...FILLED.slice(1)]
+  test('a marker with no sentence after it is reported, and is no item', () => {
+    const lines = ['- **Friction:** [LunetteOrg/starter]', ...FILLED.slice(1)]
+    assert.deepEqual(checkBody(body(...lines), RULES), [
+      'retrospective: "Friction" has a [LunetteOrg/starter] item with no sentence after the marker',
+    ])
+    assert.deepEqual(upstreamItems(body(...lines), 'LunetteOrg/starter'), [])
+  })
+
+  test('a bracketed owner/name that is not the upstream names the upstream', () => {
+    for (const marker of ['[lunetteorg/starter]', '[LunetteOrg/lntt]', '[vercel/next.js]']) {
+      const lines = ['- **Friction:**', `  - ${marker} the scaffolder pins an old Node`, ...FILLED.slice(1)]
+      assert.deepEqual(checkBody(body(...lines), RULES), [
+        `retrospective: "Friction" has an item starting with ${marker}: the upstream is [LunetteOrg/starter]`,
+      ])
+      assert.deepEqual(upstreamItems(body(...lines), 'LunetteOrg/starter'), [], marker)
+    }
+  })
+
+  test('with no upstream configured, a marker names the key to set', () => {
+    const lines = ['- **Friction:** [LunetteOrg/starter] lntt review', ...FILLED.slice(1)]
     assert.deepEqual(checkBody(body(...lines), DEFAULTS), [
-      'retrospective: "Friction" has a [lunette] item with no sentence after the marker',
+      'retrospective: "Friction" has an item starting with [LunetteOrg/starter], and cycle.retrospective.upstream.repository is not set: set it to mark upstream friction',
     ])
   })
 
-  test('a marker spelled otherwise at the start of an item names the right spelling', () => {
-    for (const marker of ['[Lunette]', '[LUNETTE]', '[lntt]', '[upstream]']) {
-      const lines = ['- **Friction:**', `  - ${marker} the scaffolder pins an old Node`, ...FILLED.slice(1)]
-      assert.deepEqual(checkBody(body(...lines), DEFAULTS), [
-        `retrospective: "Friction" has an item starting with ${marker}: the marker is [lunette]`,
-      ])
-    }
+  test('the upstream comes from cycle.retrospective.upstream.repository', () => {
+    assert.equal(
+      retrospectiveRules({ cycle: { retrospective: { upstream: { repository: 'acme/fork' } } } }).upstream,
+      'acme/fork',
+    )
   })
 
-  test('a marker in the middle of a sentence, or outside the block, is no marker', () => {
-    const lines = ['- **Friction:** the [lunette] marker was new to me', ...FILLED.slice(1)]
-    assert.deepEqual(checkBody(body(...lines), DEFAULTS), [])
-    assert.deepEqual(lunetteItems(body(...lines)), [])
-    assert.deepEqual(lunetteItems(`- [lunette] outside\n${body(...FILLED)}`), [])
-  })
-
-  test('a marker with no sentence is reported and is no item', () => {
-    const lines = ['- **Friction:** [lunette]', ...FILLED.slice(1)]
-    assert.deepEqual(lunetteItems(body(...lines)), [])
-  })
-
-  test('a marker joined to what follows is no marker: [lunette]: and [lunette]foo', () => {
-    for (const text of ['[lunette]: lntt review', '[lunette]foo']) {
+  test('a marker joined to what follows, or in the middle of a sentence, or outside the block, is no marker', () => {
+    for (const text of [
+      '[LunetteOrg/starter]: lntt review',
+      '[LunetteOrg/starter](https://x) a link',
+      'the [LunetteOrg/starter] repo',
+    ]) {
       const lines = ['- **Friction:**', `  - ${text}`, ...FILLED.slice(1)]
-      assert.deepEqual(checkBody(body(...lines), DEFAULTS), [], text)
-      assert.deepEqual(lunetteItems(body(...lines)), [], text)
+      assert.deepEqual(checkBody(body(...lines), RULES), [], text)
+      assert.deepEqual(upstreamItems(body(...lines), 'LunetteOrg/starter'), [], text)
     }
+    assert.deepEqual(upstreamItems(`- [LunetteOrg/starter] outside\n${body(...FILLED)}`, 'LunetteOrg/starter'), [])
   })
 
   test('several markers, a bullet nested deeper or not indented, an item wrapped on two lines', () => {
     const lines = [
       '- **Friction:**',
-      '  - [lunette] lntt review lost its state',
-      '    - [lunette] nested deeper',
-      '- [lunette] not indented',
-      '  - [lunette] a long item',
+      '  - [LunetteOrg/starter] lntt review lost its state',
+      '    - [LunetteOrg/starter] nested deeper',
+      '- [LunetteOrg/starter] not indented',
+      '  - [LunetteOrg/starter] a long item',
       '    wrapped on the next line',
       ...FILLED.slice(1),
     ]
-    assert.deepEqual(checkBody(body(...lines), DEFAULTS), [])
+    assert.deepEqual(checkBody(body(...lines), RULES), [])
     assert.deepEqual(
-      lunetteItems(body(...lines)).map((i) => i.item),
+      upstreamItems(body(...lines), 'LunetteOrg/starter').map((i) => i.item),
       ['lntt review lost its state', 'nested deeper', 'not indented', 'a long item wrapped on the next line'],
     )
   })
@@ -234,16 +251,18 @@ describe('the [lunette] marker', () => {
     const lines = [
       '- **Friction:** none',
       '- **To automate (hook/skill/agent):**',
-      '[lunette] a hook',
+      '[LunetteOrg/starter] a hook',
       ...FILLED.slice(2),
     ]
-    assert.deepEqual(lunetteItems(body(...lines)), [{ label: 'To automate (hook/skill/agent)', item: 'a hook' }])
+    assert.deepEqual(upstreamItems(body(...lines), 'LunetteOrg/starter'), [
+      { label: 'To automate (hook/skill/agent)', item: 'a hook' },
+    ])
   })
 
   test('a marker inside an HTML comment is no item', () => {
-    const lines = ['- **Friction:** none <!-- [lunette] -->', ...FILLED.slice(1)]
-    assert.deepEqual(checkBody(body(...lines), DEFAULTS), [])
-    assert.deepEqual(lunetteItems(body(...lines)), [])
+    const lines = ['- **Friction:** none <!-- [LunetteOrg/starter] -->', ...FILLED.slice(1)]
+    assert.deepEqual(checkBody(body(...lines), RULES), [])
+    assert.deepEqual(upstreamItems(body(...lines), 'LunetteOrg/starter'), [])
   })
 })
 

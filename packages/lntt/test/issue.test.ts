@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { parseDocument } from 'yaml'
 import type { Gh } from '../src/ci/candidate.ts'
 import type { Dump } from '../src/dump.ts'
 import {
@@ -16,14 +15,12 @@ import {
   IssueError,
   issueBody,
   parseDraft,
-  parseRepository,
   searchIssues,
   upstreamRepository,
 } from '../src/issue.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const BIN = resolve(HERE, '../bin/lntt.ts')
-const TEMPLATE = resolve(HERE, '../../../.github/ISSUE_TEMPLATE/lunette-report.yml')
 
 const DRAFT = [
   '# lntt review loses its state when the worktree changes branch',
@@ -66,23 +63,13 @@ function recorder(answers: Record<string, string> = {}): Gh & { calls: { args: s
 }
 
 describe('the upstream repository', () => {
-  test('parsed from the forms package.json and the configuration use', () => {
-    assert.equal(parseRepository('git+https://github.com/LunetteOrg/starter.git'), 'LunetteOrg/starter')
-    assert.equal(parseRepository('https://github.com/LunetteOrg/starter'), 'LunetteOrg/starter')
-    assert.equal(parseRepository('git@github.com:LunetteOrg/starter.git'), 'LunetteOrg/starter')
-    assert.equal(parseRepository('github:LunetteOrg/starter'), 'LunetteOrg/starter')
-    assert.equal(parseRepository('LunetteOrg/starter'), 'LunetteOrg/starter')
-    assert.equal(parseRepository('https://gitlab.com/a/b'), null)
-  })
-
-  test('cycle.retrospective.upstream.repository first, else the repository of the installed lntt', () => {
-    const pkg = { repository: { url: 'git+https://github.com/LunetteOrg/starter.git' } }
-    assert.equal(upstreamRepository({}, pkg), 'LunetteOrg/starter')
+  test('cycle.retrospective.upstream.repository, with no default: missing, it names the key', () => {
     assert.equal(
-      upstreamRepository({ cycle: { retrospective: { upstream: { repository: 'acme/lunette' } } } }, pkg),
+      upstreamRepository({ cycle: { retrospective: { upstream: { repository: 'acme/lunette' } } } }),
       'acme/lunette',
     )
-    assert.throws(() => upstreamRepository({}, {}), IssueError)
+    assert.throws(() => upstreamRepository({}), /no cycle\.retrospective\.upstream\.repository in the configuration/)
+    assert.throws(() => upstreamRepository({}), IssueError)
   })
 })
 
@@ -124,14 +111,6 @@ describe('issueBody', () => {
     assert.match(body, /<details><summary>lntt dump<\/summary>\n\n### lntt\n/)
     assert.match(body, /<\/details>\n$/)
   })
-
-  test('the issue template has the same fields, in the same order (.github/ISSUE_TEMPLATE/lunette-report.yml)', () => {
-    const form = parseDocument(readFileSync(TEMPLATE, 'utf8')).toJS() as {
-      body: { type: string; attributes?: { label?: string } }[]
-    }
-    const labels = form.body.filter((f) => f.type !== 'markdown').map((f) => f.attributes?.label)
-    assert.deepEqual(labels, [...ISSUE_SECTIONS])
-  })
 })
 
 describe('gh', () => {
@@ -171,6 +150,8 @@ describe('gh', () => {
   })
 })
 
+const UPSTREAM = '{ "cycle": { "retrospective": { "upstream": { "repository": "LunetteOrg/starter" } } } }\n'
+
 describe('lntt issue', () => {
   let root: string
   let bin: string
@@ -178,7 +159,7 @@ describe('lntt issue', () => {
   beforeEach(() => {
     root = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-issue-')))
     mkdirSync(join(root, '.agents'))
-    writeFileSync(join(root, '.agents/config.jsonc'), '{}\n')
+    writeFileSync(join(root, '.agents/config.jsonc'), UPSTREAM)
     writeFileSync(join(root, 'package.json'), '{"name":"acme-app"}')
     writeFileSync(join(root, 'draft.md'), DRAFT)
     bin = join(root, 'bin')
@@ -309,6 +290,16 @@ describe('lntt issue', () => {
     writeFileSync(join(root, '.agents/config.jsonc'), '{ "nope": 1 }\n')
     assert.equal(lntt([]).status, 2)
     assert.equal(lntt(['draft.md']).status, 1)
+  })
+
+  test('without cycle.retrospective.upstream.repository, it exits 1 naming the key, search too', () => {
+    writeFileSync(join(root, '.agents/config.jsonc'), '{}\n')
+    for (const args of [['draft.md'], ['search', 'x']]) {
+      const run = lntt(args)
+      assert.equal(run.status, 1, args.join(' '))
+      assert.match(run.stderr, /^lntt issue: no cycle\.retrospective\.upstream\.repository in the configuration/)
+    }
+    assert.equal(sent(), '')
   })
 
   test('the repository of cycle.retrospective.upstream', () => {

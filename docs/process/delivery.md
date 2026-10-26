@@ -99,12 +99,13 @@ adopts becomes an issue of its own (the `github-board` skill), citing the retros
 its cluster, so the board holds only the work a retrospective adopts.
 
 Friction that comes from Lunette itself (`lntt`, a shared skill, the scaffolder, a
-template) is marked `[lunette]` at the start of its item: the label's own value
-(`- **Friction:** [lunette] …`), or an item on a line below the label
-(`  - [lunette] …`). At the end of a harvest or of a
-theme, each such cluster becomes a report for the Lunette repository: the agent searches
-it for the same subject, drafts the report, collects the environment with `lntt dump`
-and shows the operator the whole report with `lntt issue`; only a report the operator
+template) is marked with the upstream repository, `cycle.retrospective.upstream.repository`,
+in brackets at the start of its item: the label's own value
+(`- **Friction:** [LunetteOrg/starter] …`), or an item on a line below the label
+(`  - [LunetteOrg/starter] …`). At the end of a harvest or of a theme, each such cluster
+becomes a report for that repository: the agent searches it for the same subject, drafts
+the report, collects the environment with `lntt dump` and shows the operator the whole
+report with `lntt issue`; only a report the operator
 approves is sent, with `lntt issue --send`. A report is an issue of the Lunette
 repository, not a retrospective: it asks for work there, as an adopted proposal does
 here.

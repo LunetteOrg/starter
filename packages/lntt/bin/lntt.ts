@@ -91,9 +91,9 @@
 //   lntt issue <draft.md | -> [--dump <dump.json>] [--harness <name>] [--model <id>]
 //              [--project <name>] [--comment <n>] [--send]
 //                             the draft (# title, ## What happened, ## Pull requests,
-//                             ## Proposal) and the dump as the report form's fields, for
-//                             cycle.retrospective.upstream.repository (default: the repository
-//                             of @lntt/lntt); printed, nothing sent, unless --send, which opens
+//                             ## Proposal) and the dump as the report's fields, for
+//                             cycle.retrospective.upstream.repository (exit 1 naming it when
+//                             missing); printed, nothing sent, unless --send, which opens
 //                             it (or comments on issue <n>) with gh and prints the URL
 //   lntt issue search <words>...
 //                             the open issues of that repository that match, one JSON line each

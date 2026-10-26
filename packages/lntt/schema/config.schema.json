@@ -708,14 +708,14 @@
             },
             "upstream": {
               "type": "object",
-              "description": "Where a report on Lunette itself goes: the [lunette] items of the retrospective blocks, filed by lntt issue on the operator's approval. Without it, the repository of the installed @lntt/lntt.",
+              "description": "The repository friction that comes from Lunette itself is reported to: its items start with it in brackets ([LunetteOrg/starter] …), lntt check body checks the marker, and lntt issue files the reports there on the operator's approval. lntt issue needs it; a scaffolded project has it.",
               "additionalProperties": false,
               "required": ["repository"],
               "properties": {
                 "repository": {
                   "type": "string",
                   "pattern": "^[\\w.-]+/[\\w.-]+$",
-                  "description": "owner/name on GitHub: the Lunette repository, a fork or a private mirror."
+                  "description": "owner/name on GitHub: LunetteOrg/starter, or a fork or a private mirror of it."
                 }
               }
             },

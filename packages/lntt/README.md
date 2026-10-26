@@ -216,10 +216,12 @@ reads that comment instead of the body: the first comment holding the start mark
 line of its own.
 
 An item whose friction comes from Lunette itself (`lntt`, a shared skill, the
-scaffolder, a template) starts with `[lunette]`: `- **Friction:** [lunette] lntt review
-…`, or a sub-bullet `  - [lunette] …`. `lntt check body` fails a marker with no sentence
-after it, and one spelled otherwise at an item's start (`[Lunette]`, `[lntt]`,
-`[upstream]`), naming `[lunette]`.
+scaffolder, a template) starts with the upstream repository,
+`cycle.retrospective.upstream.repository`, in brackets and followed by a space:
+`- **Friction:** [LunetteOrg/starter] lntt review …`, or a sub-bullet
+`  - [LunetteOrg/starter] …`. `lntt check body` fails a marker with no sentence after
+it, and a bracketed `owner/name` at an item's start that is not the upstream, naming it
+(or the key, when the configuration does not set it).
 
 ## Reports on Lunette itself
 
@@ -246,18 +248,18 @@ value of every secret-named environment variable of 8 characters or more `<redac
 no configuration file is the defaults, exit 0. The failing command is stopped after 10 minutes.
 
 `lntt issue <draft | ->` reads a draft (`# <title>`, then `## What happened`,
-`## Pull requests`, `## Proposal`) and fills the fields of the report form
-(`.github/ISSUE_TEMPLATE/lunette-report.yml` in the Lunette repository): the project
+`## Pull requests`, `## Proposal`) and writes the report's fields, each a `### <field>`
+heading as GitHub writes a submitted issue form: the project
 (`--project`, default the `name` of its `package.json`), the harness, the model and the
 versions from the dump (`--dump <file>` from `lntt dump --json`, else collected now),
 the whole dump folded at the end. Without `--send` it is a dry run: it prints the issue
 and sends nothing, so the operator reads exactly what will be sent; the draft and the
-project's name are redacted as the dump is, and a body past GitHub's 65536 characters
+project's name are redacted as the dump is, and a body or a title past GitHub's limits
 is a warning there and a refusal with `--send`. It sends with `gh`, under the account
 `gh` uses (`GH_TOKEN` when it is set, else the operator's login), to
-`cycle.retrospective.upstream.repository`, by default the `repository` of the installed
-`@lntt/lntt`; `--harness` and `--model` beside `--dump` replace the dump's. The
-`retrospective` skill drafts these reports from the `[lunette]` items and calls
+`cycle.retrospective.upstream.repository`; without it, `lntt issue` (and `search`) exits
+1 naming the key. `--harness` and `--model` beside `--dump` replace the dump's. The
+`retrospective` skill drafts these reports from the items marked with the upstream and calls
 `lntt issue`, never `gh`.
 
 ## Starting work on an issue

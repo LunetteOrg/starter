@@ -1,15 +1,15 @@
 // `lntt issue`: a report on Lunette itself (lntt, a shared skill, the scaffolder, a
-// template), filed on the Lunette repository from a draft the agent wrote and the dump of
-// lntt dump. The retrospective skill drafts it from the [lunette] items of a harvest; the
-// operator reads the whole issue (a dry run, the default) and approves it, and only then
-// is it sent (--send). The skill calls lntt issue, never gh, so another way to send it is
+// template), filed on the upstream repository from a draft the agent wrote and the dump
+// of lntt dump. The retrospective skill drafts it from the items of a harvest marked with
+// that repository (`[LunetteOrg/starter] …`); the operator reads the whole issue (a dry
+// run, the default) and approves it, and only then is it sent (--send). The skill calls lntt issue, never gh, so another way to send it is
 // added here without changing the skill (#184).
 
 import type { Gh } from './ci/candidate.ts'
 import { type Dump, renderDump } from './dump.ts'
 
-// The fields of the issue form (.github/ISSUE_TEMPLATE/lunette-report.yml in the Lunette
-// repository), in its order: the body is written as GitHub writes a submitted form.
+// The fields of a report, in their order, each a `### <field>` heading as GitHub writes
+// a submitted issue form, so a form added upstream can take them as they are.
 export const ISSUE_SECTIONS = [
   'Project',
   'What happened',
@@ -24,32 +24,18 @@ export const ISSUE_SECTIONS = [
 // A refusal with a reason the person can act on: a draft missing a section, no upstream.
 export class IssueError extends Error {}
 
-// `owner/name` from the forms a package.json `repository` or a configuration gives:
-// a GitHub URL (git+https, https, ssh), `github:owner/name`, or `owner/name` itself.
-export function parseRepository(value: string): string | null {
-  const match =
-    /^(?:git\+)?(?:https?|ssh|git):\/\/(?:[^@/]+@)?github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/.exec(value) ??
-    /^git@github\.com:([\w.-]+)\/([\w.-]+?)(?:\.git)?$/.exec(value) ??
-    /^(?:github:)?([\w.-]+)\/([\w.-]+)$/.exec(value)
-  return match ? `${match[1]}/${match[2]}` : null
-}
-
-// Where a report goes: cycle.retrospective.upstream.repository, so a fork or a private
-// mirror works; by default the repository of the installed @lntt/lntt.
-export function upstreamRepository(
-  config: { cycle?: { retrospective?: { upstream?: { repository?: string } } } },
-  pkg: { repository?: string | { url?: string } },
-): string {
+// Where a report goes: cycle.retrospective.upstream.repository, always written in the
+// configuration, never guessed (a fork or a private mirror sets its own).
+export function upstreamRepository(config: {
+  cycle?: { retrospective?: { upstream?: { repository?: string } } }
+}): string {
   const configured = config.cycle?.retrospective?.upstream?.repository
-  if (configured !== undefined) return configured
-  const url = typeof pkg.repository === 'string' ? pkg.repository : pkg.repository?.url
-  const repo = url === undefined ? null : parseRepository(url)
-  if (repo === null) {
+  if (configured === undefined) {
     throw new IssueError(
-      'no upstream repository: the installed @lntt/lntt names none on GitHub; set cycle.retrospective.upstream.repository',
+      'no cycle.retrospective.upstream.repository in the configuration: the repository reports go to',
     )
   }
-  return repo
+  return configured
 }
 
 export interface Draft {

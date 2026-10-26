@@ -1,6 +1,6 @@
 ---
 name: retrospective
-description: Carry the friction met while working to where it gets fixed — a `Retro:` trailer on the commit, the retrospective block of the pull request body (between `<!-- retro:start -->` and `<!-- retro:end -->`), the candidate's retrospective comment for the batch's friction (`lntt retro add`), a harvest of the merged pull requests' blocks into proposals, published where `cycle.retrospective` says, and the friction that comes from Lunette itself (items marked `[lunette]`) reported upstream with `lntt dump` and `lntt issue`, on the operator's approval. Use when opening a pull request (to fill the block), before marking one ready (`lntt check body`), when an orchestrator or a coordinator meets friction that belongs to the batch or squashes into the candidate, and when a theme or a release ends (the harvest and the upstream reports).
+description: Carry the friction met while working to where it gets fixed — a `Retro:` trailer on the commit, the retrospective block of the pull request body (between `<!-- retro:start -->` and `<!-- retro:end -->`), the candidate's retrospective comment for the batch's friction (`lntt retro add`), a harvest of the merged pull requests' blocks into proposals, published where `cycle.retrospective` says, and the friction that comes from Lunette itself (items marked with the upstream repository, `[<owner/name>]`) reported upstream with `lntt dump` and `lntt issue`, on the operator's approval. Use when opening a pull request (to fill the block), before marking one ready (`lntt check body`), when an orchestrator or a coordinator meets friction that belongs to the batch or squashes into the candidate, and when a theme or a release ends (the harvest and the upstream reports).
 ---
 
 # Retrospective
@@ -17,7 +17,7 @@ fit one project.
 ```sh
 lntt pr block                      # the empty block: heading, markers, one label per line
 lntt get delivery.pullRequest      # the template, the language of the body's prose
-lntt get cycle.retrospective       # where a harvest is published, the targeted review
+lntt get cycle.retrospective       # where a harvest is published, the targeted review, the upstream
 lntt get delivery.commits          # whether Retro is one of the trailers
 ```
 
@@ -27,7 +27,9 @@ configuration does not have. Without `cycle.retrospective.target`, a harvest sto
 before publishing and proposes the section to the person (`kind`, `category` for a
 Discussion, `title` with `{window}`); it never picks a place to publish. Labels are
 written exactly as the configuration gives them, in its language; the values in the
-language of `delivery.pullRequest.language`.
+language of `delivery.pullRequest.language`. `cycle.retrospective.upstream.repository`
+is the upstream repository, `<upstream>` below (`LunetteOrg/starter` in a project
+scaffolded from Lunette).
 
 ## 1. Capture, while working
 
@@ -44,9 +46,10 @@ language of `delivery.pullRequest.language`.
   ```
 
 - **Friction that comes from Lunette itself** (`lntt`, a shared skill, the scaffolder, a
-  template: what the project cannot fix on its own) starts with `[lunette]`, in the
-  trailer and in the block: `Retro: [lunette] lntt review lost its state on git switch`.
-  It is fixed in the Lunette repository (section 5), never worked around in silence.
+  template: what the project cannot fix on its own) starts with the upstream in
+  brackets, in the trailer and in the block:
+  `Retro: [<upstream>] lntt review lost its state on git switch`. It is fixed upstream
+  (section 5), never worked around in silence.
 
 ## 2. Absorb, when the pull request opens
 
@@ -62,8 +65,9 @@ such as `Refs #91`, has no colon.)
 
 - Each trailer, and each item a subagent returned, goes under the label it fits. Several
   items under one label are sub-bullets on the lines below it.
-- **An item from Lunette keeps its `[lunette]`** at the start: `- **Friction:** [lunette]
-  …`, or a sub-bullet `  - [lunette] …`. In the middle of a sentence it is no marker.
+- **An item from upstream keeps its `[<upstream>]`** at the start, followed by a space:
+  `- **Friction:** [<upstream>] …`, or a sub-bullet `  - [<upstream>] …`. In the middle
+  of a sentence it is no marker.
 - **`none` is an answer** (the configured `none`): write it where nothing applies. A label
   left empty means the block was not filled in, and the harvest counts it apart.
 - **A line about the review's cost**, when the configuration has one: the rounds of
@@ -79,7 +83,8 @@ lntt check body          # the current branch's pull request; --pr <n>, or - for
 ```
 
 It fails naming a missing block, or a label missing, written twice or left empty, or a
-`[lunette]` with no sentence after it or spelled otherwise (`[Lunette]`, `[lntt]`). CI
+marker with no sentence after it, or a bracketed `owner/name` at an item's start that is
+not the upstream (or with no upstream configured). CI
 reports the same on the pull request. The template's block is the one `lntt pr block`
 prints (`lntt check body template`): a label added to the configuration goes into the
 template in the same change.
@@ -171,7 +176,7 @@ published without the person's go.
    - `issue`: an issue with the proposals as a checklist, on the board (the
      `github-board` skill).
 
-A cluster made of `[lunette]` items is not built in the project: section 5 takes it
+A cluster made of `[<upstream>]` items is not built in the project: section 5 takes it
 upstream.
 
 **Every proposal the person adopts becomes an issue** of its own (the `github-board`
@@ -181,12 +186,12 @@ never built.
 ## 5. Report upstream what comes from Lunette
 
 At the end of a harvest, and at the end of a coordinator's theme, each cluster of
-`[lunette]` items becomes a report for the Lunette repository. **Nothing is sent without
+`[<upstream>]` items becomes a report for the upstream repository. **Nothing is sent without
 the operator's approval, report by report.**
 
 1. **The repository** is read, never written here: `lntt issue` sends to
-   `cycle.retrospective.upstream.repository`, by default the repository of the
-   installed `lntt`; its dry run names it on its first line.
+   `cycle.retrospective.upstream.repository`, and fails naming the key when the
+   configuration does not set it; its dry run names it on its first line.
 2. **No duplicates.** Search the open issues there for the cluster's subject:
 
    ```sh
