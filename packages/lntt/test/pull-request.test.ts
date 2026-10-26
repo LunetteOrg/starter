@@ -200,6 +200,36 @@ describe('the [lunette] marker', () => {
     assert.deepEqual(lunetteItems(`- [lunette] outside\n${body(...FILLED)}`), [])
   })
 
+  test('a marker with no sentence is reported and is no item', () => {
+    const lines = ['- **Friction:** [lunette]', ...FILLED.slice(1)]
+    assert.deepEqual(lunetteItems(body(...lines)), [])
+  })
+
+  test('a marker joined to what follows is no marker: [lunette]: and [lunette]foo', () => {
+    for (const text of ['[lunette]: lntt review', '[lunette]foo']) {
+      const lines = ['- **Friction:**', `  - ${text}`, ...FILLED.slice(1)]
+      assert.deepEqual(checkBody(body(...lines), DEFAULTS), [], text)
+      assert.deepEqual(lunetteItems(body(...lines)), [], text)
+    }
+  })
+
+  test('several markers, a bullet nested deeper or not indented, an item wrapped on two lines', () => {
+    const lines = [
+      '- **Friction:**',
+      '  - [lunette] lntt review lost its state',
+      '    - [lunette] nested deeper',
+      '- [lunette] not indented',
+      '  - [lunette] a long item',
+      '    wrapped on the next line',
+      ...FILLED.slice(1),
+    ]
+    assert.deepEqual(checkBody(body(...lines), DEFAULTS), [])
+    assert.deepEqual(
+      lunetteItems(body(...lines)).map((i) => i.item),
+      ['lntt review lost its state', 'nested deeper', 'not indented', 'a long item wrapped on the next line'],
+    )
+  })
+
   test('a marker inside an HTML comment is no item', () => {
     const lines = ['- **Friction:** none <!-- [lunette] -->', ...FILLED.slice(1)]
     assert.deepEqual(checkBody(body(...lines), DEFAULTS), [])

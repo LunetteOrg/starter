@@ -124,6 +124,15 @@ export function issueBody(draft: Draft, dump: Dump, project: string): string {
   return ISSUE_SECTIONS.map((name) => `### ${name}\n\n${values[name]}\n`).join('\n')
 }
 
+// The longest body GitHub takes, in characters: past it, --send would fail after the
+// operator approved the report.
+export const BODY_LIMIT = 65536
+
+export function bodyTooLong(body: string): string | null {
+  if (body.length <= BODY_LIMIT) return null
+  return `the body is ${body.length} characters, GitHub takes ${BODY_LIMIT}: shorten the draft, or dump without the failing command`
+}
+
 export interface FoundIssue {
   number: number
   title: string

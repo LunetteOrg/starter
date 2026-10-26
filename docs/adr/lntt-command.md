@@ -99,7 +99,9 @@ lntt ci local | candidate
   `cycle.retrospective.upstream.repository`, by default the `repository` of the
   installed `@lntt/lntt` (`packages/lntt/src/issue.ts`). The report form,
   `.github/ISSUE_TEMPLATE/lunette-report.yml`, lives in this repository only: the
-  reports come here, never to a scaffolded project.
+  reports come here, never to a scaffolded project. `lntt dump` is a diagnostic: a
+  configuration that does not validate is one more fact in the dump, printed with
+  exit 0, not the stop the compatibility rule asks of the other commands.
 - **No aliases for old names.** A renamed command answers only to its new name, so its
   callers (workflows, skills, the README) change with it, in the same release: the
   shared skills ship in `@lntt/lntt` with the command they call.

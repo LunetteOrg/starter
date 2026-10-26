@@ -66,8 +66,8 @@ export const LUNETTE = '[lunette]'
 // What a marker misspelled at the start of an item looks like: the check names the right one.
 const NEAR_LUNETTE = /^\[(?:lunette|lntt|upstream)\](?=\s|$)/i
 
-// Each item of the block with its label: a label's value on its own line, and each
-// sub-bullet below it.
+// Each item of the block with its label: a label's value on its own line, and each bullet
+// below it, indented or not; a line that is no bullet continues the item above it.
 function blockItems(block: string[]): { label: string; text: string }[] {
   const items: { label: string; text: string }[] = []
   let current: string | null = null
@@ -77,19 +77,27 @@ function blockItems(block: string[]): { label: string; text: string }[] {
       current = (label[1] as string).trim()
       const value = (label[2] as string).trim()
       if (value !== '') items.push({ label: current, text: value })
-    } else if (current !== null) {
-      const sub = /^\s+[-*]\s+(.*)$/.exec(line)
-      if (sub) items.push({ label: current, text: (sub[1] as string).trim() })
+      continue
     }
+    if (current === null || line.trim() === '') continue
+    const bullet = /^\s*[-*]\s+(.*)$/.exec(line)
+    const last = items.at(-1)
+    if (bullet) items.push({ label: current, text: (bullet[1] as string).trim() })
+    else if (last?.label === current) last.text = `${last.text} ${line.trim()}`
+    else items.push({ label: current, text: line.trim() })
   }
   return items
 }
 
+// The marker as the start of an item: followed by a space or nothing (`[lunette]:` or
+// `[lunette]foo` is no marker).
+const MARKER = /^\[lunette\](?=\s|$)/
+
 // The items marked [lunette], with the marker taken off: what the harvest drafts issues
-// from.
+// from. A marker with no sentence after it is no item (checkBody reports it).
 export function lunetteItems(text: string): { label: string; item: string }[] {
   return blockItems(blockLines(text) ?? [])
-    .filter((i) => i.text.startsWith(LUNETTE))
+    .filter((i) => MARKER.test(i.text))
     .map((i) => ({ label: i.label, item: i.text.slice(LUNETTE.length).trim() }))
     .filter((i) => i.item !== '')
 }

@@ -240,7 +240,9 @@ failing command, run again, with its exit code and the last 200 lines of its out
 is redacted before it is printed: the home path becomes `~`, the project's git remotes
 `<remote>`, a URL with credentials, an email, a token by its shape (GitHub, Anthropic,
 OpenAI, Slack, AWS, npm, a JWT, a bearer), the value of a key that names a secret and the
-value of every secret-named environment variable `<redacted>` or `<token>`.
+value of every secret-named environment variable of 8 characters or more `<redacted>` or
+`<token>`. A configuration that does not validate is reported in the dump, which still
+exits 0. The failing command is stopped after 10 minutes.
 
 `lntt issue <draft | ->` reads a draft (`# <title>`, then `## What happened`,
 `## Pull requests`, `## Proposal`) and fills the fields of the report form
@@ -248,10 +250,14 @@ value of every secret-named environment variable `<redacted>` or `<token>`.
 (`--project`, default the `name` of its `package.json`), the harness, the model and the
 versions from the dump (`--dump <file>` from `lntt dump --json`, else collected now),
 the whole dump folded at the end. Without `--send` it is a dry run: it prints the issue
-and sends nothing, so the operator reads exactly what will be sent. It sends with `gh`,
-under the operator's account, to `cycle.retrospective.upstream.repository`, by default
-the `repository` of the installed `@lntt/lntt`. The `retrospective` skill drafts these
-reports from the `[lunette]` items and calls `lntt issue`, never `gh`.
+and sends nothing, so the operator reads exactly what will be sent; the draft and the
+project's name are redacted as the dump is, and a body past GitHub's 65536 characters
+is a warning there and a refusal with `--send`. It sends with `gh`, under the account
+`gh` uses (`GH_TOKEN` when it is set, else the operator's login), to
+`cycle.retrospective.upstream.repository`, by default the `repository` of the installed
+`@lntt/lntt`; `--harness` and `--model` beside `--dump` replace the dump's. The
+`retrospective` skill drafts these reports from the `[lunette]` items and calls
+`lntt issue`, never `gh`.
 
 ## Starting work on an issue
 

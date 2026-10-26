@@ -240,11 +240,48 @@ describe('lntt issue', () => {
     assert.match(sent(), /^issue comment 7 --repo LunetteOrg\/starter --body-file -/)
   })
 
-  test('--dump reads a dump saved by lntt dump --json', () => {
+  test('--dump reads a dump saved by lntt dump --json; --model given beside it wins', () => {
     writeFileSync(join(root, 'dump.json'), JSON.stringify(DUMP))
     const run = lntt(['draft.md', '--dump', 'dump.json'])
     assert.equal(run.status, 0, run.stderr)
     assert.match(run.stdout, /### Harness\n\nClaude Code 2\.3\.4\n/)
+    const model = lntt(['draft.md', '--dump', 'dump.json', '--model', 'm9'])
+    assert.match(model.stdout, /### Model\n\nm9\n/)
+    assert.match(model.stdout, /- model: m9/)
+  })
+
+  test('the draft is redacted too: the home path, an email, a token', () => {
+    writeFileSync(
+      join(root, 'draft.md'),
+      DRAFT.replace('The round started', `In ${root}/app ada@example.com saw ghp_${'a'.repeat(36)}; the round started`),
+    )
+    const run = lntt(['draft.md'])
+    assert.equal(run.status, 0, run.stderr)
+    assert.match(run.stdout, /In ~\/app <email> saw <token>; the round started/)
+  })
+
+  test('the dry run of a comment names the issue, and sends nothing', () => {
+    const run = lntt(['draft.md', '--comment', '7'])
+    assert.equal(run.status, 0, run.stderr)
+    assert.match(run.stdout, /^To LunetteOrg\/starter#7, as a comment\n/)
+    assert.equal(sent(), '')
+  })
+
+  test('a body past what GitHub takes: a warning in the dry run, a refusal with --send', () => {
+    writeFileSync(join(root, 'draft.md'), DRAFT.replace('Key the state', `${'x'.repeat(70000)} Key the state`))
+    const dry = lntt(['draft.md'])
+    assert.equal(dry.status, 0)
+    assert.match(dry.stderr, /GitHub takes 65536/)
+    const send = lntt(['draft.md', '--send'])
+    assert.equal(send.status, 1)
+    assert.match(send.stderr, /GitHub takes 65536/)
+    assert.equal(sent(), '')
+  })
+
+  test('a usage error is one before the repository is looked for', () => {
+    writeFileSync(join(root, '.agents/config.jsonc'), '{ "nope": 1 }\n')
+    assert.equal(lntt([]).status, 2)
+    assert.equal(lntt(['draft.md']).status, 1)
   })
 
   test('the repository of cycle.retrospective.upstream', () => {
@@ -267,7 +304,20 @@ describe('lntt issue', () => {
     const run = lntt(['draft.md'])
     assert.equal(run.status, 1)
     assert.match(run.stderr, /no "## Pull requests" section/)
-    assert.equal(lntt([]).status, 2)
-    assert.equal(lntt(['draft.md', '--comment', 'x']).status, 2)
+    for (const args of [
+      [],
+      ['draft.md', '--comment', 'x'],
+      ['draft.md', '--comment', '0'],
+      ['draft.md', '--comment', '07'],
+      ['draft.md', '--json'],
+      ['draft.md', '--', 'ls'],
+      ['search'],
+      ['search', 'x', '--send'],
+    ]) {
+      const run = lntt(args)
+      assert.equal(run.status, 2, args.join(' '))
+      assert.match(run.stderr, /usage: lntt dump/, args.join(' '))
+    }
+    assert.equal(sent(), '')
   })
 })

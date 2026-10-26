@@ -103,7 +103,9 @@ template) is marked `[lunette]` at the start of its item. At the end of a harves
 theme, each such cluster becomes a report for the Lunette repository: the agent searches
 it for the same subject, drafts the report, collects the environment with `lntt dump`
 and shows the operator the whole report with `lntt issue`; only a report the operator
-approves is sent, with `lntt issue --send`.
+approves is sent, with `lntt issue --send`. A report is an issue of the Lunette
+repository, not a retrospective: it asks for work there, as an adopted proposal does
+here.
 
 ## The candidate
 

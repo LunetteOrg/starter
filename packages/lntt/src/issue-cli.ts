@@ -7,9 +7,17 @@ import { basename, dirname } from 'node:path'
 import { cwd, env, exit, stderr, stdin, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { makeGh } from './ci/candidate.ts'
-import { collectDump, type Dump, packageJson, renderDump, runFailing } from './dump.ts'
+import { collectDump, type Dump, packageJson, redact, redactionFor, renderDump, runFailing, withAgent } from './dump.ts'
 import { findConfig, loadConfig, NoConfigError } from './index.ts'
-import { commentIssue, fileIssue, issueBody, parseDraft, searchIssues, upstreamRepository } from './issue.ts'
+import {
+  bodyTooLong,
+  commentIssue,
+  fileIssue,
+  issueBody,
+  parseDraft,
+  searchIssues,
+  upstreamRepository,
+} from './issue.ts'
 
 const USAGE = [
   'usage: lntt dump [--json] [--harness <name>] [--model <id>] [-- <failing command>...]',
@@ -83,39 +91,49 @@ function issue({ values, positionals }: Parsed): void {
   if (values.failing !== undefined) usage('lntt issue takes no command after --: lntt dump does')
   if (values.json) usage('--json is an option of lntt dump')
   const [first, ...rest] = positionals
+  if (first === 'search') {
+    if (rest.length === 0) usage('search needs the words to look for')
+    for (const flag of ['dump', 'project', 'comment', 'harness', 'model'] as const) {
+      if (values[flag] !== undefined) usage(`search takes no --${flag}`)
+    }
+    if (values.send) usage('search takes no --send')
+  } else {
+    if (first === undefined || rest.length > 0) usage('issue takes one draft: a file, or - for stdin')
+    if (values.comment !== undefined && !/^[1-9]\d*$/.test(values.comment)) {
+      usage(`--comment takes an issue number, not ${values.comment}`)
+    }
+  }
   const repo = upstreamRepository(projectConfig(), packageJson())
   const gh = makeGh({ dryRun: false, log: (line) => stderr.write(`${line}\n`) })
   if (first === 'search') {
-    if (rest.length === 0) usage('search needs the words to look for')
     for (const found of searchIssues(gh, repo, rest.join(' '))) stdout.write(`${JSON.stringify(found)}\n`)
     return
   }
-  if (first === undefined || rest.length > 0) usage('issue takes one draft: a file, or - for stdin')
-  if (values.comment !== undefined && !/^[1-9]\d*$/.test(values.comment)) {
-    usage(`--comment takes an issue number, not ${values.comment}`)
-  }
-  const draft = parseDraft(readFileSync(first === '-' ? stdin.fd : first, 'utf8'))
+
   const root = projectRoot()
+  const given = {
+    ...(values.harness === undefined ? {} : { harness: values.harness }),
+    ...(values.model === undefined ? {} : { model: values.model }),
+  }
   const result: Dump =
-    values.dump === undefined
-      ? collectDump({
-          root,
-          env,
-          ...(values.harness === undefined ? {} : { harness: values.harness }),
-          ...(values.model === undefined ? {} : { model: values.model }),
-        })
-      : readDump(values.dump)
-  const project = values.project ?? projectName(root)
-  const body = issueBody(draft, result, project)
+    values.dump === undefined ? collectDump({ root, env, ...given }) : withAgent(readDump(values.dump), given)
+  const draft = parseDraft(readFileSync(first === '-' ? stdin.fd : (first as string), 'utf8'))
+  // The draft and the project's name leave the machine too: redacted as the dump is.
+  const redaction = redactionFor(root, env)
+  const title = redact(draft.title, redaction)
+  const body = redact(issueBody(draft, result, values.project ?? projectName(root)), redaction)
   const comment = values.comment === undefined ? undefined : Number(values.comment)
+  const tooLong = bodyTooLong(body)
 
   if (!values.send) {
-    const where = comment === undefined ? `To ${repo}: ${draft.title}` : `To ${repo}#${comment}, as a comment`
+    const where = comment === undefined ? `To ${repo}: ${title}` : `To ${repo}#${comment}, as a comment`
     stdout.write(`${where}\n\n${body}`)
+    if (tooLong) stderr.write(`lntt issue: ${tooLong}\n`)
     stderr.write('lntt issue: nothing sent: --send opens it, once the operator has read it\n')
     return
   }
-  const url = comment === undefined ? fileIssue(gh, repo, draft.title, body) : commentIssue(gh, repo, comment, body)
+  if (tooLong) throw new Error(tooLong)
+  const url = comment === undefined ? fileIssue(gh, repo, title, body) : commentIssue(gh, repo, comment, body)
   stdout.write(`${url}\n`)
 }
 

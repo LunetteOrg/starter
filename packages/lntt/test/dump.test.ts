@@ -5,7 +5,17 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { collectDump, detectHarness, installKind, redact, renderDump } from '../src/dump.ts'
+import {
+  collectDump,
+  detectHarness,
+  environmentSecrets,
+  fenceFor,
+  installKind,
+  redact,
+  renderDump,
+  runFailing,
+  withAgent,
+} from '../src/dump.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
 
@@ -51,9 +61,29 @@ describe('redact', () => {
   test('a secret held in the environment, wherever it appears', () => {
     assert.equal(redact('the value s3cr3t-value leaked', context), 'the value <redacted> leaked')
   })
+
+  test('a short secret of the environment, and a remote with no separator, are left alone', () => {
+    assert.deepEqual(
+      environmentSecrets({ MY_TOKEN: 'abc', EMPTY_SECRET: '', API_KEY: 'abcdefgh', PATH: 'abcdefghij' }),
+      ['abcdefgh'],
+    )
+    const garbling = { home: '/Users/ada', remotes: ['.', '../x', 'origin'], secrets: [] }
+    assert.equal(redact('a ./b and ../x/y', garbling), 'a ./b and ../x/y')
+  })
 })
 
 describe('detectHarness', () => {
+  test('the model of ANTHROPIC_MODEL only under Claude Code', () => {
+    const root = mkdtempSync(join(tmpdir(), 'lntt-dump-model-'))
+    try {
+      const model = (env: Record<string, string>) => collectDump({ root, env, version: () => null }).model
+      assert.equal(model({ CLAUDECODE: '1', ANTHROPIC_MODEL: 'opus' }), 'opus')
+      assert.equal(model({ OPENCODE: '1', ANTHROPIC_MODEL: 'opus' }), 'not given')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test('Claude Code, Codex and OpenCode by their variables; unknown otherwise', () => {
     assert.equal(detectHarness({ CLAUDECODE: '1' }), 'Claude Code')
     assert.equal(detectHarness({ CODEX_SANDBOX: 'seatbelt' }), 'Codex')
@@ -151,6 +181,21 @@ describe('collectDump', () => {
     assert.match(lines.join('\n'), /line 299\n```$/)
   })
 
+  test('an output holding a fence of its own stays inside the block', () => {
+    const output = 'before\n```\ninside\n```\nafter'
+    const dump = collectDump({ root, env: {}, version: () => null, command: { argv: ['x'], status: 1, output } })
+    const text = renderDump(dump)
+    assert.match(text, /\n````\nbefore\n```\ninside\n```\nafter\n````\n/)
+    assert.equal(fenceFor(['no backticks']), '```')
+  })
+
+  test('the package manager from the lockfile when package.json does not name it', () => {
+    writeFileSync(join(root, 'package.json'), '{"name":"app"}')
+    writeFileSync(join(root, 'pnpm-lock.yaml'), '')
+    const runtime = collectDump({ root, env: {}, version: () => null }).sections.find((s) => s.title === 'Runtime')
+    assert.ok(runtime?.lines.includes('package manager: pnpm'))
+  })
+
   test('a configuration that does not validate is reported, not thrown', () => {
     writeFileSync(join(root, '.agents/config.jsonc'), '{ "nope": 1 }\n')
     const project = collectDump({ root, env: {}, version: () => null }).sections.find((s) => s.title === 'Project')
@@ -161,6 +206,35 @@ describe('collectDump', () => {
     const text = renderDump(collectDump({ root, env: {}, version: () => null }))
     assert.match(text, /^### lntt\n\n- version: /)
     assert.match(text, /\n### Project\n/)
+  })
+})
+
+describe('runFailing', () => {
+  test('the exit code and the output, stderr merged', () => {
+    const run = runFailing(['sh', '-c', 'echo out; echo err >&2; exit 4'], tmpdir())
+    assert.equal(run.status, 4)
+    assert.equal(run.output, 'out\nerr\n')
+  })
+
+  test('a command that hangs is stopped at the timeout, and says so', () => {
+    const run = runFailing(['sleep', '5'], tmpdir(), 200)
+    assert.equal(run.status, null)
+    assert.equal(run.stopped, 'stopped after 0 s')
+  })
+})
+
+describe('withAgent', () => {
+  test('the harness and the model given replace those of the dump, in its section too', () => {
+    const dump = {
+      sections: [{ title: 'Harness', lines: ['harness: a', 'model: b'] }],
+      harness: 'a',
+      model: 'b',
+      lntt: '1',
+    }
+    const next = withAgent(dump, { model: 'm2' })
+    assert.equal(next.model, 'm2')
+    assert.equal(next.harness, 'a')
+    assert.deepEqual(next.sections[0]?.lines, ['harness: a', 'model: m2'])
   })
 })
 
@@ -200,7 +274,19 @@ describe('lntt dump', () => {
     assert.ok(Array.isArray(dump.sections))
   })
 
-  test('a usage error exits 2', () => {
-    assert.equal(lntt(['--nope']).status, 2)
+  test('a usage error exits 2: an unknown option, an option of lntt issue, a command without --, -- alone', () => {
+    for (const args of [
+      ['--nope'],
+      ['--send'],
+      ['--comment', '7'],
+      ['--dump', 'x'],
+      ['--project', 'p'],
+      ['ls'],
+      ['--'],
+    ]) {
+      const run = lntt(args)
+      assert.equal(run.status, 2, args.join(' '))
+      assert.match(run.stderr, /usage: lntt dump/, args.join(' '))
+    }
   })
 })
