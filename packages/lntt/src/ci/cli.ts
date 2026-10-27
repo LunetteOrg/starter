@@ -179,7 +179,7 @@ function candidateRun(args: string[]): number {
   const board = candidate.pickBoard(env.PROJECTS_GH_TOKEN, Boolean(env.GITHUB_ACTIONS), gh, (token) =>
     candidate.makeGh({ dryRun: values['dry-run'], log, token }),
   )
-  const repo = env.GITHUB_REPOSITORY || gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])
+  const repo = env.GITHUB_REPOSITORY ?? gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])
   let action: string
   let pr: candidate.PullRequest
   const number = values.pr

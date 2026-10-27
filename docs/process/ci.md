@@ -24,18 +24,19 @@ batch for what is expensive ([delivery](./delivery.md) has the flow):
 | Every day (the `schedule` of `upstream.yml`), or by hand (`workflow_dispatch`) | the [upstream check](#upstream-tools) of each new release of Orca, Herdr, claude and opencode |
 
 `ci.yml` is one job, so each run is billed once. The job is skipped on a draft, and
-`ready_for_review` starts it when the draft leaves draft. The tests run on every run:
-`pnpm ci:local` runs them on the author's machine, and a failure that shows only on the
-CI's Linux runner (a test that depends on timing, a path, a tool) would otherwise reach
-the candidate first. The scaffold level is the exception (`packages/create`: a project
-generated and committed with git, the package packed with npm, and the smoke that
-installs, lints and typechecks a generated project). It is slow and depends on the
-machine (a git process the scaffold leaves behind, a loaded laptop), so a red there says
-little about a change elsewhere: on a pull request into a candidate it runs only when
-the change touches `packages/create`, and the full CI runs it always, when the base is
-the default branch or the event is a push. A scaffold failure that a pull request does
-not see is caught on the candidate, and fixed forward there. The candidate automation
-(`candidate.yml`) is not CI: it runs on its own three events, drafts included
+`ready_for_review` starts it when the draft leaves draft. The tests run on every run but
+a push whose tree is [already proved](#a-tree-already-proved): `pnpm ci:local` runs them
+on the author's machine, and a failure that shows only on the CI's Linux runner (a test
+that depends on timing, a path, a tool) would otherwise reach the candidate first. The
+scaffold level is the exception (`packages/create`: a project generated and committed
+with git, the package packed with npm, and the smoke that installs, lints and typechecks
+a generated project). It is slow and depends on the machine (a git process the scaffold
+leaves behind, a loaded laptop), so a red there says little about a change elsewhere: on
+a pull request into a candidate it runs only when the change touches `packages/create`,
+and the full CI runs it always, when the base is the default branch or the event is a
+push. A scaffold failure that a pull request does not see is caught on the candidate,
+and fixed forward there. The candidate automation (`candidate.yml`) is not CI: it runs
+on its own three events, drafts included
 ([delivery](./delivery.md#the-candidate-automation)).
 
 ## A tree already proved
