@@ -179,7 +179,7 @@ function candidateRun(args: string[]): number {
   const board = candidate.pickBoard(env.PROJECTS_GH_TOKEN, Boolean(env.GITHUB_ACTIONS), gh, (token) =>
     candidate.makeGh({ dryRun: values['dry-run'], log, token }),
   )
-  const repo = env.GITHUB_REPOSITORY ?? gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])
+  const repo = env.GITHUB_REPOSITORY || gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])
   let action: string
   let pr: candidate.PullRequest
   const number = values.pr
@@ -233,8 +233,8 @@ function provedRun(args: string[]): number {
   const workflow = values.workflow ?? basename((env.GITHUB_WORKFLOW_REF ?? '').split('@')[0] ?? '')
   if (!workflow) usage('--workflow names the workflow file, outside Actions')
   const result = proved(gh, {
-    repo: env.GITHUB_REPOSITORY ?? gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']),
-    sha: values.sha ?? env.GITHUB_SHA ?? git('rev-parse', 'HEAD'),
+    repo: env.GITHUB_REPOSITORY || gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']),
+    sha: values.sha ?? (env.GITHUB_SHA || git('rev-parse', 'HEAD')),
     before: values.before ?? eventBefore(),
     branch: values.branch ?? env.GITHUB_REF_NAME ?? '',
     workflow,

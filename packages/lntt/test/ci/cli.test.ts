@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { afterEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -479,15 +478,19 @@ describe('lntt ci proved', () => {
     },
   }
 
-  function proved(api: Record<string, unknown>, extra: Record<string, string>, ...args: string[]) {
+  // `event` is the push event's body, written as GITHUB_EVENT_PATH; GITHUB_REPOSITORY
+  // set to '' leaves the repository to `gh repo view`.
+  function proved(api: Record<string, unknown>, extra: Record<string, string> & { event?: string }, ...args: string[]) {
     root = repo({})
     const cases = Object.entries(api)
       .map(([path, answer]) => `  '${path}') echo '${JSON.stringify(answer)}';;`)
       .join('\n')
     write(root, {
-      '.git/bin/gh': `#!/bin/sh\necho "$*" >> "${root}/.git/gh.log"\ncase "$2" in\n${cases}\n  *) echo "HTTP 502" >&2; exit 1;;\nesac\n`,
+      '.git/bin/gh': `#!/bin/sh\necho "$*" >> "${root}/.git/gh.log"\n[ "$1 $2" = "repo view" ] && { echo o/r; exit 0; }\ncase "$2" in\n${cases}\n  *) echo "HTTP 502" >&2; exit 1;;\nesac\n`,
     })
     execFileSync('chmod', ['+x', join(root, '.git/bin/gh')])
+    const { event, ...vars } = extra
+    if (event !== undefined) write(root, { '.git/event.json': event })
     return spawnSync(process.execPath, [BIN, 'ci', 'proved', ...args], {
       cwd: root,
       encoding: 'utf8',
@@ -499,24 +502,31 @@ describe('lntt ci proved', () => {
         GITHUB_WORKFLOW_REF: '',
         GITHUB_SHA: '',
         GITHUB_REF_NAME: '',
-        GITHUB_EVENT_PATH: '',
-        ...extra,
+        GITHUB_EVENT_PATH: event === undefined ? '' : join(root, '.git/event.json'),
+        ...vars,
       },
     })
   }
 
   // The push run's own environment: the sha, the branch, the workflow and the event.
-  function actions(event: unknown): Record<string, string> {
-    const path = join(tmpdir(), `lntt-proved-${process.pid}-${Math.random()}.json`)
-    writeFileSync(path, typeof event === 'string' ? event : JSON.stringify(event))
+  function actions(event: unknown): Record<string, string> & { event: string } {
     return {
       GITHUB_ACTIONS: 'true',
       GITHUB_SHA: SHA,
       GITHUB_REF_NAME: 'main',
       GITHUB_WORKFLOW_REF: 'o/r/.github/workflows/ci.yml@refs/heads/main',
-      GITHUB_EVENT_PATH: path,
+      event: typeof event === 'string' ? event : JSON.stringify(event),
     }
   }
+
+  test('from a terminal, the repository comes from gh and the sha from HEAD', () => {
+    const result = proved(API, { GITHUB_REPOSITORY: '' }, '--job', 'ci', '--workflow', 'ci.yml', '--before', BEFORE)
+    assert.equal(result.status, 1)
+    const head = git(root, 'rev-parse', 'HEAD')
+    const calls = readFileSync(join(root, '.git/gh.log'), 'utf8')
+    assert.match(calls, /^repo view /m)
+    assert.match(calls, new RegExp(`^api repos/o/r/commits/${head}/pulls$`, 'm'))
+  })
 
   test('in a push run, a proved tree exits 0 with a notice naming the run', () => {
     const result = proved(API, actions({ before: BEFORE }), '--job', 'ci', '--step', 'Full CI')
@@ -544,7 +554,7 @@ describe('lntt ci proved', () => {
   })
 
   test('an event with no previous tip, or unreadable, is not proved', () => {
-    for (const event of [{}, 'not json']) {
+    for (const event of [{}, { before: null }, { before: 7 }, 'not json']) {
       const result = proved(API, actions(event), '--job', 'ci')
       assert.equal(result.status, 1)
       assert.match(result.stdout, /^::notice title=Full run::not proved: no previous tip/)

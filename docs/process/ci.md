@@ -45,10 +45,11 @@ request that was up to date with `main` lands as new commits whose tree is
 byte-identical to its head's: the full CI of the push would test, file for file, what
 the pull request's full CI already tested. A run that repeats it costs the minutes of a
 full CI at every merge into `main`, which a private project generated from a template
-pays for, and holds back whatever waits for the push's green, a deploy first of all. The push run therefore asks `lntt ci proved` right after the
-install: on *proved* it skips the checks and ends green, with a notice that names the
-run that proved the tree; on anything else it runs the whole job. The command reads the
-GitHub API and answers *proved* only when every condition holds:
+pays for, and holds back whatever waits for the push's green, a deploy first of all.
+The push run therefore asks `lntt ci proved` right after the install: on *proved* it
+skips the checks and ends green, with a notice that names the run that proved the tree;
+on anything else it runs the whole job. The command reads the GitHub API and answers
+*proved* only when every condition holds:
 
 - **The same tree.** The pushed commit's tree equals the tree of the head of the one
   pull request merged into `main` that the commit belongs to (`commits/<sha>/pulls`).

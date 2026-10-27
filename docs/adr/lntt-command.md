@@ -127,9 +127,10 @@ rests on these criteria:
    `lntt branch check --pre-push` and commitlint with `@lntt/lntt`'s configuration
    (`lefthook.yml`, `pre-commit`, `pre-push` and `commit-msg`). Their answer is fixed
    only by the project's lockfile. A red of `lntt ci local` for a timeout is the
-   machine's, never a verdict on the code (`packages/lntt/src/ci/report.ts`). `lntt ci proved` is
-   not a gate: its answer reads GitHub's record of runs, which changes as runs are
-   added or expire, and anything but *proved* makes the CI run whole. A *proved* rests
+   machine's, never a verdict on the code (`packages/lntt/src/ci/report.ts`).
+   `lntt ci proved` is not a gate: its answer reads GitHub's record of runs, which
+   changes as runs are added or expire, and anything but *proved* makes the CI run
+   whole. A *proved* rests
    on a run of the gates on that same tree ([CI](../process/ci.md#a-tree-already-proved)).
 2. **The host adapters follow the hosts' release cadence** (#137): Orca 1.4.229 moved
    the agent's handle and `lntt worktree start` reported the agent as unknown until
@@ -180,7 +181,7 @@ So:
   | Pinned by the project: gates and what CI runs | Agent tools |
   |---|---|
   | `lntt check [area]`, `lntt check cite`: deterministic, read only the commit, or for `body` the pull request body (a candidate's retrospective comment) they are given | `lntt review [reply \| allow]`: its outcome is an opinion, wired into no CI |
-  | `lntt ci local`: CI's jobs on the machine; `lntt ci candidate`: what the candidate workflow runs on GitHub, at the default branch's version, which the workflow checks out ([delivery](../process/delivery.md#the-candidate-automation)) | `lntt worktree start`: the Orca and Herdr adapters |
+  | `lntt ci local`: CI's jobs on the machine; `lntt ci candidate`: what the candidate workflow runs on GitHub, at the default branch's version, which the workflow checks out ([delivery](../process/delivery.md#the-candidate-automation)); `lntt ci proved`: what the push run asks before its checks, read from GitHub, so not a gate (criterion 1), but CI calls it ([CI](../process/ci.md#a-tree-already-proved)) | `lntt worktree start`: the Orca and Herdr adapters |
   | `lntt branch check`, and `branch name` and `branch rename`, so the name an agent gets is the one the gate accepts | `lntt ask \| inbox \| answer` |
   | `lntt validate \| get \| set \| path`: they hold the schema; `set` writes a tracked file | `lntt guide`: it prints the skills |
   | `lntt sync`: it writes tracked files (the `AGENTS.md` block, the skill stubs) that `lntt check` verifies | `lntt operator`: personal context, read by no gate; `lntt pr block`: the empty retrospective block, for the template and the skill; `lntt retro add`: it writes a comment on GitHub, not the commit; `lntt dump` and `lntt issue`: a report on Lunette, filed upstream on the operator's approval |
