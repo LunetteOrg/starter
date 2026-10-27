@@ -20,7 +20,7 @@ through an editor that keeps them.
 
 ```sh
 lntt path                       # the file in use
-lntt validate                   # exit 0 when it matches the schema, every value naming another list is in it, and the board has its horizon
+lntt validate                   # exit 0 when it matches the schema, every value naming another list is in it, and the board has its horizon; warns of a delivery.review.warningRounds not below maxRounds
 lntt get recording.logs         # a dotted key, as plain JSON (pipe it to jq)
 lntt set recording.language '"it"'   # a JSON value, comments kept
 ```
@@ -403,7 +403,14 @@ keeps the machine awake for the round.
 stdout is the round: `findings` to act on, `refuted` with their proofs, `failed`
 reviewers and verifiers, `cost` in USD when the agents report it (claude does). Exit 0
 when no blocker or warning is left and nothing failed, 1 otherwise; notes are reported
-and do not block, nor are they carried to the next round. A reply that is neither
+and do not block, nor are they carried to the next round. From the round after
+`delivery.review.warningRounds` a warning does not block either: the round's `blocking`
+names only `blocker`, and the warnings left go in the pull request as open items. The
+branch keeps a ledger of the findings it closed (fixed, refuted, accepted open) in
+`<git dir>/lntt-review-ledger.json`: each round's reviewers read the entries on the files of
+the change and those with no anchor, each verifier those on its finding's file; a
+fresh finding that repeats one on a line that did not change goes to `closed`, not
+verified and not blocking. A reply that is neither
 finding lines nor `no findings` counts as a failed reviewer; after a failure the next
 round reads the same range again. A reviewer is stopped after
 `delivery.review.timeoutMinutes` and counts as failed; at most

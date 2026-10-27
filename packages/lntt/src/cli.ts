@@ -26,6 +26,7 @@ import {
   type Viewer,
 } from './index.ts'
 import { checkMissing, checkReferences } from './references.ts'
+import { reviewConfig, reviewWarnings } from './review.ts'
 
 const USAGE = [
   'usage: lntt path | validate | get <key> | set <key> <json> | operator [get <key> | sources]',
@@ -79,6 +80,13 @@ function run(command: string | undefined, key: string | undefined, raw: string |
         ...(missing.length > 0 ? [`a key the board skills need is missing:\n${indent(missing)}`] : []),
       ]
       if (parts.length > 0) throw new ConfigError(`${path}: ${parts.join('\n')}`)
+      // What matches the schema and still reads otherwise: said, the file stays valid.
+      // A delivery.review lntt review refuses is its own error, at its first round.
+      let warnings: string[] = []
+      try {
+        warnings = reviewWarnings(reviewConfig(data))
+      } catch {}
+      for (const warning of warnings) stderr.write(`lntt validate: warning: ${warning}\n`)
       break
     }
     case 'get':

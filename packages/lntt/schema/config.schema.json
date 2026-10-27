@@ -633,6 +633,11 @@
               "type": "integer",
               "minimum": 1,
               "description": "How many rounds a branch may take: the round past it does not start, and lntt review exits 3 with what is still open for the person to decide. lntt review allow gives one branch more. Default 4."
+            },
+            "warningRounds": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "The rounds of a branch in which a warning blocks. From the next round only a blocker does: the round is clean with warnings left, which go in the pull request as open items and stop being carried. Default 2."
             }
           }
         }
