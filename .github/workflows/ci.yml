@@ -24,6 +24,14 @@ name: CI
 #   `github.event.pull_request`.
 #   No concurrency group: the unapproved run ends in seconds, and a group shared by the
 #   review runs would let a review of any pull request cancel or queue its real run.
+# - a push to the default branch whose tree a pull request's full CI already proved green
+#   (`lntt ci proved`: the same tree, the base an ancestor of the head, the `ci` job and
+#   its `Full CI` step green) skips the checks and ends green, with a notice naming the
+#   run that proved it; anything else, an API error included, runs the whole job. Every
+#   step after the proof reads `env.PROVED != 'true'`: a step added without it runs on a
+#   proved tree too, which costs time, never a false green. ci:local never sets PROVED.
+#   The proof reads the merged pull request and its head's runs and jobs: the token adds
+#   pull-requests: read and actions: read below.
 on:
   push:
     branches: [main]
@@ -33,9 +41,12 @@ on:
     types: [submitted]
 
 # No job writes. The approval of a Dependabot pull request runs the bumped dependencies'
-# code with this token: read only, for every run.
+# code with this token: read only, for every run. lntt ci proved reads the merged pull
+# request and the runs and jobs of its head.
 permissions:
   contents: read
+  pull-requests: read
+  actions: read
 
 jobs:
   ci:
@@ -76,13 +87,25 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
+      # docs/process/ci.md#a-tree-already-proved. Exit 0 only on proved: a red, a usage
+      # error or a crash leaves PROVED unset, and the job runs whole.
+      - name: Tree already proved
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "$GITHUB_ACTIONS" ] && pnpm exec lntt ci proved --job ci --step 'Full CI'; then
+            echo PROVED=true >> "$GITHUB_ENV"
+          fi
+      - if: env.PROVED != 'true'
+        run: pnpm lint
       # Every area of lntt check: AGENTS.md's managed block matches its source, the
       # stubs of the shared skills are installed, the decision logs follow the recording
       # rules, the tests sit at their levels.
-      - run: pnpm exec lntt check
+      - if: env.PROVED != 'true'
+        run: pnpm exec lntt check
       # The branch follows type/issue/slug, whatever tool created it (lntt branch).
-      - if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review'
+      - if: env.PROVED != 'true' && (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')
         env:
           BRANCH: ${{ github.event.pull_request.head.ref }}
         run: pnpm exec lntt branch check --branch "$BRANCH"
@@ -93,9 +116,9 @@ jobs:
       # lntt check body --pr <n> reads before it is marked ready. ci:local has no body
       # and reports the step as not run; the skill runs lntt check body before ready.
       - if: >-
-          github.event_name == 'pull_request' &&
+          env.PROVED != 'true' && (github.event_name == 'pull_request' &&
           !startsWith(github.event.pull_request.head.ref, 'candidate/') &&
-          !startsWith(github.event.pull_request.head.ref, 'dependabot/')
+          !startsWith(github.event.pull_request.head.ref, 'dependabot/'))
         continue-on-error: true
         shell: bash
         env:
@@ -104,7 +127,7 @@ jobs:
           printf '%s\n' "$BODY" | pnpm exec lntt check body - --json |
             jq -r 'select(.status == "FAIL") | .message | gsub("%"; "%25") | gsub("\r"; "%0D") | gsub("\n"; "%0A") | "::warning title=Pull request body::\(.)"'
       # An installed plugin updates only when its version changes.
-      - if: github.event_name == 'pull_request' || github.event_name == 'pull_request_review'
+      - if: env.PROVED != 'true' && (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')
         env:
           BASE: ${{ github.event.pull_request.base.ref }}
         run: sh scripts/check-plugin-version.sh "origin/$BASE"
@@ -112,10 +135,13 @@ jobs:
       # (a function given `$` must be declared at the top of its file): validate each
       # plugin with the Claude Code that loads it. It needs no login. The pinned version
       # is the one the plugin was last checked with; raise it with the plugin.
-      - run: for p in plugins/*/; do pnpm dlx @anthropic-ai/claude-code@2.1.303 plugin validate "$p" || exit 1; done
+      - if: env.PROVED != 'true'
+        run: for p in plugins/*/; do pnpm dlx @anthropic-ai/claude-code@2.1.303 plugin validate "$p" || exit 1; done
       # Every published package carries the CLI's version (docs/adr/cli-runtime-and-publishing.md).
-      - run: node scripts/packages-version.mts check
-      - run: pnpm typecheck
+      - if: env.PROVED != 'true'
+        run: node scripts/packages-version.mts check
+      - if: env.PROVED != 'true'
+        run: pnpm typecheck
       # The tests run on every ready pull request: a failure that shows only on Linux is
       # caught before the candidate. The scaffold level (`packages/create`: a project
       # generated and committed with git, the package packed with npm, and the smoke that
@@ -124,7 +150,8 @@ jobs:
       # packages/create; the full CI runs it always, with the smoke.
       # BASE_REF reads the review's pull request only on a review event: ci:local has no
       # pull request on a push, and an unknown value would keep the step from running.
-      - run: |
+      - if: env.PROVED != 'true'
+        run: |
           if [ "$FULL" = true ]; then SCAFFOLD_SMOKE=1 pnpm test
           elif ! git diff --quiet "origin/$BASE_REF...HEAD" -- packages/create; then pnpm test
           else pnpm test:minimal
@@ -132,3 +159,11 @@ jobs:
         env:
           FULL: ${{ github.event_name == 'push' || github.event.pull_request.base.ref == github.event.repository.default_branch }}
           BASE_REF: ${{ github.event_name == 'pull_request_review' && github.event.pull_request.base.ref || github.base_ref }}
+      # The marker of a full CI that ran to its end: lntt ci proved accepts a pull request
+      # run as the proof of a push's tree only when this step is green in it
+      # (docs/process/ci.md#a-tree-already-proved). Keep it last and keep its name.
+      - name: Full CI
+        if: >-
+          env.PROVED != 'true' && (github.event_name == 'push' ||
+          github.event.pull_request.base.ref == github.event.repository.default_branch)
+        run: echo "the full CI ran on tree $(git rev-parse 'HEAD^{tree}')"
