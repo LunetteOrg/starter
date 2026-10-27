@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { afterEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -456,10 +457,36 @@ describe('lntt ci candidate', () => {
 })
 
 describe('lntt ci proved', () => {
-  // A gh whose every call fails, as on an API outage: the answer must be the full run.
-  function proved(extra: Record<string, string>, ...args: string[]) {
+  const SHA = 'a'.repeat(40)
+  const HEAD = 'b'.repeat(40)
+  const BEFORE = 'c'.repeat(40)
+  const TREE = 'f'.repeat(40)
+
+  // The API of a push that rebase-merged #7, up to date with main, its full CI green;
+  // a path it does not know fails, as on an API error. Every call is logged.
+  const API: Record<string, unknown> = {
+    [`repos/o/r/git/commits/${SHA}`]: { tree: { sha: TREE } },
+    [`repos/o/r/git/commits/${HEAD}`]: { tree: { sha: TREE } },
+    [`repos/o/r/commits/${SHA}/pulls`]: [
+      { number: 7, merged_at: '2026-10-27T10:00:00Z', base: { ref: 'main' }, head: { sha: HEAD } },
+    ],
+    [`repos/o/r/compare/${BEFORE}...${HEAD}`]: { status: 'ahead' },
+    [`repos/o/r/actions/workflows/ci.yml/runs?head_sha=${HEAD}&per_page=100`]: {
+      workflow_runs: [{ id: 11, event: 'pull_request', status: 'completed', conclusion: 'success', html_url: 'u/11' }],
+    },
+    [`repos/o/r/actions/runs/11/jobs?per_page=100`]: {
+      jobs: [{ name: 'ci', conclusion: 'success', steps: [{ name: 'Full CI', conclusion: 'success' }] }],
+    },
+  }
+
+  function proved(api: Record<string, unknown>, extra: Record<string, string>, ...args: string[]) {
     root = repo({})
-    write(root, { '.git/bin/gh': '#!/bin/sh\necho "HTTP 502" >&2\nexit 1\n' })
+    const cases = Object.entries(api)
+      .map(([path, answer]) => `  '${path}') echo '${JSON.stringify(answer)}';;`)
+      .join('\n')
+    write(root, {
+      '.git/bin/gh': `#!/bin/sh\necho "$*" >> "${root}/.git/gh.log"\ncase "$2" in\n${cases}\n  *) echo "HTTP 502" >&2; exit 1;;\nesac\n`,
+    })
     execFileSync('chmod', ['+x', join(root, '.git/bin/gh')])
     return spawnSync(process.execPath, [BIN, 'ci', 'proved', ...args], {
       cwd: root,
@@ -470,36 +497,75 @@ describe('lntt ci proved', () => {
         GITHUB_REPOSITORY: 'o/r',
         GITHUB_ACTIONS: '',
         GITHUB_WORKFLOW_REF: '',
+        GITHUB_SHA: '',
+        GITHUB_REF_NAME: '',
+        GITHUB_EVENT_PATH: '',
         ...extra,
       },
     })
   }
 
-  test('an API error is not proved: exit 1, with the reason', () => {
-    const before = 'c'.repeat(40)
-    const result = proved({}, '--workflow', 'ci.yml', '--job', 'ci', '--before', before, '--branch', 'main')
-    assert.equal(result.status, 1)
-    assert.match(result.stdout, /^not proved: .*HTTP 502/)
+  // The push run's own environment: the sha, the branch, the workflow and the event.
+  function actions(event: unknown): Record<string, string> {
+    const path = join(tmpdir(), `lntt-proved-${process.pid}-${Math.random()}.json`)
+    writeFileSync(path, typeof event === 'string' ? event : JSON.stringify(event))
+    return {
+      GITHUB_ACTIONS: 'true',
+      GITHUB_SHA: SHA,
+      GITHUB_REF_NAME: 'main',
+      GITHUB_WORKFLOW_REF: 'o/r/.github/workflows/ci.yml@refs/heads/main',
+      GITHUB_EVENT_PATH: path,
+    }
+  }
+
+  test('in a push run, a proved tree exits 0 with a notice naming the run', () => {
+    const result = proved(API, actions({ before: BEFORE }), '--job', 'ci', '--step', 'Full CI')
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /^::notice title=Tree already proved::proved: .*#7.*u\/11/)
+    const calls = readFileSync(join(root, '.git/gh.log'), 'utf8')
+    assert.match(calls, new RegExp(`api repos/o/r/compare/${BEFORE}\\.\\.\\.${HEAD}`))
+    assert.match(calls, /api repos\/o\/r\/actions\/workflows\/ci\.yml\/runs/)
   })
 
-  test('in Actions, the workflow comes from GITHUB_WORKFLOW_REF and the answer is a notice', () => {
+  test('the options name the push from a terminal', () => {
     const result = proved(
-      { GITHUB_ACTIONS: 'true', GITHUB_WORKFLOW_REF: 'o/r/.github/workflows/ci.yml@refs/heads/main' },
-      '--job',
-      'ci',
-      '--before',
-      'c'.repeat(40),
-      '--branch',
-      'main',
+      API,
+      {},
+      ...['--job', 'ci', '--workflow', 'ci.yml', '--sha', SHA, '--before', BEFORE, '--branch', 'main'],
     )
-    assert.equal(result.status, 1)
-    assert.match(result.stdout, /^::notice title=Full run::not proved: /)
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /^proved: /)
   })
 
-  test('no workflow outside Actions is a usage error', () => {
-    const result = proved({}, '--job', 'ci')
-    assert.equal(result.status, 2)
-    assert.match(result.stderr, /--workflow/)
+  test('the marker step is read from --step', () => {
+    const result = proved(API, actions({ before: BEFORE }), '--job', 'ci', '--step', 'Smoke')
+    assert.equal(result.status, 1)
+    assert.match(result.stdout, /step Smoke/)
+  })
+
+  test('an event with no previous tip, or unreadable, is not proved', () => {
+    for (const event of [{}, 'not json']) {
+      const result = proved(API, actions(event), '--job', 'ci')
+      assert.equal(result.status, 1)
+      assert.match(result.stdout, /^::notice title=Full run::not proved: no previous tip/)
+    }
+  })
+
+  test('an API error is not proved: exit 1, with the reason', () => {
+    const result = proved({}, actions({ before: BEFORE }), '--job', 'ci')
+    assert.equal(result.status, 1)
+    assert.match(result.stdout, /^::notice title=Full run::not proved: .*HTTP 502/)
+  })
+
+  test('no job, or no workflow outside Actions, is a usage error', () => {
+    for (const args of [
+      ['--workflow', 'ci.yml'],
+      ['--job', 'ci'],
+    ]) {
+      const result = proved(API, {}, ...args)
+      assert.equal(result.status, 2)
+      assert.match(result.stderr, /--job|--workflow/)
+    }
   })
 })
 

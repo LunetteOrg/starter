@@ -200,11 +200,16 @@ function candidateRun(args: string[]): number {
   return 0
 }
 
-// The push event's previous tip, when the run has one.
+// The push event's previous tip, when the run has one: an unreadable event has none,
+// and no previous tip is not proved.
 function eventBefore(): string {
   if (!env.GITHUB_EVENT_PATH) return ''
-  const before = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8')).before
-  return typeof before === 'string' ? before : ''
+  try {
+    const before = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8')).before
+    return typeof before === 'string' ? before : ''
+  } catch {
+    return ''
+  }
 }
 
 // Exit 0 only when the tree is proved: any other code, a crash included, is the full run.
@@ -222,6 +227,7 @@ function provedRun(args: string[]): number {
       },
     }),
   )
+  if (!values.job?.length) usage('--job names a job that must be green; repeatable')
   const log = (line: string) => stdout.write(`${line}\n`)
   const gh = candidate.makeGh({ dryRun: true, log })
   const workflow = values.workflow ?? basename((env.GITHUB_WORKFLOW_REF ?? '').split('@')[0] ?? '')

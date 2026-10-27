@@ -32,7 +32,7 @@ lntt dump | issue [search]
 lntt review [reply | allow]
 lntt worktree start
 lntt ask | inbox | answer
-lntt ci local | candidate
+lntt ci local | candidate | proved
 ```
 
 - **One entry point, one module per command group.** `bin/lntt.ts` dispatches to
@@ -127,7 +127,10 @@ rests on these criteria:
    `lntt branch check --pre-push` and commitlint with `@lntt/lntt`'s configuration
    (`lefthook.yml`, `pre-commit`, `pre-push` and `commit-msg`). Their answer is fixed
    only by the project's lockfile. A red of `lntt ci local` for a timeout is the
-   machine's, never a verdict on the code (`packages/lntt/src/ci/report.ts`).
+   machine's, never a verdict on the code (`packages/lntt/src/ci/report.ts`). `lntt ci proved` is
+   not a gate: its answer reads GitHub's record of runs, which changes as runs are
+   added or expire, and anything but *proved* makes the CI run whole. A *proved* rests
+   on a run of the gates on that same tree ([CI](../process/ci.md#a-tree-already-proved)).
 2. **The host adapters follow the hosts' release cadence** (#137): Orca 1.4.229 moved
    the agent's handle and `lntt worktree start` reported the agent as unknown until
    #126. A fix reaches a project only with a release

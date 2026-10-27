@@ -22,14 +22,16 @@ name: CI
 #   beside the `ci (pull_request)` it does not replace. On a review event
 #   `github.head_ref` and `github.base_ref` are empty: the steps read
 #   `github.event.pull_request`.
+#   No concurrency group: the unapproved run ends in seconds, and a group shared by the
+#   review runs would let a review of any pull request cancel or queue its real run.
 # - a push to the default branch whose tree a pull request's full CI already proved green
 #   (`lntt ci proved`: the same tree, the base an ancestor of the head, the `ci` job and
 #   its `Full CI` step green) skips the checks and ends green, with a notice naming the
 #   run that proved it; anything else, an API error included, runs the whole job. Every
 #   step after the proof reads `env.PROVED != 'true'`: a step added without it runs on a
 #   proved tree too, which costs time, never a false green. ci:local never sets PROVED.
-#   No concurrency group: the unapproved run ends in seconds, and a group shared by the
-#   review runs would let a review of any pull request cancel or queue its real run.
+#   The proof reads the merged pull request and its head's runs and jobs: the token adds
+#   pull-requests: read and actions: read below.
 on:
   push:
     branches: [main]

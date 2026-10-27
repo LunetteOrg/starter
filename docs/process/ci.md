@@ -44,9 +44,8 @@ not see is caught on the candidate, and fixed forward there. The candidate autom
 request that was up to date with `main` lands as new commits whose tree is
 byte-identical to its head's: the full CI of the push would test, file for file, what
 the pull request's full CI already tested. A run that repeats it costs the minutes of a
-full CI at every merge into `main` (free on this public repository, billed to a private
-project generated from a template) and holds back whatever waits for the push's green,
-a deploy first of all. The push run therefore asks `lntt ci proved` right after the
+full CI at every merge into `main`, which a private project generated from a template
+pays for, and holds back whatever waits for the push's green, a deploy first of all. The push run therefore asks `lntt ci proved` right after the
 install: on *proved* it skips the checks and ends green, with a notice that names the
 run that proved the tree; on anything else it runs the whole job. The command reads the
 GitHub API and answers *proved* only when every condition holds:
@@ -65,13 +64,10 @@ GitHub API and answers *proved* only when every condition holds:
 Every other outcome is the full run, never a green: a different tree, a push no pull
 request explains (the release bump, a direct commit), two pull requests for one commit,
 a missing run, an API error. The step prints which condition failed. A pull request
-that was not up to date with `main` gets the full run with no exception: a partial run
-of the affected packages would make the gate depend on a second judgement, the
-dependency graph, for a case the candidate flow makes rare.
+that was not up to date with `main` gets the full run with no exception.
 
-On *proved*, the step sets `PROVED=true` in the job's environment, and every later step
-reads `env.PROVED != 'true'` in its condition. A step added without that condition runs
-on a proved tree too: it costs time, never a false green. `ci:local` has no push to
+On *proved*, the step sets `PROVED=true` in the job's environment, and the later steps
+do not run ([writing a workflow](#writing-a-workflow)). `ci:local` has no push to
 prove: the step tests `GITHUB_ACTIONS`, and `PROVED` is never set in a local run, so it
 runs the whole job.
 
@@ -136,6 +132,10 @@ No real secret runs locally, and ci:local never reads one from a password manage
   test `GITHUB_ACTIONS` or `CIRCLECI`: ci:local sets `CI=true` and neither of those.
 - **Steps run with no controlling terminal**, as on a CI runner: a step that prompts on
   `/dev/tty` fails ([`lntt ci`](../../packages/lntt/README.md#parallel-runs-and-timeouts)).
+- **A step after the proof in `ci.yml`** reads `env.PROVED != 'true'` in its condition
+  ([a tree already proved](#a-tree-already-proved)). A step added without it runs on a
+  proved tree too: it costs time, never a false green. The `Full CI` step stays last
+  and keeps its name, which `lntt ci proved --step` reads.
 - A job's `services:` are not started locally: tests that need a database start their
   own (Testcontainers).
 
@@ -186,7 +186,8 @@ Dependabot's pull requests stay on `main` and merge as hotfixes, when a person d
 - **The approval runs the bump's code** (install, lint, tests, the scaffold smoke) on
   the repository's runner. The run is started by the reviewer, not by Dependabot, so it
   is not restricted like Dependabot's own runs: `ci.yml` reads no secret, and its
-  `GITHUB_TOKEN` can only read the contents, on every run, since no job writes.
+  `GITHUB_TOKEN` can only read (the contents, and the pull requests and runs that
+  `lntt ci proved` reads on a push), on every run, since no job writes.
   Approving is the review of the bump.
 - **A review of any other pull request** starts a run whose job is skipped. It is an
   entry of its own in the pull request's checks, `CI / ci (pull_request_review)`, beside
@@ -256,8 +257,8 @@ its red runs are the signal.
   once and fails to the full run.
 - **A `proof` job that the `ci` job `needs`.** A `ci` job skipped on a proved tree
   shows as skipped, which reads like "nobody verified"; ci:local cannot read another
-  job's outputs and would block the job; and the extra job is billed a minute of its
-  own on every push.
+  job's outputs and would block the job; and the extra job is billed on every push,
+  rounded up to the minute like any job.
 - **The level read from the check's name** (`ci` and `ci (full)`). It renames a check
   people and rules refer to; a step that runs only at the full level marks the level
   without touching the name.
