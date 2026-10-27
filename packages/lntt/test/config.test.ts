@@ -158,6 +158,18 @@ describe('the command line', () => {
     assert.equal(spawnSync('node', [BIN, 'validate'], { cwd: root }).status, 0)
   })
 
+  test('a warningRounds not below maxRounds validates, with a warning that no round blocks on blockers only', () => {
+    write('.agents/config.jsonc', '{ "delivery": { "review": { "maxRounds": 3, "warningRounds": 3 } } }')
+    const run = spawnSync('node', [BIN, 'validate'], { cwd: root, encoding: 'utf8' })
+    assert.equal(run.status, 0, run.stderr)
+    assert.match(
+      run.stderr,
+      /^lntt validate: warning: delivery\.review\.warningRounds \(3\) is not below delivery\.review\.maxRounds \(3\): no round blocks on blockers only$/m,
+    )
+    write('.agents/config.jsonc', '{ "delivery": { "review": { "maxRounds": 3, "warningRounds": 2 } } }')
+    assert.equal(spawnSync('node', [BIN, 'validate'], { cwd: root, encoding: 'utf8' }).stderr, '')
+  })
+
   test('an invalid file exits 1 with the reason on stderr', () => {
     write('.agents/config.jsonc', `{ "recordin": {} }`)
     const run = spawnSync('node', [BIN, 'validate'], { cwd: root, encoding: 'utf8' })

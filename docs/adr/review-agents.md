@@ -64,9 +64,11 @@ same way every time; the `review` skill keeps the judgement.
   author's list with the proofs; otherwise undecided.
 - **Rounds:** the first reads the branch from the base, later ones the commits after the
   last reviewed one, with fresh reviewers; findings still open go back to the verifiers
-  on the new head, notes excepted. The state stays in the worktree's git directory. A
+  on the new head, except notes and the warnings the ledger accepted open (below). The
+  state stays in the worktree's git directory. A
   clean round (exit 0) has no blocker or warning left and no reviewer or verifier that
-  failed; notes are reported, never blocking. A finding is a bullet with its severity,
+  failed; notes are reported, never blocking. Past `warningRounds` a round is clean with
+  warnings left too (below). A finding is a bullet with its severity,
   an anchor (a line as `:12`, a range, a column or a list, each naming its first line,
   and an optional parenthesis after it) and its text (the action after a last separator,
   when there is one), wrapped over as many lines as the reviewer likes. A finding may
@@ -76,9 +78,38 @@ same way every time; the `review` skill keeps the judgement.
   findings nor `no findings` counts as a failed reviewer. A finding line with no text
   does not drop the reply: the readable findings stand, the lines that cannot be read
   are reported in `partial` with the whole reply, and the round is not clean. A round
-  with a failure or a `partial` lens does not move the reviewed commit; a failed reply
+  with a failure or a `partial` lens does not move the reviewed commit; an optional
+  agent never keeps it from moving, neither by failing nor by an unreadable line, which
+  goes to `skipped` with the agent's readable findings standing. A failed reply
   keeps its whole text in `failed`. A fresh finding at the anchor of an open one joins it. A round runs
   on a branch (a detached HEAD is refused) whose head does not move until it ends.
+- **The branch keeps a ledger of what it closed**, next to its state in the git
+  directory: every finding the branch is done with, with its outcome. *Fixed*: one
+  carried from an earlier round and refuted on a later head, with that head. *Refuted*:
+  a fresh one refuted, with the proof (the verifiers', `lntt check cite`'s, a killed
+  mutant's), or withdrawn by its reviewers, with the author's answer. *Accepted open*: a
+  note, or a confirmed warning past `warningRounds`, with the reason. Each entry keeps
+  what its line read when it was closed. Only a round with no failure and no `partial`
+  lens adds to it, since the next round reads its range again; a ledger that cannot be
+  read is said and started again. The reviewers get the entries on the files of the
+  change and those with no anchor, each verifier the entries on its finding's file, and
+  both are told that a finding a closed entry covers is reported again only when the
+  code it cites changed. A fresh finding at the place of a refuted or accepted entry, on
+  a line that reads the same and at a severity no higher, goes to the round's `closed`
+  list with the entry it repeats and that entry's text: shown, never verified, never
+  blocking. The match is by place, so the author reads each against the entry's text. A finding on a
+  changed line, or at a higher severity, is a new finding.
+- **A warning blocks only in the first `warningRounds` rounds:** later rounds find
+  the edge cases of the fixes before them, and a round that must find nothing has no
+  end on a change with many. From the next round only a blocker keeps a round from
+  being clean (the round's `blocking` says which severities do); the warnings and notes
+  left go in the pull request as open items. A confirmed warning enters the ledger as
+  accepted open and is no longer carried; an undecided or unverified one stays carried,
+  to be verified again, without blocking. A run with no new commit, which is not a round
+  and does not count toward `maxRounds`, blocks as the round whose number it keeps. A
+  `warningRounds` not below `maxRounds` leaves no round where only
+  blockers block: the schema cannot compare two keys, so `lntt validate` says it as a
+  warning (the file stays valid), and so do `lntt review --plan` and every round.
 - **A branch takes at most `maxRounds` rounds:** later rounds find ever smaller things,
   and most of a pull request's time and cost went into them. Every round counts, one
   with a failure too. The round past the limit does not start; `lntt review` exits 3
@@ -168,6 +199,10 @@ same way every time; the `review` skill keeps the judgement.
   of `lntt check` named after the lens, and its brief drops them.
 
 ## Discarded directions
+
+- **A repeat of a closed finding matched by its wording.** A reviewer words the same
+  finding differently every round, so a match on the text would almost never hold; the
+  place and the line's text decide, and the author reads the entry's text beside it.
 
 - **The harness's own subagents** (Claude Code's Agent tool, opencode's agents). Claude
   Code takes only a few model aliases there and opencode fixes the model in the agent's

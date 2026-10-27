@@ -32,6 +32,8 @@ export interface ReviewConfig {
   roundTimeoutMinutes: number
   // The rounds a branch may take before lntt review stops and the person decides.
   maxRounds: number
+  // The rounds in which a warning blocks; from the next one only a blocker does.
+  warningRounds: number
 }
 
 export const TEST_PATHS = ['**/*.test.*', '**/*.spec.*', '**/test/**', '**/tests/**', '**/__tests__/**']
@@ -48,6 +50,7 @@ const DEFAULT: ReviewConfig = {
   optionalGraceMinutes: 2,
   roundTimeoutMinutes: 60,
   maxRounds: 4,
+  warningRounds: 2,
 }
 
 interface RawLens {
@@ -64,6 +67,7 @@ interface RawReview {
   optionalGraceMinutes?: number
   roundTimeoutMinutes?: number
   maxRounds?: number
+  warningRounds?: number
 }
 
 // delivery.review over the defaults, lens by lens. A lens with no agents is off.
@@ -96,7 +100,18 @@ export function reviewConfig(data: Record<string, unknown>): ReviewConfig {
     optionalGraceMinutes: raw.optionalGraceMinutes ?? DEFAULT.optionalGraceMinutes,
     roundTimeoutMinutes: raw.roundTimeoutMinutes ?? DEFAULT.roundTimeoutMinutes,
     maxRounds: raw.maxRounds ?? DEFAULT.maxRounds,
+    warningRounds: raw.warningRounds ?? DEFAULT.warningRounds,
   }
+}
+
+// What the schema cannot say of delivery.review, since it compares two keys: a
+// configuration that validates and still does not do what it reads as.
+export function reviewWarnings(config: ReviewConfig): string[] {
+  return config.warningRounds >= config.maxRounds
+    ? [
+        `delivery.review.warningRounds (${config.warningRounds}) is not below delivery.review.maxRounds (${config.maxRounds}): no round blocks on blockers only`,
+      ]
+    : []
 }
 
 export function lensApplies(lens: Lens, files: string[]): boolean {
@@ -380,6 +395,145 @@ export function roundRange(
   return { round: state.round + 1, from: state.reviewed, whole: false, reason: `the delta since ${state.reviewed}` }
 }
 
+// The commit the next round reads after: this head, unless a required agent failed or a
+// lens left a line unread, when the next round reads the same range again. An optional
+// agent that did not answer is in `skipped` and moves it like any answer.
+export function reviewedAfter(result: RoundResult, previous: string | null, head: string): string | null {
+  return result.failed.length > 0 || result.partial.length > 0 ? previous : head
+}
+
+// A finding the branch is done with, in the ledger lntt review keeps next to its state:
+// fixed (a finding carried from an earlier round that the verifiers refuted on a later
+// head), refuted (with the proof), or accepted open (with the reason: a note, or a warning
+// past delivery.review.warningRounds). Every round's reviewers and verifiers read it.
+export interface Closed {
+  id: string
+  round: number
+  severity: Severity
+  path: string | null
+  line: number | null
+  what: string
+  // What its line read when it was closed: while it reads the same, the finding is closed.
+  cited: string | null
+  outcome: 'fixed' | 'refuted' | 'accepted'
+  // fixed: the head the verifiers read; refuted: the proof; accepted: the reason.
+  commit?: string
+  proof?: string
+  reason?: string
+}
+
+export interface Ledger {
+  branch: string
+  closed: Closed[]
+}
+
+export function closedEntry(
+  f: Found,
+  round: number,
+  outcome: Closed['outcome'],
+  why: { commit?: string; proof?: string; reason?: string },
+): Closed {
+  return {
+    id: f.id,
+    round,
+    severity: f.severity,
+    path: f.path,
+    line: f.line,
+    what: f.what,
+    cited: typeof f.cited === 'string' ? f.cited : null,
+    outcome,
+    ...why,
+  }
+}
+
+function proofText(f: Checked): string {
+  return f.proofs.map((p) => `${p.by}: ${p.proof}`).join('; ')
+}
+
+// What a round closes, after the ledger it read: its refuted findings (fixed when carried
+// from an earlier round), its notes, and past delivery.review.warningRounds its confirmed
+// warnings, which go in the pull request as open items; an undecided or unverified one
+// stays carried, to be verified again. Withdrawn findings are closed by the reply. The
+// caller closes only a round with no failure: what a failed round found is read again.
+export function closeRound(ledger: Closed[], result: RoundResult, open: Checked[], warningRounds: number): Closed[] {
+  const known = new Set(ledger.map((c) => c.id))
+  const carried = new Set(open.map((f) => f.id))
+  const closed: Closed[] = []
+  for (const f of result.refuted) {
+    if (known.has(f.id)) continue
+    closed.push(
+      carried.has(f.id)
+        ? closedEntry(f, result.round, 'fixed', { commit: result.head })
+        : closedEntry(f, result.round, 'refuted', { proof: proofText(f) }),
+    )
+  }
+  for (const f of result.findings) {
+    if (known.has(f.id) || f.verdict === 'withdrawn') continue
+    if (f.severity === 'note') {
+      closed.push(closedEntry(f, result.round, 'accepted', { reason: 'a note: reported once, it does not block' }))
+    } else if (f.severity === 'warning' && f.verdict === 'confirmed' && result.round > warningRounds) {
+      const reason = `a warning past round ${warningRounds}: an open item of the pull request`
+      closed.push(closedEntry(f, result.round, 'accepted', { reason }))
+    }
+  }
+  return [...ledger, ...closed]
+}
+
+// The closed finding a fresh one repeats: the same place, a line that reads as it did
+// when it was closed, a severity no higher. By place, not by wording: a reviewer words
+// the same finding differently every round. A fixed one is never repeated: its line
+// changed, or the fix went away and the finding is new again.
+export function repeats(f: Found, ledger: Closed[]): Closed | undefined {
+  if (f.path === null || f.line === null || typeof f.cited !== 'string') return undefined
+  return ledger.find(
+    (c) =>
+      c.outcome !== 'fixed' &&
+      c.path === f.path &&
+      c.line === f.line &&
+      c.cited === f.cited &&
+      SEVERITIES.indexOf(f.severity) >= SEVERITIES.indexOf(c.severity),
+  )
+}
+
+function closedLine(c: Closed): string {
+  const why =
+    c.outcome === 'fixed'
+      ? `fixed on ${c.commit}`
+      : c.outcome === 'refuted'
+        ? `refuted: ${c.proof}`
+        : `accepted open: ${c.reason}`
+  return `- ${c.id} (${c.severity}) \`${anchorOf(c)}\` — ${c.what} — ${why}`
+}
+
+// The reviewers read the entries on the files of the change, and those with no anchor:
+// a closed finding elsewhere is not one they could report again.
+function closedSection(ledger: Closed[] | undefined, files: string[]): string {
+  const mine = (ledger ?? []).filter((c) => c.path === null || files.includes(c.path))
+  if (mine.length === 0) return ''
+  return [
+    '## Findings this branch already closed',
+    '',
+    'Earlier rounds closed these. Do not report one again unless the code it cites changed',
+    'since; a finding on an unchanged line that repeats one of them is dropped.',
+    '',
+    ...mine.map(closedLine),
+    '',
+  ].join('\n')
+}
+
+// The verifier reads what was closed on the finding's file only.
+function closedForVerifier(found: Found, ledger: Closed[] | undefined): string {
+  const mine = (ledger ?? []).filter((c) => c.path !== null && c.path === found.path)
+  if (mine.length === 0) return ''
+  return [
+    'Findings this branch already closed on that file. One that the finding repeats on code',
+    'that did not change since is a reason to refute it, with the entry as the proof:',
+    '',
+    ...mine.map(closedLine),
+    '',
+  ].join('\n')
+}
+
 const AGENTS = join(dirname(fileURLToPath(import.meta.url)), '../agents')
 
 function fill(template: string, values: Record<string, string>): string {
@@ -395,6 +549,8 @@ export interface PromptValues {
   scope?: string
   // The JSON lines of `lntt check <area> --base <base>`, by the lens of the same name.
   checks?: Record<string, string>
+  // The findings earlier rounds of the branch closed.
+  closed?: Closed[]
 }
 
 // What lntt check found for a lens, before the reviewers: they judge, it counts.
@@ -424,11 +580,12 @@ export function renderReviewPrompt(lens: string, values: PromptValues, brief?: s
     files: values.files.map((f) => `- ${f}`).join('\n') || '(none)',
     records: values.records || '(none configured)',
     checks: checksSection(lens, values),
+    closed: closedSection(values.closed, values.files),
     diff: values.diff,
   })
 }
 
-function anchorOf(f: Finding): string {
+function anchorOf(f: Pick<Finding, 'path' | 'line'>): string {
   return f.path === null ? '(no anchor)' : f.line === null ? f.path : `${f.path}:${f.line}`
 }
 
@@ -442,6 +599,7 @@ export function renderVerifyPrompt(found: Found, values: PromptValues): string {
     severity: found.severity,
     anchor: anchorOf(found),
     cited: citedLine(found),
+    closed: closedForVerifier(found, values.closed),
     what: found.what,
     action: found.action,
     range: `${values.base}..${values.head}`,
@@ -503,18 +661,27 @@ export interface RoundResult {
   // Lenses with finding lines that could not be read: the round is not clean until they
   // are read, but the lens did answer.
   partial: PartialLens[]
-  // Optional agents that did not answer: reported, never blocking.
+  // Optional agents that did not answer, or whose reply had lines that could not be
+  // read: reported, never blocking.
   skipped: Failure[]
+  // Fresh findings that repeat one the ledger closed, on a line that did not change:
+  // shown with the entry's text, never verified, never blocking. The match is by place,
+  // not by wording: the author reads each against `closedWhat`.
+  closed: (Found & { closedBy: string; closedWhat: string })[]
+  // The severities that keep the round from being clean: a warning blocks up to
+  // delivery.review.warningRounds, a blocker always.
+  blocking: Severity[]
   cost: number | null
   // Every token the round's agents took, where they report it.
   tokens: number | null
 }
 
-// Notes are reported, never blocking: a round is clean when no blocker or warning is
-// left open and no reviewer or verifier failed.
+// Notes are reported, never blocking: a round is clean when no finding at a blocking
+// severity is left open and no reviewer or verifier failed.
 export function roundClean(result: RoundResult): boolean {
+  const blocking = result.blocking ?? ['blocker', 'warning']
   return (
-    result.findings.every((f) => f.severity === 'note' || f.verdict === 'withdrawn') &&
+    result.findings.every((f) => !blocking.includes(f.severity) || f.verdict === 'withdrawn') &&
     result.failed.length === 0 &&
     result.partial.length === 0
   )
@@ -559,6 +726,7 @@ export async function runRound(
   ask: Ask,
   open: Checked[] = [],
 ): Promise<RoundResult> {
+  const round = input.files.length === 0 ? Math.max(1, input.range.round - 1) : input.range.round
   const result: RoundResult = {
     round: input.range.round,
     base: input.base,
@@ -570,6 +738,9 @@ export async function runRound(
     failed: [],
     partial: [],
     skipped: [],
+    closed: [],
+    // An empty delta is no round more: it blocks as the round it keeps the number of.
+    blocking: round > config.warningRounds ? ['blocker'] : ['blocker', 'warning'],
     cost: null,
     tokens: null,
   }
@@ -617,16 +788,25 @@ export async function runRound(
       continue
     }
     const lines = unreadableLines(answer.reply.text)
-    if (lines.length > 0)
+    // An optional agent never keeps a round from moving on: its unreadable lines are
+    // reported in skipped, and its readable findings stand.
+    if (lines.length > 0 && job.agent.optional)
+      failed(`${lines.length} finding lines that cannot be read`, answer.reply.text)
+    else if (lines.length > 0)
       result.partial.push({ lens: job.lens, agent: agentLabel(job.agent), lines, reply: answer.reply.text })
     reviewed.push({ ...job, session: answer.reply.session, findings })
   }
   // Fresh reviewers read only the delta, so a finding still open from the last round
   // would go unseen: it goes back to the verifiers, at any severity, and stays while
   // they cannot refute it on the new head. Without verifiers it stays until withdrawn.
-  // Notes are reported once, in the round that found them, and not carried.
-  const carried = open.filter((f) => f.verdict !== 'withdrawn' && f.severity !== 'note').map((f) => ({ ...f }))
-  const last = Math.max(0, ...open.map((f) => Number(f.id.slice(1)) || 0))
+  // Notes are reported once, in the round that found them, and not carried; nor is a
+  // finding the ledger closed (a warning accepted open past warningRounds).
+  const ledger = input.closed ?? []
+  const closedIds = new Set(ledger.map((c) => c.id))
+  const carried = open
+    .filter((f) => f.verdict !== 'withdrawn' && f.severity !== 'note' && !closedIds.has(f.id))
+    .map((f) => ({ ...f }))
+  const last = Math.max(0, ...[...open, ...ledger].map((f) => Number(f.id.slice(1)) || 0))
   // A fresh finding at the anchor of one still open is the same finding: it joins it.
   const fresh = mergeFindings(reviewed, last).filter((f) => {
     const same = f.path !== null && carried.find((c) => c.path === f.path && c.line === f.line)
@@ -645,7 +825,13 @@ export async function runRound(
     else if (cited && 'missing' in cited) {
       const proof = `${anchorOf(f)}: ${cited.missing}`
       result.refuted.push({ ...f, verdict: 'refuted', proofs: [{ by: 'lntt check cite', outcome: 'refuted', proof }] })
-    } else found.push(cited ? { ...f, cited: cited.text } : f)
+    } else {
+      const read = cited ? { ...f, cited: cited.text } : f
+      // A fresh finding that repeats a closed one on an unchanged line asks no verifier.
+      const repeated = carried.some((c) => c.id === f.id) ? undefined : repeats(read, ledger)
+      if (repeated) result.closed.push({ ...read, closedBy: repeated.id, closedWhat: repeated.what })
+      else found.push(read)
+    }
   }
   const kept = found.filter((f) => carried.some((c) => c.id === f.id)).length
   // A mutation that was run decides its finding: survived confirms it, killed refutes

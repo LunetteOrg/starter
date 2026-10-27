@@ -40,10 +40,13 @@ stops at the draft pull request.
    (the `review` skill), and fixes are local commits. Reviewers start with no context
    of the conversation that wrote the change, each lens on the agents and models of
    `delivery.review`; verifiers try to refute every blocker and warning; later rounds
-   read only the new commits. The branch reaches GitHub when a round finds nothing:
-   every push is a full run. A branch takes at most `delivery.review.maxRounds` rounds;
-   at the limit the person decides on what is still open: the pull request as it is,
-   more rounds for that branch, or an issue
+   read only the new commits, with the findings the branch already closed. The branch
+   reaches GitHub when a round is clean: nothing left at a blocking severity, warnings
+   included only in the first `delivery.review.warningRounds` rounds, after which the
+   warnings left go in the pull request as open items. Every push is a full run. A
+   branch takes at most `delivery.review.maxRounds` rounds; at the limit the person
+   decides on what is still open: the pull request as it is, more rounds for that
+   branch, or an issue
    ([review agents](../adr/review-agents.md)).
 3. **`pnpm ci:local` green** on the head about to be published, then one push, then
    `lntt check body` clean on the body, then `gh pr ready`. A red `ci:local` goes back
