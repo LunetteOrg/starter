@@ -165,28 +165,20 @@
       "prefix": "candidate/",
       "hotfix": { "prefix": "hotfix/", "label": "hotfix" }
     },
-    // Who reviews before a pull request is marked ready (lntt review): the code lens
-    // and the verifiers on more than one provider, so a blind spot of one model is
-    // not the review's; the verifiers try to refute every blocker and warning. The
-    // free opencode models are optional: they time out under load, and a round does
-    // not wait on them.
+    // Who reviews before a pull request is marked ready (lntt review); the verifiers
+    // try to refute every blocker and warning. Only agents on a paid plan: a free
+    // model's quota runs out mid-round, and the round then has one verifier less.
     "review": {
       "reviewers": {
         // haiku: lntt check decisions does the structural checks, the lens only judges
         "decisions": { "with": [{ "kind": "claude", "model": "haiku" }] },
         "code": {
-          "with": [
-            { "kind": "claude", "model": "sonnet" },
-            { "kind": "opencode", "model": "opencode/deepseek-v4.1-flash-free", "optional": true }
-          ]
+          "with": [{ "kind": "claude", "model": "sonnet" }]
         },
         "tests": { "with": [{ "kind": "claude", "model": "sonnet" }] }
       },
       "verify": {
-        "with": [
-          { "kind": "claude", "model": "sonnet" },
-          { "kind": "opencode", "model": "opencode/glm-5.3-flash-free", "optional": true }
-        ]
+        "with": [{ "kind": "claude", "model": "sonnet" }]
       }
     },
     "commits": {
