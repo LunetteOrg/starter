@@ -455,6 +455,130 @@ describe('lntt ci candidate', () => {
   })
 })
 
+describe('lntt ci proved', () => {
+  const SHA = 'a'.repeat(40)
+  const HEAD = 'b'.repeat(40)
+  const BEFORE = 'c'.repeat(40)
+  const TREE = 'f'.repeat(40)
+
+  // The API of a push that rebase-merged #7, up to date with main, its full CI green;
+  // a path it does not know fails, as on an API error. Every call is logged.
+  const API: Record<string, unknown> = {
+    [`repos/o/r/git/commits/${SHA}`]: { tree: { sha: TREE } },
+    [`repos/o/r/git/commits/${HEAD}`]: { tree: { sha: TREE } },
+    [`repos/o/r/commits/${SHA}/pulls`]: [
+      { number: 7, merged_at: '2026-10-27T10:00:00Z', base: { ref: 'main' }, head: { sha: HEAD } },
+    ],
+    [`repos/o/r/compare/${BEFORE}...${HEAD}`]: { status: 'ahead' },
+    [`repos/o/r/actions/workflows/ci.yml/runs?head_sha=${HEAD}&per_page=100`]: {
+      workflow_runs: [{ id: 11, event: 'pull_request', status: 'completed', conclusion: 'success', html_url: 'u/11' }],
+    },
+    [`repos/o/r/actions/runs/11/jobs?per_page=100`]: {
+      jobs: [{ name: 'ci', conclusion: 'success', steps: [{ name: 'Full CI', conclusion: 'success' }] }],
+    },
+  }
+
+  // `event` is the push event's body, written as GITHUB_EVENT_PATH; GITHUB_REPOSITORY
+  // set to '' leaves the repository to `gh repo view`.
+  function proved(api: Record<string, unknown>, extra: Record<string, string> & { event?: string }, ...args: string[]) {
+    root = repo({})
+    const cases = Object.entries(api)
+      .map(([path, answer]) => `  '${path}') echo '${JSON.stringify(answer)}';;`)
+      .join('\n')
+    write(root, {
+      '.git/bin/gh': `#!/bin/sh\necho "$*" >> "${root}/.git/gh.log"\n[ "$1 $2" = "repo view" ] && { echo o/r; exit 0; }\ncase "$2" in\n${cases}\n  *) echo "HTTP 502" >&2; exit 1;;\nesac\n`,
+    })
+    execFileSync('chmod', ['+x', join(root, '.git/bin/gh')])
+    const { event, ...vars } = extra
+    if (event !== undefined) write(root, { '.git/event.json': event })
+    return spawnSync(process.execPath, [BIN, 'ci', 'proved', ...args], {
+      cwd: root,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${join(root, '.git/bin')}:${process.env.PATH}`,
+        GITHUB_REPOSITORY: 'o/r',
+        GITHUB_ACTIONS: '',
+        GITHUB_WORKFLOW_REF: '',
+        GITHUB_SHA: '',
+        GITHUB_REF_NAME: '',
+        GITHUB_EVENT_PATH: event === undefined ? '' : join(root, '.git/event.json'),
+        ...vars,
+      },
+    })
+  }
+
+  // The push run's own environment: the sha, the branch, the workflow and the event.
+  function actions(event: unknown): Record<string, string> & { event: string } {
+    return {
+      GITHUB_ACTIONS: 'true',
+      GITHUB_SHA: SHA,
+      GITHUB_REF_NAME: 'main',
+      GITHUB_WORKFLOW_REF: 'o/r/.github/workflows/ci.yml@refs/heads/main',
+      event: typeof event === 'string' ? event : JSON.stringify(event),
+    }
+  }
+
+  test('from a terminal, the repository comes from gh and the sha from HEAD', () => {
+    const result = proved(API, { GITHUB_REPOSITORY: '' }, '--job', 'ci', '--workflow', 'ci.yml', '--before', BEFORE)
+    assert.equal(result.status, 1)
+    const head = git(root, 'rev-parse', 'HEAD')
+    const calls = readFileSync(join(root, '.git/gh.log'), 'utf8')
+    assert.match(calls, /^repo view /m)
+    assert.match(calls, new RegExp(`^api repos/o/r/commits/${head}/pulls$`, 'm'))
+  })
+
+  test('in a push run, a proved tree exits 0 with a notice naming the run', () => {
+    const result = proved(API, actions({ before: BEFORE }), '--job', 'ci', '--step', 'Full CI')
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /^::notice title=Tree already proved::proved: .*#7.*u\/11/)
+    const calls = readFileSync(join(root, '.git/gh.log'), 'utf8')
+    assert.match(calls, new RegExp(`api repos/o/r/compare/${BEFORE}\\.\\.\\.${HEAD}`))
+    assert.match(calls, /api repos\/o\/r\/actions\/workflows\/ci\.yml\/runs/)
+  })
+
+  test('the options name the push from a terminal', () => {
+    const result = proved(
+      API,
+      {},
+      ...['--job', 'ci', '--workflow', 'ci.yml', '--sha', SHA, '--before', BEFORE, '--branch', 'main'],
+    )
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /^proved: /)
+  })
+
+  test('the marker step is read from --step', () => {
+    const result = proved(API, actions({ before: BEFORE }), '--job', 'ci', '--step', 'Smoke')
+    assert.equal(result.status, 1)
+    assert.match(result.stdout, /step Smoke/)
+  })
+
+  test('an event with no previous tip, or unreadable, is not proved', () => {
+    for (const event of [{}, { before: null }, { before: 7 }, 'not json']) {
+      const result = proved(API, actions(event), '--job', 'ci')
+      assert.equal(result.status, 1)
+      assert.match(result.stdout, /^::notice title=Full run::not proved: no previous tip/)
+    }
+  })
+
+  test('an API error is not proved: exit 1, with the reason', () => {
+    const result = proved({}, actions({ before: BEFORE }), '--job', 'ci')
+    assert.equal(result.status, 1)
+    assert.match(result.stdout, /^::notice title=Full run::not proved: .*HTTP 502/)
+  })
+
+  test('no job, or no workflow outside Actions, is a usage error', () => {
+    for (const args of [
+      ['--workflow', 'ci.yml'],
+      ['--job', 'ci'],
+    ]) {
+      const result = proved(API, {}, ...args)
+      assert.equal(result.status, 2)
+      assert.match(result.stderr, /--job|--workflow/)
+    }
+  })
+})
+
 describe('reporting', () => {
   test('--list says which steps the event skips', () => {
     root = repo({
