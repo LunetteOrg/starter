@@ -18,7 +18,7 @@ batch for what is expensive ([delivery](./delivery.md) has the flow):
 | A draft, into any base | nothing in the cloud; `pnpm ci:local` on the machine |
 | A ready pull request into a candidate, or into any branch other than `main` (a stacked pull request) | the minimal CI: frozen install, lint, typecheck, `lntt check` (the AGENTS.md block, the installed skills, the decision logs), the branch name, the plugin version and `claude plugin validate`, the tests but the scaffold level, unless the change touches `packages/create`; the retrospective block of the body, as a warning (not on a Dependabot pull request) |
 | The candidate's pull request into `main`, ready; a hotfix | the full CI: the minimal CI plus the scaffold level (`packages/create`) and its smoke; the body's retrospective block only on a hotfix (the candidate's block is its retrospective comment, which `lntt check body --pr <n>` checks before the candidate is marked ready, [delivery](./delivery.md#the-candidate)) |
-| A push to `main` | the full CI, which gates a release |
+| A push to `main` | the full CI, which gates a release, unless its tree is one a full CI has [already proved](#a-tree-already-proved) |
 | A Dependabot pull request | the `ci` check red in seconds, until an owner, member or collaborator approves it; the approval runs the CI the base calls for, and a later push turns it red again ([Dependabot pull requests](#dependabot-pull-requests)) |
 | A merge into a candidate | nothing |
 | Every day (the `schedule` of `upstream.yml`), or by hand (`workflow_dispatch`) | the [upstream check](#upstream-tools) of each new release of Orca, Herdr, claude and opencode |
@@ -37,6 +37,49 @@ the default branch or the event is a push. A scaffold failure that a pull reques
 not see is caught on the candidate, and fixed forward there. The candidate automation
 (`candidate.yml`) is not CI: it runs on its own three events, drafts included
 ([delivery](./delivery.md#the-candidate-automation)).
+
+## A tree already proved
+
+`main` takes rebase merges only ([delivery](./delivery.md#the-candidate)), so a pull
+request that was up to date with `main` lands as new commits whose tree is
+byte-identical to its head's: the full CI of the push would test, file for file, what
+the pull request's full CI already tested. A run that repeats it costs the minutes of a
+full CI at every merge into `main` (free on this public repository, billed to a private
+project generated from a template) and holds back whatever waits for the push's green,
+a deploy first of all. The push run therefore asks `lntt ci proved` right after the
+install: on *proved* it skips the checks and ends green, with a notice that names the
+run that proved the tree; on anything else it runs the whole job. The command reads the
+GitHub API and answers *proved* only when every condition holds:
+
+- **The same tree.** The pushed commit's tree equals the tree of the head of the one
+  pull request merged into `main` that the commit belongs to (`commits/<sha>/pulls`).
+- **The tree that was tested.** A pull request run tests the merge ref, not the head;
+  the two have the same tree when `main` was an ancestor of the head. `main` moves only
+  forward, so the condition is that the commit `main` pointed at before the push
+  (`github.event.before`) is an ancestor of the head.
+- **A full green.** A completed pull request run of `ci.yml` on that head has the `ci`
+  job green and its `Full CI` step green. That step runs last and only at the full
+  level (the pull request's base is `main`): a run at the minimal level, a skipped or
+  red job, a run still in progress or a push run proves nothing.
+
+Every other outcome is the full run, never a green: a different tree, a push no pull
+request explains (the release bump, a direct commit), two pull requests for one commit,
+a missing run, an API error. The step prints which condition failed. A pull request
+that was not up to date with `main` gets the full run with no exception: a partial run
+of the affected packages would make the gate depend on a second judgement, the
+dependency graph, for a case the candidate flow makes rare.
+
+On *proved*, the step sets `PROVED=true` in the job's environment, and every later step
+reads `env.PROVED != 'true'` in its condition. A step added without that condition runs
+on a proved tree too: it costs time, never a false green. `ci:local` has no push to
+prove: the step tests `GITHUB_ACTIONS`, and `PROVED` is never set in a local run, so it
+runs the whole job.
+
+The proof covers what lives in the tree: the code, the lockfile, the workflow and its
+pinned actions. It does not cover what lies outside it (the runner image, the
+registry, the clock); a run on the same tree minutes later tests those again only by
+chance, and a red there is the runner's, not the change's. Jobs that exist only on a
+push (a publish, a deploy) always run.
 
 ## When to run it
 
@@ -197,6 +240,27 @@ its red runs are the signal.
 
 ## Discarded directions
 
+- **The full CI on every push to `main`, whatever its tree.** A push that merges a
+  pull request up to date with `main` lands a tree a full CI has just proved green: the
+  rerun spends a full CI's minutes and delays the deploy, can find only what lies
+  outside the tree, and its red holds the gate closed for a runner's fault.
+- **No CI on a push to `main`.** A direct commit (the release bump) and a pull request
+  not up to date with `main` would land a tree nobody tested.
+- **Comparing commit SHAs instead of trees.** A rebase merge rewrites every commit, so
+  the SHA never matches and nothing is ever proved.
+- **Running only the packages a different tree affects.** The gate's green would rest
+  on the dependency graph being right, a second judgement, and the full run is the
+  fallback a fail-safe proof needs anyway.
+- **The proof as shell inside `ci.yml`.** API calls and their error paths, untested,
+  where a slip turns "not proved" into a green; one command, tested on its own, answers
+  once and fails to the full run.
+- **A `proof` job that the `ci` job `needs`.** A `ci` job skipped on a proved tree
+  shows as skipped, which reads like "nobody verified"; ci:local cannot read another
+  job's outputs and would block the job; and the extra job is billed a minute of its
+  own on every push.
+- **The level read from the check's name** (`ci` and `ci (full)`). It renames a check
+  people and rules refer to; a step that runs only at the full level marks the level
+  without touching the name.
 - **One workflow per upstream tool.** The install, the issue and the cache steps would be
   written four times; a matrix job per tool keeps each tool's log, red and issue apart.
 - **The checked versions in a file of the repository.** The workflow would push to

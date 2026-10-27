@@ -166,6 +166,17 @@
 //     without creating it; --dry-run prints every write instead of making it. Without
 //     delivery.candidate in the configuration it does nothing.
 //
+//   lntt ci proved --job <name>... [--step <name>] [--workflow <file>] [--sha <sha>]
+//                  [--before <sha>] [--branch <name>]
+//
+//     Whether a push's tree is one a pull request's run already proved green: the tree
+//     of the pull request merged into --branch that --sha belongs to, --before (the
+//     branch's tip before the push) an ancestor of its head, and a completed pull
+//     request run of --workflow on that head with every --job green and, given --step,
+//     that step green in each. In Actions the defaults are the push's own (GITHUB_SHA,
+//     the event's before, GITHUB_REF_NAME, GITHUB_WORKFLOW_REF). It only reads. Exit 0
+//     proved, 1 not proved (an API error included), 2 a usage error.
+//
 // Exit codes: 0 ok (the CI green), 1 a configuration error (the CI red), 2 a usage error.
 
 import { argv } from 'node:process'

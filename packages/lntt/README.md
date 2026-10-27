@@ -571,11 +571,24 @@ lntt ci candidate                     # in the candidate workflow: reads the pul
 lntt ci candidate --pr 12 --dry-run   # from a terminal: what the workflow would do for #12
 ```
 
+```sh
+lntt ci proved --job ci --step 'Full CI'   # in a push run: is this tree already proved green?
+```
+
 A project runs the first as `pnpm ci:local`; the second is the candidate automation
 (`delivery.candidate`), run by the project's candidate workflow, whose flow is the
 delivery process description (`docs/process/delivery.md`). The candidate logic is
 adapted from DiscenTech/pelion's `scripts/ci/release-candidate.mjs`. Exit codes: 0 green, 1 a red job or a
 configuration error, 2 a usage error.
+
+The third answers, in a push run, whether the pushed tree is one a pull request's run
+already proved green: the tree of the pull request merged into the branch, the branch's
+previous tip an ancestor of its head (so the merge ref it tested had that tree), and a
+completed pull request run of the workflow on that head with every `--job` green and,
+with `--step`, that step green in each: the marker of the level that proves. It only
+reads the GitHub API. Exit 0 means proved; anything else, an API error included, means
+the caller runs the whole job, so a failure can only cost a full run. How a workflow
+uses it is the project's CI process description.
 
 ### What it runs
 

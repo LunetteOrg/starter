@@ -3,6 +3,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+import { basename } from 'node:path'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import {
@@ -21,6 +22,7 @@ import {
   type Lock,
   localEvent,
   missingTools,
+  proved,
   runJobs,
   stopRunning,
 } from './index.ts'
@@ -28,6 +30,7 @@ import {
 const USAGE = [
   'usage: lntt ci local [--event pull_request|push] [--base <branch>] [--job <key>]... [--list] [--strict] [--container] [--no-lock]',
   '       lntt ci candidate [--pr <n>] [--event <action>] [--head-ref <ref>] [--labels a,b] [--merged] [--dry-run]',
+  '       lntt ci proved --job <name>... [--step <name>] [--workflow <file>] [--sha <sha>] [--before <sha>] [--branch <name>]',
 ].join('\n')
 
 function usage(message?: string): never {
@@ -197,11 +200,56 @@ function candidateRun(args: string[]): number {
   return 0
 }
 
+// The push event's previous tip, when the run has one.
+function eventBefore(): string {
+  if (!env.GITHUB_EVENT_PATH) return ''
+  const before = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8')).before
+  return typeof before === 'string' ? before : ''
+}
+
+// Exit 0 only when the tree is proved: any other code, a crash included, is the full run.
+function provedRun(args: string[]): number {
+  const { values } = guard(() =>
+    parseArgs({
+      args,
+      options: {
+        job: { type: 'string', multiple: true },
+        step: { type: 'string' },
+        workflow: { type: 'string' },
+        sha: { type: 'string' },
+        before: { type: 'string' },
+        branch: { type: 'string' },
+      },
+    }),
+  )
+  const log = (line: string) => stdout.write(`${line}\n`)
+  const gh = candidate.makeGh({ dryRun: true, log })
+  const workflow = values.workflow ?? basename((env.GITHUB_WORKFLOW_REF ?? '').split('@')[0] ?? '')
+  if (!workflow) usage('--workflow names the workflow file, outside Actions')
+  const result = proved(gh, {
+    repo: env.GITHUB_REPOSITORY ?? gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']),
+    sha: values.sha ?? env.GITHUB_SHA ?? git('rev-parse', 'HEAD'),
+    before: values.before ?? eventBefore(),
+    branch: values.branch ?? env.GITHUB_REF_NAME ?? '',
+    workflow,
+    jobs: values.job ?? [],
+    step: values.step,
+  })
+  const annotation = env.GITHUB_ACTIONS
+    ? result.proved
+      ? '::notice title=Tree already proved::'
+      : '::notice title=Full run::'
+    : ''
+  log(`${annotation}${result.proved ? 'proved' : 'not proved'}: ${result.reason}`)
+  return result.proved ? 0 : 1
+}
+
 // `lntt ci <command> [...]`: the arguments after `ci`.
 export async function main([command, ...args]: string[]): Promise<never> {
   try {
     if (command === 'local') exit(await local(args))
     if (command === 'candidate') exit(candidateRun(args))
+    if (command === 'proved') exit(provedRun(args))
     usage()
   } catch (error) {
     stderr.write(`lntt ci: ${(error as Error).message}\n`)

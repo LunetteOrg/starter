@@ -455,6 +455,54 @@ describe('lntt ci candidate', () => {
   })
 })
 
+describe('lntt ci proved', () => {
+  // A gh whose every call fails, as on an API outage: the answer must be the full run.
+  function proved(extra: Record<string, string>, ...args: string[]) {
+    root = repo({})
+    write(root, { '.git/bin/gh': '#!/bin/sh\necho "HTTP 502" >&2\nexit 1\n' })
+    execFileSync('chmod', ['+x', join(root, '.git/bin/gh')])
+    return spawnSync(process.execPath, [BIN, 'ci', 'proved', ...args], {
+      cwd: root,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${join(root, '.git/bin')}:${process.env.PATH}`,
+        GITHUB_REPOSITORY: 'o/r',
+        GITHUB_ACTIONS: '',
+        GITHUB_WORKFLOW_REF: '',
+        ...extra,
+      },
+    })
+  }
+
+  test('an API error is not proved: exit 1, with the reason', () => {
+    const before = 'c'.repeat(40)
+    const result = proved({}, '--workflow', 'ci.yml', '--job', 'ci', '--before', before, '--branch', 'main')
+    assert.equal(result.status, 1)
+    assert.match(result.stdout, /^not proved: .*HTTP 502/)
+  })
+
+  test('in Actions, the workflow comes from GITHUB_WORKFLOW_REF and the answer is a notice', () => {
+    const result = proved(
+      { GITHUB_ACTIONS: 'true', GITHUB_WORKFLOW_REF: 'o/r/.github/workflows/ci.yml@refs/heads/main' },
+      '--job',
+      'ci',
+      '--before',
+      'c'.repeat(40),
+      '--branch',
+      'main',
+    )
+    assert.equal(result.status, 1)
+    assert.match(result.stdout, /^::notice title=Full run::not proved: /)
+  })
+
+  test('no workflow outside Actions is a usage error', () => {
+    const result = proved({}, '--job', 'ci')
+    assert.equal(result.status, 2)
+    assert.match(result.stderr, /--workflow/)
+  })
+})
+
 describe('reporting', () => {
   test('--list says which steps the event skips', () => {
     root = repo({
