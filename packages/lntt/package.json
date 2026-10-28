@@ -21,13 +21,16 @@
     "lntt": "bin/lntt.ts"
   },
   "files": [
+    ".claude-plugin",
     "dist",
+    "plugin",
+    "!plugin/**/*.test.mjs",
     "schema"
   ],
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && node -e \"const fs=require('node:fs');fs.cpSync('agents','dist/agents',{recursive:true});fs.cpSync('skills','dist/skills',{recursive:true})\"",
     "prepack": "pnpm run build",
-    "test": "node --test test/*.test.ts test/ci/*.test.ts",
+    "test": "node --test test/*.test.ts test/ci/*.test.ts plugin/hooks/*.test.mjs",
     "test:upstream": "node --test test/upstream-orca.test.ts test/upstream-herdr.test.ts test/upstream-claude.test.ts test/upstream-opencode.test.ts",
     "typecheck": "tsc --noEmit"
   },

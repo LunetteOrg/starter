@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { FAILURES, issueTitles, KEPT, KEYS_PER_RUN, LNTT_TIMEOUT_MS, WAIT_MS } from './issue-titles-hook.js'
-import { LOOKUPS_AT_ONCE } from '../../../packages/lntt/src/refs.ts'
+import { LOOKUPS_AT_ONCE } from '../../src/refs.ts'
 import { register } from './register.js'
 
 const TOP = '/repo'
@@ -552,7 +552,7 @@ describe('the issue titles hook', () => {
 
 // The real lntt refs (packages/lntt/bin/lntt.ts), run in a git repository of its own with
 // a gh on PATH that knows o/r#1: the fake lntt above answers as it does.
-const LNTT_BIN = new URL('../../../packages/lntt/bin/lntt.ts', import.meta.url).pathname
+const LNTT_BIN = new URL('../../bin/lntt.ts', import.meta.url).pathname
 const GH = `#!/bin/sh
 case "$*" in
   "repo view"*) echo o/r ;;

@@ -4,7 +4,9 @@
 //   node scripts/packages-version.mts check [version]  one shared version, equal to `version` if given
 //   node scripts/packages-version.mts set <version>    write it into every one of them
 //
-// A published package is any packages/*/package.json without `"private": true`.
+// A published package is any packages/*/package.json without `"private": true`. A
+// Claude Code plugin it ships (packages/*/plugin/.claude-plugin/plugin.json) carries the
+// package's version, shown at session start (docs/process/delivery.md#the-lunette-plugin).
 // Run from the repository root.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -12,6 +14,7 @@ import { join } from 'node:path'
 const SEMVER = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/
 
 type Published = { dir: string; file: string; name: string; version: string }
+type Versioned = { file: string; name: string; version: string }
 
 function published(): Published[] {
   return readdirSync('packages')
@@ -27,6 +30,16 @@ function published(): Published[] {
     .sort((a, b) => Number(a.name === '@lntt/create') - Number(b.name === '@lntt/create') || a.dir.localeCompare(b.dir))
 }
 
+// Every file that holds the shared version: each package.json, and each plugin.json of
+// a package's plugin, named by its path.
+function versioned(): Versioned[] {
+  return packages.flatMap((p) => {
+    const plugin = join(p.dir, 'plugin', '.claude-plugin', 'plugin.json')
+    if (!existsSync(plugin)) return [p]
+    return [p, { file: plugin, name: plugin, version: JSON.parse(readFileSync(plugin, 'utf8')).version }]
+  })
+}
+
 function fail(message: string): never {
   console.error(message)
   process.exit(1)
@@ -40,7 +53,7 @@ if (command === 'list') {
 } else if (command === 'check') {
   // Without a tag, the CLI's version is the release's: the others follow it.
   const expected = arg ?? packages.find((p) => p.name === '@lntt/create')?.version
-  const off = packages.filter((p) => p.version !== expected)
+  const off = versioned().filter((p) => p.version !== expected)
   if (off.length > 0) {
     fail(
       `the published packages must all be at ${expected}${arg ? ' (the release tag)' : ''}:\n` +
@@ -51,7 +64,7 @@ if (command === 'list') {
   console.log(`${packages.length} packages at ${expected}`)
 } else if (command === 'set') {
   if (!arg || !SEMVER.test(arg)) fail(`not a version: ${arg ?? '(none)'}; write it as X.Y.Z or X.Y.Z-pre.N`)
-  for (const p of packages) {
+  for (const p of versioned()) {
     // Rewrite the one field, keeping the rest of the file as it is.
     writeFileSync(p.file, readFileSync(p.file, 'utf8').replace(/("version":\s*)"[^"]*"/, `$1"${arg}"`))
   }

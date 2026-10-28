@@ -92,3 +92,35 @@ test('set refuses something that is not a version', () => {
   assert.equal(run('set', 'v1.3.0').status, 1)
   assert.equal(version('create'), '1.2.0')
 })
+
+// A package's Claude Code plugin (packages/<pkg>/plugin/.claude-plugin/plugin.json) is
+// shown at its version: it is the package's.
+function plugin(pkg: string, version: string): void {
+  const dir = join(root, 'packages', pkg, 'plugin', '.claude-plugin')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'plugin.json'), `${JSON.stringify({ name: 'lunette', version }, null, 2)}\n`)
+}
+const pluginVersion = (pkg: string) =>
+  JSON.parse(readFileSync(join(root, 'packages', pkg, 'plugin', '.claude-plugin', 'plugin.json'), 'utf8')).version
+
+test('check fails when a package’s plugin is not at the package’s version', () => {
+  repo([
+    ['@lntt/create', '1.2.0'],
+    ['@lntt/lntt', '1.2.0'],
+  ])
+  plugin('lntt', '0.12.1')
+  const r = run('check')
+  assert.equal(r.status, 1)
+  assert.match(r.out, /packages\/lntt\/plugin\/\.claude-plugin\/plugin\.json 0\.12\.1/)
+})
+
+test('set writes the version into each package’s plugin too', () => {
+  repo([
+    ['@lntt/create', '1.2.0'],
+    ['@lntt/lntt', '1.2.0'],
+  ])
+  plugin('lntt', '0.12.1')
+  assert.equal(run('set', '1.3.0').status, 0)
+  assert.equal(pluginVersion('lntt'), '1.3.0')
+  assert.equal(run('check').status, 0)
+})
