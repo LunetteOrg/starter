@@ -63,6 +63,18 @@ describe('the commands a hook runs', () => {
     assert.deepEqual(hookCommands(root, 'format'), ['npm run format --'])
   })
 
+  test('pnpm’s lockfile wins over npm’s', () => {
+    scripts({ typecheck: 'tsc' })
+    writeFileSync(join(root, 'package-lock.json'), '{}')
+    writeFileSync(join(root, 'pnpm-lock.yaml'), '')
+    assert.deepEqual(hookCommands(root, 'typecheck'), ['pnpm run typecheck'])
+  })
+
+  test('a package.json that is not JSON has no script', () => {
+    writeFileSync(join(root, 'package.json'), '{ "scripts": ')
+    assert.deepEqual(hookCommands(root, 'typecheck'), [])
+  })
+
   test('without both, nothing', () => {
     config({})
     scripts({ test: 'node --test' })
@@ -101,11 +113,11 @@ describe('lntt hook typecheck', () => {
     assert.equal(r.stdout + r.stderr, '')
   })
 
-  test('a new failure exits 3 with the failing output; the same failure again stays quiet', () => {
+  test('a new failure exits 1 with the failing output; the same failure again stays quiet', () => {
     config({ hooks: { typecheck: RED } })
     red('src/a.ts(1,1): error TS2322\n')
     const first = hook('typecheck')
-    assert.equal(first.status, 3)
+    assert.equal(first.status, 1)
     assert.match(first.stderr, /error TS2322/)
     const again = hook('typecheck')
     assert.equal(again.status, 0)
@@ -115,21 +127,21 @@ describe('lntt hook typecheck', () => {
   test('another failure wakes again', () => {
     config({ hooks: { typecheck: RED } })
     red('error TS2322\n')
-    assert.equal(hook('typecheck').status, 3)
+    assert.equal(hook('typecheck').status, 1)
     red('error TS2345\n')
     const r = hook('typecheck')
-    assert.equal(r.status, 3)
+    assert.equal(r.status, 1)
     assert.match(r.stderr, /TS2345/)
   })
 
   test('a green run clears it: the same failure later wakes again', () => {
     config({ hooks: { typecheck: RED } })
     red('error TS2322\n')
-    assert.equal(hook('typecheck').status, 3)
+    assert.equal(hook('typecheck').status, 1)
     red('')
     assert.equal(hook('typecheck').status, 0)
     red('error TS2322\n')
-    assert.equal(hook('typecheck').status, 3)
+    assert.equal(hook('typecheck').status, 1)
   })
 
   test('the failure is kept in the worktree’s git directory', () => {
@@ -145,7 +157,7 @@ describe('lntt hook typecheck', () => {
   test('output that differs only in colours, timings and trailing spaces is the same failure', () => {
     config({ hooks: { typecheck: RED } })
     red('\u001b[31merror\u001b[39m TS2322  \nDone in 1.2s\n')
-    assert.equal(hook('typecheck').status, 3)
+    assert.equal(hook('typecheck').status, 1)
     red('error TS2322\nDone in 340ms\n')
     assert.equal(hook('typecheck').status, 0)
   })
@@ -153,7 +165,7 @@ describe('lntt hook typecheck', () => {
   test('every command runs, and each failure is in the output with its command', () => {
     config({ hooks: { typecheck: ['echo ts broke; exit 1', 'true', 'echo py broke >&2; exit 1'] } })
     const r = hook('typecheck')
-    assert.equal(r.status, 3)
+    assert.equal(r.status, 1)
     assert.match(r.stderr, /echo ts broke; exit 1[\s\S]*ts broke/)
     assert.match(r.stderr, /py broke/)
     assert.doesNotMatch(r.stderr, /^\$ true$/m)
@@ -168,8 +180,41 @@ describe('lntt hook typecheck', () => {
     )
   })
 
-  test('normalise strips colours, timings and trailing spaces', () => {
-    assert.equal(normalise('\u001b[2mx\u001b[22m  \nin 12.5s\r\n'), 'x\nin s')
+  test('normalise strips colours, timings and trailing spaces, and leaves other numbers', () => {
+    assert.equal(normalise('\u001b[2mx\u001b[22m  \nin 12.5s, 340ms\r\n'), 'x\nin s, s')
+    assert.equal(normalise('expected 3 s, found 2 errors'), 'expected 3 s, found 2 errors')
+  })
+
+  test('a configuration lntt cannot read is a failure too, reported once', () => {
+    config({ hooks: { typecheck: 'true' } })
+    writeFileSync(join(root, '.agents/config.jsonc'), '{ "local": { "hooks": { "lint": "x" } } }')
+    const first = hook('typecheck')
+    assert.equal(first.status, 1)
+    assert.match(first.stderr, /^lntt: .*config/m)
+    assert.equal(hook('typecheck').status, 0)
+  })
+
+  test('outside git the last failure is kept in the temporary directory', () => {
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-hook-nogit-')))
+    const tmp = join(outside, 'tmp')
+    mkdirSync(tmp)
+    mkdirSync(join(outside, '.agents'))
+    writeFileSync(
+      join(outside, '.agents/config.jsonc'),
+      JSON.stringify({ local: { hooks: { typecheck: 'echo red; exit 1' } } }),
+    )
+    const run = () =>
+      spawnSync(process.execPath, [BIN, 'hook', 'typecheck'], {
+        cwd: outside,
+        encoding: 'utf8',
+        env: { ...process.env, TMPDIR: tmp, GIT_CEILING_DIRECTORIES: dirname(outside) },
+      })
+    try {
+      assert.equal(run().status, 1)
+      assert.equal(run().status, 0)
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
   })
 })
 
@@ -196,6 +241,33 @@ describe('lntt hook format', () => {
     assert.equal(r.status, 0)
     assert.equal(r.stdout + r.stderr, '')
     assert.equal(readFileSync(join(root, 'got'), 'utf8'), '/x/y.md')
+  })
+
+  test('the commands run from the project root, with a path holding a quote', () => {
+    config({ hooks: { format: 'printf "%s" > got' } })
+    mkdirSync(join(root, 'sub'))
+    spawnSync(process.execPath, [BIN, 'hook', 'format'], {
+      cwd: join(root, 'sub'),
+      input: input("/x/it's.ts"),
+      encoding: 'utf8',
+    })
+    assert.equal(readFileSync(join(root, 'got'), 'utf8'), "/x/it's.ts")
+  })
+
+  test('a configuration lntt cannot read is said once to the person, until it is fixed', () => {
+    config({ hooks: { format: 'true' } })
+    writeFileSync(join(root, '.agents/config.jsonc'), '{ "local": { "hooks": { "lint": "x" } } }')
+    const first = hook('format', input('/x/y.ts'))
+    assert.equal(first.status, 0)
+    assert.match(
+      JSON.parse(first.stdout).systemMessage,
+      /^lntt hook format is off until this is fixed: lntt: [\s\S]*config\.jsonc/,
+    )
+    assert.equal(hook('format', input('/x/y.ts')).stdout, '')
+    config({ hooks: { format: 'true' } })
+    assert.equal(hook('format', input('/x/y.ts')).stdout, '')
+    writeFileSync(join(root, '.agents/config.jsonc'), '{ "local": { "hooks": { "lint": "x" } } }')
+    assert.match(hook('format', input('/x/y.ts')).stdout, /systemMessage/)
   })
 
   test('with no path, or input that is not JSON, nothing runs', () => {
@@ -276,18 +348,40 @@ describe('the hook lines of .claude/settings.json', () => {
     })
   }
 
-  test('typecheck: a new failure (lntt exits 3) wakes the agent (exit 2)', () => {
-    lntt(3)
+  test('typecheck: a new failure (lntt exits 1) wakes the agent (exit 2)', () => {
+    lntt(1)
     assert.equal(run(TYPECHECK_HOOK.command).status, 2)
   })
 
   test('format: an lntt failure never fails the edit', () => {
-    lntt(3)
+    lntt(1)
     assert.equal(run(FORMAT_HOOK.command).status, 0)
   })
 
-  test('the typecheck runs after the turn and wakes the agent; the format runs after Write and Edit', () => {
+  test('an lntt with no hook command says it for each hook, once each', () => {
+    lntt(2)
+    assert.match(JSON.parse(run(FORMAT_HOOK.command).stdout).systemMessage, /pnpm up/)
+    assert.match(JSON.parse(run(TYPECHECK_HOOK.command).stdout).systemMessage, /pnpm up/)
+  })
+
+  test('the typecheck runs in the background and wakes the agent', () => {
     assert.equal(TYPECHECK_HOOK.asyncRewake, true)
     assert.equal(TYPECHECK_HOOK.rewakeSummary, 'Typecheck failed')
+  })
+})
+
+describe('lntt hook usage', () => {
+  for (const args of [['hook', 'format', 'extra'], ['hook', 'lint'], ['hook']]) {
+    test(`lntt ${args.join(' ')} is a usage error, exit 2`, () => {
+      const r = spawnSync(process.execPath, [BIN, ...args], { cwd: root, encoding: 'utf8', input: '' })
+      assert.equal(r.status, 2)
+      assert.match(r.stderr, /usage: lntt hook/)
+    })
+  }
+
+  // What an lntt older than `hook` does with it, which the settings lines read as exit 2.
+  test('a command lntt does not know is a usage error, exit 2', () => {
+    const r = spawnSync(process.execPath, [BIN, 'frobnicate', 'typecheck'], { cwd: root, encoding: 'utf8' })
+    assert.equal(r.status, 2)
   })
 })

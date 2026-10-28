@@ -31,7 +31,7 @@
 //                             what the hook lines lntt sync writes into .claude/settings.json
 //                             run: format the file of the hook input (stdin) with
 //                             local.hooks.format or the format script; run local.hooks.typecheck
-//                             or the typecheck script, exit 3 on a failure not seen last time
+//                             or the typecheck script, exit 1 on a failure not seen last time
 //
 //   lntt refs [--cached] [<text>...]
 //                             the issue and pull request references of the text (the arguments,

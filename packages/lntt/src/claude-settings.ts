@@ -39,10 +39,10 @@ export const INSTALL_HOOK = {
 // The first @lntt/lntt with `lntt hook`.
 export const HOOK_SINCE = '0.6.3'
 
-// A thin line: the logic is in `lntt hook <name>`. With lntt missing it says nothing (the
-// install hook said it at the session start). An lntt with no `hook` command answers with
+// A thin line: the logic is in `lntt hook <name>`. With lntt missing it says nothing: the
+// install hook says that at the session start. An lntt with no `hook` command answers with
 // its usage, exit 2: the line says once per session (per Claude Code process) what to run.
-// `lntt hook` exits 3 for a failure to report, which the line turns into the exit 2 that
+// `lntt hook` exits 1 for a failure to report, which the line turns into the exit 2 that
 // wakes the agent where `wake` asks it.
 function hookLine(name: string, wake: boolean): string {
   return [
@@ -50,7 +50,7 @@ function hookLine(name: string, wake: boolean): string {
     '[ -x node_modules/.bin/lntt ] || exit 0',
     `node_modules/.bin/lntt hook ${name}`,
     's=$?',
-    `[ $s -eq 3 ] && exit ${wake ? 2 : 0}`,
+    `[ $s -eq 1 ] && exit ${wake ? 2 : 0}`,
     '[ $s -eq 2 ] || exit 0',
     `t="\${TMPDIR:-/tmp}/lntt-hook-${name}-$PPID"`,
     '[ -f "$t" ] && exit 0',

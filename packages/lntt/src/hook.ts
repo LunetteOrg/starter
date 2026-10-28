@@ -5,10 +5,13 @@
 //
 // Which commands run, in order: `local.hooks.<name>` of .agents/config (one command or a
 // list, for a project with more than one toolchain); else the package.json script of that
-// name; else none, and the hook does nothing.
+// name, run with pnpm, or npm in a project with only a package-lock.json, as the install
+// hook installs; else none, and the hook does nothing.
 
 import { execFileSync, spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { findConfig, loadConfig, NoConfigError } from './index.ts'
 
@@ -57,8 +60,14 @@ export function hookCommands(cwd: string, name: HookName): string[] {
 }
 
 const quote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`
+// A typecheck's output can be long; Claude Code's hook timeout bounds how long it runs.
 const sh = (command: string, cwd: string) =>
-  spawnSync('/bin/sh', ['-c', command], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  spawnSync('/bin/sh', ['-c', command], {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: 64 * 1024 * 1024,
+  })
 
 // The path of the file the tool wrote, from the hook's input; null when there is none.
 function writtenPath(input: string): string | null {
@@ -71,61 +80,83 @@ function writtenPath(input: string): string | null {
   }
 }
 
-// Each command gets the path as its last argument. One that fails (a file type it does
-// not handle, a command that takes no path) is skipped: the commit's own check is the gate.
-export function runFormat(cwd: string, input: string): void {
-  const path = writtenPath(input)
-  if (path === null) return
-  const root = projectRoot(cwd)
-  for (const command of hookCommands(root, 'format')) sh(`${command} ${quote(path)}`, root)
-}
-
 // The terminal's colour sequences (ESC [ … m).
 const COLOUR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g')
 
-// Two outputs of one failure differ in colours, timings and trailing spaces.
+// Two outputs of one failure differ in colours, timings (`1.2s`, `340ms`) and trailing
+// spaces.
 export function normalise(output: string): string {
   return output
     .replace(COLOUR, '')
-    .replace(/\b\d+(\.\d+)?\s*(ms|s)\b/g, 's')
+    .replace(/\b\d+(\.\d+)?m?s\b/g, 's')
     .split(/\r?\n/)
     .map((l) => l.trimEnd())
     .join('\n')
     .trim()
 }
 
-// The last failure seen, in the worktree's own git directory; null outside git.
-function failureFile(root: string): string | null {
+// What a hook last reported, in the worktree's own git directory; outside git, in the
+// temporary directory, under a name of the project's path.
+function stateFile(root: string, name: string): string {
   try {
     const dir = execFileSync('git', ['rev-parse', '--absolute-git-dir'], {
       cwd: root,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim()
-    return join(dir, 'lntt-typecheck-failure')
+    return join(dir, `lntt-${name}`)
   } catch {
-    return null
+    const key = createHash('sha256').update(root).digest('hex').slice(0, 16)
+    return join(tmpdir(), `lntt-${name}-${key}`)
   }
 }
 
-// Every command runs. The output of the failing ones, when it is not the failure the last
-// run reported; null when they pass (the kept failure is cleared) or the failure is the same.
-export function runTypecheck(cwd: string): string | null {
-  const root = projectRoot(cwd)
-  const failed = hookCommands(root, 'typecheck').flatMap((command) => {
-    const r = sh(command, root)
-    return r.status === 0 ? [] : [`$ ${command}\n${r.stdout}${r.stderr}`]
-  })
-  const file = failureFile(root)
-  if (failed.length === 0) {
-    if (file !== null) rmSync(file, { force: true })
+// The text when it differs from what the file holds (which it then holds), null when it
+// is the same; no text clears the file.
+function once(file: string, text: string | null): string | null {
+  if (text === null) {
+    rmSync(file, { force: true })
     return null
   }
-  const output = failed.join('\n')
-  const seen = normalise(output)
-  if (file !== null) {
-    if (existsSync(file) && readFileSync(file, 'utf8') === seen) return null
-    writeFileSync(file, seen)
+  const seen = normalise(text)
+  if (existsSync(file) && readFileSync(file, 'utf8') === seen) return null
+  writeFileSync(file, seen)
+  return text
+}
+
+const failure = (e: unknown) => `lntt: ${e instanceof Error ? e.message : String(e)}`
+
+// Each command gets the path as its last argument. One that fails (a file type it does
+// not handle, a command that takes no path) is skipped: the commit's own check is the gate.
+// A configuration lntt cannot read is the notice returned, once until it changes.
+export function runFormat(cwd: string, input: string): string | null {
+  const path = writtenPath(input)
+  if (path === null) return null
+  const root = projectRoot(cwd)
+  let commands: string[]
+  try {
+    commands = hookCommands(root, 'format')
+  } catch (e) {
+    return once(stateFile(root, 'format-notice'), `lntt hook format is off until this is fixed: ${failure(e)}`)
   }
-  return output
+  once(stateFile(root, 'format-notice'), null)
+  for (const command of commands) sh(`${command} ${quote(path)}`, root)
+  return null
+}
+
+// Every command runs. The output of the failing ones, or a configuration lntt cannot
+// read, when it is not what the last run reported; null when they pass (what was kept is
+// cleared) or the failure is the same.
+export function runTypecheck(cwd: string): string | null {
+  const root = projectRoot(cwd)
+  let failed: string[]
+  try {
+    failed = hookCommands(root, 'typecheck').flatMap((command) => {
+      const r = sh(command, root)
+      return r.status === 0 ? [] : [`$ ${command}\n${r.stdout}${r.stderr}`]
+    })
+  } catch (e) {
+    failed = [failure(e)]
+  }
+  return once(stateFile(root, 'typecheck-failure'), failed.length === 0 ? null : failed.join('\n'))
 }
