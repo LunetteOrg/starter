@@ -173,9 +173,12 @@ describe('the Claude Code settings lntt sync writes', () => {
     assert.deepEqual(read().hooks.SessionStart, [own, { hooks: [INSTALL_HOOK] }])
   })
 
-  test('a byte order mark at the start is read past', () => {
-    syncClaudeSettings(root)
+  test('a byte order mark at the start is read past, and sync writes the file without it', () => {
+    write({ permissions: { deny: [] } })
     writeFileSync(settings(), `\uFEFF${readFileSync(settings(), 'utf8')}`)
+    assert.equal(off().length, 3)
+    syncClaudeSettings(root)
+    assert.deepEqual(read().permissions, { deny: [] })
     assert.deepEqual(off(), [])
   })
 

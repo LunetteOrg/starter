@@ -15,6 +15,7 @@ const PLUGIN = 'lunette@lunette'
 const INSTALL_STATUS = 'lntt: checking the dependencies are installed'
 
 const SYNC = 'Run: pnpm exec lntt sync'
+const SETTINGS_FILE = '.claude/settings.json'
 
 // `problem.kind`: lntt-missing, no-refs (with the version `found`, null for an lntt on
 // PATH), gh-missing, gh-auth, settings (with the `keys` off). Dimmed, for the message
@@ -40,6 +41,9 @@ export function noticeText(problem) {
     case 'gh-auth':
       return titles('gh is not logged in. Run: gh auth login')
     case 'settings':
+      // The whole file: lntt sync refuses it, so it is fixed by hand first.
+      if (problem.keys.includes(SETTINGS_FILE))
+        return `lntt · ${SETTINGS_FILE} is not JSON, or not the shape Claude Code reads: fix it, then run: pnpm exec lntt sync`
       return `lntt · .claude/settings.json: ${problem.keys.join(', ')} is not as lntt sync writes it. ${SYNC}`
     default:
       return ''
@@ -90,16 +94,17 @@ function wellShaped(s) {
 }
 
 // The entries of the project's .claude/settings.json (its text, null when there is none)
-// that are not as lntt sync writes them; the whole file when it is missing, not JSON, or
-// not of the shape Claude Code reads.
+// that are not as lntt sync writes them; the whole file when it is not JSON, or not of the
+// shape Claude Code reads.
 export function settingsProblems(text) {
   let s
   try {
-    s = parseJsonc(text)
+    // No file: lntt sync writes one.
+    s = text === null ? {} : parseJsonc(text)
   } catch {
-    return ['.claude/settings.json']
+    return [SETTINGS_FILE]
   }
-  if (!wellShaped(s)) return ['.claude/settings.json']
+  if (!wellShaped(s)) return [SETTINGS_FILE]
   const source = s.extraKnownMarketplaces?.lunette?.source
   const hooks = (s.hooks?.SessionStart ?? []).flatMap((e) => e.hooks ?? [])
   return [

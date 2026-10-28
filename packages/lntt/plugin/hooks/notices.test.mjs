@@ -33,6 +33,10 @@ describe('what a notice says', () => {
     )
     assert.equal(plain(notice({ kind: 'gh-auth' })), 'lntt · issue titles off: gh is not logged in. Run: gh auth login')
     assert.equal(
+      plain(notice({ kind: 'settings', keys: ['.claude/settings.json'] })),
+      'lntt · .claude/settings.json is not JSON, or not the shape Claude Code reads: fix it, then run: pnpm exec lntt sync',
+    )
+    assert.equal(
       plain(notice({ kind: 'settings', keys: ['enabledPlugins.lunette@lunette'] })),
       'lntt · .claude/settings.json: enabledPlugins.lunette@lunette is not as lntt sync writes it. Run: pnpm exec lntt sync',
     )
@@ -72,7 +76,16 @@ describe('the settings the plugin checks at session start', () => {
   })
 
   test('a key of the wrong shape names the whole file, as lntt check plugin does', () => {
-    for (const value of [{ hooks: { SessionStart: {} } }, { hooks: { SessionStart: 'x' } }, { enabledPlugins: 'x' }, { hooks: { SessionStart: [null] } }])
+    for (const value of [
+      { hooks: { SessionStart: {} } },
+      { hooks: { SessionStart: 'x' } },
+      { hooks: { SessionStart: [null] } },
+      { hooks: { SessionStart: [{ hooks: 'x' }] } },
+      { hooks: { SessionStart: [{ hooks: [null] }] } },
+      { enabledPlugins: 'x' },
+      { extraKnownMarketplaces: 'x' },
+      { hooks: 'x' },
+    ])
       assert.deepEqual(settingsProblems(JSON.stringify(value)), ['.claude/settings.json'])
   })
 
@@ -90,9 +103,12 @@ describe('the settings the plugin checks at session start', () => {
     ])
   })
 
-  test('a file that is not JSON, or none at all, is named as the whole file', () => {
+  test('no file at all: each entry lntt sync writes is missing', () => {
+    assert.equal(settingsProblems(null).length, 3)
+  })
+
+  test('a file that is not JSON is named as the whole file', () => {
     assert.deepEqual(settingsProblems('{ "a": '), ['.claude/settings.json'])
     assert.deepEqual(settingsProblems('{ /* open'), ['.claude/settings.json'])
-    assert.deepEqual(settingsProblems(null), ['.claude/settings.json'])
   })
 })
