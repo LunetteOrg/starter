@@ -83,12 +83,22 @@ pnpm exec lntt guide decisions   # the guide, from the installed package
 pnpm exec lntt guide             # the skills it has
 ```
 
-So the skills and the `lntt` they call are one version, the project's lockfile: a bump
-of `@lntt/lntt` updates the guides with no other step. `lntt check agents-md` fails
-when the block differs from its source; `lntt check skills` when a stub is missing or
-edited, or names a skill the package no longer has. Either way, `lntt sync` runs on the
-branch of the bump and its diff goes in the same pull request
-([agent layer](../../docs/adr/agent-layer.md)).
+It also writes into `.claude/settings.json`, keeping every other key, comment and hook
+of the file: the `directory` marketplace this package ships
+([`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json), path
+`./node_modules/@lntt/lntt`), the `lunette` plugin enabled from it
+([`plugin/`](./plugin/): the `lntt review` band, the issue titles on screen), and a
+`SessionStart` hook that installs the dependencies with the lockfile's package manager
+when `node_modules/.bin/lntt` is missing. The hook never fails a session: when the
+install cannot run it says, once, what to run.
+
+So the skills, the plugin and the `lntt` they call are one version, the project's
+lockfile: a bump of `@lntt/lntt` updates the guides and the plugin with no other step.
+`lntt check agents-md` fails when the block differs from its source; `lntt check
+skills` when a stub is missing or edited, or names a skill the package no longer has;
+`lntt check plugin` when an entry of `.claude/settings.json` is missing, disabled or
+points elsewhere. Either way, `lntt sync` runs on the branch of the bump and its diff
+goes in the same pull request ([agent layer](../../docs/adr/agent-layer.md)).
 
 ## Checks (`lntt check`)
 
@@ -99,6 +109,7 @@ result instead of redoing it by eye.
 lntt check                                              # every area: what CI runs
 lntt check agents-md                                    # the managed block of AGENTS.md
 lntt check skills                                       # the stubs of the shared skills
+lntt check plugin                                       # the plugin and install hook in .claude/settings.json
 lntt check decisions                                    # the decision logs of recording
 lntt check decisions --base main                        # … and what the diff from main touches
 lntt check decisions board-refs docs/product/pricing.md # the board references of those files
