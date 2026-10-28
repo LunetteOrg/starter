@@ -18,11 +18,22 @@ export interface Choice {
 
 type Env = Record<string, string | undefined>
 
+// The entrypoints Claude Code itself treats as the desktop app (claude 2.1.312).
+const DESKTOP_ENTRYPOINTS = new Set(['claude-desktop', 'claude-desktop-3p', 'local-agent'])
+
+const TERM_PROGRAMS: Record<string, Host> = { Orca: 'orca', waveterm: 'wave', herdr: 'herdr' }
+
+// Innermost first (docs/adr/worktree-tooling.md). Claude desktop sets the entrypoint on
+// the claude it starts. Herdr runs inside a terminal, never the other way round, and a
+// Herdr server started from Orca or Wave hands their variables to every pane. Then
+// TERM_PROGRAM, which names the innermost terminal, before the variables that leak inward.
 export function detectHost(env: Env): Host {
-  if (env.TERM_PROGRAM === 'Orca' || env.ORCA_WORKTREE_ID) return 'orca'
-  if (env.TERM_PROGRAM === 'waveterm' || Object.keys(env).some((k) => k.startsWith('WAVETERM_'))) return 'wave'
+  if (DESKTOP_ENTRYPOINTS.has(env.CLAUDE_CODE_ENTRYPOINT ?? '')) return 'claude-desktop'
   if (env.HERDR_ENV === '1') return 'herdr'
-  if (/desktop/i.test(env.CLAUDE_CODE_ENTRYPOINT ?? '')) return 'claude-desktop'
+  const term = TERM_PROGRAMS[env.TERM_PROGRAM ?? '']
+  if (term) return term
+  if (env.ORCA_WORKTREE_ID) return 'orca'
+  if (Object.keys(env).some((k) => k.startsWith('WAVETERM_'))) return 'wave'
   return 'terminal'
 }
 
@@ -31,7 +42,8 @@ const SYSTEM_OPEN = process.platform === 'darwin' ? 'open' : 'xdg-open'
 
 // Whether a viewer can be used in this session. Orca and Wave only from inside them
 // (Orca's browser belongs to a worktree, Wave's blocks to a tab); Claude desktop only
-// in its own sessions; Chrome is the agent's to know, so it counts when preferred.
+// in its own sessions; Chrome is the agent's to know, so it counts when preferred, and
+// so does Playwright: its CLI when on PATH, else its MCP.
 function usable(viewer: Viewer, host: Host, has: (cmd: string) => boolean): boolean {
   switch (viewer) {
     case 'orca':
@@ -41,9 +53,8 @@ function usable(viewer: Viewer, host: Host, has: (cmd: string) => boolean): bool
     case 'claude-desktop':
       return host === 'claude-desktop'
     case 'chrome':
-      return true
     case 'playwright':
-      return has('playwright')
+      return true
     case 'browser':
       return has(SYSTEM_OPEN)
     default:
@@ -55,12 +66,10 @@ const HOST_VIEWER: Partial<Record<Host, Viewer>> = { orca: 'orca', wave: 'wave',
 
 export function chooseViewer(options: { env: Env; preferences: Viewer[]; has: (cmd: string) => boolean }): Choice {
   const host = detectHost(options.env)
-  const pick = (viewer: Viewer, reason: string): Choice => ({
-    host,
-    viewer,
-    reason,
-    ...(AGENT_CALLS[viewer] ? { agentCall: AGENT_CALLS[viewer] } : {}),
-  })
+  const pick = (viewer: Viewer, reason: string): Choice => {
+    const agentCall = viewer === 'playwright' && !options.has('playwright') ? 'browser_navigate' : AGENT_CALLS[viewer]
+    return { host, viewer, reason, ...(agentCall ? { agentCall } : {}) }
+  }
   for (const viewer of options.preferences) {
     if (usable(viewer, host, options.has)) return pick(viewer, `first available preference (workspace.viewers)`)
   }
@@ -83,10 +92,24 @@ export function commandExists(cmd: string): boolean {
 // call (or none), which the caller reports instead.
 export function openWith(choice: Choice, url: string, worktree: string): boolean {
   const detached = (cmd: string, args: string[]) => spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref()
+  if (choice.agentCall) return false
   switch (choice.viewer) {
-    case 'orca':
-      execFileSync('orca', ['goto', '--url', url, '--worktree', `path:${worktree}`], { stdio: 'ignore' })
+    case 'orca': {
+      const orca = (args: string[]) =>
+        execFileSync('orca', [...args, '--url', url, '--worktree', `path:${worktree}`, '--json'], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        })
+      // goto needs a browser tab in the worktree (browser_no_tab otherwise): open one there.
+      try {
+        orca(['goto'])
+      } catch (error) {
+        const { stdout, stderr } = error as { stdout?: string; stderr?: string }
+        if (!`${stdout}${stderr}`.includes('"browser_no_tab"')) throw error
+        orca(['tab', 'create'])
+      }
       return true
+    }
     case 'wave':
       execFileSync('wsh', ['web', 'open', url], { stdio: 'ignore' })
       return true
