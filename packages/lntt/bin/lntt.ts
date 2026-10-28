@@ -27,6 +27,12 @@
 //                             API cannot do or is risky listed for the UI, with the steps.
 //                             A dry run unless --apply; --check exits 1 when the board differs
 //
+//   lntt hook format | typecheck
+//                             what the hook lines lntt sync writes into .claude/settings.json
+//                             run: format the file of the hook input (stdin) with
+//                             local.hooks.format or the format script; run local.hooks.typecheck
+//                             or the typecheck script, exit 3 on a failure not seen last time
+//
 //   lntt refs [--cached] [<text>...]
 //                             the issue and pull request references of the text (the arguments,
 //                             else stdin) with their titles, from gh, cached for a day: one JSON
@@ -186,6 +192,7 @@ if (args[0] === 'ci') await (await import('../src/ci/cli.ts')).main(args.slice(1
 else if (args[0] === 'branch') (await import('../src/branch-cli.ts')).main(args.slice(1))
 else if (args[0] === 'pr') (await import('../src/pull-request-cli.ts')).main(args.slice(1))
 else if (args[0] === 'retro') (await import('../src/retro-cli.ts')).main(args.slice(1))
+else if (args[0] === 'hook') (await import('../src/hook-cli.ts')).main(args.slice(1))
 else if (args[0] === 'refs') await (await import('../src/refs-cli.ts')).main(args.slice(1))
 else if (args[0] === 'board') (await import('../src/board-cli.ts')).main(args.slice(1))
 else if (args[0] === 'check') (await import('../src/check-cli.ts')).main(args.slice(1))

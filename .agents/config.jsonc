@@ -222,5 +222,12 @@
       // nothing, the harvest handles those items here.
       "upstream": { "repository": "LunetteOrg/starter" }
     }
+  },
+  "local": {
+    // What lntt hook runs. Format as the pre-commit does, so the commit does not rewrite a
+    // file under the agent; the typecheck is the typecheck script of package.json.
+    "hooks": {
+      "format": "pnpm exec biome check --write --no-errors-on-unmatched --files-ignore-unknown=true"
+    }
   }
 }

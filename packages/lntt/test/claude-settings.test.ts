@@ -15,7 +15,15 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import * as jsonc from 'jsonc-parser'
-import { checkClaudeSettings, INSTALL_HOOK, MARKETPLACE, PLUGIN, syncClaudeSettings } from '../src/index.ts'
+import {
+  checkClaudeSettings,
+  FORMAT_HOOK,
+  INSTALL_HOOK,
+  MARKETPLACE,
+  PLUGIN,
+  syncClaudeSettings,
+  TYPECHECK_HOOK,
+} from '../src/index.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const BIN = resolve(HERE, '../bin/lntt.ts')
@@ -92,7 +100,13 @@ describe('the Claude Code settings lntt sync writes', () => {
     })
     assert.deepEqual(
       off().map((c) => `${c.state} ${c.key}`),
-      ['elsewhere extraKnownMarketplaces.lunette', 'off enabledPlugins.lunette@lunette', 'edited hooks.SessionStart'],
+      [
+        'elsewhere extraKnownMarketplaces.lunette',
+        'off enabledPlugins.lunette@lunette',
+        'edited hooks.SessionStart',
+        'missing hooks.PostToolUse',
+        'missing hooks.Stop',
+      ],
     )
     syncClaudeSettings(root)
     assert.deepEqual(read().extraKnownMarketplaces.lunette, MARKETPLACE)
@@ -111,7 +125,13 @@ describe('the Claude Code settings lntt sync writes', () => {
     write({ hooks: { SessionStart: [{ hooks: [INSTALL_HOOK] }, { hooks: [INSTALL_HOOK] }] } })
     assert.deepEqual(
       off().map((c) => `${c.state} ${c.key}`),
-      ['missing extraKnownMarketplaces.lunette', 'missing enabledPlugins.lunette@lunette', 'edited hooks.SessionStart'],
+      [
+        'missing extraKnownMarketplaces.lunette',
+        'missing enabledPlugins.lunette@lunette',
+        'edited hooks.SessionStart',
+        'missing hooks.PostToolUse',
+        'missing hooks.Stop',
+      ],
     )
     syncClaudeSettings(root)
     assert.equal(read().hooks.SessionStart.length, 1)
@@ -178,7 +198,7 @@ describe('the Claude Code settings lntt sync writes', () => {
   test('a byte order mark at the start is read past, and sync writes the file without it', () => {
     write({ permissions: { deny: [] } })
     writeFileSync(settings(), `\uFEFF${readFileSync(settings(), 'utf8')}`)
-    assert.equal(off().length, 3)
+    assert.equal(off().length, 5)
     syncClaudeSettings(root)
     assert.deepEqual(read().permissions, { deny: [] })
     assert.deepEqual(off(), [])
@@ -201,7 +221,48 @@ describe('the Claude Code settings lntt sync writes', () => {
         'missing extraKnownMarketplaces.lunette',
         'missing enabledPlugins.lunette@lunette',
         'missing hooks.SessionStart',
+        'missing hooks.PostToolUse',
+        'missing hooks.Stop',
       ],
+    )
+  })
+
+  test('the format hook goes after Write and Edit, the typecheck at Stop, beside the project’s own', () => {
+    const own = { type: 'command', command: 'echo ours' }
+    write({ hooks: { Stop: [{ hooks: [own] }], PostToolUse: [{ matcher: 'Bash', hooks: [own] }] } })
+    syncClaudeSettings(root)
+    const s = read()
+    assert.deepEqual(s.hooks.PostToolUse, [
+      { matcher: 'Bash', hooks: [own] },
+      { matcher: 'Write|Edit', hooks: [FORMAT_HOOK] },
+    ])
+    assert.deepEqual(s.hooks.Stop, [{ hooks: [own] }, { hooks: [TYPECHECK_HOOK] }])
+    assert.deepEqual(off(), [])
+  })
+
+  test('the format hook under another matcher is an edit; sync puts it back under Write|Edit', () => {
+    write({ hooks: { PostToolUse: [{ matcher: 'Write', hooks: [FORMAT_HOOK] }] } })
+    assert.deepEqual(
+      off()
+        .filter((c) => c.key === 'hooks.PostToolUse')
+        .map((c) => c.state),
+      ['edited'],
+    )
+    syncClaudeSettings(root)
+    assert.deepEqual(read().hooks.PostToolUse, [{ matcher: 'Write|Edit', hooks: [FORMAT_HOOK] }])
+  })
+
+  test('an older typecheck line lntt wrote is replaced', () => {
+    write({ hooks: { Stop: [{ hooks: [{ ...TYPECHECK_HOOK, command: 'an older line' }] }] } })
+    syncClaudeSettings(root)
+    assert.deepEqual(read().hooks.Stop, [{ hooks: [TYPECHECK_HOOK] }])
+  })
+
+  test('a Stop that is not a list is not the shape Claude Code reads', () => {
+    write({ hooks: { Stop: {} } })
+    assert.deepEqual(
+      off().map((c) => `${c.state} ${c.key}`),
+      ['invalid .claude/settings.json'],
     )
   })
 
@@ -216,6 +277,11 @@ describe('the Claude Code settings lntt sync writes', () => {
       'edited',
       { hooks: { SessionStart: [{ hooks: [{ ...INSTALL_HOOK, command: 'x' }] }] } },
       /hooks\.SessionStart: the install hook differs from the one lntt sync writes; run lntt sync/,
+    ],
+    [
+      'edited',
+      { hooks: { Stop: [{ hooks: [{ ...TYPECHECK_HOOK, command: 'x' }] }] } },
+      /hooks\.Stop: the typecheck hook differs from the one lntt sync writes; run lntt sync/,
     ],
     [
       'invalid',

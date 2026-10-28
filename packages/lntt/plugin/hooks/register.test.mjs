@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { INSTALL_HOOK, MARKETPLACE, PLUGIN } from '../../src/claude-settings.ts'
+import { FORMAT_HOOK, INSTALL_HOOK, MARKETPLACE, PLUGIN, TYPECHECK_HOOK } from '../../src/claude-settings.ts'
 
 const PROGRESS = '/repo/.git/lntt-review.progress'
 const SETTINGS = '/repo/.claude/settings.json'
@@ -8,7 +8,11 @@ const SETTINGS = '/repo/.claude/settings.json'
 const SYNCED = JSON.stringify({
   extraKnownMarketplaces: { lunette: MARKETPLACE },
   enabledPlugins: { [PLUGIN]: true },
-  hooks: { SessionStart: [{ hooks: [INSTALL_HOOK] }] },
+  hooks: {
+    SessionStart: [{ hooks: [INSTALL_HOOK] }],
+    PostToolUse: [{ matcher: 'Write|Edit', hooks: [FORMAT_HOOK] }],
+    Stop: [{ hooks: [TYPECHECK_HOOK] }],
+  },
 })
 const roundOf = (session) =>
   [

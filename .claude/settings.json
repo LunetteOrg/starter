@@ -9,8 +9,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; [ -n \"$f\" ] && pnpm exec biome check --write --no-errors-on-unmatched --files-ignore-unknown=true \"$f\"; } 2>/dev/null || true",
-            "statusMessage": "Biome check --write"
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" || exit 0; [ -x node_modules/.bin/lntt ] || exit 0; node_modules/.bin/lntt hook format; s=$?; [ $s -eq 3 ] && exit 0; [ $s -eq 2 ] || exit 0; t=\"${TMPDIR:-/tmp}/lntt-hook-format-$PPID\"; [ -f \"$t\" ] && exit 0; : > \"$t\"; printf '{\"systemMessage\":\"this lntt has no lntt hook, which came with @lntt/lntt 0.6.3: run pnpm up @lntt/lntt\"}\\n'",
+            "statusMessage": "lntt: formatting the file written"
           }
         ]
       }
@@ -20,10 +20,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "pnpm typecheck 2>&1 || exit 2",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" || exit 0; [ -x node_modules/.bin/lntt ] || exit 0; node_modules/.bin/lntt hook typecheck; s=$?; [ $s -eq 3 ] && exit 2; [ $s -eq 2 ] || exit 0; t=\"${TMPDIR:-/tmp}/lntt-hook-typecheck-$PPID\"; [ -f \"$t\" ] && exit 0; : > \"$t\"; printf '{\"systemMessage\":\"this lntt has no lntt hook, which came with @lntt/lntt 0.6.3: run pnpm up @lntt/lntt\"}\\n'",
             "asyncRewake": true,
             "rewakeSummary": "Typecheck failed",
-            "statusMessage": "Typecheck (async)"
+            "statusMessage": "lntt: typecheck"
           }
         ]
       }

@@ -9,10 +9,14 @@ const dim = (text) => `${ESC}[2m${text}${ESC}[22m`
 export const REFS_SINCE = '0.6.3'
 
 // What lntt sync writes into .claude/settings.json (packages/lntt/src/claude-settings.ts):
-// the marketplace, the plugin, and the install hook, told by its status message.
+// the marketplace, the plugin, and its hooks by event, each told by its status message.
 const MARKETPLACE_PATH = './node_modules/@lntt/lntt'
 const PLUGIN = 'lunette@lunette'
-const INSTALL_STATUS = 'lntt: checking the dependencies are installed'
+const HOOK_STATUS = {
+  SessionStart: 'lntt: checking the dependencies are installed',
+  PostToolUse: 'lntt: formatting the file written',
+  Stop: 'lntt: typecheck',
+}
 
 const SYNC = 'Run: pnpm exec lntt sync'
 const SETTINGS_FILE = '.claude/settings.json'
@@ -85,12 +89,14 @@ const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
 function wellShaped(s) {
   if (!isObject(s)) return false
   if (['extraKnownMarketplaces', 'enabledPlugins', 'hooks'].some((k) => s[k] !== undefined && !isObject(s[k]))) return false
-  const start = s.hooks?.SessionStart
-  if (start === undefined) return true
-  return (
-    Array.isArray(start) &&
-    start.every((e) => isObject(e) && (e.hooks === undefined || (Array.isArray(e.hooks) && e.hooks.every(isObject))))
-  )
+  return Object.keys(HOOK_STATUS).every((event) => {
+    const list = s.hooks?.[event]
+    if (list === undefined) return true
+    return (
+      Array.isArray(list) &&
+      list.every((e) => isObject(e) && (e.hooks === undefined || (Array.isArray(e.hooks) && e.hooks.every(isObject))))
+    )
+  })
 }
 
 // The entries of the project's .claude/settings.json (its text, null when there is none)
@@ -106,10 +112,11 @@ export function settingsProblems(text) {
   }
   if (!wellShaped(s)) return [SETTINGS_FILE]
   const source = s.extraKnownMarketplaces?.lunette?.source
-  const hooks = (s.hooks?.SessionStart ?? []).flatMap((e) => e.hooks ?? [])
+  const has = (event) =>
+    (s.hooks?.[event] ?? []).flatMap((e) => e.hooks ?? []).some((h) => h.statusMessage === HOOK_STATUS[event])
   return [
     source?.source === 'directory' && source?.path === MARKETPLACE_PATH ? null : 'extraKnownMarketplaces.lunette',
     s.enabledPlugins?.[PLUGIN] === true ? null : `enabledPlugins.${PLUGIN}`,
-    hooks.some((h) => h.statusMessage === INSTALL_STATUS) ? null : 'hooks.SessionStart',
+    ...Object.keys(HOOK_STATUS).map((event) => (has(event) ? null : `hooks.${event}`)),
   ].filter(Boolean)
 }

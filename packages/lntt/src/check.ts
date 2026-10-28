@@ -9,7 +9,7 @@ import { isAbsolute, join, relative } from 'node:path'
 import { checkAgentsBlock } from './agents.ts'
 import { checkDecisions, decisionBoardRefs, decisionFigures } from './check-decisions.ts'
 import { runTests } from './check-tests.ts'
-import { checkClaudeSettings, INVALID, SETTINGS } from './claude-settings.ts'
+import { checkClaudeSettings, HOOK_LABELS, INVALID, SETTINGS } from './claude-settings.ts'
 import { checkBody, RETRO_START, retrospectiveBlock, retrospectiveRules } from './pull-request.ts'
 import { checkSkills, stubFolders } from './skills.ts'
 
@@ -134,7 +134,12 @@ function plugin(root: string): Result[] {
     message,
   })
   if (off.length === 0) {
-    return [result('PASS', 'the Lunette plugin loads from node_modules/@lntt/lntt, and the install hook is in place')]
+    return [
+      result(
+        'PASS',
+        'the Lunette plugin loads from node_modules/@lntt/lntt, and the install, format and typecheck hooks are in place',
+      ),
+    ]
   }
   return off.map((e) =>
     result(
@@ -143,7 +148,7 @@ function plugin(root: string): Result[] {
         missing: `${e.key} is missing; run lntt sync`,
         elsewhere: `${e.key} points elsewhere than the marketplace @lntt/lntt ships; run lntt sync`,
         off: `${e.key} is not enabled; run lntt sync`,
-        edited: `${e.key}: the install hook differs from the one lntt sync writes; run lntt sync`,
+        edited: `${e.key}: the ${HOOK_LABELS[e.key]} hook differs from the one lntt sync writes; run lntt sync`,
         invalid: INVALID,
       }[e.state as 'missing' | 'elsewhere' | 'off' | 'edited' | 'invalid'],
     ),
