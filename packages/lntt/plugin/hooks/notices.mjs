@@ -46,9 +46,12 @@ export function noticeText(problem) {
   }
 }
 
-// JSON with comments and trailing commas, as lntt reads .claude/settings.json (jsonc-parser,
-// which the plugin cannot import): both are dropped outside strings, then JSON.parse.
-function parseJsonc(text) {
+// JSON with comments and trailing commas, close to how lntt reads .claude/settings.json
+// (jsonc-parser, which the plugin cannot import): a leading byte order mark, the comments
+// and the trailing commas are dropped outside strings, then JSON.parse. A block comment
+// left open ends the text, which then fails to parse.
+function parseJsonc(raw) {
+  const text = raw.replace(/^\uFEFF/, '')
   let out = ''
   for (let i = 0; i < text.length; i += 1) {
     const c = text[i]
@@ -71,8 +74,24 @@ function parseJsonc(text) {
   return JSON.parse(out)
 }
 
+const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+// The keys the plugin reads, in the shape Claude Code reads, as lntt check plugin requires
+// (wellShaped in packages/lntt/src/claude-settings.ts).
+function wellShaped(s) {
+  if (!isObject(s)) return false
+  if (['extraKnownMarketplaces', 'enabledPlugins', 'hooks'].some((k) => s[k] !== undefined && !isObject(s[k]))) return false
+  const start = s.hooks?.SessionStart
+  if (start === undefined) return true
+  return (
+    Array.isArray(start) &&
+    start.every((e) => isObject(e) && (e.hooks === undefined || (Array.isArray(e.hooks) && e.hooks.every(isObject))))
+  )
+}
+
 // The entries of the project's .claude/settings.json (its text, null when there is none)
-// that are not as lntt sync writes them; the whole file when it is missing or not JSON.
+// that are not as lntt sync writes them; the whole file when it is missing, not JSON, or
+// not of the shape Claude Code reads.
 export function settingsProblems(text) {
   let s
   try {
@@ -80,12 +99,12 @@ export function settingsProblems(text) {
   } catch {
     return ['.claude/settings.json']
   }
-  if (typeof s !== 'object' || s === null || Array.isArray(s)) return ['.claude/settings.json']
+  if (!wellShaped(s)) return ['.claude/settings.json']
   const source = s.extraKnownMarketplaces?.lunette?.source
-  const hooks = (s.hooks?.SessionStart ?? []).flatMap((e) => e?.hooks ?? [])
+  const hooks = (s.hooks?.SessionStart ?? []).flatMap((e) => e.hooks ?? [])
   return [
     source?.source === 'directory' && source?.path === MARKETPLACE_PATH ? null : 'extraKnownMarketplaces.lunette',
     s.enabledPlugins?.[PLUGIN] === true ? null : `enabledPlugins.${PLUGIN}`,
-    hooks.some((h) => h?.statusMessage === INSTALL_STATUS) ? null : 'hooks.SessionStart',
+    hooks.some((h) => h.statusMessage === INSTALL_STATUS) ? null : 'hooks.SessionStart',
   ].filter(Boolean)
 }

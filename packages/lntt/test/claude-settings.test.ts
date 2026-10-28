@@ -154,9 +154,36 @@ describe('the Claude Code settings lntt sync writes', () => {
     test(`${what}: the file is invalid for the check, and sync refuses it without a stack trace`, () => {
       write(value)
       assert.deepEqual(off(), [{ key: '.claude/settings.json', state: 'invalid' }])
-      assert.throws(() => syncClaudeSettings(root), { name: 'ConfigError' })
+      assert.throws(() => syncClaudeSettings(root), { name: 'ConfigError', message: /not the shape Claude Code reads/ })
     })
   }
+
+  test('an install hook among the project’s own hooks of one entry is replaced, and theirs stay', () => {
+    const own = { type: 'command', command: 'echo ours' }
+    write({ hooks: { SessionStart: [{ hooks: [own, { ...INSTALL_HOOK, command: 'an older line' }] }] } })
+    syncClaudeSettings(root)
+    assert.deepEqual(read().hooks.SessionStart, [{ hooks: [own] }, { hooks: [INSTALL_HOOK] }])
+  })
+
+  test('entries holding only install hooks go, and the new one lands after the project’s', () => {
+    const own = { hooks: [{ type: 'command', command: 'echo ours' }] }
+    const old = { hooks: [{ ...INSTALL_HOOK, command: 'an older line' }] }
+    write({ hooks: { SessionStart: [old, own, old] } })
+    syncClaudeSettings(root)
+    assert.deepEqual(read().hooks.SessionStart, [own, { hooks: [INSTALL_HOOK] }])
+  })
+
+  test('a byte order mark at the start is read past', () => {
+    syncClaudeSettings(root)
+    writeFileSync(settings(), `\uFEFF${readFileSync(settings(), 'utf8')}`)
+    assert.deepEqual(off(), [])
+  })
+
+  test('the install hook with its keys in another order is the same hook', () => {
+    const reordered = Object.fromEntries(Object.entries(INSTALL_HOOK).reverse())
+    write({ hooks: { SessionStart: [{ hooks: [reordered] }] } })
+    assert.equal(checkClaudeSettings(root).find((e) => e.key === 'hooks.SessionStart')?.state, 'ok')
+  })
 
   test('the install hook has a timeout of its own, long enough for a cold install', () => {
     assert.equal(INSTALL_HOOK.timeout, 600)

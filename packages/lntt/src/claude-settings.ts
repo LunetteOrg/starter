@@ -79,7 +79,8 @@ function wellShaped(s: Record<string, unknown>): boolean {
 }
 
 function load(file: string): { text: string; settings: Settings } | null {
-  const text = existsSync(file) ? readFileSync(file, 'utf8') : '{}\n'
+  // A byte order mark some editors write is no part of the JSON.
+  const text = existsSync(file) ? readFileSync(file, 'utf8').replace(/^\uFEFF/, '') : '{}\n'
   const errors: jsonc.ParseError[] = []
   const settings = jsonc.parse(text, errors, { allowTrailingComma: true })
   if (errors.length > 0 || !isObject(settings) || !wellShaped(settings)) return null
@@ -87,7 +88,18 @@ function load(file: string): { text: string; settings: Settings } | null {
 }
 
 const ours = (h: Hook) => h.statusMessage === INSTALL_HOOK.statusMessage
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+// Equal values, whatever the order of their keys.
+const canonical = (v: unknown): unknown =>
+  Array.isArray(v)
+    ? v.map(canonical)
+    : isObject(v)
+      ? Object.fromEntries(
+          Object.keys(v)
+            .sort()
+            .map((k) => [k, canonical(v[k])]),
+        )
+      : v
+const same = (a: unknown, b: unknown) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b))
 
 function hookState(settings: Settings): SettingsEntry['state'] {
   const hooks = (settings.hooks?.SessionStart ?? []).flatMap((e) => e.hooks ?? [])

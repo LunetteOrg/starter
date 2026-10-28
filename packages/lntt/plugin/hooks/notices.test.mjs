@@ -71,6 +71,15 @@ describe('the settings the plugin checks at session start', () => {
     assert.deepEqual(settingsProblems(JSON.stringify(other)), ['extraKnownMarketplaces.lunette', 'enabledPlugins.lunette@lunette'])
   })
 
+  test('a key of the wrong shape names the whole file, as lntt check plugin does', () => {
+    for (const value of [{ hooks: { SessionStart: {} } }, { hooks: { SessionStart: 'x' } }, { enabledPlugins: 'x' }, { hooks: { SessionStart: [null] } }])
+      assert.deepEqual(settingsProblems(JSON.stringify(value)), ['.claude/settings.json'])
+  })
+
+  test('a byte order mark at the start is read past', () => {
+    assert.deepEqual(settingsProblems(`\uFEFF${JSON.stringify(SYNCED)}`), [])
+  })
+
   test('comments and trailing commas are read as lntt check reads them, inside strings left alone', () => {
     const text = JSON.stringify(SYNCED, null, 2).replace('{', '{\n  // the project’s own, with a URL: "https://x.org//y"\n').replace(/\n}$/, ',\n}')
     assert.deepEqual(settingsProblems(text), [])
@@ -83,6 +92,7 @@ describe('the settings the plugin checks at session start', () => {
 
   test('a file that is not JSON, or none at all, is named as the whole file', () => {
     assert.deepEqual(settingsProblems('{ "a": '), ['.claude/settings.json'])
+    assert.deepEqual(settingsProblems('{ /* open'), ['.claude/settings.json'])
     assert.deepEqual(settingsProblems(null), ['.claude/settings.json'])
   })
 })
