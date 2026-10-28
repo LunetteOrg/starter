@@ -154,7 +154,9 @@ describe('the Claude Code settings lntt sync writes', () => {
     test(`${what}: the file is invalid for the check, and sync refuses it without a stack trace`, () => {
       write(value)
       assert.deepEqual(off(), [{ key: '.claude/settings.json', state: 'invalid' }])
+      const before = readFileSync(settings(), 'utf8')
       assert.throws(() => syncClaudeSettings(root), { name: 'ConfigError', message: /not the shape Claude Code reads/ })
+      assert.equal(readFileSync(settings(), 'utf8'), before)
     })
   }
 

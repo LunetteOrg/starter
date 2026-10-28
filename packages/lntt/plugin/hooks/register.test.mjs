@@ -23,7 +23,7 @@ const roundOf = (session) =>
 // the session cannot tell it), reading a progress file written by `session`'s round (none
 // when `session` is undefined) and the project's `settings` (null: no file).
 // Each load is a fresh copy of the module: its state is per session.
-async function plugin({ id, session, ids, settings = SYNCED, git = 0 }) {
+async function plugin({ id, session, ids, settings = SYNCED, git = 0, unreadable = false }) {
   const { register } = await import(`./register.js?case=${Math.random()}`)
   const hooks = {}
   register((event, matcher, hook) => {
@@ -47,9 +47,10 @@ async function plugin({ id, session, ids, settings = SYNCED, git = 0 }) {
       },
     },
     fs: {
-      exists: async (p) => (p === PROGRESS && session !== undefined) || (p === SETTINGS && settings !== null),
+      exists: async (p) => (p === PROGRESS && session !== undefined) || (p === SETTINGS && (settings !== null || unreadable)),
       read: async (p) => {
         if (p === PROGRESS && session !== undefined) return roundOf(session)
+        if (p === SETTINGS && unreadable) throw new Error(`EACCES: ${p}`)
         if (p === SETTINGS && settings !== null) return settings
         throw new Error(`ENOENT: ${p}`)
       },
@@ -129,6 +130,20 @@ describe('the settings lntt sync writes, checked at session start', () => {
       assert.equal(await p.band(), 'below')
     })
   }
+
+  for (const settings of ['{ "a": ', JSON.stringify({ hooks: { SessionStart: {} } })]) {
+    test(`a file lntt sync refuses (${settings}): the band says to fix it by hand, then run lntt sync`, async () => {
+      const p = await plugin({ id: 's1', settings })
+      const band = JSON.stringify(await p.band())
+      assert.match(band, /\.claude\/settings\.json is not JSON, or not the shape Claude Code reads: fix it, then run: pnpm exec lntt sync/)
+      assert.doesNotMatch(band, /is not as lntt sync writes it/)
+    })
+  }
+
+  test('a file that exists and cannot be read: nothing in the band', async () => {
+    const p = await plugin({ id: 's1', settings: null, unreadable: true })
+    assert.equal(await p.band(), 'below')
+  })
 
   test('outside a git repository there is no project to check: nothing in the band', async () => {
     const p = await plugin({ id: 's1', settings: null, git: 128 })

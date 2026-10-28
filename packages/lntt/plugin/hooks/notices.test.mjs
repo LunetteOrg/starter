@@ -104,7 +104,11 @@ describe('the settings the plugin checks at session start', () => {
   })
 
   test('no file at all: each entry lntt sync writes is missing', () => {
-    assert.equal(settingsProblems(null).length, 3)
+    assert.deepEqual(settingsProblems(null), [
+      'extraKnownMarketplaces.lunette',
+      'enabledPlugins.lunette@lunette',
+      'hooks.SessionStart',
+    ])
   })
 
   test('a file that is not JSON is named as the whole file', () => {

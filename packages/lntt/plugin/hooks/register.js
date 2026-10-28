@@ -29,11 +29,10 @@ async function checkSettings($) {
   try {
     const r = await $.process.run(['git', 'rev-parse', '--show-toplevel'])
     if (r.exitCode !== 0) return
-    let text = null
-    try {
-      text = await $.fs.read(`${r.stdout.trim()}/.claude/settings.json`)
-    } catch {}
-    const keys = settingsProblems(text)
+    const file = `${r.stdout.trim()}/.claude/settings.json`
+    // No file: lntt sync writes one. A file that exists and cannot be read (permissions)
+    // is no case lntt sync fixes: nothing to say.
+    const keys = settingsProblems((await $.fs.exists(file)) ? await $.fs.read(file) : null)
     if (keys.length) settings = noticeText({ kind: 'settings', keys })
   } catch {}
 }
