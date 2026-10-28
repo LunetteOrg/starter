@@ -277,8 +277,9 @@ fails in CI until it does. A project gets a new version of every guide with the 
 
 The plugin holds the Claude Code hooks a project setting cannot carry (the `lntt review`
 band, the issue titles on screen), in `packages/lntt/plugin/`, and ships with the next
-release of `@lntt/lntt`, at its version: `scripts/packages-version.mts` sets and checks
-the version of its `plugin.json` with the packages'. A project reaches it through `lntt
+release of `@lntt/lntt`, at its version
+([one version](../adr/cli-runtime-and-publishing.md#one-version-for-every-published-package-one-release):
+`scripts/packages-version.mts` sets and checks it). A project reaches it through `lntt
 sync`, which writes the `directory` marketplace and the plugin into its
 `.claude/settings.json`; Claude Code loads it in place from `node_modules`, so a bump of
 `@lntt/lntt` is the update, and `lntt check` fails in CI while the entries are missing.

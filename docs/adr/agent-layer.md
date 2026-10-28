@@ -122,8 +122,9 @@ worktree of a repository loads the plugin the main checkout installed (Claude Co
 documentation of plugins for an organization, October 2026).
 
 One settings hook is Lunette's: at `SessionStart`, when `node_modules/.bin/lntt` is
-missing, it installs the dependencies with the lockfile's package manager
-(`packages/lntt/src/claude-settings.ts`). It installs `lntt`, so it is a shell line,
+missing, it installs the dependencies with pnpm, the manager of a Lunette project, or
+with `npm ci` in a project that has only a `package-lock.json`; another lockfile (yarn,
+bun) gets pnpm too (`packages/lntt/src/claude-settings.ts`). It installs `lntt`, so it is a shell line,
 not `lntt hook`. Every other hook is measured before it is adopted: what it costs in
 tokens and turns against what it catches that the next gate (the pre-commit, `ci:local`,
 the review) would catch later at a higher cost. None of the others measured pays for
