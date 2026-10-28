@@ -115,9 +115,10 @@ reads a plugin root's `skills/` and `agents/` as components, and the package roo
 the guides and the `AGENTS.md` block there. `lntt sync` writes into
 `.claude/settings.json` a `directory` marketplace, `./node_modules/@lntt/lntt`, and
 enables the plugin from it; `lntt check plugin` fails while either is missing or points
-elsewhere. Once the folder is trusted Claude Code loads the plugin in place at every
-session start, with no install step and whatever its version string, so a bump of
-`@lntt/lntt` is its update. The path resolves against the main checkout: every
+elsewhere. A file that is not JSON, or whose keys do not have the shape Claude Code
+reads, `lntt sync` refuses without writing: it is fixed by hand first. Once the folder
+is trusted Claude Code loads the plugin in place at every session start, with no install
+step and whatever its version string, so a bump of `@lntt/lntt` is its update. The path resolves against the main checkout: every
 worktree of a repository loads the plugin the main checkout installed (Claude Code's
 documentation of plugins for an organization, October 2026).
 
