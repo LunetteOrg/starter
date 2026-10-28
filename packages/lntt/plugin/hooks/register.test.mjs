@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
+import { INSTALL_HOOK, MARKETPLACE, PLUGIN } from '../../src/claude-settings.ts'
 
 const PROGRESS = '/repo/.git/lntt-review.progress'
+const SETTINGS = '/repo/.claude/settings.json'
+// The settings lntt sync writes.
+const SYNCED = JSON.stringify({
+  extraKnownMarketplaces: { lunette: MARKETPLACE },
+  enabledPlugins: { [PLUGIN]: true },
+  hooks: { SessionStart: [{ hooks: [INSTALL_HOOK] }] },
+})
 const roundOf = (session) =>
   [
     { t: 1_000, type: 'round', pid: 42, round: 1, session },
@@ -12,9 +20,10 @@ const roundOf = (session) =>
     .join('\n')
 
 // The plugin registered on a fake engine, in a session whose id is `id` (an Error when
-// the session cannot tell it), reading a progress file written by `session`'s round.
+// the session cannot tell it), reading a progress file written by `session`'s round (none
+// when `session` is undefined) and the project's `settings` (null: no file).
 // Each load is a fresh copy of the module: its state is per session.
-async function plugin({ id, session, ids }) {
+async function plugin({ id, session, ids, settings = SYNCED }) {
   const { register } = await import(`./register.js?case=${Math.random()}`)
   const hooks = {}
   register((event, matcher, hook) => {
@@ -31,10 +40,19 @@ async function plugin({ id, session, ids }) {
       },
     },
     process: {
-      run: async (argv) =>
-        argv[0] === 'git' ? { exitCode: 0, stdout: '/repo/.git\n', stderr: '' } : { exitCode: 0, stdout: '', stderr: '' },
+      run: async (argv) => {
+        if (argv[0] !== 'git') return { exitCode: 0, stdout: '', stderr: '' }
+        return { exitCode: 0, stdout: argv.includes('--show-toplevel') ? '/repo\n' : '/repo/.git\n', stderr: '' }
+      },
     },
-    fs: { exists: async (p) => p === PROGRESS, read: async () => roundOf(session) },
+    fs: {
+      exists: async (p) => (p === PROGRESS && session !== undefined) || (p === SETTINGS && settings !== null),
+      read: async (p) => {
+        if (p === PROGRESS && session !== undefined) return roundOf(session)
+        if (p === SETTINGS && settings !== null) return settings
+        throw new Error(`ENOENT: ${p}`)
+      },
+    },
     clock: { now: async () => 2_000, every: (ms, fn) => timers.push(fn) },
     command: { register: async () => {} },
     ui: { invalidate: () => {}, resolve: () => ({ Text: el('Text'), Box: el('Box') }) },
@@ -45,6 +63,8 @@ async function plugin({ id, session, ids }) {
     refresh: () => timers[0](),
     band: () => hooks['ui.render']($, { surface: 'terminal' }, async () => 'below'),
     status: async () => (await hooks['command.run']($, {})).text,
+    // A message's last delta, through the issue titles hook.
+    end: () => hooks['classic.MessageDisplay']($, { message_id: 'm', delta: 'done', final: true }, async () => ({})),
   }
 }
 
@@ -86,4 +106,26 @@ describe('the band in a session of the checkout', () => {
     await p.refresh()
     assert.equal(await p.band(), 'below')
   })
+})
+
+describe('the settings lntt sync writes, checked at session start', () => {
+  test('as lntt sync writes them: nothing in the band', async () => {
+    const p = await plugin({ id: 's1' })
+    assert.equal(await p.band(), 'below')
+  })
+
+  for (const [what, settings] of [
+    ['missing', null],
+    ['with the GitHub marketplace', JSON.stringify({ extraKnownMarketplaces: { lunette: { source: { source: 'github', repo: 'LunetteOrg/starter' } } } })],
+  ]) {
+    test(`${what}: the band says to run lntt sync until the first message ends; /review-status says it too`, async () => {
+      const p = await plugin({ id: 's1', settings })
+      const band = await p.band()
+      assert.equal(band.type, 'Box')
+      assert.match(JSON.stringify(band), /\.claude\/settings\.json.*Run: pnpm exec lntt sync/)
+      assert.match(await p.status(), /Run: pnpm exec lntt sync/)
+      await p.end()
+      assert.equal(await p.band(), 'below')
+    })
+  }
 })

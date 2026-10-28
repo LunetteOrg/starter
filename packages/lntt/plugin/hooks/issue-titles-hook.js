@@ -7,6 +7,7 @@
 // engine requires; the session's state is passed to them.
 
 import { annotate, cite, entry, footer, isKey, message, settled } from './issue-titles.mjs'
+import { notice } from './notices.mjs'
 
 // How long a delta waits, for lntt and the titles together: what is slower goes on, and
 // its title shows in a later delta (in the box of this message when it arrives before
@@ -40,6 +41,9 @@ function session() {
     home: null, // the session's repository, owner/repo, as lntt names it
     lntt: null, // the look for lntt, started at the first number
     messages: new Map(), // message_id -> what that message has shown so far
+    problem: null, // what keeps the titles off, for its notice (notices.mjs)
+    told: false, // the notice was shown: once per session
+    gh: null, // the look at gh (auth status), once, when the titles cannot be found
   }
 }
 
@@ -53,6 +57,31 @@ async function findLntt($) {
   return 'lntt'
 }
 
+// The version of the project's @lntt/lntt, null for an lntt on PATH or one that cannot
+// be read.
+async function versionOf($, bin) {
+  if (bin === 'lntt') return null
+  try {
+    return JSON.parse(await $.fs.read(bin.replace(/\.bin\/lntt$/, '@lntt/lntt/package.json'))).version ?? null
+  } catch {
+    return null
+  }
+}
+
+// Why gh finds nothing, asked once: not installed, or not logged in. Logged in, it is no
+// problem of the person's (a repository with no GitHub remote): nothing to tell.
+function askGh($, s) {
+  s.gh ??= (async () => {
+    try {
+      const r = await $.process.run(['gh', 'auth', 'status'], { timeoutMs: GH_TIMEOUT_MS })
+      if (r.exitCode !== 0) s.problem ??= { kind: 'gh-auth' }
+    } catch (error) {
+      if (/ENOENT/.test(String(error?.message ?? error))) s.problem ??= { kind: 'gh-missing' }
+    }
+  })()
+  return s.gh
+}
+
 // One lntt refs: its JSON, or null when lntt cannot start, runs past its timeout, fails
 // or answers anything else. A failed run, and one with no session repository, is tried
 // again at the next lookup, until FAILURES in a row; an lntt with no refs turns the
@@ -64,11 +93,17 @@ async function refs($, s, args, stdin, batch = { failed: false }) {
     const r = await $.process.run([await s.lntt, 'refs', ...args], { stdin, timeoutMs: LNTT_TIMEOUT_MS })
     if (r.exitCode === 2 && NO_REFS.test(r.stderr ?? '')) {
       s.dead = true
+      s.problem ??= { kind: 'no-refs', found: await versionOf($, await s.lntt) }
       return null
     }
+    if (r.exitCode === 127) s.problem ??= { kind: 'lntt-missing' }
     const json = r.exitCode === 0 ? JSON.parse(r.stdout) : null
     if (Array.isArray(json?.mentions) && Array.isArray(json?.refs)) out = json
-  } catch {}
+  } catch (error) {
+    if (/ENOENT/.test(String(error?.message ?? error))) s.problem ??= { kind: 'lntt-missing' }
+  }
+  // lntt answered, gh found nothing: no repository, or lookups off.
+  if (out && (!out.repository || out.refs.some((r) => r?.why === 'off'))) await askGh($, s)
   if (out?.repository) s.failures = 0
   else if (!batch.failed) {
     batch.failed = true
@@ -152,12 +187,24 @@ async function show($, s, e, base) {
   return shown === delta ? base : { ...base, displayContent: shown }
 }
 
-export function issueTitles(on) {
+// The last delta of a message ends with the notice of what keeps the titles off, once in
+// the session.
+function tell(s, e, shown) {
+  if (!e.final || !s.problem || s.told) return shown
+  const text = notice(s.problem)
+  if (!text) return shown
+  s.told = true
+  return { ...shown, displayContent: `${shown?.displayContent ?? e.delta}\n${text}` }
+}
+
+// `ended`: called when a message's last delta is shown.
+export function issueTitles(on, { ended } = {}) {
   const s = session()
   on('classic.MessageDisplay', async ($, e, next) => {
     const base = await next(e)
+    if (e.final) ended?.()
     try {
-      return await show($, s, e, base)
+      return tell(s, e, await show($, s, e, base))
     } catch {
       return base
     }

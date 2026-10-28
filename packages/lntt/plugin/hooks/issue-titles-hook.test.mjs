@@ -57,13 +57,30 @@ const fakeRun = async (argv, init, { gh = {}, cache = {}, home = 'o/r' }) => ({
 // lntt. Every lntt run is recorded with its options. The clock's sleep never ends, so
 // a delta waits for lntt, unless `late` makes it end after a turn of the event loop:
 // then a call still running is past its wait.
-function engine({ gh = {}, cache = {}, home = 'o/r', local = true, late = false, lntt = null } = {}) {
+function engine({
+  gh = {},
+  cache = {},
+  home = 'o/r',
+  local = true,
+  late = false,
+  lntt = null,
+  auth = 0,
+  version = '0.6.2',
+} = {}) {
   const runs = []
   const waits = []
+  const auths = []
   const $ = {
     process: {
       run: async (argv, init) => {
         if (argv[0] === 'git') return { exitCode: 0, stdout: `${TOP}\n`, stderr: '' }
+        // `gh auth status`, asked once when the titles cannot be found: `auth` is its exit
+        // code, or an Error when gh cannot start.
+        if (argv[0] === 'gh') {
+          auths.push(argv)
+          if (auth instanceof Error) throw auth
+          return { exitCode: auth, stdout: '', stderr: '' }
+        }
         runs.push({ argv, init })
         if (lntt instanceof Error) throw lntt
         if (lntt) return lntt(argv, init)
@@ -71,7 +88,13 @@ function engine({ gh = {}, cache = {}, home = 'o/r', local = true, late = false,
         return { exitCode: 0, stdout, stderr: '' }
       },
     },
-    fs: { exists: async (p) => local && p === LOCAL },
+    fs: {
+      exists: async (p) => local && p === LOCAL,
+      read: async (p) => {
+        if (local && p === `${TOP}/node_modules/@lntt/lntt/package.json`) return JSON.stringify({ version })
+        throw new Error(`ENOENT: ${p}`)
+      },
+    },
     clock: {
       sleep: (ms) => {
         waits.push(ms)
@@ -88,8 +111,11 @@ function engine({ gh = {}, cache = {}, home = 'o/r', local = true, late = false,
     hooks['classic.MessageDisplay']($, { message_id: id, delta, final }, async () => below)
   // The references each full lookup asked for.
   const lookups = () => runs.filter((r) => r.argv[2] !== '--cached').map((r) => r.argv.slice(2))
-  return { flush, runs, waits, lookups, cache }
+  return { flush, runs, waits, lookups, cache, auths }
 }
+
+// What a notice reads, without the terminal's dim sequences.
+const plain = (text) => (text ?? '').replaceAll(/\u001b\[\d+m/g, '')
 
 const tick = () => new Promise((r) => setImmediate(r))
 
@@ -356,6 +382,53 @@ describe('the issue titles hook', () => {
       assert.equal(runs.length, 1)
     })
   }
+
+  test('an lntt that cannot start: the message ends with what to run, once in the session', async () => {
+    const { flush } = engine({ local: false, lntt: () => Promise.reject(new Error('spawn lntt ENOENT')) })
+    await flush('m1', '#1\n')
+    const end = await flush('m1', 'done', true)
+    assert.match(plain(end.displayContent), /^done\nlntt · issue titles off: lntt is not installed in this project\. Run: pnpm install$/)
+    await flush('m2', '#2\n')
+    assert.deepEqual(await flush('m2', 'again', true), {})
+  })
+
+  test('an lntt with no refs: the notice names the version found and the update', async () => {
+    const { flush } = engine({ lntt: async () => ({ exitCode: 2, stdout: '', stderr: 'usage: lntt path' }) })
+    const end = await flush('m1', '#1 done\n', true)
+    assert.match(plain(end.displayContent), /lntt 0\.6\.2 has no `lntt refs`.*Run: pnpm up @lntt\/lntt$/)
+  })
+
+  test('an lntt on PATH with no refs: the notice says so, and to install the project’s', async () => {
+    const { flush } = engine({ local: false, lntt: async () => ({ exitCode: 2, stdout: '', stderr: 'usage: lntt path' }) })
+    const end = await flush('m1', '#1 done\n', true)
+    assert.match(plain(end.displayContent), /the lntt on PATH has no `lntt refs`.*Run: pnpm install$/)
+  })
+
+  for (const [what, auth, says] of [
+    ['gh missing', new Error('spawn gh ENOENT'), /gh is not installed\. Install it \(https:\/\/cli\.github\.com\), then run: gh auth login$/],
+    ['gh logged out', 1, /gh is not logged in\. Run: gh auth login$/],
+  ]) {
+    test(`no session repository, ${what}: gh auth status asked once, and the message ends with what to run`, async () => {
+      const { flush, auths } = engine({ home: null, auth })
+      await flush('m1', '#1\n')
+      const end = await flush('m1', 'done', true)
+      assert.match(plain(end.displayContent), says)
+      await flush('m2', '#2 end\n', true)
+      assert.equal(auths.length, 1)
+    })
+  }
+
+  test('lookups off with gh logged out: the same notice', async () => {
+    const { flush } = engine({ gh: { 'o/r#1': 'off' }, auth: 1 })
+    const end = await flush('m1', '#1 done\n', true)
+    assert.match(plain(end.displayContent), /gh is not logged in/)
+  })
+
+  test('no session repository with gh logged in (no GitHub remote): nothing to tell', async () => {
+    const { flush } = engine({ home: null, auth: 0 })
+    await flush('m1', '#1\n')
+    assert.deepEqual(await flush('m1', 'done', true), {})
+  })
 
   test('one lntt refs may ask the repository and then the titles: its timeout is two gh timeouts and two seconds', () => {
     assert.equal(LNTT_TIMEOUT_MS, 2 * 3000 + 2000)
