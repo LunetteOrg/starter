@@ -9,6 +9,7 @@ import { isAbsolute, join, relative } from 'node:path'
 import { checkAgentsBlock } from './agents.ts'
 import { checkDecisions, decisionBoardRefs, decisionFigures } from './check-decisions.ts'
 import { runTests } from './check-tests.ts'
+import { checkClaudeSettings, HOOK_LABELS, INVALID, SETTINGS } from './claude-settings.ts'
 import { checkBody, RETRO_START, retrospectiveBlock, retrospectiveRules } from './pull-request.ts'
 import { checkSkills, stubFolders } from './skills.ts'
 
@@ -23,7 +24,7 @@ export interface Result {
   message: string
 }
 
-export const AREAS = ['agents-md', 'skills', 'decisions', 'tests', 'body'] as const
+export const AREAS = ['agents-md', 'skills', 'plugin', 'decisions', 'tests', 'body'] as const
 export type Area = (typeof AREAS)[number]
 
 export function isArea(name: string): name is Area {
@@ -120,6 +121,40 @@ function skills(root: string): Result[] {
   }))
 }
 
+// The entries of .claude/settings.json that lntt sync writes: the Lunette plugin from the
+// package's directory marketplace, and the hook that installs the dependencies.
+function plugin(root: string): Result[] {
+  const off = checkClaudeSettings(root).filter((e) => e.state !== 'ok')
+  const result = (status: Status, message: string): Result => ({
+    area: 'plugin',
+    check: 'settings',
+    status,
+    path: SETTINGS,
+    line: null,
+    message,
+  })
+  if (off.length === 0) {
+    return [
+      result(
+        'PASS',
+        'the Lunette plugin loads from node_modules/@lntt/lntt, and the install, format and typecheck hooks are in place',
+      ),
+    ]
+  }
+  return off.map((e) =>
+    result(
+      'FAIL',
+      {
+        missing: `${e.key} is missing; run lntt sync`,
+        elsewhere: `${e.key} points elsewhere than the marketplace @lntt/lntt ships; run lntt sync`,
+        off: `${e.key} is not enabled; run lntt sync`,
+        edited: `${e.key}: the ${HOOK_LABELS[e.key]} hook differs from the one lntt sync writes; run lntt sync`,
+        invalid: INVALID,
+      }[e.state as 'missing' | 'elsewhere' | 'off' | 'edited' | 'invalid'],
+    ),
+  )
+}
+
 // The retrospective block (delivery.pullRequest.retrospective): `retrospective` in a pull
 // request body, which is not in the repository and is given to the area (without one the
 // check does not run); `template` in the pull request template, which must hold the block
@@ -179,6 +214,7 @@ function bodyTemplate(options: CheckOptions): Result {
 export function runArea(area: Area, check: string | undefined, files: string[], options: CheckOptions): Result[] {
   if (area === 'agents-md') return agentsMd(options.root)
   if (area === 'skills') return skills(options.root)
+  if (area === 'plugin') return plugin(options.root)
   if (area === 'tests') return runTests(check, files, options)
   if (area === 'body') return body(check, options)
   if (check === 'numbers') return decisionFigures(options, files)

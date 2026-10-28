@@ -5,6 +5,7 @@
       "packages/create/bin/**",
       "packages/create/test/**",
       "packages/lntt/**",
+      "!packages/lntt/plugin",
       "packages/biome-config/**",
       "packages/typescript-config/**",
       "packages/stylelint-config/**",

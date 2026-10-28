@@ -72,6 +72,21 @@ describe('the installed package', () => {
     assert.ok(files.includes('package/dist/agents/block.md'), 'the agents/ files the code reads from dist/')
   })
 
+  test('ships the Lunette plugin as a directory marketplace, at the package version, without its tests', () => {
+    const marketplace = JSON.parse(readFileSync(join(pkgRoot, '.claude-plugin/marketplace.json'), 'utf8'))
+    const entry = marketplace.plugins.find((p: { name: string }) => p.name === 'lunette')
+    const plugin = JSON.parse(readFileSync(join(pkgRoot, entry.source, '.claude-plugin/plugin.json'), 'utf8'))
+    assert.equal(marketplace.name, 'lunette')
+    assert.equal(plugin.name, 'lunette')
+    assert.equal(plugin.version, JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8')).version)
+    assert.ok(files.includes('package/plugin/hooks/hooks.json'))
+    assert.ok(files.includes('package/plugin/hooks/register.js'))
+    assert.deepEqual(
+      files.filter((f) => f.endsWith('.test.mjs')),
+      [],
+    )
+  })
+
   test('its bin points into dist and exists', () => {
     assert.match(bin, /\/dist\/bin\/lntt\.js$/)
     assert.ok(existsSync(bin))

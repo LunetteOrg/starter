@@ -25,7 +25,7 @@ import { ConfigError, loadConfig } from './index.ts'
 import { retroComment } from './pull-request.ts'
 import { isCandidate } from './retro.ts'
 
-const USAGE = `usage: lntt check [agents-md | skills | decisions [structure | board-refs [<file>...] | numbers [<file>...]] | tests [levels | focus | rules | touched] | body [template | --pr <n> | -]] [--base <ref>] [--json]
+const USAGE = `usage: lntt check [agents-md | skills | plugin | decisions [structure | board-refs [<file>...] | numbers [<file>...]] | tests [levels | focus | rules | touched] | body [template | --pr <n> | -]] [--base <ref>] [--json]
        lntt check tests mutate <path:line> --text <on the line> --to <mutated> [--json]
        lntt check cite <path:line>... [--json]`
 

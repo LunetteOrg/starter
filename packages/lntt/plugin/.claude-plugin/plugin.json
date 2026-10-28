@@ -1,6 +1,6 @@
 {
   "name": "lunette",
-  "version": "0.12.1",
+  "version": "0.6.2",
   "description": "For Lunette projects: a band above the prompt that shows a running lntt review, and /review-status; each issue or pull request number on screen with its title, and a box of their links at the end of a message. The shared skills come with @lntt/lntt (lntt sync), not with this plugin.",
   "author": { "name": "LunetteOrg" },
   "homepage": "https://github.com/LunetteOrg/starter",

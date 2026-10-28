@@ -279,12 +279,19 @@ fails in CI until it does. A project gets a new version of every guide with the 
 
 ## The Lunette plugin
 
-The plugin holds the Claude Code hooks (the `lntt review` band, the issue titles on
-screen). A change under `plugins/lunette/` raises the version in its
-`.claude-plugin/plugin.json`: installed copies update only when the version changes.
-CI checks it on every pull request (`scripts/check-plugin-version.sh`), and validates each
-plugin with `claude plugin validate`, which refuses a hooks module the engine would not
-load.
+The plugin holds the Claude Code hooks a project setting cannot carry (the `lntt review`
+band, the issue titles on screen), in `packages/lntt/plugin/`, and ships with the next
+release of `@lntt/lntt`, at its version
+([one version](../adr/cli-runtime-and-publishing.md#one-version-for-every-published-package-one-release):
+`scripts/packages-version.mts` sets and checks it). A project reaches it through `lntt
+sync`, which writes the `directory` marketplace and the plugin into its
+`.claude/settings.json`; Claude Code loads it in place from `node_modules`, so a bump of
+`@lntt/lntt` is the update, and `lntt check` fails in CI while the entries are missing.
+This repo loads it the same way, from the main checkout's `node_modules`: a change to the
+plugin shows in a session once it is merged and installed there, or at once with
+`claude --plugin-dir packages/lntt/plugin`. CI validates the marketplace and the plugin
+with `claude plugin validate`, which refuses a hooks module the engine would not load
+([agent layer](../adr/agent-layer.md#where-hooks-live)).
 
 ## Releasing
 
