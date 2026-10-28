@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { COMMAND_LIMIT_S } from '../src/hook.ts'
 import { FORMAT_HOOK, hookCommands, normalise, TYPECHECK_HOOK } from '../src/index.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -183,6 +184,7 @@ describe('lntt hook typecheck', () => {
   test('normalise strips colours, timings and trailing spaces, and leaves other numbers', () => {
     assert.equal(normalise('\u001b[2mx\u001b[22m  \nin 12.5s, 340ms\r\n'), 'x\nin s, s')
     assert.equal(normalise('expected 3 s, found 2 errors'), 'expected 3 s, found 2 errors')
+    assert.equal(normalise('src/2s.ts: x12s; Done in 1.2s.'), 'src/2s.ts: x12s; Done in s.')
   })
 
   test('a configuration lntt cannot read is a failure too, reported once', () => {
@@ -194,27 +196,59 @@ describe('lntt hook typecheck', () => {
     assert.equal(hook('typecheck').status, 0)
   })
 
-  test('outside git the last failure is kept in the temporary directory', () => {
+  test('outside git the last report is kept in the temporary directory, one per project', () => {
     const outside = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-hook-nogit-')))
     const tmp = join(outside, 'tmp')
     mkdirSync(tmp)
-    mkdirSync(join(outside, '.agents'))
-    writeFileSync(
-      join(outside, '.agents/config.jsonc'),
-      JSON.stringify({ local: { hooks: { typecheck: 'echo red; exit 1' } } }),
-    )
-    const run = () =>
-      spawnSync(process.execPath, [BIN, 'hook', 'typecheck'], {
-        cwd: outside,
-        encoding: 'utf8',
-        env: { ...process.env, TMPDIR: tmp, GIT_CEILING_DIRECTORIES: dirname(outside) },
-      })
+    const project = (name: string) => {
+      const dir = join(outside, name)
+      mkdirSync(join(dir, '.agents'), { recursive: true })
+      writeFileSync(
+        join(dir, '.agents/config.jsonc'),
+        JSON.stringify({ local: { hooks: { typecheck: 'echo red; exit 1' } } }),
+      )
+      return dir
+    }
+    const env = { ...process.env, TMPDIR: tmp, GIT_CEILING_DIRECTORIES: outside }
+    const run = (dir: string, name: string, input = '') =>
+      spawnSync(process.execPath, [BIN, 'hook', name], { cwd: dir, encoding: 'utf8', env, input })
     try {
-      assert.equal(run().status, 1)
-      assert.equal(run().status, 0)
+      const a = project('a')
+      const b = project('b')
+      assert.equal(run(a, 'typecheck').status, 1)
+      assert.equal(run(a, 'typecheck').status, 0)
+      assert.equal(run(b, 'typecheck').status, 1)
+      // The format hook's notice, outside git too.
+      writeFileSync(join(a, '.agents/config.jsonc'), '{ "local": { "hooks": { "lint": "x" } } }')
+      const path = JSON.stringify({ tool_input: { file_path: '/x/y.ts' } })
+      assert.match(run(a, 'format', path).stdout, /systemMessage/)
+      assert.equal(run(a, 'format', path).stdout, '')
     } finally {
       rmSync(outside, { recursive: true, force: true })
     }
+  })
+
+  test('the typecheck and the format keep their reports apart', () => {
+    config({ hooks: { typecheck: 'true' } })
+    writeFileSync(join(root, '.agents/config.jsonc'), '{ "local": { "hooks": { "lint": "x" } } }')
+    assert.equal(hook('typecheck').status, 1)
+    assert.match(hook('format', JSON.stringify({ tool_input: { file_path: '/x/y.ts' } })).stdout, /systemMessage/)
+  })
+
+  test('an output past a megabyte reaches the agent whole', () => {
+    config({ hooks: { typecheck: "head -c 2000000 /dev/zero | tr '\\0' x; exit 1" } })
+    const r = spawnSync(process.execPath, [BIN, 'hook', 'typecheck'], {
+      cwd: root,
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024,
+    })
+    assert.equal(r.status, 1)
+    assert.ok(r.stderr.length > 2000000, String(r.stderr.length))
+  })
+
+  test('each command stops before the hook’s own timeout', () => {
+    assert.ok(COMMAND_LIMIT_S.format < FORMAT_HOOK.timeout)
+    assert.ok(COMMAND_LIMIT_S.typecheck < TYPECHECK_HOOK.timeout)
   })
 })
 
@@ -362,6 +396,8 @@ describe('the hook lines of .claude/settings.json', () => {
     lntt(2)
     assert.match(JSON.parse(run(FORMAT_HOOK.command).stdout).systemMessage, /pnpm up/)
     assert.match(JSON.parse(run(TYPECHECK_HOOK.command).stdout).systemMessage, /pnpm up/)
+    assert.equal(run(FORMAT_HOOK.command).stdout, '')
+    assert.equal(run(TYPECHECK_HOOK.command).stdout, '')
   })
 
   test('the typecheck runs in the background and wakes the agent', () => {

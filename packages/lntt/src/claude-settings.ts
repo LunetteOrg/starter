@@ -62,6 +62,7 @@ function hookLine(name: string, wake: boolean): string {
 export const FORMAT_HOOK = {
   type: 'command',
   command: hookLine('format', false),
+  timeout: 120,
   statusMessage: 'lntt: formatting the file written',
 }
 
@@ -70,6 +71,7 @@ export const TYPECHECK_HOOK = {
   command: hookLine('typecheck', true),
   asyncRewake: true,
   rewakeSummary: 'Typecheck failed',
+  timeout: 900,
   statusMessage: 'lntt: typecheck',
 }
 

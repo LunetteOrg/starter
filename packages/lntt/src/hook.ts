@@ -17,13 +17,13 @@ import { findConfig, loadConfig, NoConfigError } from './index.ts'
 
 export type HookName = 'format' | 'typecheck'
 
-// The project root: the configuration's, or the directory the hook runs in.
+// The project root: the configuration's, or the directory the hook runs in when none is
+// found (reading it then says what is wrong).
 function projectRoot(cwd: string): string {
   try {
     return dirname(dirname(findConfig(cwd).path))
-  } catch (e) {
-    if (e instanceof NoConfigError) return cwd
-    throw e
+  } catch {
+    return cwd
   }
 }
 
@@ -60,14 +60,22 @@ export function hookCommands(cwd: string, name: HookName): string[] {
 }
 
 const quote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`
-// A typecheck's output can be long; Claude Code's hook timeout bounds how long it runs.
-const sh = (command: string, cwd: string) =>
-  spawnSync('/bin/sh', ['-c', command], {
+
+// Each command is stopped after its limit, below the hook's own timeout in the settings
+// (claude-settings.ts), so Claude Code never kills the hook with a command still running.
+// A typecheck's output can be long.
+export const COMMAND_LIMIT_S: Record<HookName, number> = { format: 30, typecheck: 300 }
+function sh(command: string, cwd: string, name: HookName): { ok: boolean; output: string } {
+  const r = spawnSync('/bin/sh', ['-c', command], {
     cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     maxBuffer: 64 * 1024 * 1024,
+    timeout: COMMAND_LIMIT_S[name] * 1000,
   })
+  const stopped = r.error ? `(lntt hook stopped it: ${r.error.message})\n` : ''
+  return { ok: r.status === 0, output: `${r.stdout ?? ''}${r.stderr ?? ''}${stopped}` }
+}
 
 // The path of the file the tool wrote, from the hook's input; null when there is none.
 function writtenPath(input: string): string | null {
@@ -88,7 +96,7 @@ const COLOUR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g')
 export function normalise(output: string): string {
   return output
     .replace(COLOUR, '')
-    .replace(/\b\d+(\.\d+)?m?s\b/g, 's')
+    .replace(/(?<![\w.])\d+(\.\d+)?m?s(?!\.?\w)/g, 's')
     .split(/\r?\n/)
     .map((l) => l.trimEnd())
     .join('\n')
@@ -119,8 +127,12 @@ function once(file: string, text: string | null): string | null {
     return null
   }
   const seen = normalise(text)
-  if (existsSync(file) && readFileSync(file, 'utf8') === seen) return null
-  writeFileSync(file, seen)
+  try {
+    if (existsSync(file) && readFileSync(file, 'utf8') === seen) return null
+    writeFileSync(file, seen)
+  } catch {
+    // A state lntt cannot keep: the text is said every time rather than never.
+  }
   return text
 }
 
@@ -140,7 +152,7 @@ export function runFormat(cwd: string, input: string): string | null {
     return once(stateFile(root, 'format-notice'), `lntt hook format is off until this is fixed: ${failure(e)}`)
   }
   once(stateFile(root, 'format-notice'), null)
-  for (const command of commands) sh(`${command} ${quote(path)}`, root)
+  for (const command of commands) sh(`${command} ${quote(path)}`, root, 'format')
   return null
 }
 
@@ -152,8 +164,8 @@ export function runTypecheck(cwd: string): string | null {
   let failed: string[]
   try {
     failed = hookCommands(root, 'typecheck').flatMap((command) => {
-      const r = sh(command, root)
-      return r.status === 0 ? [] : [`$ ${command}\n${r.stdout}${r.stderr}`]
+      const r = sh(command, root, 'typecheck')
+      return r.ok ? [] : [`$ ${command}\n${r.output}`]
     })
   } catch (e) {
     failed = [failure(e)]
