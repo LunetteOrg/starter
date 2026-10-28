@@ -1,7 +1,7 @@
 ---
 status: accepted
-date: 2026-10-22
-tags: [agents, skills, configuration, operator, templates]
+date: 2026-10-28
+tags: [agents, skills, configuration, operator, templates, hooks, plugin]
 ---
 
 # The agent layer
@@ -33,8 +33,8 @@ places a skill reads:
   of another list) and for what every reader would fail on if the schema required it
   (a key the skills need, so a section written in steps still loads).
   Sections are named after fixed process areas (`recording`, `board`, `ci`,
-  `delivery`, `cycle`, `spaces`, `team`, `local`); a section is added when a skill
-  needs it. A short reason for a value is a comment next to it. A section that a
+  `delivery`, `cycle`, `spaces`, `team`, `local`, which holds the commands of the
+  agent's hooks beside the local apps); a section is added when a skill needs it. A short reason for a value is a comment next to it. A section that a
   platform serves names it (`board.provider`), keeps that platform's own keys under its
   name (`board.github`) and the concepts every platform shares beside it; a skill of
   that platform, its adapter, does the reads and writes (`github-board` for `github`),
@@ -96,11 +96,103 @@ people need (handle, role, ownership) goes in the tracked `team` section instead
 `.agents/` is the directory agents already share: `npx skills` and the Agent Skills
 guidance use `.agents/skills/` and `~/.agents/skills/` across clients.
 
+### Where hooks live
+
+A hook goes in the `lunette` plugin only when a project setting cannot carry it: the
+hooks that change what Claude Code draws (the `lntt review` band above the prompt and
+`/review-status`, the issue titles in a message). Every other hook goes in the
+project's `.claude/settings.json`, written by `lntt sync` beside the project's own
+hooks, as a thin line that calls `lntt` with its logic in the package (`lntt hook
+<name>`, `packages/lntt/src/hook.ts`, its exit codes in `hook-cli.ts`).
+A settings line runs the worktree's `lntt` and reaches a cloud session; the plugin
+does neither (below). It is the path the skills take, and `lntt sync` can write the
+same line in another agent's hook format.
+
+The plugin ships inside `@lntt/lntt`, in `packages/lntt/plugin/`, at the package's
+version, with the marketplace that lists it at the package root
+(`.claude-plugin/marketplace.json`). It sits in a folder of its own because Claude Code
+reads a plugin root's `skills/` and `agents/` as components, and the package root holds
+the guides and the `AGENTS.md` block there. `lntt sync` writes into
+`.claude/settings.json` a `directory` marketplace, `./node_modules/@lntt/lntt`, and
+enables the plugin from it; `lntt check plugin` fails while either is missing or points
+elsewhere. A file that is not JSON, or whose keys do not have the shape Claude Code
+reads, `lntt sync` refuses without writing: it is fixed by hand first. Once the folder
+is trusted Claude Code loads the plugin in place at every session start, with no install
+step and whatever its version string, so a bump of `@lntt/lntt` is its update. The path
+resolves against the main checkout: every worktree of a repository loads the plugin the
+main checkout installed (Claude Code's documentation of plugins for an organization,
+October 2026). The plugin cannot import `lntt`, so it reads `.claude/settings.json` with
+a reader of its own, which drops comments, trailing commas and a leading byte order mark
+as `lntt` does (`lntt sync` writes the file back without the mark).
+
+Three settings hooks are Lunette's (`packages/lntt/src/claude-settings.ts`), each told
+from the project's own by its `statusMessage`: `lntt sync` replaces a hook with that
+message and a different line, so the message of a hook stays the same across versions.
+
+- **Install**, at `SessionStart`: when `node_modules/.bin/lntt` is missing, it installs
+  the dependencies with pnpm, the manager of a Lunette project, or with `npm ci` in a
+  project that has only a `package-lock.json`; another lockfile (yarn, bun) gets pnpm
+  too. It installs `lntt`, so it is a shell line, not `lntt hook`.
+- **Format**, after `Write` and `Edit`: `lntt hook format` passes the written file to
+  the format commands. The file is formatted while the agent works on it, so the
+  pre-commit, which formats the staged files and stages the fix, does not rewrite it
+  under the agent. A command that fails on the file (a type it does not handle) is
+  skipped.
+- **Typecheck**, at `Stop`, in the background: `lntt hook typecheck` runs the typecheck
+  commands and wakes the agent with the output of a failure, so the first real error
+  reaches it at once rather than at the next commit. It wakes only on a failure it has
+  not seen: the last failing output, without colours and timings, is kept in the
+  worktree's git directory (outside git, in the temporary directory), a run that fails
+  the same way stays quiet, and a green run clears it.
+
+The commands are a project's: `local.hooks.format` and `local.hooks.typecheck` of
+`.agents/config`, one command or a list run in order (a project with more than one
+toolchain, such as `tsc` and `mypy`, every one of which must pass); without the key, the
+`package.json` script of the same name; without both, the hook does nothing and says
+nothing. They run from the project root, within one limit for the whole list (a minute
+for the format commands, ten minutes for the typecheck's), below the hook's own timeout
+in the settings. Each runs in a process group of its own: at the limit the whole group
+gets SIGTERM, and SIGKILL a second later, the processes it started included (`tsc` under
+`pnpm run`), and the commands left are not run; the typecheck reports both as part of its failure. Its output reaches
+the agent up to 64 MB.
+
+`lntt hook` answers its settings line with an exit code: 0 nothing to report, 1 a
+typecheck failure not reported yet (the line exits 2, which wakes the agent with the
+output), 2 the usage, which an `lntt` older than `hook` also answers. A defect of the
+typecheck hook itself (its own error, a state it cannot read or write) never wakes the
+agent: it exits 0 with a `systemMessage`, which Claude Code gives the agent at its next
+turn. It is said once per session, told by the `session_id` of the hook input (a marker
+in the temporary directory); with no id, or a marker that cannot be kept, every time. A
+defect of the format hook is quiet: the commit's own check is the gate.
+
+Every other hook is measured before it is adopted: what it costs in tokens and turns
+against what it catches that the next gate (the pre-commit, `ci:local`, the review) would
+catch later at a higher cost. The measure of October 2026, on the Claude Code transcripts
+of three Lunette projects (about 2,400 sessions, 1,381 commits): the typecheck at `Stop`
+woke the agent 77 times, 66 of them in one project, where 65 rewakes changed nothing
+while the typecheck stayed red, for 203 model calls and 85k output tokens; the waking on
+a new failure only removes that repetition. The formatting hook ran 2,040 times and
+caused 281 file-changed notices (about 56k tokens) for the formatting the agent would
+otherwise meet at the commit. None of the other hooks measured pays for itself today (see
+the discarded directions).
+
+A mechanism of the plugin or a hook of `lntt` that cannot work never errors and never
+blocks a turn: it says once per session what is missing and the command that fixes it,
+after a fix by hand when `lntt sync` cannot read the file
+(`packages/lntt/plugin/hooks/notices.mjs`). The band says it in the band, until the
+first message ends (`.claude/settings.json` not as `lntt sync` writes it); the titles at
+the end of a message (`lntt` not installed, an `lntt` with no `refs`, `gh` missing or
+not logged in); a settings hook in a `systemMessage`, which Claude Code shows the
+person for the install and format hooks and gives the agent at its next turn for the
+typecheck, which runs in the background. A configuration `lntt` cannot read is said once
+until it changes, where each hook speaks: the typecheck wakes the agent with it, as a
+failure; the format hook, which is then off, tells the person in a `systemMessage`.
+
 ### What a number means is shown on screen, not asked of the agent
 
 In Claude Code the `lunette` plugin shows, beside the first `#N` or `owner/repo#N` of
 each message, the title of that issue or pull request, dimmed, and ends the message
-with a box of what it cited and their URLs (`plugins/lunette/hooks/issue-titles.mjs`).
+with a box of what it cited and their URLs (`packages/lntt/plugin/hooks/issue-titles.mjs`).
 It is a `MessageDisplay` hook: it changes the screen only, and what the agent wrote and
 reads stays as it was.
 
@@ -159,13 +251,31 @@ How a title is written is the `github-board` skill's.
 - One skill serves every project, and an upstream fix reaches every project that
   updates it.
 - One install path and one version for every agent: a bump of `@lntt/lntt` updates the
-  skills of Claude Code and of every other client, and the `lntt` they call with them.
+  skills of Claude Code and of every other client, the plugin, and the `lntt` they call
+  with them.
 - A project's process is readable in one file of values and a few pages of prose, not
   scattered through skills, ADRs and instruction files.
 - The operator profile follows its owner into every worktree and every agent that
   reads `.agents/`, and never lands in git.
 
 ### Negative / accepted risks
+
+- The plugin needs `node_modules` in the main checkout: a fresh clone shows no band and
+  no titles until the install, which the `SessionStart` hook runs, and the next session.
+  A worktree whose `lntt` is newer or older than the main checkout's runs the main
+  checkout's plugin against it; an output the plugin does not know is ignored.
+- A cloud session adds no `directory` marketplace: it has the skills and the settings
+  hooks, not the band or the titles.
+- The format hook adds a file-changed notice to the context after each edit it
+  reformats; the typecheck runs at every `Stop`, in the background, and a failure that
+  changes at each run wakes the agent at each run.
+- A settings line of `lntt hook` that meets an `lntt` with no `hook` says what to run once
+  per Claude Code process, which is the session's; with `lntt` missing it says nothing.
+  A configuration `lntt` cannot read turns the format hook off until it is fixed.
+- Claude Code keeps one registered `lunette` marketplace per machine: each Lunette
+  project's session start points it at that project's path, and every session loads
+  its own project's copy (observed with Claude Code 2.1.312, two projects in one
+  configuration).
 
 - A `gh repo view` slower than `GH_TIMEOUT_MS` (a slow network) counts as a failed
   `lntt refs` call: `FAILURES` of them in a row turn the titles off for the session, and
@@ -204,8 +314,34 @@ How a title is written is the `github-board` skill's.
 - Claude Code draws terminal hyperlinks (OSC 8) in a hook's display text: the number
   itself can link to its issue.
 - Claude Code reads `.agents/skills/`: `lntt sync` stops writing `.claude/skills/`.
+- Claude Code resolves a `directory` marketplace against the worktree, or cloud sessions
+  add one: the plugin follows the worktree's `lntt` everywhere, and the display hooks
+  stop needing the main checkout.
+- A gate moves (the pre-commit stops running the typecheck or the formatter) or a
+  Claude Code release changes what a hook costs: the discarded hooks below are measured
+  again.
 
 ## Discarded directions
+
+- **The plugin from the starter's GitHub marketplace.** It updated at its own version
+  string while a project's `lntt` is the version in its lockfile, so the hooks that call
+  `lntt` drifted from it, and each machine installed it once by hand.
+- **The plugin at the package root.** Claude Code would load the guides in `skills/` as
+  plugin skills and `agents/block.md` as a subagent.
+- **Command hooks in the plugin.** They would run the main checkout's `lntt` in every
+  worktree and miss cloud sessions; a settings line has neither limit.
+- **A typecheck at `Stop` that wakes the agent at every red run.** While the typecheck
+  stayed red it woke a turn that changed nothing at each `Stop` (65 of one project's 66
+  rewakes); the waking on a new failure only keeps the first.
+- **The typecheck and the formatting left to the pre-commit alone.** The first real
+  error reaches the agent a commit later, and the commit rewrites under the agent the
+  files it formats.
+- **The hooks' commands fixed by Lunette (`pnpm typecheck`, Biome).** A project with
+  another toolchain, or more than one, could not use them.
+- **A reminder to triage after `gh issue create`.** A project with it and one with only
+  the `github-board` skill left the same share of issues untriaged.
+- **Starting a cloud session (the Node version, the local services).** No cloud session
+  of a Lunette project to measure it on; it is measured when there is one.
 
 - **Project values inside the skills, or in ADRs.** It is why the skills of two
   projects scaffolded from the same template diverged, and why ADRs mixed process with

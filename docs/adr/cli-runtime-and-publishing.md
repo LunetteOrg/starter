@@ -76,7 +76,8 @@ The packages published from `packages/` besides the CLI follow the same rule.
 Every package under `packages/` that is not `private` (`@lntt/create` and the other
 `@lntt/*`) carries the same version, and one tag, `vX.Y.Z`, releases them all. A
 package with nothing new still gets the new version: the version names a release of
-the whole set, which the template depends on as one.
+the whole set, which the template depends on as one. A Claude Code plugin a package ships
+(`packages/lntt/plugin/.claude-plugin/plugin.json`) carries its package's version too.
 
 - **The tag is checked against every published package** before anything is
   published (`scripts/packages-version.mts`, which CI also runs on every pull

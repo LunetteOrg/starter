@@ -35,5 +35,5 @@ yarn-error.log*
 
 # Written by Claude Code when it loads a plugin with --plugin-dir: type declarations and a
 # tsconfig for the mod, per machine and per Claude Code version.
-plugins/*/.claude-plugin/types/
-plugins/*/tsconfig.json
+packages/lntt/plugin/.claude-plugin/types/
+packages/lntt/plugin/tsconfig.json

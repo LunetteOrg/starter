@@ -48,7 +48,7 @@
         "files": [
           "packages/{biome-config,lntt,stylelint-config,typescript-config,playwright-config}/test/**/*.test.ts",
           "scripts/*.test.mts",
-          "plugins/*/hooks/*.test.mjs"
+          "packages/lntt/plugin/hooks/*.test.mjs"
         ],
         "exclude": ["**/fixtures/**"],
         "environment": "node:test, the CLI against fixture repositories in a temp dir",
@@ -221,6 +221,14 @@
       // in the retrospective blocks. This repo is its own upstream: lntt issue sends
       // nothing, the harvest handles those items here.
       "upstream": { "repository": "LunetteOrg/starter" }
+    }
+  },
+  "local": {
+    // What lntt hook runs. Format with Biome's check --write, which the pre-commit runs on
+    // the staged files, so the commit does not rewrite a file under the agent; the
+    // typecheck is the typecheck script of package.json.
+    "hooks": {
+      "format": "pnpm exec biome check --write --no-errors-on-unmatched --files-ignore-unknown=true"
     }
   }
 }

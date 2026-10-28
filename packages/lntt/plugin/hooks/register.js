@@ -3,20 +3,37 @@
 // failure in red), with no Claude turn; `/review-status` prints the same. It reads the
 // progress events lntt review writes to <git dir>/lntt-review.progress and only shows
 // them: what to show is review-band.mjs, tested on its own. The issue titles on screen
-// are issue-titles-hook.js.
+// are issue-titles-hook.js. At session start it reads the project's .claude/settings.json:
+// entries that are not as lntt sync writes them are said in the band, with the command
+// that fixes them, until the first message ends.
 
 import { issueTitles } from './issue-titles-hook.js'
+import { noticeText, settingsProblems } from './notices.mjs'
 import { bandLines, fold, ownedBy, readEvents, SPIN_MS } from './review-band.mjs'
 
 let progressFile = null
 let session = null // this Claude Code session's id, which lntt review records with its round
 let view = null
 let alive = null // whether the round's lntt review process still runs, null when unknown
+let settings = null // what .claude/settings.json lacks, said until the first message ends
 
 async function locate($) {
   try {
     const r = await $.process.run(['git', 'rev-parse', '--absolute-git-dir'])
     if (r.exitCode === 0) progressFile = `${r.stdout.trim()}/lntt-review.progress`
+  } catch {}
+}
+
+// The entries of the project's .claude/settings.json that lntt sync would write again.
+async function checkSettings($) {
+  try {
+    const r = await $.process.run(['git', 'rev-parse', '--show-toplevel'])
+    if (r.exitCode !== 0) return
+    const file = `${r.stdout.trim()}/.claude/settings.json`
+    // No file: lntt sync writes one. A file that exists and cannot be read (permissions)
+    // is no case lntt sync fixes: nothing to say.
+    const keys = settingsProblems((await $.fs.exists(file)) ? await $.fs.read(file) : null)
+    if (keys.length) settings = noticeText({ kind: 'settings', keys })
   } catch {}
 }
 
@@ -52,9 +69,14 @@ async function refresh($) {
 const running = () => view && view.round !== null && !view.done && !view.error
 
 export function register(on) {
-  issueTitles(on)
+  issueTitles(on, {
+    ended: () => {
+      settings = null
+    },
+  })
   on('session.start', async ($, e, next) => {
     await locate($)
+    await checkSettings($)
     $.clock.every(1000, () => refresh($))
     // Only the spinner needs the faster redraw, and only while a round runs.
     $.clock.every(SPIN_MS, () => {
@@ -71,9 +93,9 @@ export function register(on) {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (!ownedBy(view, session)) return next(e)
-    const lines = bandLines(view, await $.clock.now(), alive)
-    if (!lines) return next(e)
+    const round = ownedBy(view, session) ? bandLines(view, await $.clock.now(), alive) : null
+    const lines = [...(settings ? [{ tone: 'dim', text: settings }] : []), ...(round ?? [])]
+    if (!lines.length) return next(e)
     const { Text, Box } = $.ui.resolve(e)
     const tone = {
       strong: { bold: true },
@@ -88,10 +110,12 @@ export function register(on) {
   })
 
   on('command.run', { command: 'review-status' }, async ($) => {
-    if (view && !ownedBy(view, session)) return { text: 'An lntt review round runs in another session of this worktree.' }
+    const said = settings ? `${settings}\n` : ''
+    if (view && !ownedBy(view, session))
+      return { text: `${said}An lntt review round runs in another session of this worktree.` }
     const lines = bandLines(view, await $.clock.now(), alive)
-    if (!lines || !view) return { text: 'No lntt review round in this worktree.' }
+    if (!lines || !view) return { text: `${said}No lntt review round in this worktree.` }
     const all = [...view.running.entries()].flatMap(([l, rs]) => rs.map((r) => `  running ${l}${r.optional ? ' (optional)' : ''}`))
-    return { text: [...lines.map((l) => l.text), ...all].join('\n') }
+    return { text: said + [...lines.map((l) => l.text), ...all].join('\n') }
   })
 }

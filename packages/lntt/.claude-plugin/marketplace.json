@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "lunette",
-      "source": "./plugins/lunette",
+      "source": "./plugin",
       "description": "A band above the prompt that shows a running lntt review, and /review-status; issue and pull request numbers on screen with their titles"
     }
   ]

@@ -15,10 +15,9 @@ packages/
   playwright-config/    # @lntt/playwright-config: definePlaywrightConfig
   test-utils/           # @lntt/test-utils: test Postgres per run, architecture guards
   lntt/                 # the lntt command: .agents/config.*, the operator profile,
-                        # lntt check, lntt review, the CI run locally (pnpm ci:local)
-plugins/
-  lunette/              # the Lunette plugin for Claude Code: the review band, issue titles
-.claude-plugin/marketplace.json
+                        # lntt check, lntt review, the CI run locally (pnpm ci:local),
+                        # and the Lunette plugin for Claude Code (plugin/, with its
+                        # marketplace in .claude-plugin/): the review band, issue titles
 docs/
   adr/                  # decisions about the templates system
   process/              # how work is done in this repo
@@ -48,13 +47,19 @@ added, removed or redescribed). The skills read the project's values from
 
 ## The Lunette plugin
 
-The plugin, from this repository's marketplace, adds to Claude Code the band above the
-prompt that shows a running `lntt review` round, `/review-status`, and each issue or pull
-request number on screen with its title. It is enabled per
-project: `.claude/settings.json` declares the marketplace and enables the plugin, and
-each machine installs it once with
-`claude plugin install lunette@lunette --scope project`. Claude Code does not install
-it by itself in a folder it already trusts.
+The plugin adds to Claude Code the band above the prompt that shows a running `lntt
+review` round, `/review-status`, and each issue or pull request number on screen with
+its title. It ships inside `@lntt/lntt`, in
+[`packages/lntt/plugin/`](./packages/lntt/plugin/), at the package's version. In a
+project, `pnpm exec lntt sync` writes into `.claude/settings.json` a `directory`
+marketplace pointing at `./node_modules/@lntt/lntt` and enables the plugin from it:
+once the folder is trusted, Claude Code loads it in place at every session start, with
+no install step, and a bump of `@lntt/lntt` updates it. `lntt check plugin` fails when
+those entries are missing or point elsewhere. The path resolves against the main
+checkout, so every worktree loads the plugin the main checkout installed; it needs
+`node_modules` (the hook `lntt sync` writes beside it installs them at session start),
+and cloud sessions do not add such a marketplace
+([agent layer](./docs/adr/agent-layer.md#where-hooks-live)).
 
 ## Shared packages
 
@@ -82,7 +87,7 @@ fail in CI.
   framework ([template model](./docs/adr/template-model.md)). It is a self-contained
   monorepo, **not** part of this repo's workspace (the root `pnpm-workspace.yaml`
   only globs `packages/*`): to work on one, `cd` into it and `pnpm install`.
-- To work on the plugin, load it from the working tree instead of the installed copy:
-  `claude --plugin-dir plugins/lunette`, and `/reload-plugins` after an edit.
-  `claude plugin validate .` checks the marketplace and the plugin.
+- To work on the plugin, load it from the working tree instead of the main checkout's
+  copy: `claude --plugin-dir packages/lntt/plugin`, and `/reload-plugins` after an edit.
+  `claude plugin validate packages/lntt` checks the marketplace and the plugin.
 - Agents read [`AGENTS.md`](./AGENTS.md).
