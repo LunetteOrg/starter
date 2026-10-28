@@ -47,6 +47,18 @@ This skill is the procedure; never edit it to fit one project.
   test cannot say.
 - Use the `users` the configuration lists; never invent credentials, and never write
   a secret into a file or a message.
+- **Hand the test what it reads.** A one-time code that goes to the server's log is read
+  from the log file of step 3: pass its path (and the user, and where to save the state)
+  as the variables `signIn.doc` names. Run the test from the worktree root, with the
+  app's `env` exported.
+- **Where the saved state works.** A Playwright storage state loads in Playwright
+  (`storageState`) and in `curl` (build the `Cookie` header from its `cookies`). The
+  browser `lntt browser` drives may have no way to set a cookie: there,
+  sign in through the page, or take the screenshot with Playwright and the state.
+- **Two worktrees at once.** Cookies of `localhost` are shared by every port, so two
+  instances overwrite each other's session unless the app names its cookie after the
+  port. An app that does not is a finding for the project, not something to work
+  around by signing in one instance at a time.
 
 ## 5. Check
 
