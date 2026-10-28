@@ -17,7 +17,7 @@ the whole suite weighs every line alike and costs a full run per mutant; the use
 mutations are few, and whoever reads the change knows which line a test guards. A suite
 can be fully green and hide an inverted flag, an id dropped from a call to a vendor or a
 guard removed, defects that breaking the guarded line on purpose finds and reading does
-not; the author, who knows which line each new test guards, can run that break before
+not; the author, who knows which line each test of the change guards, can run that break before
 any reviewer reads the change.
 
 ## Decision
@@ -69,10 +69,9 @@ reason, and sits at the lowest level where its assertion can.
   dropped, a guard or early return removed, the optimistic constant returned, the call
   removed), wiring before units.
 - **The author runs the mutation before the review.** A test the change adds or alters
-  that guards a line is
-  accepted when a mutation of that line, run with `mutate`, is killed by that test with a
-  message that names the defect; a mutant that survives means the test does not exist,
-  whatever the coverage says. The procedure is the shared skill `mutation-check`; where
+  that guards a line is accepted when a mutation of that line, run with `mutate`, is
+  killed by that test with a message that names the defect; a mutant that survives
+  means the test does not exist, whatever the coverage says. The procedure is the shared skill `mutation-check`; where
   the outcome is reported is the project's delivery process (here,
   [delivery](../process/delivery.md#the-pull-request-body)).
 - **The rule holds in every Lunette project.** It is decided here and reaches a project
@@ -124,7 +123,7 @@ reason, and sits at the lowest level where its assertion can.
 - **The rule in a template's testing record.** It would reach only the projects
   scaffolded from that template, and none that adopts `lntt` later; the rule governs the
   checks `lntt` runs, so it is filed with them.
-- **A check that the pull request body names a mutation for every new test.** Which line
+- **A check that the pull request body names a mutation for every test of the change.** Which line
   a test guards is a judgement; a count of mutations per test file would pass on a
   mutation of the wrong line and fail on a helper that guards nothing.
 - **Automated mutation testing (Stryker and similar).** Every mutant reruns the whole

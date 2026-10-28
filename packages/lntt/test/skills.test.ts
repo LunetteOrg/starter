@@ -465,6 +465,7 @@ describe('the mutation-check skill', () => {
     assert.match(section(1), /\*\*No `tests\.levels`:\*\* stop/)
     assert.match(section(3), /`--to=''` to delete/)
     assert.match(section(3), /single quote goes between double quotes/)
+    assert.match(section(3), /Write `--text=\.\.\.` with the `=` when the text starts with `-`/)
   })
 
   test('runs before the first review round, on the tests the change adds or alters', () => {
