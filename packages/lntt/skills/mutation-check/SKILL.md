@@ -1,14 +1,14 @@
 ---
 name: mutation-check
-description: Check that a test falls for the right reason before it is accepted — break the line it guards with lntt check tests mutate, see which test fails and why, and report the mutation in the pull request body. Reads `tests.levels` from `.agents/config.*`. Use after writing or changing a test that guards a line, before opening a pull request that adds tests, and when asked whether a test would catch the code being wrong.
+description: Check that a test falls for the right reason before it is accepted — break the line it guards with lntt check tests mutate, see which test fails and why, and report the mutation in the pull request body. Reads `tests.levels` from `.agents/config.*`. Use after writing or changing a test that guards a line, before the first review round of a change that adds tests, and when asked whether a test would catch the code being wrong.
 ---
 
 # Mutation check
 
-The rule is a record of the starter, [test checks](https://github.com/LunetteOrg/starter/blob/main/docs/adr/test-checks.md):
-a test is accepted when it fails for the right reason, not when it passes. This skill is
-the procedure the author follows before the review; the `tests` lens of `lntt review`
-proposes mutations of its own afterwards. Never edit it to fit one project.
+A test is accepted when it fails for the right reason, not when it passes: it comes with
+`lntt`, as the `tests` lens of `lntt review` does. This skill is the procedure the author
+follows before the first review round; the lens proposes mutations of its own
+afterwards. Never edit it to fit one project.
 
 ## 1. Anchor and read
 
@@ -44,7 +44,8 @@ lntt check tests mutate <path:line> --text='<exactly as on the line>' --to='<mut
 ```
 
 Write `--text=...` with the `=` when the text starts with `-`, and `--to=''` to delete
-it. The run happens in a scratch git worktree and is removed when it ends: nothing is
+it. A text that holds a single quote goes between double quotes, with `$`, `` ` `` and
+`\` escaped. The run happens in a scratch git worktree and is removed when it ends: nothing is
 restored by hand, and the working tree is never written.
 
 ## 4. Read the outcome

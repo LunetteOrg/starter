@@ -437,7 +437,16 @@ describe('the board skills', () => {
 })
 
 describe('the mutation-check skill', () => {
-  const guide = () => readFileSync(join(SKILLS, 'mutation-check', 'SKILL.md'), 'utf8').replace(/\s+/g, ' ')
+  // The body after the frontmatter, so the description cannot satisfy what a section must say.
+  const body = () =>
+    readFileSync(join(SKILLS, 'mutation-check', 'SKILL.md'), 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '')
+  const guide = () => body().replace(/\s+/g, ' ')
+  const section = (n: number) =>
+    (
+      body()
+        .split(/^## /m)
+        .find((s) => s.startsWith(`${n}. `)) ?? ''
+    ).replace(/\s+/g, ' ')
   // The kinds of mutation the tests lens proposes: the author and the reviewer try the same ones.
   const KINDS = [
     'a polarity flipped',
@@ -452,8 +461,8 @@ describe('the mutation-check skill', () => {
   })
 
   test('runs each mutation with lntt check tests mutate, and stops and proposes the levels when they are missing', () => {
-    assert.match(guide(), /lntt check tests mutate/)
-    assert.match(guide(), /\*\*No `tests\.levels`:\*\* stop/)
+    assert.match(section(3), /lntt check tests mutate <path:line> --text='[^']+' --to='[^']+'/)
+    assert.match(section(1), /\*\*No `tests\.levels`:\*\* stop/)
   })
 
   test('proposes the kinds of mutation the tests lens proposes', () => {
@@ -464,8 +473,8 @@ describe('the mutation-check skill', () => {
     }
   })
 
-  test('cites the rule from its record instead of restating it, and reports to the pull request body', () => {
-    assert.ok(guide().includes('https://github.com/LunetteOrg/starter/blob/main/docs/adr/test-checks.md'))
-    assert.match(guide(), /pull request body/)
+  test('states the rule, and reports each mutation in the pull request body', () => {
+    assert.ok(guide().includes('A test is accepted when it fails for the right reason, not when it passes'))
+    assert.match(section(5), /^5\. Report In the pull request body/)
   })
 })

@@ -71,10 +71,9 @@ reason, and sits at the lowest level where its assertion can.
 - **The author runs the mutation before the review.** A new test that guards a line is
   accepted when a mutation of that line, run with `mutate`, is killed by that test with a
   message that names the defect; a mutant that survives means the test does not exist,
-  whatever the coverage says. The pull request body lists, under its checks, each such
-  test with its mutation and outcome, or the line as not checked with the reason. The
-  procedure is the shared skill `mutation-check`, which cites this record instead of
-  restating it.
+  whatever the coverage says. The procedure is the shared skill `mutation-check`; where
+  the outcome is reported is the project's delivery process (here,
+  [delivery](../process/delivery.md#the-pull-request-body)).
 - **The rule holds in every Lunette project.** It is decided here and reaches a project
   with `lntt`: `mutate`, the `tests` lens and the `mutation-check` skill. A project
   chooses its levels and the commands that run them, not whether the rule applies.
@@ -127,7 +126,6 @@ reason, and sits at the lowest level where its assertion can.
 - **A check that the pull request body names a mutation for every new test.** Which line
   a test guards is a judgement; a count of mutations per test file would pass on a
   mutation of the wrong line and fail on a helper that guards nothing.
-
 - **Automated mutation testing (Stryker and similar).** Every mutant reruns the whole
   suite, the score weighs every line alike, and the useful mutations are few and chosen
   by whoever knows what the line guards.

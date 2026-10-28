@@ -36,7 +36,9 @@ stops at the draft pull request.
 1. **Draft.** A pull request opens as a draft. A draft runs no CI in the cloud
    ([CI](./ci.md)); a pull request opened ready into `main` runs the full CI once on
    its `opened` event, before the automation moves it onto the candidate.
-2. **Review on the machine.** The review runs on the local branch with `lntt review`
+2. **Review on the machine.** Before the first round, the author checks each new test
+   that guards a line with the `mutation-check` skill
+   ([test checks](../adr/test-checks.md#decision)). The review runs on the local branch with `lntt review`
    (the `review` skill), and fixes are local commits. Reviewers start with no context
    of the conversation that wrote the change, each lens on the agents and models of
    `delivery.review`; verifiers try to refute every blocker and warning; later rounds
