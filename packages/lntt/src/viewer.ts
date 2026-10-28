@@ -104,7 +104,8 @@ export function openWith(choice: Choice, url: string, worktree: string): boolean
       try {
         orca(['goto'])
       } catch (error) {
-        if (!String((error as { stdout?: string }).stdout).includes('"browser_no_tab"')) throw error
+        const { stdout, stderr } = error as { stdout?: string; stderr?: string }
+        if (!`${stdout}${stderr}`.includes('"browser_no_tab"')) throw error
         orca(['tab', 'create'])
       }
       return true

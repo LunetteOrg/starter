@@ -75,6 +75,8 @@ describe('detecting where the session runs', () => {
       assert.equal(detectHost({ CLAUDE_CODE_ENTRYPOINT: entrypoint }), 'claude-desktop', entrypoint)
     for (const entrypoint of ['cli', 'claude-vscode', 'sdk-ts'])
       assert.equal(detectHost({ CLAUDE_CODE_ENTRYPOINT: entrypoint }), 'terminal', entrypoint)
+    // The app sets it on the claude it starts, whatever the variables it inherited.
+    assert.equal(detectHost({ CLAUDE_CODE_ENTRYPOINT: 'claude-desktop', HERDR_ENV: '1' }), 'claude-desktop')
   })
 })
 
