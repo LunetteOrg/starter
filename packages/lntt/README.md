@@ -91,7 +91,15 @@ of the file (an edited entry is reformatted): the `directory` marketplace this p
 `SessionStart` hook that installs the dependencies when `node_modules/.bin/lntt` is
 missing: with pnpm, or `npm ci` in a project with only a `package-lock.json`, within ten
 minutes. The hook never fails a session: when the install cannot run it says, once,
-what to run.
+what to run. Beside it go two lines of `lntt hook`: `lntt hook format` after `Write` and
+`Edit`, which passes the written file to the format commands, and `lntt hook typecheck`
+at `Stop`, in the background, which wakes the agent with a failure only when it differs
+from the last one. Their commands are `local.hooks.format` and `local.hooks.typecheck`
+(one command or a list), else the `package.json` script of that name, else none:
+
+```jsonc
+"local": { "hooks": { "typecheck": ["tsc --noEmit", "uv run mypy ."] } }
+```
 
 So the skills, the plugin and the `lntt` they call are one version, the project's
 lockfile: a bump of `@lntt/lntt` updates the guides and the plugin with no other step.
@@ -110,7 +118,7 @@ result instead of redoing it by eye.
 lntt check                                              # every area: what CI runs
 lntt check agents-md                                    # the managed block of AGENTS.md
 lntt check skills                                       # the stubs of the shared skills
-lntt check plugin                                       # the plugin and install hook in .claude/settings.json
+lntt check plugin                                       # the plugin and the hooks in .claude/settings.json
 lntt check decisions                                    # the decision logs of recording
 lntt check decisions --base main                        # … and what the diff from main touches
 lntt check decisions board-refs docs/product/pricing.md # the board references of those files

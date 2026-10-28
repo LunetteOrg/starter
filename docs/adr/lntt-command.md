@@ -78,7 +78,7 @@ lntt ci local | candidate | proved
   Ctrl-C); a defect of `lntt` itself exits 1 with its stack trace.
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
   `decisions` and `tests`, whose results their review lenses read, and `agents-md`,
-  `skills`, `plugin` (the Lunette plugin and the install hook in `.claude/settings.json`)
+  `skills`, `plugin` (the Lunette plugin and the install, format and typecheck hooks in `.claude/settings.json`)
   and `body` (the retrospective block of a pull request body, of a candidate's
   retrospective comment and of the template), which no lens needs; a lens's checks are the area named after it. Alone it runs every
   area, which is what CI runs. Every check reports `PASS`, `FAIL` or `NOT RUN` with its
@@ -187,7 +187,7 @@ So:
   | `lntt validate \| get \| set \| path`: they hold the schema; `set` writes a tracked file | `lntt guide`: it prints the skills |
   | `lntt sync`: it writes tracked files (the `AGENTS.md` block, the skill stubs, the entries of `.claude/settings.json`) that `lntt check` verifies | `lntt operator`: personal context, read by no gate; `lntt pr block`: the empty retrospective block, for the template and the skill; `lntt retro add`: it writes a comment on GitHub, not the commit; `lntt dump` and `lntt issue`: a report on Lunette, filed upstream on the operator's approval |
   | the commitlint configuration (the `@lntt/lntt` export) | `lntt local app`, `lntt viewer`; `lntt board sync`: it reads and writes GitHub, not the commit, so its `--check` is a verdict on the board's state that a hook or a scheduled job runs, never a pull request's gate |
-  | the configuration schema | the plugin's hooks and `lntt refs`; once it exists, `lntt doctor` (#124) |
+  | the configuration schema | the plugin's hooks, `lntt hook` (what the settings hooks run) and `lntt refs`; once it exists, `lntt doctor` (#124) |
 
 - **The configuration schema follows one compatibility rule.** Its version is the
   `@lntt/lntt` version in the project's lockfile; the file carries none.
