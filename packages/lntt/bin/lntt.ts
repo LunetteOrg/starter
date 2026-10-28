@@ -192,7 +192,7 @@ if (args[0] === 'ci') await (await import('../src/ci/cli.ts')).main(args.slice(1
 else if (args[0] === 'branch') (await import('../src/branch-cli.ts')).main(args.slice(1))
 else if (args[0] === 'pr') (await import('../src/pull-request-cli.ts')).main(args.slice(1))
 else if (args[0] === 'retro') (await import('../src/retro-cli.ts')).main(args.slice(1))
-else if (args[0] === 'hook') (await import('../src/hook-cli.ts')).main(args.slice(1))
+else if (args[0] === 'hook') await (await import('../src/hook-cli.ts')).main(args.slice(1))
 else if (args[0] === 'refs') await (await import('../src/refs-cli.ts')).main(args.slice(1))
 else if (args[0] === 'board') (await import('../src/board-cli.ts')).main(args.slice(1))
 else if (args[0] === 'check') (await import('../src/check-cli.ts')).main(args.slice(1))

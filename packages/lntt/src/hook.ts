@@ -8,7 +8,7 @@
 // name, run with pnpm, or npm in a project with only a package-lock.json, as the install
 // hook installs; else none, and the hook does nothing.
 
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -17,13 +17,14 @@ import { findConfig, loadConfig, NoConfigError } from './index.ts'
 
 export type HookName = 'format' | 'typecheck'
 
-// The project root: the configuration's, or the directory the hook runs in when none is
-// found (reading it then says what is wrong).
+// The project root: the configuration's, or the directory the hook runs in when there is
+// none. Any other error of finding it is the caller's to report.
 function projectRoot(cwd: string): string {
   try {
     return dirname(dirname(findConfig(cwd).path))
-  } catch {
-    return cwd
+  } catch (e) {
+    if (e instanceof NoConfigError) return cwd
+    throw e
   }
 }
 
@@ -61,20 +62,76 @@ export function hookCommands(cwd: string, name: HookName): string[] {
 
 const quote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`
 
-// Each command is stopped after its limit, below the hook's own timeout in the settings
-// (claude-settings.ts), so Claude Code never kills the hook with a command still running.
-// A typecheck's output can be long.
-export const COMMAND_LIMIT_S: Record<HookName, number> = { format: 30, typecheck: 300 }
-function sh(command: string, cwd: string, name: HookName): { ok: boolean; output: string } {
-  const r = spawnSync('/bin/sh', ['-c', command], {
-    cwd,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    maxBuffer: 64 * 1024 * 1024,
-    timeout: COMMAND_LIMIT_S[name] * 1000,
+// The time a hook's commands have, all of them together, below the hook's own timeout in
+// the settings (claude-settings.ts), so Claude Code never kills the hook with a command
+// still running.
+export const LIMIT_MS: Record<HookName, number> = { format: 60_000, typecheck: 600_000 }
+// A typecheck's output can be long; past this it is cut.
+const OUTPUT_LIMIT = 64 * 1024 * 1024
+
+// A shell command in a process group of its own: past `ms` the whole group is stopped,
+// the processes it started included (`pnpm run` starting `tsc`).
+export function runLimited(
+  command: string,
+  cwd: string,
+  ms: number,
+): Promise<{ ok: boolean; output: string; stopped: boolean }> {
+  return new Promise((resolve) => {
+    const child = spawn('/bin/sh', ['-c', command], { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    const out: string[] = []
+    const err: string[] = []
+    let size = 0
+    const keep = (into: string[]) => (chunk: Buffer) => {
+      if (size >= OUTPUT_LIMIT) return
+      const text = chunk.toString('utf8')
+      size += text.length
+      into.push(text)
+    }
+    child.stdout.on('data', keep(out))
+    child.stderr.on('data', keep(err))
+    let stopped = false
+    const group = (signal: NodeJS.Signals) => {
+      try {
+        if (child.pid !== undefined) process.kill(-child.pid, signal)
+      } catch {}
+    }
+    let kill: NodeJS.Timeout | undefined
+    const timer = setTimeout(() => {
+      stopped = true
+      group('SIGTERM')
+      kill = setTimeout(() => group('SIGKILL'), 1000)
+    }, ms)
+    const end = (ok: boolean, extra = '') => {
+      clearTimeout(timer)
+      if (kill) clearTimeout(kill)
+      const cut = size >= OUTPUT_LIMIT ? '(lntt hook: output cut at 64 MB)\n' : ''
+      resolve({ ok, output: `${out.join('')}${err.join('')}${cut}${extra}`, stopped })
+    }
+    child.on('error', (e) => end(false, `${e.message}\n`))
+    child.on('close', (code) => {
+      // A process of the group may still hold nothing open but run: stop it with the rest.
+      if (stopped) group('SIGKILL')
+      end(code === 0 && !stopped)
+    })
   })
-  const stopped = r.error ? `(lntt hook stopped it: ${r.error.message})\n` : ''
-  return { ok: r.status === 0, output: `${r.stdout ?? ''}${r.stderr ?? ''}${stopped}` }
+}
+
+// The commands in order, within one limit for all of them: the outcome of each.
+async function runAll(commands: string[], root: string, ms: number, suffix = '') {
+  const deadline = Date.now() + ms
+  const secs = `${Math.round(ms / 100) / 10}`
+  const results: { command: string; ok: boolean; output: string }[] = []
+  for (const command of commands) {
+    const left = deadline - Date.now()
+    if (left <= 0) {
+      results.push({ command, ok: false, output: `(not run: the limit of ${secs} s was reached)\n` })
+      continue
+    }
+    const r = await runLimited(`${command}${suffix}`, root, left)
+    const note = r.stopped ? `(lntt hook: stopped at the limit of ${secs} s for the hook's commands)\n` : ''
+    results.push({ command, ok: r.ok, output: `${r.output}${note}` })
+  }
+  return results
 }
 
 // The path of the file the tool wrote, from the hook's input; null when there is none.
@@ -119,21 +176,24 @@ function stateFile(root: string, name: string): string {
   }
 }
 
+// A state lntt cannot read or write: a defect of the hook, not a failure of the project.
+export class StateError extends Error {}
+
 // The text when it differs from what the file holds (which it then holds), null when it
 // is the same; no text clears the file.
 function once(file: string, text: string | null): string | null {
-  if (text === null) {
-    rmSync(file, { force: true })
-    return null
-  }
-  const seen = normalise(text)
   try {
+    if (text === null) {
+      rmSync(file, { force: true })
+      return null
+    }
+    const seen = normalise(text)
     if (existsSync(file) && readFileSync(file, 'utf8') === seen) return null
     writeFileSync(file, seen)
-  } catch {
-    // A state lntt cannot keep: the text is said every time rather than never.
+    return text
+  } catch (e) {
+    throw new StateError(`${file}: ${e instanceof Error ? e.message : String(e)}`)
   }
-  return text
 }
 
 const failure = (e: unknown) => `lntt: ${e instanceof Error ? e.message : String(e)}`
@@ -141,32 +201,33 @@ const failure = (e: unknown) => `lntt: ${e instanceof Error ? e.message : String
 // Each command gets the path as its last argument. One that fails (a file type it does
 // not handle, a command that takes no path) is skipped: the commit's own check is the gate.
 // A configuration lntt cannot read is the notice returned, once until it changes.
-export function runFormat(cwd: string, input: string): string | null {
+export async function runFormat(cwd: string, input: string, ms = LIMIT_MS.format): Promise<string | null> {
   const path = writtenPath(input)
   if (path === null) return null
-  const root = projectRoot(cwd)
+  let root = cwd
   let commands: string[]
   try {
+    root = projectRoot(cwd)
     commands = hookCommands(root, 'format')
   } catch (e) {
     return once(stateFile(root, 'format-notice'), `lntt hook format is off until this is fixed: ${failure(e)}`)
   }
   once(stateFile(root, 'format-notice'), null)
-  for (const command of commands) sh(`${command} ${quote(path)}`, root, 'format')
+  await runAll(commands, root, ms, ` ${quote(path)}`)
   return null
 }
 
-// Every command runs. The output of the failing ones, or a configuration lntt cannot
-// read, when it is not what the last run reported; null when they pass (what was kept is
-// cleared) or the failure is the same.
-export function runTypecheck(cwd: string): string | null {
-  const root = projectRoot(cwd)
+// Every command runs, within the limit. The output of the failing ones, or a
+// configuration lntt cannot read, when it is not what the last run reported; null when
+// they pass (what was kept is cleared) or the failure is the same. A state lntt cannot
+// keep throws StateError.
+export async function runTypecheck(cwd: string, ms = LIMIT_MS.typecheck): Promise<string | null> {
+  let root = cwd
   let failed: string[]
   try {
-    failed = hookCommands(root, 'typecheck').flatMap((command) => {
-      const r = sh(command, root, 'typecheck')
-      return r.ok ? [] : [`$ ${command}\n${r.output}`]
-    })
+    root = projectRoot(cwd)
+    const results = await runAll(hookCommands(root, 'typecheck'), root, ms)
+    failed = results.filter((r) => !r.ok).map((r) => `$ ${r.command}\n${r.output}`)
   } catch (e) {
     failed = [failure(e)]
   }

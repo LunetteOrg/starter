@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { COMMAND_LIMIT_S } from '../src/hook.ts'
+import { LIMIT_MS, runLimited, runTypecheck } from '../src/hook.ts'
 import { FORMAT_HOOK, hookCommands, normalise, TYPECHECK_HOOK } from '../src/index.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -231,8 +231,11 @@ describe('lntt hook typecheck', () => {
   test('the typecheck and the format keep their reports apart', () => {
     config({ hooks: { typecheck: 'true' } })
     writeFileSync(join(root, '.agents/config.jsonc'), '{ "local": { "hooks": { "lint": "x" } } }')
+    const path = JSON.stringify({ tool_input: { file_path: '/x/y.ts' } })
     assert.equal(hook('typecheck').status, 1)
-    assert.match(hook('format', JSON.stringify({ tool_input: { file_path: '/x/y.ts' } })).stdout, /systemMessage/)
+    assert.match(hook('format', path).stdout, /systemMessage/)
+    assert.equal(hook('typecheck').status, 0)
+    assert.equal(hook('format', path).stdout, '')
   })
 
   test('an output past a megabyte reaches the agent whole', () => {
@@ -246,9 +249,43 @@ describe('lntt hook typecheck', () => {
     assert.ok(r.stderr.length > 2000000, String(r.stderr.length))
   })
 
-  test('each command stops before the hook’s own timeout', () => {
-    assert.ok(COMMAND_LIMIT_S.format < FORMAT_HOOK.timeout)
-    assert.ok(COMMAND_LIMIT_S.typecheck < TYPECHECK_HOOK.timeout)
+  test('the commands of a hook stop before the hook’s own timeout', () => {
+    assert.ok(LIMIT_MS.format < FORMAT_HOOK.timeout * 1000)
+    assert.ok(LIMIT_MS.typecheck < TYPECHECK_HOOK.timeout * 1000)
+  })
+
+  test('the limit covers the whole list: a command past it is stopped, the rest do not run', async () => {
+    config({ hooks: { typecheck: ['sleep 0.2', 'sleep 30', 'touch ran'] } })
+    const started = Date.now()
+    const out = await runTypecheck(root, 1000)
+    assert.ok(Date.now() - started < 5000)
+    assert.match(out ?? '', /\$ sleep 30\n[\s\S]*stopped at the limit of 1 s/)
+    assert.match(out ?? '', /\$ touch ran\n[\s\S]*not run: the limit of 1 s was reached/)
+    assert.equal(existsSync(join(root, 'ran')), false)
+  })
+
+  test('a lntt defect, such as a state it cannot read, never wakes the agent: it says it once', () => {
+    config({ hooks: { typecheck: 'echo red; exit 1' } })
+    mkdirSync(join(root, '.git/lntt-typecheck-failure'))
+    // The session marker lives in the temporary directory: one of this test's own.
+    const tmp = join(root, 'tmp')
+    mkdirSync(tmp)
+    const run = (text: string) =>
+      spawnSync(process.execPath, [BIN, 'hook', 'typecheck'], {
+        cwd: root,
+        input: text,
+        encoding: 'utf8',
+        env: { ...process.env, TMPDIR: tmp },
+      })
+    const input = JSON.stringify({ session_id: 's1' })
+    const first = run(input)
+    assert.equal(first.status, 0)
+    assert.equal(first.stderr, '')
+    assert.match(JSON.parse(first.stdout).systemMessage, /^lntt hook typecheck could not run: /)
+    const again = run(input)
+    assert.equal(again.status, 0)
+    assert.equal(again.stdout, '')
+    assert.match(run(JSON.stringify({ session_id: 's2' })).stdout, /systemMessage/)
   })
 })
 
@@ -419,5 +456,33 @@ describe('lntt hook usage', () => {
   test('a command lntt does not know is a usage error, exit 2', () => {
     const r = spawnSync(process.execPath, [BIN, 'frobnicate', 'typecheck'], { cwd: root, encoding: 'utf8' })
     assert.equal(r.status, 2)
+  })
+})
+
+describe('a command under a limit', () => {
+  test('passes or fails with its output', async () => {
+    assert.deepEqual(await runLimited('echo out; echo err >&2', root, 5000), {
+      ok: true,
+      output: 'out\nerr\n',
+      stopped: false,
+    })
+    assert.equal((await runLimited('exit 3', root, 5000)).ok, false)
+  })
+
+  test('past its limit the whole process group is stopped, grandchildren included', async () => {
+    const pid = join(root, 'pid')
+    const started = Date.now()
+    const r = await runLimited(`sh -c 'echo $$ > "${pid}"; sleep 30' & sleep 30; wait`, root, 500)
+    assert.ok(Date.now() - started < 5000, String(Date.now() - started))
+    assert.equal(r.ok, false)
+    assert.equal(r.stopped, true)
+    const grandchild = Number(readFileSync(pid, 'utf8'))
+    await new Promise((done) => setTimeout(done, 200))
+    assert.throws(() => process.kill(grandchild, 0))
+  })
+
+  test('an output past a megabyte is kept whole', async () => {
+    const r = await runLimited("head -c 2000000 /dev/zero | tr '\\0' x", root, 10000)
+    assert.equal(r.output.length, 2000000)
   })
 })
