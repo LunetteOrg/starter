@@ -50,8 +50,8 @@ it never guesses.
 ### The shared skills come with `lntt`; a project holds their stubs
 
 The shared skills (`commit-message`, `coordinate`, `decisions`, `github-board`,
-`plan-round`, `retrospective`, `review`, `roadmap`, `run-local`) ship inside
-`@lntt/lntt`, in `packages/lntt/skills/`.
+`mutation-check`, `plan-round`, `retrospective`, `review`, `roadmap`, `run-local`) ship
+inside `@lntt/lntt`, in `packages/lntt/skills/`.
 `lntt guide <skill>` prints a skill's guide from the installed package, with the folder
 its relative links start from, so a skill and the `lntt` it calls are always one
 version: the project's lockfile.

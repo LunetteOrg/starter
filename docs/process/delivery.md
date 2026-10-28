@@ -36,7 +36,9 @@ stops at the draft pull request.
 1. **Draft.** A pull request opens as a draft. A draft runs no CI in the cloud
    ([CI](./ci.md)); a pull request opened ready into `main` runs the full CI once on
    its `opened` event, before the automation moves it onto the candidate.
-2. **Review on the machine.** The review runs on the local branch with `lntt review`
+2. **Review on the machine.** Before the first round, the author checks each test the
+   change adds or alters that guards a line with the `mutation-check` skill
+   ([test checks](../adr/test-checks.md#decision)). The review runs on the local branch with `lntt review`
    (the `review` skill), and fixes are local commits. Reviewers start with no context
    of the conversation that wrote the change, each lens on the agents and models of
    `delivery.review`; verifiers try to refute every blocker and warning; later rounds
@@ -78,7 +80,9 @@ and is written in `delivery.pullRequest.language`:
   reason.
 - **Review**: the rounds of `lntt review`, what each found and how it ended, and the
   findings left open.
-- **Checks**: `pnpm ci:local` on the commit pushed, with its outcome.
+- **Checks**: `pnpm ci:local` on the commit pushed, with its outcome, and for each test
+  the change adds or alters that guards a line the mutation that makes it fail (the `mutation-check` skill,
+  [test checks](../adr/test-checks.md)).
 - **The retrospective block**: the labels of `delivery.pullRequest.retrospective`
   between `<!-- retro:start -->` and `<!-- retro:end -->`, each with a value or the
   configured `none`. The `retrospective` skill fills it from the branch's `Retro:`
