@@ -149,9 +149,19 @@ The commands are a project's: `local.hooks.format` and `local.hooks.typecheck` o
 `.agents/config`, one command or a list run in order (a project with more than one
 toolchain, such as `tsc` and `mypy`, every one of which must pass); without the key, the
 `package.json` script of the same name; without both, the hook does nothing and says
-nothing. They run from the project root, each stopped after a limit (30 seconds for a
-format command, 5 minutes for a typecheck command) below the hook's own timeout in the
-settings, and the typecheck's output reaches the agent whole.
+nothing. They run from the project root, within one limit for the whole list (a minute
+for the format commands, ten minutes for the typecheck's), below the hook's own timeout
+in the settings. Each runs in a process group of its own: at the limit the whole group is
+stopped, the processes it started included (`tsc` under `pnpm run`), and the commands
+left are not run; the typecheck reports both as part of its failure. Its output reaches
+the agent up to 64 MB.
+
+`lntt hook` answers its settings line with an exit code: 0 nothing to report, 1 a
+typecheck failure not reported yet (the line exits 2, which wakes the agent with the
+output), 2 the usage, which an `lntt` older than `hook` also answers. A defect of the
+typecheck hook itself (its own error, a state it cannot read or write) never wakes the
+agent: it exits 0 with a `systemMessage` once per session, which Claude Code gives the
+agent at its next turn.
 
 Every other hook is measured before it is adopted: what it costs in tokens and turns
 against what it catches that the next gate (the pre-commit, `ci:local`, the review) would
@@ -159,9 +169,10 @@ catch later at a higher cost. The measure of October 2026, on the Claude Code tr
 of three Lunette projects (about 2,400 sessions, 1,381 commits): the typecheck at `Stop`
 woke the agent 77 times, 66 of them in one project, where 65 rewakes changed nothing
 while the typecheck stayed red, for 203 model calls and 85k output tokens; the waking on
-a new failure only removes that repetition. The formatting hook ran 2,040 times and caused 281 file-changed notices
-(about 56k tokens) for the formatting the agent would otherwise meet at the commit. None
-of the other hooks measured pays for itself today (see the discarded directions).
+a new failure only removes that repetition. The formatting hook ran 2,040 times and
+caused 281 file-changed notices (about 56k tokens) for the formatting the agent would
+otherwise meet at the commit. None of the other hooks measured pays for itself today (see
+the discarded directions).
 
 A mechanism of the plugin or a hook of `lntt` that cannot work never errors and never
 blocks a turn: it says once per session what is missing and the command that fixes it,
@@ -170,9 +181,10 @@ after a fix by hand when `lntt sync` cannot read the file
 first message ends (`.claude/settings.json` not as `lntt sync` writes it); the titles at
 the end of a message (`lntt` not installed, an `lntt` with no `refs`, `gh` missing or
 not logged in); a settings hook in a `systemMessage`, which Claude Code shows the
-person. A configuration `lntt` cannot read is said once until it changes, where each hook
-speaks: the typecheck wakes the agent with it, as a failure; the format hook, which
-is then off, tells the person in a `systemMessage`.
+person for the install and format hooks and gives the agent at its next turn for the
+typecheck, which runs in the background. A configuration `lntt` cannot read is said once
+until it changes, where each hook speaks: the typecheck wakes the agent with it, as a
+failure; the format hook, which is then off, tells the person in a `systemMessage`.
 
 ### What a number means is shown on screen, not asked of the agent
 
