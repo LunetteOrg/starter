@@ -68,7 +68,8 @@ reason, and sits at the lowest level where its assertion can.
   brief asks for the mutations of the list that matter (a polarity flipped, an argument
   dropped, a guard or early return removed, the optimistic constant returned, the call
   removed), wiring before units.
-- **The author runs the mutation before the review.** A new test that guards a line is
+- **The author runs the mutation before the review.** A test the change adds or alters
+  that guards a line is
   accepted when a mutation of that line, run with `mutate`, is killed by that test with a
   message that names the defect; a mutant that survives means the test does not exist,
   whatever the coverage says. The procedure is the shared skill `mutation-check`; where

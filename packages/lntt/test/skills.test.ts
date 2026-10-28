@@ -463,6 +463,13 @@ describe('the mutation-check skill', () => {
   test('runs each mutation with lntt check tests mutate, and stops and proposes the levels when they are missing', () => {
     assert.match(section(3), /lntt check tests mutate <path:line> --text='[^']+' --to='[^']+'/)
     assert.match(section(1), /\*\*No `tests\.levels`:\*\* stop/)
+    assert.match(section(3), /`--to=''` to delete/)
+    assert.match(section(3), /single quote goes between double quotes/)
+  })
+
+  test('runs before the first review round, on the tests the change adds or alters', () => {
+    assert.match(guide(), /the procedure the author follows before the first review round/)
+    assert.match(section(2), /For each test the change adds or alters/)
   })
 
   test('proposes the kinds of mutation the tests lens proposes', () => {
@@ -476,5 +483,6 @@ describe('the mutation-check skill', () => {
   test('states the rule, and reports each mutation in the pull request body', () => {
     assert.ok(guide().includes('A test is accepted when it fails for the right reason, not when it passes'))
     assert.match(section(5), /^5\. Report In the pull request body/)
+    assert.match(section(5), /one line per test that guards a line, with the mutation and its outcome/)
   })
 })
