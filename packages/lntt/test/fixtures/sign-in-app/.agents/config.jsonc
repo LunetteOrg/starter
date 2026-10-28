@@ -1,0 +1,18 @@
+{
+  "local": {
+    "apps": {
+      "app": {
+        "description": "The sign-in fixture: a tiny server with two seeded users and a one-time code in its log",
+        "port": 4300,
+        "url": "http://localhost:{port}",
+        "commands": { "start": { "run": "node server.mjs" } },
+        "env": { "PORT": "{port}", "APP_ORIGIN": "http://localhost:{port}", "USERS": "alice,bob" },
+        "signIn": { "test": "e2e/sign-in.setup.ts", "doc": "docs/process/local.md#app" },
+        "users": {
+          "alice": { "login": "alice", "role": "admin" },
+          "bob": { "login": "bob", "role": "member" }
+        }
+      }
+    }
+  }
+}
