@@ -52,6 +52,18 @@ describe('detecting where the session runs', () => {
     assert.equal(detectHost({ CLAUDE_CODE_ENTRYPOINT: 'claude-desktop' }), 'claude-desktop')
     assert.equal(detectHost({ TERM_PROGRAM: 'Apple_Terminal' }), 'terminal')
   })
+
+  test('Herdr started from an Orca or Wave terminal: its panes inherit their variables, TERM_PROGRAM wins', () => {
+    const pane = { TERM_PROGRAM: 'herdr', HERDR_ENV: '1', ORCA_WORKTREE_ID: 'x', WAVETERM_BLOCKID: 'b' }
+    assert.equal(detectHost(pane), 'herdr')
+  })
+
+  test('Claude desktop by the entrypoints Claude Code itself counts as desktop', () => {
+    for (const entrypoint of ['claude-desktop', 'claude-desktop-3p', 'local-agent'])
+      assert.equal(detectHost({ CLAUDE_CODE_ENTRYPOINT: entrypoint }), 'claude-desktop', entrypoint)
+    for (const entrypoint of ['cli', 'claude-vscode', 'sdk-ts'])
+      assert.equal(detectHost({ CLAUDE_CODE_ENTRYPOINT: entrypoint }), 'terminal', entrypoint)
+  })
 })
 
 describe('choosing the viewer', () => {
@@ -78,6 +90,13 @@ describe('choosing the viewer', () => {
     assert.deepEqual([chrome.viewer, chrome.agentCall], ['chrome', 'navigate'])
   })
 
+  test('Playwright opens with its CLI when on PATH, else through its MCP: an agent call', () => {
+    const cli = chooseViewer({ env: {}, preferences: ['playwright'], has: has('playwright') })
+    assert.deepEqual([cli.viewer, cli.agentCall], ['playwright', undefined])
+    const mcp = chooseViewer({ env: {}, preferences: ['playwright', 'browser'], has: has('open', 'xdg-open') })
+    assert.deepEqual([mcp.viewer, mcp.agentCall], ['playwright', 'browser_navigate'])
+  })
+
   test('nothing at all: no viewer, curl only', () => {
     assert.equal(chooseViewer({ env: {}, preferences: [], has: has() }).viewer, 'none')
   })
@@ -102,6 +121,35 @@ describe('the command line', () => {
       '--worktree',
       `path:${repo}`,
     ])
+  })
+
+  test('viewer open in Orca with no browser tab in the worktree opens one on the page', () => {
+    const log = join(tmp, 'orca.log')
+    writeFileSync(
+      join(stubs, 'orca'),
+      `#!/bin/sh\necho "$*" >> "${log}"\n[ "$1" = goto ] && { echo '{"ok":false,"error":{"code":"browser_no_tab"}}'; exit 1; }\nexit 0\n`,
+    )
+    chmodSync(join(stubs, 'orca'), 0o755)
+    const result = run(['viewer', 'open', 'http://localhost:5183/'], { TERM_PROGRAM: 'Orca' })
+    assert.equal(result.status, 0)
+    assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n'), [
+      `goto --url http://localhost:5183/ --worktree path:${repo}`,
+      `tab create --url http://localhost:5183/ --worktree path:${repo}`,
+    ])
+  })
+
+  test('viewer open with Playwright and no CLI prints the MCP call and exits 3', () => {
+    mkdirSync(join(home, '.agents'))
+    writeFileSync(join(home, '.agents/operator.jsonc'), '{"workspace":{"viewers":["playwright"]}}')
+    // Only node and git on PATH, so a Playwright installed on this machine does not count.
+    const path = `${stubs}:${dirname(process.execPath)}:${dirname(execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim())}`
+    const result = run(['viewer', 'open', 'http://localhost:5173/'], { PATH: path })
+    assert.equal(result.status, 3)
+    assert.deepEqual(JSON.parse(result.stdout), {
+      viewer: 'playwright',
+      call: 'browser_navigate',
+      url: 'http://localhost:5173/',
+    })
   })
 
   test('viewer open for an agent action prints it and exits 3', () => {

@@ -452,8 +452,15 @@ lntt viewer open <url>    # open it there; exit 3 + JSON when only the agent can
 
 The choice: the first of the operator's `workspace.viewers` available in this
 session, else the app the session runs in (Orca opens in the browser of the same
-worktree), else the system browser. Claude desktop (`preview_start`) and Chrome
-(`navigate`) are tool calls only the agent can make: `open` prints the call.
+worktree, in a new tab when the worktree has none), else the system browser. Claude
+desktop (`preview_start`), Chrome (`navigate`) and Playwright without its CLI on the
+PATH (its MCP, `browser_navigate`) are tool calls only the agent can make: `open`
+prints the call.
+
+The app the session runs in is read innermost first: Claude desktop by
+`CLAUDE_CODE_ENTRYPOINT` (`claude-desktop`, `claude-desktop-3p`, `local-agent`), then
+`TERM_PROGRAM` (`Orca`, `waveterm`, `herdr`), then `HERDR_ENV`, `ORCA_WORKTREE_ID` and
+`WAVETERM_*`, which a Herdr server started from Orca or Wave hands to every pane.
 
 ## Driving a browser
 
