@@ -66,53 +66,82 @@ const quote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`
 // the settings (claude-settings.ts), so Claude Code never kills the hook with a command
 // still running.
 export const LIMIT_MS: Record<HookName, number> = { format: 60_000, typecheck: 600_000 }
-// A typecheck's output can be long; past this it is cut.
+// A typecheck's output can be long; past this many bytes it is cut.
 const OUTPUT_LIMIT = 64 * 1024 * 1024
+// How long the output may stay open once the command has exited, or once its group was
+// killed: a process outside the group (a daemon started with setsid) can hold it forever.
+const GRACE_MS = 1000
 
-// A shell command in a process group of its own: past `ms` the whole group is stopped,
-// the processes it started included (`pnpm run` starting `tsc`).
+// A shell command in a process group of its own. Past `ms` the whole group gets SIGTERM,
+// and SIGKILL a second later, the processes it started included (`pnpm run` starting
+// `tsc`); a command stopped so has failed, whatever it exits with.
 export function runLimited(
   command: string,
   cwd: string,
   ms: number,
+  outputLimit = OUTPUT_LIMIT,
 ): Promise<{ ok: boolean; output: string; stopped: boolean }> {
   return new Promise((resolve) => {
     const child = spawn('/bin/sh', ['-c', command], { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
     const out: string[] = []
     const err: string[] = []
-    let size = 0
-    const keep = (into: string[]) => (chunk: Buffer) => {
-      if (size >= OUTPUT_LIMIT) return
-      const text = chunk.toString('utf8')
-      size += text.length
+    let bytes = 0
+    let cut = false
+    // Decoded as a stream, so a character split between two reads stays whole.
+    const keep = (into: string[]) => (text: string) => {
+      if (cut) return
+      const size = Buffer.byteLength(text)
+      if (bytes + size > outputLimit) {
+        cut = true
+        into.push(
+          Buffer.from(text)
+            .subarray(0, outputLimit - bytes)
+            .toString('utf8'),
+        )
+        return
+      }
+      bytes += size
       into.push(text)
     }
-    child.stdout.on('data', keep(out))
-    child.stderr.on('data', keep(err))
+    child.stdout.setEncoding('utf8').on('data', keep(out))
+    child.stderr.setEncoding('utf8').on('data', keep(err))
     let stopped = false
+    let exitCode: number | null = null
+    let done = false
+    const timers: NodeJS.Timeout[] = []
     const group = (signal: NodeJS.Signals) => {
       try {
         if (child.pid !== undefined) process.kill(-child.pid, signal)
       } catch {}
     }
-    let kill: NodeJS.Timeout | undefined
-    const timer = setTimeout(() => {
-      stopped = true
-      group('SIGTERM')
-      kill = setTimeout(() => group('SIGKILL'), 1000)
-    }, ms)
-    const end = (ok: boolean, extra = '') => {
-      clearTimeout(timer)
-      if (kill) clearTimeout(kill)
-      const cut = size >= OUTPUT_LIMIT ? '(lntt hook: output cut at 64 MB)\n' : ''
-      resolve({ ok, output: `${out.join('')}${err.join('')}${cut}${extra}`, stopped })
+    const finish = (extra = '') => {
+      if (done) return
+      done = true
+      for (const t of timers) clearTimeout(t)
+      child.stdout.destroy()
+      child.stderr.destroy()
+      const note = cut ? `(lntt hook: output cut at ${outputLimit} bytes)\n` : ''
+      resolve({ ok: exitCode === 0 && !stopped, output: `${out.join('')}${err.join('')}${note}${extra}`, stopped })
     }
-    child.on('error', (e) => end(false, `${e.message}\n`))
-    child.on('close', (code) => {
-      // A process of the group may still hold nothing open but run: stop it with the rest.
+    timers.push(
+      setTimeout(() => {
+        stopped = true
+        group('SIGTERM')
+        timers.push(
+          setTimeout(() => {
+            group('SIGKILL')
+            timers.push(setTimeout(() => finish(), GRACE_MS))
+          }, 1000),
+        )
+      }, ms),
+    )
+    child.on('error', (e) => finish(`${e.message}\n`))
+    child.on('exit', (code) => {
+      exitCode = code
       if (stopped) group('SIGKILL')
-      end(code === 0 && !stopped)
+      timers.push(setTimeout(() => finish(), GRACE_MS))
     })
+    child.on('close', () => finish())
   })
 }
 
@@ -212,7 +241,11 @@ export async function runFormat(cwd: string, input: string, ms = LIMIT_MS.format
   } catch (e) {
     return once(stateFile(root, 'format-notice'), `lntt hook format is off until this is fixed: ${failure(e)}`)
   }
-  once(stateFile(root, 'format-notice'), null)
+  try {
+    once(stateFile(root, 'format-notice'), null)
+  } catch {
+    // A notice lntt cannot clear: the file is formatted all the same.
+  }
   await runAll(commands, root, ms, ` ${quote(path)}`)
   return null
 }

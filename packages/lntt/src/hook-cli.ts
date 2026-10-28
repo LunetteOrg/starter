@@ -2,9 +2,11 @@
 // (./hook.ts), with lntt's exit codes, which the lines translate: 1 a typecheck failure
 // not reported yet, on stderr (the line exits 2, which wakes the agent); 2 the usage, which
 // is also what an lntt older than `hook` answers. Otherwise 0, with any notice on stdout as
-// the systemMessage Claude Code shows the person: a configuration the format hook cannot
-// read, or a defect of the typecheck hook itself (its own error, a state it cannot keep),
-// which never wakes the agent and is said once per session.
+// a systemMessage: of the format hook, a configuration it cannot read, which Claude Code
+// shows the person; of the typecheck hook, which runs in the background, a defect of its
+// own (its error, a state it cannot keep), which Claude Code gives the agent at its next
+// turn without waking it, once per session. A defect of the format hook is quiet: the
+// commit's own check is the gate.
 
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -17,7 +19,9 @@ const USAGE = 'usage: lntt hook format | typecheck   (the hook input on stdin)'
 
 const notice = (text: string) => stdout.write(`${JSON.stringify({ systemMessage: text })}\n`)
 
+// The hook input on stdin; nothing from a terminal, so a run by hand does not wait.
 function readInput(): string {
+  if (process.stdin.isTTY) return ''
   try {
     return readFileSync(0, 'utf8')
   } catch {

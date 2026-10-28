@@ -264,6 +264,12 @@ describe('lntt hook typecheck', () => {
     assert.equal(existsSync(join(root, 'ran')), false)
   })
 
+  test('each command gets only what is left of the limit', async () => {
+    config({ hooks: { typecheck: ['sleep 0.7', 'sleep 0.7'] } })
+    const out = await runTypecheck(root, 1000)
+    assert.match(out ?? '', /\$ sleep 0\.7\n\(lntt hook: stopped at the limit of 1 s/)
+  })
+
   test('a lntt defect, such as a state it cannot read, never wakes the agent: it says it once', () => {
     config({ hooks: { typecheck: 'echo red; exit 1' } })
     mkdirSync(join(root, '.git/lntt-typecheck-failure'))
@@ -286,6 +292,9 @@ describe('lntt hook typecheck', () => {
     assert.equal(again.status, 0)
     assert.equal(again.stdout, '')
     assert.match(run(JSON.stringify({ session_id: 's2' })).stdout, /systemMessage/)
+    // With no session id there is no session to say it once in: it is said every time.
+    assert.match(run('').stdout, /systemMessage/)
+    assert.match(run('').stdout, /systemMessage/)
   })
 })
 
@@ -339,6 +348,23 @@ describe('lntt hook format', () => {
     assert.equal(hook('format', input('/x/y.ts')).stdout, '')
     writeFileSync(join(root, '.agents/config.jsonc'), '{ "local": { "hooks": { "lint": "x" } } }')
     assert.match(hook('format', input('/x/y.ts')).stdout, /systemMessage/)
+  })
+
+  test('a defect of the format hook, such as a state it cannot keep, is quiet: exit 0', () => {
+    mkdirSync(join(root, '.agents'), { recursive: true })
+    writeFileSync(join(root, '.agents/config.jsonc'), '{ "local": { "hooks": { "lint": "x" } } }')
+    mkdirSync(join(root, '.git/lntt-format-notice'))
+    const r = hook('format', input('/x/y.ts'))
+    assert.equal(r.status, 0)
+    assert.equal(r.stdout + r.stderr, '')
+  })
+
+  test('a state that cannot be cleared does not keep the file from being formatted', () => {
+    config({ hooks: { format: 'printf "%s" > got' } })
+    mkdirSync(join(root, '.git/lntt-format-notice'))
+    writeFileSync(join(root, '.git/lntt-format-notice/x'), '')
+    hook('format', input('/x/y.ts'))
+    assert.equal(readFileSync(join(root, 'got'), 'utf8'), '/x/y.ts')
   })
 
   test('with no path, or input that is not JSON, nothing runs', () => {
@@ -459,6 +485,10 @@ describe('lntt hook usage', () => {
   })
 })
 
+const waitFor = async (file: string) => {
+  for (let i = 0; i < 100 && !existsSync(file); i += 1) await new Promise((done) => setTimeout(done, 50))
+}
+
 describe('a command under a limit', () => {
   test('passes or fails with its output', async () => {
     assert.deepEqual(await runLimited('echo out; echo err >&2', root, 5000), {
@@ -469,20 +499,68 @@ describe('a command under a limit', () => {
     assert.equal((await runLimited('exit 3', root, 5000)).ok, false)
   })
 
+  test('a command that cannot start fails with why', async () => {
+    const r = await runLimited('true', join(root, 'no-such-dir'), 5000)
+    assert.equal(r.ok, false)
+    assert.match(r.output, /ENOENT/)
+  })
+
   test('past its limit the whole process group is stopped, grandchildren included', async () => {
     const pid = join(root, 'pid')
     const started = Date.now()
-    const r = await runLimited(`sh -c 'echo $$ > "${pid}"; sleep 30' & sleep 30; wait`, root, 500)
-    assert.ok(Date.now() - started < 5000, String(Date.now() - started))
+    const r = await runLimited(`sh -c 'echo $$ > "${pid}"; sleep 30' & sleep 30; wait`, root, 2000)
+    assert.ok(Date.now() - started < 6000, String(Date.now() - started))
     assert.equal(r.ok, false)
     assert.equal(r.stopped, true)
+    await waitFor(pid)
     const grandchild = Number(readFileSync(pid, 'utf8'))
     await new Promise((done) => setTimeout(done, 200))
     assert.throws(() => process.kill(grandchild, 0))
   })
 
+  test('a group that ignores the stop is killed a second later, grandchildren included', async () => {
+    const pid = join(root, 'pid')
+    const started = Date.now()
+    const r = await runLimited(
+      `sh -c 'trap "" TERM; echo $$ > "${pid}"; sleep 30' & trap '' TERM; sleep 30; wait`,
+      root,
+      1000,
+    )
+    assert.ok(Date.now() - started < 6000, String(Date.now() - started))
+    assert.equal(r.stopped, true)
+    await waitFor(pid)
+    await new Promise((done) => setTimeout(done, 200))
+    assert.throws(() => process.kill(Number(readFileSync(pid, 'utf8')), 0))
+  })
+
+  test('a command stopped at the limit has failed, even when it then exits 0', async () => {
+    const r = await runLimited("trap 'exit 0' TERM; sleep 30 & wait", root, 500)
+    assert.equal(r.stopped, true)
+    assert.equal(r.ok, false)
+  })
+
+  test('a process left holding the output does not keep the command from ending', async () => {
+    const started = Date.now()
+    const r = await runLimited('(setsid sleep 30 2>/dev/null || nohup sleep 30) & echo done', root, 20000)
+    assert.ok(Date.now() - started < 6000, String(Date.now() - started))
+    assert.equal(r.ok, true)
+    assert.match(r.output, /done/)
+  })
+
   test('an output past a megabyte is kept whole', async () => {
     const r = await runLimited("head -c 2000000 /dev/zero | tr '\\0' x", root, 10000)
     assert.equal(r.output.length, 2000000)
+  })
+
+  test('an output past the cut is cut, in bytes, and says so', async () => {
+    const r = await runLimited("head -c 100000 /dev/zero | tr '\\0' x", root, 10000, 1000)
+    assert.ok(Buffer.byteLength(r.output) < 2000, String(Buffer.byteLength(r.output)))
+    assert.match(r.output, /output cut at 1000 bytes/)
+  })
+
+  test('a character split between two reads stays whole', async () => {
+    const r = await runLimited("printf 'é%.0s' $(seq 1 40000)", root, 10000)
+    assert.equal(r.output.includes('\uFFFD'), false)
+    assert.equal(r.output.length, 40000)
   })
 })
