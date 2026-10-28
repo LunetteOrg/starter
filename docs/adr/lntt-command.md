@@ -23,6 +23,7 @@ command, so a reader who sees `lntt` in a script knows which package provides it
 
 ```
 lntt path | validate | get | set | operator | sync | guide | local app | viewer | browser | refs
+lntt hook format | typecheck
 lntt board sync
 lntt check [agents-md | skills | plugin | decisions [structure | board-refs | numbers] | tests [levels | focus | rules | touched | mutate] | body] | check cite
 lntt branch name | check | rename
@@ -38,7 +39,7 @@ lntt ci local | candidate | proved
 - **One entry point, one module per command group.** `bin/lntt.ts` dispatches to
   `src/cli.ts` (configuration, operator, `AGENTS.md`, local apps, viewer, browser),
   `src/check-cli.ts`, `src/branch-cli.ts`, `src/review-cli.ts`, `src/worktree-cli.ts`,
-  `src/refs-cli.ts`, `src/board-cli.ts`, `src/pull-request-cli.ts`, `src/retro-cli.ts`, `src/issue-cli.ts` (`dump`, `issue`), `src/messages-cli.ts` (`ask`, `inbox`,
+  `src/refs-cli.ts`, `src/hook-cli.ts`, `src/board-cli.ts`, `src/pull-request-cli.ts`, `src/retro-cli.ts`, `src/issue-cli.ts` (`dump`, `issue`), `src/messages-cli.ts` (`ask`, `inbox`,
   `answer`) and `src/ci/cli.ts`.
   A group loads only when it runs. What a script needs as a library, `@lntt/lntt`
   exports too (`resolveRefs` and `mentions` for `lntt refs`).

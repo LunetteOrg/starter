@@ -224,8 +224,9 @@
     }
   },
   "local": {
-    // What lntt hook runs. Format as the pre-commit does, so the commit does not rewrite a
-    // file under the agent; the typecheck is the typecheck script of package.json.
+    // What lntt hook runs. Format with Biome's check --write, which the pre-commit runs on
+    // the staged files, so the commit does not rewrite a file under the agent; the
+    // typecheck is the typecheck script of package.json.
     "hooks": {
       "format": "pnpm exec biome check --write --no-errors-on-unmatched --files-ignore-unknown=true"
     }
