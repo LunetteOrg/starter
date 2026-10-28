@@ -435,3 +435,55 @@ describe('the board skills', () => {
     }
   })
 })
+
+describe('the mutation-check skill', () => {
+  // The body after the frontmatter, so the description cannot satisfy what a section must say.
+  const body = () =>
+    readFileSync(join(SKILLS, 'mutation-check', 'SKILL.md'), 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '')
+  const guide = () => body().replace(/\s+/g, ' ')
+  const section = (n: number) =>
+    (
+      body()
+        .split(/^## /m)
+        .find((s) => s.startsWith(`${n}. `)) ?? ''
+    ).replace(/\s+/g, ' ')
+  // The kinds of mutation the tests lens proposes: the author and the reviewer try the same ones.
+  const KINDS = [
+    'a polarity flipped',
+    'an argument dropped',
+    'a guard or early return removed',
+    'the optimistic constant returned',
+    'the call removed',
+  ]
+
+  test('ships in the package beside the other shared skills', () => {
+    assert.ok(sharedSkills().includes('mutation-check'))
+  })
+
+  test('runs each mutation with lntt check tests mutate, and stops and proposes the levels when they are missing', () => {
+    assert.match(section(3), /lntt check tests mutate <path:line> --text='[^']+' --to='[^']+'/)
+    assert.match(section(1), /\*\*No `tests\.levels`:\*\* stop/)
+    assert.match(section(3), /`--to=''` to delete/)
+    assert.match(section(3), /single quote goes between double quotes/)
+    assert.match(section(3), /Write `--text=\.\.\.` with the `=` when the text starts with `-`/)
+  })
+
+  test('runs before the first review round, on the tests the change adds or alters', () => {
+    assert.match(guide(), /the procedure the author follows before the first review round/)
+    assert.match(section(2), /For each test the change adds or alters/)
+  })
+
+  test('proposes the kinds of mutation the tests lens proposes', () => {
+    const brief = readFileSync(resolve(HERE, '../agents/review/tests.md'), 'utf8').replace(/\s+/g, ' ')
+    for (const kind of KINDS) {
+      assert.ok(brief.includes(kind), `the tests lens: ${kind}`)
+      assert.ok(guide().includes(kind), `mutation-check: ${kind}`)
+    }
+  })
+
+  test('states the rule, and reports each mutation in the pull request body', () => {
+    assert.ok(guide().includes('A test is accepted when it fails for the right reason, not when it passes'))
+    assert.match(section(5), /^5\. Report In the pull request body/)
+    assert.match(section(5), /one line per test that guards a line, with the mutation and its outcome/)
+  })
+})

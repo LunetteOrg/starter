@@ -151,7 +151,8 @@ rests on these criteria:
    `packages/lntt/schema/config.schema.json`), so the contract is the whole file.
 4. **The skills call both groups.** `review` calls `lntt review`, `lntt check cite` and
    `ci:local`; `decisions` calls `lntt check decisions` and is a lens of `lntt review`;
-   `coordinate` calls `lntt worktree start`, the mailbox and `lntt get`; `run-local`
+   `coordinate` calls `lntt worktree start`, the mailbox and `lntt get`; `mutation-check`
+   calls `lntt get` and `lntt check tests mutate` (gates); `run-local`
    calls `lntt get`, `lntt local app` and `lntt viewer`; `retrospective` calls `lntt get`,
    `lntt pr block` and `lntt check body` (gates) and `lntt retro add`, `lntt dump` and `lntt issue` (agent tools); `github-board` calls `lntt get` and `lntt set`
    (gates) and `lntt board sync` (an agent tool); `commit-message` (`lntt get`,
