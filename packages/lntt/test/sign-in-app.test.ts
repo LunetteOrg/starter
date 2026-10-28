@@ -156,6 +156,20 @@ describe('sign-in on two instances at once', () => {
     assert.equal((await privatePage(instances[1], jarOf(instances[0]))).status, 401)
   })
 
+  test('anything but GET and POST on a known path is a 404, and a missing environment stops the server', () => {
+    const i = instances[0]
+    return Promise.all(
+      ['PUT', 'DELETE'].map(async (method) => {
+        assert.equal((await fetch(`${i.app.url}/sign-in`, { method })).status, 404)
+      }),
+    ).then(async () => {
+      assert.equal((await fetch(`${i.app.url}/nope`)).status, 404)
+      const bare = spawnSync('node', ['server.mjs'], { cwd: i.root, env: { PATH: process.env.PATH }, encoding: 'utf8' })
+      assert.equal(bare.status, 1)
+      assert.match(bare.stderr, /needs APP_ORIGIN, PORT and USERS/)
+    })
+  })
+
   test('a second sign-in on the same instance reads the newest code of the log', async () => {
     signIn(instances[0], 'alice')
     signIn(instances[0], 'alice')
