@@ -103,7 +103,7 @@ hooks that change what Claude Code draws (the `lntt review` band above the promp
 `/review-status`, the issue titles in a message). Every other hook goes in the
 project's `.claude/settings.json`, written by `lntt sync` beside the project's own
 hooks, as a thin line that calls `lntt` with its logic in the package (`lntt hook
-<name>`, `packages/lntt/src/hook.ts`).
+<name>`, `packages/lntt/src/hook.ts`, its exit codes in `hook-cli.ts`).
 A settings line runs the worktree's `lntt` and reaches a cloud session; the plugin
 does neither (below). It is the path the skills take, and `lntt sync` can write the
 same line in another agent's hook format.
@@ -151,17 +151,19 @@ toolchain, such as `tsc` and `mypy`, every one of which must pass); without the 
 `package.json` script of the same name; without both, the hook does nothing and says
 nothing. They run from the project root, within one limit for the whole list (a minute
 for the format commands, ten minutes for the typecheck's), below the hook's own timeout
-in the settings. Each runs in a process group of its own: at the limit the whole group is
-stopped, the processes it started included (`tsc` under `pnpm run`), and the commands
-left are not run; the typecheck reports both as part of its failure. Its output reaches
+in the settings. Each runs in a process group of its own: at the limit the whole group
+gets SIGTERM, and SIGKILL a second later, the processes it started included (`tsc` under
+`pnpm run`), and the commands left are not run; the typecheck reports both as part of its failure. Its output reaches
 the agent up to 64 MB.
 
 `lntt hook` answers its settings line with an exit code: 0 nothing to report, 1 a
 typecheck failure not reported yet (the line exits 2, which wakes the agent with the
 output), 2 the usage, which an `lntt` older than `hook` also answers. A defect of the
 typecheck hook itself (its own error, a state it cannot read or write) never wakes the
-agent: it exits 0 with a `systemMessage` once per session, which Claude Code gives the
-agent at its next turn.
+agent: it exits 0 with a `systemMessage`, which Claude Code gives the agent at its next
+turn. It is said once per session, told by the `session_id` of the hook input (a marker
+in the temporary directory); with no id, or a marker that cannot be kept, every time. A
+defect of the format hook is quiet: the commit's own check is the gate.
 
 Every other hook is measured before it is adopted: what it costs in tokens and turns
 against what it catches that the next gate (the pre-commit, `ci:local`, the review) would
