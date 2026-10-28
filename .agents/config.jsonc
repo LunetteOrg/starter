@@ -48,7 +48,7 @@
         "files": [
           "packages/{biome-config,lntt,stylelint-config,typescript-config,playwright-config}/test/**/*.test.ts",
           "scripts/*.test.mts",
-          "plugins/*/hooks/*.test.mjs"
+          "packages/lntt/plugin/hooks/*.test.mjs"
         ],
         "exclude": ["**/fixtures/**"],
         "environment": "node:test, the CLI against fixture repositories in a temp dir",
