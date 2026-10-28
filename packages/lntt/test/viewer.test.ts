@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -53,9 +63,11 @@ describe('detecting where the session runs', () => {
     assert.equal(detectHost({ TERM_PROGRAM: 'Apple_Terminal' }), 'terminal')
   })
 
-  test('Herdr started from an Orca or Wave terminal: its panes inherit their variables, TERM_PROGRAM wins', () => {
+  test('Herdr inside Orca or Wave is Herdr: its panes inherit the variables of the terminal that started it', () => {
+    // As observed in a pane of herdr 0.9.3 whose server was started with ORCA_* and WAVETERM_* set.
     const pane = { TERM_PROGRAM: 'herdr', HERDR_ENV: '1', ORCA_WORKTREE_ID: 'x', WAVETERM_BLOCKID: 'b' }
     assert.equal(detectHost(pane), 'herdr')
+    assert.equal(detectHost({ TERM_PROGRAM: 'Orca', ORCA_WORKTREE_ID: 'x', HERDR_ENV: '1' }), 'herdr')
   })
 
   test('Claude desktop by the entrypoints Claude Code itself counts as desktop', () => {
@@ -120,6 +132,7 @@ describe('the command line', () => {
       'http://localhost:5183/',
       '--worktree',
       `path:${repo}`,
+      '--json',
     ])
   })
 
@@ -133,17 +146,53 @@ describe('the command line', () => {
     const result = run(['viewer', 'open', 'http://localhost:5183/'], { TERM_PROGRAM: 'Orca' })
     assert.equal(result.status, 0)
     assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n'), [
-      `goto --url http://localhost:5183/ --worktree path:${repo}`,
-      `tab create --url http://localhost:5183/ --worktree path:${repo}`,
+      `goto --url http://localhost:5183/ --worktree path:${repo} --json`,
+      `tab create --url http://localhost:5183/ --worktree path:${repo} --json`,
     ])
   })
 
-  test('viewer open with Playwright and no CLI prints the MCP call and exits 3', () => {
+  test('viewer open in Orca: another goto failure is reported, no tab is opened', () => {
+    const log = join(tmp, 'orca.log')
+    writeFileSync(
+      join(stubs, 'orca'),
+      `#!/bin/sh\necho "$*" >> "${log}"\necho '{"ok":false,"error":{"code":"runtime_unavailable"}}'\nexit 1\n`,
+    )
+    chmodSync(join(stubs, 'orca'), 0o755)
+    const result = run(['viewer', 'open', 'http://localhost:5183/'], { TERM_PROGRAM: 'Orca' })
+    assert.notEqual(result.status, 0)
+    assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n'), [
+      `goto --url http://localhost:5183/ --worktree path:${repo} --json`,
+    ])
+  })
+
+  // A PATH with the stubs and links to sh, node and git only, so a Playwright installed
+  // on this machine (next to node, with a global npm install) does not count.
+  const onlyStubs = (): string => {
+    const tools = join(tmp, 'tools')
+    mkdirSync(tools)
+    for (const name of ['sh', 'git'])
+      symlinkSync(execFileSync('sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }).trim(), join(tools, name))
+    symlinkSync(process.execPath, join(tools, 'node'))
+    return `${stubs}:${tools}`
+  }
+  const preferPlaywright = () => {
     mkdirSync(join(home, '.agents'))
     writeFileSync(join(home, '.agents/operator.jsonc'), '{"workspace":{"viewers":["playwright"]}}')
-    // Only node and git on PATH, so a Playwright installed on this machine does not count.
-    const path = `${stubs}:${dirname(process.execPath)}:${dirname(execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim())}`
-    const result = run(['viewer', 'open', 'http://localhost:5173/'], { PATH: path })
+  }
+
+  test('viewer open with the Playwright CLI on PATH opens the page with it', async () => {
+    preferPlaywright()
+    const log = stub('playwright')
+    const result = run(['viewer', 'open', 'http://localhost:5173/'], { PATH: onlyStubs() })
+    assert.equal(result.status, 0)
+    // The CLI is started detached: wait for its log.
+    for (let i = 0; i < 50 && !existsSync(log); i++) await new Promise((r) => setTimeout(r, 20))
+    assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n'), ['open', 'http://localhost:5173/'])
+  })
+
+  test('viewer open with Playwright and no CLI prints the MCP call and exits 3', () => {
+    preferPlaywright()
+    const result = run(['viewer', 'open', 'http://localhost:5173/'], { PATH: onlyStubs() })
     assert.equal(result.status, 3)
     assert.deepEqual(JSON.parse(result.stdout), {
       viewer: 'playwright',

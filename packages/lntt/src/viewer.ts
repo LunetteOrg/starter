@@ -23,14 +23,15 @@ const DESKTOP_ENTRYPOINTS = new Set(['claude-desktop', 'claude-desktop-3p', 'loc
 
 const TERM_PROGRAMS: Record<string, Host> = { Orca: 'orca', waveterm: 'wave', herdr: 'herdr' }
 
-// Innermost first. Claude desktop sets the entrypoint on the claude it starts; then
-// TERM_PROGRAM, which names the innermost terminal. The other variables leak inward (a
-// Herdr server started from Orca or Wave hands theirs to every pane), so they come last.
+// Innermost first (docs/adr/worktree-tooling.md). Claude desktop sets the entrypoint on
+// the claude it starts. Herdr runs inside a terminal, never the other way round, and a
+// Herdr server started from Orca or Wave hands their variables to every pane. Then
+// TERM_PROGRAM, which names the innermost terminal, before the variables that leak inward.
 export function detectHost(env: Env): Host {
   if (DESKTOP_ENTRYPOINTS.has(env.CLAUDE_CODE_ENTRYPOINT ?? '')) return 'claude-desktop'
+  if (env.HERDR_ENV === '1') return 'herdr'
   const term = TERM_PROGRAMS[env.TERM_PROGRAM ?? '']
   if (term) return term
-  if (env.HERDR_ENV === '1') return 'herdr'
   if (env.ORCA_WORKTREE_ID) return 'orca'
   if (Object.keys(env).some((k) => k.startsWith('WAVETERM_'))) return 'wave'
   return 'terminal'
@@ -95,11 +96,15 @@ export function openWith(choice: Choice, url: string, worktree: string): boolean
   switch (choice.viewer) {
     case 'orca': {
       const orca = (args: string[]) =>
-        execFileSync('orca', [...args, '--url', url, '--worktree', `path:${worktree}`], { stdio: 'ignore' })
+        execFileSync('orca', [...args, '--url', url, '--worktree', `path:${worktree}`, '--json'], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        })
       // goto needs a browser tab in the worktree (browser_no_tab otherwise): open one there.
       try {
         orca(['goto'])
-      } catch {
+      } catch (error) {
+        if (!String((error as { stdout?: string }).stdout).includes('"browser_no_tab"')) throw error
         orca(['tab', 'create'])
       }
       return true

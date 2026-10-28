@@ -459,8 +459,9 @@ prints the call.
 
 The app the session runs in is read innermost first: Claude desktop by
 `CLAUDE_CODE_ENTRYPOINT` (`claude-desktop`, `claude-desktop-3p`, `local-agent`), then
-`TERM_PROGRAM` (`Orca`, `waveterm`, `herdr`), then `HERDR_ENV`, `ORCA_WORKTREE_ID` and
-`WAVETERM_*`, which a Herdr server started from Orca or Wave hands to every pane.
+Herdr (`HERDR_ENV=1`; its panes also carry the `ORCA_*` or `WAVETERM_*` of the
+terminal that started its server), then `TERM_PROGRAM` (`Orca`, `waveterm`), then
+`ORCA_WORKTREE_ID` and `WAVETERM_*`.
 
 ## Driving a browser
 
