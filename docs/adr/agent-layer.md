@@ -143,22 +143,23 @@ message and a different line, so the message of a hook stays the same across ver
   reaches it at once rather than at the next commit. It wakes only on a failure it has
   not seen: the last failing output, without colours and timings, is kept in the
   worktree's git directory (outside git, in the temporary directory), a run that fails
-  the same way stays quiet, and a green run clears it. A configuration `lntt` cannot read
-  is such a failure.
+  the same way stays quiet, and a green run clears it.
 
 The commands are a project's: `local.hooks.format` and `local.hooks.typecheck` of
 `.agents/config`, one command or a list run in order (a project with more than one
 toolchain, such as `tsc` and `mypy`, every one of which must pass); without the key, the
 `package.json` script of the same name; without both, the hook does nothing and says
-nothing.
+nothing. They run from the project root, each stopped after a limit (30 seconds for a
+format command, 5 minutes for a typecheck command) below the hook's own timeout in the
+settings, and the typecheck's output reaches the agent whole.
 
 Every other hook is measured before it is adopted: what it costs in tokens and turns
 against what it catches that the next gate (the pre-commit, `ci:local`, the review) would
 catch later at a higher cost. The measure of October 2026, on the Claude Code transcripts
 of three Lunette projects (about 2,400 sessions, 1,381 commits): the typecheck at `Stop`
 woke the agent 77 times, 66 of them in one project, where 65 rewakes changed nothing
-while the typecheck stayed red, for 203 model calls and 85k output tokens; the waking on a new failure only removes that
-repetition. The formatting hook ran 2,040 times and caused 281 file-changed notices
+while the typecheck stayed red, for 203 model calls and 85k output tokens; the waking on
+a new failure only removes that repetition. The formatting hook ran 2,040 times and caused 281 file-changed notices
 (about 56k tokens) for the formatting the agent would otherwise meet at the commit. None
 of the other hooks measured pays for itself today (see the discarded directions).
 
@@ -169,7 +170,9 @@ after a fix by hand when `lntt sync` cannot read the file
 first message ends (`.claude/settings.json` not as `lntt sync` writes it); the titles at
 the end of a message (`lntt` not installed, an `lntt` with no `refs`, `gh` missing or
 not logged in); a settings hook in a `systemMessage`, which Claude Code shows the
-person.
+person. A configuration `lntt` cannot read is said once until it changes, where each hook
+speaks: the typecheck wakes the agent with it, as a failure; the format hook, which
+is then off, tells the person in a `systemMessage`.
 
 ### What a number means is shown on screen, not asked of the agent
 
@@ -254,8 +257,7 @@ How a title is written is the `github-board` skill's.
   changes at each run wakes the agent at each run.
 - A settings line of `lntt hook` that meets an `lntt` with no `hook` says what to run once
   per Claude Code process, which is the session's; with `lntt` missing it says nothing.
-  A configuration `lntt` cannot read turns the format hook off, said once to the person
-  until it changes.
+  A configuration `lntt` cannot read turns the format hook off until it is fixed.
 - Claude Code keeps one registered `lunette` marketplace per machine: each Lunette
   project's session start points it at that project's path, and every session loads
   its own project's copy (observed with Claude Code 2.1.312, two projects in one
