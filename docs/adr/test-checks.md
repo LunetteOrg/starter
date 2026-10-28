@@ -4,7 +4,7 @@ date: 2026-10-17
 tags: [lntt, tests, review, mutation]
 ---
 
-# `lntt check tests`: the test levels, and the mutations a reviewer proposes
+# `lntt check tests`: the test levels, and the mutations the author and the reviewer run
 
 ## Context
 
@@ -14,7 +14,11 @@ forgotten `.only`, which tests run a changed line. The strongest proof that a te
 worth something, that it fails when the line it guards breaks, is a run, and a
 read-only reviewer cannot run anything. Mutation testing that tries every mutant over
 the whole suite weighs every line alike and costs a full run per mutant; the useful
-mutations are few, and whoever reads the change knows which line a test guards.
+mutations are few, and whoever reads the change knows which line a test guards. A suite
+can be fully green and hide an inverted flag, an id dropped from a call to a vendor or a
+guard removed, defects that breaking the guarded line on purpose finds and reading does
+not; the author, who knows which line each new test guards, can run that break before
+any reviewer reads the change.
 
 ## Decision
 
@@ -64,6 +68,16 @@ reason, and sits at the lowest level where its assertion can.
   brief asks for the mutations of the list that matter (a polarity flipped, an argument
   dropped, a guard or early return removed, the optimistic constant returned, the call
   removed), wiring before units.
+- **The author runs the mutation before the review.** A new test that guards a line is
+  accepted when a mutation of that line, run with `mutate`, is killed by that test with a
+  message that names the defect; a mutant that survives means the test does not exist,
+  whatever the coverage says. The pull request body lists, under its checks, each such
+  test with its mutation and outcome, or the line as not checked with the reason. The
+  procedure is the shared skill `mutation-check`, which cites this record instead of
+  restating it.
+- **The rule holds in every Lunette project.** It is decided here and reaches a project
+  with `lntt`: `mutate`, the `tests` lens and the `mutation-check` skill. A project
+  chooses its levels and the commands that run them, not whether the rule applies.
 - **What stays with the model:** whether a test is at the lowest level that can fail for
   the right reason, whether a jsdom test drives a stub, an expected value copied from
   the output instead of the contract, and which mutations to propose.
@@ -102,6 +116,17 @@ reason, and sits at the lowest level where its assertion can.
   check.
 
 ## Discarded directions
+
+- **The rule as a per-project choice.** A green suite that hides a silent defect is a
+  risk of every project, and the tools that apply the rule ship with `lntt` in all of
+  them; a choice per project would leave the skill and the lens applying a rule the
+  project's records do not state.
+- **The rule in a template's testing record.** It would reach only the projects
+  scaffolded from that template, and none that adopts `lntt` later; the rule governs the
+  checks `lntt` runs, so it is filed with them.
+- **A check that the pull request body names a mutation for every new test.** Which line
+  a test guards is a judgement; a count of mutations per test file would pass on a
+  mutation of the wrong line and fail on a helper that guards nothing.
 
 - **Automated mutation testing (Stryker and similar).** Every mutant reruns the whole
   suite, the score weighs every line alike, and the useful mutations are few and chosen

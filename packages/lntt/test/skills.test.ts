@@ -435,3 +435,37 @@ describe('the board skills', () => {
     }
   })
 })
+
+describe('the mutation-check skill', () => {
+  const guide = () => readFileSync(join(SKILLS, 'mutation-check', 'SKILL.md'), 'utf8').replace(/\s+/g, ' ')
+  // The kinds of mutation the tests lens proposes: the author and the reviewer try the same ones.
+  const KINDS = [
+    'a polarity flipped',
+    'an argument dropped',
+    'a guard or early return removed',
+    'the optimistic constant returned',
+    'the call removed',
+  ]
+
+  test('ships in the package beside the other shared skills', () => {
+    assert.ok(sharedSkills().includes('mutation-check'))
+  })
+
+  test('runs each mutation with lntt check tests mutate, and stops and proposes the levels when they are missing', () => {
+    assert.match(guide(), /lntt check tests mutate/)
+    assert.match(guide(), /\*\*No `tests\.levels`:\*\* stop/)
+  })
+
+  test('proposes the kinds of mutation the tests lens proposes', () => {
+    const brief = readFileSync(resolve(HERE, '../agents/review/tests.md'), 'utf8').replace(/\s+/g, ' ')
+    for (const kind of KINDS) {
+      assert.ok(brief.includes(kind), `the tests lens: ${kind}`)
+      assert.ok(guide().includes(kind), `mutation-check: ${kind}`)
+    }
+  })
+
+  test('cites the rule from its record instead of restating it, and reports to the pull request body', () => {
+    assert.ok(guide().includes('https://github.com/LunetteOrg/starter/blob/main/docs/adr/test-checks.md'))
+    assert.match(guide(), /pull request body/)
+  })
+})

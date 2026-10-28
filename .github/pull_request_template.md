@@ -17,7 +17,7 @@ Closes #
 
 ## Checks
 
-<!-- pnpm ci:local on the commit pushed, with its outcome. -->
+<!-- pnpm ci:local on the commit pushed, with its outcome; each new test that guards a line, with the mutation that makes it fail (mutation-check). -->
 
 ## 🔁 Retrospective
 <!-- retro:start -->

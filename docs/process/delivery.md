@@ -78,7 +78,9 @@ and is written in `delivery.pullRequest.language`:
   reason.
 - **Review**: the rounds of `lntt review`, what each found and how it ended, and the
   findings left open.
-- **Checks**: `pnpm ci:local` on the commit pushed, with its outcome.
+- **Checks**: `pnpm ci:local` on the commit pushed, with its outcome, and for each new
+  test that guards a line the mutation that makes it fail (the `mutation-check` skill,
+  [test checks](../adr/test-checks.md)).
 - **The retrospective block**: the labels of `delivery.pullRequest.retrospective`
   between `<!-- retro:start -->` and `<!-- retro:end -->`, each with a value or the
   configured `none`. The `retrospective` skill fills it from the branch's `Retro:`
