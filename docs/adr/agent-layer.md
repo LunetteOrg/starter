@@ -118,7 +118,8 @@ enables the plugin from it; `lntt check plugin` fails while either is missing or
 elsewhere. Once the folder is trusted Claude Code loads the plugin in place at every
 session start, with no install step and whatever its version string, so a bump of
 `@lntt/lntt` is its update. The path resolves against the main checkout: every
-worktree of a repository loads the plugin the main checkout installed.
+worktree of a repository loads the plugin the main checkout installed (Claude Code's
+documentation of plugins for an organization, October 2026).
 
 One settings hook is Lunette's: at `SessionStart`, when `node_modules/.bin/lntt` is
 missing, it installs the dependencies with the lockfile's package manager
@@ -216,7 +217,8 @@ How a title is written is the `github-board` skill's.
   hooks, not the band or the titles.
 - Claude Code keeps one registered `lunette` marketplace per machine: each Lunette
   project's session start points it at that project's path, and every session loads
-  its own project's copy.
+  its own project's copy (observed with Claude Code 2.1.312, two projects in one
+  configuration).
 
 - A `gh repo view` slower than `GH_TIMEOUT_MS` (a slow network) counts as a failed
   `lntt refs` call: `FAILURES` of them in a row turn the titles off for the session, and
