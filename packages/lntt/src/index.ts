@@ -33,6 +33,15 @@ export {
   type DriverChoice,
   formatPlan,
 } from './browser.ts'
+export {
+  checkClaudeSettings,
+  INSTALL_HOOK,
+  MARKETPLACE,
+  PLUGIN,
+  SETTINGS,
+  type SettingsEntry,
+  syncClaudeSettings,
+} from './claude-settings.ts'
 export { commitlintConfig } from './commitlint.ts'
 export { ConfigError, type Format, type Located, NoConfigError } from './files.ts'
 export {

@@ -22,6 +22,7 @@ import {
   setValue,
   sharedSkills,
   syncAgentsBlock,
+  syncClaudeSettings,
   syncSkills,
   type Viewer,
 } from './index.ts'
@@ -117,6 +118,7 @@ function run(command: string | undefined, key: string | undefined, raw: string |
       // The skills first: a clash with a project skill stops the command before any write.
       syncSkills(cwd())
       syncAgentsBlock(cwd())
+      syncClaudeSettings(cwd())
       break
     case 'guide': {
       if (key === undefined) {
