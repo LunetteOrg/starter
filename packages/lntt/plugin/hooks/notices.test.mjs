@@ -62,8 +62,27 @@ describe('the settings the plugin checks at session start', () => {
     ])
   })
 
+  test('a marketplace with a directory source at another path, and a disabled plugin, are named', () => {
+    const other = {
+      ...SYNCED,
+      extraKnownMarketplaces: { lunette: { source: { source: 'directory', path: './plugins/lunette' } } },
+      enabledPlugins: { [PLUGIN]: false },
+    }
+    assert.deepEqual(settingsProblems(JSON.stringify(other)), ['extraKnownMarketplaces.lunette', 'enabledPlugins.lunette@lunette'])
+  })
+
+  test('comments and trailing commas are read as lntt check reads them, inside strings left alone', () => {
+    const text = JSON.stringify(SYNCED, null, 2).replace('{', '{\n  // the project’s own, with a URL: "https://x.org//y"\n').replace(/\n}$/, ',\n}')
+    assert.deepEqual(settingsProblems(text), [])
+    assert.deepEqual(settingsProblems('{ /* all of it */ }'), [
+      'extraKnownMarketplaces.lunette',
+      'enabledPlugins.lunette@lunette',
+      'hooks.SessionStart',
+    ])
+  })
+
   test('a file that is not JSON, or none at all, is named as the whole file', () => {
-    assert.deepEqual(settingsProblems('{ // a comment\n}'), ['.claude/settings.json'])
+    assert.deepEqual(settingsProblems('{ "a": '), ['.claude/settings.json'])
     assert.deepEqual(settingsProblems(null), ['.claude/settings.json'])
   })
 })

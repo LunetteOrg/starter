@@ -392,6 +392,12 @@ describe('the issue titles hook', () => {
     assert.deepEqual(await flush('m2', 'again', true), {})
   })
 
+  test('an lntt the shell cannot find (exit 127): the same notice', async () => {
+    const { flush } = engine({ local: false, lntt: async () => ({ exitCode: 127, stdout: '', stderr: 'lntt: not found' }) })
+    const end = await flush('m1', '#1 done\n', true)
+    assert.match(plain(end.displayContent), /lntt is not installed in this project\. Run: pnpm install$/)
+  })
+
   test('an lntt with no refs: the notice names the version found and the update', async () => {
     const { flush } = engine({ lntt: async () => ({ exitCode: 2, stdout: '', stderr: 'usage: lntt path' }) })
     const end = await flush('m1', '#1 done\n', true)

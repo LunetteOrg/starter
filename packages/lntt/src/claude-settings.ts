@@ -17,9 +17,11 @@ export const SETTINGS = '.claude/settings.json'
 export const MARKETPLACE = { source: { source: 'directory', path: './node_modules/@lntt/lntt' } }
 export const PLUGIN = 'lunette@lunette'
 
-// Runs before lntt can, so it is a shell line with no lntt and no jq. It never fails the
-// session: when the install cannot run it says, once, what to run instead. The status
-// message tells this hook from the project's own, so an older line is replaced.
+// Runs before lntt can, so it is a shell line with no lntt and no jq. It installs with pnpm
+// (a Lunette project's manager), or `npm ci` in a project that has only a package-lock.json.
+// It never fails the session: when the install cannot run it says, once, what to run
+// instead. Its timeout leaves room for a cold install. The status message tells this hook
+// from the project's own, so an older line is replaced.
 export const INSTALL_HOOK = {
   type: 'command',
   command: [
@@ -29,6 +31,7 @@ export const INSTALL_HOOK = {
     'if $c >/dev/null 2>&1 && [ -x node_modules/.bin/lntt ]; then printf \'{"systemMessage":"lntt was missing: the dependencies are installed (%s)"}\\n\' "$c"',
     'else printf \'{"systemMessage":"lntt is not installed and %s failed: run %s"}\\n\' "$c" "$m"; fi',
   ].join('; '),
+  timeout: 600,
   statusMessage: 'lntt: checking the dependencies are installed',
 }
 
@@ -36,7 +39,7 @@ export interface SettingsEntry {
   key: string
   // `elsewhere`: the marketplace names another source; `off`: the plugin is disabled;
   // `edited`: the install hook differs from the one lntt writes; `invalid`: the file is
-  // not JSON.
+  // not JSON, or a key it reads does not have the shape Claude Code reads.
   state: 'ok' | 'missing' | 'elsewhere' | 'off' | 'edited' | 'invalid'
 }
 
@@ -59,12 +62,28 @@ function projectRoot(cwd: string): string {
   return dirname(dirname(findConfig(cwd).path))
 }
 
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+// The keys lntt reads and writes, in the shape Claude Code reads: objects, and SessionStart
+// a list of entries each with a list of hooks.
+function wellShaped(s: Record<string, unknown>): boolean {
+  for (const key of ['extraKnownMarketplaces', 'enabledPlugins', 'hooks']) {
+    if (s[key] !== undefined && !isObject(s[key])) return false
+  }
+  const start = (s.hooks as Record<string, unknown> | undefined)?.SessionStart
+  if (start === undefined) return true
+  if (!Array.isArray(start)) return false
+  return start.every(
+    (e) => isObject(e) && (e.hooks === undefined || (Array.isArray(e.hooks) && e.hooks.every(isObject))),
+  )
+}
+
 function load(file: string): { text: string; settings: Settings } | null {
   const text = existsSync(file) ? readFileSync(file, 'utf8') : '{}\n'
   const errors: jsonc.ParseError[] = []
-  const settings = jsonc.parse(text, errors, { allowTrailingComma: true }) as Settings
-  if (errors.length > 0 || typeof settings !== 'object' || settings === null || Array.isArray(settings)) return null
-  return { text, settings }
+  const settings = jsonc.parse(text, errors, { allowTrailingComma: true })
+  if (errors.length > 0 || !isObject(settings) || !wellShaped(settings)) return null
+  return { text, settings: settings as Settings }
 }
 
 const ours = (h: Hook) => h.statusMessage === INSTALL_HOOK.statusMessage
@@ -96,33 +115,49 @@ export function checkClaudeSettings(cwd: string): SettingsEntry[] {
   return entries(loaded.settings)
 }
 
+export const INVALID = `${SETTINGS} is not JSON, or not the shape Claude Code reads: fix it, then run lntt sync`
+
+const FORMAT = { formattingOptions: { insertSpaces: true, tabSize: 2 } }
+
+// One edit, applied to the text: undefined removes the value at the path.
+function edit(text: string, path: jsonc.JSONPath, value: unknown, insert = false): string {
+  return jsonc.applyEdits(text, jsonc.modify(text, path, value, { ...FORMAT, isArrayInsertion: insert }))
+}
+
+// Each install hook lntt wrote, removed from the last one up so the indexes before it
+// hold (an entry left with no hook goes with it), then the one lntt writes now appended:
+// the project's own entries, their comments and formatting stay as they are.
+function placeInstallHook(text: string, start: HookEntry[] | undefined): string {
+  if (start === undefined) return edit(text, ['hooks', 'SessionStart'], [{ hooks: [INSTALL_HOOK] }])
+  let next = text
+  let length = start.length
+  for (let i = start.length - 1; i >= 0; i -= 1) {
+    const hooks = start[i]?.hooks ?? []
+    if (!hooks.some(ours)) continue
+    if (hooks.every(ours)) {
+      next = edit(next, ['hooks', 'SessionStart', i], undefined)
+      length -= 1
+      continue
+    }
+    for (let j = hooks.length - 1; j >= 0; j -= 1) {
+      if (ours(hooks[j] as Hook)) next = edit(next, ['hooks', 'SessionStart', i, 'hooks', j], undefined)
+    }
+  }
+  return edit(next, ['hooks', 'SessionStart', length], { hooks: [INSTALL_HOOK] }, true)
+}
+
 // Writes the three entries, each only when it is off, with edits that keep the rest of
 // the file as it is: the project's own hooks of SessionStart stay beside the install hook.
 export function syncClaudeSettings(cwd: string): void {
   const file = join(projectRoot(cwd), SETTINGS)
   const loaded = load(file)
-  if (loaded === null) throw new ConfigError(`${SETTINGS} is not JSON: fix it, then run lntt sync`)
+  if (loaded === null) throw new ConfigError(INVALID)
   const [marketplace, plugin, hook] = entries(loaded.settings) as [SettingsEntry, SettingsEntry, SettingsEntry]
-  const edits: [jsonc.JSONPath, unknown][] = []
-  if (marketplace.state !== 'ok') edits.push([['extraKnownMarketplaces', 'lunette'], MARKETPLACE])
-  if (plugin.state !== 'ok') edits.push([['enabledPlugins', PLUGIN], true])
-  if (hook.state !== 'ok') {
-    const kept = (loaded.settings.hooks?.SessionStart ?? [])
-      .map((e) => ({ ...e, hooks: (e.hooks ?? []).filter((h) => !ours(h)) }))
-      .filter((e) => e.hooks.length > 0)
-    edits.push([
-      ['hooks', 'SessionStart'],
-      [...kept, { hooks: [INSTALL_HOOK] }],
-    ])
-  }
-  if (edits.length === 0 && existsSync(file)) return
   let text = loaded.text
-  for (const [path, value] of edits) {
-    text = jsonc.applyEdits(
-      text,
-      jsonc.modify(text, path, value, { formattingOptions: { insertSpaces: true, tabSize: 2 } }),
-    )
-  }
+  if (marketplace.state !== 'ok') text = edit(text, ['extraKnownMarketplaces', 'lunette'], MARKETPLACE)
+  if (plugin.state !== 'ok') text = edit(text, ['enabledPlugins', PLUGIN], true)
+  if (hook.state !== 'ok') text = placeInstallHook(text, loaded.settings.hooks?.SessionStart)
+  if (text === loaded.text && existsSync(file)) return
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, text.endsWith('\n') ? text : `${text}\n`)
 }

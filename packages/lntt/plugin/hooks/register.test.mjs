@@ -23,7 +23,7 @@ const roundOf = (session) =>
 // the session cannot tell it), reading a progress file written by `session`'s round (none
 // when `session` is undefined) and the project's `settings` (null: no file).
 // Each load is a fresh copy of the module: its state is per session.
-async function plugin({ id, session, ids, settings = SYNCED }) {
+async function plugin({ id, session, ids, settings = SYNCED, git = 0 }) {
   const { register } = await import(`./register.js?case=${Math.random()}`)
   const hooks = {}
   register((event, matcher, hook) => {
@@ -42,6 +42,7 @@ async function plugin({ id, session, ids, settings = SYNCED }) {
     process: {
       run: async (argv) => {
         if (argv[0] !== 'git') return { exitCode: 0, stdout: '', stderr: '' }
+        if (git !== 0) return { exitCode: git, stdout: '', stderr: 'fatal: not a git repository' }
         return { exitCode: 0, stdout: argv.includes('--show-toplevel') ? '/repo\n' : '/repo/.git\n', stderr: '' }
       },
     },
@@ -128,4 +129,9 @@ describe('the settings lntt sync writes, checked at session start', () => {
       assert.equal(await p.band(), 'below')
     })
   }
+
+  test('outside a git repository there is no project to check: nothing in the band', async () => {
+    const p = await plugin({ id: 's1', settings: null, git: 128 })
+    assert.equal(await p.band(), 'below')
+  })
 })

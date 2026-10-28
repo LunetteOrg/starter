@@ -84,13 +84,14 @@ pnpm exec lntt guide             # the skills it has
 ```
 
 It also writes into `.claude/settings.json`, keeping every other key, comment and hook
-of the file: the `directory` marketplace this package ships
+of the file (an edited entry is reformatted): the `directory` marketplace this package ships
 ([`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json), path
 `./node_modules/@lntt/lntt`), the `lunette` plugin enabled from it
 ([`plugin/`](./plugin/): the `lntt review` band, the issue titles on screen), and a
-`SessionStart` hook that installs the dependencies with the lockfile's package manager
-when `node_modules/.bin/lntt` is missing. The hook never fails a session: when the
-install cannot run it says, once, what to run.
+`SessionStart` hook that installs the dependencies when `node_modules/.bin/lntt` is
+missing: with pnpm, or `npm ci` in a project with only a `package-lock.json`, within ten
+minutes. The hook never fails a session: when the install cannot run it says, once,
+what to run.
 
 So the skills, the plugin and the `lntt` they call are one version, the project's
 lockfile: a bump of `@lntt/lntt` updates the guides and the plugin with no other step.

@@ -46,12 +46,37 @@ export function noticeText(problem) {
   }
 }
 
+// JSON with comments and trailing commas, as lntt reads .claude/settings.json (jsonc-parser,
+// which the plugin cannot import): both are dropped outside strings, then JSON.parse.
+function parseJsonc(text) {
+  let out = ''
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text[i]
+    if (c === '"') {
+      const start = i
+      for (i += 1; i < text.length && text[i] !== '"'; i += 1) if (text[i] === '\\') i += 1
+      out += text.slice(start, i + 1)
+    } else if (c === '/' && text[i + 1] === '/') {
+      while (i < text.length && text[i] !== '\n') i += 1
+      out += '\n'
+    } else if (c === '/' && text[i + 1] === '*') {
+      const end = text.indexOf('*/', i + 2)
+      i = end === -1 ? text.length : end + 1
+      out += ' '
+    } else if (c === '}' || c === ']') {
+      // A trailing comma before it, past the whitespace and the comments dropped.
+      out = out.replace(/,(\s*)$/, '$1') + c
+    } else out += c
+  }
+  return JSON.parse(out)
+}
+
 // The entries of the project's .claude/settings.json (its text, null when there is none)
 // that are not as lntt sync writes them; the whole file when it is missing or not JSON.
 export function settingsProblems(text) {
   let s
   try {
-    s = JSON.parse(text)
+    s = parseJsonc(text)
   } catch {
     return ['.claude/settings.json']
   }

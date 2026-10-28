@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import * as jsonc from 'jsonc-parser'
 import { checkClaudeSettings, INSTALL_HOOK, MARKETPLACE, PLUGIN, syncClaudeSettings } from '../src/index.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -106,6 +107,61 @@ describe('the Claude Code settings lntt sync writes', () => {
     assert.equal(readFileSync(settings(), 'utf8'), first)
   })
 
+  test('two copies of the install hook are an edit; sync leaves one', () => {
+    write({ hooks: { SessionStart: [{ hooks: [INSTALL_HOOK] }, { hooks: [INSTALL_HOOK] }] } })
+    assert.deepEqual(
+      off().map((c) => `${c.state} ${c.key}`),
+      ['missing extraKnownMarketplaces.lunette', 'missing enabledPlugins.lunette@lunette', 'edited hooks.SessionStart'],
+    )
+    syncClaudeSettings(root)
+    assert.equal(read().hooks.SessionStart.length, 1)
+    assert.deepEqual(off(), [])
+  })
+
+  test('the install hook replaces an older one in SessionStart, and the project’s own entries and their comments stay', () => {
+    mkdirSync(join(root, '.claude'))
+    const text = [
+      '{',
+      '  "hooks": {',
+      '    "SessionStart": [',
+      '      // ours, before the install',
+      '      { "hooks": [{ "type": "command", "command": "echo ours" }] },',
+      `      { "hooks": [${JSON.stringify({ ...INSTALL_HOOK, command: 'an older line' })}] }`,
+      '    ]',
+      '  }',
+      '}',
+      '',
+    ].join('\n')
+    writeFileSync(settings(), text)
+    syncClaudeSettings(root)
+    const after = readFileSync(settings(), 'utf8')
+    assert.match(after, /\/\/ ours, before the install\n/)
+    assert.deepEqual(
+      jsonc.parse(after).hooks.SessionStart.map((e: { hooks: { command: string }[] }) => e.hooks[0]?.command),
+      ['echo ours', INSTALL_HOOK.command],
+    )
+    assert.doesNotMatch(after, /an older line/)
+    assert.deepEqual(off(), [])
+  })
+
+  for (const [what, value] of [
+    ['enabledPlugins a string', { enabledPlugins: 'x' }],
+    ['extraKnownMarketplaces an array', { extraKnownMarketplaces: [] }],
+    ['hooks.SessionStart an object', { hooks: { SessionStart: {} } }],
+    ['a null entry in SessionStart', { hooks: { SessionStart: [null] } }],
+    ['a null hook in an entry', { hooks: { SessionStart: [{ hooks: [null] }] } }],
+  ]) {
+    test(`${what}: the file is invalid for the check, and sync refuses it without a stack trace`, () => {
+      write(value)
+      assert.deepEqual(off(), [{ key: '.claude/settings.json', state: 'invalid' }])
+      assert.throws(() => syncClaudeSettings(root), { name: 'ConfigError' })
+    })
+  }
+
+  test('the install hook has a timeout of its own, long enough for a cold install', () => {
+    assert.equal(INSTALL_HOOK.timeout, 600)
+  })
+
   test('the check names what is missing, with no settings file at all', () => {
     assert.deepEqual(
       off().map((c) => `${c.state} ${c.key}`),
@@ -116,6 +172,32 @@ describe('the Claude Code settings lntt sync writes', () => {
       ],
     )
   })
+
+  for (const [state, value, says] of [
+    [
+      'elsewhere',
+      { extraKnownMarketplaces: { lunette: { source: { source: 'github', repo: 'o/r' } } } },
+      /extraKnownMarketplaces\.lunette points elsewhere than the marketplace @lntt\/lntt ships; run lntt sync/,
+    ],
+    ['off', { enabledPlugins: { [PLUGIN]: false } }, /enabledPlugins\.lunette@lunette is not enabled; run lntt sync/],
+    [
+      'edited',
+      { hooks: { SessionStart: [{ hooks: [{ ...INSTALL_HOOK, command: 'x' }] }] } },
+      /hooks\.SessionStart: the install hook differs from the one lntt sync writes; run lntt sync/,
+    ],
+    [
+      'invalid',
+      { enabledPlugins: 'x' },
+      /\.claude\/settings\.json is not JSON, or not the shape Claude Code reads: fix it, then run lntt sync/,
+    ],
+  ] as const) {
+    test(`lntt check plugin says what to do for ${state}`, () => {
+      write(value)
+      const r = spawnSync(process.execPath, [BIN, 'check', 'plugin'], { cwd: root, encoding: 'utf8' })
+      assert.equal(r.status, 1)
+      assert.match(r.stdout, says)
+    })
+  }
 
   test('lntt sync writes them, and lntt check plugin passes then', () => {
     const before = spawnSync(process.execPath, [BIN, 'check', 'plugin'], { cwd: root, encoding: 'utf8' })

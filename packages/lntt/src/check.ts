@@ -9,7 +9,7 @@ import { isAbsolute, join, relative } from 'node:path'
 import { checkAgentsBlock } from './agents.ts'
 import { checkDecisions, decisionBoardRefs, decisionFigures } from './check-decisions.ts'
 import { runTests } from './check-tests.ts'
-import { checkClaudeSettings, SETTINGS } from './claude-settings.ts'
+import { checkClaudeSettings, INVALID, SETTINGS } from './claude-settings.ts'
 import { checkBody, RETRO_START, retrospectiveBlock, retrospectiveRules } from './pull-request.ts'
 import { checkSkills, stubFolders } from './skills.ts'
 
@@ -144,7 +144,7 @@ function plugin(root: string): Result[] {
         elsewhere: `${e.key} points elsewhere than the marketplace @lntt/lntt ships; run lntt sync`,
         off: `${e.key} is not enabled; run lntt sync`,
         edited: `${e.key}: the install hook differs from the one lntt sync writes; run lntt sync`,
-        invalid: `${e.key} is not JSON: fix it, then run lntt sync`,
+        invalid: INVALID,
       }[e.state as 'missing' | 'elsewhere' | 'off' | 'edited' | 'invalid'],
     ),
   )
