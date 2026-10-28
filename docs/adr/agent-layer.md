@@ -118,21 +118,25 @@ enables the plugin from it; `lntt check plugin` fails while either is missing or
 elsewhere. A file that is not JSON, or whose keys do not have the shape Claude Code
 reads, `lntt sync` refuses without writing: it is fixed by hand first. Once the folder
 is trusted Claude Code loads the plugin in place at every session start, with no install
-step and whatever its version string, so a bump of `@lntt/lntt` is its update. The path resolves against the main checkout: every
-worktree of a repository loads the plugin the main checkout installed (Claude Code's
-documentation of plugins for an organization, October 2026).
+step and whatever its version string, so a bump of `@lntt/lntt` is its update. The path
+resolves against the main checkout: every worktree of a repository loads the plugin the
+main checkout installed (Claude Code's documentation of plugins for an organization,
+October 2026). The plugin cannot import `lntt`, so it reads `.claude/settings.json` with
+a reader of its own, which drops comments, trailing commas and a leading byte order mark
+as `lntt` does (`lntt sync` writes the file back without the mark).
 
 One settings hook is Lunette's: at `SessionStart`, when `node_modules/.bin/lntt` is
 missing, it installs the dependencies with pnpm, the manager of a Lunette project, or
 with `npm ci` in a project that has only a `package-lock.json`; another lockfile (yarn,
-bun) gets pnpm too (`packages/lntt/src/claude-settings.ts`). It installs `lntt`, so it is a shell line,
-not `lntt hook`. Every other hook is measured before it is adopted: what it costs in
+bun) gets pnpm too (`packages/lntt/src/claude-settings.ts`). It installs `lntt`, so it
+is a shell line, not `lntt hook`. Every other hook is measured before it is adopted: what it costs in
 tokens and turns against what it catches that the next gate (the pre-commit, `ci:local`,
 the review) would catch later at a higher cost. None of the others measured pays for
 itself today (see the discarded directions).
 
 A mechanism of the plugin or a hook of `lntt` that cannot work never errors and never
-blocks a turn: it says once per session what is missing and the command that fixes it
+blocks a turn: it says once per session what is missing and the command that fixes it,
+after a fix by hand when `lntt sync` cannot read the file
 (`packages/lntt/plugin/hooks/notices.mjs`). The band says it in the band, until the
 first message ends (`.claude/settings.json` not as `lntt sync` writes it); the titles at
 the end of a message (`lntt` not installed, an `lntt` with no `refs`, `gh` missing or
