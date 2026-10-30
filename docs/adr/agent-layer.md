@@ -192,8 +192,8 @@ failure; the format hook, which is then off, tells the person in a `systemMessag
 
 In Claude Code the `lunette` plugin ends each message with a box of the issues and pull
 requests it cited (`#N`, `repo#N` or `owner/repo#N`): each with its title and its URL
-(`packages/lntt/plugin/hooks/issue-titles.mjs`). The text of the message is not touched:
-no title goes beside a number. It is a `MessageDisplay` hook: it changes the screen
+(`packages/lntt/plugin/hooks/issue-titles.mjs`). The text of the message is not touched.
+It is a `MessageDisplay` hook: it changes the screen
 only, and what the agent wrote and reads stays as it was.
 
 The rules below, the cache and the `gh` lookups are `lntt refs`
@@ -210,7 +210,7 @@ keeps the display and calls `lntt refs`, the project's `node_modules/.bin/lntt`,
 `lntt` on `PATH`. The deltas of a message only add to its text, in the order they come,
 and show as they are; the last one calls `lntt refs` with the whole text and waits for
 lntt and the titles at most `WAIT_MS` (`issue-titles-hook.js`); a slower title is cached
-and shows in the box of the next message. The titles still missing are asked in `lntt
+and shows in the box of the next message that cites it. The titles still missing are asked in `lntt
 refs` runs of at most `KEYS_PER_RUN` references, side by side, so that one run fits
 `LNTT_TIMEOUT_MS` however many a message cites; the runs of one lookup count as one
 failure at most. The text read is the one Claude wrote (`delta`), never the display
@@ -221,8 +221,7 @@ another hook below may have changed; the box goes after that display.
   reference (`C#5`, `fix#12`, `starter#94` written in another repository's session);
   when the word could be a repository name (three characters or more, a letter
   first) it counts as another repository. Names are compared in lower case.
-- **Shown as written:** code, a link's URL (a title goes after the link, once the link
-  is whole), `#0` (GitHub numbers from 1), a reference `gh` answers with HTTP 404 or
+- **Shown as written:** code, a link's URL, `#0` (GitHub numbers from 1), a reference `gh` answers with HTTP 404 or
   410 (a missing issue, or a repository the token cannot see), and one `gh` answers
   with an empty title or a URL that is not a plain `https` address.
 - **Nothing for the session** after `FAILURES` failures in a row, a failure being a

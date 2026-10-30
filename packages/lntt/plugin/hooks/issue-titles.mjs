@@ -1,8 +1,8 @@
 // What a number means, on screen: the message ends with a box of the issues and pull
 // requests it cited, each with its title and URL. Pure: which numbers are references,
 // and their titles, are `lntt refs`'s; the hook that calls it is issue-titles-hook.js.
-// A message is read delta by delta as it streams: `message()` holds the text Claude
-// wrote so far. Nothing is put inside the text: the box alone shows the titles.
+// A message streams in deltas: `message()` holds the text Claude wrote so far, and the
+// last delta reads it whole. Nothing is put inside the text: the box alone shows the titles.
 
 export const TITLE_MAX = 60
 

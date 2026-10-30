@@ -519,6 +519,22 @@ describe('the issue titles hook', () => {
     assert.deepEqual(waits, [])
   })
 
+  test('the same id after its end starts a new message: only its own text is read and boxed', async () => {
+    const { flush, runs } = engine({ gh: { 'o/r#1': 'One', 'o/r#2': 'Two' } })
+    await flush('m1', 'first #1\n', true)
+    const end = await flush('m1', 'second #2\n', true)
+    assert.equal(runs.filter((r) => r.argv[2] === '--cached')[1].init.stdin, 'second #2\n')
+    assert.match(plain(end.displayContent), /#2 Two/)
+    assert.doesNotMatch(plain(end.displayContent), /#1 One/)
+  })
+
+  test('a `#` that is no reference (a heading, #0) starts no lntt and no timer', async () => {
+    const { flush, runs, waits } = engine()
+    assert.deepEqual(await flush('m1', '# Heading\n\nissue #0\n', true), {})
+    assert.deepEqual(runs, [])
+    assert.deepEqual(waits, [])
+  })
+
   test('a lntt refs --cached slower than the wait leaves the message as written', async () => {
     const lntt = () => new Promise(() => {})
     const { flush } = engine({ lntt, late: true })

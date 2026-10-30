@@ -11,7 +11,7 @@ import { cite, entry, footer, isKey, message, settled } from './issue-titles.mjs
 import { notice } from './notices.mjs'
 
 // How long the last delta waits, for lntt and the titles together: what is slower goes
-// on, and its title is cached for the next message.
+// on, and its title is cached for the next message that cites it.
 export const WAIT_MS = 800
 // Messages kept at once: one interrupted before its last delta is never closed.
 export const KEPT = 20
@@ -165,11 +165,18 @@ async function show($, s, e, base, m) {
   // One timer for the whole wait, started only when something is waited for.
   let deadline = null
   const wait = () => (deadline ??= $.clock.sleep(WAIT_MS))
-  const out = await Promise.race([refs($, s, ['--cached'], m.text), wait().then(() => undefined)])
+  // An answer later than the wait still counts for the session: the repository and the
+  // titles it holds.
+  const call = refs($, s, ['--cached'], m.text).then((out) => {
+    if (out?.repository) {
+      s.home = out.repository
+      learn(s, out)
+    }
+    return out
+  })
+  const out = await Promise.race([call, wait().then(() => undefined)])
   // Without the session's repository nothing can be told for certain: shown as written.
   if (!out?.repository) return base
-  s.home = out.repository
-  learn(s, out)
   cite(m, out.mentions, m.text)
   const keys = out.mentions.filter((x) => settled(x, m.text)).map((x) => x.ref)
   await lookUp($, s, [...new Set(keys)], wait)
