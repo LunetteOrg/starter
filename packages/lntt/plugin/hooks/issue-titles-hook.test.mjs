@@ -541,6 +541,22 @@ describe('the issue titles hook', () => {
     assert.deepEqual(await flush('m1', '#1\n', true), {})
   })
 
+  test('a --cached answer later than the wait still gives the session its titles, for the next message', async () => {
+    let calls = 0
+    const lntt = (argv, init) => {
+      calls += 1
+      // Later runs know no title: what shows comes from the first answer.
+      if (calls > 1) return fakeRun(argv, init, { cache: {} })
+      // The first answer comes after the wait.
+      return new Promise((r) => setImmediate(() => r(fakeRun(argv, init, { cache: { 'o/r#1': 'One' } }))))
+    }
+    const { flush } = engine({ lntt, late: true })
+    assert.deepEqual(await flush('m1', '#1\n', true), {})
+    await tick()
+    await tick()
+    assert.match(plain((await flush('m2', '#1 again\n', true)).displayContent), /#1 One/)
+  })
+
   test('a title not found within the wait is not in the box, and is there in the next message', async () => {
     let release
     const slow = () => new Promise((r) => (release = () => r('Slow one')))

@@ -174,6 +174,7 @@ async function show($, s, e, base, m) {
     }
     return out
   })
+  call.catch(() => {})
   const out = await Promise.race([call, wait().then(() => undefined)])
   // Without the session's repository nothing can be told for certain: shown as written.
   if (!out?.repository) return base
