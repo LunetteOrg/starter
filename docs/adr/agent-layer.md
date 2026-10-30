@@ -190,11 +190,11 @@ failure; the format hook, which is then off, tells the person in a `systemMessag
 
 ### What a number means is shown on screen, not asked of the agent
 
-In Claude Code the `lunette` plugin shows, beside the first `#N` or `owner/repo#N` of
-each message, the title of that issue or pull request, dimmed, and ends the message
-with a box of what it cited and their URLs (`packages/lntt/plugin/hooks/issue-titles.mjs`).
-It is a `MessageDisplay` hook: it changes the screen only, and what the agent wrote and
-reads stays as it was.
+In Claude Code the `lunette` plugin ends each message with a box of the issues and pull
+requests it cited (`#N`, `repo#N` or `owner/repo#N`): each with its title and its URL
+(`packages/lntt/plugin/hooks/issue-titles.mjs`). The text of the message is not touched:
+no title goes beside a number. It is a `MessageDisplay` hook: it changes the screen
+only, and what the agent wrote and reads stays as it was.
 
 The rules below, the cache and the `gh` lookups are `lntt refs`
 (`packages/lntt/src/refs.ts`), for the hook and for any agent: it reads a text and
@@ -207,16 +207,14 @@ concurrent calls merge, the newest entry of each key kept, and an entry lost in 
 is only asked again): `#N` (and `repo#N` naming the same repository) from the session's
 repository as `gh repo view` names it, `owner/repo#N` from that repository. The hook
 keeps the display and calls `lntt refs`, the project's `node_modules/.bin/lntt`, else
-`lntt` on `PATH`. A delta waits for lntt and the titles at most `WAIT_MS`
-(`issue-titles-hook.js`); a slower title shows in a later delta, in the box or beside
-the number in the next message. The titles still missing are asked in `lntt refs` runs
-of at most `KEYS_PER_RUN` references, side by side, so that one run fits
+`lntt` on `PATH`. The deltas of a message only add to its text, in the order they come,
+and show as they are; the last one calls `lntt refs` with the whole text and waits for
+lntt and the titles at most `WAIT_MS` (`issue-titles-hook.js`); a slower title is cached
+and shows in the box of the next message. The titles still missing are asked in `lntt
+refs` runs of at most `KEYS_PER_RUN` references, side by side, so that one run fits
 `LNTT_TIMEOUT_MS` however many a message cites; the runs of one lookup count as one
-failure at most. A reference belongs to the delta where it ends, and one that ends a
-delta other than the last is read with the next delta, since it may go on (`#1` | `38`
-is `#138`); so is one inside a `[` still open, since it may become a link's text (its
-title then goes after the link). A newline, or the last delta, ends that wait; a
-reference held for a link that does not form gets its title in the box only.
+failure at most. The text read is the one Claude wrote (`delta`), never the display
+another hook below may have changed; the box goes after that display.
 
 - **Never a title from the wrong repository:** a message that cites another
   repository shows every bare `#N` after that as written. Any other `word#N` is no
@@ -291,9 +289,10 @@ How a title is written is the `github-board` skill's.
   Another agent can resolve its references with `lntt refs` before writing, so its
   text carries the titles. A renamed issue shows its old title for up to a day, from
   the cache.
-- Each delta that holds a number starts one `lntt` process (`lntt refs --cached`, with
-  the message so far on stdin) within `WAIT_MS`, and one more for each `KEYS_PER_RUN`
-  titles still missing: a machine slow to start Node shows more titles a delta late.
+- A message that holds a number starts one `lntt` process at its last delta (`lntt refs
+  --cached`, with the whole message on stdin) within `WAIT_MS`, and one more for each
+  `KEYS_PER_RUN` titles still missing: a machine slow to start Node shows more titles a
+  message late.
 - Skills depend on `lntt`; a generated project needs it installed, which ties the
   template to a published `@lntt/lntt`.
 - Reading the profile from the main checkout fails over to the home directory when the
@@ -358,6 +357,11 @@ How a title is written is the `github-board` skill's.
   Code from reading `AGENTS.md`.
 - **A directory named after Lunette** (`.lunette/`). `.agents/` is the name agents
   already share.
+- **The title beside each number, inserted into the streamed text.** A title goes at a
+  position counted in the message so far, and the hook read that message delta by delta
+  on screen: in live sessions three titles landed inside an earlier line (a backticked
+  path, words), none after their numbers. The box at the end of the message reads the
+  whole text once and cannot misplace anything.
 - **A rule in AGENTS.md that an agent writes each issue's title beside its number.**
   Agents given it broke it in three samples of four, always the same way: an opening
   line repeating the numbers the person used, before any title. The reader needs to see
