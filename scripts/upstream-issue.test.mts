@@ -314,4 +314,28 @@ describe('report', () => {
     assert.match(out.join('\n'), /::notice title=Status not set::#9 is on the Project with its status unset: .*timeout/)
     assert.doesNotMatch(out.join('\n'), /off the board/)
   })
+  test('a create that fails for another reason, or with no type to drop, is not retried', () => {
+    const down = () => {
+      throw new Error('Command failed: gh api repos/o/r/issues: HTTP 502 Bad Gateway')
+    }
+    const gh = fakeGh(issues(), down)
+    assert.throws(() => report({ gh, repo: 'o/r', target, log: () => {} }, failure()), /502/)
+    assert.equal(gh.writes.length, 1)
+
+    const refused = () => {
+      throw new Error('Command failed: gh api repos/o/r/issues: HTTP 422 Validation Failed')
+    }
+    const untyped = fakeGh(issues(), refused)
+    assert.throws(() => report({ gh: untyped, repo: 'o/r', target: {}, log: () => {} }, failure()), /422/)
+    assert.equal(untyped.writes.length, 1)
+  })
+
+  test('a read-back with no item logs no status, not a failure', () => {
+    const gh = fakeGh(issues())
+    const board = fakeGh({ ...project(), 'node(id:': { data: { node: null } } })
+    const { out, log } = lines()
+    report({ gh, board, repo: 'o/r', target, log }, failure())
+    assert.match(out.join('\n'), /#9 on the Project at "no status"/)
+    assert.doesNotMatch(out.join('\n'), /::notice/)
+  })
 })

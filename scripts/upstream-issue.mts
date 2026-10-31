@@ -191,8 +191,9 @@ export function report(run: Report, f: Failure): { action: 'none' | 'commented' 
   try {
     created = create(target.type)
   } catch (error) {
-    // A type the repository lacks is refused: the issue matters more than its type.
-    if (!target.type) throw error
+    // A type the repository lacks is refused as a validation error (422): the issue
+    // matters more than its type. Any other failure stands.
+    if (!target.type || !/HTTP 422|Validation Failed/i.test((error as Error).message)) throw error
     log(
       `::notice title=Issue untyped::GitHub refused the type "${target.type}": ${(error as Error).message.split('\n')[0]}`,
     )

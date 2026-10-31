@@ -250,8 +250,9 @@ red, with the Projects permission alone. The Project's own auto-add
 ([board](./board.md)) does not pick up an issue opened by `GITHUB_TOKEN` (#192, #206
 and #215 stayed off it), so the script adds it. Without that token, or when GitHub
 refuses it, the issue is opened off the board and the run leaves a notice saying so:
-it is put on the board with the `github-board` skill. A type GitHub refuses opens the
-issue with no type, with a notice. A red of `pnpm install` opens no issue, since the
+it is put on the board with the `github-board` skill; a failure after the issue is
+added leaves it on the board with its status unset, and a notice saying so. A type
+GitHub refuses (a validation error) opens the issue with no type, with a notice. A red of `pnpm install` opens no issue, since the
 script needs the install, and saves no entry: the version is checked again the next
 day.
 
