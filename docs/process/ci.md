@@ -245,11 +245,15 @@ A red is reported by `scripts/upstream-issue.mts`, in this order:
    it sets it, as for any bug ([board](./board.md)).
 
 The issue is written with the job's `GITHUB_TOKEN`; the Project with a token of the
-candidate app ([delivery](./delivery.md#the-candidate-automation)) asked only on a red, with the Projects
-permission alone. Without that token, or when GitHub refuses it, the issue is opened
-off the board and the run leaves a notice saying so: it is put on the board with the
-`github-board` skill. A red of `pnpm install` opens no issue, since the script needs the
-install, and saves no entry: the version is checked again the next day.
+candidate app ([delivery](./delivery.md#the-candidate-automation)) asked only on a
+red, with the Projects permission alone. The Project's own auto-add
+([board](./board.md)) does not pick up an issue opened by `GITHUB_TOKEN` (#192, #206
+and #215 stayed off it), so the script adds it. Without that token, or when GitHub
+refuses it, the issue is opened off the board and the run leaves a notice saying so:
+it is put on the board with the `github-board` skill. A type GitHub refuses opens the
+issue with no type, with a notice. A red of `pnpm install` opens no issue, since the
+script needs the install, and saves no entry: the version is checked again the next
+day.
 
 Whoever takes the issue reads the log, then fixes
 lntt's adapter (`packages/lntt/src/worktree.ts`, `headless.ts`, `orca-subagents.ts`) or

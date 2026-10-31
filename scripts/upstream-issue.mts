@@ -181,8 +181,23 @@ export function report(run: Report, f: Failure): { action: 'none' | 'commented' 
     return { action: 'commented', number: reported.number }
   }
 
-  const payload = { title, body: issueBody(f, repo, tests), ...(target.type ? { type: target.type } : {}) }
-  const created = gh.write(['api', `repos/${repo}/issues`, '--method', 'POST', '--input', '-'], JSON.stringify(payload))
+  const body = issueBody(f, repo, tests)
+  const create = (type?: string) =>
+    gh.write(
+      ['api', `repos/${repo}/issues`, '--method', 'POST', '--input', '-'],
+      JSON.stringify({ title, body, ...(type ? { type } : {}) }),
+    )
+  let created: string
+  try {
+    created = create(target.type)
+  } catch (error) {
+    // A type the repository lacks is refused: the issue matters more than its type.
+    if (!target.type) throw error
+    log(
+      `::notice title=Issue untyped::GitHub refused the type "${target.type}": ${(error as Error).message.split('\n')[0]}`,
+    )
+    created = create()
+  }
   // A dry run creates nothing: there is no issue to put on the board.
   if (!created) return { action: 'opened' }
   const issue = JSON.parse(created) as {
@@ -225,9 +240,14 @@ const READ_BACK = `query($item: ID!, $field: String!) {
 function putOnBoard({ board, target, log }: Report, issue: { number: number; node_id: string }) {
   const { project, status } = target
   if (!project) return
+  // Once the item is added, a later failure leaves the issue on the Project with its
+  // status unset, not off it.
+  let placed = false
   const off = (why: string) =>
     log(
-      `::notice title=Issue off the board::#${issue.number} is not on the Project: ${why}. Add it with the github-board skill (docs/process/ci.md#upstream-tools)`,
+      placed
+        ? `::notice title=Status not set::#${issue.number} is on the Project with its status unset: ${why}. Set it with the github-board skill (docs/process/ci.md#upstream-tools)`
+        : `::notice title=Issue off the board::#${issue.number} is not on the Project: ${why}. Add it with the github-board skill (docs/process/ci.md#upstream-tools)`,
     )
   if (!board) return off('no token with the Projects permission')
   const field = status?.field ?? 'Status'
@@ -267,6 +287,7 @@ function putOnBoard({ board, target, log }: Report, issue: { number: number; nod
       ]),
     ) as { data: { addProjectV2ItemById: { item: { id: string } } } }
     const item = added.data.addProjectV2ItemById.item.id
+    placed = true
     if (!status) return log(`#${issue.number} on the Project, with no status field configured`)
     const option = projectV2.field?.options?.find((o) => o.name.toLowerCase() === status.option.toLowerCase())
     if (!projectV2.field?.id || !option) {
@@ -292,8 +313,8 @@ function putOnBoard({ board, target, log }: Report, issue: { number: number; nod
     // Read back: a workflow of the Project may write the status after this one.
     const back = JSON.parse(
       board.read(['api', 'graphql', '-f', `query=${READ_BACK}`, '-f', `item=${item}`, '-f', `field=${field}`]),
-    ) as { data: { node: { fieldValueByName?: { name?: string } | null } } }
-    log(`#${issue.number} on the Project at "${back.data.node.fieldValueByName?.name ?? 'no status'}"`)
+    ) as { data: { node?: { fieldValueByName?: { name?: string } | null } | null } }
+    log(`#${issue.number} on the Project at "${back.data.node?.fieldValueByName?.name ?? 'no status'}"`)
   } catch (error) {
     const message = (error as Error).message.split('\n')[0] ?? ''
     off(NOT_PERMITTED.test(message) ? `the token was refused: ${message}` : message)

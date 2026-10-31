@@ -36,7 +36,8 @@ const target: Target = {
 }
 
 // A gh that answers each read from the first key its command line contains, and
-// records every write; `created` is what the REST create answers.
+// records every write; `created` is what the REST create answers, or a function of its
+// payload that answers or throws.
 function fakeGh(
   answers: Record<string, unknown>,
   created: unknown = { number: 9, node_id: 'I_9', html_url: 'u', type: { name: 'Bug' } },
@@ -55,7 +56,10 @@ function fakeGh(
     write: (args, input) => {
       const line = args.join(' ')
       writes.push({ args: line, input })
-      if (line.includes('repos/o/r/issues --method POST')) return JSON.stringify(created)
+      if (line.includes('repos/o/r/issues --method POST')) {
+        const answer = typeof created === 'function' ? created(JSON.parse(input ?? '{}')) : created
+        return typeof answer === 'string' ? answer : JSON.stringify(answer)
+      }
       const key = Object.keys(answers).find((k) => line.includes(k))
       const answer = key === undefined ? '' : answers[key]
       if (answer instanceof Error) throw answer
@@ -157,6 +161,7 @@ describe('report', () => {
     assert.match(writes[1] ?? '', /updateProjectV2ItemFieldValue.*item=IT -f field=F -f option=o-Todo/s)
     assert.doesNotMatch(writes.join('\n'), /Priority/)
     assert.match(out.join('\n'), /#9 on the Project at "Todo"/)
+    assert.doesNotMatch(out.join('\n'), /::notice/)
   })
 
   test('a red already reported for the same tool at the same test comments on the open issue and opens none', () => {
@@ -256,5 +261,57 @@ describe('report', () => {
     const gh = fakeGh(issues())
     report({ gh, repo: 'o/r', target: { ...target, type: undefined }, log: () => {} }, failure())
     assert.equal(JSON.parse(gh.writes[0]?.input ?? '{}').type, undefined)
+  })
+  test('the issue quotes only the last 80 lines of the log', () => {
+    const gh = fakeGh(issues())
+    const log = Array.from({ length: 200 }, (_, i) => `line ${i + 1}`).join('\n')
+    report({ gh, repo: 'o/r', target, log: () => {} }, failure({ log }))
+    const body = JSON.parse(gh.writes[0]?.input ?? '{}').body as string
+    assert.match(body, /^line 121$/m)
+    assert.match(body, /^line 200$/m)
+    assert.doesNotMatch(body, /^line 120$/m)
+  })
+
+  test('a test name with -- does not end the marker early', () => {
+    const gh = fakeGh(issues())
+    const log = '✖ failing tests:\n\n✖ a --flag --> b (1ms)\n'
+    report({ gh, repo: 'o/r', target, log: () => {} }, failure({ log }))
+    const body = JSON.parse(gh.writes[0]?.input ?? '{}').body as string
+    const marker = body.split('\n').find((l) => l.startsWith('<!-- upstream-failure'))
+    assert.equal(marker, '<!-- upstream-failure: opencode: test: a - -flag - -> b -->')
+  })
+
+  test('a dry run creates nothing and puts nothing on the board', () => {
+    const gh = fakeGh(issues(), '')
+    const board = fakeGh(project())
+    assert.deepEqual(report({ gh, board, repo: 'o/r', target, log: () => {} }, failure()), { action: 'opened' })
+    assert.deepEqual(board.writes, [])
+  })
+
+  test('a type GitHub refuses opens the issue without it, with a notice', () => {
+    const gh = fakeGh(issues(), (payload: { type?: string }) => {
+      if (payload.type) throw new Error('Command failed: gh api repos/o/r/issues: HTTP 422 Validation Failed')
+      return { number: 9, node_id: 'I_9', html_url: 'u', type: null }
+    })
+    const { out, log } = lines()
+    assert.deepEqual(report({ gh, repo: 'o/r', target: { type: 'Bug' }, log }, failure()), {
+      action: 'opened',
+      number: 9,
+    })
+    assert.equal(gh.writes.length, 2)
+    assert.equal(JSON.parse(gh.writes[1]?.input ?? '{}').type, undefined)
+    assert.match(out.join('\n'), /::notice title=Issue untyped::GitHub refused the type "Bug": .*422/)
+  })
+
+  test('a failure after the item is added says the status is unset, not that the issue is off the board', () => {
+    const gh = fakeGh(issues())
+    const board = fakeGh({
+      ...project(),
+      updateProjectV2ItemFieldValue: new Error('Command failed: gh api graphql: timeout'),
+    })
+    const { out, log } = lines()
+    report({ gh, board, repo: 'o/r', target, log }, failure())
+    assert.match(out.join('\n'), /::notice title=Status not set::#9 is on the Project with its status unset: .*timeout/)
+    assert.doesNotMatch(out.join('\n'), /off the board/)
   })
 })

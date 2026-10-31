@@ -186,7 +186,7 @@ jobs:
       # for a permission the app lacks fails, and that must not stop the issue. Without
       # this token the issue is opened off the board, with a notice.
       - id: projects-token
-        if: failure() && vars.CANDIDATE_APP_CLIENT_ID != ''
+        if: failure() && steps.install.outcome != 'failure' && vars.CANDIDATE_APP_CLIENT_ID != ''
         continue-on-error: true
         uses: actions/create-github-app-token@v3
         with:
@@ -195,27 +195,26 @@ jobs:
           permission-organization-projects: write
       # One issue per tool and version, typed and on the board; a red at the same tests
       # as an open issue of the tool is a comment there (scripts/upstream-issue.mts). It
-      # needs the install: a red of `pnpm install` opens nothing, and its version is
-      # checked again the next day.
+      # needs the install: a red of `pnpm install` opens nothing and saves no entry, so
+      # its version is checked again the next day.
       - id: issue
         name: Open an issue
-        if: failure()
+        if: failure() && steps.install.outcome != 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
           PROJECTS_GH_TOKEN: ${{ steps.projects-token.outputs.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           STEP: >-
-            ${{ steps.install.outcome == 'failure' && 'pnpm install' ||
-            steps.tool.outcome == 'failure' && 'scripts/upstream-install.sh' ||
+            ${{ steps.tool.outcome == 'failure' && 'scripts/upstream-install.sh' ||
             steps.oidc.outcome == 'failure' && 'the GitHub OIDC token for claude' ||
             steps.test.outcome == 'failure' && format('the upstream test (packages/lntt/test/upstream-{0}.test.ts)', matrix.tool) ||
             'a setup step' }}
         run: node scripts/upstream-issue.mts --tool "$TOOL" --version "$VERSION" --step "$STEP" --run "$RUN_URL" --log upstream.log
-      # A red whose issue could not be opened saves no entry: the next run checks the
-      # version again and opens it.
-      - if: ${{ !cancelled() && steps.issue.outcome != 'failure' }}
+      # A red whose issue could not be opened, or a red install, saves no entry: the next
+      # run checks the version again and opens it.
+      - if: ${{ !cancelled() && steps.install.outcome != 'failure' && steps.issue.outcome != 'failure' }}
         run: mkdir -p .upstream-checked && echo "$TOOL $VERSION ${{ job.status }}" > .upstream-checked/version
-      - if: ${{ !cancelled() && steps.issue.outcome != 'failure' }}
+      - if: ${{ !cancelled() && steps.install.outcome != 'failure' && steps.issue.outcome != 'failure' }}
         uses: actions/cache/save@v6
         with:
           path: .upstream-checked
@@ -223,7 +222,7 @@ jobs:
           # have set (opencode, when Homebrew moved on since the versions job).
           key: upstream-${{ matrix.tool }}-${{ env.VERSION }}
       # The version read, when another was installed: the versions job looks that one up.
-      - if: ${{ !cancelled() && steps.issue.outcome != 'failure' && env.VERSION != matrix.version }}
+      - if: ${{ !cancelled() && steps.install.outcome != 'failure' && steps.issue.outcome != 'failure' && env.VERSION != matrix.version }}
         uses: actions/cache/save@v6
         with:
           path: .upstream-checked
