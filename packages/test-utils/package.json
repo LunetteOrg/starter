@@ -1,6 +1,6 @@
 {
   "name": "@lntt/test-utils",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Test helpers every Lunette project uses: one Postgres per vitest run, rollback per test, architecture, migration and test-suite guards, the vitest preset and the jsdom setup, the Playwright helpers and a stable e2e port per checkout",
   "type": "module",
   "license": "MIT",

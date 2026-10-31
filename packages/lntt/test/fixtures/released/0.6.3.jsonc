@@ -1,0 +1,375 @@
+// Every field @lntt/lntt 0.6.3 knew, from its schema (tag v0.6.3). Values are placeholders;
+// the test validates this file against the current schema.
+{
+  "$schema": "./node_modules/@lntt/lntt/schema/config.schema.json",
+  "lunette": {
+    "template": "example",
+    "version": "0.6.3"
+  },
+  // Every board field is a singleSelect here: the completeness check wants options on
+  // each, and the schema allows options only on a singleSelect. lntt validate rejects
+  // board.fields.iteration as one; the test reads the file with the schema alone.
+  "board": {
+    "provider": "github",
+    "github": {
+      "project": {
+        "owner": "example",
+        "ownerType": "organization",
+        "number": 1,
+        "title": "example"
+      },
+      "views": [
+        {
+          "name": "example",
+          "layout": "board",
+          "filter": "is:open",
+          "fields": ["Title"],
+          "groupBy": "Priority",
+          "columns": "Status"
+        }
+      ]
+    },
+    "issueTypes": {
+      "parents": ["Feature"],
+      "children": ["Task"],
+      "permanent": ["Feature"],
+      "descriptions": {
+        "Feature": "example"
+      }
+    },
+    "subIssues": true,
+    "milestones": true,
+    "blockedBy": true,
+    "fields": {
+      "status": {
+        "name": "Status",
+        "kind": "project",
+        "type": "singleSelect",
+        "options": ["Todo", "Ready", "In progress", "In review", "In release", "Done"],
+        "initial": "Todo",
+        "ready": "Ready",
+        "inProgress": "In progress",
+        "inReview": "In review",
+        "done": "Done"
+      },
+      "priority": {
+        "name": "Priority",
+        "kind": "project",
+        "type": "singleSelect",
+        "on": "parents",
+        "options": ["P0", "P1"],
+        "colors": { "P0": "RED", "P1": "GRAY" }
+      },
+      "size": {
+        "name": "Size",
+        "kind": "project",
+        "type": "singleSelect",
+        "on": "children",
+        "options": ["S", "L"],
+        "colors": { "S": "GREEN", "L": "ORANGE" }
+      },
+      "horizon": {
+        "name": "Horizon",
+        "kind": "project",
+        "type": "singleSelect",
+        "on": "parents",
+        "options": ["Now", "Later"],
+        "colors": { "Now": "GREEN", "Later": "GRAY" }
+      },
+      "iteration": {
+        "name": "Iteration",
+        "kind": "project",
+        "type": "singleSelect",
+        "on": "children",
+        "options": ["One", "Two"],
+        "colors": { "One": "BLUE", "Two": "PURPLE" }
+      },
+      "startDate": {
+        "name": "Start",
+        "kind": "project",
+        "type": "singleSelect",
+        "on": "parents",
+        "options": ["example"],
+        "colors": { "example": "YELLOW" }
+      },
+      "targetDate": {
+        "name": "Target",
+        "kind": "project",
+        "type": "singleSelect",
+        "on": "parents",
+        "options": ["example"],
+        "colors": { "example": "PINK" }
+      },
+      "example": {
+        "name": "Example",
+        "kind": "project",
+        "type": "singleSelect",
+        "on": "children",
+        "options": ["example"],
+        "colors": { "example": "GRAY" }
+      }
+    },
+    "tracks": {
+      "from": ["apps/*"],
+      "labels": {
+        "example": {
+          "owner": "example",
+          "paths": ["apps/example"],
+          "description": "example"
+        }
+      }
+    }
+  },
+  "ci": {
+    "local": {
+      "cloudOnly": {
+        "example": "example"
+      },
+      "fake": {
+        "secrets": {
+          "example": "example"
+        },
+        "vars": {
+          "example": "example"
+        }
+      },
+      "actions": {
+        "example": {
+          "skip": "example"
+        }
+      },
+      "lock": "machine",
+      "timeoutMinutes": 1
+    },
+    "providers": ["github-actions"],
+    "drafts": false
+  },
+  "delivery": {
+    "branches": {
+      "types": ["example"]
+    },
+    "candidate": {
+      "base": "example",
+      "prefix": "feat/",
+      "hotfix": {
+        "prefix": "example",
+        "label": "example"
+      },
+      "status": {
+        "inRelease": "In release",
+        "done": "Done"
+      }
+    },
+    "commits": {
+      "language": "en",
+      "scopes": ["example"],
+      "maxLineLength": 50,
+      "longTrailers": ["Example"],
+      "trailers": {
+        "Example": "example"
+      }
+    },
+    "pullRequest": {
+      "language": "en",
+      "template": ".github/pull_request_template.md",
+      "closing": ["Closes"],
+      "outcome": {
+        "done": "— done",
+        "notApplicable": "— not applicable:"
+      },
+      "retrospective": {
+        "heading": "Retrospective",
+        "lines": ["Friction"],
+        "none": "none"
+      }
+    },
+    "review": {
+      "reviewers": {
+        "example": {
+          "with": [
+            {
+              "kind": "claude",
+              "model": "example",
+              "effort": "example",
+              "optional": true
+            }
+          ],
+          "brief": "example",
+          "paths": ["example"]
+        }
+      },
+      "verify": {
+        "with": [
+          {
+            "kind": "claude",
+            "model": "example",
+            "effort": "example",
+            "optional": true
+          }
+        ],
+        "severities": ["blocker"]
+      },
+      "timeoutMinutes": 1,
+      "perProvider": 1,
+      "optionalGraceMinutes": 0,
+      "roundTimeoutMinutes": 1,
+      "maxRounds": 1,
+      "warningRounds": 1
+    }
+  },
+  "cycle": {
+    "iteration": {
+      "days": 14,
+      "startDay": 1
+    },
+    "retrospective": {
+      "target": {
+        "kind": "discussion",
+        "category": "example",
+        "title": "Retrospective {window}",
+        "targetedTitle": "Retrospective {subject}"
+      },
+      "upstream": {
+        "repository": "example/example"
+      },
+      "targetedReview": {
+        "line": "Friction",
+        "minPullRequests": 2
+      }
+    }
+  },
+  "recording": {
+    "language": "en",
+    "logs": {
+      "example": {
+        "path": "example",
+        "index": "example",
+        "template": "example",
+        "scope": "example",
+        "boardReferences": true
+      }
+    },
+    "externalReferences": {
+      "example": "example"
+    }
+  },
+  "spaces": {
+    "example": {
+      "path": "example",
+      "tracked": true,
+      "archive": "example",
+      "description": "example"
+    }
+  },
+  "team": {
+    "language": "en",
+    "members": {
+      "example": {
+        "role": "example",
+        "owns": ["*"]
+      }
+    }
+  },
+  "tests": {
+    "levels": [
+      {
+        "name": "example",
+        "files": ["example"],
+        "exclude": ["example"],
+        "environment": "example",
+        "harness": ["example"],
+        "run": "example",
+        "coverage": "example",
+        "cwd": "example",
+        "repeat": 1,
+        "timeoutSeconds": 1
+      }
+    ],
+    "rules": [
+      {
+        "name": "example",
+        "pattern": "example",
+        "files": ["example"],
+        "message": "example",
+        "anchor": "example",
+        "assertedBy": "example"
+      }
+    ],
+    "ignore": ["example"],
+    "assertions": ["example"]
+  },
+  "local": {
+    "hooks": {
+      "format": "example",
+      "typecheck": "example"
+    },
+    "infra": {
+      "up": "example",
+      "check": "example"
+    },
+    "apps": {
+      "example": {
+        "description": "example",
+        "port": 1024,
+        "url": "http://localhost:3000",
+        "readyPath": "/health",
+        "commands": {
+          "start": {
+            "run": "example",
+            "description": "example"
+          }
+        },
+        "env": {
+          "example": "example"
+        },
+        "signIn": {
+          "test": "example",
+          "doc": "example"
+        },
+        "users": {
+          "example": {
+            "login": "example",
+            "role": "example"
+          }
+        }
+      }
+    }
+  },
+  "coordinator": {
+    "gate": "propose",
+    "models": {
+      "coordinator": {
+        "kind": "example",
+        "model": "example",
+        "effort": "example"
+      },
+      "children": {
+        "XS": {
+          "kind": "example",
+          "model": "example",
+          "effort": "example"
+        },
+        "S": {
+          "kind": "example",
+          "model": "example",
+          "effort": "example"
+        },
+        "M": {
+          "kind": "example",
+          "model": "example",
+          "effort": "example"
+        },
+        "L": {
+          "kind": "example",
+          "model": "example",
+          "effort": "example"
+        },
+        "XL": {
+          "kind": "example",
+          "model": "example",
+          "effort": "example"
+        }
+      }
+    }
+  }
+}
