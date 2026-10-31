@@ -259,8 +259,10 @@ describe('report', () => {
 
   test('with no Bug in board.issueTypes the issue is opened with no type', () => {
     const gh = fakeGh(issues())
-    report({ gh, repo: 'o/r', target: { ...target, type: undefined }, log: () => {} }, failure())
+    const { out, log } = lines()
+    report({ gh, repo: 'o/r', target: { ...target, type: undefined }, log }, failure())
     assert.equal(JSON.parse(gh.writes[0]?.input ?? '{}').type, undefined)
+    assert.match(out.join('\n'), /::notice title=Issue untyped::board\.issueTypes names no Bug: #9 has no type/)
   })
   test('the issue quotes only the last 80 lines of the log', () => {
     const gh = fakeGh(issues())
@@ -300,7 +302,11 @@ describe('report', () => {
     })
     assert.equal(gh.writes.length, 2)
     assert.equal(JSON.parse(gh.writes[1]?.input ?? '{}').type, undefined)
-    assert.match(out.join('\n'), /::notice title=Issue untyped::GitHub refused the type "Bug": .*422/)
+    assert.match(
+      out.join('\n'),
+      /::notice title=Issue untyped::GitHub refused the issue with the type "Bug", so it is opened without it: .*422/,
+    )
+    assert.doesNotMatch(out.join('\n'), /GitHub dropped/)
   })
 
   test('a failure after the item is added says the status is unset, not that the issue is off the board', () => {

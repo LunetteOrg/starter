@@ -188,15 +188,17 @@ export function report(run: Report, f: Failure): { action: 'none' | 'commented' 
       JSON.stringify({ title, body, ...(type ? { type } : {}) }),
     )
   let created: string
+  let refused = false
   try {
     created = create(target.type)
   } catch (error) {
     // A type the repository lacks is refused as a validation error (422): the issue
     // matters more than its type. Any other failure stands.
-    if (!target.type || !/HTTP 422|Validation Failed/i.test((error as Error).message)) throw error
+    if (!target.type || !/HTTP 422/.test((error as Error).message)) throw error
     log(
-      `::notice title=Issue untyped::GitHub refused the type "${target.type}": ${(error as Error).message.split('\n')[0]}`,
+      `::notice title=Issue untyped::GitHub refused the issue with the type "${target.type}", so it is opened without it: ${(error as Error).message.split('\n')[0]}`,
     )
+    refused = true
     created = create()
   }
   // A dry run creates nothing: there is no issue to put on the board.
@@ -208,7 +210,8 @@ export function report(run: Report, f: Failure): { action: 'none' | 'commented' 
     type?: { name: string } | null
   }
   log(`opened #${issue.number}: ${issue.html_url}`)
-  if (target.type && issue.type?.name !== target.type) {
+  if (!target.type) log(`::notice title=Issue untyped::board.issueTypes names no ${BUG}: #${issue.number} has no type`)
+  if (target.type && !refused && issue.type?.name !== target.type) {
     log(`::notice title=Issue untyped::#${issue.number} has no type: GitHub dropped "${target.type}"; set it by hand`)
   }
   putOnBoard(run, issue)
