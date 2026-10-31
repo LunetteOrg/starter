@@ -85,6 +85,7 @@ async function signIn(i: Instance, login: string): Promise<void> {
   assert.ok(test, 'the app declares no signIn.test')
   const run = spawn(PLAYWRIGHT, ['test', test, '--config', join(i.root, 'playwright.config.ts')], {
     cwd: i.root,
+    timeout: 60_000,
     env: { ...process.env, ...i.app.env, SIGN_IN_AS: login, LOG_FILE: i.log, STATE_FILE: i.state },
   })
   let output = ''
@@ -180,8 +181,14 @@ describe('sign-in on two instances at once', () => {
 
   test('a second sign-in on the same instance reads the newest code of the log', async () => {
     await signIn(instances[0], 'alice')
+    // Without the first run's state, only the second run can make the page open.
+    rmSync(instances[0].state)
     await signIn(instances[0], 'alice')
     assert.match((await privatePage(instances[0], jarOf(instances[0]))).body, /Signed in as alice/)
+  })
+
+  test('a sign-in that fails stops the test with Playwright’s output', async () => {
+    await assert.rejects(signIn(instances[0], 'mallory'), /Expected: 202\s+Received: 404/)
   })
 
   test('a one-time code works once, and only the right one', async () => {
