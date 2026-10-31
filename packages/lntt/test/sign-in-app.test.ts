@@ -77,16 +77,25 @@ async function start(root: string, name: string): Promise<Instance> {
   return instance
 }
 
-function signIn(i: Instance, login: string): void {
+// Playwright runs without blocking this process: a blocked event loop never sees the
+// server close an idle keep-alive connection, and the next fetch reuses it (ECONNRESET).
+async function signIn(i: Instance, login: string): Promise<void> {
   // The setup test is the one `signIn.test` points at; it reads the code in the log.
   const test = i.app.signIn?.test
   assert.ok(test, 'the app declares no signIn.test')
-  const run = spawnSync(PLAYWRIGHT, ['test', test, '--config', join(i.root, 'playwright.config.ts')], {
+  const run = spawn(PLAYWRIGHT, ['test', test, '--config', join(i.root, 'playwright.config.ts')], {
     cwd: i.root,
+    timeout: 60_000,
     env: { ...process.env, ...i.app.env, SIGN_IN_AS: login, LOG_FILE: i.log, STATE_FILE: i.state },
-    encoding: 'utf8',
   })
-  assert.equal(run.status, 0, `${run.error ?? ''}${run.stdout}${run.stderr}`)
+  let output = ''
+  run.stdout.on('data', (chunk) => (output += chunk))
+  run.stderr.on('data', (chunk) => (output += chunk))
+  const [status, error] = await new Promise<[number | null, Error | undefined]>((done) => {
+    run.once('error', (e) => done([null, e]))
+    run.once('close', (code) => done([code, undefined]))
+  })
+  assert.equal(status, 0, `${error ?? ''}${output}`)
 }
 
 async function privatePage(i: Instance, jar: string): Promise<{ status: number; body: string }> {
@@ -136,8 +145,8 @@ describe('sign-in on two instances at once', () => {
   })
 
   test('the signIn.test of each app saves a state that opens the protected page', async () => {
-    signIn(instances[0], 'alice')
-    signIn(instances[1], 'bob')
+    await signIn(instances[0], 'alice')
+    await signIn(instances[1], 'bob')
     const [a, b] = await Promise.all([
       privatePage(instances[0], jarOf(instances[0])),
       privatePage(instances[1], jarOf(instances[1])),
@@ -171,9 +180,15 @@ describe('sign-in on two instances at once', () => {
   })
 
   test('a second sign-in on the same instance reads the newest code of the log', async () => {
-    signIn(instances[0], 'alice')
-    signIn(instances[0], 'alice')
+    await signIn(instances[0], 'alice')
+    // Without the first run's state, only the second run can make the page open.
+    rmSync(instances[0].state)
+    await signIn(instances[0], 'alice')
     assert.match((await privatePage(instances[0], jarOf(instances[0]))).body, /Signed in as alice/)
+  })
+
+  test('a sign-in that fails stops the test with Playwright’s output', async () => {
+    await assert.rejects(signIn(instances[0], 'mallory'), /Expected: 202\s+Received: 404/)
   })
 
   test('a one-time code works once, and only the right one', async () => {
