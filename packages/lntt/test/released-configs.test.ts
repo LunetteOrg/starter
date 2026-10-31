@@ -35,8 +35,12 @@ type Node = Record<string, unknown>
 // (`additionalProperties` as a schema) is covered by what any of its items sets; of a
 // `oneOf`, by the closest branch.
 function missing(schema: Node, root: Node, value: unknown, at = ''): string[] {
+  // A `$ref` is followed whole from the root: `#/definitions/x/properties/y` too.
   const s = schema.$ref
-    ? (root.definitions as Record<string, Node>)[String(schema.$ref).split('/').pop() as string]
+    ? (String(schema.$ref)
+        .replace(/^#\//, '')
+        .split('/')
+        .reduce((node, key) => (node as Node)[key] as Node, root as Node) as Node)
     : schema
   if (Array.isArray(s.oneOf)) {
     return (s.oneOf as Node[])
@@ -160,6 +164,19 @@ describe('the configuration of each released version', () => {
     assert.deepEqual(missing(schema, schema, { ...full, map: { k: {} } }), ['.map.*.x'])
     assert.deepEqual(missing(schema, schema, { ...full, nested: { deep: {} } }), ['.nested.deep.leaf'])
     assert.deepEqual(missing(schema, schema, { ...full, either: { with: 'w' } }), [])
+  })
+
+  test('missing follows a $ref past definitions, to a property of a definition', () => {
+    const schema: Node = {
+      type: 'object',
+      definitions: {
+        field: { type: 'object', properties: { name: { type: 'string' }, kind: { type: 'string' } } },
+        other: { type: 'object', properties: { alias: { $ref: '#/definitions/field/properties/name' } } },
+      },
+      properties: { other: { $ref: '#/definitions/other' } },
+    }
+    assert.deepEqual(missing(schema, schema, { other: { alias: 'a' } }), [])
+    assert.deepEqual(missing(schema, schema, { other: {} }), ['.other.alias'])
   })
 
   test('a fixture cut down to its version is incomplete against the current schema', () => {

@@ -1,17 +1,17 @@
-// Issue titles on screen: each message Claude writes shows the title beside the first
-// `#N`, `repo#N` or `owner/repo#N` and ends with a box of what it cited, with their
-// URLs. Display-only: what Claude wrote and reads is unchanged. Which numbers are
-// references, their titles, the cache and the gh calls are `lntt refs`'s (the project's
+// Issue titles on screen: each message ends with a box of what it cited, with their
+// titles and URLs. Display-only: what Claude wrote and reads is unchanged, and nothing
+// is put inside the text. The message is read whole, at its last delta; the deltas
+// before it only add to its text, in the order they come. Which numbers are references,
+// their titles, the cache and the gh calls are `lntt refs`'s (the project's
 // node_modules/.bin/lntt, else lntt on PATH); what to show is issue-titles.mjs, tested
 // on its own. The functions that take `$` are declared at the top of the file, as the
 // engine requires; the session's state is passed to them.
 
-import { annotate, cite, entry, footer, isKey, message, settled } from './issue-titles.mjs'
+import { cite, entry, footer, isKey, message, settled } from './issue-titles.mjs'
 import { notice } from './notices.mjs'
 
-// How long a delta waits, for lntt and the titles together: what is slower goes on, and
-// its title shows in a later delta (in the box of this message when it arrives before
-// the last delta, beside the number from the next message).
+// How long the last delta waits, for lntt and the titles together: what is slower goes
+// on, and its title is cached for the next message that cites it.
 export const WAIT_MS = 800
 // Messages kept at once: one interrupted before its last delta is never closed.
 export const KEPT = 20
@@ -125,8 +125,8 @@ function learn(s, out) {
 }
 
 // The lookups of these references, one lntt refs for each KEYS_PER_RUN of those not yet
-// asked, side by side, waited for within the delta's timer: a run that ends past it gives
-// its titles to a later delta or the box. A failed one is asked again at the next lookup.
+// asked, side by side, waited for within the message's timer: a run that ends past it gives
+// its titles to the next message. A failed one is asked again at the next lookup.
 async function lookUp($, s, keys, wait) {
   if (s.off || !keys.length) return
   const todo = keys.filter((k) => !s.info.has(k) && !s.unknown.has(k) && !s.pending.has(k))
@@ -144,47 +144,45 @@ async function lookUp($, s, keys, wait) {
   if (waiting.length) await Promise.race([Promise.all(waiting), wait()])
 }
 
-async function show($, s, e, base) {
-  if (s.dead) return base
-  const delta = base?.displayContent ?? e.delta
+// The message so far, with this delta added: synchronous, so that deltas arriving while
+// an earlier one still waits are added in the order they came. It is the text Claude
+// wrote (`e.delta`), whatever a hook below made of the display.
+function hold(s, e) {
   let m = s.messages.get(e.message_id)
   if (!m) {
     m = message()
     s.messages.set(e.message_id, m)
     if (s.messages.size > KEPT) s.messages.delete(s.messages.keys().next().value)
   }
+  m.text += e.delta
   if (e.final) s.messages.delete(e.message_id)
-  // One timer for the whole wait of a delta, started only when something is waited for.
+  return m
+}
+
+// The last delta: the box of what the message cited, when lntt finds a title for any.
+async function show($, s, e, base, m) {
+  if (s.dead || !e.final || !/#[1-9]/.test(m.text)) return base
+  // One timer for the whole wait, started only when something is waited for.
   let deadline = null
   const wait = () => (deadline ??= $.clock.sleep(WAIT_MS))
-  let found = []
-  const text = m.text + delta
-  // lntt reads the message when the delta has a number, or goes on one the text so far
-  // ends in (`#` | `138`), or ends where a mention was held back.
-  if (/#[1-9]/.test(delta) || /#\d*$/.test(m.text) || m.held || (e.final && m.cited.length)) {
-    // An answer later than the wait still counts: its titles and what the message cited
-    // go to the box.
-    const call = refs($, s, ['--cached'], text).then((out) => {
-      if (!out?.repository) return out
+  // An answer later than the wait still counts for the session: the repository and the
+  // titles it holds.
+  const call = refs($, s, ['--cached'], m.text).then((out) => {
+    if (out?.repository) {
       s.home = out.repository
       learn(s, out)
-      cite(m, out.mentions, text, e.final)
-      return out
-    })
-    const out = await Promise.race([call, wait().then(() => undefined)])
-    // Without the session's repository nothing can be told for certain: shown as written.
-    if (out === null || (out && !out.repository)) {
-      annotate(delta, m, [], s.info, e.final)
-      return base
     }
-    found = out?.mentions ?? []
-    // The last delta waits once, for its own references and the message's still missing.
-    const keys = found.filter((x) => settled(x, text, e.final) && (e.final || x.after >= m.text.length))
-    await lookUp($, s, [...new Set(keys.map((x) => x.ref))], wait)
-  }
-  let shown = annotate(delta, m, found, s.info, e.final)
-  if (e.final) shown += footer(m, s.info, s.home)
-  return shown === delta ? base : { ...base, displayContent: shown }
+    return out
+  })
+  call.catch(() => {})
+  const out = await Promise.race([call, wait().then(() => undefined)])
+  // Without the session's repository nothing can be told for certain: shown as written.
+  if (!out?.repository) return base
+  cite(m, out.mentions, m.text)
+  const keys = out.mentions.filter((x) => settled(x, m.text)).map((x) => x.ref)
+  await lookUp($, s, [...new Set(keys)], wait)
+  const box = footer(m, s.info, s.home)
+  return box ? { ...base, displayContent: `${base?.displayContent ?? e.delta}${box}` } : base
 }
 
 // The last delta of a message ends with the notice of what keeps the titles off, once in
@@ -201,10 +199,11 @@ function tell(s, e, shown) {
 export function issueTitles(on, { ended } = {}) {
   const s = session()
   on('classic.MessageDisplay', async ($, e, next) => {
+    const m = hold(s, e)
     const base = await next(e)
     if (e.final) ended?.()
     try {
-      return tell(s, e, await show($, s, e, base))
+      return tell(s, e, await show($, s, e, base, m))
     } catch {
       return base
     }

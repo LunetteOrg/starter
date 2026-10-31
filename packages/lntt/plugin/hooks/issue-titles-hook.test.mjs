@@ -107,12 +107,19 @@ function engine({
     hooks[event] = hook
     return { catch: () => {} }
   })
-  const flush = (id, delta, final = false, below = {}) =>
-    hooks['classic.MessageDisplay']($, { message_id: id, delta, final }, async () => below)
+  // `lag`: the hooks below answer only after a turn of the event loop.
+  const flush = (id, delta, final = false, below = {}, lag = false) =>
+    hooks['classic.MessageDisplay']($, { message_id: id, delta, final }, async () => {
+      if (lag) await new Promise((r) => setImmediate(r))
+      return below
+    })
   // The references each full lookup asked for.
   const lookups = () => runs.filter((r) => r.argv[2] !== '--cached').map((r) => r.argv.slice(2))
   return { flush, runs, waits, lookups, cache, auths }
 }
+
+// Whether a message ends with its box of what it cited.
+const boxed = (shown) => /╭─ cited/.test(shown?.displayContent ?? '')
 
 // What a notice reads, without the terminal's dim sequences.
 const plain = (text) => (text ?? '').replaceAll(/\u001b\[\d+m/g, '')
@@ -129,34 +136,27 @@ describe('the issue titles hook', () => {
     assert.ok(events.includes('classic.MessageDisplay'))
   })
 
-  test('a title beside the number, and the box once, on the last delta', async () => {
-    const { flush } = engine({ gh: { 'o/r#138': 'Publish lntt' } })
-    const first = await flush('m1', 'Do #138.\n')
-    assert.match(first.displayContent, /#138 .*· Publish lntt/)
-    assert.doesNotMatch(first.displayContent, /cited/)
+  test('the deltas of a message run nothing and change nothing; the box comes once, on the last', async () => {
+    const { flush, runs } = engine({ gh: { 'o/r#138': 'Publish lntt' } })
+    assert.deepEqual(await flush('m1', 'Do #138.\n'), {})
+    assert.deepEqual(runs, [])
     const last = await flush('m1', 'Done.', true)
     assert.match(last.displayContent, /^Done\.\n.*╭─ cited/s)
+    assert.match(plain(last.displayContent), /#138 Publish lntt/)
     assert.match(last.displayContent, /https:\/\/github\.com\/o\/r\/issues\/138/)
   })
 
-  test('lntt refs --cached reads the message so far on stdin, then the missing titles are asked by ref', async () => {
-    const { flush, runs } = engine({ gh: { 'o/r#2': 'Two' } })
+  test('lntt refs --cached reads the whole message on stdin, then the missing titles are asked by ref', async () => {
+    const { flush, runs } = engine({ gh: { 'o/r#1': 'One', 'o/r#2': 'Two' } })
     await flush('m1', 'one #1\n')
-    await flush('m1', 'two #2\n')
-    const cachedRuns = runs.filter((r) => r.argv[2] === '--cached')
+    await flush('m1', 'two #2\n', true)
     assert.deepEqual(
-      cachedRuns.map((r) => [r.argv, r.init.stdin]),
-      [
-        [[LOCAL, 'refs', '--cached'], 'one #1\n'],
-        [[LOCAL, 'refs', '--cached'], 'one #1\ntwo #2\n'],
-      ],
+      runs.filter((r) => r.argv[2] === '--cached').map((r) => [r.argv, r.init.stdin]),
+      [[[LOCAL, 'refs', '--cached'], 'one #1\ntwo #2\n']],
     )
     assert.deepEqual(
       runs.filter((r) => r.argv[2] !== '--cached').map((r) => r.argv),
-      [
-        [LOCAL, 'refs', 'o/r#1'],
-        [LOCAL, 'refs', 'o/r#2'],
-      ],
+      [[LOCAL, 'refs', 'o/r#1', 'o/r#2']],
     )
     for (const r of runs) assert.equal(r.init.timeoutMs, LNTT_TIMEOUT_MS)
   })
@@ -192,7 +192,7 @@ describe('the issue titles hook', () => {
     const many = Array.from({ length: 2 * KEYS_PER_RUN + 1 }, (_, i) => `#${i + 1}`).join(' ')
     await flush('m1', `${many}\n`, true)
     assert.equal(runs.filter((r) => r.argv[2] !== '--cached').length, 3)
-    for (const id of ['m2', 'm3']) await flush(id, '#1 again\n')
+    for (const id of ['m2', 'm3']) await flush(id, '#1 again\n', true)
     assert.equal(runs.filter((r) => r.argv[2] === '--cached').length, 3)
   })
 
@@ -216,9 +216,9 @@ describe('the issue titles hook', () => {
       },
     })
     const many = Array.from({ length: KEYS_PER_RUN + 2 }, (_, i) => `#${i + 1}`).join(' ')
-    await flush('m1', `${many}\n`)
+    await flush('m1', `${many}\n`, true)
     assert.equal(held.length, 2)
-    await flush('m2', `${many}\n`)
+    await flush('m2', `${many}\n`, true)
     assert.equal(lookups().length, 2)
     const [first, second] = held
     const ok = {
@@ -229,7 +229,7 @@ describe('the issue titles hook', () => {
     first.resolve({ exitCode: 0, stdout: JSON.stringify(ok), stderr: '' })
     second.resolve({ exitCode: 1, stdout: '', stderr: 'boom' })
     for (let i = 0; i < 5; i++) await tick()
-    await flush('m3', `${many}\n`)
+    await flush('m3', `${many}\n`, true)
     assert.deepEqual(lookups().slice(2), [second.keys])
   })
 
@@ -257,7 +257,7 @@ describe('the issue titles hook', () => {
       },
     })
     const many = Array.from({ length: 2 * KEYS_PER_RUN + 1 }, (_, i) => `#${i + 1}`).join(' ')
-    await flush('m1', `${many}\n`)
+    await flush('m1', `${many}\n`, true)
     assert.equal(held.length, 3)
     const out = {
       repository: 'o/r',
@@ -266,49 +266,50 @@ describe('the issue titles hook', () => {
     }
     held[0].resolve({ exitCode: 0, stdout: JSON.stringify(out), stderr: '' })
     for (let i = 0; i < 5; i++) await tick()
-    await flush('m2', `${many}\n`)
+    await flush('m2', `${many}\n`, true)
     assert.equal(lookups().length, 3)
   })
 
   test("the project's lntt, else the lntt on PATH", async () => {
     const { flush, runs } = engine({ local: false, gh: { 'o/r#1': 'One' } })
-    await flush('m1', '#1\n')
+    await flush('m1', '#1\n', true)
     assert.deepEqual(new Set(runs.map((r) => r.argv[0])), new Set(['lntt']))
   })
 
   test('a cached title shows with no lookup', async () => {
     const { flush, lookups } = engine({ cache: { 'o/r#5': 'Cached' } })
-    assert.match((await flush('m1', '#5\n')).displayContent, /· Cached/)
+    assert.match(plain((await flush('m1', '#5\n', true)).displayContent), /#5 Cached/)
     assert.deepEqual(lookups(), [])
   })
 
-  test('each message starts over: the next one, or the same id after its end, shows the title again', async () => {
+  test('each message starts over: the next one, or the same id after its end, boxes the title again', async () => {
     const { flush } = engine({ gh: { 'o/r#138': 'Publish lntt' } })
     await flush('m1', '#138\n', true)
-    assert.match((await flush('m2', '#138 again\n')).displayContent, /· Publish lntt/)
-    assert.match((await flush('m1', '#138 again\n')).displayContent, /· Publish lntt/)
+    assert.match((await flush('m2', '#138 again\n', true)).displayContent, /cited.*Publish lntt/s)
+    assert.match((await flush('m1', '#138 again\n', true)).displayContent, /cited.*Publish lntt/s)
   })
 
   test('a number lntt says is unknown stays as written, and is not asked again', async () => {
     const { flush, lookups } = engine({ gh: { 'o/r#9': 'unknown' } })
-    assert.deepEqual(await flush('m1', '#9 here\n'), {})
-    await flush('m2', '#9 again\n')
+    assert.deepEqual(await flush('m1', '#9 here\n', true), {})
+    await flush('m2', '#9 again\n', true)
     assert.deepEqual(lookups(), [['o/r#9']])
   })
 
   test('a failed lookup is asked again in the next message', async () => {
     const { flush, lookups } = engine({ gh: { 'o/r#8': 'failed' } })
-    assert.deepEqual(await flush('m1', '#8\n'), {})
-    await flush('m2', '#8\n')
+    assert.deepEqual(await flush('m1', '#8\n', true), {})
+    await flush('m2', '#8\n', true)
     assert.deepEqual(lookups(), [['o/r#8'], ['o/r#8']])
   })
 
   test('lookups off (gh missing or logged out): none asked again, a cached title still shows', async () => {
     const { flush, lookups } = engine({ gh: { 'o/r#1': 'off', 'o/r#2': 'Two' }, cache: { 'o/r#5': 'Cached' } })
-    await flush('m1', '#1\n')
-    const shown = await flush('m2', '#2 and #5\n')
+    await flush('m1', '#1\n', true)
+    const shown = await flush('m2', '#2 and #5\n', true)
     assert.deepEqual(lookups(), [['o/r#1']])
-    assert.match(shown.displayContent, /· Cached/)
+    assert.match(plain(shown.displayContent), /#5 Cached/)
+    assert.doesNotMatch(plain(shown.displayContent), /#2 Two/)
   })
 
   test("without the session's repository, the message is shown as written", async () => {
@@ -329,9 +330,9 @@ describe('the issue titles hook', () => {
       const { flush, runs } = engine({
         lntt: (argv, init) => (fail ? failing() : fakeRun(argv, init, { gh: { 'o/r#2': 'Two' } })),
       })
-      assert.deepEqual(await flush('m1', '#1\n'), {})
+      assert.equal(boxed(await flush('m1', '#1\n', true)), false)
       fail = false
-      assert.match((await flush('m2', '#2\n')).displayContent, /· Two/)
+      assert.match(plain((await flush('m2', '#2\n', true)).displayContent), /#2 Two/)
       assert.ok(runs.length > 1)
     })
   }
@@ -343,7 +344,7 @@ describe('the issue titles hook', () => {
       lntt: (argv, init) =>
         ok.has(runs.length) ? fakeRun(argv, init, { gh: { 'o/r#3': 'Three' } }) : Promise.reject(new Error('timed out')),
     })
-    for (let i = 1; i <= 7; i += 1) await flush(`m${i}`, `#${i}\n`)
+    for (let i = 1; i <= 7; i += 1) await flush(`m${i}`, `#${i}\n`, true)
     assert.equal(FAILURES, 3)
     assert.equal(runs.length, 2 + 2 + FAILURES)
   })
@@ -353,20 +354,20 @@ describe('the issue titles hook', () => {
     const { flush, runs } = engine({
       lntt: (argv, init) => fakeRun(argv, init, { home: runs.length === 3 ? 'o/r' : null, cache: { 'o/r#3': 'Three' } }),
     })
-    for (let i = 1; i <= 7; i += 1) await flush(`m${i}`, `#${i}\n`)
+    for (let i = 1; i <= 7; i += 1) await flush(`m${i}`, `#${i}\n`, true)
     assert.equal(runs.length, 2 + 1 + FAILURES)
   })
 
   test('lntt exiting 2 with anything else on stderr is a failed run, not an lntt with no refs', async () => {
     const { flush, runs } = engine({ lntt: async () => ({ exitCode: 2, stdout: '', stderr: 'boom' }) })
-    for (let i = 1; i <= FAILURES + 2; i += 1) assert.deepEqual(await flush(`m${i}`, `#${i}\n`), {})
+    for (let i = 1; i <= FAILURES + 2; i += 1) assert.equal(boxed(await flush(`m${i}`, `#${i}\n`, true)), false)
     assert.equal(runs.length, FAILURES)
   })
 
   for (const stdout of ['{}', '{"repository":"o/r"}']) {
     test(`lntt answering ${stdout}, with no mentions or refs: a failed run, ${FAILURES} in a row turn the titles off`, async () => {
       const { flush, runs } = engine({ lntt: async () => ({ exitCode: 0, stdout, stderr: '' }) })
-      for (let i = 1; i <= FAILURES + 2; i += 1) assert.deepEqual(await flush(`m${i}`, `#${i}\n`), {})
+      for (let i = 1; i <= FAILURES + 2; i += 1) assert.equal(boxed(await flush(`m${i}`, `#${i}\n`, true)), false)
       assert.equal(runs.length, FAILURES)
     })
   }
@@ -377,8 +378,8 @@ describe('the issue titles hook', () => {
   ]) {
     test(`lntt answering ${what}: off for the session at once`, async () => {
       const { flush, runs } = engine({ lntt: async () => ({ exitCode: 2, stdout: '', stderr }) })
-      assert.deepEqual(await flush('m1', '#1\n'), {})
-      assert.deepEqual(await flush('m2', '#2\n'), {})
+      assert.equal(boxed(await flush('m1', '#1\n', true)), false)
+      assert.equal(boxed(await flush('m2', '#2\n', true)), false)
       assert.equal(runs.length, 1)
     })
   }
@@ -440,26 +441,29 @@ describe('the issue titles hook', () => {
     assert.equal(LNTT_TIMEOUT_MS, 2 * 3000 + 2000)
   })
 
-  test('a number split across deltas is the one cited: its title in the delta where it ends', async () => {
+  test('a number split across deltas is the one cited: the message is read whole', async () => {
     const { flush, lookups } = engine({ gh: { 'o/r#1': 'Issue one', 'o/r#138': 'Publish lntt' } })
     assert.deepEqual(await flush('m1', 'See #1'), {})
-    assert.match((await flush('m1', '38 now.')).displayContent, /^38 .*· Publish lntt.* now\.$/)
+    assert.deepEqual(await flush('m1', '38 now.'), {})
     const end = await flush('m1', ' end', true)
     assert.doesNotMatch(end.displayContent, /Issue one|\/1\b/)
-    assert.match(end.displayContent, /cited.*#138/s)
+    assert.match(plain(end.displayContent), /#138 Publish lntt/)
     assert.deepEqual(lookups(), [['o/r#138']])
   })
 
-  test('a delta that goes on a number of the text so far runs lntt: # | 138', async () => {
-    const { flush } = engine({ gh: { 'o/r#138': 'Publish lntt' } })
-    await flush('m1', 'See #')
-    assert.match((await flush('m1', '138 now.')).displayContent, /^138 .*· Publish lntt.* now\.$/)
+  test('a number at the end of the last delta is cited', async () => {
+    const { flush } = engine({ gh: { 'o/r#5': 'Five' } })
+    assert.match(plain((await flush('m1', 'See #5', true)).displayContent), /#5 Five/)
   })
 
-  test('a number at the end of a delta gets its title at the start of the next, with no number in it', async () => {
-    const { flush } = engine({ gh: { 'o/r#5': 'Five' } })
-    assert.deepEqual(await flush('m1', 'See #5'), {})
-    assert.match((await flush('m1', ' now.\n')).displayContent, /^ .*· Five.* now\.\n$/)
+  test('a delta that arrives while an earlier one is still being passed down is added after it', async () => {
+    const { flush, runs } = engine({ gh: { 'o/r#138': 'Publish lntt' } })
+    const first = flush('m1', 'See #1', false, {}, true)
+    const second = flush('m1', '38 now.\n', false, {}, true)
+    const end = await flush('m1', 'end', true)
+    await Promise.all([first, second])
+    assert.equal(runs[0].init.stdin, 'See #138 now.\nend')
+    assert.match(plain(end.displayContent), /#138 Publish lntt/)
   })
 
   test('a ref lntt gives that is not a lower-case owner/repo#N is ignored', async () => {
@@ -480,9 +484,10 @@ describe('the issue titles hook', () => {
 
   test('a reference to another repository is looked up there; a bare #N after it is not', async () => {
     const { flush, lookups } = engine({ gh: { 'x/pelion#3': 'Pelion three', 'o/r#65': 'Ours' } })
-    const shown = await flush('m1', 'see x/pelion#3, and then #65\n')
+    const shown = await flush('m1', 'see x/pelion#3, and then #65\n', true)
     assert.deepEqual(lookups(), [['x/pelion#3']])
-    assert.match(shown.displayContent, /x\/pelion#3 .*· Pelion three.*and then #65\n$/)
+    assert.match(plain(shown.displayContent), /^see x\/pelion#3, and then #65\n\n.*x\/pelion#3 Pelion three/s)
+    assert.doesNotMatch(shown.displayContent, /Ours/)
   })
 
   test('a title lntt gives is checked again before it is shown', async () => {
@@ -495,8 +500,9 @@ describe('the issue titles hook', () => {
       }),
       stderr: '',
     })
-    const shown = await engine({ lntt }).flush('m1', '#1\n')
-    assert.match(shown.displayContent, /· ok\]0;pwned/)
+    const shown = await engine({ lntt }).flush('m1', '#1\n', true)
+    assert.match(shown.displayContent, /ok\]0;pwned/)
+    assert.doesNotMatch(shown.displayContent, /\u0007/)
   })
 
   test('the box labels a reference to the session repository as #N', async () => {
@@ -513,50 +519,54 @@ describe('the issue titles hook', () => {
     assert.deepEqual(waits, [])
   })
 
-  test('a slow lntt refs --cached does not hold the text, and its titles serve the next delta', async () => {
-    let release
-    const lntt = (argv, init) =>
-      argv[2] === '--cached'
-        ? new Promise((r) => {
-            release = () =>
-              r({
-                exitCode: 0,
-                stdout: JSON.stringify({
-                  repository: 'o/r',
-                  mentions: [{ text: '#1', ref: 'o/r#1', index: init.stdin.indexOf('#1'), after: init.stdin.indexOf('#1') + 2 }],
-                  refs: [{ ref: 'o/r#1', title: 'One', url: 'https://github.com/o/r/issues/1' }],
-                }),
-                stderr: '',
-              })
-          })
-        : Promise.resolve({ exitCode: 0, stdout: '{"repository":"o/r","mentions":[],"refs":[]}', stderr: '' })
+  test('the same id after its end starts a new message: only its own text is read and boxed', async () => {
+    const { flush, runs } = engine({ gh: { 'o/r#1': 'One', 'o/r#2': 'Two' } })
+    await flush('m1', 'first #1\n', true)
+    const end = await flush('m1', 'second #2\n', true)
+    assert.equal(runs.filter((r) => r.argv[2] === '--cached')[1].init.stdin, 'second #2\n')
+    assert.match(plain(end.displayContent), /#2 Two/)
+    assert.doesNotMatch(plain(end.displayContent), /#1 One/)
+  })
+
+  test('a `#` that is no reference (a heading, #0) starts no lntt and no timer', async () => {
+    const { flush, runs, waits } = engine()
+    assert.deepEqual(await flush('m1', '# Heading\n\nissue #0\n', true), {})
+    assert.deepEqual(runs, [])
+    assert.deepEqual(waits, [])
+  })
+
+  test('a lntt refs --cached slower than the wait leaves the message as written', async () => {
+    const lntt = () => new Promise(() => {})
     const { flush } = engine({ lntt, late: true })
-    assert.deepEqual(await flush('m1', '#1\n'), {})
-    release()
-    await tick()
-    assert.match((await flush('m1', 'end', true)).displayContent, /cited.*#1.*One/s)
+    assert.deepEqual(await flush('m1', '#1\n', true), {})
   })
 
-  test('a title found after its delta has moved on shows in the box of the same message', async () => {
-    let release
-    const slow = () => new Promise((r) => (release = () => r('Late one')))
-    const { flush } = engine({ gh: { 'o/r#4': slow }, late: true })
-    assert.deepEqual(await flush('m1', '#4 now\n'), {})
-    release()
+  test('a --cached answer later than the wait still gives the session its titles, for the next message', async () => {
+    let calls = 0
+    const lntt = (argv, init) => {
+      calls += 1
+      // Later runs know no title: what shows comes from the first answer.
+      if (calls > 1) return fakeRun(argv, init, { cache: {} })
+      // The first answer comes after the wait.
+      return new Promise((r) => setImmediate(() => r(fakeRun(argv, init, { cache: { 'o/r#1': 'One' } }))))
+    }
+    const { flush } = engine({ lntt, late: true })
+    assert.deepEqual(await flush('m1', '#1\n', true), {})
     await tick()
-    assert.match((await flush('m1', 'end', true)).displayContent, /cited.*#4.*Late one/s)
+    await tick()
+    assert.match(plain((await flush('m2', '#1 again\n', true)).displayContent), /#1 One/)
   })
 
-  test('a slow lookup does not hold the text: it shows as written, and the title comes later', async () => {
+  test('a title not found within the wait is not in the box, and is there in the next message', async () => {
     let release
     const slow = () => new Promise((r) => (release = () => r('Slow one')))
     const { flush, lookups } = engine({ gh: { 'o/r#3': slow }, late: true })
-    assert.deepEqual(await flush('m1', '#3 now\n'), {})
-    await flush('m2', '#3 meanwhile\n')
+    assert.deepEqual(await flush('m1', '#3 now\n', true), {})
+    await flush('m2', '#3 meanwhile\n', true)
     assert.deepEqual(lookups(), [['o/r#3']])
     release()
     await tick()
-    assert.match((await flush('m3', '#3 later\n')).displayContent, /· Slow one/)
+    assert.match(plain((await flush('m3', '#3 later\n', true)).displayContent), /#3 Slow one/)
   })
 
   test('a number missing after a failure is asked again on the last delta, for the box', async () => {
@@ -566,44 +576,24 @@ describe('the issue titles hook', () => {
       return tries === 1 ? 'failed' : 'Second try'
     }
     const { flush } = engine({ gh: { 'o/r#2': flaky } })
-    await flush('m1', '#2 here\n')
-    assert.match((await flush('m1', 'end', true)).displayContent, /cited.*Second try/s)
+    await flush('m1', '#2 here\n', true)
+    assert.match((await flush('m2', '#2 again\n', true)).displayContent, /cited.*Second try/s)
   })
 
-  test('a reference of an earlier delta whose lookup failed is asked again on the last delta, not before', async () => {
-    let tries = 0
-    const flaky = async () => {
-      tries += 1
-      return tries === 1 ? 'failed' : 'Second try'
-    }
-    const { flush, lookups } = engine({ gh: { 'o/r#2': flaky, 'o/r#3': 'Three' } })
-    await flush('m1', '#2 here\n')
-    await flush('m1', 'and #3\n')
-    assert.deepEqual(lookups(), [['o/r#2'], ['o/r#3']])
-    assert.match((await flush('m1', 'end', true)).displayContent, /cited.*Second try/s)
-    assert.deepEqual(lookups(), [['o/r#2'], ['o/r#3'], ['o/r#2']])
-  })
-
-  test('a link split across deltas runs lntt again with the next delta: the title goes after the link', async () => {
-    const { flush } = engine({ gh: { 'o/r#138': 'Publish lntt' } })
-    assert.deepEqual(await flush('m1', 'see [#138](http'), {})
-    assert.match((await flush('m1', 's://x.org/1) now\n')).displayContent, /^s:\/\/x\.org\/1\) .*· Publish lntt.* now\n$/)
-  })
-
-  test('one timer per delta for lntt and the lookups together, and none when nothing waits', async () => {
+  test('one timer for the whole wait of a message, and none when nothing waits', async () => {
     const { flush, waits } = engine({ gh: { 'o/r#9': 'Nine', 'o/r#1': () => new Promise(() => {}) }, late: true })
-    await flush('m1', '#9\n')
+    await flush('m1', '#9\n', true)
     assert.equal(waits.length, 1)
     await tick()
-    await flush('m2', 'no number\n')
-    assert.equal(waits.length, 1, 'a delta with no number starts no timer')
-    await flush('m3', '#1 slow\n')
+    await flush('m2', 'no number\n', true)
+    assert.equal(waits.length, 1, 'a message with no number starts no timer')
+    await flush('m3', '#1 slow\n', true)
     assert.equal(waits.length, 2, 'a slow lookup waits on the same timer as lntt')
   })
 
-  test(`a delta waits for its lookups at most WAIT_MS (${WAIT_MS} ms)`, async () => {
+  test(`a message waits for its lookups at most WAIT_MS (${WAIT_MS} ms)`, async () => {
     const { flush, waits } = engine({ gh: { 'o/r#1': () => new Promise(() => {}) }, late: true })
-    await flush('m1', '#1\n')
+    await flush('m1', '#1\n', true)
     assert.deepEqual(waits, [WAIT_MS])
   })
 
@@ -615,11 +605,11 @@ describe('the issue titles hook', () => {
     assert.doesNotMatch(end?.displayContent ?? '', /cited/)
   })
 
-  test('the text a hook below rewrote is the one annotated', async () => {
+  test('the text Claude wrote is the one read: what a hook below rewrote gets the box after it', async () => {
     const { flush, runs } = engine({ gh: { 'o/r#138': 'Publish lntt' } })
-    const shown = await flush('m1', 'raw #138\n', false, { displayContent: 'rewritten #138\n' })
-    assert.match(shown.displayContent, /^rewritten #138 .*· Publish lntt/)
-    assert.equal(runs[0].init.stdin, 'rewritten #138\n')
+    const shown = await flush('m1', 'raw #138\n', true, { displayContent: 'rewritten, no number\n' })
+    assert.equal(runs[0].init.stdin, 'raw #138\n')
+    assert.match(plain(shown.displayContent), /^rewritten, no number\n\n╭─ cited\n│ #138 Publish lntt/)
   })
 
   test('nothing to change returns what came from below, as it came', async () => {
@@ -641,7 +631,7 @@ esac
 `
 
 describe('the issue titles hook with the real lntt refs', () => {
-  test('a title beside the number, and the box on the last delta', async () => {
+  test('the box on the last delta, and nothing in the text before it', async () => {
     const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'issue-titles-')))
     try {
       const stubs = join(tmp, 'bin')
@@ -676,7 +666,7 @@ describe('the issue titles hook with the real lntt refs', () => {
         return { catch: () => {} }
       })
       const flush = (delta, final = false) => hook($, { message_id: 'm1', delta, final }, async () => ({}))
-      assert.match((await flush('Do #1.\n')).displayContent, /^Do #1 .*· One.*\.\n$/)
+      assert.deepEqual(await flush('Do #1.\n'), {})
       const end = (await flush('Done.', true)).displayContent
       assert.match(end, /^Done\.\n.*╭─ cited.*#1 .*One.*https:\/\/github\.com\/o\/r\/issues\/1/s)
     } finally {
