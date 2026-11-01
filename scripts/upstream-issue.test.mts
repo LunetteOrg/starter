@@ -212,7 +212,7 @@ describe('report', () => {
   })
 
   test('an issue with the title of this tool and version, open or closed, stops a second one', () => {
-    const gh = fakeGh({ 'in:title': [{ number: 186, title: 'opencode 2.2.1 breaks lntt' }] })
+    const gh = fakeGh({ ...issues(), 'in:title': [{ number: 186, title: 'opencode 2.2.1 breaks lntt' }] })
     const { out, log } = lines()
     assert.deepEqual(report({ gh, repo: 'o/r', target, log }, failure()), { action: 'none', number: 186 })
     assert.deepEqual(gh.writes, [])
@@ -220,7 +220,7 @@ describe('report', () => {
   })
 
   test('a search hit whose title only contains this one is not the same issue', () => {
-    const gh = fakeGh({ ...issues(), 'in:title': [{ number: 3, title: 'opencode 2.2.10 breaks lntt' }] })
+    const gh = fakeGh({ ...issues(), 'in:title': [{ number: 3, title: 'Re: opencode 2.2.1 breaks lntt on arm' }] })
     assert.equal(report({ gh, repo: 'o/r', target, log: () => {} }, failure()).action, 'opened')
   })
 
