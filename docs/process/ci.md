@@ -228,8 +228,36 @@ is then checked again, and its issue, if any, stops a second one. `workflow_disp
 one tool and `force`, to check a version again; it is run from `main`, whose cache the
 scheduled runs use.
 
-A red opens the issue `<tool> <version> breaks lntt`, once per tool and version, with the
-failing step, the run and the end of the log. Whoever takes it reads the log, then fixes
+A red is reported by `scripts/upstream-issue.mts`, in this order:
+
+1. An issue named `<tool> <version> breaks lntt`, open or closed, already exists: nothing
+   is opened, so one tool and version opens at most one issue.
+2. An open issue reports the same failure of the tool, the same failing tests (by name)
+   or, with no test failing, the same step: the version, the run and the end of the log
+   go there as a comment, once per version, and no issue is opened. The failure is read
+   from a marker line at the end of the issue's body (`<!-- upstream-failure: … -->`),
+   which the script writes: an issue retitled or rewritten by hand keeps it to go on
+   collecting its reds.
+3. Otherwise the issue `<tool> <version> breaks lntt` is opened with the failing step,
+   the failing tests, the run and the end of the log, with the type Bug of
+   `board.issueTypes`, added to the Project of `board.github.project` and set to the
+   status role `initial` of `board.fields.status`. Priority stays empty: whoever triages
+   it sets it, as for any bug ([board](./board.md)).
+
+The issue is written with the job's `GITHUB_TOKEN`; the Project with a token of the
+candidate app ([delivery](./delivery.md#the-candidate-automation)) asked only on a
+red, with the Projects permission alone. The Project's own auto-add
+([board](./board.md)) does not pick up an issue opened by `GITHUB_TOKEN`, so the
+script adds it. Without that token, or when GitHub refuses it, the issue is opened off
+the board and the run leaves a notice saying so: it is put on the board with the
+`github-board` skill; a failure after the issue is added leaves it on the board with
+its status unset, and a notice saying so. When `board.issueTypes` names no Bug, or
+GitHub refuses the type (a validation error), the issue is opened with no type, with a
+notice. A red of `pnpm install` opens no issue,
+since the script needs the install, and saves no entry: the version is checked again
+the next day.
+
+Whoever takes the issue reads the log, then fixes
 lntt's adapter (`packages/lntt/src/worktree.ts`, `headless.ts`, `orca-subagents.ts`) or
 records the tool's change in the decision that relies on it
 ([worktree tooling](../adr/worktree-tooling.md), [review agents](../adr/review-agents.md)).

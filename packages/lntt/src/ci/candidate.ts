@@ -716,7 +716,7 @@ const BOARD_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   }
 }`
 
-const BOARD_MUTATION = `mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
+export const BOARD_MUTATION = `mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
   updateProjectV2ItemFieldValue(input: {
     projectId: $project, itemId: $item, fieldId: $field, value: { singleSelectOptionId: $option }
   }) { projectV2Item { id } }
@@ -728,7 +728,7 @@ interface BoardItem {
   project: { id: string; title: string; field?: { id?: string; options?: Array<{ id: string; name: string }> } | null }
 }
 
-const NOT_PERMITTED = /resource not accessible|forbidden|insufficient|required scope|has not been granted/i
+export const NOT_PERMITTED = /resource not accessible|forbidden|insufficient|required scope|has not been granted/i
 
 // Moves each issue to `status` on every Project it is on that has that status. An issue
 // with no project that can take the status is told in a `::notice` and returned in
