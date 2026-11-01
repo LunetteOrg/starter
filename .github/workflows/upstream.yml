@@ -4,8 +4,9 @@ name: Upstream tools
 # lntt's own tests run against fakes and cannot see a real tool change. Every day this
 # reads each tool's latest version and, for each one not checked yet, installs it on a
 # throwaway runner and runs lntt's upstream test for it (packages/lntt/test/upstream-*);
-# a red opens an issue `<tool> <version> breaks lntt`, once per tool and version. What to
-# do with it: docs/process/ci.md.
+# a red opens an issue `<tool> <version> breaks lntt`, once per tool and version, typed
+# and on the board, or adds itself to the open issue of the same failure. What to do with
+# it: docs/process/ci.md.
 #
 # One workflow, one job per tool through a matrix: each tool gets its own log, its own
 # red and its own issue, while the install, the issue and the cache steps are written
@@ -180,48 +181,40 @@ jobs:
           ANTHROPIC_WORKSPACE_ID: ${{ matrix.tool == 'claude' && vars.ANTHROPIC_WORKSPACE_ID || '' }}
         # Every upstream test file runs; those of the other tools skip.
         run: pnpm --filter @lntt/lntt test:upstream 2>&1 | tee -a upstream.log
-      # One issue per tool and version: an issue with that title, open or closed, also
-      # covers a forced run and a cache entry GitHub evicted.
+      # The Projects permission of the candidate app (docs/process/delivery.md), asked
+      # only on a red and in a step of its own, as candidate.yml does: a token request
+      # for a permission the app lacks fails, and that must not stop the issue. Without
+      # this token the issue is opened off the board, with a notice.
+      - id: projects-token
+        if: failure() && steps.install.outcome != 'failure' && vars.CANDIDATE_APP_CLIENT_ID != ''
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.CANDIDATE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CANDIDATE_APP_PRIVATE_KEY }}
+          permission-organization-projects: write
+      # One issue per tool and version, typed and on the board; a red at the same tests
+      # as an open issue of the tool is a comment there (scripts/upstream-issue.mts). It
+      # needs the install: a red of `pnpm install` opens nothing and saves no entry, so
+      # its version is checked again the next day.
       - id: issue
         name: Open an issue
-        if: failure()
+        if: failure() && steps.install.outcome != 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
+          PROJECTS_GH_TOKEN: ${{ steps.projects-token.outputs.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           STEP: >-
-            ${{ steps.install.outcome == 'failure' && 'pnpm install' ||
-            steps.tool.outcome == 'failure' && 'scripts/upstream-install.sh' ||
+            ${{ steps.tool.outcome == 'failure' && 'scripts/upstream-install.sh' ||
             steps.oidc.outcome == 'failure' && 'the GitHub OIDC token for claude' ||
             steps.test.outcome == 'failure' && format('the upstream test (packages/lntt/test/upstream-{0}.test.ts)', matrix.tool) ||
             'a setup step' }}
-        run: |
-          title="$TOOL $VERSION breaks lntt"
-          found=$(gh issue list --repo "$GITHUB_REPOSITORY" --state all --search "\"$title\" in:title" --json title --jq '.[].title')
-          if printf '%s\n' "$found" | grep -qxF "$title"; then
-            echo "an issue named \"$title\" exists; none opened"
-            exit 0
-          fi
-          {
-            echo "The scheduled check of lntt against $TOOL $VERSION failed at **$STEP**."
-            echo
-            echo "Run: $RUN_URL"
-            echo
-            echo "What to do: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/main/docs/process/ci.md#upstream-tools"
-            echo
-            echo '<details><summary>The end of the log</summary>'
-            echo
-            echo '```'
-            tail -n 80 upstream.log 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g'
-            echo '```'
-            echo
-            echo '</details>'
-          } > issue.md
-          gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file issue.md
-      # A red whose issue could not be opened saves no entry: the next run checks the
-      # version again and opens it.
-      - if: ${{ !cancelled() && steps.issue.outcome != 'failure' }}
+        run: node scripts/upstream-issue.mts --tool "$TOOL" --version "$VERSION" --step "$STEP" --run "$RUN_URL" --log upstream.log
+      # A red whose issue could not be opened, or a red install, saves no entry: the next
+      # run checks the version again and opens it.
+      - if: ${{ !cancelled() && steps.install.outcome != 'failure' && steps.issue.outcome != 'failure' }}
         run: mkdir -p .upstream-checked && echo "$TOOL $VERSION ${{ job.status }}" > .upstream-checked/version
-      - if: ${{ !cancelled() && steps.issue.outcome != 'failure' }}
+      - if: ${{ !cancelled() && steps.install.outcome != 'failure' && steps.issue.outcome != 'failure' }}
         uses: actions/cache/save@v6
         with:
           path: .upstream-checked
@@ -229,7 +222,7 @@ jobs:
           # have set (opencode, when Homebrew moved on since the versions job).
           key: upstream-${{ matrix.tool }}-${{ env.VERSION }}
       # The version read, when another was installed: the versions job looks that one up.
-      - if: ${{ !cancelled() && steps.issue.outcome != 'failure' && env.VERSION != matrix.version }}
+      - if: ${{ !cancelled() && steps.install.outcome != 'failure' && steps.issue.outcome != 'failure' && env.VERSION != matrix.version }}
         uses: actions/cache/save@v6
         with:
           path: .upstream-checked

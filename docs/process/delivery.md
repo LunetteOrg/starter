@@ -250,7 +250,8 @@ and pull requests stay where they are opened. To turn it on:
    For the board, grant the app the organization permission **Projects** *read and
    write*, and let the installation reach the Project. It is requested by a step of its
    own, so an app without it still runs the candidate; the board stays put, with a
-   notice.
+   notice. The upstream check asks the app for the same permission to put the issue
+   of a red on the board ([CI](./ci.md#upstream-tools)).
 4. **Add the app as a bypass actor of the candidates ruleset** (*candidates: squash
    merge only*): it creates `candidate/<N>` with a commit, which the ruleset's
    pull-request rule otherwise blocks.
