@@ -234,7 +234,9 @@ candidate's lists, or close and carry over on a merged candidate) without follow
 open candidate follows `main`, with the path and its reason printed). `--dry-run` prints the
 writes and the push instead of making them; the fetch, the merge and the rebase still
 run in the local clone and a temporary worktree, so it shows the files in conflict or
-the head it would push. A terminal run moves the board too, with the
+the head it would push. Without `--dry-run`, `--follow` pushes the candidate from the
+operator's clone at once (with a lease, forced, on the rebase path): it runs with
+`--dry-run` first. A terminal run moves the board too, with the
 login of `gh`, which needs the `project` scope (`gh auth refresh -s project`). A terminal run is outside the workflow's
 concurrency group: run one at a time, and not while the workflow is running.
 
