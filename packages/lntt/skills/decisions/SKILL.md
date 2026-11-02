@@ -18,7 +18,7 @@ Read the `recording` section through the configuration reader, never by parsing 
 file yourself (it has comments):
 
 ```sh
-lntt get recording        # or: pnpm exec lntt get recording
+pnpm exec lntt get recording
 ```
 
 It returns `language` and `logs`: one entry per log (`adr`, `product`, `process`, …)
@@ -58,8 +58,8 @@ apply fixes: output findings and recommended actions only.
 1. **Run the structural checks first**, never by eye:
 
    ```sh
-   lntt check decisions                  # the whole logs
-   lntt check decisions --base <ref>     # on a change: also its inventory and figures
+   pnpm exec lntt check decisions                  # the whole logs
+   pnpm exec lntt check decisions --base <ref>     # on a change: also its inventory and figures
    ```
 
    Every `FAIL` is a finding, at its `path:line`, as it is; every `PASS` a passing
@@ -83,11 +83,11 @@ apply fixes: output findings and recommended actions only.
    a process rule inside an ADR, a value repeated from the configuration instead of
    citing its key, a record that narrates how it was reached, discarded options outside
    *Discarded directions*.
-7. **Reconcile the figures** of those records (`lntt check decisions numbers <file>`,
+7. **Reconcile the figures** of those records (`pnpm exec lntt check decisions numbers <file>`,
    or the `figures` lines with `--base`): a figure about the world outside or a count
    of today's code is stale in a year; one about the technology holds.
 8. **Cite only what you reread:** before writing a finding, pass its `path:line` to
-   `lntt check cite <path:line>...`. A line that does not exist, or that does not say
+   `pnpm exec lntt check cite <path:line>...`. A line that does not exist, or that does not say
    what the finding claims, drops the finding; never adjust the number by eye.
 
 Output:
