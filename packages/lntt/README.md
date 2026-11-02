@@ -366,11 +366,11 @@ lntt worktree start --theme release-0-6-1 --parent current --issue 89 \
 The agents talk through the mailbox, which needs no Orca or Herdr:
 
 ```sh
-lntt ask --to coordinator --theme release-0-6-1 "Which pull request first?"   # waits; stdout is the answer
+lntt ask --to coordinator --theme release-0-6-1 --issue 89 "Which pull request first?"   # waits; stdout is the answer
 lntt ask --to orchestrator --issue 89 "May I push?"           # topic issue-89-may-i-push, in to-orchestrator/
-lntt ask --wait 20261017-101500-review-limit                   # the answer to a message already sent
+lntt ask --wait 20261017-101500-issue-89-review-limit          # the answer to a message already sent
 lntt inbox --as coordinator --theme release-0-6-1 [--wait]    # unanswered messages, one JSON line each
-lntt answer 20261017-101500-which-pull-request "The CLI one."
+lntt answer 20261017-101500-issue-89-which-pull-request "The CLI one."
 ```
 
 A message is `<git common dir>/lntt-messages/to-<role>/<YYYYMMDD-HHMMSS>-<topic>.md`, its answer the
@@ -383,9 +383,10 @@ again for its answer, with the same output and exit codes; `-` reads the text fr
 
 Every wait of a child goes through the mailbox, and its brief says so: a question, an approval
 (a 1Password prompt included), the review limit. `lntt worktree start` records who each branch
-reports to in `<git common dir>/lntt-messages/started/<branch>.json`; at `lntt review: limit:`
-the round sends the open findings there itself, without waiting, and prints the id to wait on
-with `lntt ask --wait <id>`.
+reports to in `<git common dir>/lntt-messages/started/<branch, URL-encoded>.json`; at
+`lntt review: limit:` the round sends the open findings there itself, without waiting, and
+prints the id to wait on with `lntt ask --wait <id>` (the same id while that message waits for
+its answer).
 
 ## Reviewing a change
 

@@ -71,9 +71,10 @@ const AGENTS = join(dirname(fileURLToPath(import.meta.url)), '../agents')
 const BRIEF = join(AGENTS, 'brief.md')
 
 // How a child routes every wait through the mailbox: to its coordinator with a theme, to
-// the orchestrator with its issue otherwise.
+// the orchestrator otherwise; its issue tags the topic either way.
 export function waitingSection(issue: number, theme?: string): string {
-  const ask = theme ? `lntt ask --to coordinator --theme ${theme}` : `lntt ask --to orchestrator --issue ${issue}`
+  const to = theme ? `--to coordinator --theme ${theme}` : '--to orchestrator'
+  const ask = `lntt ask ${to} --issue ${issue}`
   return fill(readFileSync(join(AGENTS, 'waiting.md'), 'utf8'), { ask, issue }).trimEnd()
 }
 

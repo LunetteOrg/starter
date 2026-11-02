@@ -114,8 +114,13 @@ host, with no messaging command of Orca or Herdr:
   one. `answer` writes the answer file; the first answer stays.
 - Every wait goes through `lntt ask`, never only in an agent's terminal, which nobody
   watches: a question, an approval (a 1Password prompt included), the review limit, for
-  which `lntt review` sends the open findings itself and prints the id to wait on. A child
-  that waits re-reads its mailbox, so an answer for it goes there. Both briefs say so.
+  which `lntt review` sends the open findings itself to whoever the branch reports to and
+  prints the id to wait on. A plain child asks the orchestrator
+  (`--to orchestrator --issue <n>`), a child of a theme its coordinator
+  (`--to coordinator --theme <theme> --issue <n>`), a coordinator the orchestrator. A
+  child runs the wait in the background and re-reads its mailbox between polls, so an
+  answer for it goes there; an answer that grants review rounds is the go for
+  `lntt review allow`. Both briefs say so.
 - The directory is shared by every worktree of the repository and belongs to none of them:
   nothing in it is committed.
 - Both directions work: a child asks its coordinator and reports to it; a coordinator asks

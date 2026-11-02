@@ -146,6 +146,18 @@ function marker(job: Start, coordinator: boolean, theme: string | undefined): St
   return { branch: job.branch, issue: job.issue, to: 'orchestrator' }
 }
 
+// A marker that cannot be written costs the review limit its message, not the start:
+// it is said.
+function recordMarker(started: Started): void {
+  try {
+    recordStarted(messagesRoot(), started)
+  } catch (error) {
+    stderr.write(
+      `lntt worktree start: could not record who ${started.branch} reports to: ${(error as Error).message}\n`,
+    )
+  }
+}
+
 // A coordinator's child waits for the person's go before anything is created, unless the
 // theme's approved list already has it: the gate is the project's setting
 // (coordinator.gate), not a sentence in a brief. The proposal is one message for the batch.
@@ -296,6 +308,8 @@ function start(args: string[]): void {
   if (!coordinator && theme) passTheGate(config, theme, jobs, values.size)
 
   for (const job of jobs) {
+    // Before the host starts: a start that fails once the worktree exists still leaves it.
+    recordMarker(marker(job, coordinator, theme))
     const started =
       host === 'orca'
         ? startOrca(job, runner, setupScript)
@@ -303,7 +317,6 @@ function start(args: string[]): void {
           ? startHerdr(job, runner, setupScript)
           : startGit(job, runner, setupScript)
     stdout.write(`${JSON.stringify(started)}\n`)
-    recordStarted(messagesRoot(), marker(job, coordinator, theme))
     // Nobody was asked to start an agent: the command and the brief are for the person who will.
     if (job.agent === null) {
       const launch = shellLaunch(agent) ?? [agent.kind, ...agentArgs(agent)].join(' ')

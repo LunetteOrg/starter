@@ -3,9 +3,10 @@
 
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+import { basename, dirname } from 'node:path'
 import { cwd, env, exit, stderr, stdin, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
-import { answer, locate, type Mailbox, type Message, POLL_MS, pending, send, waitForAnswer } from './messages.ts'
+import { answer, locate, type Mailbox, type Message, POLL_MS, pending, ROLES, send, waitForAnswer } from './messages.ts'
 
 const USAGE = [
   'usage: lntt ask --to <orchestrator|coordinator|child> [--issue <n>] [--theme <slug>] [--topic <slug>] [--timeout <s>] [--interval <s>] <question | ->',
@@ -88,7 +89,10 @@ function sentMessage(root: string, raw: string): Message {
   if (found.length > 1) throw new Error(`${raw} names more than one message: ${found.join(', ')}`)
   const path = found[0] as string
   const id = raw.replace(/\.md$/, '')
-  const to = (path.split('/').at(-2) as string).replace(/^to-/, '')
+  // The role of to-<role> or to-<role>-<who>: the directory says who, the role is the word.
+  const directory = basename(dirname(path))
+  const to = ROLES.find((role) => directory === `to-${role}` || directory.startsWith(`to-${role}-`))
+  if (to === undefined) throw new Error(`${path} is not in a role's directory`)
   return { id, topic: id.replace(/^\d{8}-\d{6}-/, ''), to, path, question: readFileSync(path, 'utf8').trim() }
 }
 

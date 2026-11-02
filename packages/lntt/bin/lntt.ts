@@ -128,7 +128,8 @@
 //                             brief is printed for the person to start the agent;
 //                             --prompt adds instructions of one's own after the brief
 //                             (## Added at start). Each start records who the branch
-//                             reports to (lntt-messages/started/), read by lntt review
+//                             reports to (lntt-messages/started/<branch, URL-encoded>.json),
+//                             read by lntt review
 //
 //   lntt worktree start --coordinator --theme <slug> --issue <n>... [--approve <n>]...
 //                             a theme's coordinator: one worktree on no issue, the coordinator's

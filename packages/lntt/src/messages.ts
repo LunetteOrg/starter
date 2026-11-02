@@ -4,7 +4,7 @@
 //
 //   <git common dir>/lntt-messages/to-<role>/<YYYYMMDD-HHMMSS>-<topic>.md          the question
 //   <git common dir>/lntt-messages/to-<role>/<YYYYMMDD-HHMMSS>-<topic>.answer.md   the answer
-//   <git common dir>/lntt-messages/started/<branch, / as ->.json                    who a branch reports to
+//   <git common dir>/lntt-messages/started/<branch, URL-encoded>.json               who a branch reports to
 //
 // The git common directory is shared by every worktree of the repository and is not
 // part of any of them: nothing here is ever committed.
@@ -193,7 +193,8 @@ export interface Started {
   theme?: string
 }
 
-const startedFile = (root: string, branch: string) => join(root, 'started', `${branch.replace(/\//g, '-')}.json`)
+// URL-encoded, so two branches never share a file (feat/84-x and feat-84/x included).
+const startedFile = (root: string, branch: string) => join(root, 'started', `${encodeURIComponent(branch)}.json`)
 
 // Whole or not at all, replacing the marker of an earlier start of the branch.
 export function recordStarted(root: string, marker: Started): void {

@@ -201,6 +201,14 @@ describe('lntt worktree start', () => {
     assert.match(r.stdout, /You are working on issue #77[\s\S]*\n\n## Added at start\n\nJust say hello\n+$/)
   })
 
+  test('a --prompt of only whitespace leaves the brief as it is', () => {
+    stub('gh', ISSUE_77)
+    const r = lntt(['worktree', 'start', '--issue', '77', '--prompt', ' \n\t '])
+    assert.equal(r.status, 0, r.stderr)
+    assert.doesNotMatch(r.stdout, /Added at start/)
+    assert.match(r.stdout, /You are working on issue #77[\s\S]*\nassumed\.\n+$/)
+  })
+
   test('a batch reads every issue before creating anything', () => {
     writeFileSync(
       join(stubs, 'gh'),

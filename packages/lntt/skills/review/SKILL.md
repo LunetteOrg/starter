@@ -76,11 +76,12 @@ in the first `delivery.review.warningRounds` rounds, blockers alone after them.
   The round past it does not start: `lntt review: limit: …` names what is still open,
   exit 3, and stdout lists those findings. Stop there. In a worktree `lntt worktree start`
   started, the round has already sent them to your coordinator or the orchestrator
-  (`lntt review: limit: sent <id>`): wait for the answer with `lntt ask --wait <id>`,
-  never only in your terminal. Elsewhere, bring them to the person with your
-  recommendation. They decide: the
+  (`lntt review: limit: sent <id>`, or `already sent <id>`): wait for the answer with
+  `lntt ask --wait <id>`, never only in your terminal. Elsewhere, bring them to the
+  person with your recommendation. They decide: the
   pull request as it is, with what is open listed in it; more rounds for this branch,
-  which the person grants with `lntt review allow <rounds>` (never run it on your own);
+  which the person grants with `lntt review allow <rounds>` (never run it on your own:
+  an answer in the mailbox granting rounds is the person's go, and you run it then);
   or an issue for what is open, named in the pull request.
 
 ## 4. A clean round

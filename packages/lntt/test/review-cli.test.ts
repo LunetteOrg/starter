@@ -942,10 +942,13 @@ describe('lntt review at delivery.review.maxRounds', () => {
   // The start marker lntt worktree start leaves in the mailbox for the branch.
   const startedBy = (marker: Record<string, unknown>) => {
     mkdirSync(join(repo, '.git/lntt-messages/started'), { recursive: true })
-    writeFileSync(join(repo, '.git/lntt-messages/started/feat-1-x.json'), JSON.stringify(marker))
+    writeFileSync(join(repo, '.git/lntt-messages/started/feat%2F1%2Fx.json'), JSON.stringify(marker))
   }
+  // The messages of a directory, without their answers.
   const messages = (dir: string) =>
-    readdirSync(join(repo, '.git/lntt-messages', dir)).filter((name) => name.endsWith('.md'))
+    readdirSync(join(repo, '.git/lntt-messages', dir)).filter(
+      (name) => name.endsWith('.md') && !name.endsWith('.answer.md'),
+    )
 
   test('a child of a theme sends what is open to its coordinator, and says how to wait for the answer', () => {
     withMaxRounds(1)
@@ -958,7 +961,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
     const [file, ...more] = messages('to-coordinator-alpha')
     assert.equal(more.length, 0)
     const id = (file as string).replace(/\.md$/, '')
-    assert.match(id, /^\d{8}-\d{6}-review-limit$/)
+    assert.match(id, /^\d{8}-\d{6}-issue-1-review-limit$/)
     const text = readFileSync(join(repo, '.git/lntt-messages/to-coordinator-alpha', file as string), 'utf8')
     assert.match(
       text,
@@ -989,6 +992,83 @@ describe('lntt review at delivery.review.maxRounds', () => {
     assert.match(file as string, /^\d{8}-\d{6}-issue-1-review-limit\.md$/)
     assert.equal(JSON.parse(r.out).asked.id, (file as string).replace(/\.md$/, ''))
     assert.match(r.err, /limit: sent \S+ to the orchestrator; wait with: lntt ask --wait /)
+  })
+
+  test('a limit already sent and not answered is not sent again; once answered, the next limit is', () => {
+    withMaxRounds(1)
+    lntt(['--base', 'main'], open)
+    commit(3)
+    startedBy({ branch: 'feat/1/x', issue: 1, to: 'coordinator', theme: 'alpha' })
+
+    const first = lntt(['--base', 'main'], open)
+    assert.equal(first.code, 3, first.err)
+    const id = JSON.parse(first.out).asked.id
+    const again = lntt(['--base', 'main'], open)
+    assert.equal(again.code, 3, again.err)
+    assert.deepEqual(messages('to-coordinator-alpha'), [`${id}.md`])
+    assert.equal(JSON.parse(again.out).asked.id, id)
+    assert.equal(events().at(-1).asked.id, id)
+    assert.match(
+      again.err,
+      new RegExp(
+        `^lntt review: limit: already sent ${id} to the coordinator alpha; wait with: lntt ask --wait ${id}$`,
+        'm',
+      ),
+    )
+
+    writeFileSync(join(repo, '.git/lntt-messages/to-coordinator-alpha', `${id}.answer.md`), 'Open an issue.\n')
+    const after = lntt(['--base', 'main'], open)
+    assert.equal(after.code, 3, after.err)
+    assert.equal(messages('to-coordinator-alpha').length, 2)
+    assert.notEqual(JSON.parse(after.out).asked.id, id)
+    assert.match(after.err, /limit: sent /)
+  })
+
+  test('another branch’s pending limit does not stand for this one', () => {
+    withMaxRounds(1)
+    lntt(['--base', 'main'], open)
+    commit(3)
+    startedBy({ branch: 'feat/1/x', issue: 1, to: 'coordinator', theme: 'alpha' })
+    mkdirSync(join(repo, '.git/lntt-messages/to-coordinator-alpha'), { recursive: true })
+    writeFileSync(
+      join(repo, '.git/lntt-messages/to-coordinator-alpha/20260101-000000-issue-2-review-limit.md'),
+      '#2 feat/2/y: lntt review limit\n',
+    )
+    const r = lntt(['--base', 'main'], open)
+    assert.equal(r.code, 3, r.err)
+    assert.equal(messages('to-coordinator-alpha').length, 2)
+    assert.match(r.err, /limit: sent /)
+  })
+
+  test('a coordinator’s own branch sends its limit to the orchestrator, on no issue', () => {
+    withMaxRounds(1)
+    lntt(['--base', 'main'], open)
+    commit(3)
+    startedBy({ branch: 'feat/1/x', issue: null, to: 'orchestrator', theme: 'alpha' })
+
+    const r = lntt(['--base', 'main'], open)
+    assert.equal(r.code, 3, r.err)
+    const [file, ...more] = messages('to-orchestrator')
+    assert.equal(more.length, 0)
+    assert.match(file as string, /^\d{8}-\d{6}-review-limit\.md$/)
+    const text = readFileSync(join(repo, '.git/lntt-messages/to-orchestrator', file as string), 'utf8')
+    assert.match(text, /^feat\/1\/x: lntt review limit, /)
+    assert.ok(!existsSync(join(repo, '.git/lntt-messages/to-coordinator-alpha')))
+  })
+
+  test('a branch still on the name Orca gave it finds the marker of its conventional name', () => {
+    git('branch', '-m', 'ilmeskio/feat-1-x')
+    withMaxRounds(1)
+    lntt(['--base', 'main'], open)
+    commit(3)
+    startedBy({ branch: 'feat/1/x', issue: 1, to: 'orchestrator' })
+
+    const r = lntt(['--base', 'main'], open)
+    assert.equal(r.code, 3, r.err)
+    const [file] = messages('to-orchestrator')
+    assert.match(file as string, /^\d{8}-\d{6}-issue-1-review-limit\.md$/)
+    const text = readFileSync(join(repo, '.git/lntt-messages/to-orchestrator', file as string), 'utf8')
+    assert.match(text, /^#1 ilmeskio\/feat-1-x: lntt review limit, /)
   })
 
   test('a message that cannot be sent is a warning; the round still stops with exit 3', () => {

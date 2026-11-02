@@ -254,7 +254,26 @@ describe('lntt ask / inbox / answer', () => {
 
   test('ask --wait takes no question and no address', () => {
     assert.equal(lntt(['ask', '--wait', '20261015-090000-q', 'question']).status, 2)
-    assert.equal(lntt(['ask', '--wait', '20261015-090000-q', '--to', 'orchestrator']).status, 2)
+    for (const [flag, value] of [
+      ['--to', 'orchestrator'],
+      ['--issue', '84'],
+      ['--theme', 'alpha'],
+      ['--topic', 'q'],
+    ]) {
+      const r = lntt(['ask', '--wait', '20261015-090000-q', flag as string, value as string])
+      assert.equal(r.status, 2, `${flag}: ${r.stderr}`)
+      assert.match(r.stderr, new RegExp(`--wait takes no ${flag}`))
+    }
+  })
+
+  test('ask --wait on an id in two directories exits 1: it names more than one message', () => {
+    for (const dir of ['to-orchestrator', 'to-coordinator-alpha']) {
+      mkdirSync(join(box(), dir), { recursive: true })
+      writeFileSync(join(box(), dir, '20261015-090000-q.md'), 'Q\n')
+    }
+    const r = lntt(['ask', '--wait', '20261015-090000-q', '--timeout', '0.1', '--interval', '0.05'])
+    assert.equal(r.status, 1)
+    assert.match(r.stderr, /^lntt ask: 20261015-090000-q names more than one message: /)
   })
 
   test('two coordinators in one repository have a mailbox each', () => {

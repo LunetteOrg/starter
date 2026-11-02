@@ -38,20 +38,22 @@ small adapter that makes the calls it understands.
   setup has ended, because Orca's setup terminal stays open as a shell.
 - **One brief**, `packages/lntt/agents/brief.md`: the issue is the mandate, work only in
   this worktree, review and `ci:local` green, a draft pull request, then stop, and
-  report the friction met; every wait (an answer, an approval such as a 1Password prompt,
-  the review limit) goes through the mailbox, to the orchestrator with the issue
+  report the friction met; every wait goes through the mailbox, as
+  [coordinator mode](./coordinator-mode.md#the-mailbox) states it
   (`packages/lntt/agents/waiting.md`). The brief always comes first: `--prompt` adds
   instructions of one's own after it, in a closing `## Added at start` section, for a
   coordinator and a child alike. A theme's coordinator and its children are
   [coordinator mode](./coordinator-mode.md): the same entry point, other briefs, a model
   per role.
 - **Each start leaves a marker** in the mailbox,
-  `<git common dir>/lntt-messages/started/<branch, / as ->.json`: the branch, its issue
+  `<git common dir>/lntt-messages/started/<branch, URL-encoded>.json`: the branch, its issue
   (none for a coordinator), and who it reports to (`coordinator` with the theme for a
-  theme's child, `orchestrator` otherwise). At `lntt review: limit:` the round reads it and
-  sends the open findings there with the mailbox, without waiting for the answer, and
-  prints the id to wait on (`lntt ask --wait <id>`). A branch with no marker stops at the
-  limit with the findings on stdout and stderr only.
+  theme's child, `orchestrator` otherwise), written before the host starts; a marker that
+  cannot be written is a warning, not a failed start. At `lntt review: limit:` the round
+  reads it (a branch still on the name Orca gave it reads the marker of its conventional
+  name) and sends the open findings there with the mailbox, without waiting for the
+  answer, and prints the id to wait on (`lntt ask --wait <id>`). A branch with no marker
+  stops at the limit with the findings on stdout and stderr only.
 - **The agent, its model and its effort** (`--kind`, `--model`, `--effort`) reach each
   tool in the form it accepts:
   - Orca: one `worktree create --issue --agent --prompt`, with `--model` and

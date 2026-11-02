@@ -292,27 +292,49 @@ describe('the start marker', () => {
       to: 'coordinator',
       theme: 'alpha',
     })
-    assert.deepEqual(readdirSync(join(root, 'started')), ['feat-84-x.json'])
+    assert.deepEqual(readdirSync(join(root, 'started')), ['feat%2F84%2Fx.json'])
   })
 
   test('a later start of the same branch replaces the marker', () => {
     recordStarted(dir, { branch: 'feat/84/x', issue: 84, to: 'orchestrator' })
     recordStarted(dir, { branch: 'feat/84/x', issue: 84, to: 'coordinator', theme: 'beta' })
     assert.equal(startedBy(dir, 'feat/84/x')?.theme, 'beta')
-    assert.deepEqual(readdirSync(join(dir, 'started')), ['feat-84-x.json'])
+    assert.deepEqual(readdirSync(join(dir, 'started')), ['feat%2F84%2Fx.json'])
   })
 
   test('a branch with no marker, or one that cannot be read, has none', () => {
     assert.equal(startedBy(dir, 'feat/84/x'), null)
     mkdirSync(join(dir, 'started'))
-    writeFileSync(join(dir, 'started', 'feat-84-x.json'), '{ cut')
+    writeFileSync(join(dir, 'started', 'feat%2F84%2Fx.json'), '{ cut')
     assert.equal(startedBy(dir, 'feat/84/x'), null)
-    writeFileSync(join(dir, 'started', 'feat-84-x.json'), JSON.stringify({ branch: 'feat/84/x', to: 'boss' }))
+    writeFileSync(join(dir, 'started', 'feat%2F84%2Fx.json'), JSON.stringify({ branch: 'feat/84/x', to: 'boss' }))
     assert.equal(startedBy(dir, 'feat/84/x'), null)
   })
 
   test('a marker is the branch’s own: another branch with the same flat name has none', () => {
     recordStarted(dir, { branch: 'feat/84-x', issue: 84, to: 'orchestrator' })
     assert.equal(startedBy(dir, 'feat-84/x'), null)
+  })
+
+  test('two branches that flatten alike keep a marker each', () => {
+    recordStarted(dir, { branch: 'feat/84-x', issue: 84, to: 'orchestrator' })
+    recordStarted(dir, { branch: 'feat-84/x', issue: 84, to: 'coordinator', theme: 'alpha' })
+    assert.equal(startedBy(dir, 'feat/84-x')?.to, 'orchestrator')
+    assert.equal(startedBy(dir, 'feat-84/x')?.to, 'coordinator')
+    assert.equal(readdirSync(join(dir, 'started')).length, 2)
+  })
+
+  test('a marker that does not say who, exactly, is none', () => {
+    const write = (marker: Record<string, unknown>) => {
+      mkdirSync(join(dir, 'started'), { recursive: true })
+      writeFileSync(join(dir, 'started', 'feat%2F84%2Fx.json'), JSON.stringify({ branch: 'feat/84/x', ...marker }))
+      return startedBy(dir, 'feat/84/x')
+    }
+    assert.ok(write({ issue: 84, to: 'coordinator', theme: 'alpha' }), 'the well-formed one is read')
+    assert.equal(write({ issue: 84, to: 'coordinator' }), null, 'a coordinator with no theme')
+    assert.equal(write({ issue: 84, to: 'coordinator', theme: '../x' }), null, 'a theme that is not a slug')
+    assert.equal(write({ issue: '84', to: 'orchestrator' }), null, 'an issue as a string')
+    assert.equal(write({ issue: 1.5, to: 'orchestrator' }), null, 'an issue that is not whole')
+    assert.equal(write({ to: 'orchestrator' }), null, 'no issue at all')
   })
 })
