@@ -62,6 +62,8 @@ The body comes from the template (`delivery.pullRequest.template`, default
 git log "origin/<base>..HEAD" --format=%B | grep -i '^Retro:' | sed 's/^[Rr]etro: *//'
 ```
 
+(`<base>` is the pull request's base: the open candidate when the branch is on it.)
+
 (Not `%(trailers)`: git does not read the last paragraph as trailers when a line of it,
 such as `Refs #91`, has no colon.)
 

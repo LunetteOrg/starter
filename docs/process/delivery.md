@@ -152,7 +152,8 @@ candidate exists on a day without pull requests.
   on its last pull request (`--pr <n>`). Before the candidate is marked ready every
   label holds a value or the configured `none`.
 - **Into `main`**, once a day or when the batch is worth it: `pnpm ci:local` on the
-  candidate's head and `lntt check body --pr <candidate>` clean (on a candidate it
+  candidate's head (a detached checkout, `git switch --detach origin/candidate/<N>`
+  after `git fetch origin`: no local branch named after the candidate) and `lntt check body --pr <candidate>` clean (on a candidate it
   reads the retrospective comment); with both green, the candidate pull request is marked ready and the
   full CI runs once on the whole batch; with the full CI green and the person's go,
   it merges with a **rebase**, so `main` gets one commit per pull request and one push.
@@ -188,8 +189,8 @@ candidate exists on a day without pull requests.
   the new head. The candidate may be what a preview or pre-production environment runs:
   no merged commit is taken out of it, and the pull requests already merged keep their
   `Closes`.
-- **When `main` moves** (a hotfix), the candidate rebases on `main` and `ci:local` runs
-  again.
+- **When `main` moves** (a hotfix), the candidate rebases on `origin/main` and
+  `ci:local` runs again.
 - **Stranded pull requests.** A pull request left on a candidate that is no longer open
   (closed without merging, or a merge whose event the workflow dropped) moves onto the
   open candidate at the automation's next run, whatever event starts it.
