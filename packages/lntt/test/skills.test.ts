@@ -487,3 +487,21 @@ describe('the mutation-check skill', () => {
     assert.match(section(5), /one line per test that guards a line, with the mutation and its outcome/)
   })
 })
+
+describe('the open decisions of a child', () => {
+  const text = (name: string) => readFileSync(join(SKILLS, name, 'SKILL.md'), 'utf8').replace(/\s+/g, ' ')
+
+  test('the coordinate skill collects them in one batch before the children code', () => {
+    assert.match(
+      text('coordinate'),
+      /A child's open decisions come first\.\*\* Before its first commit each child asks/,
+    )
+    assert.match(text('coordinate'), /to the orchestrator in one batch before the children code/)
+    assert.match(text('coordinate'), /needs the person's go for the new rounds \(`lntt review allow`\)/)
+  })
+
+  test('the review skill restarts a converged loop only on the person’s go', () => {
+    assert.match(text('review'), /After the loop converged, a new decision that changes the change does not restart it/)
+    assert.match(text('review'), /run `lntt review allow <rounds>` only on the person's go/)
+  })
+})

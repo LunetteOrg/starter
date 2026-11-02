@@ -172,6 +172,10 @@ describe('the coordinator’s brief', () => {
     assert.match(brief, /`lntt ask --to orchestrator`, batched, with a recommendation/)
     assert.match(brief, /re-reads its mailbox/)
     assert.match(brief, /`lntt ask --to child --issue <n>`/)
+    assert.match(
+      brief,
+      /open decisions your children ask before their first\n {2}commit are collected and sent to the orchestrator in one batch/,
+    )
   })
 
   test('on a host with no Orca there is no Orca line', () => {
@@ -265,6 +269,17 @@ describe('the child’s brief', () => {
         '  `lntt ask --wait <id>`. An answer that grants rounds is the go: run',
         '  `lntt review allow <rounds>` yourself, then the next round.',
         '',
+        '## Open decisions come before the first commit',
+        '',
+        'Before your first commit, list the open decisions of your issue (what its body leaves',
+        'to choose) and ask them in one `lntt ask --to orchestrator --issue 84 "<…>"`, each with a recommendation and the',
+        'criteria that decide it. Start coding once it is answered.',
+        '',
+        'A decision that arrives after your review converged, and would change the change, is',
+        'asked the same way: apply it in this pull request, or in a follow-up. Applied here, the',
+        "new rounds need the person's go (`lntt review allow <rounds>`, above): a round does not",
+        'restart on its own.',
+        '',
         'While you wait, and before you resume after any pause, re-read your mailbox:',
         '`lntt inbox --as child --issue 84`. A decision sent there holds over what you',
         'assumed.',
@@ -284,6 +299,9 @@ describe('the child’s brief', () => {
     assert.match(brief, /at `lntt review: limit:` the round sends the open findings/)
     assert.match(brief, /lntt ask --wait <id>/)
     assert.match(brief, /re-read your mailbox:\n`lntt inbox --as child --issue 84`/)
+    assert.match(brief, /## Open decisions come before the first commit/)
+    assert.match(brief, /ask them in one `lntt ask --to coordinator --theme release-0-6-1 --issue 84 "<…>"`/)
+    assert.match(brief, /the\nnew rounds need the person's go \(`lntt review allow <rounds>`/)
     assert.doesNotMatch(brief, /workflow|orca/i)
   })
 
