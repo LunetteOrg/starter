@@ -1,10 +1,21 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { afterEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { ciConfig } from '../../src/ci/config.ts'
+import { type Clone, clone } from '../clone.ts'
 import { git, repo, write } from './helpers.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../../bin/lntt.ts')
@@ -694,5 +705,71 @@ jobs:
     const out = ci('local', '--job', 'ci.yml/ci')
     assert.equal(out.status, 0, out.stdout + out.stderr)
     assert.match(out.stdout, /1 passed, 0 failed, 0 cloud only, 0 skipped, 1 not selected with --job/)
+  })
+})
+
+describe('lntt ci local: the base', () => {
+  const CANDIDATE = JSON.stringify({ delivery: { candidate: { prefix: 'candidate/' } } })
+  let c: Clone
+
+  // In a clone with a stale local main and candidate/13 open on GitHub (a gh on the PATH
+  // that answers the open-candidate query, or fails it).
+  function list(config: string, at: string, gh: 'answers' | 'fails', ...args: string[]) {
+    root = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-ci-base-')))
+    c = clone(root, { '.agents/config.jsonc': config, '.github/workflows/ci.yml': CI })
+    c.git('switch', '-q', ...(at.startsWith('feat/') ? ['-c', at, 'origin/candidate/13'] : ['--detach', at]))
+    if (at.startsWith('feat/')) c.git('commit', '-q', '--allow-empty', '-m', 'mine')
+    const answer =
+      gh === 'answers' ? `echo '[{"number":40,"headRefName":"candidate/13","body":""}]'` : 'echo offline >&2; exit 1'
+    write(root, { 'bin/gh': `#!/bin/sh\ncase "$*" in *"pr list"*) ${answer};; esac\n` })
+    chmodSync(join(root, 'bin/gh'), 0o755)
+    return spawnSync(process.execPath, [BIN, 'ci', 'local', '--list', ...args], {
+      cwd: c.repo,
+      encoding: 'utf8',
+      env: { ...env(), PATH: `${join(root, 'bin')}:${process.env.PATH}`, GITHUB_REPOSITORY: 'o/r' },
+    })
+  }
+
+  test('a branch on the open candidate: a pull request into it, diffed from the fork point', () => {
+    const out = list(CANDIDATE, 'feat/5/x', 'answers')
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /pull request feat\/5\/x → candidate\/13 @ \w+ \(diff against (\w+), 0 files changed\)/)
+    assert.ok(out.stdout.includes(`diff against ${c.candidate}`), out.stdout)
+  })
+
+  test('with no candidate: origin/main, not the stale local main', () => {
+    const out = list('{}', 'feat/5/x', 'answers')
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /pull request feat\/5\/x → main @ \w+ \(diff against origin\/main, 1 files changed\)/)
+  })
+
+  test('a push with no origin/main: an error that says to fetch, not the stale local main', () => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-ci-base-')))
+    c = clone(root, { '.agents/config.jsonc': '{}', '.github/workflows/ci.yml': CI })
+    c.git('update-ref', '-d', 'refs/remotes/origin/main')
+    const out = spawnSync(process.execPath, [BIN, 'ci', 'local', '--list', '--event', 'push'], {
+      cwd: c.repo,
+      encoding: 'utf8',
+      env: env(),
+    })
+    assert.notEqual(out.status, 0, out.stdout)
+    assert.match(out.stderr, /no origin\/main.*git fetch origin/)
+  })
+
+  test('an explicit --base wins over the open candidate', () => {
+    const out = list(CANDIDATE, 'feat/5/x', 'answers', '--base', 'main')
+    assert.match(out.stdout, /pull request feat\/5\/x → main /)
+  })
+
+  test('GitHub unreachable: origin/main, and it says so', () => {
+    const out = list(CANDIDATE, 'feat/5/x', 'fails')
+    assert.match(out.stdout, /pull request feat\/5\/x → main /)
+    assert.match(out.stderr, /the open candidate is unknown/)
+  })
+
+  test("a detached HEAD at a candidate's head: the candidate's pull request into main", () => {
+    const out = list(CANDIDATE, 'origin/candidate/13', 'answers')
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /pull request candidate\/13 → main /)
   })
 })

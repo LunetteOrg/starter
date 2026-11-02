@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-10-22
+date: 2026-11-02
 tags: [cli, packages, agents, ci, commands]
 ---
 
@@ -144,7 +144,9 @@ rests on these criteria:
    `delivery.review` (`reviewConfig` in `packages/lntt/src/review.ts`), `coordinator`
    (`gateOf` in `packages/lntt/src/coordinator.ts`) and `local` (`localApp` in
    `packages/lntt/src/local.ts`); `lntt worktree start` reads `delivery.candidate`
-   and `delivery.branches` through the gate's branch code; `lntt retro add` reads
+   and `delivery.branches` through the gate's branch code; `lntt worktree start`,
+   `lntt review` and `lntt ci local` read `delivery.candidate` to find a branch's base
+   (`projectBase` in `packages/lntt/src/base.ts`); `lntt retro add` reads
    `delivery.candidate` and `delivery.pullRequest.retrospective` (`candidateConfig` in
    `packages/lntt/src/ci/config.ts`, `retrospectiveRules` in
    `packages/lntt/src/pull-request.ts`). Every read validates the

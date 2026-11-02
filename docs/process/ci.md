@@ -85,8 +85,11 @@ push (a publish, a deploy) always run.
 
 - **Before a push leaves the machine for review**: `pnpm ci:local` green on the head
   about to be pushed. It refuses uncommitted changes, so the run is about that head.
-  Its default base is `main`, so it runs the full CI, a superset of the minimal one;
-  `--base <candidate> --list` shows what the minimal CI runs (the test step's choice,
+  Its default base is the one every `lntt` command resolves
+  ([worktree tooling](../adr/worktree-tooling.md#decision)): for a branch on the open
+  candidate, the candidate, so it runs the minimal CI; for the candidate's own head and
+  a branch off `origin/main`, `main`, so it runs the full CI. `--base <branch>` names
+  another one, and `--list` shows the base and what runs (the test step's choice,
   scaffold level or not, is made when it runs, from the diff against the base).
 - **On the candidate, before it is marked ready** ([delivery](./delivery.md#the-candidate)).
 - **`pnpm ci:local --list`** before changing a workflow: it shows, per job, what the

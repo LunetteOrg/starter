@@ -18,14 +18,15 @@ export function write(root: string, files: Record<string, string>): void {
   }
 }
 
-// A repository with `files` committed on main, and a branch `feat/x` checked out
-// that adds `changed` on top.
+// A repository with `files` committed on main, fetched as origin/main (the base ci:local
+// resolves), and a branch `feat/x` checked out that adds `changed` on top.
 export function repo(files: Record<string, string>, changed: Record<string, string> = { 'src/a.ts': 'x\n' }): string {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-ci-')))
   write(root, files)
   git(root, 'init', '-q', '-b', 'main')
   git(root, 'add', '-A')
   git(root, 'commit', '-q', '--allow-empty', '-m', 'init')
+  git(root, 'update-ref', 'refs/remotes/origin/main', 'main')
   git(root, 'switch', '-q', '-c', 'feat/x')
   write(root, changed)
   git(root, 'add', '-A')

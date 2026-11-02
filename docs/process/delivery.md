@@ -155,7 +155,8 @@ candidate exists on a day without pull requests.
   on its last pull request (`--pr <n>`). Before the candidate is marked ready every
   label holds a value or the configured `none`.
 - **Into `main`**, once a day or when the batch is worth it: `pnpm ci:local` on the
-  candidate's head and `lntt check body --pr <candidate>` clean (on a candidate it
+  candidate's head (a detached checkout, `git switch --detach origin/candidate/<N>`
+  after `git fetch origin`: no local branch named after the candidate) and `lntt check body --pr <candidate>` clean (on a candidate it
   reads the retrospective comment); with both green, the candidate pull request is marked ready and the
   full CI runs once on the whole batch; with the full CI green and the person's go,
   it merges with a **rebase**, so `main` gets one commit per pull request and one push.
@@ -197,7 +198,7 @@ candidate exists on a day without pull requests.
 - **When `main` moves** (a hotfix, a Dependabot pull request merged on `main`), the
   automation brings the open candidate up to date, the way that suits whoever stands on
   it:
-  - **No pull request open into the candidate:** its commits are rebased on `main`
+  - **No pull request open into the candidate:** its commits are rebased on `origin/main`
     (the empty opening commit kept) and pushed with a lease on the head it read. Nobody's
     branch descends from the old commits, and the history stays linear.
   - **Pull requests open into the candidate:** `main` is merged into it, a merge commit
@@ -207,11 +208,14 @@ candidate exists on a day without pull requests.
   A comment on the candidate says where `main` moved, which path was taken and why, and
   the old and new head; after a merge each pull request open into it gets one too. The
   candidate's CI runs on the new head once it is ready for review; a draft candidate
-  gets no cloud CI, so `pnpm ci:local` runs on it. A conflict, or a push GitHub refuses,
-  leaves the candidate as it is, with a comment naming the files in conflict, or git's
-  error, and a warning in the run: an admin, as only the ruleset's bypass actors push
-  to a candidate directly, switches to the candidate, merges `origin/main` into it (or
-  rebases it, with no pull request open into it), resolves and pushes.
+  gets no cloud CI, so `pnpm ci:local` runs on it again. A conflict, or a push GitHub
+  refuses, leaves the candidate as it is, with a comment naming the files in conflict,
+  or git's error, and a warning in the run: an admin, as only the ruleset's bypass
+  actors push to a candidate directly, checks it out detached (`git switch --detach
+  origin/candidate/<N>` after `git fetch origin`), merges `origin/main` into it (or
+  rebases it on `origin/main`, with no pull request open into it), resolves, runs
+  `pnpm ci:local` and pushes with `git push origin HEAD:candidate/<N>` (with
+  `--force-with-lease` after a rebase).
 - **Stranded pull requests.** A pull request left on a candidate that is no longer open
   (closed without merging, or a merge whose event the workflow dropped) moves onto the
   open candidate at the automation's next run, whatever event starts it.

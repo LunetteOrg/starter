@@ -14,7 +14,7 @@ list. This skill is the judgement around it. Never edit it to fit one project.
 From the worktree of the change, with every change committed:
 
 ```sh
-pnpm exec lntt review
+pnpm exec lntt review                       # base: the open candidate, else origin/<default branch>
 pnpm exec lntt review --base <branch>       # a pull request stacked on another branch
 pnpm exec lntt review --plan                # the range, the lenses and the agents; runs nothing
 ```
