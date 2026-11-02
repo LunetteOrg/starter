@@ -7,7 +7,7 @@ import { describe, test } from 'node:test'
 import { headlessInvocation, parseReply } from '../src/headless.ts'
 import { agentEnv } from '../src/review-cli.ts'
 import { shellLaunch } from '../src/worktree.ts'
-import { collect, flagsOf, helpFlags, missingFlags, tool, upstream } from './upstream.ts'
+import { collect, flagsOf, helpFlags, inconclusive, missingFlags, tool, upstream, usageLimit } from './upstream.ts'
 
 // lntt against the real opencode: the flags of the headless reviewer against
 // `opencode run --help` and those of the interactive launch against `opencode --help`,
@@ -32,7 +32,7 @@ describe('opencode', () => {
   test('a one-line call on a free model answers with the JSON lntt reads: text, session, tokens', {
     skip,
     timeout: 180_000,
-  }, () => {
+  }, (t) => {
     const inv = headlessInvocation({ kind: 'opencode', model: MODEL }, 'Reply with the single word ok.')
     // A HOME of its own: no login, configuration or session of the machine's.
     const home = mkdtempSync(join(tmpdir(), 'lntt-upstream-opencode-'))
@@ -44,6 +44,15 @@ describe('opencode', () => {
         encoding: 'utf8',
         timeout: 170_000,
       })
+      // The free model's quota ran out on the runner: nothing of lntt was exercised.
+      const limit = usageLimit(r.stdout)
+      if (r.status !== 0 && limit) {
+        inconclusive(`opencode: ${limit}`)
+        // Not t.skip: `lntt check tests` rejects it as a skipped test, and this one is
+        // decided at run time. The reason is in the log and in the job's notice.
+        t.diagnostic(`skipped: the free model's usage limit is reached: ${limit}`)
+        return
+      }
       assert.equal(r.status, 0, `opencode exited ${r.status ?? r.signal}: ${r.stderr || r.stdout}`)
       const reply = parseReply('opencode', r.stdout)
       assert.match(reply.text, /\S/)
