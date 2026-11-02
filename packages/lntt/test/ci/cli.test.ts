@@ -406,8 +406,9 @@ describe('lntt ci candidate', () => {
     return candidateWith('', event, ...args)
   }
 
+  // A null event: no GITHUB_EVENT_PATH, as in a terminal.
   function candidateWith(cases: string, event: unknown, ...args: string[]) {
-    write(root, { '.git/event.json': JSON.stringify(event) })
+    if (event !== null) write(root, { '.git/event.json': JSON.stringify(event) })
     write(root, {
       '.git/bin/gh': `#!/bin/sh\necho "$*" >> "${root}/.git/gh.log"\ncase "$*" in ${cases} *"--state open"*) echo '[{"number":40,"headRefName":"candidate/4","body":""}]';; *compare/*) echo '{"behindBy":0,"base":"b"}';; esac\n`,
     })
@@ -419,7 +420,7 @@ describe('lntt ci candidate', () => {
         ...process.env,
         PATH: `${join(root, '.git/bin')}:${process.env.PATH}`,
         GITHUB_REPOSITORY: 'o/r',
-        GITHUB_EVENT_PATH: join(root, '.git/event.json'),
+        GITHUB_EVENT_PATH: event === null ? '' : join(root, '.git/event.json'),
         // The identity the workflow gives git, for the rebase the follow step makes.
         GIT_AUTHOR_NAME: 'bot',
         GIT_AUTHOR_EMAIL: 'bot@example.com',
@@ -488,7 +489,7 @@ describe('lntt ci candidate', () => {
     git(root, 'push', '-q', 'origin', 'main', 'candidate/4')
     const out = candidateWith(
       `*"--state open"*) echo '[{"number":40,"headRefName":"candidate/4","headRefOid":"${head}","body":""}]';; *compare/*) echo '{"behindBy":1,"base":"${base}"}';; *graphql*) echo '[]';;`,
-      {},
+      null,
       '--follow',
       '--dry-run',
     )
