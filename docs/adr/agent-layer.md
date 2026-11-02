@@ -81,8 +81,9 @@ The skills, the briefs, the `AGENTS.md` block and the hints the CLI prints write
 command an agent or a person runs as `pnpm exec lntt …`: the project's version, from its
 lockfile, so the first call works in any shell, with or without mise. A Lunette project
 uses pnpm, and installs `lntt` in the project (`node_modules/.bin/lntt`), not globally: a
-bare `lntt` resolves only where that directory is on `PATH`. Prose that names the tool,
-the prefixes of its output, and the settings hooks, which call `node_modules/.bin/lntt`
+bare `lntt` resolves only where that directory is on `PATH`. Prose that names the tool
+(the decision records' included), the usage lines that give a command's synopsis, the
+prefixes of its output, and the settings hooks, which run `node_modules/.bin/lntt`
 (`packages/lntt/src/claude-settings.ts`), keep the bare name.
 
 The starter's `mise.toml` puts `node_modules/.bin` on `PATH` (`[env] _.path`), for a
@@ -377,7 +378,8 @@ How a title is written is the `github-board` skill's.
 
 - **Bare `lntt` in the skills, relying on mise's `_.path`.** Shims do not apply a
   directory's `[env]`, so a login shell that is not interactive does not get it; nor
-  does a session started before the change, or a project or machine without mise.
+  does a session started before `_.path` is in `mise.toml`, or a project or machine
+  without mise.
 - **A configuration key naming the runner, read with `lntt get`.** The agent cannot run
   `lntt get` before it knows how to invoke `lntt`.
 - **Project values inside the skills, or in ADRs.** It is why the skills of two

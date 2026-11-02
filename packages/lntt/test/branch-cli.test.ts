@@ -146,7 +146,7 @@ describe('lntt branch rename', () => {
     git('switch', '-q', '-c', 'ilmeskio/probe-b')
     const r = lntt(['branch', 'rename'])
     assert.equal(r.status, 0, 'a setup step must not fail on a name it cannot fix')
-    assert.match(r.stderr, /lntt branch name --issue/)
+    assert.match(r.stderr, /"\$\(pnpm exec lntt branch name --issue <n>\)"/)
     assert.equal(git('branch', '--show-current'), 'ilmeskio/probe-b')
   })
 

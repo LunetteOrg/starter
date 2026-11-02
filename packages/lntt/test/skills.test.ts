@@ -182,7 +182,7 @@ describe('the shared skills', () => {
     writeFileSync(join(root, '.claude/skills/review/SKILL.md'), 'our own review\n')
     assert.throws(
       () => syncSkills(root),
-      /\.claude\/skills\/review: a skill of the project's own with the name of a shared skill/,
+      /\.claude\/skills\/review: a skill of the project's own with the name of a shared skill; rename it, then run pnpm exec lntt sync$/,
     )
     assert.equal(existsSync(join(root, '.agents/skills/review')), false, 'nothing written')
     assert.equal(readFileSync(join(root, '.claude/skills/review/SKILL.md'), 'utf8'), 'our own review\n')

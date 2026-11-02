@@ -536,7 +536,7 @@ function ensureRetrospective(run: Run, candidate: CandidatePr) {
     // One line: a workflow command ends at the first newline, and `%` starts an escape.
     const message = (error as Error).message.replaceAll('%', '%25').replace(/\r?\n/g, ' ')
     log(
-      `::warning title=Retrospective comment::${candidate.headRefName}: not written (${message}); lntt retro add writes it`,
+      `::warning title=Retrospective comment::${candidate.headRefName}: not written (${message}); pnpm exec lntt retro add writes it`,
     )
   }
 }
