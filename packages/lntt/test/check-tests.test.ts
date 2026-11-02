@@ -159,7 +159,7 @@ describe('lntt check tests focus', () => {
       return fails(results(['check', 'tests', 'focus']).results, 'focus')
     }
     assert.deepEqual(run("t.skip('the free model is at its usage limit')"), [])
-    assert.deepEqual(run('t.skip(`the limit: ${reason}`)'), [])
+    assert.deepEqual(run(`t.skip(\`the limit: \${reason}\`)`), [])
     assert.deepEqual(run('t.skip()'), ['test/unit/runtime.test.ts:4'])
     assert.deepEqual(run("t.skip('')"), ['test/unit/runtime.test.ts:4'])
     assert.deepEqual(run("t.skip('  ')"), ['test/unit/runtime.test.ts:4'])
