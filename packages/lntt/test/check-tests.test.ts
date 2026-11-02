@@ -164,7 +164,7 @@ describe('lntt check tests focus', () => {
     assert.deepEqual(run("t.skip('')"), ['test/unit/runtime.test.ts:4'])
     assert.deepEqual(run("t.skip('  ')"), ['test/unit/runtime.test.ts:4'])
     assert.deepEqual(run('t.skip(reason)'), ['test/unit/runtime.test.ts:4'])
-    assert.deepEqual(run('t.skip(`${reason}`)'), ['test/unit/runtime.test.ts:4'])
+    assert.deepEqual(run(`t.skip(\`\${reason}\`)`), ['test/unit/runtime.test.ts:4'])
     assert.deepEqual(run("t.skip('why'); t.skip()"), ['test/unit/runtime.test.ts:4'])
   })
 
