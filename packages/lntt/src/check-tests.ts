@@ -234,6 +234,12 @@ function withoutStrings(line: string): string {
   return line.replace(/(['"`])(?:\\.|(?!\1).)*\1/g, '$1$1')
 }
 
+// A run-time `t.skip('reason')` decides in the test that this run proves nothing and says
+// why (a provider's usage limit): the reason is a string literal with text in it. A bare
+// `t.skip()`, a `t.skip(reason)` with a variable or an empty string is the skip the check
+// rejects.
+const REASONED_SKIP = /\bt\.skip\s*\(\s*(['"`])\s*[^\s'"`]/
+
 function comment(line: string): boolean {
   return /^\s*(?:\/\/|\*|\/\*)/.test(line)
 }
@@ -245,12 +251,19 @@ function focus(options: CheckOptions, s: Scope): Result[] {
     lines.forEach((line, i) => {
       if (comment(line)) return
       const n = i + 1
-      const code = withoutStrings(line)
+      // A reasoned run-time skip is no new skip: its `t.skip(` is cut before the match.
+      const code = withoutStrings(line).replace(REASONED_SKIP.test(line) ? /\bt\.skip\s*\(/ : /(?!)/, '')
       if (ONLY.test(code)) {
         out.push(result('focus', 'FAIL', file, n, '.only: the rest of the file does not run'))
       } else if (SKIP.test(code) && isNew(s, file, n)) {
         out.push(
-          result('focus', 'FAIL', file, n, 'a skipped test: fix it or delete it (a skipIf with a reason is fine)'),
+          result(
+            'focus',
+            'FAIL',
+            file,
+            n,
+            "a skipped test: fix it or delete it (a skipIf, or a run-time t.skip('reason') with a written reason, is fine)",
+          ),
         )
       } else if (TODO.test(code) && isNew(s, file, n)) {
         out.push(result('focus', 'FAIL', file, n, 'a todo test: a test that does not exist yet'))

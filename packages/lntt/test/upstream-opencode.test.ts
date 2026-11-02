@@ -48,9 +48,7 @@ describe('opencode', () => {
       // Whatever the exit code: the error event is the signal.
       const limit = skipOnUsageLimit('opencode', r.stdout)
       if (limit) {
-        // Not t.skip: `lntt check tests` rejects it as a skipped test, and this one is
-        // decided at run time. The job's notice (the `inconclusive` step) is the visible signal.
-        t.diagnostic(`skipped: the free model's usage limit is reached: ${limit}`)
+        t.skip(`the free model's usage limit is reached: ${limit}`)
         return
       }
       assert.equal(r.status, 0, `opencode exited ${r.status ?? r.signal}: ${r.stderr || r.stdout}`)

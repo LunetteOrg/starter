@@ -150,6 +150,22 @@ describe('lntt check tests focus', () => {
     assert.match(at(15) ?? '', /no assertion/)
   })
 
+  test('a run-time t.skip with a written reason passes, one without a reason fails', () => {
+    project('clean')
+    const body = (skip: string) =>
+      `import assert from 'node:assert/strict'\nimport { test } from 'node:test'\ntest('x', (t) => {\n  ${skip}\n  assert.ok(true)\n})\n`
+    const run = (skip: string) => {
+      writeFileSync(join(repo, 'test/unit/runtime.test.ts'), body(skip))
+      return fails(results(['check', 'tests', 'focus']).results, 'focus')
+    }
+    assert.deepEqual(run("t.skip('the free model is at its usage limit')"), [])
+    assert.deepEqual(run('t.skip(`the limit: ${reason}`)'), [])
+    assert.deepEqual(run('t.skip()'), ['test/unit/runtime.test.ts:4'])
+    assert.deepEqual(run("t.skip('')"), ['test/unit/runtime.test.ts:4'])
+    assert.deepEqual(run("t.skip('  ')"), ['test/unit/runtime.test.ts:4'])
+    assert.deepEqual(run('t.skip(reason)'), ['test/unit/runtime.test.ts:4'])
+  })
+
   test("with --base a skip or a todo that was already there is not the diff's", () => {
     project('defects')
     writeFileSync(join(repo, 'test/unit/new.test.ts'), "import { test } from 'node:test'\ntest.skip('x', () => {})\n")
