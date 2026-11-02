@@ -6,7 +6,16 @@ import { readFileSync } from 'node:fs'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { candidateAt } from './base.ts'
-import { type BranchRules, branchName, branchRules, checkBranch, fromToolName, slugify, typeFor } from './branch.ts'
+import {
+  type BranchRules,
+  branchName,
+  branchRules,
+  CANDIDATE_PREFIX,
+  checkBranch,
+  fromToolName,
+  slugify,
+  typeFor,
+} from './branch.ts'
 import { ConfigError } from './files.ts'
 import { loadConfig } from './index.ts'
 import { detectHost } from './viewer.ts'
@@ -42,13 +51,13 @@ export function rules(): BranchRules {
 }
 
 // The branch checked out; on a detached HEAD, the candidate whose origin/ ref points at
-// it (delivery.candidate.prefix, `candidate/` by default as in branchRules), so a
+// it (delivery.candidate.prefix, else CANDIDATE_PREFIX as in branchRules), so a
 // candidate's head is checked without a local branch named after it.
 function currentBranch(): string {
   const current = run('git', ['branch', '--show-current'])
   if (current !== '') return current
   const delivery = projectData().delivery as { candidate?: { prefix?: string } } | undefined
-  const prefix = delivery?.candidate?.prefix ?? 'candidate/'
+  const prefix = delivery?.candidate?.prefix ?? CANDIDATE_PREFIX
   const candidate = candidateAt(cwd(), prefix)
   if (candidate === null) {
     throw new Error(`HEAD is detached and no origin/${prefix}<n> points at it: switch to a branch, or give --branch`)

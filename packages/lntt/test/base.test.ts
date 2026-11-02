@@ -99,6 +99,13 @@ describe('the base of a branch', () => {
     assert.match(base.warning ?? '', /give --base/)
   })
 
+  test('the local branch named after the open candidate is the candidate itself: main', () => {
+    c.git('switch', '-q', '-c', 'candidate/13', 'origin/candidate/13')
+    c.git('commit', '-q', '--allow-empty', '-m', 'squashed here')
+    const base = resolve({})
+    assert.deepEqual([base.branch, base.ref], ['main', 'origin/main'])
+  })
+
   test('a base not fetched is an error that says to fetch, not the local branch', () => {
     c.git('branch', 'candidate/14')
     assert.throws(
@@ -114,5 +121,14 @@ describe('the candidate at a detached HEAD', () => {
     assert.equal(candidateAt(c.repo, 'candidate/'), 'candidate/13')
     c.git('switch', '-q', '--detach', 'origin/main')
     assert.equal(candidateAt(c.repo, 'candidate/'), null)
+  })
+
+  test('the highest by number when several point at it, and names past the prefix that are no number are not candidates', () => {
+    for (const name of ['9', '13', 'x']) c.git('update-ref', `refs/remotes/origin/rc/${name}`, 'origin/candidate/13')
+    c.git('switch', '-q', '--detach', 'origin/candidate/13')
+    assert.equal(candidateAt(c.repo, 'rc/'), 'rc/13')
+    c.git('update-ref', '-d', 'refs/remotes/origin/rc/13')
+    c.git('update-ref', '-d', 'refs/remotes/origin/rc/9')
+    assert.equal(candidateAt(c.repo, 'rc/'), null)
   })
 })

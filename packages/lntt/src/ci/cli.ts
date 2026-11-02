@@ -6,7 +6,8 @@ import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
-import { defaultBranch, projectBase } from '../base.ts'
+import { defaultBranch, projectBase, remoteRef } from '../base.ts'
+import { CANDIDATE_PREFIX } from '../branch.ts'
 import {
   acquireLock,
   candidate,
@@ -64,12 +65,16 @@ function giveBack(lock: Lock | null): void {
 }
 
 // The event's base and its options: --base as given; else, for a pull request, the base
-// every lntt command resolves (src/base.ts), and for a push the default branch.
+// every lntt command resolves (src/base.ts), and for a push the default branch; both as
+// the remote's copy.
 function base(root: string, event: 'pull_request' | 'push', given: string | undefined): [string, EventOptions] {
   const candidate = candidateConfig(root)
-  const options: EventOptions = { candidatePrefix: candidate?.prefix ?? 'candidate/' }
+  const options: EventOptions = { candidatePrefix: candidate?.prefix ?? CANDIDATE_PREFIX }
   if (given !== undefined) return [given, options]
-  if (event === 'push') return [defaultBranch(root, candidate), options]
+  if (event === 'push') {
+    const branch = defaultBranch(root, candidate)
+    return [branch, { ...options, baseRef: remoteRef(root, branch) }]
+  }
   // The report names the base and the ref; only a base that may be wrong is said here.
   const resolved = projectBase(root, 'head')
   if (resolved.warning) stderr.write(`lntt ci: ${resolved.warning}\n`)

@@ -74,8 +74,10 @@ small adapter that makes the calls it understands.
   Which candidate is open is asked to GitHub (`gh pr list`, the query of the candidate
   automation): a merged candidate's branch stays on origin and its commits reach the
   default branch rebased, so the refs cannot tell an open one. When GitHub cannot
-  answer, the base is `origin/<default branch>` and the command says so. A base that is
-  not in the clone is an error that asks for `git fetch origin`; nothing is fetched.
+  answer, the base is `origin/<default branch>` and the command says so. A resolved base
+  whose `origin/` ref is not in the clone is an error that asks for `git fetch origin`;
+  nothing is fetched. An explicit `--base` goes to the host as given when neither ref
+  exists, and the host says what it cannot find.
   A detached HEAD at a candidate's head is that candidate: `lntt branch check` and
   `ci:local`'s branch name are the `delivery.candidate.prefix` branch whose `origin/`
   ref points at HEAD, so a candidate is checked without a local branch named after it.

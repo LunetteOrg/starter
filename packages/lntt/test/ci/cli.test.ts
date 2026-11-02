@@ -653,6 +653,19 @@ describe('lntt ci local: the base', () => {
     assert.match(out.stdout, /pull request feat\/5\/x → main @ \w+ \(diff against origin\/main, 1 files changed\)/)
   })
 
+  test('a push with no origin/main: an error that says to fetch, not the stale local main', () => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-ci-base-')))
+    c = clone(root, { '.agents/config.jsonc': '{}', '.github/workflows/ci.yml': CI })
+    c.git('update-ref', '-d', 'refs/remotes/origin/main')
+    const out = spawnSync(process.execPath, [BIN, 'ci', 'local', '--list', '--event', 'push'], {
+      cwd: c.repo,
+      encoding: 'utf8',
+      env: env(),
+    })
+    assert.notEqual(out.status, 0, out.stdout)
+    assert.match(out.stderr, /no origin\/main.*git fetch origin/)
+  })
+
   test('an explicit --base wins over the open candidate', () => {
     const out = list(CANDIDATE, 'feat/5/x', 'answers', '--base', 'main')
     assert.match(out.stdout, /pull request feat\/5\/x → main /)

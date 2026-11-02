@@ -344,6 +344,15 @@ describe('lntt branch check on a detached HEAD', () => {
     assert.equal(r.status, 0, r.stderr)
   })
 
+  test("at the head of a candidate under the configured prefix: that candidate's name", () => {
+    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify({ delivery: { candidate: { prefix: 'rc/' } } }))
+    c.git('update-ref', 'refs/remotes/origin/rc/2', 'origin/candidate/13')
+    c.git('update-ref', '-d', 'refs/remotes/origin/candidate/13')
+    c.git('switch', '-q', '--detach', 'refs/remotes/origin/rc/2')
+    const r = lntt(['branch', 'check'])
+    assert.equal(r.status, 0, r.stderr)
+  })
+
   test('anywhere else: fails, and says HEAD is detached', () => {
     c.git('switch', '-q', '--detach', 'origin/main')
     const r = lntt(['branch', 'check'])

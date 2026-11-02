@@ -58,7 +58,7 @@ export function defaultBranch(cwd: string, candidate: CandidateRules | null): st
 }
 
 // `origin/<branch>`; a missing one is an error, not a fall back on the local branch.
-function remote(cwd: string, branch: string): string {
+export function remoteRef(cwd: string, branch: string): string {
   const ref = `origin/${branch}`
   if (git(cwd, 'rev-parse', '--verify', '--quiet', `refs/remotes/${ref}^{commit}`) === null) {
     throw new Error(`no ${ref} in this clone: run git fetch origin, or give --base`)
@@ -71,7 +71,7 @@ export function resolveBase(lookup: BaseLookup): Base {
   const main = defaultBranch(cwd, candidate)
   const onMain = (why: string, warning: string | null = null): Base => ({
     branch: main,
-    ref: remote(cwd, main),
+    ref: remoteRef(cwd, main),
     reason: `origin/${main}: ${why}`,
     warning,
   })
@@ -85,7 +85,7 @@ export function resolveBase(lookup: BaseLookup): Base {
     return onMain(why, `${why}: the base is origin/${main}; give --base if the branch is on a candidate`)
   }
   if (!open) return onMain(`no ${candidate.prefix} branch is open`)
-  const ref = remote(cwd, open)
+  const ref = remoteRef(cwd, open)
   if (lookup.for === 'new') return { branch: open, ref, reason: `${ref}: the open candidate`, warning: null }
   // The candidate itself: by name on a branch, by its head on a detached HEAD. A branch
   // just started on the candidate sits at its head too, and goes into the candidate.
@@ -96,7 +96,7 @@ export function resolveBase(lookup: BaseLookup): Base {
   // A branch started on the candidate holds the candidate's commits, which origin/<main>
   // does not have until the candidate merges; one started on origin/<main> forks there.
   const fork = git(cwd, 'merge-base', 'HEAD', ref)
-  if (fork && git(cwd, 'merge-base', '--is-ancestor', fork, remote(cwd, main)) === null) {
+  if (fork && git(cwd, 'merge-base', '--is-ancestor', fork, remoteRef(cwd, main)) === null) {
     return {
       branch: open,
       ref: fork,

@@ -470,7 +470,8 @@ function mergeBase(root: string, given: string | undefined): string {
     return git('merge-base', 'HEAD', base.ref)
   }
   const ref = localRef(root, given)
-  if (ref === null) throw new Error(`no ${given} or origin/${given} to compare the branch with; give --base`)
+  if (ref === null)
+    throw new Error(`no ${given} or origin/${given} to compare the branch with: run git fetch origin, or check --base`)
   return git('merge-base', 'HEAD', ref)
 }
 
