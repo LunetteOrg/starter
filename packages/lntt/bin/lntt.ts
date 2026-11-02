@@ -126,7 +126,9 @@
 //                             one JSON line each. The host is the innermost one the
 //                             session runs in (Herdr, Orca), else plain git, where the
 //                             brief is printed for the person to start the agent;
-//                             --prompt replaces the brief (a coordinator's own, a trial)
+//                             --prompt adds instructions of one's own after the brief
+//                             (## Added at start). Each start records who the branch
+//                             reports to (lntt-messages/started/), read by lntt review
 //
 //   lntt worktree start --coordinator --theme <slug> --issue <n>... [--approve <n>]...
 //                             a theme's coordinator: one worktree on no issue, the coordinator's
@@ -139,7 +141,12 @@
 //   lntt ask --to <orchestrator|coordinator|child> [--issue <n>] [--theme <slug>] [--topic <slug>]
 //            [--timeout <s>] <question | ->
 //                             write a message under <git common dir>/lntt-messages/ and wait for
-//                             its answer (polled every 20 s); stdout is the answer
+//                             its answer (polled every 20 s); stdout is the answer. --issue names
+//                             a child's mailbox; to the orchestrator or a coordinator it tags the
+//                             topic issue-<n>-
+//   lntt ask --wait <id> [--timeout <s>]
+//                             wait for the answer to a message already sent (the one lntt review
+//                             sends at its limit); stdout is the answer
 //   lntt inbox [--as <role>] [--issue <n>] [--theme <slug>] [--wait] [--timeout <s>]
 //                             the unanswered messages to a role, one JSON line each
 //   lntt answer <id> <text | ->

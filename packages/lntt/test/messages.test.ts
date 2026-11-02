@@ -3,7 +3,16 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
-import { answer, type Mailbox, messageDirectory, pending, send, waitForAnswer } from '../src/messages.ts'
+import {
+  answer,
+  type Mailbox,
+  messageDirectory,
+  pending,
+  recordStarted,
+  send,
+  startedBy,
+  waitForAnswer,
+} from '../src/messages.ts'
 
 let dir: string
 
@@ -90,6 +99,35 @@ describe('sending', () => {
   test('a topic that is not a slug is refused', () => {
     assert.throws(() => send(box(), 'coordinator', 'q', { topic: '../x' }), /topic/)
   })
+
+  test('to the orchestrator or a coordinator, the issue tags the topic and the role directory stays', () => {
+    const clock = box()
+    const up = send(clock, 'orchestrator', 'May I push?', { topic: 'push', issue: 84 })
+    assert.equal(up.id, '20261017-101500-issue-84-push')
+    assert.equal(up.topic, 'issue-84-push')
+    assert.equal(up.path, join(dir, 'to-orchestrator', '20261017-101500-issue-84-push.md'))
+    const side = send(clock, 'coordinator', 'q', { topic: 'order', issue: 84, theme: 'alpha' })
+    assert.equal(side.path, join(dir, 'to-coordinator-alpha', '20261017-101500-issue-84-order.md'))
+  })
+
+  test('a topic already tagged with its issue is not tagged twice', () => {
+    const sent = send(box(), 'orchestrator', 'q', { topic: 'issue-84-push', issue: 84 })
+    assert.equal(sent.topic, 'issue-84-push')
+  })
+
+  test('the topic drawn from the question is cut to 40 characters before the issue tags it', () => {
+    const question = 'Which of the two pull requests of the theme merges first, the CLI or the docs?'
+    const plain = send(box(), 'orchestrator', question)
+    const tagged = send(box(), 'orchestrator', question, { issue: 84 })
+    assert.equal(tagged.topic, `issue-84-${plain.topic}`)
+    assert.ok(plain.topic.length <= 40)
+  })
+
+  test('to a child, the issue names its directory and leaves the topic as it is', () => {
+    const sent = send(box(), 'child', 'q', { topic: 'hint', issue: 84 })
+    assert.equal(sent.topic, 'hint')
+    assert.equal(sent.path, join(dir, 'to-child-84', '20261017-101500-hint.md'))
+  })
 })
 
 describe('answering', () => {
@@ -98,6 +136,11 @@ describe('answering', () => {
     const written = answer(dir, sent.id, 'yes')
     assert.equal(written, join(dir, 'to-child-84', '20261017-101500-t.answer.md'))
     assert.equal(readFileSync(written, 'utf8'), 'yes\n')
+  })
+
+  test('finds a message to the orchestrator tagged with an issue', () => {
+    const sent = send(box(), 'orchestrator', 'q', { topic: 't', issue: 84 })
+    assert.equal(answer(dir, sent.id, 'yes'), join(dir, 'to-orchestrator', '20261017-101500-issue-84-t.answer.md'))
   })
 
   test('takes the id with the .md the file name has', () => {
@@ -214,6 +257,20 @@ describe('the inbox', () => {
     assert.equal(only?.topic, 'hand-written')
   })
 
+  test('lists a message tagged with an issue in the orchestrator’s and the coordinator’s inbox', () => {
+    const clock = box()
+    send(clock, 'orchestrator', 'up', { topic: 'limit', issue: 84 })
+    send(clock, 'coordinator', 'side', { topic: 'limit', issue: 84, theme: 'alpha' })
+    assert.deepEqual(
+      pending(dir, 'orchestrator').map((m) => [m.topic, m.question]),
+      [['issue-84-limit', 'up']],
+    )
+    assert.deepEqual(
+      pending(dir, 'coordinator', { theme: 'alpha' }).map((m) => m.topic),
+      ['issue-84-limit'],
+    )
+  })
+
   test('a child’s inbox is its own to-child-<issue>', () => {
     const clock = box()
     send(clock, 'child', 'for 84', { topic: 'a', issue: 84 })
@@ -222,5 +279,40 @@ describe('the inbox', () => {
       pending(dir, 'child', { issue: 84 }).map((m) => m.question),
       ['for 84'],
     )
+  })
+})
+
+describe('the start marker', () => {
+  test('records who a branch reports to, and reads it back', () => {
+    const root = join(dir, 'box')
+    recordStarted(root, { branch: 'feat/84/x', issue: 84, to: 'coordinator', theme: 'alpha' })
+    assert.deepEqual(startedBy(root, 'feat/84/x'), {
+      branch: 'feat/84/x',
+      issue: 84,
+      to: 'coordinator',
+      theme: 'alpha',
+    })
+    assert.deepEqual(readdirSync(join(root, 'started')), ['feat-84-x.json'])
+  })
+
+  test('a later start of the same branch replaces the marker', () => {
+    recordStarted(dir, { branch: 'feat/84/x', issue: 84, to: 'orchestrator' })
+    recordStarted(dir, { branch: 'feat/84/x', issue: 84, to: 'coordinator', theme: 'beta' })
+    assert.equal(startedBy(dir, 'feat/84/x')?.theme, 'beta')
+    assert.deepEqual(readdirSync(join(dir, 'started')), ['feat-84-x.json'])
+  })
+
+  test('a branch with no marker, or one that cannot be read, has none', () => {
+    assert.equal(startedBy(dir, 'feat/84/x'), null)
+    mkdirSync(join(dir, 'started'))
+    writeFileSync(join(dir, 'started', 'feat-84-x.json'), '{ cut')
+    assert.equal(startedBy(dir, 'feat/84/x'), null)
+    writeFileSync(join(dir, 'started', 'feat-84-x.json'), JSON.stringify({ branch: 'feat/84/x', to: 'boss' }))
+    assert.equal(startedBy(dir, 'feat/84/x'), null)
+  })
+
+  test('a marker is the branch’s own: another branch with the same flat name has none', () => {
+    recordStarted(dir, { branch: 'feat/84-x', issue: 84, to: 'orchestrator' })
+    assert.equal(startedBy(dir, 'feat-84/x'), null)
   })
 })

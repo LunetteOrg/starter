@@ -92,6 +92,8 @@ function creates(): string[][] {
 
 const after = (call: string[], flag: string) => call[call.indexOf(flag) + 1]
 const mailbox = () => join(repo, '.git', 'lntt-messages')
+// The start marker of a branch, by its flat name.
+const started = (flat: string) => JSON.parse(readFileSync(join(mailbox(), 'started', `${flat}.json`), 'utf8'))
 
 beforeEach(() => {
   tmp = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-coordinator-')))
@@ -128,6 +130,21 @@ describe('lntt worktree start --coordinator', () => {
     assert.match(brief, new RegExp(`${join(tmp, 'bin', 'orca')} worktree set`))
     assert.equal(JSON.parse(r.stdout.trim()).issue, null)
     assert.equal(readFileSync(join(mailbox(), 'approved-release-0-6-1.txt'), 'utf8'), '89\n')
+    assert.deepEqual(started('chore-no-issue-release-0-6-1'), {
+      branch: 'chore/no-issue/release-0-6-1',
+      issue: null,
+      to: 'orchestrator',
+      theme: 'release-0-6-1',
+    })
+  })
+
+  test('--prompt adds to the coordinator’s brief, in a section of its own at the end', () => {
+    const r = lntt(['--coordinator', '--theme', 't', '--issue', '84', '--prompt', 'extra'])
+    assert.equal(r.status, 0, r.stderr)
+    const brief = after(creates()[0] as string[], '--prompt') as string
+    assert.match(brief, /You write no code/)
+    assert.match(brief, /#84: Coordinator mode/)
+    assert.ok(brief.endsWith('\n\n## Added at start\n\nextra\n'), brief)
   })
 
   test('refuses what is a child’s, before creating anything', () => {
@@ -179,6 +196,21 @@ describe('lntt worktree start --theme (a coordinator’s child)', () => {
     assert.match(brief, /lntt ask --to coordinator --theme release-0-6-1/)
     assert.match(brief, /At most 6 agents/)
     assert.equal(JSON.parse(r.stdout.trim()).parent, 'current')
+    const marker = started(after(call, '--name') as string)
+    assert.match(marker.branch, /^[a-z]+\/89\//)
+    assert.deepEqual(marker, { branch: marker.branch, issue: 89, to: 'coordinator', theme: 'release-0-6-1' })
+  })
+
+  test('--prompt adds to a child’s brief, with --context and --workflow', () => {
+    mkdirSync(mailbox(), { recursive: true })
+    approved()
+    const r = lntt(child('--workflow', '--prompt', 'Rebase on #84 first.'))
+    assert.equal(r.status, 0, r.stderr)
+    const brief = after(creates()[0] as string[], '--prompt') as string
+    assert.match(brief, /^You are working on issue #89/)
+    assert.match(brief, /## The theme\n\nYour neighbours: #89/)
+    assert.match(brief, /At most 6 agents/)
+    assert.ok(brief.endsWith('\n\n## Added at start\n\nRebase on #84 first.\n'), brief)
   })
 
   test('the command line wins over the Size', () => {
@@ -290,11 +322,10 @@ describe('lntt worktree start --theme (a coordinator’s child)', () => {
     const size = lntt(['--theme', 'x', '--issue', '89', '--size', 'XXL'])
     assert.equal(size.status, 1)
     assert.match(size.stderr, /XS, S, M, L or XL/)
-    assert.equal(lntt(['--theme', 'x', '--issue', '89', '--prompt', 'p', '--workflow']).status, 2)
     assert.deepEqual(creates(), [])
   })
 
-  test('a plain issue is as before: the plain brief, no parent, the agent’s own model', () => {
+  test('a plain issue: the plain brief, its waits to the orchestrator, no parent, the agent’s own model', () => {
     const r = lntt(['--issue', '89'])
     assert.equal(r.status, 0, r.stderr)
     const [call] = creates()
@@ -303,6 +334,12 @@ describe('lntt worktree start --theme (a coordinator’s child)', () => {
     assert.ok(!call.includes('--model'))
     const brief = after(call, '--prompt') as string
     assert.match(brief, /working on issue #89/)
-    assert.doesNotMatch(brief, /theme|mailbox/i)
+    assert.doesNotMatch(brief, /theme/i)
+    assert.match(brief, /## Every wait goes through the mailbox/)
+    assert.match(brief, /lntt ask --to orchestrator --issue 89/)
+    const marker = started(after(call, '--name') as string)
+    assert.equal(marker.to, 'orchestrator')
+    assert.equal(marker.issue, 89)
+    assert.equal(marker.theme, undefined)
   })
 })

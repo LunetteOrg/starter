@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fill } from './template.ts'
-import type { Agent } from './worktree.ts'
+import { type Agent, waitingSection } from './worktree.ts'
 
 export const SIZES = ['XS', 'S', 'M', 'L', 'XL'] as const
 export type Size = (typeof SIZES)[number]
@@ -152,6 +152,7 @@ export function coordinatorBrief(v: CoordinatorValues): string {
     models: modelsText(v.config),
     gate: gateText(v.config, v.issues, v.approved),
     card: v.orca ? orcaCard(v.orca) : '',
+    waiting: fill(template('coordinator-waiting.md'), { theme: v.theme }).trimEnd(),
   })
 }
 
@@ -164,6 +165,8 @@ export interface ChildValues {
 
 // The brief of one issue. With a theme, the child belongs to a coordinator: the context
 // the coordinator wrote, how to ask and report, and, on request, the workflow section.
+// Every child routes its waits through the mailbox: to the coordinator, else the
+// orchestrator.
 export function childBrief(
   v: ChildValues,
   options: { theme?: string; context?: string; workflow?: boolean; orca?: string | null },
@@ -178,6 +181,7 @@ export function childBrief(
     reporting: options.theme
       ? fill(template('reporting.md'), { theme: options.theme, issue: v.issue, card }).trimEnd()
       : '',
+    waiting: waitingSection(v.issue, options.theme),
     workflow: options.workflow ? template('workflow.md').trimEnd() : '',
   })
 }

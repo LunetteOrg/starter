@@ -29,6 +29,8 @@ import {
   timerMs,
 } from './headless.ts'
 import { findConfig, loadConfig } from './index.ts'
+import { type Started, send, startedBy } from './messages.ts'
+import { messagesRoot, systemMailbox } from './messages-cli.ts'
 import { describeOutcome, mutateAll } from './mutate.ts'
 import { orcaSubagents, type Subagents } from './orca-subagents.ts'
 import {
@@ -137,6 +139,39 @@ function writeLedger(branch: string, closed: Closed[]): void {
   writeFileSync(ledgerPath(), `${JSON.stringify({ branch, closed } satisfies Ledger, null, 2)}\n`)
 }
 
+type Asked = { id: string; to: string; path: string }
+
+// Who the branch reports to, when `lntt worktree start` started it; null otherwise, and
+// outside a git repository.
+function reportsTo(branch: string): Started | null {
+  try {
+    return startedBy(messagesRoot(), branch)
+  } catch {
+    return null
+  }
+}
+
+// What is open goes to the coordinator or the orchestrator as a message the round does not
+// wait for: it holds the review lock, and `lntt review allow` must stay possible while the
+// answer is awaited. Null when the message cannot be written, which is only said.
+function askAtLimit(marker: Started, text: string): Asked | null {
+  const who = marker.to === 'coordinator' ? `the coordinator ${marker.theme}` : 'the orchestrator'
+  const address =
+    marker.to === 'coordinator'
+      ? { theme: marker.theme as string }
+      : marker.issue === null
+        ? {}
+        : { issue: marker.issue }
+  try {
+    const sent = send(systemMailbox(), marker.to, text, { topic: 'review-limit', ...address })
+    stderr.write(`lntt review: limit: sent ${sent.id} to ${who}; wait with: lntt ask --wait ${sent.id}\n`)
+    return { id: sent.id, to: sent.to, path: sent.path }
+  } catch (error) {
+    stderr.write(`lntt review: limit: could not send to ${who}: ${(error as Error).message}\n`)
+    return null
+  }
+}
+
 // The round past the limit does not start: the person decides on what the last round
 // left, its findings not withdrawn and its failures. Exit 3, with a `limit:` line the
 // review skill watches for.
@@ -149,13 +184,39 @@ function stopAtLimit(state: ReviewState | null, branch: string, round: number, c
     ...open.map((f) => `${f.id} (${f.severity}, ${f.verdict})`),
     ...failed.map((f) => `${f.lens} · ${f.agent} failed`),
   ]
+  const passing = `round ${round} would pass delivery.review.maxRounds (${config.maxRounds})${allowed > 0 ? ` and ${allowed} allowed` : ''}`
+  const still = listed.length === 0 ? 'nothing' : listed.join(', ')
   stderr.write(
-    `lntt review: limit: round ${round} would pass delivery.review.maxRounds (${config.maxRounds})${allowed > 0 ? ` and ${allowed} allowed` : ''} on ${branch}; still open: ${listed.length === 0 ? 'nothing' : listed.join(', ')}\n` +
+    `lntt review: limit: ${passing} on ${branch}; still open: ${still}\n` +
       'lntt review: the person decides: the pull request as it is, more rounds for this branch (lntt review allow <rounds>), or an issue for what is open\n',
   )
-  emit({ type: 'limit', round, maxRounds: config.maxRounds, allowed, open: open.length, failed: failed.length })
+  // A branch lntt worktree start started reports to its parent as well: the open
+  // findings in full, so the answer needs nothing else.
+  const marker = reportsTo(branch)
+  const details = open.map((f) => {
+    const anchor = f.path === null ? '(no anchor)' : `${f.path}${f.line === null ? '' : `:${f.line}`}`
+    return `- ${f.id} [${f.severity}, ${f.verdict}] ${anchor} — ${f.what} — ${f.action}`
+  })
+  const asked = marker
+    ? askAtLimit(
+        marker,
+        [
+          `${marker.issue === null ? '' : `#${marker.issue} `}${branch}: lntt review limit, ${passing}; still open: ${still}; decide: the pull request as it is, lntt review allow <rounds>, or an issue for what is open`,
+          ...(details.length > 0 ? ['', ...details] : []),
+        ].join('\n'),
+      )
+    : null
+  emit({
+    type: 'limit',
+    round,
+    maxRounds: config.maxRounds,
+    allowed,
+    open: open.length,
+    failed: failed.length,
+    ...(asked ? { asked } : {}),
+  })
   stdout.write(
-    `${JSON.stringify({ limit: { round, maxRounds: config.maxRounds, allowed }, findings: open, failed }, null, 2)}\n`,
+    `${JSON.stringify({ limit: { round, maxRounds: config.maxRounds, allowed }, findings: open, failed, ...(asked ? { asked } : {}) }, null, 2)}\n`,
   )
   return 3
 }

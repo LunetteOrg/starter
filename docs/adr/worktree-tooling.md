@@ -38,9 +38,20 @@ small adapter that makes the calls it understands.
   setup has ended, because Orca's setup terminal stays open as a shell.
 - **One brief**, `packages/lntt/agents/brief.md`: the issue is the mandate, work only in
   this worktree, review and `ci:local` green, a draft pull request, then stop, and
-  report the friction met. `--prompt` replaces it with instructions of one's own. A theme's
-  coordinator and its children are [coordinator mode](./coordinator-mode.md): the same
-  entry point, other briefs, a model per role.
+  report the friction met; every wait (an answer, an approval such as a 1Password prompt,
+  the review limit) goes through the mailbox, to the orchestrator with the issue
+  (`packages/lntt/agents/waiting.md`). The brief always comes first: `--prompt` adds
+  instructions of one's own after it, in a closing `## Added at start` section, for a
+  coordinator and a child alike. A theme's coordinator and its children are
+  [coordinator mode](./coordinator-mode.md): the same entry point, other briefs, a model
+  per role.
+- **Each start leaves a marker** in the mailbox,
+  `<git common dir>/lntt-messages/started/<branch, / as ->.json`: the branch, its issue
+  (none for a coordinator), and who it reports to (`coordinator` with the theme for a
+  theme's child, `orchestrator` otherwise). At `lntt review: limit:` the round reads it and
+  sends the open findings there with the mailbox, without waiting for the answer, and
+  prints the id to wait on (`lntt ask --wait <id>`). A branch with no marker stops at the
+  limit with the findings on stdout and stderr only.
 - **The agent, its model and its effort** (`--kind`, `--model`, `--effort`) reach each
   tool in the form it accepts:
   - Orca: one `worktree create --issue --agent --prompt`, with `--model` and
@@ -112,3 +123,8 @@ small adapter that makes the calls it understands.
   agent ready, or not at all.
 - **Ignoring a model or an effort the agent cannot take.** The run would look right and
   be on another model.
+- **`--prompt` in place of the brief.** Every use wanted to add context to it; a
+  coordinator started that way had none of its issues and approvals.
+- **The review round waiting for the answer at the limit.** The round holds the review
+  lock, and `lntt review allow`, the answer most often given, needs it free; the wait is
+  the agent's, with `lntt ask --wait <id>`.

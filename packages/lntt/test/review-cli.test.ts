@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -930,6 +931,78 @@ describe('lntt review at delivery.review.maxRounds', () => {
     assert.equal(readFileSync(log, 'utf8'), calls, 'no agent started')
     assert.equal(state().round, 1)
     assert.deepEqual(events().at(-1), { ...events().at(-1), type: 'limit', round: 2, maxRounds: 1, open: 1, failed: 0 })
+    // A branch nobody started with lntt worktree start sends nothing.
+    assert.equal(out.asked, undefined)
+    assert.equal(events().at(-1).asked, undefined)
+    assert.doesNotMatch(r.err, /limit: sent/)
+    const box = join(repo, '.git/lntt-messages')
+    assert.ok(!existsSync(box) || readdirSync(box).every((name) => !name.startsWith('to-')), 'no message')
+  })
+
+  // The start marker lntt worktree start leaves in the mailbox for the branch.
+  const startedBy = (marker: Record<string, unknown>) => {
+    mkdirSync(join(repo, '.git/lntt-messages/started'), { recursive: true })
+    writeFileSync(join(repo, '.git/lntt-messages/started/feat-1-x.json'), JSON.stringify(marker))
+  }
+  const messages = (dir: string) =>
+    readdirSync(join(repo, '.git/lntt-messages', dir)).filter((name) => name.endsWith('.md'))
+
+  test('a child of a theme sends what is open to its coordinator, and says how to wait for the answer', () => {
+    withMaxRounds(1)
+    assert.equal(lntt(['--base', 'main'], open).code, 1)
+    commit(3)
+    startedBy({ branch: 'feat/1/x', issue: 1, to: 'coordinator', theme: 'alpha' })
+
+    const r = lntt(['--base', 'main'], open)
+    assert.equal(r.code, 3, r.err)
+    const [file, ...more] = messages('to-coordinator-alpha')
+    assert.equal(more.length, 0)
+    const id = (file as string).replace(/\.md$/, '')
+    assert.match(id, /^\d{8}-\d{6}-review-limit$/)
+    const text = readFileSync(join(repo, '.git/lntt-messages/to-coordinator-alpha', file as string), 'utf8')
+    assert.match(
+      text,
+      /^#1 feat\/1\/x: lntt review limit, round 2 would pass delivery\.review\.maxRounds \(1\); still open: f1 \(warning, confirmed\); decide: the pull request as it is, lntt review allow <rounds>, or an issue for what is open$/m,
+    )
+    assert.match(text, /^- f1 \[warning, confirmed\] a\.ts:1 — w — a$/m)
+    const out = JSON.parse(r.out)
+    assert.equal(out.asked.id, id)
+    assert.equal(out.asked.to, 'coordinator')
+    assert.equal(out.asked.path, join(repo, '.git/lntt-messages/to-coordinator-alpha', file as string))
+    assert.match(
+      r.err,
+      new RegExp(`^lntt review: limit: sent ${id} to the coordinator alpha; wait with: lntt ask --wait ${id}$`, 'm'),
+    )
+    assert.equal(events().at(-1).asked.id, id)
+  })
+
+  test('a plain child sends what is open to the orchestrator, the topic tagged with its issue', () => {
+    withMaxRounds(1)
+    lntt(['--base', 'main'], open)
+    commit(3)
+    startedBy({ branch: 'feat/1/x', issue: 1, to: 'orchestrator' })
+
+    const r = lntt(['--base', 'main'], open)
+    assert.equal(r.code, 3, r.err)
+    const [file, ...more] = messages('to-orchestrator')
+    assert.equal(more.length, 0)
+    assert.match(file as string, /^\d{8}-\d{6}-issue-1-review-limit\.md$/)
+    assert.equal(JSON.parse(r.out).asked.id, (file as string).replace(/\.md$/, ''))
+    assert.match(r.err, /limit: sent \S+ to the orchestrator; wait with: lntt ask --wait /)
+  })
+
+  test('a message that cannot be sent is a warning; the round still stops with exit 3', () => {
+    withMaxRounds(1)
+    lntt(['--base', 'main'], open)
+    commit(3)
+    startedBy({ branch: 'feat/1/x', issue: 1, to: 'orchestrator' })
+    // A file where the directory of the message would go.
+    writeFileSync(join(repo, '.git/lntt-messages/to-orchestrator'), '')
+
+    const r = lntt(['--base', 'main'], open)
+    assert.equal(r.code, 3, r.err)
+    assert.match(r.err, /^lntt review: limit: could not send to the orchestrator: /m)
+    assert.equal(JSON.parse(r.out).asked, undefined)
   })
 
   test('what is open at the limit: a withdrawn finding is not, a failed reviewer is', () => {

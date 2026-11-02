@@ -18,4 +18,6 @@ You are working on issue #{{issue}}: {{title}}.
 
 {{reporting}}
 
+{{waiting}}
+
 {{workflow}}

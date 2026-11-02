@@ -5,10 +5,11 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { cwd, env, exit, stderr, stdin, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
-import { answer, type Mailbox, type Message, POLL_MS, pending, send, waitForAnswer } from './messages.ts'
+import { answer, locate, type Mailbox, type Message, POLL_MS, pending, send, waitForAnswer } from './messages.ts'
 
 const USAGE = [
   'usage: lntt ask --to <orchestrator|coordinator|child> [--issue <n>] [--theme <slug>] [--topic <slug>] [--timeout <s>] [--interval <s>] <question | ->',
+  '       lntt ask --wait <id> [--timeout <s>] [--interval <s>]',
   '       lntt inbox [--as <orchestrator|coordinator|child>] [--issue <n>] [--theme <slug>] [--wait] [--timeout <s>] [--interval <s>]',
   '       lntt answer <id> <text | ->',
 ].join('\n')
@@ -79,8 +80,21 @@ function line(message: Message): string {
   })
 }
 
+// A message already sent, by its id: the one `lntt review` sends at its limit, or one
+// whose wait was cut short by a timeout.
+function sentMessage(root: string, raw: string): Message {
+  const found = locate(root, raw)
+  if (found.length === 0) throw new Error(`no message ${raw} in ${root}`)
+  if (found.length > 1) throw new Error(`${raw} names more than one message: ${found.join(', ')}`)
+  const path = found[0] as string
+  const id = raw.replace(/\.md$/, '')
+  const to = (path.split('/').at(-2) as string).replace(/^to-/, '')
+  return { id, topic: id.replace(/^\d{8}-\d{6}-/, ''), to, path, question: readFileSync(path, 'utf8').trim() }
+}
+
 // Writes the question, then polls for its answer; stdout is the answer. The wait is the
-// point of the command: a caller that must not block runs it in the background.
+// point of the command: a caller that must not block runs it in the background. With
+// --wait <id>, only the wait, for a message already sent.
 function ask(args: string[]): void {
   const { values, positionals } = parseArgs({
     args,
@@ -92,18 +106,31 @@ function ask(args: string[]): void {
       topic: { type: 'string' },
       timeout: { type: 'string' },
       interval: { type: 'string' },
+      wait: { type: 'string' },
     },
   })
-  if (!values.to) usage('give --to')
-  if (positionals.length !== 1) usage('give the question as one argument')
-  const box = systemMailbox()
-  const sent = send(box, values.to, text(positionals[0]), {
-    ...(values.topic ? { topic: values.topic } : {}),
-    ...(values.issue ? { issue: issueNumber(values.issue) as number } : {}),
-    ...(values.theme ? { theme: values.theme } : {}),
-  })
   const interval = seconds(values.interval, '--interval') ?? pollInterval()
-  stderr.write(`lntt ask: ${sent.id} sent to ${sent.to}; waiting for the answer, polling every ${interval / 1000} s\n`)
+  const box = systemMailbox()
+  let sent: Message
+  if (values.wait !== undefined) {
+    if (positionals.length > 0) usage('--wait takes the id of a message already sent, and no question')
+    for (const flag of ['to', 'issue', 'theme', 'topic'] as const) {
+      if (values[flag] !== undefined) usage(`--wait takes no --${flag}: the message is already addressed`)
+    }
+    sent = sentMessage(box.dir, values.wait)
+    stderr.write(`lntt ask: waiting for the answer to ${sent.id}, polling every ${interval / 1000} s\n`)
+  } else {
+    if (!values.to) usage('give --to')
+    if (positionals.length !== 1) usage('give the question as one argument')
+    sent = send(box, values.to, text(positionals[0]), {
+      ...(values.topic ? { topic: values.topic } : {}),
+      ...(values.issue ? { issue: issueNumber(values.issue) as number } : {}),
+      ...(values.theme ? { theme: values.theme } : {}),
+    })
+    stderr.write(
+      `lntt ask: ${sent.id} sent to ${sent.to}; waiting for the answer, polling every ${interval / 1000} s\n`,
+    )
+  }
   const timeoutMs = seconds(values.timeout, '--timeout')
   stdout.write(waitForAnswer(box, sent, { intervalMs: interval, ...(timeoutMs === undefined ? {} : { timeoutMs }) }))
 }

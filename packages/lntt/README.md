@@ -305,7 +305,7 @@ lntt worktree start --issue 78                 # a worktree, its setup, an agent
 lntt worktree start --issue 78 --issue 85      # one each
 lntt worktree start --issue 78 --no-agent      # the worktree only; the brief is printed
 lntt worktree start --issue 78 --host git      # force the host
-lntt worktree start --issue 78 --prompt '…'    # a prompt of your own instead of the brief
+lntt worktree start --issue 78 --prompt '…'    # instructions of your own, after the brief
 lntt worktree start --issue 78 --kind codex --model gpt-6 --effort high
 ```
 
@@ -316,8 +316,10 @@ refused; opencode gets its model through its inline configuration,
 `OPENCODE_CONFIG_CONTENT`, on a standalone server) handed the brief in
 [`agents/brief.md`](./agents/brief.md): the issue is the mandate, work only in this
 worktree, review and `pnpm ci:local` green, a **draft** pull request, then stop (no
-merge, no `gh pr ready`) and return a summary and the friction met. One JSON line per
-issue: host, branch, path, and the agent's handle.
+merge, no `gh pr ready`) and return a summary and the friction met, with every wait sent
+through the mailbox ([`agents/waiting.md`](./agents/waiting.md)). `--prompt` adds
+instructions of one's own after the brief, in a closing `## Added at start` section. One
+JSON line per issue: host, branch, path, and the agent's handle.
 
 The host is the innermost one the session runs in, detected from the environment:
 
@@ -365,15 +367,25 @@ The agents talk through the mailbox, which needs no Orca or Herdr:
 
 ```sh
 lntt ask --to coordinator --theme release-0-6-1 "Which pull request first?"   # waits; stdout is the answer
+lntt ask --to orchestrator --issue 89 "May I push?"           # topic issue-89-may-i-push, in to-orchestrator/
+lntt ask --wait 20261017-101500-review-limit                   # the answer to a message already sent
 lntt inbox --as coordinator --theme release-0-6-1 [--wait]    # unanswered messages, one JSON line each
 lntt answer 20261017-101500-which-pull-request "The CLI one."
 ```
 
 A message is `<git common dir>/lntt-messages/to-<role>/<YYYYMMDD-HHMMSS>-<topic>.md`, its answer the
 same name ending in `.answer.md`; polled every 20 seconds (`LNTT_POLL_SECONDS`). A child is
-addressed by `--issue`, a coordinator by `--theme`. `--timeout <s>` ends a wait with exit 1 and
-leaves the message in place; `-` reads the text from stdin; `LNTT_ROLE`, `LNTT_THEME` and
-`LNTT_ISSUE` default `inbox`'s role and address.
+addressed by `--issue`, a coordinator by `--theme`; sent to the orchestrator or a coordinator,
+`--issue` says which child the message is about and prefixes its topic with `issue-<n>-`.
+`--timeout <s>` ends a wait with exit 1 and leaves the message in place; `--wait <id>` waits
+again for its answer, with the same output and exit codes; `-` reads the text from stdin;
+`LNTT_ROLE`, `LNTT_THEME` and `LNTT_ISSUE` default `inbox`'s role and address.
+
+Every wait of a child goes through the mailbox, and its brief says so: a question, an approval
+(a 1Password prompt included), the review limit. `lntt worktree start` records who each branch
+reports to in `<git common dir>/lntt-messages/started/<branch>.json`; at `lntt review: limit:`
+the round sends the open findings there itself, without waiting, and prints the id to wait on
+with `lntt ask --wait <id>`.
 
 ## Reviewing a change
 
@@ -450,7 +462,10 @@ A finding whose reviewer cannot be resumed is refused: the person decides on it.
 
 A branch takes at most `delivery.review.maxRounds` rounds, one with a failure among
 them. The round past the limit does not start: `lntt review: limit: …` on stderr with the findings still open, the
-same findings as JSON on stdout, a `limit` event in the progress file, exit 3. `allow`
+same findings as JSON on stdout, a `limit` event in the progress file, exit 3. On a branch
+`lntt worktree start` started, the open findings also go to its coordinator or the
+orchestrator as a message the round does not wait for (`asked` in the JSON and the event,
+`lntt review: limit: sent <id>` on stderr). `allow`
 gives the current branch more rounds, kept in its state; the configuration and the
 other branches stay as they are. A run with no new commit is not a round and is never
 stopped.

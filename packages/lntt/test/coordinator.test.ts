@@ -163,6 +163,17 @@ describe('the coordinator’s brief', () => {
     assert.doesNotMatch(brief, /(^|[^/\w])orca (worktree|terminal)/m)
   })
 
+  test('says every wait goes through the mailbox, its own and its children’s', () => {
+    const brief = coordinatorBrief(VALUES)
+    assert.match(brief, /Every wait goes through the mailbox/)
+    assert.match(brief, /1Password/)
+    assert.match(brief, /review limit/)
+    assert.match(brief, /`lntt inbox --as coordinator --theme release-0-6-1`/)
+    assert.match(brief, /`lntt ask --to orchestrator`, batched, with a recommendation/)
+    assert.match(brief, /re-reads its mailbox/)
+    assert.match(brief, /`lntt ask --to child --issue <n>`/)
+  })
+
   test('on a host with no Orca there is no Orca line', () => {
     const brief = coordinatorBrief({ ...VALUES, orca: null })
     assert.doesNotMatch(brief, /orca/i)
@@ -218,7 +229,7 @@ describe('the brief without a model or a gate', () => {
 describe('the child’s brief', () => {
   const base = { issue: 84, title: 'Coordinator mode', branch: 'feat/84/coordinator-mode', worktree: '/w' }
 
-  test('without a theme it is the plain brief, byte for byte', () => {
+  test('without a theme it is the plain brief, with its waits sent to the orchestrator, byte for byte', () => {
     const plain = childBrief(base, {})
     assert.equal(
       plain,
@@ -239,11 +250,38 @@ describe('the child’s brief', () => {
         '  met along the way (a missing tool, an unclear rule, a check that failed for reasons',
         '  outside the change).',
         '',
+        '## Every wait goes through the mailbox',
+        '',
+        'Nobody watches your terminal: whatever you wait for, ask with `lntt ask --to orchestrator --issue 84 "<…>"`,',
+        'which waits for the answer and prints it, never only in your tab.',
+        '',
+        '- **An answer** the issue, the decision records and the code do not give.',
+        '- **An approval:** a 1Password prompt for a `git push` or a secret, a go-ahead. Say what',
+        '  it unlocks, and retry once it is answered.',
+        '- **The review limit:** at `lntt review: limit:` the round sends the open findings',
+        '  itself and prints the id of its message; wait for the answer with',
+        '  `lntt ask --wait <id>`.',
+        '',
+        'While you wait, and before you resume after any pause, re-read your mailbox:',
+        '`lntt inbox --as child --issue 84`. A decision sent there holds over what you',
+        'assumed.',
+        '',
       ].join('\n'),
     )
-    assert.doesNotMatch(plain, /theme|mailbox|workflow|ultracode/i)
+    assert.doesNotMatch(plain, /theme|workflow|ultracode/i)
     assert.doesNotMatch(plain, /\{\{/)
-    assert.ok(plain.endsWith('outside the change).\n'))
+  })
+
+  test('a child of a theme routes every wait to its coordinator, and re-reads its mailbox', () => {
+    const brief = childBrief(base, { theme: 'release-0-6-1' })
+    assert.match(brief, /## Every wait goes through the mailbox/)
+    assert.match(brief, /ask with `lntt ask --to coordinator --theme release-0-6-1 "<…>"`/)
+    assert.doesNotMatch(brief, /--to orchestrator/)
+    assert.match(brief, /1Password/)
+    assert.match(brief, /at `lntt review: limit:` the round sends the open findings/)
+    assert.match(brief, /lntt ask --wait <id>/)
+    assert.match(brief, /re-read your mailbox:\n`lntt inbox --as child --issue 84`/)
+    assert.doesNotMatch(brief, /workflow|orca/i)
   })
 
   test('with a context and a parent it carries the theme section and how to report', () => {
