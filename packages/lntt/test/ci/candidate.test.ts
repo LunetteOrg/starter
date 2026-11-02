@@ -1259,6 +1259,19 @@ describe('follow', () => {
     assert.equal(git(s.clone, 'worktree', 'list').split('\n').length, 1)
   })
 
+  test("the clone's hooks do not run on the automation's rebase and push", (t) => {
+    const s = setup()
+    t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+    // Hooks that refuse everything: a project's pre-push or pre-rebase on the machine.
+    for (const hook of ['pre-push', 'pre-rebase', 'post-checkout']) {
+      write(s.clone, { [`.git/hooks/${hook}`]: '#!/bin/sh\nexit 1\n' })
+      chmodSync(join(s.clone, `.git/hooks/${hook}`), 0o755)
+    }
+    const result = follow({ ...run(fakeGh(answers(s))), git: recordingGit(s) })
+    assert.equal(result.outcome, 'updated')
+    assert.equal(remoteHead(s), result.head)
+  })
+
   test('pull requests on the candidate: the base is merged into it, no force, and each is told', (t) => {
     const s = setup()
     t.after(() => rmSync(s.dir, { recursive: true, force: true }))
