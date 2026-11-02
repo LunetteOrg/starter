@@ -40,10 +40,10 @@ reason, and sits at the lowest level where its assertion can.
     pyramid per level, what the diff adds to each, and the jsdom tests that stub a Web
     API are `INFO`: never a threshold.
   - `focus`: `.only`, a new `.skip` or todo, a test with no assertion. A skip decided
-    while the test runs, `t.skip('<reason>')` with a string literal that says why (a
-    provider's usage limit left the call with nothing to prove), is allowed: it shows
-    as skipped, with its reason. A bare `t.skip()`, an empty reason or one that is not a
-    literal still fails.
+    while the test runs, `t.skip('<reason>')` with a string or template literal that
+    opens with text saying why (a provider's usage limit left the call with nothing to
+    prove), is allowed: it shows as skipped, with its reason. A bare `t.skip()`, an empty reason, one that is not a
+    literal or a template opening with a placeholder still fails.
   - `rules`: the lines that match a rule; a rule asserted by the suite is cited. A rule
     whose `anchor` names a record that is not there, or a heading the record does not
     have, fails. Headings resolve as GitHub's slugs do, over CommonMark's blocks: a

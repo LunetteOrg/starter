@@ -166,6 +166,9 @@ describe('lntt check tests focus', () => {
     assert.deepEqual(run('t.skip(reason)'), ['test/unit/runtime.test.ts:4'])
     assert.deepEqual(run(`t.skip(\`\${reason}\`)`), ['test/unit/runtime.test.ts:4'])
     assert.deepEqual(run("t.skip('why'); t.skip()"), ['test/unit/runtime.test.ts:4'])
+    assert.deepEqual(run("t.skip('why'); test.skip('x', () => {})"), ['test/unit/runtime.test.ts:4'])
+    assert.deepEqual(run("t.skip('a'); t.skip('b')"), [])
+    assert.deepEqual(run("t.skip('skip: true, so say the notes')"), [])
   })
 
   test("with --base a skip or a todo that was already there is not the diff's", () => {

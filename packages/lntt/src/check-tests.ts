@@ -238,7 +238,7 @@ function withoutStrings(line: string): string {
 // why (a provider's usage limit): the reason is a string literal with text in it. A bare
 // `t.skip()`, a `t.skip(reason)` with a variable, an empty string or a template that
 // opens with a placeholder is the skip the check rejects. Only the reasoned call is cut.
-const REASONED_SKIP = /\bt\.skip\s*\(\s*(['"`])\s*(?!\$\{)[^\s'"`]/g
+const REASONED_SKIP = /\bt\.skip\s*\(\s*(['"`])\s*(?!\$\{)[^\s'"`](?:\\.|(?!\1)[^\\])*\1/g
 
 function comment(line: string): boolean {
   return /^\s*(?:\/\/|\*|\/\*)/.test(line)
