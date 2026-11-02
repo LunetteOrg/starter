@@ -262,7 +262,8 @@ the board and the run leaves a notice saying so: it is put on the board with the
 `github-board` skill; a failure after the issue is added leaves it on the board with
 its status unset, and a notice saying so. When `board.issueTypes` names no Bug, or
 GitHub refuses the type (a validation error), the issue is opened with no type, with a
-notice. A red of `pnpm install` opens no issue,
+notice; when that second create fails too, the run fails with its error, no issue is
+opened and the board is not touched. A red of `pnpm install` opens no issue,
 since the script needs the install, and saves no entry: the version is checked again
 the next day.
 
