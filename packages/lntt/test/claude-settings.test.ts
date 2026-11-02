@@ -270,23 +270,27 @@ describe('the Claude Code settings lntt sync writes', () => {
     [
       'elsewhere',
       { extraKnownMarketplaces: { lunette: { source: { source: 'github', repo: 'o/r' } } } },
-      /extraKnownMarketplaces\.lunette points elsewhere than the marketplace @lntt\/lntt ships; run lntt sync/,
+      /extraKnownMarketplaces\.lunette points elsewhere than the marketplace @lntt\/lntt ships; run pnpm exec lntt sync/,
     ],
-    ['off', { enabledPlugins: { [PLUGIN]: false } }, /enabledPlugins\.lunette@lunette is not enabled; run lntt sync/],
+    [
+      'off',
+      { enabledPlugins: { [PLUGIN]: false } },
+      /enabledPlugins\.lunette@lunette is not enabled; run pnpm exec lntt sync/,
+    ],
     [
       'edited',
       { hooks: { SessionStart: [{ hooks: [{ ...INSTALL_HOOK, command: 'x' }] }] } },
-      /hooks\.SessionStart: the install hook differs from the one lntt sync writes; run lntt sync/,
+      /hooks\.SessionStart: the install hook differs from the one lntt sync writes; run pnpm exec lntt sync/,
     ],
     [
       'edited',
       { hooks: { Stop: [{ hooks: [{ ...TYPECHECK_HOOK, command: 'x' }] }] } },
-      /hooks\.Stop: the typecheck hook differs from the one lntt sync writes; run lntt sync/,
+      /hooks\.Stop: the typecheck hook differs from the one lntt sync writes; run pnpm exec lntt sync/,
     ],
     [
       'invalid',
       { enabledPlugins: 'x' },
-      /\.claude\/settings\.json is not JSON, or not the shape Claude Code reads: fix it, then run lntt sync/,
+      /\.claude\/settings\.json is not JSON, or not the shape Claude Code reads: fix it, then run pnpm exec lntt sync/,
     ],
   ] as const) {
     test(`lntt check plugin says what to do for ${state}`, () => {
@@ -300,7 +304,7 @@ describe('the Claude Code settings lntt sync writes', () => {
   test('lntt sync writes them, and lntt check plugin passes then', () => {
     const before = spawnSync(process.execPath, [BIN, 'check', 'plugin'], { cwd: root, encoding: 'utf8' })
     assert.equal(before.status, 1)
-    assert.match(before.stdout, /FAIL\s+plugin\/settings\s+\.claude\/settings\.json .*run lntt sync/)
+    assert.match(before.stdout, /FAIL\s+plugin\/settings\s+\.claude\/settings\.json .*run pnpm exec lntt sync/)
     assert.equal(spawnSync(process.execPath, [BIN, 'sync'], { cwd: root, encoding: 'utf8' }).status, 0)
     const after = spawnSync(process.execPath, [BIN, 'check', 'plugin'], { cwd: root, encoding: 'utf8' })
     assert.equal(after.status, 0, after.stdout)

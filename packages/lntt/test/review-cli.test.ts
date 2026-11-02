@@ -921,7 +921,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
       r.err,
       /^lntt review: limit: round 2 would pass delivery\.review\.maxRounds \(1\) on feat\/1\/x; still open: f1 \(warning, confirmed\)$/m,
     )
-    assert.match(r.err, /lntt review allow <rounds>/)
+    assert.match(r.err, /pnpm exec lntt review allow <rounds>/)
     const out = JSON.parse(r.out)
     assert.deepEqual(
       out.findings.map((f: { id: string }) => f.id),

@@ -125,7 +125,7 @@ function check(args: string[]): void {
     if (result.ok) continue
     const fix = result.expected
       ? `rename it: git branch -m ${result.expected}`
-      : 'rename it to the name lntt branch name --issue <n> prints'
+      : 'rename it to the name pnpm exec lntt branch name --issue <n> prints'
     stderr.write(`lntt branch: ${branch} does not follow type/issue/slug: ${result.reason}; ${fix}\n`)
     failed = true
   }
@@ -174,7 +174,7 @@ function rename(): void {
   if (!target) {
     stderr.write(
       `lntt branch: ${current} does not follow type/issue/slug and holds nothing to rebuild it from; ` +
-        'rename it with git branch -m "$(lntt branch name --issue <n>)"\n',
+        'rename it with git branch -m "$(pnpm exec lntt branch name --issue <n>)"\n',
     )
     return
   }

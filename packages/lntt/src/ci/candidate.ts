@@ -254,7 +254,7 @@ export function candidateBody(config: CandidateConfig, n: number): string {
 // candidate is marked ready. The automation never rewrites it, unlike the body.
 export function retrospectiveComment(config: CandidateConfig): string {
   return [
-    `The retrospective of this ${candidateName(config)}: the friction that belongs to the batch and to no single pull request, appended as it is met with \`lntt retro add --label <label> "<one sentence>"\` (the \`retrospective\` skill). Every label holds a value or none before the ${candidateName(config)} is marked ready (\`lntt check body --pr <n>\`).`,
+    `The retrospective of this ${candidateName(config)}: the friction that belongs to the batch and to no single pull request, appended as it is met with \`pnpm exec lntt retro add --label <label> "<one sentence>"\` (the \`retrospective\` skill). Every label holds a value or none before the ${candidateName(config)} is marked ready (\`pnpm exec lntt check body --pr <n>\`).`,
     '',
     config.retrospective,
   ].join('\n')
@@ -536,7 +536,7 @@ function ensureRetrospective(run: Run, candidate: CandidatePr) {
     // One line: a workflow command ends at the first newline, and `%` starts an escape.
     const message = (error as Error).message.replaceAll('%', '%25').replace(/\r?\n/g, ' ')
     log(
-      `::warning title=Retrospective comment::${candidate.headRefName}: not written (${message}); lntt retro add writes it`,
+      `::warning title=Retrospective comment::${candidate.headRefName}: not written (${message}); pnpm exec lntt retro add writes it`,
     )
   }
 }
