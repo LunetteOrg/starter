@@ -65,9 +65,10 @@ stops at the draft pull request.
 **Merge methods are enforced** by repository rulesets: candidate branches
 (`refs/heads/candidate/*`) take squash merges only, `main` takes rebase merges only, and
 both take changes through pull requests only, with no required approval. The
-repository admin role bypasses both: the release bump is a direct commit on `main`,
-and rewriting a candidate (a rebase on `main`) is a force push an
-admin makes.
+repository admin role bypasses both: the release bump is a direct commit on `main`.
+Rewriting a candidate (a rebase on `main`) is the candidate app's force push with a
+lease when no pull request is open into it ([when `main` moves](#the-candidate)), and a
+force push an admin makes by hand otherwise.
 
 ## The pull request body
 
@@ -188,8 +189,24 @@ candidate exists on a day without pull requests.
   the new head. The candidate may be what a preview or pre-production environment runs:
   no merged commit is taken out of it, and the pull requests already merged keep their
   `Closes`.
-- **When `main` moves** (a hotfix), the candidate rebases on `main` and `ci:local` runs
-  again.
+- **When `main` moves** (a hotfix, a Dependabot pull request merged on `main`), the
+  automation brings the open candidate up to date, the way that suits whoever stands on
+  it:
+  - **No pull request open into the candidate:** its commits are rebased on `main`
+    (the empty opening commit kept) and pushed with a lease on the head it read. Nobody's
+    branch descends from the old commits, and the history stays linear.
+  - **Pull requests open into the candidate:** `main` is merged into it, a merge commit
+    and a plain push, no rewrite. Their branches stay valid and follow with a merge or a
+    rebase of the candidate of their own.
+
+  A comment on the candidate says where `main` moved, which path was taken and why, and
+  the old and new head; after a merge each pull request open into it gets one too. The
+  candidate's CI runs on the new head once it is ready for review; a draft candidate
+  gets no cloud CI, so `pnpm ci:local` runs on it. A conflict, or a push GitHub refuses,
+  leaves the candidate as it is, with a comment naming the files in conflict, or git's
+  error, and a warning in the run: a person switches to the candidate, merges
+  `origin/main` into it (or rebases it, with no pull request open into it), resolves
+  and pushes.
 - **Stranded pull requests.** A pull request left on a candidate that is no longer open
   (closed without merging, or a merge whose event the workflow dropped) moves onto the
   open candidate at the automation's next run, whatever event starts it.
@@ -207,18 +224,25 @@ Dependabot pull request runs the CI once an owner, member or collaborator approv
 
 The automation runs from a terminal too: `pnpm exec lntt ci candidate --pr <n>` does
 what the workflow would do on that pull request's event (move it, rebuild a
-candidate's lists, or close and carry over on a merged candidate), and `--dry-run`
-prints the writes instead of making them. A terminal run moves the board too, with the
+candidate's lists, or close and carry over on a merged candidate), and
+`pnpm exec lntt ci candidate --follow` what it does on a push to `main` (the open
+candidate follows `main`, with the path and its reason printed). `--dry-run` prints the
+writes and the push instead of making them; the fetch, the merge and the rebase still
+run in the local clone and a temporary worktree, so it shows the files in conflict or
+the head it would push. A terminal run moves the board too, with the
 login of `gh`, which needs the `project` scope (`gh auth refresh -s project`). A terminal run is outside the workflow's
 concurrency group: run one at a time, and not while the workflow is running.
 
 ## The candidate automation
 
 `.github/workflows/candidate.yml` runs `lntt ci candidate` (`@lntt/lntt`) on three
-`pull_request` events (`opened`, `ready_for_review`, `closed`), drafts included, never
-on a push. One run at a time across the repository, so two pull requests opened
-together find the same candidate. The script and the configuration are read from the
-default branch.
+`pull_request` events (`opened`, `ready_for_review`, `closed`), drafts included, and on
+a push to `main`. One run at a time across the repository, so two pull requests opened
+together find the same candidate. Every run sweeps the stranded pull requests and
+brings the open candidate up to date with `main` before it handles its event: the
+concurrency group keeps one pending run, and a newer one cancels it, so the next run
+covers a dropped push. The script and the configuration are read from the default
+branch.
 
 It writes with the token of a **GitHub App of the organization**, generated in the job
 by `actions/create-github-app-token`. `GITHUB_TOKEN` cannot open a pull request while
@@ -231,12 +255,14 @@ and pull requests stay where they are opened. To turn it on:
 
 1. **Create the app** in the organization (Settings → Developer settings → GitHub
    Apps → New GitHub App):
-   - **Repository permissions:** Contents *read and write* (the candidate branch and
-     its empty commit), Pull requests *read and write* (create the candidate, move a
+   - **Repository permissions:** Contents *read and write* (the candidate branch, its
+     empty commit, its rebase on `main` or the merge of `main` into it), Pull requests *read and write* (create the candidate, move a
      pull request, edit the body, comment), Issues *read and write* (comment on and
      close issues). Metadata *read* comes with them. Nothing else on the repository, and
      the organization permission Projects of the board (below): no approvals, no
-     administration, no workflows.
+     administration, no workflows. GitHub refuses an app's push that changes a file
+     under `.github/workflows/` without the Workflows permission: when `main` brings
+     such a change, the candidate's rebase or merge is pushed by hand.
    - **Homepage URL** (required by the form): this repository's URL.
    - **Webhook:** off. **Events:** none; the workflow brings the events.
    - **Where it can be installed:** only this account.
@@ -253,8 +279,9 @@ and pull requests stay where they are opened. To turn it on:
    notice. The upstream check asks the app for the same permission to put the issue
    of a red on the board ([CI](./ci.md#upstream-tools)).
 4. **Add the app as a bypass actor of the candidates ruleset** (*candidates: squash
-   merge only*): it creates `candidate/<N>` with a commit, which the ruleset's
-   pull-request rule otherwise blocks.
+   merge only*): it creates `candidate/<N>` with a commit and writes the candidate
+   branch directly when `main` moves, which the ruleset's pull-request rule otherwise
+   blocks.
 5. **Repository settings:** rebase merge and squash merge allowed (the rulesets narrow
    each branch to one). *Automatically delete head branches* may stay as it is: the
    automation finds the pull requests left behind either way.
@@ -413,6 +440,13 @@ because npm configures a trusted publisher only on a package that exists:
 - **`Closes` lines in squash messages as the only way to close issues.** They depend on
   each message being written right and on a merge method that keeps them; the
   automation closes issues whatever the method, and the messages stay as the net.
+- **Always rebasing the candidate when `main` moves.** With pull requests open into
+  it, every branch on the candidate would have to rebase and force-push in cascade.
+- **Always merging `main` into the candidate.** With nobody standing on it, a merge
+  history serves no one, where a rebase keeps it linear.
+- **Following `main` only on the push event.** A newer pending run of the concurrency
+  group cancels the push's run, and the candidate would stay behind until the next
+  push to `main`.
 - **`GITHUB_TOKEN` with *Allow GitHub Actions to create and approve pull requests*.**
   The same setting lets any workflow approve a pull request.
 - **Creating the `In release` option from the automation.** The automation runs on

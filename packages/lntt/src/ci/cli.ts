@@ -30,6 +30,7 @@ import {
 const USAGE = [
   'usage: lntt ci local [--event pull_request|push] [--base <branch>] [--job <key>]... [--list] [--strict] [--container] [--no-lock]',
   '       lntt ci candidate [--pr <n>] [--event <action>] [--head-ref <ref>] [--labels a,b] [--merged] [--dry-run]',
+  '       lntt ci candidate --follow [--dry-run]',
   '       lntt ci proved --job <name>... [--step <name>] [--workflow <file>] [--sha <sha>] [--before <sha>] [--branch <name>]',
 ].join('\n')
 
@@ -163,6 +164,7 @@ function candidateRun(args: string[]): number {
         'head-ref': { type: 'string' },
         labels: { type: 'string' },
         merged: { type: 'boolean', default: false },
+        follow: { type: 'boolean', default: false },
         'dry-run': { type: 'boolean', default: false },
       },
     }),
@@ -180,6 +182,14 @@ function candidateRun(args: string[]): number {
     candidate.makeGh({ dryRun: values['dry-run'], log, token }),
   )
   const repo = env.GITHUB_REPOSITORY ?? gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])
+  // The local clone: the candidate follows the base through it (fetch, merge or rebase,
+  // push). In Actions it authenticates with GH_TOKEN through its environment.
+  const git = candidate.makeGit({ dryRun: values['dry-run'], log, cwd: cwd(), env })
+  const run: candidate.Run = { gh, ...(board ? { board } : {}), git, repo, config, log }
+  if (values.follow) {
+    candidate.handlePush(run)
+    return 0
+  }
   let action: string
   let pr: candidate.PullRequest
   const number = values.pr
@@ -188,15 +198,20 @@ function candidateRun(args: string[]): number {
     pr = candidate.prFromGh(gh, repo, Number(number))
     action = values.event ?? (pr.merged ? 'closed' : 'opened')
   } else {
-    if (!env.GITHUB_EVENT_PATH) usage('without --pr, GITHUB_EVENT_PATH must name the pull_request event')
+    if (!env.GITHUB_EVENT_PATH) usage('without --pr or --follow, GITHUB_EVENT_PATH must name the event')
     const event = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8'))
+    // A push to the base: the candidate follows it.
+    if (!event.pull_request) {
+      candidate.handlePush(run)
+      return 0
+    }
     action = event.action
     pr = candidate.prFromEvent(event)
   }
   if (values['head-ref'] !== undefined) pr.headRef = values['head-ref']
   if (values.labels !== undefined) pr.labels = values.labels.split(',').filter((l) => l !== '')
   if (values.merged) pr.merged = true
-  candidate.handle({ gh, ...(board ? { board } : {}), repo, config, log }, action, pr)
+  candidate.handle(run, action, pr)
   return 0
 }
 

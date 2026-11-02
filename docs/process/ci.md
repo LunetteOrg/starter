@@ -36,7 +36,8 @@ a pull request into a candidate it runs only when the change touches `packages/c
 and the full CI runs it always, when the base is the default branch or the event is a
 push. A scaffold failure that a pull request does not see is caught on the candidate,
 and fixed forward there. The candidate automation (`candidate.yml`) is not CI: it runs
-on its own three events, drafts included
+on its own three `pull_request` events, drafts included, and on a push to the default
+branch, to bring the open candidate up to date with it
 ([delivery](./delivery.md#the-candidate-automation)).
 
 ## A tree already proved

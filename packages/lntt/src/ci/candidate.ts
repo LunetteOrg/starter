@@ -16,6 +16,12 @@
 //   still open, then move the pull requests still open on it (GitHub moves them onto
 //   the base when it deletes the branch) onto the next candidate, created only when
 //   there are some.
+// - every run, and alone on a push to the base (`handlePush`): when the base moved
+//   while a candidate is open, the candidate follows it. Nobody on it (no pull request
+//   open into it): its commits are rebased on the base and pushed with a lease on the
+//   head as read. Pull requests open into it: the base is merged into it, no rewrite,
+//   so their branches stay valid. A conflict or a refused push leaves it as it is and
+//   tells the candidate's pull request what a person does.
 //
 // The board follows: an open issue a pull request closes moves to `In release` when the
 // pull request is squashed into a candidate, and its status becomes `Done` when the
@@ -31,6 +37,9 @@
 // prefix, base and hotfix markers come from the configuration.
 
 import { spawnSync } from 'node:child_process'
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { retroComment } from '../pull-request.ts'
 
 export interface CandidateConfig {
@@ -73,8 +82,18 @@ export interface Gh {
   write: (args: string[], input?: string) => string
 }
 
+// git on the local clone. `run` always executes (it only touches the clone and its
+// worktrees); `push` is the one command that writes to the remote, so a dry run logs
+// it instead.
+export interface Git {
+  run: (args: string[]) => { status: number; stdout: string; stderr: string }
+  push: (args: string[]) => { status: number; stderr: string }
+}
+
 export interface Run {
   gh: Gh
+  // The local clone, for following the base; without it the follow step does nothing.
+  git?: Git
   // The same commands with a token that has the Projects permission; without it the
   // board is not moved.
   board?: Gh
@@ -231,6 +250,26 @@ export function sweepDecision(
   return { move }
 }
 
+// How the open candidate follows the base when the base moved: rebased when nobody
+// stands on it, the base merged into it when pull requests are open into it, so their
+// branches keep the candidate's commits. `behindBy` is the number of the base's commits
+// the candidate lacks.
+export function followDecision(
+  config: CandidateConfig,
+  { candidate, behindBy, prsInto }: { candidate: string | null; behindBy: number; prsInto: number[] },
+): { path: 'none' | 'rebase' | 'merge'; reason: string } {
+  if (candidate === null) return { path: 'none', reason: 'no candidate open' }
+  if (behindBy === 0) return { path: 'none', reason: `${config.base} is an ancestor of ${candidate}` }
+  if (prsInto.length === 0) {
+    return { path: 'rebase', reason: `${config.base} moved and no pull request is open into ${candidate}: rebase` }
+  }
+  const prs = [...prsInto].sort((a, b) => a - b)
+  return {
+    path: 'merge',
+    reason: `${config.base} moved and ${prs.map((n) => `#${n}`).join(', ')} ${prs.length === 1 ? 'is' : 'are'} open into ${candidate}: merge ${config.base} into it, no rewrite`,
+  }
+}
+
 export function candidateBody(config: CandidateConfig, n: number): string {
   return [
     `${sentence(candidateName(config))} ${n}: pull requests into \`${config.base}\` land here, and merging this pull request brings them to \`${config.base}\` together, one commit each (rebase merge).`,
@@ -374,6 +413,48 @@ export function makeGh({ dryRun, log, token }: { dryRun: boolean; log: (line: st
   }
 }
 
+// In Actions, git authenticates to github.com with the token through its environment
+// (an extra header, as actions/checkout sets it), never through its arguments, so the
+// token shows in no command line and no log.
+export function gitAuthEnv(env: Record<string, string | undefined>): Record<string, string> {
+  const token = env.GH_TOKEN
+  if (!env.GITHUB_ACTIONS || !token) return {}
+  return {
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
+    GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`,
+  }
+}
+
+export function makeGit({
+  dryRun,
+  log,
+  cwd,
+  env,
+}: {
+  dryRun: boolean
+  log: (line: string) => void
+  cwd: string
+  env: Record<string, string | undefined>
+}): Git {
+  const childEnv = { ...env, ...gitAuthEnv(env) }
+  const run = (args: string[]) => {
+    const result = spawnSync('git', args, { cwd, env: childEnv, encoding: 'utf8' })
+    if (result.error) throw result.error
+    return { status: result.status ?? 1, stdout: result.stdout.trim(), stderr: result.stderr }
+  }
+  return {
+    run,
+    push: (args) => {
+      if (dryRun) {
+        log(`[dry-run] git push ${args.join(' ')}`)
+        return { status: 0, stderr: '' }
+      }
+      return run(['push', ...args])
+    },
+  }
+}
+
 // The client for the board: the Projects token when the workflow has one, none inside
 // a workflow without it (the board is left as it is, with a notice), the operator's own
 // client in a terminal.
@@ -385,6 +466,8 @@ export function pickBoard<T>(token: string | undefined, inWorkflow: boolean, own
 interface CandidatePr {
   number: number
   headRefName: string
+  // The candidate's head when it was read.
+  headRefOid?: string
   body?: string
   // Created by this run: it has no comment yet.
   created?: boolean
@@ -404,7 +487,7 @@ function openCandidates({ gh, repo, config }: Pick<Run, 'gh' | 'repo' | 'config'
       '--search',
       `head:${config.prefix}`,
       '--json',
-      'number,headRefName,body',
+      'number,headRefName,headRefOid,body',
     ]),
   ) as CandidatePr[]
   return prs
@@ -505,6 +588,9 @@ function createCandidate(run: Run): CandidatePr {
   return { number, headRefName: branch, created: true }
 }
 
+// One line: a workflow command ends at the first newline, and `%` starts an escape.
+const workflowLine = (text: string) => text.replaceAll('%', '%25').replace(/\r?\n/g, ' ')
+
 export interface Comment {
   id: number
   body: string
@@ -533,10 +619,8 @@ function ensureRetrospective(run: Run, candidate: CandidatePr) {
       retrospectiveComment(config),
     )
   } catch (error) {
-    // One line: a workflow command ends at the first newline, and `%` starts an escape.
-    const message = (error as Error).message.replaceAll('%', '%25').replace(/\r?\n/g, ' ')
     log(
-      `::warning title=Retrospective comment::${candidate.headRefName}: not written (${message}); lntt retro add writes it`,
+      `::warning title=Retrospective comment::${candidate.headRefName}: not written (${workflowLine((error as Error).message)}); lntt retro add writes it`,
     )
   }
 }
@@ -988,6 +1072,288 @@ export function sweep(run: Run) {
   return { move }
 }
 
+// --- Following the base ---------------------------------------------------------
+
+export interface FollowResult {
+  path: 'none' | 'rebase' | 'merge'
+  reason: string
+  // Nothing to do; no git in this run; the candidate or the base moved between the API
+  // read and the fetch (the next run sees it); a conflict; a refused push; updated.
+  outcome: 'none' | 'no-git' | 'moved-meanwhile' | 'conflict' | 'refused' | 'updated'
+  // The candidate's new head, pushed (or, in a dry run, the one that would be).
+  head?: string
+  // The files in conflict.
+  files?: string[]
+}
+
+const short = (sha: string) => sha.slice(0, 8)
+
+// The markers that keep a rerun from repeating a comment: a conflict or a refusal once
+// per base and candidate head, an update once per new head.
+export function followMarker(base: string, oldHead: string): string {
+  return `<!-- candidate:follow:${base}:${oldHead} -->`
+}
+
+export function followedMarker(newHead: string): string {
+  return `<!-- candidate:followed:${newHead} -->`
+}
+
+interface FollowFacts {
+  candidate: string
+  base: string
+  oldHead: string
+  path: 'rebase' | 'merge'
+  prsInto: number[]
+}
+
+const followWhy = (facts: FollowFacts) =>
+  facts.path === 'rebase'
+    ? 'no pull request is open into it'
+    : `${facts.prsInto.map((n) => `#${n}`).join(', ')} ${facts.prsInto.length === 1 ? 'is' : 'are'} open into it`
+
+function manualSteps(config: CandidateConfig, { candidate }: FollowFacts): string[] {
+  return [
+    '```sh',
+    'git fetch origin',
+    `git switch ${candidate}`,
+    `git merge origin/${config.base}   # or, with no pull request open into it: git rebase origin/${config.base}`,
+    '# resolve the conflicts, then commit (or git rebase --continue)',
+    'git push                  # after a rebase: git push --force-with-lease',
+    '```',
+  ]
+}
+
+export function followConflictComment(config: CandidateConfig, facts: FollowFacts, files: string[]): string {
+  const step = facts.path === 'rebase' ? `the rebase on it` : `the merge of it`
+  return [
+    followMarker(facts.base, facts.oldHead),
+    `\`${config.base}\` moved to \`${short(facts.base)}\` and \`${facts.candidate}\` cannot follow it by itself: ${step} (${followWhy(facts)}) stops on a conflict in:`,
+    '',
+    ...files.map((file) => `- \`${file}\``),
+    '',
+    `Nothing was pushed: \`${facts.candidate}\` stays at \`${short(facts.oldHead)}\`. A person brings it up to date (docs/process/delivery.md):`,
+    '',
+    ...manualSteps(config, facts),
+  ].join('\n')
+}
+
+export function followRefusedComment(config: CandidateConfig, facts: FollowFacts, error: string): string {
+  const done = facts.path === 'rebase' ? 'rebased on it' : `merged with it`
+  return [
+    followMarker(facts.base, facts.oldHead),
+    `\`${config.base}\` moved to \`${short(facts.base)}\`: \`${facts.candidate}\` was ${done} (${followWhy(facts)}), and the push was refused:`,
+    '',
+    `> ${error}`,
+    '',
+    `Nothing was pushed: \`${facts.candidate}\` stays at \`${short(facts.oldHead)}\`. GitHub refuses a push of the app that changes a workflow file (it has no Workflows permission), and the lease refuses one when someone pushed to the candidate meanwhile. A person brings it up to date (docs/process/delivery.md):`,
+    '',
+    ...manualSteps(config, facts),
+  ].join('\n')
+}
+
+export function followedComment(config: CandidateConfig, facts: FollowFacts, newHead: string): string {
+  const what =
+    facts.path === 'rebase'
+      ? `\`${facts.candidate}\` was rebased on it, as ${followWhy(facts)}`
+      : `it was merged into \`${facts.candidate}\`, as ${followWhy(facts)}: no commit of the candidate was rewritten`
+  return [
+    followedMarker(newHead),
+    `\`${config.base}\` moved to \`${short(facts.base)}\`: ${what}. Head: \`${short(facts.oldHead)}\` → \`${short(newHead)}\`.`,
+    '',
+    `The candidate's CI runs on the new head once the candidate is ready for review; a draft runs no cloud CI, so \`pnpm ci:local\` runs on it (docs/process/delivery.md).`,
+  ].join('\n')
+}
+
+export function followedPrComment(config: CandidateConfig, facts: FollowFacts, newHead: string): string {
+  return [
+    followedMarker(newHead),
+    `\`${config.base}\` moved to \`${short(facts.base)}\` and was merged into \`${facts.candidate}\`, the base of this pull request (\`${short(facts.oldHead)}\` → \`${short(newHead)}\`). This branch follows with a merge or a rebase of \`${facts.candidate}\` of its own: \`git fetch origin\`, then \`git merge origin/${facts.candidate}\` (or \`git rebase origin/${facts.candidate}\` and \`git push --force-with-lease\`).`,
+  ].join('\n')
+}
+
+// Writes `body` on `number` unless a comment there already carries `marker`.
+function commentOnce(run: Run, number: number, marker: string, body: string) {
+  if (comments(run.gh, run.repo, number).some((c) => (c.body ?? '').includes(marker))) {
+    run.log(`candidate: #${number} already has this comment.`)
+    return
+  }
+  run.gh.write(['pr', 'comment', String(number), '--repo', run.repo, '--body-file', '-'], body)
+}
+
+// The line of git's error that says why: the rejected ref, else the first error.
+function pushError(stderr: string): string {
+  const lines = stderr
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+  return (
+    lines.find((line) => line.startsWith('!')) ??
+    lines.find((line) => /^(error|fatal|remote):/.test(line)) ??
+    lines[0] ??
+    'no message'
+  )
+}
+
+// The project's hooks do not run on the automation's own rebase.
+const NO_HOOKS = ['-c', 'core.hooksPath=/dev/null']
+
+// The candidate's new head, or the files in conflict.
+function rebased(git: Git, oldHead: string, base: string): { head: string } | { files: string[] } {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-follow-')))
+  try {
+    const add = git.run([...NO_HOOKS, 'worktree', 'add', '--detach', dir, oldHead])
+    if (add.status !== 0) throw new Error(`git worktree add failed: ${pushError(add.stderr)}`)
+    // The candidate opens with an empty commit, kept; merges of the base in its
+    // history are dropped, their commits being in the base.
+    const rebase = git.run(['-C', dir, ...NO_HOOKS, 'rebase', '--keep-empty', base])
+    if (rebase.status === 0) return { head: git.run(['-C', dir, 'rev-parse', 'HEAD']).stdout }
+    const files = git
+      .run(['-C', dir, 'diff', '--name-only', '--diff-filter=U'])
+      .stdout.split('\n')
+      .filter((line) => line !== '')
+    git.run(['-C', dir, ...NO_HOOKS, 'rebase', '--abort'])
+    if (files.length === 0) throw new Error(`git rebase failed: ${pushError(rebase.stderr)}`)
+    return { files }
+  } finally {
+    git.run(['worktree', 'remove', '--force', dir])
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+// The merge commit of the base into the candidate (parents: the candidate's head, then
+// the base), or the files in conflict.
+function merged(git: Git, facts: FollowFacts, base: string): { head: string } | { files: string[] } {
+  const tree = git.run(['merge-tree', '--write-tree', '--name-only', '--no-messages', facts.oldHead, facts.base])
+  const lines = tree.stdout.split('\n').filter((line) => line !== '')
+  if (tree.status === 1) return { files: [...new Set(lines.slice(1))] }
+  if (tree.status !== 0) throw new Error(`git merge-tree failed: ${pushError(tree.stderr)}`)
+  const commit = git.run([
+    'commit-tree',
+    lines[0] ?? '',
+    '-p',
+    facts.oldHead,
+    '-p',
+    facts.base,
+    '-m',
+    `Merge ${base} into ${facts.candidate}`,
+    '-m',
+    `${base} at ${facts.base}.`,
+  ])
+  if (commit.status !== 0) throw new Error(`git commit-tree failed: ${pushError(commit.stderr)}`)
+  return { head: commit.stdout }
+}
+
+// The open candidate follows the base when the base moved (followDecision): its commits
+// rebased on the base and pushed with a lease on the head as read, or the base merged
+// into it and pushed plainly. A conflict or a refused push leaves the candidate as it
+// is, comments on its pull request what a person does, and warns: it does not fail the
+// run. Every comment is written once (followMarker, followedMarker). In a dry run the
+// fetch, the merge and the rebase still run on the local clone and a temporary worktree;
+// only the push and the comments are printed.
+export function follow(run: Run): FollowResult {
+  const { gh, repo, config, log, git } = run
+  if (!git) {
+    log(`candidate: follow ${config.base}: no git client in this run, the candidate is left as it is.`)
+    return { path: 'none', reason: 'no git client', outcome: 'no-git' }
+  }
+  const candidate = openCandidate(run)
+  let behindBy = 0
+  let base = ''
+  let prsInto: number[] = []
+  if (candidate) {
+    const compare = JSON.parse(
+      gh.read([
+        'api',
+        `repos/${repo}/compare/${config.base}...${candidate.headRefName}`,
+        '--jq',
+        '{behindBy: .behind_by, base: .base_commit.sha}',
+      ]),
+    ) as { behindBy: number; base: string }
+    behindBy = compare.behindBy
+    base = compare.base
+    if (behindBy > 0) {
+      prsInto = openPrs(run)
+        .filter((pr) => pr.baseRef === candidate.headRefName)
+        .map((pr) => pr.number)
+        .sort((a, b) => a - b)
+    }
+  }
+  const decision = followDecision(config, { candidate: candidate?.headRefName ?? null, behindBy, prsInto })
+  log(`candidate: follow ${config.base}: ${decision.reason}`)
+  if (decision.path === 'none' || !candidate) return { ...decision, outcome: 'none' }
+
+  const name = candidate.headRefName
+  const must = (args: string[]) => {
+    const result = git.run(args)
+    if (result.status !== 0) throw new Error(`git ${args[0]} failed: ${pushError(result.stderr)}`)
+    return result.stdout
+  }
+  const shallow = must(['rev-parse', '--is-shallow-repository']) === 'true'
+  must([
+    'fetch',
+    '--no-tags',
+    ...(shallow ? ['--unshallow'] : []),
+    'origin',
+    `+refs/heads/${config.base}:refs/remotes/origin/${config.base}`,
+    `+refs/heads/${name}:refs/remotes/origin/${name}`,
+  ])
+  const fetched = must(['rev-parse', `refs/remotes/origin/${name}`])
+  const oldHead = candidate.headRefOid ?? fetched
+  if (fetched !== oldHead || git.run(['rev-parse', '--verify', '--quiet', `${base}^{commit}`]).status !== 0) {
+    log(
+      `candidate: ${name} moved between the read (${short(oldHead)}) and the fetch (${short(fetched)}): left as it is, the next run follows ${config.base}.`,
+    )
+    return { ...decision, outcome: 'moved-meanwhile' }
+  }
+
+  const facts: FollowFacts = { candidate: name, base, oldHead, path: decision.path, prsInto }
+  const result = decision.path === 'rebase' ? rebased(git, oldHead, base) : merged(git, facts, config.base)
+  if ('files' in result) {
+    log(
+      `::warning title=Candidate not updated::${name}: the ${decision.path} on ${config.base} ${short(base)} stops on a conflict in ${workflowLine(result.files.join(', '))}; nothing pushed, what to do is on #${candidate.number}`,
+    )
+    commentOnce(run, candidate.number, followMarker(base, oldHead), followConflictComment(config, facts, result.files))
+    return { ...decision, outcome: 'conflict', files: result.files }
+  }
+
+  const head = result.head
+  const push = git.push(
+    decision.path === 'rebase'
+      ? [`--force-with-lease=refs/heads/${name}:${oldHead}`, 'origin', `${head}:refs/heads/${name}`]
+      : ['origin', `${head}:refs/heads/${name}`],
+  )
+  if (push.status !== 0) {
+    const error = pushError(push.stderr)
+    log(
+      `::warning title=Candidate not updated::${name}: the push of the ${decision.path} on ${config.base} ${short(base)} was refused (${workflowLine(error)}); what to do is on #${candidate.number}`,
+    )
+    commentOnce(run, candidate.number, followMarker(base, oldHead), followRefusedComment(config, facts, error))
+    return { ...decision, outcome: 'refused', head }
+  }
+  log(
+    `candidate: ${name} ${decision.path === 'rebase' ? 'rebased on' : 'merged with'} ${config.base} ${short(base)}: ${short(oldHead)} → ${short(head)}.`,
+  )
+  commentOnce(run, candidate.number, followedMarker(head), followedComment(config, facts, head))
+  if (decision.path === 'merge') {
+    for (const number of prsInto) {
+      commentOnce(run, number, followedMarker(head), followedPrComment(config, facts, head))
+    }
+  }
+  return { ...decision, outcome: 'updated', head }
+}
+
+// The follow step inside a pull_request run: a failure is a warning, so the event is
+// still handled.
+function followOrWarn(run: Run) {
+  try {
+    follow(run)
+  } catch (error) {
+    run.log(
+      `::warning title=Candidate not updated::following ${run.config.base} failed (${workflowLine((error as Error).message)}); the next run tries again`,
+    )
+  }
+}
+
 // The candidate is merged: its issues close, and the pull requests it left behind
 // move. One failing does not stop the other; the run fails after both.
 export function candidateMerged(run: Run, pr: PullRequest) {
@@ -1003,13 +1369,23 @@ export function candidateMerged(run: Run, pr: PullRequest) {
 }
 
 // What the event asks for: move, record, or close and carry over; first, the sweep of
-// pull requests a dropped event left behind.
+// pull requests a dropped event left behind and the candidate following the base. Both
+// run on every event: the concurrency group drops a pending run when a newer one
+// arrives, and the newer one catches up.
 export function handle(run: Run, action: string, pr: PullRequest) {
   sweep(run)
+  followOrWarn(run)
   if (action === 'opened' || action === 'ready_for_review') retarget(run, pr)
   else if (action === 'closed' && isCandidateMerge(run.config, pr)) candidateMerged(run, pr)
   else if (action === 'closed') record(run, pr)
   else run.log(`candidate: event ${action}, nothing to do.`)
+}
+
+// A push to the base, or `--follow` from a terminal: the sweep, then the candidate
+// following the base.
+export function handlePush(run: Run) {
+  sweep(run)
+  return follow(run)
 }
 
 interface EventPullRequest {

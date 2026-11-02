@@ -165,12 +165,17 @@
 //
 //   lntt ci candidate [--pr <n>] [--event opened|ready_for_review|closed]
 //                     [--head-ref <ref>] [--labels a,b] [--merged] [--dry-run]
+//   lntt ci candidate --follow [--dry-run]
 //
-//     In Actions it reads the pull_request event (GITHUB_EVENT_PATH). From a terminal,
-//     --pr reads the pull request with gh and does what the workflow would do on its
-//     event; --head-ref, --labels and --merged override what was read, to try a case
-//     without creating it; --dry-run prints every write instead of making it. Without
-//     delivery.candidate in the configuration it does nothing.
+//     In Actions it reads the event (GITHUB_EVENT_PATH): a pull_request event, or a push
+//     to the base. From a terminal, --pr reads the pull request with gh and does what the
+//     workflow would do on its event; --head-ref, --labels and --merged override what was
+//     read, to try a case without creating it; --follow does what a push to the base
+//     does: the open candidate follows the base (rebased when no pull request is open
+//     into it, the base merged into it otherwise), with the path and its reason printed;
+//     --dry-run prints every write and push instead of making it (the fetch, merge and
+//     rebase still run on the local clone). Without delivery.candidate in the
+//     configuration it does nothing.
 //
 //   lntt ci proved --job <name>... [--step <name>] [--workflow <file>] [--sha <sha>]
 //                  [--before <sha>] [--branch <name>]
