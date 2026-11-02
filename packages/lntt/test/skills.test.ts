@@ -548,6 +548,7 @@ describe('the retrospective skill, harvest', () => {
   test('the next harvest reads the outcomes for its previous proposals, and asks a later one again', () => {
     assert.match(step(5), /starts from the outcome written in the previous retrospective's Discussion/)
     assert.match(step(5), /`dropped` keeps its reason and is not proposed again unless new signals say otherwise/)
+    assert.match(step(5), /a cluster that recurs after a drop is such a signal/)
     assert.match(step(5), /a proposal still marked `later` is asked again/)
     assert.match(step(5), /A proposal with no outcome was never discussed: say so, and put it in the discussion too/)
   })
@@ -556,6 +557,8 @@ describe('the retrospective skill, harvest', () => {
     assert.match(step(5), /\(step 11\)/)
     assert.match(step(5), /\(step 10\)/)
     assert.match(step(12), /\(step 11\)/)
+    assert.match(step(11), /\(step 9 numbers them in order\)/)
+    assert.match(step(9), /^Publish\*\*/)
     assert.match(guardrails(), /steps 10–12/)
     assert.match(step(11), /^Write each outcome in the Discussion/)
     assert.match(step(10), /^Discuss the proposals/)
