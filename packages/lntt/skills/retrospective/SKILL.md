@@ -160,7 +160,12 @@ published without the person's go.
    leaves no trace in a body.
 5. **The previous proposals**, each with its state (adopted, partial, superseded, not
    adopted) and its proof: a `path:line`, a command and its output, a pull request or
-   issue number.
+   issue number. The state starts from the outcome written in the previous
+   retrospective's Discussion (step 11): `adopted #N` is checked against that issue and
+   what it built, `dropped` keeps its reason and is not proposed again unless new
+   signals say otherwise, and a proposal still marked `later` is asked again in this
+   harvest's discussion (step 10). A proposal with no outcome was never discussed: say
+   so, and put it in the discussion too.
 6. **One concrete mechanism per cluster**: a skill or a change to one, a hook, a CI
    check, a decision record, an `AGENTS.md` rule, or an `lntt` command. Each cites the
    pull requests (and issues) it comes from.
@@ -178,12 +183,27 @@ published without the person's go.
    - `issue`: an issue with the proposals as a checklist, on the board (the
      `github-board` skill).
 
+   Publishing opens no issue for any proposal: the proposals are decided first.
+10. **Discuss the proposals with the person,** after publishing, one proposal at a time
+    (the proposals still marked `later` in the previous Discussion included). Each ends
+    in exactly one of three outcomes:
+    - **adopted:** it will be built;
+    - **dropped:** it will not, and the reason is said;
+    - **later:** not decided now; it is asked again at the next harvest.
+11. **Write each outcome in the Discussion** as soon as it is decided, as a comment per
+    proposal (or an edit of the body), in one line the next harvest reads:
+    `Proposal <n>: adopted #<issue>`, `Proposal <n>: dropped, <reason>` or
+    `Proposal <n>: later`. Where `adopted` has no issue number yet, step 12 comes first.
+12. **Open an issue only for an adopted proposal** (the `github-board` skill), citing the
+    Discussion and the proposal's cluster, and write its number in the outcome (step 11).
+    Nothing is opened before the discussion, and a proposal that is dropped or later
+    gets no issue.
+
 A cluster made of `[upstream:<owner/name>]` items is not built in the project: the
 harvest lists them by repository, and section 5 takes them upstream.
 
-**Every proposal the person adopts becomes an issue** of its own (the `github-board`
-skill), citing the retrospective and its cluster. A proposal left only in a retrospective is
-never built.
+A proposal left only in a retrospective, without an outcome written in its Discussion,
+is never built and is asked again at the next harvest.
 
 ## 5. Report upstream what comes from Lunette
 
@@ -251,6 +271,7 @@ without the operator's approval, report by report.**
   trailers, reports and `lntt retro add` are how friction gets there.
 - Keep the markers exactly `<!-- retro:start -->` and `<!-- retro:end -->`, each on a line
   of its own: the check and the harvest read them as text.
-- A harvest creates no skill, hook or issue by itself: it proposes.
+- A harvest creates no skill, hook or issue by itself: it proposes. An issue exists
+  only for a proposal the person adopted in the discussion (section 4, steps 10–12).
 - An upstream report goes through `lntt issue`, never `gh` directly, and only with
   `--send` after the operator approved that report.

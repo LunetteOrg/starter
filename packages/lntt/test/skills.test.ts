@@ -487,3 +487,43 @@ describe('the mutation-check skill', () => {
     assert.match(section(5), /one line per test that guards a line, with the mutation and its outcome/)
   })
 })
+
+describe('the retrospective skill, harvest', () => {
+  // Section 4 only, after the frontmatter, whitespace folded.
+  const harvest = () =>
+    (
+      readFileSync(join(SKILLS, 'retrospective', 'SKILL.md'), 'utf8')
+        .split(/^## /m)
+        .find((s) => s.startsWith('4. ')) ?? ''
+    ).replace(/\s+/g, ' ')
+  const step = (n: number) => harvest().match(new RegExp(`(?:^| )${n}\\. (.*?)(?= \\d+\\. \\*\\*|$)`))?.[1] ?? ''
+
+  test('publishing opens no issue: the proposals are discussed first, one at a time', () => {
+    assert.match(step(9), /Publishing opens no issue for any proposal/)
+    assert.match(step(10), /one proposal at a time/)
+  })
+
+  test('each proposal ends adopted, dropped with its reason, or later', () => {
+    assert.match(step(10), /\*\*adopted:\*\*/)
+    assert.match(step(10), /\*\*dropped:\*\* it will not, and the reason is said/)
+    assert.match(step(10), /\*\*later:\*\*/)
+  })
+
+  test('the outcome of each proposal is written in the Discussion, in a line the next harvest reads', () => {
+    assert.match(step(11), /as a comment per proposal \(or an edit of the body\)/)
+    assert.ok(step(11).includes('`Proposal <n>: adopted #<issue>`'))
+    assert.ok(step(11).includes('`Proposal <n>: dropped, <reason>`'))
+    assert.ok(step(11).includes('`Proposal <n>: later`'))
+  })
+
+  test('only an adopted proposal becomes an issue, citing the Discussion and its cluster', () => {
+    assert.match(step(12), /Open an issue only for an adopted proposal\*\* \(the `github-board` skill\)/)
+    assert.match(step(12), /citing the Discussion and the proposal's cluster/)
+    assert.match(step(12), /Nothing is opened before the discussion/)
+  })
+
+  test('the next harvest reads the outcomes for its previous proposals, and asks a later one again', () => {
+    assert.match(step(5), /starts from the outcome written in the previous retrospective's Discussion/)
+    assert.match(step(5), /a proposal still marked `later` is asked again/)
+  })
+})
