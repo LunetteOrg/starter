@@ -156,7 +156,7 @@ function rename(): void {
   if (!target) {
     stderr.write(
       `lntt branch: ${current} does not follow type/issue/slug and holds nothing to rebuild it from; ` +
-        'rename it with git branch -m "$(lntt branch name --issue <n>)"\n',
+        'rename it with git branch -m "$(pnpm exec lntt branch name --issue <n>)"\n',
     )
     return
   }
