@@ -20,14 +20,14 @@ procedure; it is never edited to fit one project.
 ## 0. Read the board
 
 ```sh
-lntt get board              # the whole section; lntt get fails on a key it does not have
-lntt get team               # members (owners, assignees) and the language issues are written in
+pnpm exec lntt get board              # the whole section; lntt get fails on a key it does not have
+pnpm exec lntt get team               # members (owners, assignees) and the language issues are written in
 ```
 
 **No `board` section:** stop. Say what this skill would need, and propose a section
 built from what GitHub shows (the Project with `gh project list`, its fields with
 `gh project field-list`, the organization's issue types, the labels): the person decides
-and writes it (`lntt set`). Never carry on with guessed values.
+and writes it (`pnpm exec lntt set`). Never carry on with guessed values.
 
 **No `board.fields.horizon`:** stop. The horizon is the base every board plans on
 (section 5): propose the field (a single select on the parents, its options nearest
@@ -64,8 +64,8 @@ sets (`delivery.candidate.status`) are never set by hand.
 person's go**: an option set rewritten without its ids clears every item's value
 ([reference, *Changing a field's options*](./references/github-project.md#changing-a-fields-options)).
 A value the board needs and the configuration lacks is a proposal for the configuration,
-then for the Project: once it is in the configuration, `lntt board sync` shows what it
-would add (a dry run), and `lntt board sync --apply` adds it, with the person's go.
+then for the Project: once it is in the configuration, `pnpm exec lntt board sync` shows what it
+would add (a dry run), and `pnpm exec lntt board sync --apply` adds it, with the person's go.
 
 ## 1. Resolve the ids, once per session
 
@@ -223,7 +223,7 @@ covers; `board.tracks.from` names the folders that are candidate tracks.
    invent a label to hide it.
 3. **Propose** the new labels (name, owner, one-line purpose), confirm, then **create
    only the missing ones** (never `--force`, never rename) and add them to
-   `board.tracks.labels` with `lntt set`.
+   `board.tracks.labels` with `pnpm exec lntt set`.
 
 **Before inventing any marker:** a dimension an issue has exactly one value of is a
 single-select field; a dimension it can have several values of is a label (Projects v2
@@ -246,7 +246,7 @@ has no multi-select field). Prefix a label that carries a dimension (`lever:grow
 
 ## Guardrails
 
-- Every value from `lntt get board`; every id resolved at runtime; nothing the
+- Every value from `pnpm exec lntt get board`; every id resolved at runtime; nothing the
   configuration leaves out assumed or created.
 - Confirm before any batch, and before creating a Project, field, option, milestone or
   label.

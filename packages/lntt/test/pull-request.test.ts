@@ -383,7 +383,7 @@ describe('lntt pr block and lntt check body', () => {
         check: 'retrospective',
         status: 'NOT RUN',
         path: null,
-        message: 'no pull request body given: lntt check body [--pr <n> | -]',
+        message: 'no pull request body given: pnpm exec lntt check body [--pr <n> | -]',
       },
       {
         check: 'template',
@@ -401,7 +401,8 @@ describe('lntt pr block and lntt check body', () => {
         check: 'template',
         status: 'FAIL',
         path: '.github/pull_request_template.md',
-        message: 'the retrospective block differs from the configuration: replace it with what lntt pr block prints',
+        message:
+          'the retrospective block differs from the configuration: replace it with what pnpm exec lntt pr block prints',
       },
     ])
     template('## Why\n')

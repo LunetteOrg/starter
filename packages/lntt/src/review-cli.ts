@@ -151,7 +151,7 @@ function stopAtLimit(state: ReviewState | null, branch: string, round: number, c
   ]
   stderr.write(
     `lntt review: limit: round ${round} would pass delivery.review.maxRounds (${config.maxRounds})${allowed > 0 ? ` and ${allowed} allowed` : ''} on ${branch}; still open: ${listed.length === 0 ? 'nothing' : listed.join(', ')}\n` +
-      'lntt review: the person decides: the pull request as it is, more rounds for this branch (lntt review allow <rounds>), or an issue for what is open\n',
+      'lntt review: the person decides: the pull request as it is, more rounds for this branch (pnpm exec lntt review allow <rounds>), or an issue for what is open\n',
   )
   emit({ type: 'limit', round, maxRounds: config.maxRounds, allowed, open: open.length, failed: failed.length })
   stdout.write(
