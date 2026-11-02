@@ -65,10 +65,12 @@ stops at the draft pull request.
 **Merge methods are enforced** by repository rulesets: candidate branches
 (`refs/heads/candidate/*`) take squash merges only, `main` takes rebase merges only, and
 both take changes through pull requests only, with no required approval. The
-repository admin role bypasses both: the release bump is a direct commit on `main`.
-Rewriting a candidate (a rebase on `main`) is the candidate app's force push with a
-lease when no pull request is open into it ([when `main` moves](#the-candidate)), and a
-force push an admin makes by hand otherwise.
+repository admin role bypasses both: the release bump is a direct commit on `main`. The
+candidate app bypasses the candidates ruleset, and updates the open candidate when
+`main` moves ([the candidate](#the-candidate)): with no pull request open into it, it
+rewrites the candidate (a rebase on `main`, a force push with a lease); with pull
+requests open into it, it merges `main` in, no rewrite. An admin updates a candidate by
+hand only after the app stops on a conflict or a refused push.
 
 ## The pull request body
 
@@ -157,6 +159,9 @@ candidate exists on a day without pull requests.
   reads the retrospective comment); with both green, the candidate pull request is marked ready and the
   full CI runs once on the whole batch; with the full CI green and the person's go,
   it merges with a **rebase**, so `main` gets one commit per pull request and one push.
+  A candidate that holds merge commits of `main` lands the same way: the rebase merge
+  drops them, and `main` gets the candidate's own commits, linear, with the same tree
+  (tried on throwaway branches in #247).
   Squashes into the candidate happen before it is marked ready: a push to a ready
   candidate starts the full CI again.
 - **The board follows.** An open issue that a pull request squashed into the candidate
@@ -241,9 +246,10 @@ a push to `main`. One run at a time across the repository, so two pull requests 
 together find the same candidate. Every run sweeps the stranded pull requests and
 brings the open candidate up to date with `main` before it handles its event: the
 concurrency group keeps one pending run, and a newer one cancels it, so the next run
-covers a dropped push. In a `pull_request` run a failure to follow `main` is a warning
-and the event is still handled; in the push run following is the whole job, so a
-failure turns the run red. The script and the configuration are read from the default
+covers a dropped push. A conflict or a refused push is a warning on a green run, with
+the comment on the candidate, in every run. In a `pull_request` run an error while
+following `main` is a warning too, and the event is still handled; in the push run
+following is the whole job, so only an error turns the run red. The script and the configuration are read from the default
 branch.
 
 It writes with the token of a **GitHub App of the organization**, generated in the job

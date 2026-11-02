@@ -612,8 +612,11 @@ delivery process description (`docs/process/delivery.md`). On a push to the base
 when the base moved (a terminal run with `--pr` does not follow; `--follow` takes no
 `--pr`, `--event`, `--head-ref`, `--labels` or `--merged`): rebased on it and pushed
 with a lease when no pull request is open into it, the base merged into it otherwise, a
-comment on its pull request either way, or one naming the conflict. `--dry-run` prints the push and the comments; the fetch, merge and
-rebase still run on the local clone. The candidate logic is
+comment on its pull request either way, or one naming the conflict. Without
+`--dry-run`, `--follow` pushes the candidate right away from the operator's clone (a
+force push with a lease on the rebase path): run it with `--dry-run` first.
+`--dry-run` prints the push and the comments; the fetch, merge and rebase still run on
+the local clone. The candidate logic is
 adapted from DiscenTech/pelion's `scripts/ci/release-candidate.mjs`. Exit codes: 0 green, 1 a red job or a
 configuration error, 2 a usage error.
 

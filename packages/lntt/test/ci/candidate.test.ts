@@ -737,6 +737,15 @@ describe('sweep', () => {
     assert.ok(lines.some((l) => l.startsWith('::warning title=Candidate not updated::')))
   })
 
+  test('a failure following the base escapes a push run, which turns red', () => {
+    const gh = fakeGh({
+      'api graphql': [],
+      '--state open': [{ number: 50, headRefName: 'candidate/5', body: '' }],
+      ...hasRetro(50),
+    })
+    assert.throws(() => handlePush({ ...run(gh), git: noGit() }), /unexpected read: .*compare\/main\.\.\.candidate\/5/)
+  })
+
   test('without git the follow step says it cannot act and reads nothing', () => {
     const gh = fakeGh({ 'api graphql': [], '--state open': [] })
     const lines: string[] = []
@@ -1370,6 +1379,42 @@ describe('follow', () => {
     assert.deepEqual(g.calls, [])
     assert.deepEqual(g.pushes, [])
     assert.deepEqual(gh.writes, [])
+  })
+
+  test('the base already an ancestor: the pull requests are not read', () => {
+    const gh = fakeGh({
+      '--state open': [{ number: 40, headRefName: 'candidate/4', body: '', headRefOid: 'a'.repeat(40) }],
+      'compare/main...candidate/4': { behindBy: 0, base: 'b'.repeat(40) },
+    })
+    const result = follow({ ...run(gh), git: noGit() })
+    assert.deepEqual([result.path, result.outcome], ['none', 'none'])
+  })
+
+  test('a comment that fails after the push is a warning: the candidate is updated, the others are told', (t) => {
+    const s = setup()
+    t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+    const base = fakeGh(answers(s, { prsInto: [12, 15] }))
+    const gh: typeof base = {
+      ...base,
+      write: (args, input) => {
+        if (args.join(' ') === 'pr comment 12 --repo o/r --body-file -') throw new Error('HTTP 502\nbad gateway')
+        return base.write(args, input)
+      },
+    }
+    const lines: string[] = []
+    const result = follow({ ...run(gh), log: (l) => lines.push(l), git: recordingGit(s) })
+    assert.equal(result.outcome, 'updated')
+    assert.equal(result.head, remoteHead(s))
+    assert.deepEqual(
+      base.writes.map((w) => w.args),
+      ['pr comment 40 --repo o/r --body-file -', 'pr comment 15 --repo o/r --body-file -'],
+    )
+    assert.ok(
+      lines.includes(
+        `::warning title=Candidate updated, comment not written::candidate/4 is at ${result.head?.slice(0, 8)}; the comment on #12 failed (HTTP 502 bad gateway)`,
+      ),
+      lines.join('\n'),
+    )
   })
 
   test('no candidate open: nothing read beyond the list', () => {

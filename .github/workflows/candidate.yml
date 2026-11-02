@@ -20,8 +20,8 @@ name: Candidate
 # the head as read; with pull requests open into it, the default branch is merged into
 # it, no rewrite. A conflict or a refused push leaves the candidate as it is and says on
 # its pull request what an admin does. The push to the default branch runs only this
-# step and the sweep; every pull_request run runs them too, first, because the
-# concurrency group below drops a pending run when a newer one arrives.
+# step and the sweep; every pull_request run runs them too, first, because the job's
+# concurrency group drops a pending run when a newer one arrives.
 #
 # It runs on drafts too, on these three pull_request events and on a push to the
 # default branch. It writes with the token of the organization's candidate GitHub App:
@@ -36,19 +36,6 @@ on:
     branches: [main]
 
 permissions: {}
-
-# One run at a time across the repo: two pull requests opened together must not create
-# two candidates. GitHub keeps one running and one pending run per group, and a newer
-# pending run cancels the older one. A dropped merge into a candidate is recorded by
-# the next run, which rebuilds the lists from every merged pull request; every run
-# also sweeps pull requests stranded on a candidate that is no longer open onto the
-# open one, and brings the open candidate up to date with the default branch, so a
-# dropped push is followed by the next run. A dropped `opened` is redone from a terminal
-# with `pnpm exec lntt ci candidate --pr <n>`, a dropped push with
-# `pnpm exec lntt ci candidate --follow`; both run outside this group: one at a time.
-concurrency:
-  group: candidate
-  cancel-in-progress: false
 
 jobs:
   candidate:
@@ -69,6 +56,21 @@ jobs:
       (github.event.action == 'closed' && github.event.pull_request.merged &&
       (github.event.pull_request.base.ref != github.event.repository.default_branch ||
       startsWith(github.event.pull_request.head.ref, 'candidate/')))))
+    # One run at a time across the repo: two pull requests opened together must not
+    # create two candidates. The group is the job's, so only a run whose job passes the
+    # condition above takes a slot: a skipped run (Dependabot, a fork, a pull request
+    # into a candidate) never replaces a pending one. GitHub keeps one running and one
+    # pending job per group, and a newer pending job cancels the older one. A dropped
+    # merge into a candidate is recorded by the next run, which rebuilds the lists from
+    # every merged pull request; every run also sweeps pull requests stranded on a
+    # candidate that is no longer open onto the open one, and brings the open candidate
+    # up to date with the default branch, so a dropped push is followed by the next
+    # run. A dropped `opened` is redone from a terminal with
+    # `pnpm exec lntt ci candidate --pr <n>`, a dropped push with
+    # `pnpm exec lntt ci candidate --follow`; both run outside this group: one at a time.
+    concurrency:
+      group: candidate
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -98,15 +100,22 @@ jobs:
           permission-pull-requests: write
           permission-issues: write
       # GitHub attributes a commit to the app's bot only by the email
-      # <user id>+<slug>[bot]@users.noreply.github.com: the id is the bot user's.
+      # <user id>+<slug>[bot]@users.noreply.github.com: the id is the bot user's. A
+      # failed read of the id is a warning, and the commits carry
+      # <slug>[bot]@users.noreply.github.com, which GitHub links to no account.
       - id: bot
         if: steps.credentials.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           SLUG: ${{ steps.app-token.outputs.app-slug }}
         run: |
-          id=$(gh api "/users/${SLUG}[bot]" --jq .id)
-          echo "id=$id" >> "$GITHUB_OUTPUT"
+          id=$(gh api "/users/${SLUG}[bot]" --jq .id) || id=''
+          if [[ "$id" =~ ^[0-9]+$ ]]; then
+            echo "email=${id}+${SLUG}[bot]@users.noreply.github.com" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=Candidate bot id not read::the id of ${SLUG}[bot] could not be read; its commits carry ${SLUG}[bot]@users.noreply.github.com"
+            echo "email=${SLUG}[bot]@users.noreply.github.com" >> "$GITHUB_OUTPUT"
+          fi
       # The Projects permission is an organization permission of the app, asked in a
       # step of its own: a token request for a permission the app has not been granted
       # fails, and that must not stop the candidate. Without this token the script
@@ -148,7 +157,7 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PROJECTS_GH_TOKEN: ${{ steps.projects-token.outputs.token }}
           GIT_AUTHOR_NAME: ${{ steps.app-token.outputs.app-slug }}[bot]
-          GIT_AUTHOR_EMAIL: ${{ steps.bot.outputs.id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com
+          GIT_AUTHOR_EMAIL: ${{ steps.bot.outputs.email }}
           GIT_COMMITTER_NAME: ${{ steps.app-token.outputs.app-slug }}[bot]
-          GIT_COMMITTER_EMAIL: ${{ steps.bot.outputs.id }}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com
+          GIT_COMMITTER_EMAIL: ${{ steps.bot.outputs.email }}
         run: node packages/lntt/bin/lntt.ts ci candidate

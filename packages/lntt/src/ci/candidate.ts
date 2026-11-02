@@ -1247,9 +1247,10 @@ function merged(git: Git, facts: FollowFacts, base: string): { head: string } | 
 // rebased on the base and pushed with a lease on the head as read, or the base merged
 // into it and pushed plainly. A conflict or a refused push leaves the candidate as it
 // is, comments on its pull request what an admin does, and warns: it does not fail the
-// run. Every comment is written once (followMarker, followedMarker). In a dry run the
-// fetch, the merge and the rebase still run on the local clone and a temporary worktree;
-// only the push and the comments are printed.
+// run. A comment that fails after the push is a warning too. Every comment is written
+// once (followMarker, followedMarker). In a dry run the fetch, the merge and the rebase
+// still run on the local clone and a temporary worktree; only the push and the comments
+// are printed.
 export function follow(run: Run): FollowResult {
   const { gh, repo, config, log, git } = run
   if (!git) {
@@ -1335,11 +1336,20 @@ export function follow(run: Run): FollowResult {
   log(
     `candidate: ${name} ${decision.path === 'rebase' ? 'rebased on' : 'merged with'} ${config.base} ${short(base)}: ${short(oldHead)} → ${short(head)}.`,
   )
-  commentOnce(run, candidate.number, followedMarker(head), followedComment(config, facts, head))
-  if (decision.path === 'merge') {
-    for (const number of prsInto) {
-      commentOnce(run, number, followedMarker(head), followedPrComment(config, facts, head))
+  // The candidate is updated: a comment that fails is a warning, and does not stop the
+  // comments on the other pull requests.
+  const tell = (number: number, body: string) => {
+    try {
+      commentOnce(run, number, followedMarker(head), body)
+    } catch (error) {
+      log(
+        `::warning title=Candidate updated, comment not written::${name} is at ${short(head)}; the comment on #${number} failed (${workflowLine((error as Error).message)})`,
+      )
     }
+  }
+  tell(candidate.number, followedComment(config, facts, head))
+  if (decision.path === 'merge') {
+    for (const number of prsInto) tell(number, followedPrComment(config, facts, head))
   }
   return { ...decision, outcome: 'updated', head }
 }
