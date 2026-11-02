@@ -202,6 +202,7 @@ lntt branch name --issue 77          # feat/77/branch-names-follow-type: type, i
 lntt branch name --issue 77 --slug worktree-names   # --type and --slug override
 lntt branch name --type docs --slug version-numbering   # docs/no-issue/version-numbering
 lntt branch check                    # exit 1 off the convention, with the expected name
+                                     # (a detached HEAD at a candidate's head is that candidate)
 lntt branch check --pre-push         # the branches a push creates or updates (git's hook input)
 lntt branch rename                   # fix the name a tool gave the current branch; never fails
 ```
@@ -319,6 +320,27 @@ worktree, review and `pnpm ci:local` green, a **draft** pull request, then stop 
 merge, no `gh pr ready`) and return a summary and the friction met. One JSON line per
 issue: host, branch, path, and the agent's handle.
 
+The worktree starts from the base (`--base` names another one), on every host:
+`origin/<candidate>` while a candidate is open, else `origin/<default branch>`
+([the base of a branch](#the-base-of-a-branch)).
+
+### The base of a branch
+
+`lntt worktree start`, `lntt review` and `lntt ci local` find a branch's base one way
+(`packages/lntt/src/base.ts`, decided in the project's worktree tooling record):
+
+- **The open candidate**, asked to GitHub with `gh pr list` when `delivery.candidate` is
+  set: a new worktree starts from `origin/<candidate>`; a branch that descends from it
+  is compared with it from its fork point; the candidate's own head goes into the
+  default branch.
+- **Else the default branch** (`delivery.candidate.base`, else the branch `origin/HEAD`
+  names, else `main`), as `origin/<branch>`.
+- **Never a local branch**, which may be behind: a base missing from the clone is an
+  error that asks for `git fetch origin`. When GitHub cannot answer, the base is
+  `origin/<default branch>` and the command says so on stderr.
+- **`--base <branch>` wins** in each command: `origin/<branch>`, else the local branch
+  of that name (a sibling's branch in a stack).
+
 The host is the innermost one the session runs in, detected from the environment:
 
 - **Herdr** (`HERDR_ENV=1`, also inside an Orca terminal): `herdr worktree create` on the
@@ -379,7 +401,7 @@ leaves the message in place; `-` reads the text from stdin; `LNTT_ROLE`, `LNTT_T
 
 ```sh
 lntt review                       # one round on the current branch; JSON on stdout
-lntt review --base <branch>       # against another base (a stacked pull request)
+lntt review --base <branch>       # against another base than the resolved one (a stacked pull request)
 lntt review --plan                # the range, the lenses and their agents; runs nothing
 lntt review reply f2 "line 120 excludes it"   # answer the reviewers who found f2
 lntt review allow 2               # two rounds more for this branch, past maxRounds
@@ -387,7 +409,8 @@ lntt review allow 2               # two rounds more for this branch, past maxRou
 
 A round, on a clean working tree:
 
-1. **What to read:** the branch from where it left the base the first time, then only
+1. **What to read:** the branch from where it left the base
+   ([the base of a branch](#the-base-of-a-branch)) the first time, then only
    the commits after the last reviewed one (after a rebase, the whole branch again).
    The state is `lntt-review.json` in the worktree's git directory.
 2. **Checks**: a lens named after an area of `lntt check` (`decisions`, `tests`) gets
@@ -587,7 +610,7 @@ secrets policy are the project's CI process description (`docs/process/ci.md`).
 ```sh
 lntt ci local                      # the jobs a ready pull request into the base triggers
 lntt ci local --list               # per job: what the cloud runs, what runs locally
-lntt ci local --base candidate/3   # the pull request into another base
+lntt ci local --base feat/12/x     # the pull request into another base
 lntt ci local --event push         # a push to the base
 lntt ci local --job ci.yml/ci      # one job (repeatable)
 lntt ci local --strict             # fail on anything the cloud runs and the run did not
@@ -622,10 +645,14 @@ uses it is the project's CI process description.
 ### What it runs
 
 - **The event.** By default a pull request from the current branch into the base,
-  ready for review: the run the cloud starts once a draft leaves draft. The base
-  defaults to the branch `origin/HEAD` points at. `--base` names another one; `--event
-  push` stands in for a push to the base. Nothing is fetched and GitHub is never asked:
-  the base is the local ref (`origin/<base>`, else `<base>`), and the report names it.
+  ready for review: the run the cloud starts once a draft leaves draft. The base is
+  the resolved one ([the base of a branch](#the-base-of-a-branch)): the open candidate
+  for a branch on it, else the default branch. `--base` names another one
+  (`origin/<base>`, else `<base>`); `--event push` stands in for a push to the default
+  branch, or to `--base`. Nothing is fetched, and the report names the base and the
+  ref it diffs against. On a detached HEAD at a candidate's head (`git switch --detach
+  origin/candidate/<N>`), the head branch is that candidate, so the branch check passes
+  without a local branch named after it.
 - **Which jobs.** A workflow runs when its `on:` takes the event, with its branch,
   types and path filters applied to the local diff. A job's `if:` is evaluated against
   the event: event name, draft, base and head refs, the repository and its default

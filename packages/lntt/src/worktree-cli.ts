@@ -5,8 +5,12 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
+import { projectBase } from './base.ts'
 import { branchName, checkBranch } from './branch.ts'
 import { nameFromIssue, readIssue, rules } from './branch-cli.ts'
+import { isHotfix } from './ci/candidate.ts'
+import { candidateConfig } from './ci/config.ts'
+import { localRef } from './ci/event.ts'
 import {
   agentFor,
   approvals,
@@ -94,27 +98,31 @@ function mainCheckout(): string {
 // The project's configuration; a project without one has the defaults. A file that does
 // not validate is an error: a child on the default gate and models would pass for the one
 // the project configured.
-export function projectConfig(dir: string = cwd()): Config & { delivery?: { candidate?: { base?: string } } } {
+export function projectConfig(dir: string = cwd()): Config {
   try {
-    return loadConfig(dir).data as Config & { delivery?: { candidate?: { base?: string } } }
+    return loadConfig(dir).data as Config
   } catch (error) {
     if (error instanceof NoConfigError) return {}
     throw error
   }
 }
 
-// delivery.candidate.base, else main.
-function configuredBase(config = projectConfig()): string {
-  return config.delivery?.candidate?.base ?? 'main'
-}
-
-// git and Herdr branch from the remote's copy when there is one: the local base may be behind.
-function gitBase(root: string, base: string): string {
-  try {
-    runner.run('git', ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${base}`], { cwd: root })
-    return `origin/${base}`
-  } catch {
-    return base
+// What every host branches from: --base as given (origin/<base>, else <base>: a sibling's
+// branch may exist only here), else the base every lntt command resolves (src/base.ts),
+// asked once per kind: a hotfix (branch prefix or label) stays on the default branch.
+function startBase(root: string, given: string | undefined): (hotfix: boolean) => string {
+  if (given !== undefined) {
+    const ref = localRef(root, given) ?? given
+    return () => ref
+  }
+  const resolved = new Map<boolean, string>()
+  return (hotfix) => {
+    const known = resolved.get(hotfix)
+    if (known !== undefined) return known
+    const base = projectBase(root, hotfix ? 'hotfix' : 'new')
+    stderr.write(`lntt worktree: ${base.warning ?? `base ${base.reason}`}\n`)
+    resolved.set(hotfix, base.ref)
+    return base.ref
   }
 }
 
@@ -218,7 +226,8 @@ function start(args: string[]): void {
   const context = values.context ? readFileSync(values.context, 'utf8') : undefined
   if (values.context && !context?.trim()) usage(`--context ${values.context} is empty`)
   const root = mainCheckout()
-  const base = values.base ?? configuredBase(config)
+  const base = startBase(root, values.base)
+  const candidate = candidateConfig(root)
   const ruleset = rules()
   const orca = orcaPath(host)
   const wherever = (branch: string) =>
@@ -238,7 +247,7 @@ function start(args: string[]): void {
       issue: null,
       title: `Theme ${themeName}`,
       branch,
-      base: host === 'orca' ? base : gitBase(root, base),
+      base: base(false),
       agent: launched,
       root,
       brief:
@@ -266,7 +275,9 @@ function start(args: string[]): void {
         issue,
         title: data.title,
         branch,
-        base: host === 'orca' ? base : gitBase(root, base),
+        base: base(
+          candidate !== null && isHotfix(candidate, { headRef: branch, labels: data.labels.map((l) => l.name) }),
+        ),
         agent: launched,
         root,
         ...(values.parent ? { parent: values.parent } : {}),
