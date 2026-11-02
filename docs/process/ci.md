@@ -223,8 +223,8 @@ or a container to try a change to it.
 
 A version counts as checked once its cache entry `upstream-<tool>-<version>` exists, which
 the job saves green or red, unless the issue of a red could not be opened or the check
-was inconclusive (below): that version is checked again the next day. GitHub evicts an entry left unused (its cache retention); the version
-is then checked again, and its issue, if any, stops a second one.
+was inconclusive (below): that version is checked again the next day. GitHub evicts an entry left unused (its cache retention);
+the version is then checked again, and its issue, if any, stops a second one.
 A check that proved nothing about its version is not recorded either: a test that meets a
 provider's usage limit (today the opencode call on a free model) skips with its message and
 writes it to the file `UPSTREAM_INCONCLUSIVE` names, the job leaves a notice, and no entry

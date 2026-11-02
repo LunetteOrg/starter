@@ -138,6 +138,7 @@ describe('upstream helpers', () => {
     assert.equal(usageLimit('{"type":"error","error":{"status":429,"message":"slow down"}}'), 'slow down')
     assert.equal(usageLimit('{"type":"error","error":{"type":"provider.auth","status":401,"message":"no key"}}'), null)
     assert.equal(usageLimit('{"type":"error","error":{"status":429}}'), 'usage limit reached')
+    assert.equal(usageLimit('{"type":"text","error":{"status":429,"message":"not an error event"}}'), null)
     assert.equal(usageLimit('{"type":"text","part":{"text":"ok"}}\nnot json'), null)
   })
 
