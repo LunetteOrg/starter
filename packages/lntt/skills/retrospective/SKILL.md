@@ -15,10 +15,10 @@ fit one project.
 ## 0. Read the values
 
 ```sh
-lntt pr block                      # the empty block: heading, markers, one label per line
-lntt get delivery.pullRequest      # the template, the language of the body's prose
-lntt get cycle.retrospective       # where a harvest is published, the targeted review, the upstream
-lntt get delivery.commits          # whether Retro is one of the trailers
+pnpm exec lntt pr block                      # the empty block: heading, markers, one label per line
+pnpm exec lntt get delivery.pullRequest      # the template, the language of the body's prose
+pnpm exec lntt get cycle.retrospective       # where a harvest is published, the targeted review, the upstream
+pnpm exec lntt get delivery.commits          # whether Retro is one of the trailers
 ```
 
 `lntt pr block` prints the block with the schema's defaults for what
@@ -42,13 +42,13 @@ scaffolded from Lunette).
   candidate's retrospective comment the moment it is met (section 3):
 
   ```sh
-  lntt retro add --label <label> "<one sentence>"     # the open candidate; --pr <n> for another
+  pnpm exec lntt retro add --label <label> "<one sentence>"     # the open candidate; --pr <n> for another
   ```
 
 - **Friction that comes from another repository** (what the project cannot fix on its
   own) starts with that repository, `[upstream:<owner/name>]`, in the trailer and in the
   block. Lunette itself (`lntt`, a shared skill, the scaffolder, a template) is
-  `lntt get cycle.retrospective.upstream.repository`:
+  `pnpm exec lntt get cycle.retrospective.upstream.repository`:
   `Retro: [upstream:LunetteOrg/starter] lntt review lost its state on git switch`; a
   library the project uses is its own repository. It is fixed upstream (section 5), never
   worked around in silence.
@@ -81,7 +81,7 @@ such as `Refs #91`, has no colon.)
 Before the pull request is marked ready:
 
 ```sh
-lntt check body          # the current branch's pull request; --pr <n>, or - for stdin
+pnpm exec lntt check body          # the current branch's pull request; --pr <n>, or - for stdin
 ```
 
 It fails naming a missing block, or a label missing, written twice or left empty, or a
@@ -102,7 +102,7 @@ written from memory, after the context was compacted or the session gone; so it 
 written as it happens, one sentence each:
 
 ```sh
-lntt retro add --label friction "the full CI failed on a runner out of disk; rerun"
+pnpm exec lntt retro add --label friction "the full CI failed on a runner out of disk; rerun"
 ```
 
 `--label` is the configured label, or the start of only one (`to` for `To automate
@@ -125,7 +125,7 @@ last pull request). A candidate opened before the comment existed gets one at th
 **Before the candidate is marked ready**, every label holds a value or `none`:
 
 ```sh
-lntt check body --pr <candidate>    # on a candidate it reads the retrospective comment
+pnpm exec lntt check body --pr <candidate>    # on a candidate it reads the retrospective comment
 ```
 
 It fails on a missing comment, a label missing, written twice or left empty.
@@ -228,7 +228,7 @@ without the operator's approval, report by report.**
 2. **No duplicates.** Search the open issues there for the cluster's subject:
 
    ```sh
-   lntt issue search [--repo <owner/name>] <a few words of the subject>
+   pnpm exec lntt issue search [--repo <owner/name>] <a few words of the subject>
    ```
 
    When one is the same subject, the report is a comment on it (`--comment <n>`), not a
@@ -251,7 +251,7 @@ without the operator's approval, report by report.**
 4. **The dump**, the environment collected by the command, never by hand:
 
    ```sh
-   lntt dump --json --model <the model you run on> [-- <the failing command>] > <dump.json>
+   pnpm exec lntt dump --json --model <the model you run on> [-- <the failing command>] > <dump.json>
    ```
 
    `--` runs the failing command again, when there is one and running it again is
@@ -260,7 +260,7 @@ without the operator's approval, report by report.**
 5. **Show the operator each report whole**, as it would be sent:
 
    ```sh
-   lntt issue <draft.md> --dump <dump.json> [--repo <owner/name>] [--comment <n>]
+   pnpm exec lntt issue <draft.md> --dump <dump.json> [--repo <owner/name>] [--comment <n>]
    ```
 
    The dry run prints everything that leaves the machine. The operator approves each
