@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
+import { defaultBranch, projectBase } from '../base.ts'
 import {
   acquireLock,
   candidate,
@@ -13,7 +14,7 @@ import {
   ciConfig,
   circleciJobs,
   containerCommand,
-  defaultBranch,
+  type EventOptions,
   exitCode,
   formatList,
   formatReport,
@@ -62,6 +63,19 @@ function giveBack(lock: Lock | null): void {
   }
 }
 
+// The event's base and its options: --base as given; else, for a pull request, the base
+// every lntt command resolves (src/base.ts), and for a push the default branch.
+function base(root: string, event: 'pull_request' | 'push', given: string | undefined): [string, EventOptions] {
+  const candidate = candidateConfig(root)
+  const options: EventOptions = { candidatePrefix: candidate?.prefix ?? 'candidate/' }
+  if (given !== undefined) return [given, options]
+  if (event === 'push') return [defaultBranch(root, candidate), options]
+  // The report names the base and the ref; only a base that may be wrong is said here.
+  const resolved = projectBase(root, 'head')
+  if (resolved.warning) stderr.write(`lntt ci: ${resolved.warning}\n`)
+  return [resolved.branch, { ...options, baseRef: resolved.ref }]
+}
+
 async function local(args: string[]): Promise<number> {
   const { values } = guard(() =>
     parseArgs({
@@ -82,7 +96,7 @@ async function local(args: string[]): Promise<number> {
   const root = git('rev-parse', '--show-toplevel')
   process.chdir(root)
   const config = ciConfig(root)
-  const localEv = localEvent(root, event, values.base ?? defaultBranch(root))
+  const localEv = localEvent(root, event, ...base(root, event, values.base))
   const jobs = [...(await githubJobs(root, localEv, config)), ...circleciJobs(root, localEv, config)]
   const only = values.job
   for (const key of only ?? []) {

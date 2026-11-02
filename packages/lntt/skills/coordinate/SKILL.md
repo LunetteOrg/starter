@@ -32,10 +32,12 @@ children. The worktree stays on its placeholder branch: no commit, no push, no p
 Read every issue (`gh issue view <n>`, with its comments) and the decisions it cites
 before anything starts. Then decide:
 
-- **Independent issues** start together, from the base branch.
+- **Independent issues** start together, with no `--base`: from the base `lntt worktree
+  start` resolves (the open candidate, else the default branch, from origin).
 - **A stacked issue** starts from its predecessor's branch (`--base`). When pull requests
   collect on a candidate branch, "the predecessor is merged" means merged into the open
-  candidate, and the dependent child starts from the candidate; the child checks that its
+  candidate, and the dependent child starts from the candidate (no `--base`, or
+  `--base candidate/<N>`: the remote's copy, never a local branch); the child checks that its
   upstream is not the candidate and rebases if the candidate moves before Ready.
 - **Two issues editing one file** are not stacked for that alone: different sections of one
   document merge in turn, and only a pull request that turns `CONFLICTING` is rebased.

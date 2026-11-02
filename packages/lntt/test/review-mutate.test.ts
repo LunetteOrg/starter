@@ -188,6 +188,8 @@ describe('lntt review with mutations', () => {
     git('config', 'user.name', 't')
     git('add', '-A')
     git('commit', '-qm', 'base')
+    // The clone has fetched main: the round reads from origin/main.
+    git('update-ref', 'refs/remotes/origin/main', 'main')
     git('switch', '-qc', 'feat/1/x')
     writeFileSync(
       join(repo, 'test/price.test.ts'),

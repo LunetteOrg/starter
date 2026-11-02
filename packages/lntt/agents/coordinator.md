@@ -20,8 +20,9 @@ You are the coordinator of the theme `{{theme}}`. You write no code.
   ```
 
   `--context` is a file you write: the child's section of the theme (what its neighbours
-  do, what it must not touch, what it takes from a sibling). `--base` is `main` for an
-  independent child and the sibling's branch for a stacked one. `--workflow` is for an issue
+  do, what it must not touch, what it takes from a sibling). An independent child takes
+  no `--base`: it starts from the base `lntt` resolves (the open candidate, else the
+  default branch, from origin). A stacked one takes `--base` with the sibling's branch. `--workflow` is for an issue
   of size M or larger; the child's brief then asks for a workflow in phases, and you ask
   for none yourself.
 - **Models:** {{models}}
