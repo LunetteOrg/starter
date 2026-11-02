@@ -174,7 +174,7 @@ describe('the coordinator’s brief', () => {
     assert.match(brief, /`lntt ask --to child --issue <n>`/)
     assert.match(
       brief,
-      /open decisions your children ask before their first\n {2}commit are collected and sent to the orchestrator in one batch/,
+      /open decisions your children ask before their first\n {2}commit are collected and sent to the orchestrator in one batch, each with a\n {2}recommendation, before the children code\./,
     )
   })
 
@@ -277,8 +277,8 @@ describe('the child’s brief', () => {
         '',
         'A decision that arrives after your review converged, and would change the change, is',
         'asked the same way: apply it in this pull request, or in a follow-up. Applied here, the',
-        "new rounds need the person's go (`lntt review allow <rounds>`, above): a round does not",
-        'restart on its own.',
+        "new rounds need the person's go: a round does not restart on its own, and past",
+        '`delivery.review.maxRounds` the go is `lntt review allow <rounds>` (above).',
         '',
         'While you wait, and before you resume after any pause, re-read your mailbox:',
         '`lntt inbox --as child --issue 84`. A decision sent there holds over what you',
@@ -301,7 +301,10 @@ describe('the child’s brief', () => {
     assert.match(brief, /re-read your mailbox:\n`lntt inbox --as child --issue 84`/)
     assert.match(brief, /## Open decisions come before the first commit/)
     assert.match(brief, /ask them in one `lntt ask --to coordinator --theme release-0-6-1 --issue 84 "<…>"`/)
-    assert.match(brief, /the\nnew rounds need the person's go \(`lntt review allow <rounds>`/)
+    assert.match(
+      brief,
+      /new rounds need the person's go: a round does not restart on its own, and past\n`delivery.review.maxRounds` the go is `lntt review allow <rounds>`/,
+    )
     assert.doesNotMatch(brief, /workflow|orca/i)
   })
 

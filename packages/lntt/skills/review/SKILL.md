@@ -84,8 +84,9 @@ in the first `delivery.review.warningRounds` rounds, blockers alone after them.
   an answer in the mailbox granting rounds is the person's go, and you run it then);
   or an issue for what is open, named in the pull request.
 - After the loop converged, a new decision that changes the change does not restart it:
-  ask whether it is applied in this pull request or in a follow-up, and run
-  `lntt review allow <rounds>` only on the person's go (the brief says so once).
+  ask whether it is applied in this pull request or in a follow-up, and new
+  rounds start only on the person's go, which past `delivery.review.maxRounds` is
+  `lntt review allow <rounds>` (the brief says so once).
 
 ## 4. A clean round
 

@@ -100,7 +100,7 @@ lntt ask --wait <id>                                   # the answer to a message
   orchestrator in one batch before the children code. A decision that arrives after a
   child's review converged goes the same way, asking whether it is applied in that pull
   request or in a follow-up; applied there, the child needs the person's go for the new
-  rounds (`lntt review allow`).
+  rounds (past `delivery.review.maxRounds`, `lntt review allow`).
 - **Questions for the person go to the orchestrator, batched**: every open question in one
   message, each with a recommendation. While waiting, keep following the children.
 - **A freeze** from the orchestrator ("STOP: no new children, no rebases, no Ready, no

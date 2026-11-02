@@ -21,8 +21,8 @@ criteria that decide it. Start coding once it is answered.
 
 A decision that arrives after your review converged, and would change the change, is
 asked the same way: apply it in this pull request, or in a follow-up. Applied here, the
-new rounds need the person's go (`lntt review allow <rounds>`, above): a round does not
-restart on its own.
+new rounds need the person's go: a round does not restart on its own, and past
+`delivery.review.maxRounds` the go is `lntt review allow <rounds>` (above).
 
 While you wait, and before you resume after any pause, re-read your mailbox:
 `lntt inbox --as child --issue {{issue}}`. A decision sent there holds over what you
