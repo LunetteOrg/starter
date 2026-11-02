@@ -1255,7 +1255,7 @@ export function follow(run: Run): FollowResult {
   const { gh, repo, config, log, git } = run
   if (!git) {
     log(
-      `candidate: follow ${config.base}: no git client in this run, the candidate is left as it is (from a terminal, lntt ci candidate --follow follows it).`,
+      `candidate: follow ${config.base}: no git client in this run, the candidate is left as it is (from a terminal, pnpm exec lntt ci candidate --follow follows it).`,
     )
     return { path: 'none', reason: 'no git client', outcome: 'no-git' }
   }
