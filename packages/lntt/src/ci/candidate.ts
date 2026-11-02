@@ -21,7 +21,7 @@
 //   open into it): its commits are rebased on the base and pushed with a lease on the
 //   head as read. Pull requests open into it: the base is merged into it, no rewrite,
 //   so their branches stay valid. A conflict or a refused push leaves it as it is and
-//   tells the candidate's pull request what a person does.
+//   tells the candidate's pull request what an admin does.
 //
 // The board follows: an open issue a pull request closes moves to `In release` when the
 // pull request is squashed into a candidate, and its status becomes `Done` when the
@@ -426,6 +426,9 @@ export function gitAuthEnv(env: Record<string, string | undefined>): Record<stri
   }
 }
 
+// The project's hooks do not run on the automation's own rebase and push.
+const NO_HOOKS = ['-c', 'core.hooksPath=/dev/null']
+
 export function makeGit({
   dryRun,
   log,
@@ -450,7 +453,7 @@ export function makeGit({
         log(`[dry-run] git push ${args.join(' ')}`)
         return { status: 0, stderr: '' }
       }
-      return run(['push', ...args])
+      return run([...NO_HOOKS, 'push', ...args])
     },
   }
 }
@@ -1131,7 +1134,7 @@ export function followConflictComment(config: CandidateConfig, facts: FollowFact
     '',
     ...files.map((file) => `- \`${file}\``),
     '',
-    `Nothing was pushed: \`${facts.candidate}\` stays at \`${short(facts.oldHead)}\`. A person brings it up to date (docs/process/delivery.md):`,
+    `Nothing was pushed: \`${facts.candidate}\` stays at \`${short(facts.oldHead)}\`. An admin brings it up to date, as only the ruleset's bypass actors push to it directly (docs/process/delivery.md):`,
     '',
     ...manualSteps(config, facts),
   ].join('\n')
@@ -1145,7 +1148,7 @@ export function followRefusedComment(config: CandidateConfig, facts: FollowFacts
     '',
     `> ${error}`,
     '',
-    `Nothing was pushed: \`${facts.candidate}\` stays at \`${short(facts.oldHead)}\`. GitHub refuses a push of the app that changes a workflow file (it has no Workflows permission), and the lease refuses one when someone pushed to the candidate meanwhile. A person brings it up to date (docs/process/delivery.md):`,
+    `Nothing was pushed: \`${facts.candidate}\` stays at \`${short(facts.oldHead)}\`. GitHub refuses a push of the app that changes a workflow file (it has no Workflows permission), and the lease refuses one when someone pushed to the candidate meanwhile. An admin brings it up to date, as only the ruleset's bypass actors push to it directly (docs/process/delivery.md):`,
     '',
     ...manualSteps(config, facts),
   ].join('\n')
@@ -1193,9 +1196,6 @@ function pushError(stderr: string): string {
     'no message'
   )
 }
-
-// The project's hooks do not run on the automation's own rebase.
-const NO_HOOKS = ['-c', 'core.hooksPath=/dev/null']
 
 // The candidate's new head, or the files in conflict.
 function rebased(git: Git, oldHead: string, base: string): { head: string } | { files: string[] } {
@@ -1246,14 +1246,16 @@ function merged(git: Git, facts: FollowFacts, base: string): { head: string } | 
 // The open candidate follows the base when the base moved (followDecision): its commits
 // rebased on the base and pushed with a lease on the head as read, or the base merged
 // into it and pushed plainly. A conflict or a refused push leaves the candidate as it
-// is, comments on its pull request what a person does, and warns: it does not fail the
+// is, comments on its pull request what an admin does, and warns: it does not fail the
 // run. Every comment is written once (followMarker, followedMarker). In a dry run the
 // fetch, the merge and the rebase still run on the local clone and a temporary worktree;
 // only the push and the comments are printed.
 export function follow(run: Run): FollowResult {
   const { gh, repo, config, log, git } = run
   if (!git) {
-    log(`candidate: follow ${config.base}: no git client in this run, the candidate is left as it is.`)
+    log(
+      `candidate: follow ${config.base}: no git client in this run, the candidate is left as it is (from a terminal, lntt ci candidate --follow follows it).`,
+    )
     return { path: 'none', reason: 'no git client', outcome: 'no-git' }
   }
   const candidate = openCandidate(run)
@@ -1382,7 +1384,8 @@ export function handle(run: Run, action: string, pr: PullRequest) {
 }
 
 // A push to the base, or `--follow` from a terminal: the sweep, then the candidate
-// following the base.
+// following the base. An error escapes on purpose: following is the whole job of
+// this run, so a failure turns it red (inside a pull_request run it is a warning).
 export function handlePush(run: Run) {
   sweep(run)
   return follow(run)

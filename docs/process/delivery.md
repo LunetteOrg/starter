@@ -204,9 +204,9 @@ candidate exists on a day without pull requests.
   candidate's CI runs on the new head once it is ready for review; a draft candidate
   gets no cloud CI, so `pnpm ci:local` runs on it. A conflict, or a push GitHub refuses,
   leaves the candidate as it is, with a comment naming the files in conflict, or git's
-  error, and a warning in the run: a person switches to the candidate, merges
-  `origin/main` into it (or rebases it, with no pull request open into it), resolves
-  and pushes.
+  error, and a warning in the run: an admin, as only the ruleset's bypass actors push
+  to a candidate directly, switches to the candidate, merges `origin/main` into it (or
+  rebases it, with no pull request open into it), resolves and pushes.
 - **Stranded pull requests.** A pull request left on a candidate that is no longer open
   (closed without merging, or a merge whose event the workflow dropped) moves onto the
   open candidate at the automation's next run, whatever event starts it.
@@ -224,9 +224,9 @@ Dependabot pull request runs the CI once an owner, member or collaborator approv
 
 The automation runs from a terminal too: `pnpm exec lntt ci candidate --pr <n>` does
 what the workflow would do on that pull request's event (move it, rebuild a
-candidate's lists, or close and carry over on a merged candidate), and
-`pnpm exec lntt ci candidate --follow` what it does on a push to `main` (the open
-candidate follows `main`, with the path and its reason printed). `--dry-run` prints the
+candidate's lists, or close and carry over on a merged candidate) without following
+`main`, and `pnpm exec lntt ci candidate --follow` what it does on a push to `main` (the
+open candidate follows `main`, with the path and its reason printed). `--dry-run` prints the
 writes and the push instead of making them; the fetch, the merge and the rebase still
 run in the local clone and a temporary worktree, so it shows the files in conflict or
 the head it would push. A terminal run moves the board too, with the
@@ -241,7 +241,9 @@ a push to `main`. One run at a time across the repository, so two pull requests 
 together find the same candidate. Every run sweeps the stranded pull requests and
 brings the open candidate up to date with `main` before it handles its event: the
 concurrency group keeps one pending run, and a newer one cancels it, so the next run
-covers a dropped push. The script and the configuration are read from the default
+covers a dropped push. In a `pull_request` run a failure to follow `main` is a warning
+and the event is still handled; in the push run following is the whole job, so a
+failure turns the run red. The script and the configuration are read from the default
 branch.
 
 It writes with the token of a **GitHub App of the organization**, generated in the job

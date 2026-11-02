@@ -1305,6 +1305,7 @@ describe('follow', () => {
       assert.match(body, /`a\.txt`/)
       assert.match(body, /git switch candidate\/4/)
       assert.match(body, /git merge origin\/main/)
+      assert.match(body, /An admin brings it up to date/)
       assert.ok(lines.some((l) => l.startsWith('::warning title=Candidate not updated::candidate/4')))
       assert.equal(git(s.clone, 'worktree', 'list').split('\n').length, 1)
     })
@@ -1332,6 +1333,7 @@ describe('follow', () => {
     assert.ok(body.includes(`<!-- candidate:follow:${s.base}:${s.oldHead} -->`))
     assert.match(body, /refused/)
     assert.match(body, /stale info|rejected/)
+    assert.match(body, /An admin brings it up to date/)
     assert.ok(lines.some((l) => l.startsWith('::warning title=Candidate not updated::')))
   })
 
@@ -1393,6 +1395,101 @@ describe('follow', () => {
       ),
     )
     assert.ok(lines.some((l) => l.startsWith('[dry-run] gh pr comment 40')))
+  })
+
+  test('a shallow clone is unshallowed, then the candidate is rebased', (t) => {
+    const s = setup()
+    t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+    // A file:// URL, so the depth is honoured.
+    const shallow = join(s.dir, 'shallow')
+    git(s.dir, 'clone', '-q', '--no-checkout', '--depth', '1', `file://${s.remote}`, shallow)
+    assert.equal(git(shallow, 'rev-parse', '--is-shallow-repository'), 'true')
+    const gh = fakeGh(answers(s))
+    const result = follow({ ...run(gh), git: recordingGit({ ...s, clone: shallow }) })
+    assert.equal(result.outcome, 'updated')
+    const head = remoteHead(s)
+    assert.equal(result.head, head)
+    assert.equal(git(s.remote, 'rev-parse', `${head}~2`), s.base)
+    assert.equal(git(shallow, 'rev-parse', '--is-shallow-repository'), 'false')
+  })
+
+  test('the merge path tells the candidate and every pull request into it, none into the base', (t) => {
+    const s = setup()
+    t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+    const gh = fakeGh({
+      ...answers(s, { prsInto: [15, 12] }),
+      'api graphql': [
+        node(15, { baseRefName: 'candidate/4' }),
+        node(20, { baseRefName: 'main' }),
+        node(12, { baseRefName: 'candidate/4' }),
+      ],
+      'issues/20/comments': '',
+    })
+    const result = follow({ ...run(gh), git: recordingGit(s) })
+    assert.equal(result.path, 'merge')
+    assert.equal(result.outcome, 'updated')
+    assert.match(result.reason, /#12, #15 are open into candidate\/4/)
+    assert.deepEqual(
+      gh.writes.map((w) => w.args),
+      [
+        'pr comment 40 --repo o/r --body-file -',
+        'pr comment 12 --repo o/r --body-file -',
+        'pr comment 15 --repo o/r --body-file -',
+      ],
+    )
+  })
+
+  test('a pull request open on the base only does not stand on the candidate: rebase', (t) => {
+    const s = setup()
+    t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+    const gh = fakeGh({ ...answers(s), 'api graphql': [node(20, { baseRefName: 'main' })] })
+    const g = recordingGit(s)
+    const result = follow({ ...run(gh), git: g })
+    assert.equal(result.path, 'rebase')
+    assert.equal(result.outcome, 'updated')
+    assert.ok(g.pushes[0]?.[0]?.startsWith('--force-with-lease='))
+    assert.deepEqual(
+      gh.writes.map((w) => w.args),
+      ['pr comment 40 --repo o/r --body-file -'],
+    )
+  })
+
+  test('a base the fetch did not bring: nothing pushed, nothing written', (t) => {
+    const s = setup()
+    t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+    const gh = fakeGh({ ...answers(s), 'compare/main...candidate/4': { behindBy: 1, base: 'f'.repeat(40) } })
+    const g = recordingGit(s)
+    const result = follow({ ...run(gh), git: g })
+    assert.equal(result.outcome, 'moved-meanwhile')
+    assert.deepEqual(g.pushes, [])
+    assert.deepEqual(gh.writes, [])
+  })
+
+  test('a rebase that fails with no file in conflict throws, naming git rebase', () => {
+    const oldHead = 'a'.repeat(40)
+    const base = 'b'.repeat(40)
+    const gh = fakeGh({
+      '--state open': [{ number: 40, headRefName: 'candidate/4', body: '', headRefOid: oldHead }],
+      'compare/main...candidate/4': { behindBy: 1, base },
+      'api graphql': [],
+    })
+    const ok = (stdout = '') => ({ status: 0, stdout, stderr: '' })
+    const fake: Git = {
+      run: (args) => {
+        const line = args.join(' ')
+        if (line.includes('--is-shallow-repository')) return ok('false')
+        if (line.includes('rev-parse refs/remotes/origin/candidate/4')) return ok(oldHead)
+        if (/ rebase --keep-empty /.test(` ${line} `)) {
+          return { status: 1, stdout: '', stderr: 'fatal: no identity\n' }
+        }
+        return ok()
+      },
+      push: (args) => {
+        throw new Error(`unexpected git push ${args.join(' ')}`)
+      },
+    }
+    assert.throws(() => follow({ ...run(gh), git: fake }), /git rebase failed: fatal: no identity/)
+    assert.deepEqual(gh.writes, [])
   })
 })
 

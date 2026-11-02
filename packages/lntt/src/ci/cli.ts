@@ -169,6 +169,11 @@ function candidateRun(args: string[]): number {
       },
     }),
   )
+  if (values.follow) {
+    const flag = ['pr', 'event', 'head-ref', 'labels'].find((name) => values[name as keyof typeof values] !== undefined)
+    if (flag !== undefined || values.merged)
+      usage(`--follow takes no --${flag ?? 'merged'}: it handles no pull request`)
+  }
   const log = (line: string) => stdout.write(`${line}\n`)
   const config = candidateConfig(cwd())
   if (!config) {
@@ -183,9 +188,11 @@ function candidateRun(args: string[]): number {
   )
   const repo = env.GITHUB_REPOSITORY ?? gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])
   // The local clone: the candidate follows the base through it (fetch, merge or rebase,
-  // push). In Actions it authenticates with GH_TOKEN through its environment.
-  const git = candidate.makeGit({ dryRun: values['dry-run'], log, cwd: cwd(), env })
-  const run: candidate.Run = { gh, ...(board ? { board } : {}), git, repo, config, log }
+  // push). In Actions it authenticates with GH_TOKEN through its environment. `--pr`
+  // from a terminal handles its pull request only: it gets no git, so it does not follow.
+  const git =
+    values.pr === undefined ? candidate.makeGit({ dryRun: values['dry-run'], log, cwd: cwd(), env }) : undefined
+  const run: candidate.Run = { gh, ...(board ? { board } : {}), ...(git ? { git } : {}), repo, config, log }
   if (values.follow) {
     candidate.handlePush(run)
     return 0
@@ -200,8 +207,12 @@ function candidateRun(args: string[]): number {
   } else {
     if (!env.GITHUB_EVENT_PATH) usage('without --pr or --follow, GITHUB_EVENT_PATH must name the event')
     const event = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8'))
-    // A push to the base: the candidate follows it.
+    // A push to the base: the candidate follows it. Any other event has nothing to do.
     if (!event.pull_request) {
+      if (event.ref !== `refs/heads/${config.base}`) {
+        log(`candidate: event ${event.ref || env.GITHUB_EVENT_NAME || 'without a pull request'}, nothing to do.`)
+        return 0
+      }
       candidate.handlePush(run)
       return 0
     }

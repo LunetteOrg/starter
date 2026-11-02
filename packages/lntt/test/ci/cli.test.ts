@@ -502,6 +502,47 @@ describe('lntt ci candidate', () => {
     assert.match(out.stdout, /\[dry-run\] gh pr comment 40/)
     assert.equal(git(remote, 'rev-parse', 'refs/heads/candidate/4'), head)
   })
+
+  test('--pr from a terminal handles its pull request and does not follow the base', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidateWith(
+      `*"pr view 7"*) echo '{"number":7,"title":"t","body":"Closes #3","baseRefName":"main","headRefName":"feat/3/x","labels":[],"mergedAt":null}';; *compare/*) echo '{"behindBy":1,"base":"b"}';;`,
+      null,
+      '--pr',
+      '7',
+      '--dry-run',
+    )
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /\[dry-run\] gh pr edit 7 --repo o\/r --base candidate\/4/)
+    assert.match(out.stdout, /candidate: follow main: no git client in this run.*--follow/)
+    assert.doesNotMatch(out.stdout, /git push/)
+    assert.doesNotMatch(readFileSync(join(root, '.git/gh.log'), 'utf8'), /compare\//)
+  })
+
+  for (const flags of [
+    ['--pr', '7'],
+    ['--event', 'opened'],
+    ['--head-ref', 'feat/3/x'],
+    ['--labels', 'a'],
+    ['--merged'],
+  ]) {
+    test(`--follow with ${flags[0]} is a usage error`, () => {
+      root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+      const out = candidateWith('', null, '--follow', ...flags)
+      assert.equal(out.status, 2)
+      assert.match(out.stderr, new RegExp(`--follow takes no ${flags[0]}`))
+      assert.equal(existsSync(join(root, '.git/gh.log')), false)
+    })
+  }
+
+  test('an event without a pull request that is no push to the base does nothing', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidate({ ref: 'refs/heads/other', before: 'a', after: 'b' })
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /^candidate: event refs\/heads\/other, nothing to do\.$/m)
+    assert.doesNotMatch(out.stdout, /candidate: follow/)
+    assert.equal(existsSync(join(root, '.git/gh.log')), false)
+  })
 })
 
 describe('lntt ci proved', () => {
