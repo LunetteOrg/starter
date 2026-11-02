@@ -1024,6 +1024,20 @@ describe('lntt review at delivery.review.maxRounds', () => {
     assert.match(after.err, /limit: sent /)
   })
 
+  test('a limit sent under a topic with a collision suffix is still the one waited on', () => {
+    withMaxRounds(1)
+    lntt(['--base', 'main'], open)
+    commit(3)
+    startedBy({ branch: 'feat/1/x', issue: 1, to: 'coordinator', theme: 'alpha' })
+    const id = '20260101-000000-issue-1-review-limit-2'
+    mkdirSync(join(repo, '.git/lntt-messages/to-coordinator-alpha'), { recursive: true })
+    writeFileSync(join(repo, '.git/lntt-messages/to-coordinator-alpha', `${id}.md`), '#1 feat/1/x: lntt review limit\n')
+    const r = lntt(['--base', 'main'], open)
+    assert.equal(r.code, 3, r.err)
+    assert.deepEqual(messages('to-coordinator-alpha'), [`${id}.md`])
+    assert.equal(JSON.parse(r.out).asked.id, id)
+  })
+
   test('another branch’s pending limit does not stand for this one', () => {
     withMaxRounds(1)
     lntt(['--base', 'main'], open)

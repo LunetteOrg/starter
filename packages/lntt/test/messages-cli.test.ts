@@ -241,6 +241,16 @@ describe('lntt ask / inbox / answer', () => {
     assert.equal(again.stdout, 'Yes.\n')
   })
 
+  test('ask --wait finds a message sent to a child', () => {
+    const dir = join(box(), 'to-child-84')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, '20260101-000000-decision.md'), 'q\n')
+    writeFileSync(join(dir, '20260101-000000-decision.answer.md'), 'Go.\n')
+    const r = lntt(['ask', '--wait', '20260101-000000-decision'])
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(r.stdout, 'Go.\n')
+  })
+
   test('ask --wait on an unknown id, or with no answer in time, exits 1', () => {
     const unknown = lntt(['ask', '--wait', '20260101-000000-none'])
     assert.equal(unknown.status, 1)

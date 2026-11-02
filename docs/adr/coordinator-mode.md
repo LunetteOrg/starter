@@ -109,7 +109,8 @@ host, with no messaging command of Orca or Herdr:
   narrows only a child's.
 - `ask` writes the question and polls for the answer file every 20 seconds
   (`LNTT_POLL_SECONDS` changes it); stdout is the answer. `ask --wait <id>` waits for the
-  answer to a message already sent, with the same output and exit codes. `inbox` lists
+  answer to a message already sent, with the same output and exit codes; it takes no
+  question and no address (exit 2). `inbox` lists
   the unanswered messages of a role as JSON lines, and with `--wait` blocks until there is
   one. `answer` writes the answer file; the first answer stays.
 - Every wait goes through `lntt ask`, never only in an agent's terminal, which nobody
