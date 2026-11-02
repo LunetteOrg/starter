@@ -1,6 +1,13 @@
 # Tools for `pnpm ci:local --container` (docs/process/ci.md): `act` runs
 # the GitHub Actions jobs and `circleci` the CircleCI ones, each inside a container.
 # Node is not pinned here: its version is in .nvmrc.
+# [env] puts the project's node_modules/.bin on PATH, so a bare `lntt` resolves in a
+# shell where mise is fully activated (`mise activate zsh`); `mise activate --shims`
+# alone does not apply it. The skills do not rely on it: they write `pnpm exec lntt`
+# (docs/adr/agent-layer.md).
 [tools]
 act = "0.2.89"
 circleci = "1.11.0"
+
+[env]
+_.path = ["node_modules/.bin"]

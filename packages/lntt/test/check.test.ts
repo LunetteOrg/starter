@@ -641,7 +641,7 @@ describe('lntt check', () => {
       r.results.map((x) => `${x.status} ${x.area}/${x.check} ${x.path}`),
       ['FAIL agents-md/block AGENTS.md'],
     )
-    assert.match((r.results[0] as Result).message, /run lntt sync/)
+    assert.match((r.results[0] as Result).message, /run pnpm exec lntt sync/)
   })
 
   test('an unknown area or check is a usage error that runs nothing', () => {

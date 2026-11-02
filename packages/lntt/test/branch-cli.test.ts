@@ -116,6 +116,12 @@ describe('lntt branch check', () => {
     assert.match(r.stderr, /rename it: git branch -m feat\/77\/branch-names/)
   })
 
+  test('with no name to derive, it says which command prints one', () => {
+    const r = lntt(['branch', 'check', '--branch', 'ilmeskio/probe-b'])
+    assert.equal(r.status, 1)
+    assert.match(r.stderr, /; rename it to the name pnpm exec lntt branch name --issue <n> prints$/m)
+  })
+
   test('lets the base through', () => {
     assert.equal(lntt(['branch', 'check']).status, 0)
   })
@@ -146,7 +152,7 @@ describe('lntt branch rename', () => {
     git('switch', '-q', '-c', 'ilmeskio/probe-b')
     const r = lntt(['branch', 'rename'])
     assert.equal(r.status, 0, 'a setup step must not fail on a name it cannot fix')
-    assert.match(r.stderr, /lntt branch name --issue/)
+    assert.match(r.stderr, /"\$\(pnpm exec lntt branch name --issue <n>\)"/)
     assert.equal(git('branch', '--show-current'), 'ilmeskio/probe-b')
   })
 

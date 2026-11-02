@@ -113,7 +113,7 @@ export function syncSkills(cwd: string): void {
   )
   if (clashing.length > 0) {
     throw new ConfigError(
-      `${clashing.join(', ')}: a skill of the project's own with the name of a shared skill; rename it, then run lntt sync`,
+      `${clashing.join(', ')}: a skill of the project's own with the name of a shared skill; rename it, then run pnpm exec lntt sync`,
     )
   }
   for (const dir of SKILL_DIRS) {

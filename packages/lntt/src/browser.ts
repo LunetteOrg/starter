@@ -90,7 +90,7 @@ export function browserApp(cwd: string, name?: string): string {
   )
   if (names.length === 1) return names[0] as string
   throw new ConfigError(
-    `name the app: lntt browser <app> (local.apps: ${names.length > 0 ? names.join(', ') : 'none configured'})`,
+    `name the app: pnpm exec lntt browser <app> (local.apps: ${names.length > 0 ? names.join(', ') : 'none configured'})`,
   )
 }
 

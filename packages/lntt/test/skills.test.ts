@@ -182,7 +182,7 @@ describe('the shared skills', () => {
     writeFileSync(join(root, '.claude/skills/review/SKILL.md'), 'our own review\n')
     assert.throws(
       () => syncSkills(root),
-      /\.claude\/skills\/review: a skill of the project's own with the name of a shared skill/,
+      /\.claude\/skills\/review: a skill of the project's own with the name of a shared skill; rename it, then run pnpm exec lntt sync$/,
     )
     assert.equal(existsSync(join(root, '.agents/skills/review')), false, 'nothing written')
     assert.equal(readFileSync(join(root, '.claude/skills/review/SKILL.md'), 'utf8'), 'our own review\n')
@@ -214,8 +214,8 @@ describe('the shared skills', () => {
     staleStub('.agents/skills', 'gone')
     writeFileSync(join(root, '.agents/skills/review/SKILL.md'), 'our own review\n')
     const out = lntt(['check', 'skills']).stdout
-    assert.match(out, /\.claude\/skills\/decisions — differs from the stub lntt sync writes; run lntt sync/)
-    assert.match(out, /\.agents\/skills\/gone — a stub of a skill @lntt\/lntt does not have; run lntt sync/)
+    assert.match(out, /\.claude\/skills\/decisions — differs from the stub lntt sync writes; run pnpm exec lntt sync/)
+    assert.match(out, /\.agents\/skills\/gone — a stub of a skill @lntt\/lntt does not have; run pnpm exec lntt sync/)
     assert.match(
       out,
       /\.agents\/skills\/review — a skill of the project's own with the name of a shared skill; rename it/,
@@ -225,7 +225,7 @@ describe('the shared skills', () => {
   test('lntt sync writes the stubs and lntt check skills fails until it has', () => {
     const before = lntt(['check', 'skills'])
     assert.equal(before.status, 1)
-    assert.match(before.stdout, /FAIL {5}skills\/installed {2}\.agents\/skills\/decisions — .*run lntt sync/)
+    assert.match(before.stdout, /FAIL {5}skills\/installed {2}\.agents\/skills\/decisions — .*run pnpm exec lntt sync/)
     assert.equal(lntt(['sync']).status, 0)
     assert.ok(existsSync(join(root, 'AGENTS.md')), 'sync still writes the managed block')
     const after = lntt(['check', 'skills'])
@@ -397,7 +397,7 @@ describe('the board skills', () => {
     const guide = readFileSync(join(SKILLS, 'github-board', 'SKILL.md'), 'utf8').replace(/\s+/g, ' ')
     assert.match(
       guide,
-      /`lntt board sync` shows what it would add \(a dry run\), and `lntt board sync --apply` adds it, with the person's go/,
+      /`pnpm exec lntt board sync` shows what it would add \(a dry run\), and `pnpm exec lntt board sync --apply` adds it, with the person's go/,
     )
     const reference = readFileSync(resolve(HERE, '../skills/github-board/references/github-project.md'), 'utf8')
     assert.match(reference, /An option passed with its `id`\s+keeps it, and every item keeps its value/)
