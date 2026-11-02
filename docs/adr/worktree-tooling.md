@@ -76,8 +76,10 @@ small adapter that makes the calls it understands.
   default branch rebased, so the refs cannot tell an open one. When GitHub cannot
   answer, the base is `origin/<default branch>` and the command says so. A resolved base
   whose `origin/` ref is not in the clone is an error that asks for `git fetch origin`;
-  nothing is fetched. An explicit `--base` goes to the host as given when neither ref
-  exists, and the host says what it cannot find.
+  nothing is fetched. An explicit `--base` with neither `origin/<base>` nor a local
+  branch of that name goes to the host as given in `lntt worktree start`, which says
+  what it cannot find, is an error in `lntt review`, and leaves `ci:local` with no diff
+  to choose its tests from.
   A detached HEAD at a candidate's head is that candidate: `lntt branch check` and
   `ci:local`'s branch name are the `delivery.candidate.prefix` branch whose `origin/`
   ref points at HEAD, so a candidate is checked without a local branch named after it.
