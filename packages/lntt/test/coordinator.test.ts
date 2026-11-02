@@ -171,7 +171,7 @@ describe('the coordinator’s brief', () => {
   test('under propose, names the approved children and the proposal flow', () => {
     const brief = coordinatorBrief(VALUES)
     assert.match(brief, /Approved to start now: #89/)
-    assert.match(brief, /`lntt worktree start --theme` asks the orchestrator/)
+    assert.match(brief, /`pnpm exec lntt worktree start --theme` asks the orchestrator/)
     assert.match(brief, /#84/)
   })
 
@@ -229,7 +229,7 @@ describe('the child’s brief', () => {
         '  else; its Definition of Done is what finishes the work. `AGENTS.md` applies.',
         '- **Work only in this worktree:** `/w`, on branch `feat/84/coordinator-mode`. Run every',
         '  command from it, never from the main checkout or another worktree.',
-        '- **Before publishing:** the review (`lntt review`, with the `review` skill) until a',
+        '- **Before publishing:** the review (`pnpm exec lntt review`, with the `review` skill) until a',
         '  round finds nothing, and `pnpm ci:local` green on the commit you push. At',
         '  `lntt review: limit:` (`delivery.review.maxRounds`) stop: what is still open goes to',
         '  the person (or your coordinator, when you have one), who decides.',

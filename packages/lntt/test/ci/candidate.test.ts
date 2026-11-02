@@ -262,7 +262,8 @@ describe('retarget', () => {
     assert.ok(comment, 'no comment on the new candidate')
     assert.equal(comment.input, retrospectiveComment(config))
     assert.ok((comment.input ?? '').endsWith(`\n\n${config.retrospective}`))
-    assert.match(comment.input ?? '', /lntt retro add --label/)
+    assert.match(comment.input ?? '', /`pnpm exec lntt retro add --label <label> "<one sentence>"`/)
+    assert.match(comment.input ?? '', /\(`pnpm exec lntt check body --pr <n>`\)/)
   })
 
   test("pelion's release/<N> works the same", () => {
@@ -697,7 +698,7 @@ describe('sweep', () => {
     const warning = lines.find((l) => l.startsWith('::warning'))
     assert.equal(
       warning,
-      '::warning title=Retrospective comment::candidate/4: not written (quota 100%25 used retry later); lntt retro add writes it',
+      '::warning title=Retrospective comment::candidate/4: not written (quota 100%25 used retry later); pnpm exec lntt retro add writes it',
     )
   })
 

@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-10-28
+date: 2026-11-02
 tags: [agents, skills, configuration, operator, templates, hooks, plugin]
 ---
 
@@ -64,9 +64,9 @@ the project root, as their documentation states it in October 2026:
 
 A stub folder holds its `SKILL.md` only, and `lntt sync` removes anything else from it.
 The stub holds the skill's frontmatter, for discovery, a marker line, and one instruction:
-load the guide with `pnpm exec lntt guide <skill>` before acting (a Lunette project
-uses pnpm). The stubs are committed, so a fresh clone or a cloud session knows every
-skill before an install. A bump of `@lntt/lntt` updates every guide with no other step;
+load the guide with `pnpm exec lntt guide <skill>` before acting (the project's `lntt`,
+[below](#agents-call-pnpm-exec-lntt)). The stubs are committed, so a fresh clone or a
+cloud session knows every skill before an install. A bump of `@lntt/lntt` updates every guide with no other step;
 the stubs change only when a skill is added, removed or redescribed. `lntt check
 skills` fails on a stub that is missing or edited, or that names a skill the package
 does not have; when to run `lntt sync` is in [delivery](../process/delivery.md#the-shared-skills).
@@ -74,6 +74,35 @@ The project's own skills sit beside the stubs and are left alone: `lntt sync` wr
 nothing while a folder of the project's own has a shared skill's name, and `lntt check
 skills` names it.
 The other check areas skip the stubs.
+
+### Agents call `pnpm exec lntt`
+
+The skills, the briefs, the `AGENTS.md` block and the hints the CLI prints write every
+command an agent or a person runs as `pnpm exec lntt …`: the project's version, from its
+lockfile, so the first call works in any shell, with or without mise. A Lunette project
+uses pnpm, and installs `lntt` in the project (`node_modules/.bin/lntt`), not globally: a
+bare `lntt` resolves only where that directory is on `PATH`. Prose that names the tool
+(the decision records' included), the usage lines that give a command's synopsis, the
+prefixes of its output, and the settings hooks, which run `node_modules/.bin/lntt`
+(`packages/lntt/src/claude-settings.ts`), keep the bare name.
+
+The starter's `mise.toml` puts `node_modules/.bin` on `PATH` (`[env] _.path`), for a
+shell where mise is fully activated. Observed in November 2026 with mise 2026.10.19 on
+macOS, where login shells activate mise with `--shims` (`~/.zprofile`) and interactive
+ones with `mise activate zsh` (`~/.zshrc`), by `command -v lntt` in a worktree of this
+repo with `_.path` in `mise.toml`:
+
+- an Orca terminal (`orca terminal create`, shell `-/bin/zsh`, interactive and login):
+  `node_modules/.bin/lntt`;
+- the Bash of a Claude Code session started from `zsh -l -i` in the worktree: found, from
+  the terminal's `PATH`, which it inherits;
+- `zsh -l -c` (login, not interactive: shims only): not found;
+- the Bash of a Claude Code session started before `_.path` was added: not found, since
+  its `PATH` is fixed when the session starts;
+- `mise exec -- sh -c 'command -v lntt'`: found.
+
+`_.path` is a convenience for a fully activated shell, and nothing an agent is told
+relies on it. The template takes it when it adopts `@lntt/lntt` (#60).
 
 ### Operator context is personal and found from any worktree
 
@@ -304,6 +333,8 @@ How a title is written is the `github-board` skill's.
 - A stub's guide needs the install: in a fresh clone the agent finds the skill, and
   `lntt guide` fails until `pnpm install` has run.
 - Every skill load costs one command, the guide's, before the agent acts.
+- Every `lntt` call an agent makes pays pnpm's start-up before `lntt`'s own, and fails
+  where pnpm is not on `PATH`, which the project's install needs too.
 
 ### When to deviate (revisit triggers)
 
@@ -320,6 +351,8 @@ How a title is written is the `github-board` skill's.
 - A gate moves (the pre-commit stops running the typecheck or the formatter) or a
   Claude Code release changes what a hook costs: the discarded hooks below are measured
   again.
+- mise's shims apply a directory's `[env]`, or the agents' shells activate mise in full:
+  `_.path` is measured again as the way a bare `lntt` resolves.
 
 ## Discarded directions
 
@@ -343,6 +376,12 @@ How a title is written is the `github-board` skill's.
 - **Starting a cloud session (the Node version, the local services).** No cloud session
   of a Lunette project to measure it on; it is measured when there is one.
 
+- **Bare `lntt` in the skills, relying on mise's `_.path`.** Shims do not apply a
+  directory's `[env]`, so a login shell that is not interactive does not get it; nor
+  does a session started before `_.path` is in `mise.toml`, or a project or machine
+  without mise.
+- **A configuration key naming the runner, read with `lntt get`.** The agent cannot run
+  `lntt get` before it knows how to invoke `lntt`.
 - **Project values inside the skills, or in ADRs.** It is why the skills of two
   projects scaffolded from the same template diverged, and why ADRs mixed process with
   architecture.

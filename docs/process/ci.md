@@ -221,12 +221,18 @@ or a container to try a change to it.
 | Orca | GitHub Releases of `stablyai/orca` (the `.deb`) | the flags lntt passes, against `orca agent-context --json`; on a headless `orca serve`, `startOrca` with the real `claude` not logged in (path, handle, model, effort, brief) and with opencode's shell launch, and the review's subagents through Orca's hook script |
 | Herdr | GitHub Releases of `herdrdev/herdr` | the flags, against each subcommand's `--help`; on a headless `herdr server`, `startHerdr` through `agent start` and through the shell command Herdr detects |
 | claude | npm `@anthropic-ai/claude-code` | the flags, against `claude --help`; a one-line call on `haiku` whose JSON lntt parses, authenticated by Workload Identity Federation: the repository variables `ANTHROPIC_FEDERATION_RULE_ID`, `ANTHROPIC_ORGANIZATION_ID`, `ANTHROPIC_SERVICE_ACCOUNT_ID` and `ANTHROPIC_WORKSPACE_ID` and the job's GitHub OIDC token, with no stored key; without the variables, that call is skipped with a notice |
-| opencode | Homebrew's `opencode` formula | the flags, against `opencode run --help` and `opencode --help`; a one-line call on a free model whose JSON lntt parses |
+| opencode | Homebrew's `opencode` formula | the flags, against `opencode run --help` and `opencode --help`; a one-line call on a free model whose JSON lntt parses; when the model answers with a usage limit (an error event of type `provider.free-limit`, or status 429), that call is skipped (`t.skip`) with the provider's message |
 
 A version counts as checked once its cache entry `upstream-<tool>-<version>` exists, which
-the job saves green or red, unless the issue of a red could not be opened: that version is
-checked again the next day. GitHub evicts an entry left unused (its cache retention); the version
-is then checked again, and its issue, if any, stops a second one. `workflow_dispatch` takes
+the job saves green or red, unless the issue of a red could not be opened or the check
+was inconclusive (below): that version is checked again the next day. GitHub evicts an entry left unused (its cache retention);
+the version is then checked again, and its issue, if any, stops a second one.
+A check that proved nothing about its version is not recorded either: a test that meets a
+provider's usage limit (today the opencode call on a free model) skips with its message and
+writes it to the file `UPSTREAM_INCONCLUSIVE` names, the job leaves a notice, and no entry
+is saved, so a later run tries the version again. The skip opens no issue; the flags test
+still runs, and a real break in it still opens one (the issue then stops a second, as
+below). `workflow_dispatch` takes
 one tool and `force`, to check a version again; it is run from `main`, whose cache the
 scheduled runs use.
 
