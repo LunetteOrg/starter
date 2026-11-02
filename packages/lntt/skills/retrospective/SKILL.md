@@ -163,7 +163,7 @@ published without the person's go.
    issue number. The state starts from the outcome written in the previous
    retrospective's Discussion (step 11): `adopted #N` is checked against that issue and
    what it built, `dropped` keeps its reason and is not proposed again unless new
-   signals say otherwise, and a proposal still marked `later` is asked again in this
+   signals say otherwise (a cluster that recurs after a drop is such a signal), and a proposal still marked `later` is asked again in this
    harvest's discussion (step 10). A proposal with no outcome was never discussed: say
    so, and put it in the discussion too.
 6. **One concrete mechanism per cluster**: a skill or a change to one, a hook, a CI
@@ -183,7 +183,8 @@ published without the person's go.
    - `issue`: an issue with the proposals as a checklist, on the board (the
      `github-board` skill).
 
-   Publishing opens no issue for any proposal: the proposals are decided first.
+   The proposals are numbered in order in the published body. Publishing opens no issue
+   for any proposal: the proposals are decided first.
 10. **Discuss the proposals with the person,** after publishing, one proposal at a time
     (the proposals still marked `later` in the previous Discussion included). Each ends
     in exactly one of three outcomes:
@@ -193,7 +194,10 @@ published without the person's go.
 11. **Write each outcome in the Discussion** as soon as it is decided, as a comment per
     proposal (or an edit of the body), in one line the next harvest reads:
     `Proposal <n>: adopted #<issue>`, `Proposal <n>: dropped, <reason>` or
-    `Proposal <n>: later`. Where `adopted` has no issue number yet, step 12 comes first.
+    `Proposal <n>: later`. `<n>` is the number the proposal has in the published body
+    (step 9 numbers them in order); a proposal carried over as `later` takes a new
+    number and cites the one it had, so step 5 matches them.
+    Where `adopted` has no issue number yet, step 12 comes first.
 12. **Open an issue only for an adopted proposal** (the `github-board` skill), citing the
     Discussion and the proposal's cluster, and write its number in the outcome (step 11).
     Nothing is opened before the discussion, and a proposal that is dropped or later
