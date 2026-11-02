@@ -189,7 +189,7 @@ jobs:
         run: |
           if [ -s "$RUNNER_TEMP/upstream-inconclusive" ]; then
             echo "inconclusive=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::$TOOL $VERSION is not recorded as checked: $(tr '\n' ' ' < "$RUNNER_TEMP/upstream-inconclusive")"
+            echo "::notice::$TOOL $VERSION is not recorded as checked: $(head -n1 "$RUNNER_TEMP/upstream-inconclusive" | tr -d '%\r')"
           fi
       # The Projects permission of the candidate app (docs/process/delivery.md), asked
       # only on a red and in a step of its own, as candidate.yml does: a token request

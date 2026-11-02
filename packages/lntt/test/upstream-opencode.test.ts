@@ -7,7 +7,7 @@ import { describe, test } from 'node:test'
 import { headlessInvocation, parseReply } from '../src/headless.ts'
 import { agentEnv } from '../src/review-cli.ts'
 import { shellLaunch } from '../src/worktree.ts'
-import { collect, flagsOf, helpFlags, inconclusive, missingFlags, tool, upstream, usageLimit } from './upstream.ts'
+import { collect, flagsOf, helpFlags, missingFlags, skipOnUsageLimit, tool, upstream } from './upstream.ts'
 
 // lntt against the real opencode: the flags of the headless reviewer against
 // `opencode run --help` and those of the interactive launch against `opencode --help`,
@@ -45,11 +45,11 @@ describe('opencode', () => {
         timeout: 170_000,
       })
       // The free model's quota ran out on the runner: nothing of lntt was exercised.
-      const limit = usageLimit(r.stdout)
-      if (r.status !== 0 && limit) {
-        inconclusive(`opencode: ${limit}`)
+      // Whatever the exit code: the error event is the signal.
+      const limit = skipOnUsageLimit('opencode', r.stdout)
+      if (limit) {
         // Not t.skip: `lntt check tests` rejects it as a skipped test, and this one is
-        // decided at run time. The reason is in the log and in the job's notice.
+        // decided at run time. The job's notice (the `inconclusive` step) is the visible signal.
         t.diagnostic(`skipped: the free model's usage limit is reached: ${limit}`)
         return
       }

@@ -221,6 +221,14 @@ export function inconclusive(reason: string): void {
   if (file) appendFileSync(file, `${reason}\n`)
 }
 
+// The usage limit a tool's output shows, recorded as inconclusive for the workflow, or
+// null when there is none: the one decision of the test that skips on it.
+export function skipOnUsageLimit(tool: Tool, output: string): string | null {
+  const limit = usageLimit(output)
+  if (limit) inconclusive(`${tool}: ${limit}`)
+  return limit
+}
+
 export const readLog = (log: string): string => {
   try {
     return readFileSync(log, 'utf8')

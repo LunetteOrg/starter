@@ -14,6 +14,7 @@ import {
   missingFlags,
   ownArgs,
   recorder,
+  skipOnUsageLimit,
   upstream,
   usageLimit,
   waitFor,
@@ -136,6 +137,7 @@ describe('upstream helpers', () => {
     assert.match(usageLimit(captured) ?? '', /^Free usage limit reached/)
     assert.equal(usageLimit('{"type":"error","error":{"status":429,"message":"slow down"}}'), 'slow down')
     assert.equal(usageLimit('{"type":"error","error":{"type":"provider.auth","status":401,"message":"no key"}}'), null)
+    assert.equal(usageLimit('{"type":"error","error":{"status":429}}'), 'usage limit reached')
     assert.equal(usageLimit('{"type":"text","part":{"text":"ok"}}\nnot json'), null)
   })
 
@@ -149,6 +151,22 @@ describe('upstream helpers', () => {
       process.env.UPSTREAM_INCONCLUSIVE = file
       inconclusive('opencode: limit')
       assert.equal(readFileSync(file, 'utf8'), 'opencode: limit\n')
+    } finally {
+      if (saved === undefined) delete process.env.UPSTREAM_INCONCLUSIVE
+      else process.env.UPSTREAM_INCONCLUSIVE = saved
+      rmSync(dirname(file), { recursive: true, force: true })
+    }
+  })
+
+  test('a usage limit is recorded as inconclusive whatever the exit code, other output is not', () => {
+    const saved = process.env.UPSTREAM_INCONCLUSIVE
+    const file = join(mkdtempSync(join(tmpdir(), 'lntt-inconclusive-')), 'marker')
+    try {
+      process.env.UPSTREAM_INCONCLUSIVE = file
+      assert.equal(skipOnUsageLimit('opencode', '{"type":"text","part":{"text":"ok"}}'), null)
+      assert.equal(existsSync(file), false)
+      assert.equal(skipOnUsageLimit('opencode', '{"type":"error","error":{"status":429,"message":"full"}}'), 'full')
+      assert.equal(readFileSync(file, 'utf8'), 'opencode: full\n')
     } finally {
       if (saved === undefined) delete process.env.UPSTREAM_INCONCLUSIVE
       else process.env.UPSTREAM_INCONCLUSIVE = saved

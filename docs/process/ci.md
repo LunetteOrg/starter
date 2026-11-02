@@ -222,8 +222,8 @@ or a container to try a change to it.
 | opencode | Homebrew's `opencode` formula | the flags, against `opencode run --help` and `opencode --help`; a one-line call on a free model whose JSON lntt parses; when the model answers with a usage limit (an error event of type `provider.free-limit`, or status 429), that call is skipped with the provider's message |
 
 A version counts as checked once its cache entry `upstream-<tool>-<version>` exists, which
-the job saves green or red, unless the issue of a red could not be opened: that version is
-checked again the next day. GitHub evicts an entry left unused (its cache retention); the version
+the job saves green or red, unless the issue of a red could not be opened or the check
+was inconclusive (below): that version is checked again the next day. GitHub evicts an entry left unused (its cache retention); the version
 is then checked again, and its issue, if any, stops a second one.
 A check that proved nothing about its version is not recorded either: a test that meets a
 provider's usage limit (today the opencode call on a free model) skips with its message and
