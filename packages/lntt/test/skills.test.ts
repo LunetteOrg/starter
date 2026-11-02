@@ -499,7 +499,7 @@ describe('the open decisions of a child', () => {
     assert.match(text('coordinate'), /to the orchestrator in one batch before the children code/)
     assert.match(
       text('coordinate'),
-      /needs the person's go for the new rounds \(past `delivery.review.maxRounds`, `lntt review allow`\)/,
+      /needs the person's go for the new rounds \(past `delivery\.review\.maxRounds`, `lntt review allow`\)/,
     )
     assert.match(text('coordinate'), /settle what the issues, the records and the code settle, and send the rest/)
   })
@@ -510,6 +510,6 @@ describe('the open decisions of a child', () => {
       text('review'),
       /ask whether it is applied in this pull request or in a follow-up, and new rounds start only on the person's go/,
     )
-    assert.match(text('review'), /past `delivery.review.maxRounds` is `lntt review allow <rounds>`/)
+    assert.match(text('review'), /past `delivery\.review\.maxRounds` is `lntt review allow <rounds>`/)
   })
 })

@@ -303,7 +303,7 @@ describe('the child’s brief', () => {
     assert.match(brief, /ask them in one `lntt ask --to coordinator --theme release-0-6-1 --issue 84 "<…>"`/)
     assert.match(
       brief,
-      /new rounds need the person's go: a round does not restart on its own, and past\n`delivery.review.maxRounds` the go is `lntt review allow <rounds>`/,
+      /new rounds need the person's go: a round does not restart on its own, and past\n`delivery\.review\.maxRounds` the go is `lntt review allow <rounds>`/,
     )
     assert.doesNotMatch(brief, /workflow|orca/i)
   })
