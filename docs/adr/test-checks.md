@@ -108,6 +108,9 @@ reason, and sits at the lowest level where its assertion can.
   the `lntt-mutate-*` folder is removed clears the registration.
 - A mutation run costs the tests of the files that import the changed file. A timeout
   stops the shell that runs the command; a process it started may outlive it.
+- A run-time `t.skip('<reason>')` passes `focus` whatever the condition that reaches it,
+  so a test that skips on a condition always true is seen only as skipped in the report;
+  the reason written beside the call is what a reviewer reads.
 - Each scratch worktree copies the links of `node_modules`; a project whose tests need
   built output that is not committed fails without the mutation and is `NOT RUN`.
 

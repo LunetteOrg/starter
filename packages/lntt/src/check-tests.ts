@@ -236,9 +236,9 @@ function withoutStrings(line: string): string {
 
 // A run-time `t.skip('reason')` decides in the test that this run proves nothing and says
 // why (a provider's usage limit): the reason is a string literal with text in it. A bare
-// `t.skip()`, a `t.skip(reason)` with a variable or an empty string is the skip the check
-// rejects.
-const REASONED_SKIP = /\bt\.skip\s*\(\s*(['"`])\s*[^\s'"`]/
+// `t.skip()`, a `t.skip(reason)` with a variable, an empty string or a template that
+// opens with a placeholder is the skip the check rejects. Only the reasoned call is cut.
+const REASONED_SKIP = /\bt\.skip\s*\(\s*(['"`])\s*(?!\$\{)[^\s'"`]/g
 
 function comment(line: string): boolean {
   return /^\s*(?:\/\/|\*|\/\*)/.test(line)
@@ -252,7 +252,7 @@ function focus(options: CheckOptions, s: Scope): Result[] {
       if (comment(line)) return
       const n = i + 1
       // A reasoned run-time skip is no new skip: its `t.skip(` is cut before the match.
-      const code = withoutStrings(line).replace(REASONED_SKIP.test(line) ? /\bt\.skip\s*\(/ : /(?!)/, '')
+      const code = withoutStrings(line.replace(REASONED_SKIP, '""'))
       if (ONLY.test(code)) {
         out.push(result('focus', 'FAIL', file, n, '.only: the rest of the file does not run'))
       } else if (SKIP.test(code) && isNew(s, file, n)) {
