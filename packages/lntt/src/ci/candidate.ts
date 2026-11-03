@@ -68,6 +68,8 @@ export interface PullRequest {
   merged: boolean
   // The login of who opened it, when the source has it.
   author?: string
+  // Its head is in another repository (a fork), when the source says so.
+  fromFork?: boolean
 }
 
 export interface OpenPullRequest {
@@ -152,9 +154,12 @@ export function retargetDecision(
 
 // Dependabot's pull requests stay on the base, where they are approved and merged
 // (docs/process/ci.md): its branch prefix and its login, as the event names it
-// (`dependabot[bot]`) or as gh does (`app/dependabot`).
+// (`dependabot[bot]`) or as gh does (`app/dependabot`, `dependabot` on older versions).
 export function isDependabot({ headRef, author }: { headRef: string; author?: string }) {
-  return headRef.startsWith('dependabot/') && (author === 'dependabot[bot]' || author === 'app/dependabot')
+  return (
+    headRef.startsWith('dependabot/') &&
+    (author === 'dependabot[bot]' || author === 'app/dependabot' || author === 'dependabot')
+  )
 }
 
 // The guard on pull requests into the base (`lntt ci candidate --guard`, the
@@ -162,14 +167,19 @@ export function isDependabot({ headRef, author }: { headRef: string; author?: st
 // Dependabot's, or the automation did not move it (an event GitHub dropped, a fork) and
 // the check fails with the remedy. Required by the base's ruleset, a check that never
 // reports blocks the merge too, so the guard holds when Actions drops every event.
+// A branch name counts only from this repository, where pushing one takes write
+// access: a fork can name its branch `candidate/1` or `hotfix/x`. The hotfix label
+// counts from anywhere: only a person with triage access puts it on.
 export function guardDecision(
   config: CandidateConfig,
-  pr: { number: number; baseRef: string; headRef: string; labels?: string[]; author?: string },
+  pr: { number: number; baseRef: string; headRef: string; labels?: string[]; author?: string; fromFork?: boolean },
 ): { pass: boolean; reason: string } {
   if (pr.baseRef !== config.base) return { pass: true, reason: `it targets ${pr.baseRef}, not ${config.base}` }
-  if (pr.headRef.startsWith(config.prefix)) return { pass: true, reason: `${pr.headRef} is the candidate` }
-  if (isHotfix(config, pr)) return { pass: true, reason: `a hotfix stays on ${config.base}` }
-  if (isDependabot(pr)) return { pass: true, reason: `a Dependabot pull request stays on ${config.base}` }
+  const own = !pr.fromFork
+  if (own && pr.headRef.startsWith(config.prefix)) return { pass: true, reason: `${pr.headRef} is the candidate` }
+  if (isHotfix(config, { headRef: own ? pr.headRef : '', labels: pr.labels ?? [] }))
+    return { pass: true, reason: `a hotfix stays on ${config.base}` }
+  if (own && isDependabot(pr)) return { pass: true, reason: `a Dependabot pull request stays on ${config.base}` }
   return {
     pass: false,
     reason:
@@ -1436,8 +1446,8 @@ interface EventPullRequest {
   number: number
   title: string
   body: string | null
-  base: { ref: string }
-  head: { ref: string }
+  base: { ref: string; repo?: { full_name: string } | null }
+  head: { ref: string; repo?: { full_name: string } | null }
   labels?: Array<{ name: string }>
   merged?: boolean
   user?: { login: string } | null
@@ -1454,6 +1464,8 @@ export function prFromEvent(event: { pull_request: EventPullRequest }): PullRequ
     labels: (pr.labels ?? []).map((label) => label.name),
     merged: Boolean(pr.merged),
     ...(pr.user?.login ? { author: pr.user.login } : {}),
+    // A head repository GitHub deleted (a fork removed) is null: not this repository.
+    ...(pr.base.repo ? { fromFork: pr.head.repo?.full_name !== pr.base.repo.full_name } : {}),
   }
 }
 
@@ -1466,7 +1478,7 @@ export function prFromGh(gh: Gh, repo: string, number: number): PullRequest {
       '--repo',
       repo,
       '--json',
-      'number,title,body,baseRefName,headRefName,labels,mergedAt,author',
+      'number,title,body,baseRefName,headRefName,labels,mergedAt,author,isCrossRepository',
     ]),
   ) as {
     number: number
@@ -1477,6 +1489,7 @@ export function prFromGh(gh: Gh, repo: string, number: number): PullRequest {
     labels: Array<{ name: string }>
     mergedAt: string | null
     author?: { login: string } | null
+    isCrossRepository?: boolean
   }
   return {
     number: pr.number,
@@ -1487,5 +1500,6 @@ export function prFromGh(gh: Gh, repo: string, number: number): PullRequest {
     labels: pr.labels.map((label) => label.name),
     merged: Boolean(pr.mergedAt),
     ...(pr.author?.login ? { author: pr.author.login } : {}),
+    ...(pr.isCrossRepository !== undefined ? { fromFork: pr.isCrossRepository } : {}),
   }
 }

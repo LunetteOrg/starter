@@ -34,7 +34,7 @@ stops at the draft pull request.
 ## One pull request
 
 1. **Draft.** A pull request opens as a draft. A draft runs no CI in the cloud
-   ([CI](./ci.md)); a pull request opened ready into `main` runs the full CI once on
+   ([CI](./ci.md)), only the [candidate guard](#a-pull-request-left-on-main); a pull request opened ready into `main` runs the full CI once on
    its `opened` event, before the automation moves it onto the candidate.
 2. **Review on the machine.** Before the first round, the author checks each test the
    change adds or alters that guards a line with the `mutation-check` skill
@@ -232,8 +232,9 @@ own. A pull request moved by mistake goes back with the label and
 get no repository secrets, so no app token. A maintainer moves one onto the candidate with
 `pnpm exec lntt ci candidate --pr <n>`, or merges it on `main` as a hotfix. A
 Dependabot pull request runs the CI once an owner, member or collaborator approves it
-([CI](./ci.md#dependabot-pull-requests)), and merges on `main`: the guard lets it
-through. A fork's pull request is red on the guard until it is moved or labelled.
+([CI](./ci.md#dependabot-pull-requests)), and merges on `main`: the guard lets
+through a pull request from a `dependabot/` branch of this repository opened by
+Dependabot. A fork's pull request is red on the guard until it is moved or labelled.
 
 The automation runs from a terminal too: `pnpm exec lntt ci candidate --pr <n>` does
 what the workflow would do on that pull request's event (move it, rebuild a
@@ -259,8 +260,11 @@ got no run of any workflow for forty minutes). A pull request whose `opened` and
   `lntt ci candidate --guard`). On a pull request into `main` it is green for the
   candidate (the `delivery.candidate.prefix` branch), a hotfix (the hotfix prefix or
   label) and a Dependabot pull request; any other pull request into `main` gets it red,
-  with the remedy in the error. On a pull request into any other branch it is green at
-  once. It runs on every event that can change the answer (opened, reopened, a push,
+  with the remedy in the error. A branch name counts only from this repository, where
+  pushing a branch takes write access: a fork's `candidate/1` or `hotfix/x` is red, and
+  the hotfix label, which only triage access puts on, counts from a fork too. On a pull
+  request into any other branch it is green at once. A project without
+  `delivery.candidate` gets it green with a notice: there is no candidate to be on. It runs on every event that can change the answer (opened, reopened, a push,
   edited, labelled, unlabelled, ready), drafts included, so the automation's move
   (an `edited` event) turns it green, and so does the hotfix label.
 - **The remedy:** `pnpm exec lntt ci candidate --pr <n>` moves it onto the open
@@ -289,10 +293,15 @@ got no run of any workflow for forty minutes). A pull request whose `opened` and
   `gh api -X PUT repos/<owner>/<repo>/rulesets/<id>` with the whole `rules` list), once
   `candidate-guard.yml` is on `main`: before that, no pull request into `main` reports
   the check. A required check that never reports blocks the merge, so the guard holds
-  when Actions drops every event of the pull request. Tried on a throwaway branch with
-  the same rules (#233): with the check never reported, `gh pr merge --rebase` is
-  refused ("the base branch policy prohibits the merge") and offers `--admin`; with
-  `ci` red, a review that adds a skipped `ci` run leaves the pull request blocked.
+  when Actions drops every event of the pull request: on a pull request whose required
+  check never reported, `gh pr merge --rebase` answers "the base branch policy
+  prohibits the merge" and offers `--admin`; on one whose required `ci` is red, a later
+  skipped `ci` run (a review's) leaves it blocked (both on a throwaway branch under the
+  same rules, 2026-11-03, #233).
+- **It catches a mistake, not an author.** The workflow and `lntt` run from the pull
+  request's own head, as every `pull_request` run does: a pull request that edits
+  `candidate-guard.yml` or `candidate.ts` can turn its own check green. The review
+  reads such a change like any other.
 - **The admin bypass stays, for an emergency, and is silent outside `gh`.** The
   repository admin role bypasses the ruleset: `gh pr merge` merges a blocked pull
   request only with `--admin`, but an admin's merge through the REST API
@@ -300,7 +309,7 @@ got no run of any workflow for forty minutes). A pull request whose `opened` and
   so does the web page's bypass box. An agent never merges, so neither path is an
   agent's.
 - **Without rulesets, visible only.** Rulesets on a private repository need GitHub Team
-  or above: a private repository on Free answers `gh api repos/<owner>/<repo>/rulesets`
+  or above (GitHub's plans, as read on 2026-11-02): a private repository on Free answers `gh api repos/<owner>/<repo>/rulesets`
   with 403 ("Upgrade to GitHub Pro or make this repository public"), a public one or a
   private one on Team lists its rulesets. Where the answer is 403, the workflow runs the
   same and the check shows red on the pull request, but nothing blocks the merge: whoever

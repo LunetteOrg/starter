@@ -553,6 +553,20 @@ describe('lntt ci candidate', () => {
       '--guard',
     )
     assert.equal(out.status, 0, out.stdout)
+    assert.match(out.stdout, /a Dependabot pull request stays on main/)
+  })
+
+  test('--guard --pr reads whether the head is a fork: a fork named like the candidate fails', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidateWith(
+      `*"pr view 8"*isCrossRepository*) echo '{"number":8,"title":"t","body":"","baseRefName":"main","headRefName":"candidate/1","labels":[],"mergedAt":null,"isCrossRepository":true}';;`,
+      null,
+      '--guard',
+      '--pr',
+      '8',
+    )
+    assert.equal(out.status, 1, out.stdout)
+    assert.match(out.stdout, /::error title=Not on the candidate::#8 targets main/)
   })
 
   test('--guard --pr reads the pull request with gh, its author included', () => {
@@ -569,12 +583,34 @@ describe('lntt ci candidate', () => {
     assert.match(out.stdout, /Dependabot/)
   })
 
-  test('--guard with --follow is a usage error', () => {
-    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
-    const out = candidate(null, '--guard', '--follow')
-    assert.equal(out.status, 2)
-    assert.match(out.stderr, /--guard takes no --follow/)
-  })
+  for (const flags of [
+    ['--follow'],
+    ['--dry-run'],
+    ['--merged'],
+    ['--event', 'opened'],
+    ['--head-ref', 'x'],
+    ['--labels', 'a'],
+  ]) {
+    test(`--guard with ${flags[0]} is a usage error`, () => {
+      root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+      const out = candidate(opened(), '--guard', ...flags)
+      assert.equal(out.status, 2)
+      assert.match(out.stderr, new RegExp(`--guard takes no ${flags[0]}`))
+    })
+  }
+
+  for (const [what, event, flags, message] of [
+    ['without an event or --pr', null, [], /--guard without --pr reads the pull request from GITHUB_EVENT_PATH/],
+    ['on a push event', { ref: 'refs/heads/main' }, [], /--guard runs on a pull_request event/],
+    ['with --pr that is not a number', null, ['--pr', 'x'], /--pr takes a number, not x/],
+  ] as const) {
+    test(`--guard ${what} is a usage error`, () => {
+      root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+      const out = candidate(event, '--guard', ...flags)
+      assert.equal(out.status, 2, out.stdout)
+      assert.match(out.stderr, message)
+    })
+  }
 
   for (const flags of [
     ['--pr', '7'],

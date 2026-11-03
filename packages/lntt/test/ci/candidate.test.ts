@@ -33,6 +33,7 @@ import {
   orphanCandidate,
   type PullRequest,
   pickBoard,
+  prFromEvent,
   type Run,
   record,
   recordMerges,
@@ -124,6 +125,45 @@ describe('guardDecision', () => {
     assert.equal(guardDecision(config, { ...pr, headRef: 'dependabot/npm_and_yarn/x' }).pass, false)
     assert.equal(guardDecision(config, { ...pr, author: 'dependabot[bot]' }).pass, false)
     assert.equal(guardDecision(pelion, { ...pr, headRef: 'candidate/3' }).pass, false)
+  })
+
+  test('a branch name counts only from this repository; the hotfix label from anywhere', () => {
+    const fork = { ...pr, fromFork: true }
+    assert.equal(guardDecision(config, { ...fork, headRef: 'candidate/3' }).pass, false)
+    assert.equal(guardDecision(config, { ...fork, headRef: 'hotfix/login' }).pass, false)
+    assert.equal(guardDecision(config, { ...fork, labels: ['hotfix'] }).pass, true)
+    const bump = { ...pr, headRef: 'dependabot/npm_and_yarn/x', author: 'dependabot[bot]' }
+    assert.equal(guardDecision(config, { ...bump, fromFork: true }).pass, false)
+    // An older gh names the bot dependabot.
+    assert.equal(guardDecision(config, { ...bump, author: 'dependabot' }).pass, true)
+  })
+})
+
+describe('prFromEvent', () => {
+  const event = (fields = {}) => ({
+    pull_request: {
+      number: 7,
+      title: 't',
+      body: null,
+      base: { ref: 'main', repo: { full_name: 'o/r' } },
+      head: { ref: 'feat/3/x', repo: { full_name: 'o/r' } },
+      user: { login: 'octocat' },
+      ...fields,
+    },
+  })
+
+  test('the author and whether the head is a fork', () => {
+    assert.equal(prFromEvent(event()).author, 'octocat')
+    assert.equal(prFromEvent(event()).fromFork, false)
+    assert.equal(prFromEvent(event({ head: { ref: 'x', repo: { full_name: 'someone/r' } } })).fromFork, true)
+    // A deleted fork has no head repository: not this one.
+    assert.equal(prFromEvent(event({ head: { ref: 'x', repo: null } })).fromFork, true)
+  })
+
+  test('a deleted account (user null) leaves the author out, an event without repositories the fork out', () => {
+    assert.equal(prFromEvent(event({ user: null })).author, undefined)
+    const bare = prFromEvent(event({ base: { ref: 'main' }, head: { ref: 'x' } }))
+    assert.equal(bare.fromFork, undefined)
   })
 })
 
