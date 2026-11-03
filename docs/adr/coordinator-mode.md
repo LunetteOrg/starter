@@ -43,8 +43,9 @@ two.
 
 The coordinator's instructions are the shared `coordinate` skill (`lntt guide coordinate`); the
 flags and files are in the `@lntt/lntt` README. The briefs are templates in
-`packages/lntt/agents/`: `coordinator.md` for the parent, `brief.md` for a child, with
-`reporting.md` and `workflow.md` added to it when the child belongs to a theme.
+`packages/lntt/agents/`: `coordinator.md` for the parent, with `coordinator-waiting.md`;
+`brief.md` for a child, with `waiting.md` for every child and `reporting.md` and
+`workflow.md` added to it when the child belongs to a theme.
 
 ### The entry point
 
@@ -104,10 +105,25 @@ host, with no messaging command of Orca or Herdr:
   share one repository, so a coordinator is addressed by its theme
   (`to-coordinator-<theme>`, `--theme`) and a child by its issue (`to-child-<issue>`,
   `--issue`). Without it, the role's own directory.
+- `--issue` names a child's mailbox. In a message to the orchestrator or a coordinator it
+  says which child the message is about: the topic becomes `issue-<n>-<topic>`, in the
+  role's own directory, so a child asks with its issue whoever it asks. `inbox --issue`
+  narrows only a child's.
 - `ask` writes the question and polls for the answer file every 20 seconds
-  (`LNTT_POLL_SECONDS` changes it); stdout is the answer. `inbox` lists the unanswered
-  messages of a role as JSON lines, and with `--wait` blocks until there is one. `answer`
-  writes the answer file; the first answer stays.
+  (`LNTT_POLL_SECONDS` changes it); stdout is the answer. `ask --wait <id>` waits for the
+  answer to a message already sent, with the same output and exit codes; it takes no
+  question and no address (exit 2). `inbox` lists
+  the unanswered messages of a role as JSON lines, and with `--wait` blocks until there is
+  one. `answer` writes the answer file; the first answer stays.
+- Every wait goes through `lntt ask`, never only in an agent's terminal, which nobody
+  watches: a question, an approval (a 1Password prompt included), the review limit, for
+  which `lntt review` sends the open findings itself to whoever the branch reports to and
+  prints the id to wait on. A plain child asks the orchestrator
+  (`--to orchestrator --issue <n>`), a child of a theme its coordinator
+  (`--to coordinator --theme <theme> --issue <n>`), a coordinator the orchestrator. A
+  child runs the wait in the background and re-reads its mailbox between polls, so an
+  answer for it goes there; an answer that grants review rounds is the go for
+  `lntt review allow`. Both briefs say so.
 - The directory is shared by every worktree of the repository and belongs to none of them:
   nothing in it is committed.
 - Both directions work: a child asks its coordinator and reports to it; a coordinator asks

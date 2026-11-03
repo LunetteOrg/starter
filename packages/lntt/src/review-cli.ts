@@ -17,6 +17,7 @@ import { join } from 'node:path'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { projectBase } from './base.ts'
+import { type BranchRules, branchRules, fromToolName } from './branch.ts'
 import { cite, formatJson, isArea, projectFiles, runArea } from './check.ts'
 import { localRef } from './ci/event.ts'
 import { NoConfigError } from './files.ts'
@@ -31,6 +32,8 @@ import {
   timerMs,
 } from './headless.ts'
 import { findConfig, loadConfig } from './index.ts'
+import { type Message, pending, type Started, send, startedBy } from './messages.ts'
+import { messagesRoot, systemMailbox } from './messages-cli.ts'
 import { describeOutcome, mutateAll } from './mutate.ts'
 import { orcaSubagents, type Subagents } from './orca-subagents.ts'
 import {
@@ -139,10 +142,69 @@ function writeLedger(branch: string, closed: Closed[]): void {
   writeFileSync(ledgerPath(), `${JSON.stringify({ branch, closed } satisfies Ledger, null, 2)}\n`)
 }
 
+type Asked = { id: string; to: string; path: string }
+
+// Who the branch reports to, when `lntt worktree start` started it; null otherwise, and
+// outside a git repository. A branch still on the name Orca gave it
+// (`<user>/<type>-<issue>-<slug>`, until `lntt branch rename`) has the marker of its
+// conventional name.
+function reportsTo(branch: string, rules: BranchRules): Started | null {
+  try {
+    const root = messagesRoot()
+    const conventional = fromToolName(branch, rules)
+    return (
+      startedBy(root, branch) ??
+      (conventional !== null && conventional !== branch ? startedBy(root, conventional) : null)
+    )
+  } catch {
+    return null
+  }
+}
+
+// The limit message of this branch still waiting for its answer in the directory it goes
+// to: its first line names the branch.
+function pendingLimit(root: string, marker: Started, branch: string): Message | undefined {
+  const address = marker.to === 'coordinator' ? { theme: marker.theme as string } : {}
+  return pending(root, marker.to, address).find((message) => {
+    const first = message.question.split('\n')[0] ?? ''
+    return /(^|-)review-limit(-\d+)?$/.test(message.topic) && first.split(' ').slice(0, 2).includes(`${branch}:`)
+  })
+}
+
+// What is open goes to the coordinator or the orchestrator as a message the round does not
+// wait for: it holds the review lock, and `lntt review allow` must stay possible while the
+// answer is awaited. A limit already sent and not yet answered is not sent again: its id
+// is the one to wait on. Null when the message cannot be written, which is only said.
+function askAtLimit(marker: Started, branch: string, text: string): Asked | null {
+  const who = marker.to === 'coordinator' ? `the coordinator ${marker.theme}` : 'the orchestrator'
+  const address = {
+    ...(marker.to === 'coordinator' ? { theme: marker.theme as string } : {}),
+    ...(marker.issue === null ? {} : { issue: marker.issue }),
+  }
+  try {
+    const box = systemMailbox()
+    const earlier = pendingLimit(box.dir, marker, branch)
+    const sent = earlier ?? send(box, marker.to, text, { topic: 'review-limit', ...address })
+    stderr.write(
+      `lntt review: limit: ${earlier ? 'already sent' : 'sent'} ${sent.id} to ${who}; wait with: pnpm exec lntt ask --wait ${sent.id}\n`,
+    )
+    return { id: sent.id, to: marker.to, path: sent.path }
+  } catch (error) {
+    stderr.write(`lntt review: limit: could not send to ${who}: ${(error as Error).message}\n`)
+    return null
+  }
+}
+
 // The round past the limit does not start: the person decides on what the last round
 // left, its findings not withdrawn and its failures. Exit 3, with a `limit:` line the
 // review skill watches for.
-function stopAtLimit(state: ReviewState | null, branch: string, round: number, config: ReviewConfig): number {
+function stopAtLimit(
+  state: ReviewState | null,
+  branch: string,
+  round: number,
+  config: ReviewConfig,
+  rules: BranchRules,
+): number {
   const own = state?.branch === branch ? state : null
   const allowed = own?.allowed ?? 0
   const open = (own?.result.findings ?? []).filter((f) => f.verdict !== 'withdrawn')
@@ -151,13 +213,40 @@ function stopAtLimit(state: ReviewState | null, branch: string, round: number, c
     ...open.map((f) => `${f.id} (${f.severity}, ${f.verdict})`),
     ...failed.map((f) => `${f.lens} · ${f.agent} failed`),
   ]
+  const passing = `round ${round} would pass delivery.review.maxRounds (${config.maxRounds})${allowed > 0 ? ` and ${allowed} allowed` : ''}`
+  const still = listed.length === 0 ? 'nothing' : listed.join(', ')
   stderr.write(
-    `lntt review: limit: round ${round} would pass delivery.review.maxRounds (${config.maxRounds})${allowed > 0 ? ` and ${allowed} allowed` : ''} on ${branch}; still open: ${listed.length === 0 ? 'nothing' : listed.join(', ')}\n` +
+    `lntt review: limit: ${passing} on ${branch}; still open: ${still}\n` +
       'lntt review: the person decides: the pull request as it is, more rounds for this branch (pnpm exec lntt review allow <rounds>), or an issue for what is open\n',
   )
-  emit({ type: 'limit', round, maxRounds: config.maxRounds, allowed, open: open.length, failed: failed.length })
+  // A branch lntt worktree start started reports to its parent as well: the open
+  // findings in full, so the answer needs nothing else.
+  const marker = reportsTo(branch, rules)
+  const details = open.map((f) => {
+    const anchor = f.path === null ? '(no anchor)' : `${f.path}${f.line === null ? '' : `:${f.line}`}`
+    return `- ${f.id} [${f.severity}, ${f.verdict}] ${anchor} — ${f.what} — ${f.action}`
+  })
+  const asked = marker
+    ? askAtLimit(
+        marker,
+        branch,
+        [
+          `${marker.issue === null ? '' : `#${marker.issue} `}${branch}: lntt review limit, ${passing}; still open: ${still}; decide: the pull request as it is, pnpm exec lntt review allow <rounds>, or an issue for what is open`,
+          ...(details.length > 0 ? ['', ...details] : []),
+        ].join('\n'),
+      )
+    : null
+  emit({
+    type: 'limit',
+    round,
+    maxRounds: config.maxRounds,
+    allowed,
+    open: open.length,
+    failed: failed.length,
+    ...(asked ? { asked } : {}),
+  })
   stdout.write(
-    `${JSON.stringify({ limit: { round, maxRounds: config.maxRounds, allowed }, findings: open, failed }, null, 2)}\n`,
+    `${JSON.stringify({ limit: { round, maxRounds: config.maxRounds, allowed }, findings: open, failed, ...(asked ? { asked } : {}) }, null, 2)}\n`,
   )
   return 3
 }
@@ -526,7 +615,7 @@ async function round(args: string[]): Promise<number> {
   const files = git('diff', '--name-only', `${range.from}..${head}`).split('\n').filter(Boolean)
   // A run with nothing new to read keeps the round's number: it is not a round more.
   const pastLimit = files.length > 0 && range.round > roundLimit(state, branch, config.maxRounds)
-  if (pastLimit && !values.plan) return stopAtLimit(state, branch, range.round, config)
+  if (pastLimit && !values.plan) return stopAtLimit(state, branch, range.round, config, branchRules(data))
   const lenses = Object.entries(config.reviewers).filter(([, lens]) => lensApplies(lens, files))
   const plan = [
     `round ${range.round}, ${range.reason}: ${range.from}..${head}, ${files.length} files`,

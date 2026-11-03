@@ -38,9 +38,22 @@ small adapter that makes the calls it understands.
   setup has ended, because Orca's setup terminal stays open as a shell.
 - **One brief**, `packages/lntt/agents/brief.md`: the issue is the mandate, work only in
   this worktree, review and `ci:local` green, a draft pull request, then stop, and
-  report the friction met. `--prompt` replaces it with instructions of one's own. A theme's
-  coordinator and its children are [coordinator mode](./coordinator-mode.md): the same
-  entry point, other briefs, a model per role.
+  report the friction met; every wait goes through the mailbox, as
+  [coordinator mode](./coordinator-mode.md#the-mailbox) states it
+  (`packages/lntt/agents/waiting.md`). The brief always comes first: `--prompt` adds
+  instructions of one's own after it, in a closing `## Added at start` section, for a
+  coordinator and a child alike. A theme's coordinator and its children are
+  [coordinator mode](./coordinator-mode.md): the same entry point, other briefs, a model
+  per role.
+- **Each start leaves a marker** in the mailbox,
+  `<git common dir>/lntt-messages/started/<branch, URL-encoded>.json`: the branch, its issue
+  (none for a coordinator), and who it reports to (`coordinator` with the theme for a
+  theme's child, `orchestrator` otherwise), written before the host starts; a marker that
+  cannot be written is a warning, not a failed start. At `lntt review: limit:` the round
+  reads it (a branch still on the name Orca gave it reads the marker of its conventional
+  name) and sends the open findings there with the mailbox, without waiting for the
+  answer, and prints the id to wait on (`lntt ask --wait <id>`). A branch with no marker
+  stops at the limit with the findings on stdout and stderr only.
 - **The agent, its model and its effort** (`--kind`, `--model`, `--effort`) reach each
   tool in the form it accepts:
   - Orca: one `worktree create --issue --agent --prompt`, with `--model` and
@@ -157,3 +170,8 @@ small adapter that makes the calls it understands.
 - **A base per command** (`delivery.candidate.base` for the worktree and the review,
   `origin/HEAD` for `ci:local`). A branch started on the candidate would be reviewed and
   checked against the default branch, with the candidate's commits in its diff.
+- **`--prompt` in place of the brief.** Every use wanted to add context to it; a
+  coordinator started that way had none of its issues and approvals.
+- **The review round waiting for the answer at the limit.** The round holds the review
+  lock, and `lntt review allow`, the answer most often given, needs it free; the wait is
+  the agent's, with `lntt ask --wait <id>`.

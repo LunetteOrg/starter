@@ -67,7 +67,16 @@ export function worktreeHost(env: Env): WorktreeHost {
   return 'git'
 }
 
-const BRIEF = join(dirname(fileURLToPath(import.meta.url)), '../agents/brief.md')
+const AGENTS = join(dirname(fileURLToPath(import.meta.url)), '../agents')
+const BRIEF = join(AGENTS, 'brief.md')
+
+// How a child routes every wait through the mailbox: to its coordinator with a theme, to
+// the orchestrator otherwise; its issue tags the topic either way.
+export function waitingSection(issue: number, theme?: string): string {
+  const to = theme ? `--to coordinator --theme ${theme}` : '--to orchestrator'
+  const ask = `pnpm exec lntt ask ${to} --issue ${issue}`
+  return fill(readFileSync(join(AGENTS, 'waiting.md'), 'utf8'), { ask, issue }).trimEnd()
+}
 
 export interface BriefValues {
   issue: number
@@ -78,7 +87,13 @@ export interface BriefValues {
 
 // The brief of a plain issue; a child of a coordinator gets childBrief (coordinator.ts).
 export function renderBrief(template: string | undefined, values: BriefValues): string {
-  return fill(template ?? readFileSync(BRIEF, 'utf8'), { theme: '', reporting: '', workflow: '', ...values })
+  return fill(template ?? readFileSync(BRIEF, 'utf8'), {
+    theme: '',
+    reporting: '',
+    workflow: '',
+    waiting: waitingSection(values.issue),
+    ...values,
+  })
 }
 
 // The setup a worktree gets, read from its own orca.yaml (the revision it checks out,
