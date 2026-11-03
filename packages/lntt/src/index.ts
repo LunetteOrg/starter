@@ -35,7 +35,6 @@ export {
 } from './browser.ts'
 export {
   checkClaudeSettings,
-  FORMAT_HOOK,
   INSTALL_HOOK,
   MARKETPLACE,
   PLUGIN,
@@ -60,7 +59,7 @@ export {
   type Spawn,
   timerMs,
 } from './headless.ts'
-export { type HookName, hookCommands, normalise, runFormat, runTypecheck } from './hook.ts'
+export { type HookName, hookCommands, normalise, runTypecheck } from './hook.ts'
 export { type LocalApp, localApp } from './local.ts'
 export { loadOperator, type Operator } from './operator.ts'
 export {

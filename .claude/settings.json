@@ -3,19 +3,6 @@
     "deny": []
   },
   "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" || exit 0; [ -x node_modules/.bin/lntt ] || exit 0; node_modules/.bin/lntt hook format; s=$?; [ $s -eq 1 ] && exit 0; [ $s -eq 2 ] || exit 0; t=\"${TMPDIR:-/tmp}/lntt-hook-format-$PPID\"; [ -f \"$t\" ] && exit 0; : > \"$t\"; printf '{\"systemMessage\":\"this lntt has no lntt hook, which came with @lntt/lntt 0.6.3: run pnpm up @lntt/lntt\"}\\n'",
-            "timeout": 120,
-            "statusMessage": "lntt: formatting the file written"
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [

@@ -125,3 +125,15 @@ export function checkMissing(data: Record<string, unknown>): string[] {
   }
   return missing
 }
+
+// Keys the schema still accepts and nothing reads: one line each, empty when none is set.
+// The schema only grows, so a key that was removed stays accepted.
+export function checkIgnored(data: Record<string, unknown>): string[] {
+  const ignored: string[] = []
+  if (at(data, 'local', 'hooks', 'format') !== undefined) {
+    ignored.push(
+      'local.hooks.format is ignored: the format hook is gone, formatting is the pre-commit’s (remove the key)',
+    )
+  }
+  return ignored
+}

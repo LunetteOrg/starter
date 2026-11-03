@@ -14,9 +14,11 @@ const MARKETPLACE_PATH = './node_modules/@lntt/lntt'
 const PLUGIN = 'lunette@lunette'
 const HOOK_STATUS = {
   SessionStart: 'lntt: checking the dependencies are installed',
-  PostToolUse: 'lntt: formatting the file written',
   Stop: 'lntt: typecheck',
 }
+
+// The event of the format hook an earlier lntt wrote, which the shape check still reads.
+const SHAPED = [...Object.keys(HOOK_STATUS), 'PostToolUse']
 
 const SYNC = 'Run: pnpm exec lntt sync'
 const SETTINGS_FILE = '.claude/settings.json'
@@ -89,7 +91,7 @@ const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
 function wellShaped(s) {
   if (!isObject(s)) return false
   if (['extraKnownMarketplaces', 'enabledPlugins', 'hooks'].some((k) => s[k] !== undefined && !isObject(s[k]))) return false
-  return Object.keys(HOOK_STATUS).every((event) => {
+  return SHAPED.every((event) => {
     const list = s.hooks?.[event]
     if (list === undefined) return true
     return (

@@ -1,9 +1,10 @@
 // The entries of a project's `.claude/settings.json` that come with lntt
 // (docs/adr/agent-layer.md#where-hooks-live): the Lunette plugin, loaded from the
 // `directory` marketplace this package ships at its root, the hook that installs the
-// dependencies when lntt itself is missing, and the lines of `lntt hook format` and
-// `lntt hook typecheck` (./hook.ts). `lntt sync` writes them and keeps whatever else the
-// file holds; `lntt check plugin` says when they are missing or point elsewhere.
+// dependencies when lntt itself is missing, and the line of `lntt hook typecheck`
+// (./hook.ts). `lntt sync` writes them and keeps whatever else the file holds; `lntt check
+// plugin` says when they are missing or point elsewhere. Formatting is the pre-commit's:
+// the format hook an earlier version wrote is stale, and `lntt sync` removes it.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -59,13 +60,6 @@ function hookLine(name: string, wake: boolean): string {
   ].join('; ')
 }
 
-export const FORMAT_HOOK = {
-  type: 'command',
-  command: hookLine('format', false),
-  timeout: 120,
-  statusMessage: 'lntt: formatting the file written',
-}
-
 export const TYPECHECK_HOOK = {
   type: 'command',
   command: hookLine('typecheck', true),
@@ -78,18 +72,25 @@ export const TYPECHECK_HOOK = {
 // Each hook lntt writes: its event, the matcher of its entry, and how check names it.
 const HOOKS = [
   { event: 'SessionStart', hook: INSTALL_HOOK, label: 'install' },
-  { event: 'PostToolUse', matcher: 'Write|Edit', hook: FORMAT_HOOK, label: 'format' },
   { event: 'Stop', hook: TYPECHECK_HOOK, label: 'typecheck' },
 ] as const
 type Placed = (typeof HOOKS)[number]
-export const HOOK_LABELS: Record<string, string> = Object.fromEntries(HOOKS.map((h) => [`hooks.${h.event}`, h.label]))
+
+// A hook an earlier lntt wrote and no lntt writes now: told by its status message, reported
+// as stale and removed by `lntt sync`. The format hook (`lntt hook format`, 0.6.3).
+const STALE = [{ event: 'PostToolUse', statusMessage: 'lntt: formatting the file written', label: 'format' }] as const
+type Stale = (typeof STALE)[number]
+export const HOOK_LABELS: Record<string, string> = Object.fromEntries(
+  [...HOOKS, ...STALE].map((h) => [`hooks.${h.event}`, h.label]),
+)
 
 export interface SettingsEntry {
   key: string
   // `elsewhere`: the marketplace names another source; `off`: the plugin is disabled;
-  // `edited`: a hook lntt writes differs from the one it writes now; `invalid`: the file is
+  // `edited`: a hook lntt writes differs from the one it writes now; `stale`: a hook an
+  // earlier lntt wrote is still there; `invalid`: the file is
   // not JSON, or a key it reads does not have the shape Claude Code reads.
-  state: 'ok' | 'missing' | 'elsewhere' | 'off' | 'edited' | 'invalid'
+  state: 'ok' | 'missing' | 'elsewhere' | 'off' | 'edited' | 'stale' | 'invalid'
 }
 
 interface Hook {
@@ -119,7 +120,7 @@ function wellShaped(s: Record<string, unknown>): boolean {
   for (const key of ['extraKnownMarketplaces', 'enabledPlugins', 'hooks']) {
     if (s[key] !== undefined && !isObject(s[key])) return false
   }
-  return HOOKS.every(({ event }) => {
+  return [...HOOKS, ...STALE].every(({ event }) => {
     const list = (s.hooks as Record<string, unknown> | undefined)?.[event]
     if (list === undefined) return true
     if (!Array.isArray(list)) return false
@@ -139,7 +140,8 @@ function load(file: string): { text: string; settings: Settings } | null {
 }
 
 // A hook lntt wrote, at any version: told by its status message.
-const ours = (placed: Placed) => (h: Hook) => h.statusMessage === placed.hook.statusMessage
+const ours = (placed: Placed | Stale) => (h: Hook) =>
+  h.statusMessage === ('hook' in placed ? placed.hook.statusMessage : placed.statusMessage)
 // Equal values, whatever the order of their keys.
 const canonical = (v: unknown): unknown =>
   Array.isArray(v)
@@ -172,6 +174,9 @@ function entries(settings: Settings): SettingsEntry[] {
     },
     { key: `enabledPlugins.${PLUGIN}`, state: plugin === undefined ? 'missing' : plugin === true ? 'ok' : 'off' },
     ...HOOKS.map((placed) => ({ key: `hooks.${placed.event}`, state: hookState(settings, placed) })),
+    ...STALE.filter((stale) =>
+      (settings.hooks?.[stale.event] ?? []).some((e) => (e.hooks ?? []).some(ours(stale))),
+    ).map((stale) => ({ key: `hooks.${stale.event}`, state: 'stale' as const })),
   ]
 }
 
@@ -191,11 +196,9 @@ function edit(text: string, path: jsonc.JSONPath, value: unknown, insert = false
 }
 
 // Each hook of this kind lntt wrote, removed from the last one up so the indexes before it
-// hold (an entry left with no hook goes with it), then the one lntt writes now appended:
-// the project's own entries, their comments and formatting stay as they are.
-function placeHook(text: string, list: HookEntry[] | undefined, placed: Placed): string {
-  const entry = { ...('matcher' in placed ? { matcher: placed.matcher } : {}), hooks: [placed.hook] }
-  if (list === undefined) return edit(text, ['hooks', placed.event], [entry])
+// hold (an entry left with no hook goes with it): the project's own entries, their comments
+// and formatting stay as they are. The number of entries left is returned.
+function removeHooks(text: string, list: HookEntry[], placed: Placed | Stale): { text: string; length: number } {
   const mine = ours(placed)
   let next = text
   let length = list.length
@@ -211,7 +214,21 @@ function placeHook(text: string, list: HookEntry[] | undefined, placed: Placed):
       if (mine(hooks[j] as Hook)) next = edit(next, ['hooks', placed.event, i, 'hooks', j], undefined)
     }
   }
-  return edit(next, ['hooks', placed.event, length], entry, true)
+  return { text: next, length }
+}
+
+// The hooks lntt wrote removed, then the one it writes now appended.
+function placeHook(text: string, list: HookEntry[] | undefined, placed: Placed): string {
+  const entry = { ...('matcher' in placed ? { matcher: placed.matcher } : {}), hooks: [placed.hook] }
+  if (list === undefined) return edit(text, ['hooks', placed.event], [entry])
+  const removed = removeHooks(text, list, placed)
+  return edit(removed.text, ['hooks', placed.event, removed.length], entry, true)
+}
+
+// A stale hook removed; an event left with no entry goes with it.
+function dropStale(text: string, list: HookEntry[], stale: Stale): string {
+  const removed = removeHooks(text, list, stale)
+  return removed.length === 0 ? edit(removed.text, ['hooks', stale.event], undefined) : removed.text
 }
 
 // Writes the entries, each only when it is off, with edits that keep the rest of the file
@@ -221,12 +238,19 @@ export function syncClaudeSettings(cwd: string): void {
   const loaded = load(file)
   if (loaded === null) throw new ConfigError(INVALID)
   const [marketplace, plugin, ...hooks] = entries(loaded.settings) as SettingsEntry[]
+  // The stale entries follow the hooks lntt writes.
   let text = loaded.text
   if (marketplace?.state !== 'ok') text = edit(text, ['extraKnownMarketplaces', 'lunette'], MARKETPLACE)
   if (plugin?.state !== 'ok') text = edit(text, ['enabledPlugins', PLUGIN], true)
   HOOKS.forEach((placed, i) => {
     if (hooks[i]?.state !== 'ok') text = placeHook(text, loaded.settings.hooks?.[placed.event], placed)
   })
+  for (const stale of STALE) {
+    const list = loaded.settings.hooks?.[stale.event]
+    if (list !== undefined && hooks.some((h) => h.state === 'stale' && h.key === `hooks.${stale.event}`)) {
+      text = dropStale(text, list, stale)
+    }
+  }
   if (text === loaded.text && existsSync(file)) return
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, text.endsWith('\n') ? text : `${text}\n`)

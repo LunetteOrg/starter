@@ -154,7 +154,7 @@ October 2026). The plugin cannot import `lntt`, so it reads `.claude/settings.js
 a reader of its own, which drops comments, trailing commas and a leading byte order mark
 as `lntt` does (`lntt sync` writes the file back without the mark).
 
-Three settings hooks are Lunette's (`packages/lntt/src/claude-settings.ts`), each told
+Two settings hooks are Lunette's (`packages/lntt/src/claude-settings.ts`), each told
 from the project's own by its `statusMessage`: `lntt sync` replaces a hook with that
 message and a different line, so the message of a hook stays the same across versions.
 
@@ -162,11 +162,6 @@ message and a different line, so the message of a hook stays the same across ver
   the dependencies with pnpm, the manager of a Lunette project, or with `npm ci` in a
   project that has only a `package-lock.json`; another lockfile (yarn, bun) gets pnpm
   too. It installs `lntt`, so it is a shell line, not `lntt hook`.
-- **Format**, after `Write` and `Edit`: `lntt hook format` passes the written file to
-  the format commands. The file is formatted while the agent works on it, so the
-  pre-commit, which formats the staged files and stages the fix, does not rewrite it
-  under the agent. A command that fails on the file (a type it does not handle) is
-  skipped.
 - **Typecheck**, at `Stop`, in the background: `lntt hook typecheck` runs the typecheck
   commands and wakes the agent with the output of a failure, so the first real error
   reaches it at once rather than at the next commit. It wakes only on a failure it has
@@ -174,12 +169,19 @@ message and a different line, so the message of a hook stays the same across ver
   worktree's git directory (outside git, in the temporary directory), a run that fails
   the same way stays quiet, and a green run clears it.
 
-The commands are a project's: `local.hooks.format` and `local.hooks.typecheck` of
+Formatting is the pre-commit's alone: it formats the staged files and stages the fix
+(`lefthook.yml`), and no hook formats the file while the agent works on it. The
+`PostToolUse` format hook that `lntt sync` wrote up to 0.6.3 is stale: `lntt sync`
+removes it (its own entry, by its status message; the project's other hooks stay) and
+`lntt check plugin` reports a leftover one. `lntt validate` says that `local.hooks.format`
+is ignored; the schema keeps accepting the key.
+
+The typecheck command is a project's: `local.hooks.typecheck` of
 `.agents/config`, one command or a list run in order (a project with more than one
 toolchain, such as `tsc` and `mypy`, every one of which must pass); without the key, the
 `package.json` script of the same name; without both, the hook does nothing and says
-nothing. They run from the project root, within one limit for the whole list (a minute
-for the format commands, ten minutes for the typecheck's), below the hook's own timeout
+nothing. They run from the project root, within one limit for the whole list (ten
+minutes), below the hook's own timeout
 in the settings. Each runs in a process group of its own: at the limit the whole group
 gets SIGTERM, and SIGKILL a second later, the processes it started included (`tsc` under
 `pnpm run`), and the commands left are not run; the typecheck reports both as part of its failure. Its output reaches
@@ -192,7 +194,6 @@ typecheck hook itself (its own error, a state it cannot read or write) never wak
 agent: it exits 0 with a `systemMessage`, which Claude Code gives the agent at its next
 turn. It is said once per session, told by the `session_id` of the hook input (a marker
 in the temporary directory); with no id, or a marker that cannot be kept, every time. A
-defect of the format hook is quiet: the commit's own check is the gate.
 
 Every other hook is measured before it is adopted: what it costs in tokens and turns
 against what it catches that the next gate (the pre-commit, `ci:local`, the review) would
@@ -212,10 +213,9 @@ after a fix by hand when `lntt sync` cannot read the file
 first message ends (`.claude/settings.json` not as `lntt sync` writes it); the titles at
 the end of a message (`lntt` not installed, an `lntt` with no `refs`, `gh` missing or
 not logged in); a settings hook in a `systemMessage`, which Claude Code shows the
-person for the install and format hooks and gives the agent at its next turn for the
+person for the install hook and gives the agent at its next turn for the
 typecheck, which runs in the background. A configuration `lntt` cannot read is said once
-until it changes, where each hook speaks: the typecheck wakes the agent with it, as a
-failure; the format hook, which is then off, tells the person in a `systemMessage`.
+until it changes: the typecheck wakes the agent with it, as a failure.
 
 ### What a number means is shown on screen, not asked of the agent
 
@@ -294,12 +294,10 @@ How a title is written is the `github-board` skill's.
   checkout's plugin against it; an output the plugin does not know is ignored.
 - A cloud session adds no `directory` marketplace: it has the skills and the settings
   hooks, not the band or the titles.
-- The format hook adds a file-changed notice to the context after each edit it
-  reformats; the typecheck runs at every `Stop`, in the background, and a failure that
-  changes at each run wakes the agent at each run.
+- The typecheck runs at every `Stop`, in the background, and a failure that changes at
+  each run wakes the agent at each run.
 - A settings line of `lntt hook` that meets an `lntt` with no `hook` says what to run once
   per Claude Code process, which is the session's; with `lntt` missing it says nothing.
-  A configuration `lntt` cannot read turns the format hook off until it is fixed.
 - Claude Code keeps one registered `lunette` marketplace per machine: each Lunette
   project's session start points it at that project's path, and every session loads
   its own project's copy (observed with Claude Code 2.1.312, two projects in one
@@ -366,9 +364,16 @@ How a title is written is the `github-board` skill's.
 - **A typecheck at `Stop` that wakes the agent at every red run.** While the typecheck
   stayed red it woke a turn that changed nothing at each `Stop` (65 of one project's 66
   rewakes); the waking on a new failure only keeps the first.
-- **The typecheck and the formatting left to the pre-commit alone.** The first real
-  error reaches the agent a commit later, and the commit rewrites under the agent the
-  files it formats.
+- **The typecheck left to the pre-commit alone.** The first real error reaches the agent
+  a commit later.
+- **A format hook after `Write` and `Edit`.** The file changes under the agent while it
+  works: a scripted replacement (python, sed) written against the text it last read
+  missed its target after the formatter rewrote the file, twice in one pull request
+  (once leaving duplicated code) and once in another. The measure of October 2026
+  (2,040 runs, 281 file-changed notices, about 56k tokens) paid for formatting the
+  agent would meet at the commit anyway, where the pre-commit formats the staged files
+  and stages the fix. The hook is worth it only against the next gate, and the next
+  gate does the same work without touching a file in use.
 - **The hooks' commands fixed by Lunette (`pnpm typecheck`, Biome).** A project with
   another toolchain, or more than one, could not use them.
 - **A reminder to triage after `gh issue create`.** A project with it and one with only

@@ -27,11 +27,10 @@
 //                             API cannot do or is risky listed for the UI, with the steps.
 //                             A dry run unless --apply; --check exits 1 when the board differs
 //
-//   lntt hook format | typecheck
-//                             what the hook lines lntt sync writes into .claude/settings.json
-//                             run: format the file of the hook input (stdin) with
-//                             local.hooks.format or the format script; run local.hooks.typecheck
-//                             or the typecheck script, exit 1 on a failure not seen last time
+//   lntt hook typecheck
+//                             what the hook line lntt sync writes into .claude/settings.json
+//                             runs: local.hooks.typecheck or the typecheck script, exit 1 on a
+//                             failure not seen last time
 //
 //   lntt refs [--cached] [<text>...]
 //                             the issue and pull request references of the text (the arguments,

@@ -26,7 +26,7 @@ import {
   syncSkills,
   type Viewer,
 } from './index.ts'
-import { checkMissing, checkReferences } from './references.ts'
+import { checkIgnored, checkMissing, checkReferences } from './references.ts'
 import { reviewConfig, reviewWarnings } from './review.ts'
 
 const USAGE = [
@@ -87,6 +87,7 @@ function run(command: string | undefined, key: string | undefined, raw: string |
       try {
         warnings = reviewWarnings(reviewConfig(data))
       } catch {}
+      warnings.push(...checkIgnored(data))
       for (const warning of warnings) stderr.write(`lntt validate: warning: ${warning}\n`)
       break
     }

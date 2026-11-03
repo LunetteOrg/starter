@@ -137,7 +137,7 @@ function plugin(root: string): Result[] {
     return [
       result(
         'PASS',
-        'the Lunette plugin loads from node_modules/@lntt/lntt, and the install, format and typecheck hooks are in place',
+        'the Lunette plugin loads from node_modules/@lntt/lntt, and the install and typecheck hooks are in place',
       ),
     ]
   }
@@ -149,8 +149,9 @@ function plugin(root: string): Result[] {
         elsewhere: `${e.key} points elsewhere than the marketplace @lntt/lntt ships; run pnpm exec lntt sync`,
         off: `${e.key} is not enabled; run pnpm exec lntt sync`,
         edited: `${e.key}: the ${HOOK_LABELS[e.key]} hook differs from the one lntt sync writes; run pnpm exec lntt sync`,
+        stale: `${e.key}: the ${HOOK_LABELS[e.key]} hook is stale: the pre-commit formats; run pnpm exec lntt sync`,
         invalid: INVALID,
-      }[e.state as 'missing' | 'elsewhere' | 'off' | 'edited' | 'invalid'],
+      }[e.state as 'missing' | 'elsewhere' | 'off' | 'edited' | 'stale' | 'invalid'],
     ),
   )
 }

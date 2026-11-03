@@ -866,20 +866,20 @@
     },
     "local": {
       "type": "object",
-      "description": "How the apps are started and reached locally, read by the run-local skill and lntt local; and the commands of the agent's hooks, read by lntt hook.",
+      "description": "How the apps are started and reached locally, read by the run-local skill and lntt local; and the command of the agent's typecheck hook, read by lntt hook.",
       "additionalProperties": false,
       "properties": {
         "hooks": {
           "type": "object",
           "additionalProperties": false,
-          "description": "The commands the hooks lntt sync writes into .claude/settings.json run, one or a list run in order (a project with more than one toolchain). Absent, the package.json script of the same name; absent both, the hook does nothing.",
+          "description": "The commands the hook lntt sync writes into .claude/settings.json runs, one or a list run in order (a project with more than one toolchain). Absent, the package.json script of the same name; absent both, the hook does nothing.",
           "properties": {
             "format": {
               "oneOf": [
                 { "type": "string", "minLength": 1 },
                 { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
               ],
-              "description": "Formats the file just written, given as the last argument; a command that fails on it is skipped."
+              "description": "Removed: ignored, and lntt validate says so. Formatting is the pre-commit's; lntt sync removes the format hook an earlier version wrote."
             },
             "typecheck": {
               "oneOf": [
