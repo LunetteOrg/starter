@@ -395,6 +395,8 @@ export interface ReviewCost {
   // The rounds with an agent that reported no tokens, or no USD.
   noTokens: number[]
   noUsd: number[]
+  // The rounds the branch ran with no entry: a state saved before the rounds were kept.
+  unrecorded: number[]
   // The line the pull request's Review cost takes, e.g.
   // `2 rounds, 412k tokens, 1.23 USD; no USD: round 2 (opencode opencode/x)`.
   line: string
@@ -410,6 +412,10 @@ export function reviewCost(rounds: RoundCost[]): ReviewCost {
   const usd = total === null ? null : Math.round(total * 1e6) / 1e6
   const noTokens = rounds.filter((r) => r.noTokens.length > 0)
   const noUsd = rounds.filter((r) => r.noUsd.length > 0)
+  // Round numbers go up by one for each round that read files: a gap is a round not kept.
+  const kept = new Set(rounds.map((r) => r.round))
+  const last = Math.max(0, ...kept)
+  const unrecorded = Array.from({ length: last }, (_, i) => i + 1).filter((n) => !kept.has(n))
   const which = (word: string, listed: RoundCost[], agents: (r: RoundCost) => string[]) =>
     listed.length === 0
       ? ''
@@ -419,13 +425,17 @@ export function reviewCost(rounds: RoundCost[]): ReviewCost {
       ? 'no rounds'
       : `${rounds.length} ${rounds.length === 1 ? 'round' : 'rounds'}, ${tokens === null ? 'no tokens' : formatTokens(tokens)}, ${usd === null ? 'no USD' : `${usd.toFixed(2)} USD`}` +
         which('tokens', noTokens, (r) => r.noTokens) +
-        which('USD', noUsd, (r) => r.noUsd)
+        which('USD', noUsd, (r) => r.noUsd) +
+        (unrecorded.length === 0
+          ? ''
+          : `; not recorded: ${unrecorded.length === 1 ? 'round' : 'rounds'} ${unrecorded.join(', ')}`)
   return {
     rounds: rounds.length,
     tokens,
     usd,
     noTokens: noTokens.map((r) => r.round),
     noUsd: noUsd.map((r) => r.round),
+    unrecorded,
     line,
   }
 }

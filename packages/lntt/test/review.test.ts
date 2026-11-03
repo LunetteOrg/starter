@@ -509,6 +509,13 @@ describe('a round', () => {
     assert.deepEqual(result.noTokens, ['claude sonnet', 'claude opus'])
     assert.equal(result.tokens, 1400)
     assert.equal(result.cost, 0.01)
+    const silent: Ask = async (jobs) =>
+      jobs.map((job) => ({
+        ok: true as const,
+        reply: { text: 'no findings', session: 's', cost: 0.01, tokens: job.agent.model === 'haiku' ? null : 10 },
+      }))
+    const again = await runRound(config, { ...input, files: ['a.ts', 'a.test.ts'] }, silent)
+    assert.deepEqual(again.noTokens, ['claude haiku'], 'haiku answers twice with no tokens and is named once')
   })
 
   test('a verifier that reports no cost is named too; an empty delta names nobody', async () => {
@@ -1528,9 +1535,15 @@ describe("the cost of a branch's rounds", () => {
       usd: 1.231,
       noTokens: [],
       noUsd: [],
+      unrecorded: [],
       line: '2 rounds, 412.3k tokens, 1.23 USD',
     })
     assert.equal(reviewCost([cost(1, 1500, 0.01)]).line, '1 round, 1.5k tokens, 0.01 USD')
+    // Rounds of a state saved before the rounds were kept: named, never counted as free.
+    const late = reviewCost([cost(3, 1500, 0.01)])
+    assert.deepEqual(late.unrecorded, [1, 2])
+    assert.equal(late.line, '1 round, 1.5k tokens, 0.01 USD; not recorded: rounds 1, 2')
+    assert.equal(reviewCost([cost(2, 1500, 0.01)]).line, '1 round, 1.5k tokens, 0.01 USD; not recorded: round 1')
     assert.equal(reviewCost([cost(1, 2_000_000, 3)]).line, '1 round, 2M tokens, 3.00 USD')
   })
 
@@ -1554,7 +1567,15 @@ describe("the cost of a branch's rounds", () => {
   })
 
   test('no rounds', () => {
-    assert.deepEqual(reviewCost([]), { rounds: 0, tokens: null, usd: null, noTokens: [], noUsd: [], line: 'no rounds' })
+    assert.deepEqual(reviewCost([]), {
+      rounds: 0,
+      tokens: null,
+      usd: null,
+      noTokens: [],
+      noUsd: [],
+      unrecorded: [],
+      line: 'no rounds',
+    })
   })
 
   test('a round that read files adds its cost to the branch; an empty delta adds none; another branch starts over', () => {

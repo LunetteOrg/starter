@@ -1268,6 +1268,30 @@ describe("the cost of the branch's rounds", () => {
     )
   })
 
+  test('a state saved before the rounds were kept names the rounds it has no cost for', () => {
+    lntt(['--base', 'main'])
+    const path = join(repo, '.git/lntt-review.json')
+    const saved = JSON.parse(readFileSync(path, 'utf8'))
+    delete saved.rounds
+    writeFileSync(path, JSON.stringify({ ...saved, round: 2 }))
+    assert.equal(lntt(['cost']).out, 'no rounds\n')
+    commit(9)
+    assert.match(
+      lntt(['--base', 'main']).err,
+      /^lntt review: branch total: 1 round, [^;]+; not recorded: rounds 1, 2$/m,
+    )
+  })
+
+  test('a cost that cannot be read is an error, and leaves the progress of the last round alone', () => {
+    lntt(['--base', 'main'])
+    const progress = readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8')
+    writeFileSync(join(repo, '.git/lntt-review.json'), '{ cut short')
+    const r = lntt(['cost'])
+    assert.equal(r.code, 1)
+    assert.match(r.err, /^lntt review: error: /m)
+    assert.equal(readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8'), progress)
+  })
+
   test('at the limit: the branch total on stderr, in the message to the parent and in the JSON', () => {
     const config = JSON.parse(CONFIG)
     config.delivery.review.maxRounds = 1

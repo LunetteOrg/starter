@@ -113,7 +113,8 @@ same way every time; the `review` skill keeps the judgement.
   warning (the file stays valid), and so do `lntt review --plan` and every round.
 - **A branch takes at most `maxRounds` rounds:** later rounds find ever smaller things,
   and most of a pull request's time and cost went into them. Every round counts, one
-  with a failure too. The round past the limit does not start; `lntt review` exits 3
+  with a failure too. Past the last allowed round no fix is made: a commit waits for the
+  round the person grants to review it. The round past the limit does not start; `lntt review` exits 3
   with what is still open (the findings not withdrawn and the failures of the last
   round), and the person decides: the pull request as it is, more rounds for that
   branch (`lntt review allow <rounds>`, kept in its state, the configuration
@@ -141,7 +142,8 @@ same way every time; the `review` skill keeps the judgement.
 - **Progress is a contract:** stderr carries a line when each agent starts and ends
   (with its tokens), `failed` or `skipped` for one that did not answer, the agents still
   running every 30 seconds, `round N done` at the end, `error:` for a round that could
-  not start and `limit:` for one past `maxRounds`. The `review` skill wakes on `failed`,
+  not start and `limit:` for one past `maxRounds`; after `round N done` and with `limit:`,
+  `branch total: <line>`, the branch's review cost so far. The `review` skill wakes on `failed`,
   `error:`, `limit:` and `round N done` only. The same goes as JSON events, one per
   line, to `<git dir>/lntt-review.progress`: the round with the pid of `lntt review`
   and the Claude Code session that started it (`CLAUDE_CODE_SESSION_ID`, or none),
@@ -192,7 +194,8 @@ same way every time; the `review` skill keeps the judgement.
 - The diff travels in the prompt: a very large change may not fit an agent's context.
 - The adapters follow `claude -p` and `opencode run`, whose flags change; the tests pin
   the calls, a trial round against the real tools confirms them.
-- opencode reports no cost: a round's `cost` covers only the agents that report it.
+- opencode reports no cost: a round's `cost` covers only the agents that report it, and
+  the cost line names, round by round, the agents that reported no tokens or no USD.
 - The diff and the files a reviewer reads go to the provider of each configured agent,
   with that provider's terms on data (free models among them). Configuring an agent is
   the project's choice; `lntt review` names the destinations in `--plan` and in every

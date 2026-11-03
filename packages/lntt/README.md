@@ -430,7 +430,9 @@ A round, on a clean working tree:
    The state is `lntt-review.json` in the worktree's git directory. Its `rounds` keep
    each round that read files: `round`, `head`, `tokens`, `usd` (null when no agent
    reported them), `noTokens` and `noUsd` (the agents that reported none, a failed one
-   included). After `round N done`, stderr says `lntt review: branch total: <line>`.
+   included). After `round N done`, stderr says `lntt review: branch total: <line>`; the
+   line names the rounds a state saved before `rounds` existed has no entry for
+   (`not recorded: rounds 1, 2`).
 2. **Checks**: a lens named after an area of `lntt check` (`decisions`, `tests`) gets
    `lntt check <area> --base <first commit read> --json` in its prompt, and its brief
    keeps only what needs judgement.

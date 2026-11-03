@@ -60,10 +60,9 @@ import {
   roundRange,
   runRound,
 } from './review.ts'
+import { commandExists } from './viewer.ts'
 
 export { formatTokens }
-
-import { commandExists } from './viewer.ts'
 
 const USAGE = `usage: lntt review [--base <branch>] [--plan]
        lntt review reply <finding> <answer>
