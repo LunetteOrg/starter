@@ -1206,6 +1206,92 @@ describe('lntt review at delivery.review.maxRounds', () => {
   })
 })
 
+describe("the cost of the branch's rounds", () => {
+  const commit = (value: number) => {
+    writeFileSync(join(repo, 'a.ts'), `export const a = ${value}\n`)
+    git('commit', '-qam', `a = ${value}`)
+  }
+  const found = { FAKE_REVIEW: '- [warning] a.ts:1 — w — a', FAKE_VERIFY: 'confirmed\\np' }
+
+  test('each round that read files is kept with its tokens and USD; lntt review cost prints their sum', () => {
+    assert.equal(lntt(['cost']).out, 'no rounds\n', 'nothing yet on the branch')
+    const first = lntt(['--base', 'main'])
+    assert.equal(first.code, 0, first.err)
+    assert.match(first.err, /round 1 done[^\n]*\nlntt review: branch total: 1 round, 1\.5k tokens, 0\.01 USD$/m)
+    commit(3)
+    const second = lntt(['--base', 'main'], found)
+    assert.equal(second.code, 1, second.err)
+    assert.match(second.err, /round 2 done[^\n]*\nlntt review: branch total: 2 rounds, 4\.5k tokens, 0\.03 USD$/m)
+    const [one, two] = [JSON.parse(first.out), JSON.parse(second.out)]
+    const rounds = [
+      { round: 1, head: one.head, tokens: one.tokens, usd: one.cost, noTokens: [], noUsd: [] },
+      { round: 2, head: two.head, tokens: two.tokens, usd: two.cost, noTokens: [], noUsd: [] },
+    ]
+    assert.deepEqual(state().rounds, rounds)
+    assert.deepEqual([one.tokens, one.cost, two.tokens, two.cost], [1500, 0.01, 3000, 0.02])
+
+    const cost = lntt(['cost'])
+    assert.equal(cost.code, 0, cost.err)
+    assert.equal(cost.out, '2 rounds, 4.5k tokens, 0.03 USD\n')
+    assert.deepEqual(JSON.parse(lntt(['cost', '--json']).out), {
+      branch: 'feat/1/x',
+      rounds,
+      total: { rounds: 2, tokens: 4500, usd: 0.03 },
+      line: '2 rounds, 4.5k tokens, 0.03 USD',
+    })
+
+    // No new commit: no round more, and nothing added. Nor by a reply, nor by allow.
+    lntt(['--base', 'main'], found)
+    assert.equal(lntt(['reply', 'f1', 'fine'], { FAKE_REPLY: 'kept\\nno' }).code, 1)
+    assert.equal(lntt(['allow', '1']).code, 0)
+    assert.deepEqual(state().rounds, rounds)
+    assert.equal(state().allowed, 1)
+  })
+
+  test('a failed agent is a round that reported no tokens and no USD, named with its agent', () => {
+    lntt(['--base', 'main'], { FAKE_FAIL_REVIEW: '1' })
+    assert.deepEqual(state().rounds[0].noTokens, ['claude sonnet'])
+    assert.equal(
+      lntt(['cost']).out,
+      '1 round, no tokens, no USD; no tokens: round 1 (claude sonnet); no USD: round 1 (claude sonnet)\n',
+    )
+  })
+
+  test('another branch starts a list of its own', () => {
+    lntt(['--base', 'main'])
+    git('switch', '-qc', 'feat/2/y')
+    commit(5)
+    assert.equal(lntt(['cost']).out, 'no rounds\n')
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    assert.deepEqual(
+      state().rounds.map((r: { head: string }) => r.head),
+      [git('rev-parse', '--short', 'HEAD')],
+    )
+  })
+
+  test('at the limit: the branch total on stderr, in the message to the parent and in the JSON', () => {
+    const config = JSON.parse(CONFIG)
+    config.delivery.review.maxRounds = 1
+    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify(config))
+    git('commit', '-qam', 'maxRounds 1')
+    assert.equal(lntt(['--base', 'main'], found).code, 1)
+    commit(3)
+    mkdirSync(join(repo, '.git/lntt-messages/started'), { recursive: true })
+    writeFileSync(
+      join(repo, '.git/lntt-messages/started/feat%2F1%2Fx.json'),
+      JSON.stringify({ branch: 'feat/1/x', issue: 1, to: 'orchestrator' }),
+    )
+    const r = lntt(['--base', 'main'], found)
+    assert.equal(r.code, 3, r.err)
+    const line = '1 round, 3k tokens, 0.02 USD'
+    assert.match(r.err, new RegExp(`^lntt review: branch total: ${line.replace(/\./g, '\\.')}$`, 'm'))
+    assert.deepEqual(JSON.parse(r.out).total, { rounds: 1, tokens: 3000, usd: 0.02, line })
+    const dir = join(repo, '.git/lntt-messages/to-orchestrator')
+    const [file] = readdirSync(dir).filter((name) => name.endsWith('.md') && !name.endsWith('.answer.md'))
+    assert.match(readFileSync(join(dir, file as string), 'utf8'), new RegExp(`^review cost: ${line}$`, 'm'))
+  })
+})
+
 // The 5-second SIGKILL timer of `terminate` is the only thing that can kill the stubborn
 // agent while the round is open: the exit handler kills what is left only when lntt
 // review exits, and a verifier holds the round open past the timer.

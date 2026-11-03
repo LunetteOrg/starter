@@ -350,6 +350,84 @@ export interface ReviewState {
   result: RoundResult
   // Rounds a person allowed on this branch past delivery.review.maxRounds.
   allowed?: number
+  // What each round of the branch cost, in order: one entry per round that read files.
+  rounds?: RoundCost[]
+}
+
+// The cost of one round, as its agents reported it: the round's number and the head it
+// read; its tokens and USD summed, null when no agent reported any; the agents (their
+// labels) whose answer reported no tokens or no USD, a failed answer among them.
+export interface RoundCost {
+  round: number
+  head: string
+  tokens: number | null
+  usd: number | null
+  noTokens: string[]
+  noUsd: string[]
+}
+
+// The branch's rounds after this one: the list carried while the branch stays the same,
+// with the round added when it read files. An empty delta is no round more and adds none.
+export function roundCosts(
+  state: ReviewState | null,
+  branch: string,
+  result: Pick<RoundResult, 'head' | 'tokens' | 'cost' | 'noTokens' | 'noUsd'>,
+  round: number,
+  read: boolean,
+): RoundCost[] {
+  const before = state?.branch === branch ? (state.rounds ?? []) : []
+  if (!read) return before
+  const { head, tokens, cost: usd, noTokens, noUsd } = result
+  return [...before, { round, head, tokens, usd, noTokens, noUsd }]
+}
+
+export function formatTokens(n: number | null): string {
+  if (n === null) return ''
+  if (n < 1000) return `${n} tokens`
+  if (n < 1_000_000) return `${Math.round(n / 100) / 10}k tokens`.replace('.0k', 'k')
+  return `${Math.round(n / 100_000) / 10}M tokens`.replace('.0M', 'M')
+}
+
+export interface ReviewCost {
+  rounds: number
+  tokens: number | null
+  usd: number | null
+  // The rounds with an agent that reported no tokens, or no USD.
+  noTokens: number[]
+  noUsd: number[]
+  // The line the pull request's Review cost takes, e.g.
+  // `2 rounds, 412k tokens, 1.23 USD; no USD: round 2 (opencode opencode/x)`.
+  line: string
+}
+
+// The branch's total: the exact sums, and the line with the tokens rounded as the progress
+// shows them and the USD to the cent. A sum no round reported is `no tokens`, `no USD`.
+export function reviewCost(rounds: RoundCost[]): ReviewCost {
+  const sum = (values: (number | null)[]) =>
+    values.reduce<number | null>((total, v) => (v === null ? total : (total ?? 0) + v), null)
+  const tokens = sum(rounds.map((r) => r.tokens))
+  const total = sum(rounds.map((r) => r.usd))
+  const usd = total === null ? null : Math.round(total * 1e6) / 1e6
+  const noTokens = rounds.filter((r) => r.noTokens.length > 0)
+  const noUsd = rounds.filter((r) => r.noUsd.length > 0)
+  const which = (word: string, listed: RoundCost[], agents: (r: RoundCost) => string[]) =>
+    listed.length === 0
+      ? ''
+      : `; no ${word}: ${listed.map((r) => `round ${r.round} (${agents(r).join(', ')})`).join(', ')}`
+  const line =
+    rounds.length === 0
+      ? 'no rounds'
+      : `${rounds.length} ${rounds.length === 1 ? 'round' : 'rounds'}, ${tokens === null ? 'no tokens' : formatTokens(tokens)}, ${usd === null ? 'no USD' : `${usd.toFixed(2)} USD`}` +
+        which('tokens', noTokens, (r) => r.noTokens) +
+        which('USD', noUsd, (r) => r.noUsd)
+  return {
+    rounds: rounds.length,
+    tokens,
+    usd,
+    noTokens: noTokens.map((r) => r.round),
+    noUsd: noUsd.map((r) => r.round),
+    line,
+  }
 }
 
 // The rounds a branch may take: delivery.review.maxRounds, and what a person allowed
@@ -674,6 +752,10 @@ export interface RoundResult {
   cost: number | null
   // Every token the round's agents took, where they report it.
   tokens: number | null
+  // The agents asked in the round whose answer reported no tokens, or no cost: a failed
+  // answer reports neither.
+  noTokens: string[]
+  noUsd: string[]
 }
 
 // Notes are reported, never blocking: a round is clean when no finding at a blocking
@@ -717,6 +799,15 @@ function addCost(total: number | null, answer: Answer): number | null {
   return answer.ok && answer.reply.cost !== null ? Math.round(((total ?? 0) + answer.reply.cost) * 1e6) / 1e6 : total
 }
 
+// An answer's tokens and cost in the round's sums, and its agent named where it reported none.
+function account(result: RoundResult, answer: Answer, agent: Agent): void {
+  result.cost = addCost(result.cost, answer)
+  result.tokens = addTokens(result.tokens, answer)
+  const label = agentLabel(agent)
+  if (!(answer.ok && answer.reply.tokens !== null) && !result.noTokens.includes(label)) result.noTokens.push(label)
+  if (!(answer.ok && answer.reply.cost !== null) && !result.noUsd.includes(label)) result.noUsd.push(label)
+}
+
 // One round: the lenses the diff touches, every agent of each at once; then every
 // finding at a verified severity, each to its verifiers at once. An empty delta asks
 // nobody and keeps the findings still open from the last round.
@@ -743,6 +834,8 @@ export async function runRound(
     blocking: round > config.warningRounds ? ['blocker'] : ['blocker', 'warning'],
     cost: null,
     tokens: null,
+    noTokens: [],
+    noUsd: [],
   }
   if (input.files.length === 0) {
     result.findings = open.filter((f) => f.verdict !== 'withdrawn')
@@ -763,8 +856,7 @@ export async function runRound(
   const reviewed: Reviewed[] = []
   for (const [i, answer] of answers.entries()) {
     const job = jobs[i] as (typeof jobs)[number]
-    result.cost = addCost(result.cost, answer)
-    result.tokens = addTokens(result.tokens, answer)
+    account(result, answer, job.agent)
     const failed = (error: string, reply?: string) =>
       (job.agent.optional ? result.skipped : result.failed).push({
         lens: job.lens,
@@ -877,8 +969,7 @@ export async function runRound(
   })
   verdicts.forEach((answer, i) => {
     const check = checks[i] as (typeof checks)[number]
-    result.cost = addCost(result.cost, answer)
-    result.tokens = addTokens(result.tokens, answer)
+    account(result, answer, check.agent)
     const by = agentLabel(check.agent)
     if (!answer.ok) {
       const failure = { lens: `verify ${(found[check.finding] as Found).id}`, agent: by, error: answer.error }

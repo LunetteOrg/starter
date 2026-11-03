@@ -116,6 +116,9 @@
 //                             the author's answer, to the sessions of the reviewers who found it
 //   lntt review allow <rounds>
 //                             more rounds for the current branch, past delivery.review.maxRounds
+//   lntt review cost [--json]
+//                             what the current branch's rounds cost, from its review state: the
+//                             line of the pull request's Review cost, or each round and the total
 //
 //   lntt worktree start --issue <n> [--issue <n>]... [--host orca|herdr|git]
 //                       [--kind <agent>] [--model <id>] [--effort <level>] [--no-agent]
