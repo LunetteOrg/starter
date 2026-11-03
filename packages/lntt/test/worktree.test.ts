@@ -184,19 +184,22 @@ describe('Orca starts the agent in a terminal', () => {
     }
   })
 
-  test('an untuned agent still starts when the help cannot be read, with no flag', () => {
-    const calls: string[] = []
+  test('a help that cannot be run stops the start, instead of silently starting a chat', () => {
     const runner: Runner = {
       run(_command, args) {
-        calls.push(args.join(' '))
         if (args.includes('--help')) throw new Error('orca: help failed')
         return created
       },
       shell() {},
       sleep() {},
     }
+    assert.throws(() => startOrca(START, runner), /help failed/)
+  })
+
+  test('a help that prints nothing starts an untuned agent with no flag', () => {
+    const { calls, runner } = recorder({ 'orca worktree create --help': '', 'orca worktree create --name': created })
     startOrca(START, runner)
-    assert.doesNotMatch(calls.at(-1) as string, /--surface/)
+    assert.match(calls.at(-1) as string, /--agent claude --prompt BRIEF$/)
   })
 
   test('opencode with a model opens its own terminal and gets no --surface', () => {

@@ -138,14 +138,6 @@ export function toolFailure(command: string, args: string[], stdout: string, std
 // say is an error for it: guessing the older path would fail later, for another reason.
 const createHelp = (runner: Runner): string => runner.run('orca', ['worktree', 'create', '--help'])
 
-function tryHelp(runner: Runner): string {
-  try {
-    return createHelp(runner)
-  } catch {
-    return ''
-  }
-}
-
 function orcaTakesModel(help: string): boolean {
   if (!help.trim())
     throw new Error('orca worktree create --help printed nothing: lntt could not tell whether it takes --model')
@@ -173,9 +165,9 @@ export function startOrca(start: Start, runner: Runner, setupFor: SetupFor = () 
   const shell = start.agent ? shellLaunch(start.agent) : null
   if (shell) return startOrcaShell(start, shell, runner, setupFor)
   const tuned = Boolean(start.agent?.model || start.agent?.effort)
-  // The surface is optional for an untuned agent: a help that cannot be read starts it
-  // as before, with no flag. A tuned one needs the help to choose its path.
-  const help = start.agent ? (tuned ? createHelp(runner) : tryHelp(runner)) : ''
+  // An Orca whose help cannot be run fails here, loudly, as its next call would; one whose
+  // help prints nothing starts an untuned agent with no flag.
+  const help = start.agent ? createHelp(runner) : ''
   if (start.agent && tuned && !orcaTakesModel(help)) return startOrcaWorker(start, start.agent, runner, setupFor)
   const args = createArgs(start)
   args.push('--base-branch', start.base, '--setup', 'run', '--json')
