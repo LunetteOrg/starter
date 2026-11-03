@@ -133,15 +133,21 @@ export function toolFailure(command: string, args: string[], stdout: string, std
   return tail ? `${what}: ${tail}` : `${what} failed`
 }
 
-// Whether Orca's `worktree create` takes the agent's model and effort (1.4.229 does,
-// 1.4.224 did not). An Orca that cannot say is an error: guessing the older path would
-// fail later, for another reason.
-function orcaTakesModel(runner: Runner): boolean {
-  const help = runner.run('orca', ['worktree', 'create', '--help'])
+// What `orca worktree create` lists in its help. A tuned agent needs it to say whether
+// Orca takes the model and effort (1.4.229 does, 1.4.224 did not); an Orca that cannot
+// say is an error for it: guessing the older path would fail later, for another reason.
+const createHelp = (runner: Runner): string => runner.run('orca', ['worktree', 'create', '--help'])
+
+function orcaTakesModel(help: string): boolean {
   if (!help.trim())
     throw new Error('orca worktree create --help printed nothing: lntt could not tell whether it takes --model')
   return /--model\b/.test(help)
 }
+
+// Whether `worktree create` takes `--surface`. Without it Orca opens the agent as a chat
+// or a terminal by the operator's own setting, and a coordinator reads and writes a
+// child only through `orca terminal`: lntt asks for the terminal where Orca can be asked.
+const orcaTakesSurface = (help: string): boolean => /--surface\b/.test(help)
 
 // `orca worktree create`: the name, the issue it is linked to and the coordinator it
 // descends from, when there are any.
@@ -159,13 +165,15 @@ export function startOrca(start: Start, runner: Runner, setupFor: SetupFor = () 
   const shell = start.agent ? shellLaunch(start.agent) : null
   if (shell) return startOrcaShell(start, shell, runner, setupFor)
   const tuned = Boolean(start.agent?.model || start.agent?.effort)
-  if (start.agent && tuned && !orcaTakesModel(runner)) return startOrcaWorker(start, start.agent, runner, setupFor)
+  const help = start.agent ? createHelp(runner) : ''
+  if (start.agent && tuned && !orcaTakesModel(help)) return startOrcaWorker(start, start.agent, runner, setupFor)
   const args = createArgs(start)
   args.push('--base-branch', start.base, '--setup', 'run', '--json')
   if (start.agent) {
     args.push('--agent', start.agent.kind, '--prompt', start.brief)
     if (start.agent.model) args.push('--model', start.agent.model)
     if (start.agent.effort) args.push('--effort', start.agent.effort)
+    if (orcaTakesSurface(help)) args.push('--surface', 'terminal')
   }
   const reply = JSON.parse(runner.run('orca', args) || '{}') as {
     result?: {

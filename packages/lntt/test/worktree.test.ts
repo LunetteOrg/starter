@@ -102,6 +102,7 @@ describe('Orca', () => {
     })
     const started = startOrca(START, runner)
     assert.deepEqual(calls, [
+      'orca worktree create --help',
       'orca worktree create --name feat-78-start-agent --issue 78 --base-branch main --setup run --json --agent claude --prompt BRIEF',
     ])
     assert.deepEqual(started, {
@@ -134,7 +135,53 @@ describe('Orca', () => {
       'orca worktree create': JSON.stringify({ result: { worktree: { path: '/p' } } }),
     })
     startOrca({ ...START, agent: null }, runner)
-    assert.doesNotMatch(calls[0] as string, /--agent|--prompt/)
+    assert.doesNotMatch(calls[0] as string, /--agent|--prompt|--surface/)
+    assert.equal(calls.length, 1, 'no agent, nothing to ask the help about')
+  })
+})
+
+describe('Orca starts the agent in a terminal', () => {
+  const WITH_SURFACE = 'Usage: orca worktree create --name <name> [--agent <id>] [--surface chat|terminal]'
+  const created = JSON.stringify({ result: { worktree: { path: '/w' } } })
+
+  test('--surface terminal on the create, where Orca lists --surface', () => {
+    const { calls, runner } = recorder({
+      'orca worktree create --help': WITH_SURFACE,
+      'orca worktree create --name': created,
+    })
+    startOrca(START, runner)
+    assert.match(calls.at(-1) as string, /--agent claude --prompt BRIEF --surface terminal$/)
+  })
+
+  test('also with a model and an effort', () => {
+    const help = `${WITH_SURFACE} [--model <id>] [--effort <level>]`
+    const { calls, runner } = recorder({ 'orca worktree create --help': help, 'orca worktree create --name': created })
+    startOrca({ ...START, agent: { kind: 'claude', model: 'sonnet', effort: 'high' } }, runner)
+    assert.match(calls.at(-1) as string, /--model sonnet --effort high --surface terminal$/)
+  })
+
+  test('an Orca whose help lists no --surface gets no flag', () => {
+    const help = 'Usage: orca worktree create --name <name> [--agent <id>] [--model <id>]'
+    const { calls, runner } = recorder({ 'orca worktree create --help': help, 'orca worktree create --name': created })
+    startOrca({ ...START, agent: { kind: 'claude', model: 'sonnet' } }, runner)
+    assert.doesNotMatch(calls.at(-1) as string, /--surface/)
+    const bare = recorder({ 'orca worktree create --help': '', 'orca worktree create --name': created })
+    startOrca(START, bare.runner)
+    assert.doesNotMatch(bare.calls.at(-1) as string, /--surface/)
+  })
+
+  test('the worker path takes no --surface: worker-start launches the agent in a terminal', () => {
+    const { calls, runner } = recorder({
+      'orca worktree create --help':
+        'Usage: orca worktree create --name <name> [--agent <id>] [--surface chat|terminal]',
+      'orca orchestration run-current': JSON.stringify({ result: { run: { id: 'run_1' } } }),
+      'orca worktree create --name': created,
+      'orca orchestration worker-start': JSON.stringify({ result: { dispatch: { dispatchId: 'ctx_9' } } }),
+    })
+    // a help with --surface but no --model is not a real Orca; it pins that the worker never gets the flag
+    startOrca({ ...START, agent: { kind: 'codex', model: 'gpt-6' } }, runner)
+    assert.ok(calls.some((c) => c.startsWith('orca orchestration worker-start')))
+    assert.ok(calls.every((c) => !c.includes('--surface')))
   })
 })
 

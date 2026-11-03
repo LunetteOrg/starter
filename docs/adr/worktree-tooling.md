@@ -48,6 +48,13 @@ small adapter that makes the calls it understands.
     (`wait-for-setup`); Orca refuses a model and effort the agent does not take, before
     creating anything, and `lntt` reports its reason. The agent's handle is
     `launch.outcome.handle` in the reply.
+    The agent starts in a terminal, never as a chat: `lntt` passes `--surface terminal`
+    when `worktree create --help` lists `--surface` (an older Orca gets no flag). Without
+    it Orca follows the operator's personal Chat | CLI setting, and a chat session has no
+    terminal: a coordinator follows its children with `orca terminal` (read, wait, send),
+    so the surface is the project's choice, not the operator's. The supervised worker
+    below launches its agent in a terminal by construction (`worker-start` has no
+    surface option).
   - An Orca whose `worktree create` takes no model (its help lists no `--model`; 1.4.224
     did not, 1.4.229 does): the worktree
     with its issue, the setup, then `orchestration worker-start` on it, in a Run
