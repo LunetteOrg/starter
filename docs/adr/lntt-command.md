@@ -79,7 +79,7 @@ lntt ci local | candidate | proved
   Ctrl-C); a defect of `lntt` itself exits 1 with its stack trace.
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
   `decisions` and `tests`, whose results their review lenses read, and `agents-md`,
-  `skills`, `plugin` (the Lunette plugin and the install, format and typecheck hooks in `.claude/settings.json`)
+  `skills`, `plugin` (the Lunette plugin and the install and typecheck hooks in `.claude/settings.json`)
   and `body` (the retrospective block of a pull request body, of a candidate's
   retrospective comment and of the template), which no lens needs; a lens's checks are the area named after it. Alone it runs every
   area, which is what CI runs. Every check reports `PASS`, `FAIL` or `NOT RUN` with its
@@ -221,6 +221,9 @@ So:
     the old name. Renaming one of the fixed areas of the
     [agent layer](./agent-layer.md#an-installed-skill-is-never-edited) is such a
     change, and these two releases are its coordination.
+  - A removed key that has no replacement and whose absence changes nothing stays
+    accepted by the schema, and `lntt validate` warns that it is ignored instead of
+    failing: `local.hooks.format`, since formatting is the pre-commit's.
 - **When the split's trigger fires**, the agent tools leave `@lntt/lntt` for a second
   command at its latest version, shipped with the plugin and through `npx`. The pinned
   group stays where it is. The skills become full files beside the agent tools and the

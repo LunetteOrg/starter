@@ -193,7 +193,7 @@ output), 2 the usage, which an `lntt` older than `hook` also answers. A defect o
 typecheck hook itself (its own error, a state it cannot read or write) never wakes the
 agent: it exits 0 with a `systemMessage`, which Claude Code gives the agent at its next
 turn. It is said once per session, told by the `session_id` of the hook input (a marker
-in the temporary directory); with no id, or a marker that cannot be kept, every time. A
+in the temporary directory); with no id, or a marker that cannot be kept, every time.
 
 Every other hook is measured before it is adopted: what it costs in tokens and turns
 against what it catches that the next gate (the pre-commit, `ci:local`, the review) would

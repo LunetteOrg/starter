@@ -238,7 +238,7 @@ export function syncClaudeSettings(cwd: string): void {
   const loaded = load(file)
   if (loaded === null) throw new ConfigError(INVALID)
   const [marketplace, plugin, ...hooks] = entries(loaded.settings) as SettingsEntry[]
-  // The stale entries follow the hooks lntt writes.
+  // `hooks` holds the states of the hooks lntt writes, then those of the stale ones.
   let text = loaded.text
   if (marketplace?.state !== 'ok') text = edit(text, ['extraKnownMarketplaces', 'lunette'], MARKETPLACE)
   if (plugin?.state !== 'ok') text = edit(text, ['enabledPlugins', PLUGIN], true)
