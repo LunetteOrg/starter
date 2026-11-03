@@ -805,7 +805,7 @@ function cost(args: string[]): number {
   const total = reviewCost(rounds)
   stdout.write(
     values.json
-      ? `${JSON.stringify({ branch, rounds, total: { rounds: total.rounds, tokens: total.tokens, usd: total.usd }, line: total.line }, null, 2)}\n`
+      ? `${JSON.stringify({ branch, rounds, total: { rounds: total.rounds, tokens: total.tokens, usd: total.usd, line: total.line } }, null, 2)}\n`
       : `${total.line}\n`,
   )
   return 0

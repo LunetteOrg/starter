@@ -121,7 +121,9 @@ same way every time; the `review` skill keeps the judgement.
   them sent to whoever it reports to, without waiting
   ([worktree tooling](./worktree-tooling.md)): stderr says `lntt review: limit: sent <id>`
   (`already sent <id>` while that branch's earlier message waits for its answer), and the
-  stdout JSON and the `limit` event carry `asked` (`id`, `to`, `path`). A run with no new
+  stdout JSON and the `limit` event carry `asked` (`id`, `to`, `path`). The stdout JSON,
+  stderr and the message carry the branch's review cost so far (`total`: `rounds`,
+  `tokens`, `usd`, `line`), the one `lntt review cost` prints. A run with no new
   commit to read is not a round and is never stopped.
 - **Load:** at most `perProvider` required agents of one provider run at once, and as
   many optional ones in a queue of their own, the others waiting their turn; a provider

@@ -1236,8 +1236,7 @@ describe("the cost of the branch's rounds", () => {
     assert.deepEqual(JSON.parse(lntt(['cost', '--json']).out), {
       branch: 'feat/1/x',
       rounds,
-      total: { rounds: 2, tokens: 4500, usd: 0.03 },
-      line: '2 rounds, 4.5k tokens, 0.03 USD',
+      total: { rounds: 2, tokens: 4500, usd: 0.03, line: '2 rounds, 4.5k tokens, 0.03 USD' },
     })
 
     // No new commit: no round more, and nothing added. Nor by a reply, nor by allow.
