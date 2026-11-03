@@ -197,15 +197,18 @@ export function drawn(screen: string, brief: string): boolean {
 
 // A provider's usage limit in the JSON events a tool printed (one per line): the
 // message of an error event of type `provider.free-limit` or status 429, else null.
-// That is the provider's quota running out on the runner, not a break of lntt.
+// That is the provider's quota running out on the runner, not a break of lntt. A line
+// that is not a JSON object (`null`, a number, a string) is skipped like a non-JSON one.
 export function usageLimit(output: string): string | null {
   for (const line of output.split('\n')) {
-    let event: { type?: string; error?: { type?: string; status?: number; message?: string } }
+    let parsed: unknown
     try {
-      event = JSON.parse(line)
+      parsed = JSON.parse(line)
     } catch {
       continue
     }
+    if (typeof parsed !== 'object' || parsed === null) continue
+    const event = parsed as { type?: string; error?: { type?: string; status?: number; message?: string } }
     if (event.type !== 'error') continue
     if (event.error?.type === 'provider.free-limit' || event.error?.status === 429) {
       return event.error.message ?? 'usage limit reached'
