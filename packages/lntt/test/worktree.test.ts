@@ -63,7 +63,7 @@ describe('the brief', () => {
     assert.match(brief, /## Every wait goes through the mailbox/)
     assert.match(brief, /`pnpm exec lntt ask --to orchestrator --issue 78 "<…>"`/)
     assert.match(brief, /1Password/)
-    assert.match(brief, /lntt ask --wait <id>/)
+    assert.match(brief, /`pnpm exec lntt ask --wait <id>`/)
     assert.match(brief, /re-read your mailbox:\n`pnpm exec lntt inbox --as child --issue 78`/)
   })
 })

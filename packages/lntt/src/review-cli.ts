@@ -231,7 +231,7 @@ function stopAtLimit(
         marker,
         branch,
         [
-          `${marker.issue === null ? '' : `#${marker.issue} `}${branch}: lntt review limit, ${passing}; still open: ${still}; decide: the pull request as it is, lntt review allow <rounds>, or an issue for what is open`,
+          `${marker.issue === null ? '' : `#${marker.issue} `}${branch}: lntt review limit, ${passing}; still open: ${still}; decide: the pull request as it is, pnpm exec lntt review allow <rounds>, or an issue for what is open`,
           ...(details.length > 0 ? ['', ...details] : []),
         ].join('\n'),
       )

@@ -966,7 +966,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
     const text = readFileSync(join(repo, '.git/lntt-messages/to-coordinator-alpha', file as string), 'utf8')
     assert.match(
       text,
-      /^#1 feat\/1\/x: lntt review limit, round 2 would pass delivery\.review\.maxRounds \(1\); still open: f1 \(warning, confirmed\); decide: the pull request as it is, lntt review allow <rounds>, or an issue for what is open$/m,
+      /^#1 feat\/1\/x: lntt review limit, round 2 would pass delivery\.review\.maxRounds \(1\); still open: f1 \(warning, confirmed\); decide: the pull request as it is, pnpm exec lntt review allow <rounds>, or an issue for what is open$/m,
     )
     assert.match(text, /^- f1 \[warning, confirmed\] a\.ts:1 — w — a$/m)
     const out = JSON.parse(r.out)

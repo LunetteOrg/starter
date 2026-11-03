@@ -282,7 +282,7 @@ describe('the child’s brief', () => {
     assert.doesNotMatch(brief, /--to orchestrator/)
     assert.match(brief, /1Password/)
     assert.match(brief, /at `lntt review: limit:` the round sends the open findings/)
-    assert.match(brief, /lntt ask --wait <id>/)
+    assert.match(brief, /`pnpm exec lntt ask --wait <id>`/)
     assert.match(brief, /re-read your mailbox:\n`pnpm exec lntt inbox --as child --issue 84`/)
     assert.doesNotMatch(brief, /workflow|orca/i)
   })
