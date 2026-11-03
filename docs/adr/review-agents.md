@@ -117,8 +117,12 @@ same way every time; the `review` skill keeps the judgement.
   with what is still open (the findings not withdrawn and the failures of the last
   round), and the person decides: the pull request as it is, more rounds for that
   branch (`lntt review allow <rounds>`, kept in its state, the configuration
-  unchanged), or an issue for what is open. A run with no new commit to read is not a
-  round and is never stopped.
+  unchanged), or an issue for what is open. A branch `lntt worktree start` started gets
+  them sent to whoever it reports to, without waiting
+  ([worktree tooling](./worktree-tooling.md)): stderr says `lntt review: limit: sent <id>`
+  (`already sent <id>` while that branch's earlier message waits for its answer), and the
+  stdout JSON and the `limit` event carry `asked` (`id`, `to`, `path`). A run with no new
+  commit to read is not a round and is never stopped.
 - **Load:** at most `perProvider` required agents of one provider run at once, and as
   many optional ones in a queue of their own, the others waiting their turn; a provider
   given dozens of sessions at once queues them until they time out. A slow optional

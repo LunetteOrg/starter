@@ -82,6 +82,7 @@ pnpm exec lntt worktree start --theme <slug> --parent current --issue <n> --cont
 pnpm exec lntt inbox --as coordinator --theme <slug> --wait      # what they ask and report (returns at once while any message is unanswered: answer each one)
 pnpm exec lntt answer <id> "<answer>"
 pnpm exec lntt ask --to orchestrator "<questions>"               # waits for the person's answer
+pnpm exec lntt ask --wait <id>                                   # the answer to a message already sent
 ```
 
 - **A child's report** is one line: the pull request link, its head SHA, its checks, its
@@ -142,8 +143,10 @@ pnpm exec lntt ask --to orchestrator "<questions>"               # waits for the
 
 The brief `lntt worktree start --coordinator` renders already says: write no code; the
 issues; the gate and who is approved; the model of each role; `--context`, `--size`,
-`--workflow` and `--base` for a child; the mailbox; `orca` by absolute path; never merge or
-mark ready; return the state of the theme and the friction. Also say:
+`--workflow` and `--base` for a child (`--prompt` adds to the brief, never replaces it); the
+mailbox, through which every wait goes (approvals, the review limit), a child's review
+limit reaching your inbox; `orca` by absolute path; never merge or mark ready; return the
+state of the theme and the friction. Also say:
 
 - A path in a brief is found by `grep`, not rebuilt.
 - An approval names what it covers.

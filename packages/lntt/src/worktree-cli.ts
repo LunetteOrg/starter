@@ -23,7 +23,7 @@ import {
 } from './coordinator.ts'
 import { NoConfigError } from './files.ts'
 import { loadConfig } from './index.ts'
-import { send, waitForAnswer } from './messages.ts'
+import { recordStarted, type Started, send, waitForAnswer } from './messages.ts'
 import { messagesRoot, pollInterval, systemMailbox } from './messages-cli.ts'
 import {
   type Agent,
@@ -139,6 +139,33 @@ function orcaPath(host: WorktreeHost): string | null {
 
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
+// --prompt: instructions of one's own, after the whole brief.
+export function withPrompt(brief: string, prompt: string | undefined): string {
+  if (!prompt?.trim()) return brief
+  return `${brief.trimEnd()}\n\n## Added at start\n\n${prompt.trim()}\n`
+}
+
+// Who the agent started on a branch reports to, for `lntt review` at its limit: a
+// coordinator to the orchestrator, a child of a theme to its coordinator, a plain issue
+// to the orchestrator.
+function marker(job: Start, coordinator: boolean, theme: string | undefined): Started {
+  if (coordinator) return { branch: job.branch, issue: null, to: 'orchestrator', theme: theme as string }
+  if (theme) return { branch: job.branch, issue: job.issue, to: 'coordinator', theme }
+  return { branch: job.branch, issue: job.issue, to: 'orchestrator' }
+}
+
+// A marker that cannot be written costs the review limit its message, not the start:
+// it is said.
+function recordMarker(started: Started): void {
+  try {
+    recordStarted(messagesRoot(), started)
+  } catch (error) {
+    stderr.write(
+      `lntt worktree start: could not record who ${started.branch} reports to: ${(error as Error).message}\n`,
+    )
+  }
+}
+
 // A coordinator's child waits for the person's go before anything is created, unless the
 // theme's approved list already has it: the gate is the project's setting
 // (coordinator.gate), not a sentence in a brief. The proposal is one message for the batch.
@@ -203,9 +230,6 @@ function start(args: string[]): void {
   for (const flag of ['parent', 'context', 'size', 'workflow'] as const) {
     if (!coordinator && !theme && values[flag]) usage(`--${flag} needs the theme the child belongs to: --theme <slug>`)
   }
-  if (values.prompt !== undefined && (values.context || values.workflow)) {
-    usage('--prompt replaces the whole brief, so --context and --workflow have nothing to add to')
-  }
   const approved = (values.approve ?? []).map((raw) => {
     if (!issues.includes(raw)) usage(`--approve ${raw} is not one of the --issue of the theme`)
     return Number(raw)
@@ -250,8 +274,7 @@ function start(args: string[]): void {
       base: base(false),
       agent: launched,
       root,
-      brief:
-        values.prompt ??
+      brief: withPrompt(
         coordinatorBrief({
           theme: themeName,
           worktree: wherever(branch),
@@ -261,6 +284,8 @@ function start(args: string[]): void {
           config,
           orca,
         }),
+        values.prompt,
+      ),
     })
   } else {
     for (const raw of issues) {
@@ -281,11 +306,12 @@ function start(args: string[]): void {
         agent: launched,
         root,
         ...(values.parent ? { parent: values.parent } : {}),
-        brief:
-          values.prompt ??
-          (theme
+        brief: withPrompt(
+          theme
             ? childBrief(common, { theme, ...(context ? { context } : {}), workflow: values.workflow, orca })
-            : renderBrief(undefined, common)),
+            : renderBrief(undefined, common),
+          values.prompt,
+        ),
       })
     }
   }
@@ -293,6 +319,8 @@ function start(args: string[]): void {
   if (!coordinator && theme) passTheGate(config, theme, jobs, values.size)
 
   for (const job of jobs) {
+    // Before the host starts: a start that fails once the worktree exists still leaves it.
+    recordMarker(marker(job, coordinator, theme))
     const started =
       host === 'orca'
         ? startOrca(job, runner, setupScript)

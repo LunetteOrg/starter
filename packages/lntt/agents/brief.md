@@ -6,8 +6,8 @@ You are working on issue #{{issue}}: {{title}}.
   command from it, never from the main checkout or another worktree.
 - **Before publishing:** the review (`pnpm exec lntt review`, with the `review` skill) until a
   round finds nothing, and `pnpm ci:local` green on the commit you push. At
-  `lntt review: limit:` (`delivery.review.maxRounds`) stop: what is still open goes to
-  the person (or your coordinator, when you have one), who decides.
+  `lntt review: limit:` (`delivery.review.maxRounds`) stop: the round sends what is
+  still open to whoever you report to, who decides (below).
 - **Then open a draft pull request** with `Closes #{{issue}}` and the Definition of Done
   filled in, and **stop**: no merge, no `gh pr ready`. A person takes it from there.
 - **Return** a short summary of what changed, the pull request link, and any friction
@@ -17,5 +17,7 @@ You are working on issue #{{issue}}: {{title}}.
 {{theme}}
 
 {{reporting}}
+
+{{waiting}}
 
 {{workflow}}
