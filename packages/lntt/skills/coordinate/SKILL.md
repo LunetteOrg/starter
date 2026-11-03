@@ -96,6 +96,13 @@ pnpm exec lntt ask --wait <id>                                   # the answer to
 - **Check on the pull request itself before saying a check passed or is pending**
   (`gh pr checks`, or the API): a check reported "without outcome" from memory has to be
   re-read before every merge.
+- **A child's open decisions come first.** Before its first commit each child asks the
+  open decisions of its issue (`lntt ask`, each with a recommendation). Collect them,
+  settle what the issues, the records and the code settle, and send the rest to the
+  orchestrator in one batch before the children code. A decision that arrives after a
+  child's review converged goes the same way, asking whether it is applied in that pull
+  request or in a follow-up; applied there, the child needs the person's go for the new
+  rounds (past `delivery.review.maxRounds`, `lntt review allow`).
 - **Questions for the person go to the orchestrator, batched**: every open question in one
   message, each with a recommendation. While waiting, keep following the children.
 - **A freeze** from the orchestrator ("STOP: no new children, no rebases, no Ready, no
