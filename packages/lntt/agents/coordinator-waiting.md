@@ -5,4 +5,6 @@
   `pnpm exec lntt ask --to orchestrator`, batched, with a recommendation; your own waits, an
   approval included, go the same way. A child that waits re-reads its mailbox, so an
   answer for it goes there (`pnpm exec lntt answer <id>`, or `pnpm exec lntt ask --to child --issue <n>`),
-  never typed into its tab.
+  never typed into its tab. The open decisions your children ask before their first
+  commit are collected and sent to the orchestrator in one batch, each with a
+  recommendation, before the children code.
