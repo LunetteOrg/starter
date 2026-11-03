@@ -138,6 +138,14 @@ export function toolFailure(command: string, args: string[], stdout: string, std
 // say is an error for it: guessing the older path would fail later, for another reason.
 const createHelp = (runner: Runner): string => runner.run('orca', ['worktree', 'create', '--help'])
 
+function tryHelp(runner: Runner): string {
+  try {
+    return createHelp(runner)
+  } catch {
+    return ''
+  }
+}
+
 function orcaTakesModel(help: string): boolean {
   if (!help.trim())
     throw new Error('orca worktree create --help printed nothing: lntt could not tell whether it takes --model')
@@ -147,7 +155,7 @@ function orcaTakesModel(help: string): boolean {
 // Whether `worktree create` takes `--surface`. Without it Orca opens the agent as a chat
 // or a terminal by the operator's own setting, and a coordinator reads and writes a
 // child only through `orca terminal`: lntt asks for the terminal where Orca can be asked.
-const orcaTakesSurface = (help: string): boolean => /--surface\b/.test(help)
+const orcaTakesSurface = (help: string): boolean => /--surface(?![\w-])/.test(help)
 
 // `orca worktree create`: the name, the issue it is linked to and the coordinator it
 // descends from, when there are any.
@@ -165,7 +173,9 @@ export function startOrca(start: Start, runner: Runner, setupFor: SetupFor = () 
   const shell = start.agent ? shellLaunch(start.agent) : null
   if (shell) return startOrcaShell(start, shell, runner, setupFor)
   const tuned = Boolean(start.agent?.model || start.agent?.effort)
-  const help = start.agent ? createHelp(runner) : ''
+  // The surface is optional for an untuned agent: a help that cannot be read starts it
+  // as before, with no flag. A tuned one needs the help to choose its path.
+  const help = start.agent ? (tuned ? createHelp(runner) : tryHelp(runner)) : ''
   if (start.agent && tuned && !orcaTakesModel(help)) return startOrcaWorker(start, start.agent, runner, setupFor)
   const args = createArgs(start)
   args.push('--base-branch', start.base, '--setup', 'run', '--json')

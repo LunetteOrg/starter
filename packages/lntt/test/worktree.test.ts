@@ -170,7 +170,48 @@ describe('Orca starts the agent in a terminal', () => {
     assert.doesNotMatch(bare.calls.at(-1) as string, /--surface/)
   })
 
-  test('the worker path takes no --surface: worker-start launches the agent in a terminal', () => {
+  test('only an option named --surface counts, not --surface-x or a word in prose', () => {
+    for (const help of [
+      'Usage: orca worktree create [--surface-x <v>]',
+      'Usage: orca worktree create; the surface is yours',
+    ]) {
+      const { calls, runner } = recorder({
+        'orca worktree create --help': help,
+        'orca worktree create --name': created,
+      })
+      startOrca(START, runner)
+      assert.doesNotMatch(calls.at(-1) as string, /--surface/)
+    }
+  })
+
+  test('an untuned agent still starts when the help cannot be read, with no flag', () => {
+    const calls: string[] = []
+    const runner: Runner = {
+      run(_command, args) {
+        calls.push(args.join(' '))
+        if (args.includes('--help')) throw new Error('orca: help failed')
+        return created
+      },
+      shell() {},
+      sleep() {},
+    }
+    startOrca(START, runner)
+    assert.doesNotMatch(calls.at(-1) as string, /--surface/)
+  })
+
+  test('opencode with a model opens its own terminal and gets no --surface', () => {
+    const { calls, runner } = recorder({
+      'orca worktree create --help': WITH_SURFACE,
+      'orca worktree create --name': created,
+      'orca terminal create': JSON.stringify({ result: { terminal: { handle: 'term_7' } } }),
+      'orca terminal wait': JSON.stringify({ result: { wait: { satisfied: true } } }),
+    })
+    startOrca({ ...START, agent: { kind: 'opencode', model: 'opencode/x' } }, runner, () => null)
+    assert.ok(calls.some((c) => c.startsWith('orca terminal create')))
+    assert.ok(calls.every((c) => !c.includes('--surface')))
+  })
+
+  test('the worker path takes no --surface: worker-start has no such option (orca 1.4.229 help)', () => {
     const { calls, runner } = recorder({
       'orca worktree create --help':
         'Usage: orca worktree create --name <name> [--agent <id>] [--surface chat|terminal]',
@@ -178,7 +219,7 @@ describe('Orca starts the agent in a terminal', () => {
       'orca worktree create --name': created,
       'orca orchestration worker-start': JSON.stringify({ result: { dispatch: { dispatchId: 'ctx_9' } } }),
     })
-    // a help with --surface but no --model is not a real Orca; it pins that the worker never gets the flag
+    // a help with --surface and no --model is no real Orca: it pins that this path never adds the flag
     startOrca({ ...START, agent: { kind: 'codex', model: 'gpt-6' } }, runner)
     assert.ok(calls.some((c) => c.startsWith('orca orchestration worker-start')))
     assert.ok(calls.every((c) => !c.includes('--surface')))
