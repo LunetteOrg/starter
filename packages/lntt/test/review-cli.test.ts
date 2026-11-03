@@ -1822,6 +1822,16 @@ describe('lntt review status', () => {
       git('push', '-q', 'origin', 'feat/1/x:main')
       git('fetch', '-q', 'origin')
       assert.equal(json().out.state.merged, true)
+      // A candidate GitHub cannot name (no gh here): the base may be the wrong one, so
+      // whether the branch is merged cannot be told, and --clear says why.
+      const config = JSON.parse(CONFIG)
+      config.delivery.candidate = { prefix: 'candidate/' }
+      writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify(config))
+      assert.equal(json().out.state.merged, null)
+      const unknown = lntt(['status', '--clear'])
+      assert.equal(unknown.code, 1)
+      assert.match(unknown.err, /whether it is merged cannot be told \(the open candidate is unknown/)
+      git('checkout', '-q', '--', '.agents/config.jsonc')
       git('switch', '-qc', 'feat/2/y', 'main')
       assert.match(lntt(['status']).out, /the state here is feat\/1\/x's, round 1, [^:]+:\d\d, merged: /)
       git('switch', '-q', 'feat/1/x')

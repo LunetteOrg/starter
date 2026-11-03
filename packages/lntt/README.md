@@ -430,7 +430,9 @@ round is clean, 1 with something to act on (a blocking finding open, a failed or
 lens), 3 at the limit, 4 with no round on this branch (none yet, a detached HEAD, or
 another branch's state, named with its date). `--json` gives `branch`, `running` (the pid
 of a round holding the lock) and `state`: its `branch`, `current`, `updated`, `merged`
-(null when the base cannot be resolved, such as with no remote), the round, `limit`
+(null when it cannot be told: no base to compare with, an open candidate GitHub
+could not name, no commit of the branch; with `delivery.candidate` set, status asks
+GitHub for the open candidate, as every lntt command that resolves the base does), the round, `limit`
 (maxRounds and the rounds allowed), `reviewed`, `clean`, `atLimit`, `open`, `replied`
 (with the `reply` the author gave), `closed` (the ledger), `failed`, `partial`, `skipped`,
 `tokens` and `cost`. A state that cannot be read is an error, exit 1, with nothing on
