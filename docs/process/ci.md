@@ -235,7 +235,7 @@ provider's usage limit (today the opencode call on a free model) skips with its 
 writes it to the file `UPSTREAM_INCONCLUSIVE` names, the job leaves a notice, and no entry
 is saved, so a later run tries the version again. The skip opens no issue; the flags test
 still runs, and a real break in it still opens one (the issue then stops a second, as
-below). Both saves of the job carry that guard, the one on the version read as well as the
+below). Every save of the job carries that guard, the one on the version read as well as the
 one on the version installed (they differ when opencode's Homebrew formula moved on since
 the versions job). A pull request cannot run the check for real (it needs a new tool
 release and a provider at its limit), so `upstream-helpers.test.ts` reads `upstream.yml`

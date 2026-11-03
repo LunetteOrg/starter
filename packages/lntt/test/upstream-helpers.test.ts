@@ -158,6 +158,7 @@ describe('upstream helpers', () => {
     ).flatMap((job) => job.steps ?? [])
     // The step the guard reads: it must exist and write the output the guard compares.
     const marker = steps.find((step) => step.id === 'inconclusive')
+    assert.match(marker?.if ?? '', /!cancelled\(\)/)
     assert.match(marker?.run ?? '', /echo "inconclusive=true" >> "\$GITHUB_OUTPUT"/)
     const saves = steps.filter((step) => step.uses?.startsWith('actions/cache/save'))
     assert.ok(saves.length >= 2, `expected the job's cache saves, found ${saves.length}`)
