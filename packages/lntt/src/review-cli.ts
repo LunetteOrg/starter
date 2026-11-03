@@ -865,20 +865,29 @@ function ledgerFile(): Partial<Ledger> | null {
 }
 
 // A branch is merged when its tip (its local ref, else the head its last round read) is
-// in the base every lntt command resolves (src/base.ts). Whatever cannot be resolved (no
-// remote, no ref) is not merged: --clear then refuses on the current branch.
-function isMerged(root: string, branch: string, head: string | null): boolean {
+// in the base every lntt command resolves (src/base.ts), which may ask GitHub for the open
+// candidate. Null, with the reason, when that cannot be told: no base to compare with, a
+// candidate GitHub could not name, no tip. Never a guess of "not merged".
+function mergedInto(root: string, branch: string, head: string | null): { merged: boolean | null; why: string } {
+  let ref: string
   try {
-    const base = projectBase(root, 'head').ref
-    let tip = head
-    try {
-      tip = git('rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`)
-    } catch {}
-    if (!tip) return false
-    git('merge-base', '--is-ancestor', tip, base)
-    return true
+    const base = projectBase(root, 'head')
+    if (base.warning) return { merged: null, why: base.warning }
+    ref = base.ref
+    git('rev-parse', '--verify', '--quiet', `${ref}^{commit}`)
+  } catch (error) {
+    return { merged: null, why: `no base to compare with (${(error as Error).message.split('\n')[0]})` }
+  }
+  let tip = head
+  try {
+    tip = git('rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`)
+  } catch {}
+  if (!tip) return { merged: null, why: `no commit of ${branch} to compare with ${ref}` }
+  try {
+    git('merge-base', '--is-ancestor', tip, ref)
+    return { merged: true, why: `in ${ref}` }
   } catch {
-    return false
+    return { merged: false, why: `not in ${ref}` }
   }
 }
 
@@ -921,9 +930,14 @@ function clear(root: string, current: string | null): number {
     return 0
   }
   const head = own?.state.branch === current ? (own?.state.result.head ?? null) : null
-  const currentMerged = current !== null && isMerged(root, current, head)
+  const check = current === null ? null : mergedInto(root, current, head)
+  const currentMerged = check?.merged === true
   if (target === current && !currentMerged)
-    throw new Error(`the state is ${target}'s, the current branch, and it is not merged: nothing cleared`)
+    throw new Error(
+      check?.merged === null
+        ? `the state is ${target}'s, the current branch, and whether it is merged cannot be told (${check.why}): nothing cleared`
+        : `the state is ${target}'s, the current branch, and it is not merged (${check?.why}): nothing cleared`,
+    )
   const removed: string[] = []
   const remove = (name: string, path: string) => {
     if (!existsSync(path)) return
@@ -991,7 +1005,7 @@ function status(args: string[]): number {
         branch: state.branch,
         current: isCurrent,
         updated: updated.toISOString(),
-        merged: isMerged(root, state.branch, result.head),
+        merged: mergedInto(root, state.branch, result.head).merged,
         round: state.round,
         maxRounds,
         allowed,
@@ -1017,7 +1031,7 @@ function status(args: string[]): number {
   }
   if (!isCurrent) {
     // Another branch's findings are not this branch's to act on: only its name and date.
-    const merged = isMerged(root, state.branch, result.head) ? ', merged' : ''
+    const merged = mergedInto(root, state.branch, result.head).merged ? ', merged' : ''
     stdout.write(
       `lntt review: no round on ${here}; the state here is ${state.branch}'s, round ${state.round}, ${localTime(updated)}${merged}: pnpm exec lntt review status --clear removes it${runningText ? `; ${runningText}` : ''}\n`,
     )
@@ -1030,8 +1044,9 @@ function status(args: string[]): number {
     ...(atLimit ? ['at the limit'] : []),
     ...(runningText ? [runningText] : []),
   ]
+  const blocked = open.filter((f) => result.blocking.includes(f.severity)).length
   const counts = [
-    `${open.length} open`,
+    `${open.length} open${open.length > 0 ? ` (${blocked} blocking)` : ''}`,
     `${replied.length} replied`,
     `${closed.length} closed`,
     ...(result.failed.length > 0 ? [`${result.failed.length} failed`] : []),

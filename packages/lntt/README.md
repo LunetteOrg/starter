@@ -429,12 +429,14 @@ one, so a file there is the main checkout's). Its exit code is 0 when this branc
 round is clean, 1 with something to act on (a blocking finding open, a failed or partial
 lens), 3 at the limit, 4 with no round on this branch (none yet, a detached HEAD, or
 another branch's state, named with its date). `--json` gives `branch`, `running` (the pid
-of a round holding the lock) and `state`: the round, `limit` (maxRounds and the rounds
-allowed), `reviewed`, `clean`, `atLimit`, `open`, `replied` (with the `reply` the author
-gave), `closed` (the ledger), `failed`, `partial`, `skipped`, `tokens` and `cost`.
-`--clear` also removes a state that cannot be read; it never runs while a round holds the
-lock, never removes the lock, and refuses on the current branch until it is merged into
-the base.
+of a round holding the lock) and `state`: its `branch`, `current`, `updated`, `merged`
+(null when the base cannot be resolved, such as with no remote), the round, `limit`
+(maxRounds and the rounds allowed), `reviewed`, `clean`, `atLimit`, `open`, `replied`
+(with the `reply` the author gave), `closed` (the ledger), `failed`, `partial`, `skipped`,
+`tokens` and `cost`. A state that cannot be read is an error, exit 1, with nothing on
+stdout even with `--json`. `--clear` also removes it; it never runs while a round holds
+the lock, never removes the lock, and refuses on the current branch until it is merged
+into the base.
 
 A round, on a clean working tree:
 

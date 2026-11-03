@@ -70,7 +70,8 @@ same way every time; the `review` skill keeps the judgement.
   with `lntt review status` (a summary, or `--json`), never from those files; a state
   left by another branch is reported as that branch's, and `lntt review status --clear`
   removes the state, ledger and progress of another branch or a merged one, never while
-  a round holds the lock. A
+  a round holds the lock. The command's exit codes and JSON fields are in the package
+  README. A
   clean round (exit 0) has no blocker or warning left and no reviewer or verifier that
   failed; notes are reported, never blocking. Past `warningRounds` a round is clean with
   warnings left too (below). A finding is a bullet with its severity,
@@ -166,8 +167,9 @@ same way every time; the `review` skill keeps the judgement.
   missing. The agents themselves get none of the host's hook variables, so they never
   report as the session that started them.
 - **A conversation inside a round:** `lntt review reply` resumes the sessions of the
-  reviewers who found a finding with the author's answer; it closes when they all
-  withdraw it. A disagreement that remains goes to the person.
+  reviewers who found a finding with the author's answer, which the state keeps on the
+  finding (kept or withdrawn, and carried with it while it stays open); it closes when
+  they all withdraw it. A disagreement that remains goes to the person.
 - **The runner is its own module** (`src/headless.ts`): several agents and providers
   asked the same question at once, headless and read-only, for any practice that needs
   it; the review is its first user.
