@@ -1476,3 +1476,311 @@ describe('the base a round reads from', () => {
     assert.match(r.err, /the open candidate is unknown/)
   })
 })
+
+// `lntt review status`: the worktree's state read through lntt review, never from the
+// files in the git directory; exit 0 clean, 1 to act on, 3 at the limit, 4 no round here.
+describe('lntt review status', () => {
+  const gitDir = (...names: string[]) => join(repo, '.git', ...names)
+  const json = (args: string[] = [], env: Record<string, string> = {}) => {
+    const r = lntt(['status', '--json', ...args], env)
+    return { code: r.code, out: JSON.parse(r.out), err: r.err }
+  }
+  const first = (out: string) => out.split('\n')[0] as string
+  const blocker = { FAKE_REVIEW: '- [blocker] a.ts:1 — wrong — fix', FAKE_VERIFY: 'confirmed\\na.ts:1 shows it' }
+
+  test('an own clean round: exit 0, one line, and the JSON', () => {
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    const head = git('rev-parse', '--short', 'HEAD')
+    const r = lntt(['status'])
+    assert.equal(r.code, 0, r.err)
+    assert.match(
+      first(r.out),
+      new RegExp(
+        `^lntt review: feat/1/x: round 1 of 4, reviewed ${head}, clean; 0 open, 0 replied, 0 closed, 1\\.5k tokens, \\$0\\.01$`,
+      ),
+    )
+    assert.equal(r.out.trimEnd().split('\n').length, 1, 'nothing to act on: one line')
+    const j = json()
+    assert.equal(j.code, 0)
+    assert.equal(j.out.branch, 'feat/1/x')
+    assert.equal(j.out.running, null)
+    assert.equal(j.out.state.branch, 'feat/1/x')
+    assert.equal(j.out.state.current, true)
+    assert.equal(j.out.state.merged, false)
+    assert.equal(j.out.state.round, 1)
+    assert.equal(j.out.state.maxRounds, 4)
+    assert.equal(j.out.state.allowed, 0)
+    assert.equal(j.out.state.limit, 4)
+    assert.equal(j.out.state.reviewed, head)
+    assert.equal(j.out.state.clean, true)
+    assert.equal(j.out.state.atLimit, false)
+    assert.deepEqual(j.out.state.open, [])
+    assert.deepEqual(j.out.state.replied, [])
+    assert.deepEqual(j.out.state.closed, [])
+    assert.equal(j.out.state.tokens, 1500)
+    assert.equal(j.out.state.cost, 0.01)
+    assert.match(j.out.state.updated, /^\d{4}-\d\d-\d\dT/)
+    assert.deepEqual(Object.keys(j.out.state), [
+      'branch',
+      'current',
+      'updated',
+      'merged',
+      'round',
+      'maxRounds',
+      'allowed',
+      'limit',
+      'reviewed',
+      'base',
+      'head',
+      'clean',
+      'atLimit',
+      'blocking',
+      'open',
+      'replied',
+      'closed',
+      'failed',
+      'partial',
+      'skipped',
+      'tokens',
+      'cost',
+    ])
+  })
+
+  test('a confirmed blocker: exit 1 and its line; kept by a reply it stays open, withdrawn it is closed', () => {
+    assert.equal(lntt(['--base', 'main'], blocker).code, 1)
+    const r = lntt(['status'])
+    assert.equal(r.code, 1, r.err)
+    assert.match(first(r.out), /, not clean; 1 open, 0 replied, 0 closed/)
+    assert.match(r.out, /^ {2}f1 blocker confirmed a\.ts:1 — wrong$/m)
+
+    assert.equal(lntt(['reply', 'f1', 'no'], { FAKE_REPLY: 'kept\\nstill wrong' }).code, 1)
+    const kept = json()
+    assert.equal(kept.code, 1)
+    assert.deepEqual(
+      kept.out.state.open.map((f: { id: string }) => f.id),
+      ['f1'],
+    )
+    assert.deepEqual(kept.out.state.replied[0].reply, { answer: 'no', withdrawn: false })
+
+    assert.equal(lntt(['reply', 'f1', 'line 1 is the point'], { FAKE_REPLY: 'withdrawn\\nfair' }).code, 0)
+    const withdrawn = json()
+    assert.equal(withdrawn.code, 0)
+    assert.deepEqual(withdrawn.out.state.open, [])
+    assert.deepEqual(
+      withdrawn.out.state.replied.map((f: { id: string; verdict: string }) => [f.id, f.verdict]),
+      [['f1', 'withdrawn']],
+    )
+    assert.deepEqual(
+      withdrawn.out.state.closed.map((c: { id: string; outcome: string }) => [c.id, c.outcome]),
+      [['f1', 'refuted']],
+    )
+    assert.match(first(lntt(['status']).out), /, clean; 0 open, 1 replied, 1 closed/)
+  })
+
+  test('a reviewer that failed: exit 1 and its line', () => {
+    assert.equal(lntt(['--base', 'main'], { FAKE_FAIL_REVIEW: '1' }).code, 1)
+    const r = lntt(['status'])
+    assert.equal(r.code, 1, r.err)
+    assert.match(first(r.out), /reviewed nothing, not clean; 0 open, 0 replied, 0 closed, 1 failed/)
+    assert.match(r.out, /^ {2}code · claude sonnet failed: claude exited 1: boom$/m)
+  })
+
+  test('at the limit: exit 3, said, atLimit true', () => {
+    const config = JSON.parse(CONFIG)
+    config.delivery.review.maxRounds = 1
+    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify(config))
+    git('commit', '-qam', 'maxRounds 1')
+    assert.equal(lntt(['--base', 'main'], blocker).code, 1)
+    const r = lntt(['status'])
+    assert.equal(r.code, 3, r.err)
+    assert.match(first(r.out), /^lntt review: feat\/1\/x: round 1 of 1, reviewed \w+, not clean, at the limit; 1 open/)
+    const j = json()
+    assert.equal(j.code, 3)
+    assert.equal(j.out.state.atLimit, true)
+    assert.equal(j.out.state.limit, 1)
+  })
+
+  test("another branch's state is named as such, with no finding of it; a detached HEAD has no round", () => {
+    assert.equal(lntt(['--base', 'main'], blocker).code, 1)
+    git('switch', '-qc', 'feat/2/y')
+    const r = lntt(['status'])
+    assert.equal(r.code, 4, r.err)
+    assert.match(
+      r.out,
+      /^lntt review: no round on feat\/2\/y; the state here is feat\/1\/x's, round 1, \d{4}-\d\d-\d\d \d\d:\d\d: pnpm exec lntt review status --clear removes it\n$/,
+    )
+    assert.doesNotMatch(r.out, /f1/)
+    const j = json()
+    assert.equal(j.code, 4)
+    assert.equal(j.out.branch, 'feat/2/y')
+    assert.equal(j.out.state.branch, 'feat/1/x')
+    assert.equal(j.out.state.current, false)
+
+    git('switch', '-q', '--detach')
+    const detached = lntt(['status'])
+    assert.equal(detached.code, 4)
+    assert.match(detached.out, /^lntt review: no round on detached HEAD; the state here is feat\/1\/x's/)
+    const dj = json()
+    assert.equal(dj.code, 4)
+    assert.equal(dj.out.branch, null)
+    assert.equal(dj.out.state.current, false)
+  })
+
+  test('no state: exit 4, and state null', () => {
+    const r = lntt(['status'])
+    assert.equal(r.code, 4, r.err)
+    assert.equal(r.out, 'lntt review: no round on feat/1/x yet\n')
+    assert.deepEqual(json().out, { branch: 'feat/1/x', running: null, state: null })
+  })
+
+  test('a state that cannot be read: an error, exit 1, and --clear removes it', () => {
+    for (const text of ['{', 'null', '[]', '{"branch":"feat/1/x","round":1,"reviewed":null}']) {
+      writeFileSync(gitDir('lntt-review.json'), text)
+      const r = lntt(['status'])
+      assert.equal(r.code, 1, text)
+      assert.match(
+        r.err,
+        /^lntt review: error: .*lntt-review\.json cannot be read: pnpm exec lntt review status --clear removes it$/m,
+        text,
+      )
+    }
+    const cleared = lntt(['status', '--clear'])
+    assert.equal(cleared.code, 0, cleared.err)
+    assert.match(cleared.out, /^lntt review: cleared an unreadable state: its state$/m)
+    assert.ok(!existsSync(gitDir('lntt-review.json')))
+  })
+
+  test('a state written before a field existed reads with its default', () => {
+    const r = lntt(['--base', 'main'], {
+      FAKE_REVIEW: '- [note] a.ts:1 — n — fix\\n- [blocker] .agents/config.jsonc:1 — b — fix',
+      FAKE_VERIFY: 'confirmed\\np',
+    })
+    assert.equal(r.code, 1, r.err)
+    const old = state()
+    delete old.result.blocking
+    delete old.result.skipped
+    writeFileSync(gitDir('lntt-review.json'), JSON.stringify(old))
+    const summary = lntt(['status'])
+    assert.equal(summary.code, 1, summary.err)
+    assert.match(
+      summary.out,
+      /^ {2}f\d blocker confirmed \.agents\/config\.jsonc:1 — b\n {2}f\d note unverified a\.ts:1 — n$/m,
+    )
+    const json = JSON.parse(lntt(['status', '--json']).out)
+    assert.deepEqual(json.state.blocking, ['blocker', 'warning'])
+    assert.deepEqual(json.state.skipped, [])
+  })
+
+  test('a branch with no commit yet is named, not taken for a detached HEAD', () => {
+    git('switch', '-q', '--orphan', 'feat/9/new')
+    const r = lntt(['status'])
+    assert.equal(r.code, 4)
+    assert.match(r.out, /^lntt review: no round on feat\/9\/new yet$/m)
+  })
+
+  test('a lock created an instant ago is no round running yet, and --clear waits for it', () => {
+    git('switch', '-qc', 'feat/2/y')
+    writeFileSync(gitDir('lntt-review.lock'), '')
+    const r = lntt(['status', '--json'])
+    assert.equal(JSON.parse(r.out).running, null)
+    assert.doesNotMatch(lntt(['status']).out, /running/)
+    const cleared = lntt(['status', '--clear'])
+    assert.equal(cleared.code, 1)
+    assert.match(cleared.err, /a round is running in this worktree \(pid starting\): nothing cleared/)
+  })
+
+  test('in a linked worktree and in the main checkout, each reads its own state', () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-review-wt-')))
+    const wt = join(dir, 'wt')
+    const main = repo
+    try {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      git('worktree', 'add', '-q', '-b', 'feat/3/z', wt, 'main')
+      repo = wt
+      writeFileSync(join(wt, 'a.ts'), 'export const a = 3\n')
+      git('commit', '-qam', 'another change')
+      assert.equal(lntt(['--base', 'main'], blocker).code, 1)
+      const linked = lntt(['status'])
+      assert.equal(linked.code, 1, linked.err)
+      assert.match(first(linked.out), /^lntt review: feat\/3\/z: round 1 of 4/)
+      repo = main
+      const own = lntt(['status'])
+      assert.equal(own.code, 0, own.err)
+      assert.match(first(own.out), /^lntt review: feat\/1\/x: round 1 of 4, reviewed \w+, clean/)
+      assert.doesNotMatch(own.out, /f1|feat\/3\/z/)
+    } finally {
+      repo = main
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('a round running: reported with its pid, and --clear refused with nothing removed', () => {
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    git('switch', '-qc', 'feat/2/y')
+    const sleeper = spawn('sleep', ['30'], { stdio: 'ignore' })
+    try {
+      writeFileSync(gitDir('lntt-review.lock'), String(sleeper.pid))
+      const r = lntt(['status'])
+      assert.equal(r.code, 4)
+      assert.match(r.out, new RegExp(`; a round is running \\(pid ${sleeper.pid}\\)\\n$`))
+      assert.equal(json().out.running, sleeper.pid)
+      const clear = lntt(['status', '--clear'])
+      assert.equal(clear.code, 1)
+      assert.match(clear.err, /^lntt review: error: /m)
+      assert.equal(existsSync(gitDir('lntt-review.json')), true)
+      assert.equal(readFileSync(gitDir('lntt-review.lock'), 'utf8'), String(sleeper.pid))
+    } finally {
+      sleeper.kill()
+    }
+  })
+
+  test("--clear: refused on the current unmerged branch; another branch's state, ledger and progress go, the lock stays", () => {
+    assert.equal(lntt(['--base', 'main'], blocker).code, 1)
+    assert.equal(lntt(['reply', 'f1', 'fair'], { FAKE_REPLY: 'withdrawn\\nfair' }).code, 0)
+    const refused = lntt(['status', '--clear'])
+    assert.equal(refused.code, 1)
+    assert.match(
+      refused.err,
+      /^lntt review: error: the state is feat\/1\/x's, the current branch, and it is not merged: nothing cleared$/m,
+    )
+    assert.equal(existsSync(gitDir('lntt-review.json')), true)
+
+    git('switch', '-qc', 'feat/2/y')
+    const dead = spawnSync('true').pid as number
+    writeFileSync(gitDir('lntt-review.lock'), String(dead))
+    const r = lntt(['status', '--clear'])
+    assert.equal(r.code, 0, r.err)
+    assert.equal(r.out, "lntt review: cleared feat/1/x's state, ledger and progress\n")
+    assert.equal(existsSync(gitDir('lntt-review.json')), false)
+    assert.equal(existsSync(gitDir('lntt-review-ledger.json')), false)
+    assert.equal(existsSync(gitDir('lntt-review.progress')), false)
+    assert.equal(readFileSync(gitDir('lntt-review.lock'), 'utf8'), String(dead), 'the lock is never removed')
+
+    const nothing = lntt(['status', '--clear'])
+    assert.equal(nothing.code, 0)
+    assert.equal(nothing.out, 'lntt review: nothing to clear\n')
+  })
+
+  test('--clear on the current branch once it is merged into the base', () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-review-origin-')))
+    try {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      execFileSync('git', ['init', '-q', '--bare', '-b', 'main', join(dir, 'origin.git')])
+      git('remote', 'add', 'origin', join(dir, 'origin.git'))
+      git('push', '-q', 'origin', 'feat/1/x:main')
+      git('fetch', '-q', 'origin')
+      assert.equal(json().out.state.merged, true)
+      const r = lntt(['status', '--clear'])
+      assert.equal(r.code, 0, r.err)
+      assert.equal(r.out, "lntt review: cleared feat/1/x's state, ledger and progress\n")
+      assert.equal(existsSync(gitDir('lntt-review.json')), false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('--clear with --json, and an unknown flag: usage, exit 2', () => {
+    assert.equal(lntt(['status', '--clear', '--json']).code, 2)
+    assert.equal(lntt(['status', '--nope']).code, 2)
+  })
+})

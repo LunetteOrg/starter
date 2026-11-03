@@ -645,6 +645,9 @@ export type Verdict = Outcome | 'unverified' | 'withdrawn'
 export interface Checked extends Found {
   verdict: Verdict
   proofs: Proof[]
+  // The author's last answer through `lntt review reply`, and whether its reviewers
+  // withdrew the finding: a kept finding stays open with the answer it got.
+  reply?: { answer: string; withdrawn: boolean }
 }
 
 export interface RoundResult {

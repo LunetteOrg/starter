@@ -116,6 +116,10 @@
 //                             the author's answer, to the sessions of the reviewers who found it
 //   lntt review allow <rounds>
 //                             more rounds for the current branch, past delivery.review.maxRounds
+//   lntt review status [--json] [--clear]
+//                             the worktree's review state: a summary, or the whole with --json; exit
+//                             0 clean, 1 to act on, 3 at the limit, 4 no round on this branch.
+//                             --clear removes another or a merged branch's state, ledger, progress
 //
 //   lntt worktree start --issue <n> [--issue <n>]... [--host orca|herdr|git]
 //                       [--kind <agent>] [--model <id>] [--effort <level>] [--no-agent]

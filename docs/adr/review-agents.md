@@ -66,7 +66,11 @@ same way every time; the `review` skill keeps the judgement.
   `lntt` command resolves: [worktree tooling](./worktree-tooling.md#decision)), later ones the commits after the
   last reviewed one, with fresh reviewers; findings still open go back to the verifiers
   on the new head, except notes and the warnings the ledger accepted open (below). The
-  state stays in the worktree's git directory. A
+  state stays in the worktree's git directory, each worktree with its own, and is read
+  with `lntt review status` (a summary, or `--json`), never from those files; a state
+  left by another branch is reported as that branch's, and `lntt review status --clear`
+  removes the state, ledger and progress of another branch or a merged one, never while
+  a round holds the lock. A
   clean round (exit 0) has no blocker or warning left and no reviewer or verifier that
   failed; notes are reported, never blocking. Past `warningRounds` a round is clean with
   warnings left too (below). A finding is a bullet with its severity,
