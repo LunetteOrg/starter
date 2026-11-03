@@ -1544,6 +1544,8 @@ describe("the cost of a branch's rounds", () => {
     assert.deepEqual(late.unrecorded, [1, 2])
     assert.equal(late.line, '1 round, 1.5k tokens, 0.01 USD; not recorded: rounds 1, 2')
     assert.equal(reviewCost([cost(2, 1500, 0.01)]).line, '1 round, 1.5k tokens, 0.01 USD; not recorded: round 1')
+    assert.deepEqual(reviewCost([cost(1, 1500, 0.01), cost(3, 1500, 0.01)]).unrecorded, [2])
+    assert.equal(reviewCost([], 2).line, 'no rounds; not recorded: rounds 1, 2')
     assert.equal(reviewCost([cost(1, 2_000_000, 3)]).line, '1 round, 2M tokens, 3.00 USD')
   })
 

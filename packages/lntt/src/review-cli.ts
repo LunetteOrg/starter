@@ -130,6 +130,12 @@ function ledgerPath(): string {
   return join(git('rev-parse', '--absolute-git-dir'), 'lntt-review-ledger.json')
 }
 
+// A state saved before the rounds were kept: the rounds it ran, none of them with a cost.
+// A state of this version keeps `rounds` (empty too) and its gaps show in the numbers.
+function legacyRounds(state: ReviewState | null): number {
+  return state && state.rounds === undefined ? state.round : 0
+}
+
 // A ledger that cannot be read (a write cut short) costs the reviewers what it told them,
 // not the round: it is said, and the branch starts a new one.
 function readLedger(branch: string): Closed[] {
@@ -219,7 +225,7 @@ function stopAtLimit(
     ...open.map((f) => `${f.id} (${f.severity}, ${f.verdict})`),
     ...failed.map((f) => `${f.lens} · ${f.agent} failed`),
   ]
-  const cost = reviewCost(own?.rounds ?? [])
+  const cost = reviewCost(own?.rounds ?? [], legacyRounds(own))
   const passing = `round ${round} would pass delivery.review.maxRounds (${config.maxRounds})${allowed > 0 ? ` and ${allowed} allowed` : ''}`
   const still = listed.length === 0 ? 'nothing' : listed.join(', ')
   stderr.write(
@@ -256,7 +262,13 @@ function stopAtLimit(
     ...(asked ? { asked } : {}),
   })
   // The branch's total so far, with its line: what the pull request's Review cost takes.
-  const total = { rounds: cost.rounds, tokens: cost.tokens, usd: cost.usd, line: cost.line }
+  const total = {
+    rounds: cost.rounds,
+    tokens: cost.tokens,
+    usd: cost.usd,
+    unrecorded: cost.unrecorded,
+    line: cost.line,
+  }
   stdout.write(
     `${JSON.stringify({ limit: { round, maxRounds: config.maxRounds, allowed }, findings: open, failed, total, ...(asked ? { asked } : {}) }, null, 2)}\n`,
   )
@@ -801,10 +813,10 @@ function cost(args: string[]): number {
   const branch = git('rev-parse', '--abbrev-ref', 'HEAD')
   const state = readState()
   const rounds = state?.branch === branch ? (state.rounds ?? []) : []
-  const total = reviewCost(rounds)
+  const total = reviewCost(rounds, legacyRounds(state?.branch === branch ? state : null))
   stdout.write(
     values.json
-      ? `${JSON.stringify({ branch, rounds, total: { rounds: total.rounds, tokens: total.tokens, usd: total.usd, line: total.line } }, null, 2)}\n`
+      ? `${JSON.stringify({ branch, rounds, total: { rounds: total.rounds, tokens: total.tokens, usd: total.usd, unrecorded: total.unrecorded, line: total.line } }, null, 2)}\n`
       : `${total.line}\n`,
   )
   return 0

@@ -113,8 +113,7 @@ same way every time; the `review` skill keeps the judgement.
   warning (the file stays valid), and so do `lntt review --plan` and every round.
 - **A branch takes at most `maxRounds` rounds:** later rounds find ever smaller things,
   and most of a pull request's time and cost went into them. Every round counts, one
-  with a failure too. Past the last allowed round no fix is made: a commit waits for the
-  round the person grants to review it. The round past the limit does not start; `lntt review` exits 3
+  with a failure too. The round past the limit does not start; `lntt review` exits 3
   with what is still open (the findings not withdrawn and the failures of the last
   round), and the person decides: the pull request as it is, more rounds for that
   branch (`lntt review allow <rounds>`, kept in its state, the configuration
@@ -196,6 +195,8 @@ same way every time; the `review` skill keeps the judgement.
   the calls, a trial round against the real tools confirms them.
 - opencode reports no cost: a round's `cost` covers only the agents that report it, and
   the cost line names, round by round, the agents that reported no tokens or no USD.
+  A state saved before `rounds` existed has no cost for its rounds: the line names them
+  (`not recorded: rounds 1, 2`) and `total.unrecorded` lists them.
 - The diff and the files a reviewer reads go to the provider of each configured agent,
   with that provider's terms on data (free models among them). Configuring an agent is
   the project's choice; `lntt review` names the destinations in `--plan` and in every

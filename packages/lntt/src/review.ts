@@ -404,7 +404,8 @@ export interface ReviewCost {
 
 // The branch's total: the exact sums, and the line with the tokens rounded as the progress
 // shows them and the USD to the cent. A sum no round reported is `no tokens`, `no USD`.
-export function reviewCost(rounds: RoundCost[]): ReviewCost {
+// `ran`: the rounds a state saved before `rounds` existed ran, named with no entry at all.
+export function reviewCost(rounds: RoundCost[], ran = 0): ReviewCost {
   const sum = (values: (number | null)[]) =>
     values.reduce<number | null>((total, v) => (v === null ? total : (total ?? 0) + v), null)
   const tokens = sum(rounds.map((r) => r.tokens))
@@ -414,21 +415,21 @@ export function reviewCost(rounds: RoundCost[]): ReviewCost {
   const noUsd = rounds.filter((r) => r.noUsd.length > 0)
   // Round numbers go up by one for each round that read files: a gap is a round not kept.
   const kept = new Set(rounds.map((r) => r.round))
-  const last = Math.max(0, ...kept)
+  const last = Math.max(ran, ...kept)
   const unrecorded = Array.from({ length: last }, (_, i) => i + 1).filter((n) => !kept.has(n))
   const which = (word: string, listed: RoundCost[], agents: (r: RoundCost) => string[]) =>
     listed.length === 0
       ? ''
       : `; no ${word}: ${listed.map((r) => `round ${r.round} (${agents(r).join(', ')})`).join(', ')}`
   const line =
-    rounds.length === 0
+    (rounds.length === 0
       ? 'no rounds'
       : `${rounds.length} ${rounds.length === 1 ? 'round' : 'rounds'}, ${tokens === null ? 'no tokens' : formatTokens(tokens)}, ${usd === null ? 'no USD' : `${usd.toFixed(2)} USD`}` +
         which('tokens', noTokens, (r) => r.noTokens) +
-        which('USD', noUsd, (r) => r.noUsd) +
-        (unrecorded.length === 0
-          ? ''
-          : `; not recorded: ${unrecorded.length === 1 ? 'round' : 'rounds'} ${unrecorded.join(', ')}`)
+        which('USD', noUsd, (r) => r.noUsd)) +
+    (unrecorded.length === 0
+      ? ''
+      : `; not recorded: ${unrecorded.length === 1 ? 'round' : 'rounds'} ${unrecorded.join(', ')}`)
   return {
     rounds: rounds.length,
     tokens,

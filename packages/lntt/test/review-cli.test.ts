@@ -1236,7 +1236,7 @@ describe("the cost of the branch's rounds", () => {
     assert.deepEqual(JSON.parse(lntt(['cost', '--json']).out), {
       branch: 'feat/1/x',
       rounds,
-      total: { rounds: 2, tokens: 4500, usd: 0.03, line: '2 rounds, 4.5k tokens, 0.03 USD' },
+      total: { rounds: 2, tokens: 4500, usd: 0.03, unrecorded: [], line: '2 rounds, 4.5k tokens, 0.03 USD' },
     })
 
     // No new commit: no round more, and nothing added. Nor by a reply, nor by allow.
@@ -1274,7 +1274,8 @@ describe("the cost of the branch's rounds", () => {
     const saved = JSON.parse(readFileSync(path, 'utf8'))
     delete saved.rounds
     writeFileSync(path, JSON.stringify({ ...saved, round: 2 }))
-    assert.equal(lntt(['cost']).out, 'no rounds\n')
+    assert.equal(lntt(['cost']).out, 'no rounds; not recorded: rounds 1, 2\n')
+    assert.deepEqual(JSON.parse(lntt(['cost', '--json']).out).total.unrecorded, [1, 2])
     commit(9)
     assert.match(
       lntt(['--base', 'main']).err,
@@ -1308,7 +1309,7 @@ describe("the cost of the branch's rounds", () => {
     assert.equal(r.code, 3, r.err)
     const line = '1 round, 3k tokens, 0.02 USD'
     assert.match(r.err, new RegExp(`^lntt review: branch total: ${line.replace(/\./g, '\\.')}$`, 'm'))
-    assert.deepEqual(JSON.parse(r.out).total, { rounds: 1, tokens: 3000, usd: 0.02, line })
+    assert.deepEqual(JSON.parse(r.out).total, { rounds: 1, tokens: 3000, usd: 0.02, unrecorded: [], line })
     const dir = join(repo, '.git/lntt-messages/to-orchestrator')
     const [file] = readdirSync(dir).filter((name) => name.endsWith('.md') && !name.endsWith('.answer.md'))
     assert.match(readFileSync(join(dir, file as string), 'utf8'), new RegExp(`^review cost: ${line}$`, 'm'))
