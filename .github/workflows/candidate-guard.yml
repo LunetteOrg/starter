@@ -1,0 +1,61 @@
+name: Candidate guard
+
+# The `candidate guard` check: a pull request into the default branch is the candidate,
+# a hotfix (delivery.candidate.hotfix: branch prefix or label) or Dependabot's, or the
+# candidate automation did not move it, and the check fails with the remedy
+# (`pnpm exec lntt ci candidate --pr <n>`). A pull request into any other branch passes
+# at once. The logic: `lntt ci candidate --guard` (packages/lntt/src/ci/candidate.ts);
+# the flow: docs/process/delivery.md.
+#
+# The ruleset of the default branch requires this check, where the plan has rulesets: a
+# required check that never reports blocks the merge, so the guard holds when Actions
+# drops every event of a pull request. Without rulesets (a private repository on Free)
+# it runs the same and only shows red.
+#
+# It runs on every event that changes the answer: the base (`edited`, which the
+# automation's move fires), the hotfix label, a new head (a required check is read on
+# the head commit), drafts included. Every run gives a result, green or red: a skipped
+# job would read as passed. It reads only the event: no token, no write. The script is
+# the pull request's own, like this file.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited, labeled, unlabeled, ready_for_review]
+
+permissions: {}
+
+jobs:
+  guard:
+    # The check's name, as the ruleset requires it.
+    name: candidate guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - id: base
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+          DEFAULT: ${{ github.event.repository.default_branch }}
+        run: |
+          if [ "$BASE" = "$DEFAULT" ]; then
+            echo "guard=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "candidate guard: it targets $BASE, not $DEFAULT: nothing to guard."
+          fi
+      - if: steps.base.outputs.guard == 'true'
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - if: steps.base.outputs.guard == 'true'
+        uses: pnpm/action-setup@v6
+      - if: steps.base.outputs.guard == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+      # Only @lntt/lntt and what it depends on.
+      - if: steps.base.outputs.guard == 'true'
+        run: pnpm install --frozen-lockfile --filter '@lntt/lntt...'
+      - name: A pull request into the default branch is the candidate, a hotfix or Dependabot's
+        if: steps.base.outputs.guard == 'true'
+        run: node packages/lntt/bin/lntt.ts ci candidate --guard

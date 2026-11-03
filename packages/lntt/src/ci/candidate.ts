@@ -66,6 +66,8 @@ export interface PullRequest {
   headRef: string
   labels: string[]
   merged: boolean
+  // The login of who opened it, when the source has it.
+  author?: string
 }
 
 export interface OpenPullRequest {
@@ -146,6 +148,35 @@ export function retargetDecision(
   if (headRef.startsWith(config.prefix)) return { move: false, reason: `${headRef} is a candidate` }
   if (isHotfix(config, { headRef, labels })) return { move: false, reason: `a hotfix stays on ${config.base}` }
   return { move: true, reason: `it targets ${config.base}` }
+}
+
+// Dependabot's pull requests stay on the base, where they are approved and merged
+// (docs/process/ci.md): its branch prefix and its login, as the event names it
+// (`dependabot[bot]`) or as gh does (`app/dependabot`).
+export function isDependabot({ headRef, author }: { headRef: string; author?: string }) {
+  return headRef.startsWith('dependabot/') && (author === 'dependabot[bot]' || author === 'app/dependabot')
+}
+
+// The guard on pull requests into the base (`lntt ci candidate --guard`, the
+// `candidate guard` check): a pull request into the base is the candidate, a hotfix or
+// Dependabot's, or the automation did not move it (an event GitHub dropped, a fork) and
+// the check fails with the remedy. Required by the base's ruleset, a check that never
+// reports blocks the merge too, so the guard holds when Actions drops every event.
+export function guardDecision(
+  config: CandidateConfig,
+  pr: { number: number; baseRef: string; headRef: string; labels?: string[]; author?: string },
+): { pass: boolean; reason: string } {
+  if (pr.baseRef !== config.base) return { pass: true, reason: `it targets ${pr.baseRef}, not ${config.base}` }
+  if (pr.headRef.startsWith(config.prefix)) return { pass: true, reason: `${pr.headRef} is the candidate` }
+  if (isHotfix(config, pr)) return { pass: true, reason: `a hotfix stays on ${config.base}` }
+  if (isDependabot(pr)) return { pass: true, reason: `a Dependabot pull request stays on ${config.base}` }
+  return {
+    pass: false,
+    reason:
+      `#${pr.number} targets ${config.base} and is neither the candidate nor a hotfix: the candidate automation did not move it ` +
+      `(an event GitHub dropped, a fork). Move it with \`pnpm exec lntt ci candidate --pr ${pr.number}\`, ` +
+      `or keep it on ${config.base} as a hotfix with the \`${config.hotfix.label}\` label. docs/process/delivery.md.`,
+  }
 }
 
 const CLOSING =
@@ -1409,6 +1440,7 @@ interface EventPullRequest {
   head: { ref: string }
   labels?: Array<{ name: string }>
   merged?: boolean
+  user?: { login: string } | null
 }
 
 export function prFromEvent(event: { pull_request: EventPullRequest }): PullRequest {
@@ -1421,6 +1453,7 @@ export function prFromEvent(event: { pull_request: EventPullRequest }): PullRequ
     headRef: pr.head.ref,
     labels: (pr.labels ?? []).map((label) => label.name),
     merged: Boolean(pr.merged),
+    ...(pr.user?.login ? { author: pr.user.login } : {}),
   }
 }
 
@@ -1433,7 +1466,7 @@ export function prFromGh(gh: Gh, repo: string, number: number): PullRequest {
       '--repo',
       repo,
       '--json',
-      'number,title,body,baseRefName,headRefName,labels,mergedAt',
+      'number,title,body,baseRefName,headRefName,labels,mergedAt,author',
     ]),
   ) as {
     number: number
@@ -1443,6 +1476,7 @@ export function prFromGh(gh: Gh, repo: string, number: number): PullRequest {
     headRefName: string
     labels: Array<{ name: string }>
     mergedAt: string | null
+    author?: { login: string } | null
   }
   return {
     number: pr.number,
@@ -1452,5 +1486,6 @@ export function prFromGh(gh: Gh, repo: string, number: number): PullRequest {
     headRef: pr.headRefName,
     labels: pr.labels.map((label) => label.name),
     merged: Boolean(pr.mergedAt),
+    ...(pr.author?.login ? { author: pr.author.login } : {}),
   }
 }

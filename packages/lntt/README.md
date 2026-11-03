@@ -665,6 +665,8 @@ lntt ci local --no-lock            # without waiting for the ci:local lock
 lntt ci candidate                     # in the candidate workflow: reads the pull_request or push event
 lntt ci candidate --pr 12 --dry-run   # from a terminal: what the workflow would do for #12, without following
 lntt ci candidate --follow --dry-run  # how the open candidate would follow the base, and why
+lntt ci candidate --guard             # in the guard workflow: is this pull request into the base where it belongs?
+lntt ci candidate --guard --pr 12     # the same check on #12, from a terminal
 ```
 
 ```sh
@@ -681,6 +683,11 @@ with a lease when no pull request is open into it, the base merged into it other
 comment on its pull request either way, or one naming the conflict. Without
 `--dry-run`, `--follow` pushes the candidate right away from the operator's clone (a
 force push with a lease on the rebase path): run it with `--dry-run` first.
+`--guard` only reads: a pull request into the base passes when it is the candidate, a
+hotfix (the branch prefix or the label of `delivery.candidate.hotfix`) or Dependabot's,
+and any pull request into another branch passes; any other one fails (exit 1) with an
+error annotation naming the remedy, `lntt ci candidate --pr <n>`. It takes no other
+flag but `--pr`.
 `--dry-run` prints the push and the comments; the fetch, merge and rebase still run on
 the local clone. The candidate logic is
 adapted from DiscenTech/pelion's `scripts/ci/release-candidate.mjs`. Exit codes: 0 green, 1 a red job or a

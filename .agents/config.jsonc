@@ -77,7 +77,8 @@
     "local": {
       "cloudOnly": {
         "release.yml": "publishes the @lntt packages to npm with the OIDC token of a published GitHub Release",
-        "candidate.yml": "moves pull requests and edits the candidate with the GitHub App's token"
+        "candidate.yml": "moves pull requests and edits the candidate with the GitHub App's token",
+        "candidate-guard.yml": "reads the pull request's labels and author from the event, which a local run does not have"
       }
     }
   },

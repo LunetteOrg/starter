@@ -65,8 +65,8 @@ jobs:
     # every merged pull request; every run also sweeps pull requests stranded on a
     # candidate that is no longer open onto the open one, and brings the open candidate
     # up to date with the default branch, so a dropped push is followed by the next
-    # run. A dropped `opened` is redone from a terminal with
-    # `pnpm exec lntt ci candidate --pr <n>`, a dropped push with
+    # run. A dropped `opened` turns the `candidate guard` check red (candidate-guard.yml)
+    # and is redone from a terminal with `pnpm exec lntt ci candidate --pr <n>`, a dropped push with
     # `pnpm exec lntt ci candidate --follow`; both run outside this group: one at a time.
     concurrency:
       group: candidate

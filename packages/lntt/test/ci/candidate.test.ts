@@ -20,6 +20,7 @@ import {
   type Gh,
   type Git,
   gitAuthEnv,
+  guardDecision,
   handle,
   handlePush,
   isAnnounced,
@@ -95,6 +96,34 @@ describe('isHotfix and retargetDecision', () => {
     assert.equal(retargetDecision(config, { ...pr, headRef: 'hotfix/x' }).move, false)
     assert.equal(retargetDecision(config, { ...pr, labels: ['hotfix'] }).move, false)
     assert.equal(retargetDecision({ ...config, base: 'trunk' }, pr).move, false)
+  })
+})
+
+describe('guardDecision', () => {
+  const pr = { number: 7, baseRef: 'main', headRef: 'feat/31/x', labels: [], author: 'octocat' }
+
+  test('a pull request into another branch, the candidate, a hotfix, a Dependabot one pass', () => {
+    assert.equal(guardDecision(config, { ...pr, baseRef: 'candidate/3' }).pass, true)
+    assert.equal(guardDecision(config, { ...pr, headRef: 'candidate/3' }).pass, true)
+    assert.equal(guardDecision(pelion, { ...pr, headRef: 'release/3' }).pass, true)
+    assert.equal(guardDecision(config, { ...pr, headRef: 'hotfix/login' }).pass, true)
+    assert.equal(guardDecision(config, { ...pr, labels: ['Hotfix'] }).pass, true)
+    const bump = { ...pr, headRef: 'dependabot/npm_and_yarn/vite-7.1.0' }
+    assert.equal(guardDecision(config, { ...bump, author: 'dependabot[bot]' }).pass, true)
+    // gh names the same bot app/dependabot.
+    assert.equal(guardDecision(config, { ...bump, author: 'app/dependabot' }).pass, true)
+  })
+
+  test('any other pull request into the base fails, with the remedy', () => {
+    const decision = guardDecision(config, pr)
+    assert.equal(decision.pass, false)
+    assert.match(decision.reason, /#7 targets main and is neither the candidate nor a hotfix/)
+    assert.match(decision.reason, /pnpm exec lntt ci candidate --pr 7/)
+    assert.match(decision.reason, /`hotfix` label/)
+    // A Dependabot branch from someone else, a person's branch named like Dependabot's.
+    assert.equal(guardDecision(config, { ...pr, headRef: 'dependabot/npm_and_yarn/x' }).pass, false)
+    assert.equal(guardDecision(config, { ...pr, author: 'dependabot[bot]' }).pass, false)
+    assert.equal(guardDecision(pelion, { ...pr, headRef: 'candidate/3' }).pass, false)
   })
 })
 

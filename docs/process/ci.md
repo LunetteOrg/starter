@@ -21,6 +21,7 @@ batch for what is expensive ([delivery](./delivery.md) has the flow):
 | A push to `main` | the full CI, which gates a release, unless its tree is one a full CI has [already proved](#a-tree-already-proved) |
 | A push to `main`, beside the CI | the [candidate automation](./delivery.md#the-candidate-automation) (`candidate.yml`), not CI: one short job that brings the open candidate, when there is one, up to date with `main` |
 | A Dependabot pull request | the `ci` check red in seconds, until an owner, member or collaborator approves it; the approval runs the CI the base calls for, and a later push turns it red again ([Dependabot pull requests](#dependabot-pull-requests)) |
+| Any pull request, drafts included, at each event that changes its base, labels or head | the [candidate guard](./delivery.md#a-pull-request-left-on-main) (`candidate-guard.yml`), not CI: one short job, green unless the pull request targets `main` and is neither the candidate, a hotfix nor Dependabot's |
 | A merge into a candidate | nothing |
 | Every day (the `schedule` of `upstream.yml`), or by hand (`workflow_dispatch`) | the [upstream check](#upstream-tools) of each new release of Orca, Herdr, claude and opencode |
 

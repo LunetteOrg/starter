@@ -65,7 +65,9 @@ stops at the draft pull request.
 
 **Merge methods are enforced** by repository rulesets: candidate branches
 (`refs/heads/candidate/*`) take squash merges only, `main` takes rebase merges only, and
-both take changes through pull requests only, with no required approval. The
+both take changes through pull requests only, with no required approval. `main`'s
+ruleset also requires the `ci` and `candidate guard` checks
+([a pull request left on `main`](#a-pull-request-left-on-main)). The
 repository admin role bypasses both: the release bump is a direct commit on `main`. The
 candidate app bypasses the candidates ruleset, and updates the open candidate when
 `main` moves ([the candidate](#the-candidate)): with no pull request open into it, it
@@ -230,7 +232,8 @@ own. A pull request moved by mistake goes back with the label and
 get no repository secrets, so no app token. A maintainer moves one onto the candidate with
 `pnpm exec lntt ci candidate --pr <n>`, or merges it on `main` as a hotfix. A
 Dependabot pull request runs the CI once an owner, member or collaborator approves it
-([CI](./ci.md#dependabot-pull-requests)).
+([CI](./ci.md#dependabot-pull-requests)), and merges on `main`: the guard lets it
+through. A fork's pull request is red on the guard until it is moved or labelled.
 
 The automation runs from a terminal too: `pnpm exec lntt ci candidate --pr <n>` does
 what the workflow would do on that pull request's event (move it, rebuild a
@@ -244,6 +247,64 @@ operator's clone at once (with a lease, forced, on the rebase path): it runs wit
 `--dry-run` first. A terminal run moves the board too, with the
 login of `gh`, which needs the `project` scope (`gh auth refresh -s project`). A terminal run is outside the workflow's
 concurrency group: run one at a time, and not while the workflow is running.
+
+### A pull request left on `main`
+
+GitHub sometimes starts no run at all for an event (in DiscenTech/pelion, on
+2026-10-30, a pull request opened as a draft into `main` and marked ready a minute later
+got no run of any workflow for forty minutes). A pull request whose `opened` and
+`ready_for_review` were dropped stays on `main`, and looks like one meant for it.
+
+- **The signal: the `candidate guard` check** (`.github/workflows/candidate-guard.yml`,
+  `lntt ci candidate --guard`). On a pull request into `main` it is green for the
+  candidate (the `delivery.candidate.prefix` branch), a hotfix (the hotfix prefix or
+  label) and a Dependabot pull request; any other pull request into `main` gets it red,
+  with the remedy in the error. On a pull request into any other branch it is green at
+  once. It runs on every event that can change the answer (opened, reopened, a push,
+  edited, labelled, unlabelled, ready), drafts included, so the automation's move
+  (an `edited` event) turns it green, and so does the hotfix label.
+- **The remedy:** `pnpm exec lntt ci candidate --pr <n>` moves it onto the open
+  candidate, as the automation would have; or, for a pull request meant for `main`,
+  the hotfix label. `pnpm exec lntt ci candidate --guard --pr <n>` gives the check's
+  answer from a terminal.
+- **Required, where the plan has rulesets.** `main`'s ruleset (*main: rebase merge
+  only*) requires both `candidate guard` and `ci`, each from GitHub Actions
+  (integration id 15368), so a red CI does not merge either:
+
+  ```json
+  {
+    "type": "required_status_checks",
+    "parameters": {
+      "strict_required_status_checks_policy": false,
+      "do_not_enforce_on_create": false,
+      "required_status_checks": [
+        { "context": "candidate guard", "integration_id": 15368 },
+        { "context": "ci", "integration_id": 15368 }
+      ]
+    }
+  }
+  ```
+
+  It is added to the ruleset's `rules` (Settings → Rules → Rulesets, or
+  `gh api -X PUT repos/<owner>/<repo>/rulesets/<id>` with the whole `rules` list), once
+  `candidate-guard.yml` is on `main`: before that, no pull request into `main` reports
+  the check. A required check that never reports blocks the merge, so the guard holds
+  when Actions drops every event of the pull request. Tried on a throwaway branch with
+  the same rules (#233): with the check never reported, `gh pr merge --rebase` is
+  refused ("the base branch policy prohibits the merge") and offers `--admin`; with
+  `ci` red, a review that adds a skipped `ci` run leaves the pull request blocked.
+- **The admin bypass stays, for an emergency, and is silent outside `gh`.** The
+  repository admin role bypasses the ruleset: `gh pr merge` merges a blocked pull
+  request only with `--admin`, but an admin's merge through the REST API
+  (`PUT /repos/<owner>/<repo>/pulls/<n>/merge`) goes through with nothing asked, and
+  so does the web page's bypass box. An agent never merges, so neither path is an
+  agent's.
+- **Without rulesets, visible only.** Rulesets on a private repository need GitHub Team
+  or above: a private repository on Free answers `gh api repos/<owner>/<repo>/rulesets`
+  with 403 ("Upgrade to GitHub Pro or make this repository public"), a public one or a
+  private one on Team lists its rulesets. Where the answer is 403, the workflow runs the
+  same and the check shows red on the pull request, but nothing blocks the merge: whoever
+  merges into `main` looks at the checks first.
 
 ## The candidate automation
 
@@ -304,6 +365,12 @@ and pull requests stay where they are opened. To turn it on:
    which the steps above do not create: `gh label create <name> --description "Stays
    on main, not on the candidate"`. Without it the label cannot be put on a pull
    request that must stay on `main`.
+
+7. **Require the checks on `main`** where the plan has rulesets: the
+   `required_status_checks` rule of
+   [a pull request left on `main`](#a-pull-request-left-on-main), added to *main:
+   rebase merge only* once `candidate-guard.yml` is on `main`. The guard needs no app
+   and no secret.
 
 **Rotating the key.** A pull request from this repository runs its own copy of the
 workflow file, with the app's key in reach, so anyone with write access can use the
@@ -471,5 +538,11 @@ because npm configures a trusted publisher only on a package that exists:
 - **One status per candidate** (`In candidate 3`). The options would multiply with the
   candidates and every move would rewrite one; the candidate's number is already in the
   issue's comment.
+- **A comment from the automation on a pull request it did not move.** The run that
+  would write it is the one GitHub dropped; a check that never reports, required,
+  still blocks the merge.
+- **Re-running the candidate automation on more events** (a push, an edit) to catch a
+  dropped `opened`. It narrows the window and moves nothing when every event of the
+  pull request is dropped, which is the case seen in pelion.
 - **A personal access token.** The writes would be one person's, with that person's
   rights on every repository they see, and they stop when the person leaves.
