@@ -292,7 +292,7 @@ describe('the Claude Code settings lntt sync writes', () => {
     assert.deepEqual(read().hooks.Stop, [{ hooks: [TYPECHECK_HOOK] }])
   })
 
-  test('a PostToolUse that is not a list is not the shape Claude Code reads', () => {
+  test('a PostToolUse entry whose hooks are not a list is not the shape Claude Code reads', () => {
     write({ hooks: { PostToolUse: [{ hooks: 'x' }] } })
     assert.deepEqual(
       off().map((c) => `${c.state} ${c.key}`),

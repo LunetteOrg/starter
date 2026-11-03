@@ -189,7 +189,9 @@ the agent up to 64 MB.
 
 `lntt hook` answers its settings line with an exit code: 0 nothing to report, 1 a
 typecheck failure not reported yet (the line exits 2, which wakes the agent with the
-output), 2 the usage, which an `lntt` older than `hook` also answers. A defect of the
+output), 2 the usage, which an `lntt` older than `hook` also answers. `lntt hook format`,
+the name of the line an earlier sync wrote, exits 0 and does nothing until `lntt sync`
+removes that line. A defect of the
 typecheck hook itself (its own error, a state it cannot read or write) never wakes the
 agent: it exits 0 with a `systemMessage`, which Claude Code gives the agent at its next
 turn. It is said once per session, told by the `session_id` of the hook input (a marker
