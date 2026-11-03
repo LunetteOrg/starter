@@ -79,6 +79,8 @@ The database tests of `@lntt/test-utils` need Docker: without it they skip local
 fail in CI.
 `pnpm ci:local` runs the CI workflows on the working tree before a push
 ([CI](./docs/process/ci.md)).
+mise is optional: in a shell that activates it, `mise.toml` puts `node_modules/.bin`
+on `PATH` and a bare `lntt` runs; without it, `pnpm exec lntt`.
 
 - The CLI is TypeScript run directly by Node in this repo and compiled to `dist/` when
   packed ([CLI runtime and publishing](./docs/adr/cli-runtime-and-publishing.md)).

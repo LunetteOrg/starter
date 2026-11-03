@@ -14,7 +14,7 @@ export {
 export { evaluateWhen } from './circleci-when.ts'
 export { type CiConfig, candidateConfig, ciConfig, emptyConfig } from './config.ts'
 export { containerCommand, missingTools } from './container.ts'
-export { defaultBranch, type Event, type EventName, localEvent } from './event.ts'
+export { defaultBranch, type Event, type EventName, type EventOptions, localEvent } from './event.ts'
 export { evaluate, interpolate } from './expressions.ts'
 export { githubJobs } from './github.ts'
 export { acquireLock, holdDeadline, type Lock, LockError, type LockScope, MAX_HOLD_MINUTES } from './lock.ts'

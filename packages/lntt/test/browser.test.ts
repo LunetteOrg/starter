@@ -343,7 +343,7 @@ describe('the command line', () => {
     writeApps({ web, admin: { ...web, port: 5174 } })
     const result = run(main, ['browser'])
     assert.equal(result.status, 1)
-    assert.match(result.stderr, /web, admin/)
+    assert.match(result.stderr, /name the app: pnpm exec lntt browser <app> \(local\.apps: web, admin\)/)
   })
 
   test('--json before the app name', () => {

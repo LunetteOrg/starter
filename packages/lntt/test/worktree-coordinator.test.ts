@@ -117,6 +117,8 @@ beforeEach(() => {
   const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, stdio: 'ignore' })
   git('init', '-q', '-b', 'main')
   git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init')
+  // The clone has fetched main: the worktrees start from origin/main.
+  git('update-ref', 'refs/remotes/origin/main', 'main')
 })
 afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
@@ -256,7 +258,7 @@ describe('lntt worktree start --theme (a coordinator’s child)', () => {
     const message = JSON.parse(asked.stdout.trim().split('\n')[0] as string)
     assert.match(
       message.question,
-      /Coordinator release-0-6-1 proposes to start:\n- #89: Board status for released issues \(on main\)/,
+      /Coordinator release-0-6-1 proposes to start:\n- #89: Board status for released issues \(on origin\/main\)/,
     )
     assert.deepEqual(creates(), [], 'nothing is created while the answer is awaited')
 

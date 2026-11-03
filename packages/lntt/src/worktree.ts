@@ -74,7 +74,7 @@ const BRIEF = join(AGENTS, 'brief.md')
 // the orchestrator otherwise; its issue tags the topic either way.
 export function waitingSection(issue: number, theme?: string): string {
   const to = theme ? `--to coordinator --theme ${theme}` : '--to orchestrator'
-  const ask = `lntt ask ${to} --issue ${issue}`
+  const ask = `pnpm exec lntt ask ${to} --issue ${issue}`
   return fill(readFileSync(join(AGENTS, 'waiting.md'), 'utf8'), { ask, issue }).trimEnd()
 }
 

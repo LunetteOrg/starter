@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-10-17
+date: 2026-11-02
 tags: [review, agents, models, cost, lntt]
 ---
 
@@ -62,7 +62,8 @@ same way every time; the `review` skill keeps the judgement.
   required verifier. The verdict counts the
   verifiers that answered: all confirm, confirmed; all refute, refuted, kept out of the
   author's list with the proofs; otherwise undecided.
-- **Rounds:** the first reads the branch from the base, later ones the commits after the
+- **Rounds:** the first reads the branch from the base (`--base`, else the one every
+  `lntt` command resolves: [worktree tooling](./worktree-tooling.md#decision)), later ones the commits after the
   last reviewed one, with fresh reviewers; findings still open go back to the verifiers
   on the new head, except notes and the warnings the ledger accepted open (below). The
   state stays in the worktree's git directory. A

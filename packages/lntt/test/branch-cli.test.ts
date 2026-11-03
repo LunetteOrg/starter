@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { type Clone, clone } from './clone.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
 
@@ -116,6 +117,12 @@ describe('lntt branch check', () => {
     assert.match(r.stderr, /rename it: git branch -m feat\/77\/branch-names/)
   })
 
+  test('with no name to derive, it says which command prints one', () => {
+    const r = lntt(['branch', 'check', '--branch', 'ilmeskio/probe-b'])
+    assert.equal(r.status, 1)
+    assert.match(r.stderr, /; rename it to the name pnpm exec lntt branch name --issue <n> prints$/m)
+  })
+
   test('lets the base through', () => {
     assert.equal(lntt(['branch', 'check']).status, 0)
   })
@@ -146,7 +153,7 @@ describe('lntt branch rename', () => {
     git('switch', '-q', '-c', 'ilmeskio/probe-b')
     const r = lntt(['branch', 'rename'])
     assert.equal(r.status, 0, 'a setup step must not fail on a name it cannot fix')
-    assert.match(r.stderr, /lntt branch name --issue/)
+    assert.match(r.stderr, /"\$\(pnpm exec lntt branch name --issue <n>\)"/)
     assert.equal(git('branch', '--show-current'), 'ilmeskio/probe-b')
   })
 
@@ -178,11 +185,16 @@ describe('lntt branch rename', () => {
 })
 
 describe('lntt worktree start', () => {
+  // The base is the remote's copy of main: a clone that has fetched it.
+  const fetched = () => git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+  beforeEach(fetched)
+
   test('in a plain terminal: a git worktree on the issue branch, setup run, the brief printed', () => {
     stub('gh', ISSUE_77)
     writeFileSync(join(repo, 'orca.yaml'), 'scripts:\n  setup: |\n    echo ready > setup-ran\n')
     git('add', '.')
     git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'setup')
+    fetched()
     const r = lntt(['worktree', 'start', '--issue', '77'])
     assert.equal(r.status, 0, r.stderr)
     const path = join(repo, '.worktrees', 'feat-77-branch-names-follow-type')
@@ -223,5 +235,135 @@ describe('lntt worktree start', () => {
   test('--host forces the adapter; an unknown one is a usage error', () => {
     assert.equal(lntt(['worktree', 'start', '--issue', '77', '--host', 'wave']).status, 2)
     assert.equal(lntt(['worktree', 'start']).status, 2)
+  })
+})
+
+describe('lntt worktree start: the base', () => {
+  let c: Clone
+  let calls: string
+
+  const CANDIDATE = JSON.stringify({ delivery: { candidate: { prefix: 'candidate/' } } })
+
+  // gh answers the issue and the open-candidate query, or fails that query.
+  function gh(open: 'candidate/13' | 'fails', issue = ISSUE_77): void {
+    const answer =
+      open === 'fails'
+        ? `echo 'error connecting to api.github.com' >&2; exit 1`
+        : `echo '[{"number":40,"headRefName":"${open}","body":""}]'`
+    writeFileSync(
+      join(stubs, 'gh'),
+      `#!/bin/sh\ncase "$*" in *"pr list"*) ${answer};; *) cat <<'EOF'\n${issue}\nEOF\n;; esac\n`,
+    )
+    chmodSync(join(stubs, 'gh'), 0o755)
+  }
+
+  // An orca or herdr that records its arguments and answers a worktree create.
+  function host(name: 'orca' | 'herdr'): void {
+    writeFileSync(
+      join(stubs, name),
+      `#!/bin/sh\necho "$*" >> "${calls}"\necho '{"result":{"worktree":{"path":"/w"}}}'\n`,
+    )
+    chmodSync(join(stubs, name), 0o755)
+  }
+
+  function start(config: string, ...args: string[]) {
+    writeFileSync(join(repo, '.agents/config.jsonc'), config)
+    return lntt(['worktree', 'start', '--issue', '77', ...args], { GITHUB_REPOSITORY: 'o/r' })
+  }
+
+  const worktreeHead = () =>
+    execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: join(repo, '.worktrees', 'feat-77-branch-names-follow-type'),
+      encoding: 'utf8',
+    }).trim()
+
+  beforeEach(() => {
+    c = clone(join(tmp, 'c'), { '.agents/config.jsonc': '{}' })
+    repo = c.repo
+    calls = join(tmp, 'calls')
+  })
+
+  test('with no candidate: origin/main, not the stale local main', () => {
+    gh('candidate/13')
+    const r = start('{}')
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(worktreeHead(), c.main)
+  })
+
+  test('with a candidate open: the candidate, on every host', () => {
+    gh('candidate/13')
+    const r = start(CANDIDATE)
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(worktreeHead(), c.candidate)
+    assert.match(r.stderr, /origin\/candidate\/13: the open candidate/)
+
+    host('orca')
+    host('herdr')
+    assert.equal(
+      lntt(['worktree', 'start', '--issue', '77', '--host', 'orca', '--no-agent'], { GITHUB_REPOSITORY: 'o/r' }).status,
+      0,
+    )
+    assert.equal(
+      lntt(['worktree', 'start', '--issue', '77', '--host', 'herdr', '--no-agent'], { GITHUB_REPOSITORY: 'o/r' })
+        .status,
+      0,
+    )
+    const [orca, herdr] = readFileSync(calls, 'utf8').trim().split('\n')
+    assert.match(orca as string, /--base-branch origin\/candidate\/13 /)
+    assert.match(herdr as string, /--base origin\/candidate\/13 /)
+  })
+
+  test('an explicit --base wins over the open candidate', () => {
+    gh('candidate/13')
+    const r = start(CANDIDATE, '--base', 'main')
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(worktreeHead(), c.main)
+  })
+
+  test('a hotfix issue: origin/main, with a candidate open', () => {
+    gh('candidate/13', JSON.stringify({ ...JSON.parse(ISSUE_77), labels: [{ name: 'hotfix' }] }))
+    const r = start(CANDIDATE)
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(worktreeHead(), c.main)
+    assert.match(r.stderr, /a hotfix goes into main/)
+  })
+
+  test('GitHub unreachable: origin/main, and it says so', () => {
+    gh('fails')
+    const r = start(CANDIDATE)
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(worktreeHead(), c.main)
+    assert.match(r.stderr, /the open candidate is unknown/)
+  })
+})
+
+describe('lntt branch check on a detached HEAD', () => {
+  let c: Clone
+
+  beforeEach(() => {
+    c = clone(join(tmp, 'c'), { '.agents/config.jsonc': '{}' })
+    repo = c.repo
+  })
+
+  test("at a candidate's head: the candidate's name, which passes", () => {
+    c.git('switch', '-q', '--detach', 'origin/candidate/13')
+    const r = lntt(['branch', 'check'])
+    assert.equal(r.status, 0, r.stderr)
+  })
+
+  test("at the head of a candidate under the configured prefix: that candidate's name", () => {
+    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify({ delivery: { candidate: { prefix: 'rc/' } } }))
+    c.git('update-ref', 'refs/remotes/origin/rc/2', 'origin/candidate/13')
+    c.git('update-ref', '-d', 'refs/remotes/origin/candidate/13')
+    c.git('switch', '-q', '--detach', 'refs/remotes/origin/rc/2')
+    const r = lntt(['branch', 'check'])
+    assert.equal(r.status, 0, r.stderr)
+  })
+
+  test('anywhere else: fails, and says HEAD is detached', () => {
+    c.git('switch', '-q', '--detach', 'origin/main')
+    const r = lntt(['branch', 'check'])
+    assert.equal(r.status, 1)
+    assert.match(r.stderr, /HEAD is detached/)
   })
 })

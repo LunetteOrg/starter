@@ -23,7 +23,7 @@ are `github-board`'s.
 
 ## 0. Read the board
 
-`lntt get board` and `lntt get cycle`; `docs/process/board.md` and `docs/process/cycle.md`
+`pnpm exec lntt get board` and `pnpm exec lntt get cycle`; `docs/process/board.md` and `docs/process/cycle.md`
 when they exist. **No `board` section:** stop, and propose one (`github-board`,
 section 0). **No `board.fields.horizon`:** stop, and propose it (`github-board`,
 section 0): the roadmap is the parents by horizon. Then resolve the ids

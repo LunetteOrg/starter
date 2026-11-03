@@ -61,10 +61,10 @@ describe('the brief', () => {
   test('the shipped template routes every wait to the orchestrator, with the issue', () => {
     const brief = renderBrief(undefined, { issue: 78, title: 'T', branch: 'feat/78/t', worktree: '/w' })
     assert.match(brief, /## Every wait goes through the mailbox/)
-    assert.match(brief, /`lntt ask --to orchestrator --issue 78 "<…>"`/)
+    assert.match(brief, /`pnpm exec lntt ask --to orchestrator --issue 78 "<…>"`/)
     assert.match(brief, /1Password/)
-    assert.match(brief, /lntt ask --wait <id>/)
-    assert.match(brief, /re-read your mailbox:\n`lntt inbox --as child --issue 78`/)
+    assert.match(brief, /`pnpm exec lntt ask --wait <id>`/)
+    assert.match(brief, /re-read your mailbox:\n`pnpm exec lntt inbox --as child --issue 78`/)
   })
 })
 

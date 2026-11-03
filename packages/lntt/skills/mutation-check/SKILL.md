@@ -14,7 +14,7 @@ afterwards. Never edit it to fit one project.
 
 - Work from the worktree root, with the change saved: a mutation runs on the head with
   the uncommitted files laid over it.
-- `lntt get tests.levels` (or `pnpm exec lntt get tests.levels`). **No `tests.levels`:**
+- `pnpm exec lntt get tests.levels`. **No `tests.levels`:**
   stop and propose them (the test files you can see by level, lowest first, and the
   command that runs each); `mutate` has nothing to run without a level's `run`.
 
@@ -40,7 +40,7 @@ One mutation per line, from these, the one most likely to survive first:
 - the call removed.
 
 ```sh
-lntt check tests mutate <path:line> --text='<exactly as on the line>' --to='<mutated>'
+pnpm exec lntt check tests mutate <path:line> --text='<exactly as on the line>' --to='<mutated>'
 ```
 
 Write `--text=...` with the `=` when the text starts with `-`, and `--to=''` to delete

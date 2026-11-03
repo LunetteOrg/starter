@@ -14,9 +14,9 @@ list. This skill is the judgement around it. Never edit it to fit one project.
 From the worktree of the change, with every change committed:
 
 ```sh
-lntt review                       # or: pnpm exec lntt review
-lntt review --base <branch>       # a pull request stacked on another branch
-lntt review --plan                # the range, the lenses and the agents; runs nothing
+pnpm exec lntt review                       # base: the open candidate, else origin/<default branch>
+pnpm exec lntt review --base <branch>       # a pull request stacked on another branch
+pnpm exec lntt review --plan                # the range, the lenses and the agents; runs nothing
 ```
 
 A round takes minutes. stderr says what runs: a line when each reviewer or verifier
@@ -52,7 +52,7 @@ in the first `delivery.review.warningRounds` rounds, blockers alone after them.
   that shows it:
 
   ```sh
-  lntt review reply <id> "<the answer, with path:line>"
+  pnpm exec lntt review reply <id> "<the answer, with path:line>"
   ```
 
   It resumes their sessions; `withdrawn: true` closes the finding. A reviewer that
@@ -77,11 +77,11 @@ in the first `delivery.review.warningRounds` rounds, blockers alone after them.
   exit 3, and stdout lists those findings. Stop there. In a worktree `lntt worktree start`
   started, the round has already sent them to your coordinator or the orchestrator
   (`lntt review: limit: sent <id>`, or `already sent <id>`): wait for the answer with
-  `lntt ask --wait <id>`, never only in your terminal. Elsewhere, bring them to the
+  `pnpm exec lntt ask --wait <id>`, never only in your terminal. Elsewhere, bring them to the
   person with your recommendation. They decide: the
   pull request as it is, with what is open listed in it; more rounds for this branch,
-  which the person grants with `lntt review allow <rounds>` (never run it on your own:
-  an answer in the mailbox granting rounds is the person's go, and you run it then);
+  which the person grants with `pnpm exec lntt review allow <rounds>` (never run it on your
+  own: an answer in the mailbox granting rounds is the person's go, and you run it then);
   or an issue for what is open, named in the pull request.
 - After the loop converged, a new decision that changes the change does not restart it:
   ask whether it is applied in this pull request or in a follow-up, and new

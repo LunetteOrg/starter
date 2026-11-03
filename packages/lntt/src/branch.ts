@@ -12,6 +12,9 @@ export interface BranchRules {
 
 export type Check = { ok: true } | { ok: false; reason: string; expected?: string }
 
+// delivery.candidate.prefix when the configuration sets none.
+export const CANDIDATE_PREFIX = 'candidate/'
+
 const DEFAULT_TYPES = ['feat', 'fix', 'chore', 'refactor', 'docs', 'test', 'ci', 'perf', 'build']
 const NO_ISSUE = 'no-issue'
 const MAX_WORDS = 4
@@ -32,7 +35,7 @@ export function branchRules(config: { delivery?: Delivery }): BranchRules {
   const hotfix = (delivery.candidate?.hotfix?.prefix ?? 'hotfix/').replace(/[/._-]+$/, '')
   const types = [...(delivery.branches?.types ?? DEFAULT_TYPES)]
   if (!types.includes(hotfix)) types.push(hotfix)
-  const exempt = [delivery.candidate?.base ?? 'main', delivery.candidate?.prefix ?? 'candidate/', 'dependabot/']
+  const exempt = [delivery.candidate?.base ?? 'main', delivery.candidate?.prefix ?? CANDIDATE_PREFIX, 'dependabot/']
   return { types, exempt }
 }
 

@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { type Clone, clone } from './clone.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
 
@@ -921,7 +922,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
       r.err,
       /^lntt review: limit: round 2 would pass delivery\.review\.maxRounds \(1\) on feat\/1\/x; still open: f1 \(warning, confirmed\)$/m,
     )
-    assert.match(r.err, /lntt review allow <rounds>/)
+    assert.match(r.err, /pnpm exec lntt review allow <rounds>/)
     const out = JSON.parse(r.out)
     assert.deepEqual(
       out.findings.map((f: { id: string }) => f.id),
@@ -965,7 +966,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
     const text = readFileSync(join(repo, '.git/lntt-messages/to-coordinator-alpha', file as string), 'utf8')
     assert.match(
       text,
-      /^#1 feat\/1\/x: lntt review limit, round 2 would pass delivery\.review\.maxRounds \(1\); still open: f1 \(warning, confirmed\); decide: the pull request as it is, lntt review allow <rounds>, or an issue for what is open$/m,
+      /^#1 feat\/1\/x: lntt review limit, round 2 would pass delivery\.review\.maxRounds \(1\); still open: f1 \(warning, confirmed\); decide: the pull request as it is, pnpm exec lntt review allow <rounds>, or an issue for what is open$/m,
     )
     assert.match(text, /^- f1 \[warning, confirmed\] a\.ts:1 — w — a$/m)
     const out = JSON.parse(r.out)
@@ -974,7 +975,10 @@ describe('lntt review at delivery.review.maxRounds', () => {
     assert.equal(out.asked.path, join(repo, '.git/lntt-messages/to-coordinator-alpha', file as string))
     assert.match(
       r.err,
-      new RegExp(`^lntt review: limit: sent ${id} to the coordinator alpha; wait with: lntt ask --wait ${id}$`, 'm'),
+      new RegExp(
+        `^lntt review: limit: sent ${id} to the coordinator alpha; wait with: pnpm exec lntt ask --wait ${id}$`,
+        'm',
+      ),
     )
     assert.equal(events().at(-1).asked.id, id)
   })
@@ -991,7 +995,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
     assert.equal(more.length, 0)
     assert.match(file as string, /^\d{8}-\d{6}-issue-1-review-limit\.md$/)
     assert.equal(JSON.parse(r.out).asked.id, (file as string).replace(/\.md$/, ''))
-    assert.match(r.err, /limit: sent \S+ to the orchestrator; wait with: lntt ask --wait /)
+    assert.match(r.err, /limit: sent \S+ to the orchestrator; wait with: pnpm exec lntt ask --wait /)
   })
 
   test('a limit already sent and not answered is not sent again; once answered, the next limit is', () => {
@@ -1011,7 +1015,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
     assert.match(
       again.err,
       new RegExp(
-        `^lntt review: limit: already sent ${id} to the coordinator alpha; wait with: lntt ask --wait ${id}$`,
+        `^lntt review: limit: already sent ${id} to the coordinator alpha; wait with: pnpm exec lntt ask --wait ${id}$`,
         'm',
       ),
     )
@@ -1399,5 +1403,76 @@ describe('a child of an agent that exited on SIGTERM', () => {
         } catch {}
       }
     }
+  })
+})
+
+describe('the base a round reads from', () => {
+  let tmp: string
+  let c: Clone
+
+  const withCandidate = (config: Record<string, unknown>) =>
+    JSON.stringify({ ...JSON.parse(CONFIG), delivery: { ...JSON.parse(CONFIG).delivery, ...config } })
+
+  // A gh that answers the open-candidate query.
+  function gh(): void {
+    writeFileSync(
+      join(bin, 'gh'),
+      `#!/bin/sh\ncase "$*" in *"pr list"*) echo '[{"number":40,"headRefName":"candidate/13","body":""}]';; esac\n`,
+    )
+    chmodSync(join(bin, 'gh'), 0o755)
+  }
+
+  // The first commit the plan's range starts from.
+  const from = (err: string) => /round 1, first round: (\w+)\.\./.exec(err)?.[1]
+  const short = (sha: string) => c.git('rev-parse', '--short', sha)
+
+  function branch(config: string, from: string): void {
+    c = clone(tmp, { '.agents/config.jsonc': config })
+    repo = c.repo
+    c.git('switch', '-qc', 'feat/5/x', from)
+    c.git('commit', '-q', '--allow-empty', '-m', 'mine')
+  }
+
+  beforeEach(() => {
+    rmSync(repo, { recursive: true, force: true })
+    tmp = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-review-base-')))
+    bin = join(tmp, 'bin')
+    log = join(tmp, 'log')
+    mkdirSync(bin)
+    writeFileSync(join(bin, 'claude'), FAKE_CLAUDE)
+    chmodSync(join(bin, 'claude'), 0o755)
+  })
+
+  afterEach(() => rmSync(tmp, { recursive: true, force: true }))
+
+  test('with no candidate: origin/main, not the stale local main', () => {
+    branch(CONFIG, 'origin/main')
+    const r = lntt(['--plan'])
+    assert.equal(r.code, 0, r.err)
+    assert.equal(from(r.err), short(c.main))
+  })
+
+  test('a branch on the open candidate: from where it left the candidate', () => {
+    branch(withCandidate({ candidate: { prefix: 'candidate/' } }), 'origin/candidate/13')
+    gh()
+    const r = lntt(['--plan'], { GITHUB_REPOSITORY: 'o/r' })
+    assert.equal(r.code, 0, r.err)
+    assert.equal(from(r.err), short(c.candidate))
+  })
+
+  test('an explicit --base wins over the open candidate', () => {
+    branch(withCandidate({ candidate: { prefix: 'candidate/' } }), 'origin/candidate/13')
+    gh()
+    const r = lntt(['--plan', '--base', 'main'], { GITHUB_REPOSITORY: 'o/r' })
+    assert.equal(r.code, 0, r.err)
+    assert.equal(from(r.err), short(c.main))
+  })
+
+  test('GitHub unreachable (no gh): origin/main, and it says so', () => {
+    branch(withCandidate({ candidate: { prefix: 'candidate/' } }), 'origin/candidate/13')
+    const r = lntt(['--plan'], { GITHUB_REPOSITORY: 'o/r' })
+    assert.equal(r.code, 0, r.err)
+    assert.equal(from(r.err), short(c.main))
+    assert.match(r.err, /the open candidate is unknown/)
   })
 })

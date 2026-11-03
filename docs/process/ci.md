@@ -83,8 +83,11 @@ push (a publish, a deploy) always run.
 
 - **Before a push leaves the machine for review**: `pnpm ci:local` green on the head
   about to be pushed. It refuses uncommitted changes, so the run is about that head.
-  Its default base is `main`, so it runs the full CI, a superset of the minimal one;
-  `--base <candidate> --list` shows what the minimal CI runs (the test step's choice,
+  Its default base is the one every `lntt` command resolves
+  ([worktree tooling](../adr/worktree-tooling.md#decision)): for a branch on the open
+  candidate, the candidate, so it runs the minimal CI; for the candidate's own head and
+  a branch off `origin/main`, `main`, so it runs the full CI. `--base <branch>` names
+  another one, and `--list` shows the base and what runs (the test step's choice,
   scaffold level or not, is made when it runs, from the diff against the base).
 - **On the candidate, before it is marked ready** ([delivery](./delivery.md#the-candidate)).
 - **`pnpm ci:local --list`** before changing a workflow: it shows, per job, what the
@@ -219,12 +222,18 @@ or a container to try a change to it.
 | Orca | GitHub Releases of `stablyai/orca` (the `.deb`) | the flags lntt passes, against `orca agent-context --json`; on a headless `orca serve`, `startOrca` with the real `claude` not logged in (path, handle, model, effort, brief) and with opencode's shell launch, and the review's subagents through Orca's hook script |
 | Herdr | GitHub Releases of `herdrdev/herdr` | the flags, against each subcommand's `--help`; on a headless `herdr server`, `startHerdr` through `agent start` and through the shell command Herdr detects |
 | claude | npm `@anthropic-ai/claude-code` | the flags, against `claude --help`; a one-line call on `haiku` whose JSON lntt parses, authenticated by Workload Identity Federation: the repository variables `ANTHROPIC_FEDERATION_RULE_ID`, `ANTHROPIC_ORGANIZATION_ID`, `ANTHROPIC_SERVICE_ACCOUNT_ID` and `ANTHROPIC_WORKSPACE_ID` and the job's GitHub OIDC token, with no stored key; without the variables, that call is skipped with a notice |
-| opencode | Homebrew's `opencode` formula | the flags, against `opencode run --help` and `opencode --help`; a one-line call on a free model whose JSON lntt parses |
+| opencode | Homebrew's `opencode` formula | the flags, against `opencode run --help` and `opencode --help`; a one-line call on a free model whose JSON lntt parses; when the model answers with a usage limit (an error event of type `provider.free-limit`, or status 429), that call is skipped (`t.skip`) with the provider's message |
 
 A version counts as checked once its cache entry `upstream-<tool>-<version>` exists, which
-the job saves green or red, unless the issue of a red could not be opened: that version is
-checked again the next day. GitHub evicts an entry left unused (its cache retention); the version
-is then checked again, and its issue, if any, stops a second one. `workflow_dispatch` takes
+the job saves green or red, unless the issue of a red could not be opened or the check
+was inconclusive (below): that version is checked again the next day. GitHub evicts an entry left unused (its cache retention);
+the version is then checked again, and its issue, if any, stops a second one.
+A check that proved nothing about its version is not recorded either: a test that meets a
+provider's usage limit (today the opencode call on a free model) skips with its message and
+writes it to the file `UPSTREAM_INCONCLUSIVE` names, the job leaves a notice, and no entry
+is saved, so a later run tries the version again. The skip opens no issue; the flags test
+still runs, and a real break in it still opens one (the issue then stops a second, as
+below). `workflow_dispatch` takes
 one tool and `force`, to check a version again; it is run from `main`, whose cache the
 scheduled runs use.
 
@@ -253,7 +262,8 @@ the board and the run leaves a notice saying so: it is put on the board with the
 `github-board` skill; a failure after the issue is added leaves it on the board with
 its status unset, and a notice saying so. When `board.issueTypes` names no Bug, or
 GitHub refuses the type (a validation error), the issue is opened with no type, with a
-notice. A red of `pnpm install` opens no issue,
+notice; when that second create fails too, the run fails with its error, no issue is
+opened and the board is not touched. A red of `pnpm install` opens no issue,
 since the script needs the install, and saves no entry: the version is checked again
 the next day.
 
