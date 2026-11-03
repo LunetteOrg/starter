@@ -14,26 +14,28 @@ name: Candidate
 # (packages/lntt/src/ci/candidate.ts); the flow:
 # docs/process/delivery.md.
 #
-# It runs on drafts too, on these three events only, never on a push. It writes with
-# the token of the organization's candidate GitHub App: until its client ID
-# (variable CANDIDATE_APP_CLIENT_ID) and private key (secret
+# When the default branch moves while a candidate is open (a hotfix, a Dependabot pull
+# request merged on it), the candidate follows it: with no pull request open into the
+# candidate, its commits are rebased on the default branch and pushed with a lease on
+# the head as read; with pull requests open into it, the default branch is merged into
+# it, no rewrite. A conflict or a refused push leaves the candidate as it is and says on
+# its pull request what an admin does. The push to the default branch runs only this
+# step and the sweep; every pull_request run runs them too, first, because the job's
+# concurrency group drops a pending run when a newer one arrives.
+#
+# It runs on drafts too, on these three pull_request events and on a push to the
+# default branch. It writes with the token of the organization's candidate GitHub App:
+# until its client ID (variable CANDIDATE_APP_CLIENT_ID) and private key (secret
 # CANDIDATE_APP_PRIVATE_KEY) exist, the job ends at its first step with a notice.
 on:
   pull_request:
     types: [opened, ready_for_review, closed]
+  # `main` is the default branch, repeated here as `candidate/` is in the job's
+  # condition: neither can read the configuration.
+  push:
+    branches: [main]
 
 permissions: {}
-
-# One run at a time across the repo: two pull requests opened together must not create
-# two candidates. GitHub keeps one running and one pending run per group, and a newer
-# pending run cancels the older one. A dropped merge into a candidate is recorded by
-# the next run, which rebuilds the lists from every merged pull request; every run
-# also sweeps pull requests stranded on a candidate that is no longer open onto the
-# open one. A dropped `opened` is redone from a terminal with
-# `pnpm exec lntt ci candidate --pr <n>`, which runs outside this group: one at a time.
-concurrency:
-  group: candidate
-  cancel-in-progress: false
 
 jobs:
   candidate:
@@ -41,17 +43,34 @@ jobs:
     # token: those stay where they were opened. Only the events with something to do
     # start a runner: a pull request opened or ready into the default branch, not a
     # candidate itself; a merge into another branch (a candidate); the candidate's own
-    # merge. `candidate/` is delivery.candidate.prefix, repeated here because a job's
-    # condition cannot read the configuration; the script decides the rest from it.
+    # merge; and every push to the default branch. `candidate/` is
+    # delivery.candidate.prefix, repeated here because a job's condition cannot read the
+    # configuration; the script decides the rest from it.
     if: >-
-      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.event_name == 'push' ||
+      (github.event.pull_request.user.login != 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       ((github.event.action != 'closed' &&
       github.event.pull_request.base.ref == github.event.repository.default_branch &&
       !startsWith(github.event.pull_request.head.ref, 'candidate/')) ||
       (github.event.action == 'closed' && github.event.pull_request.merged &&
       (github.event.pull_request.base.ref != github.event.repository.default_branch ||
-      startsWith(github.event.pull_request.head.ref, 'candidate/'))))
+      startsWith(github.event.pull_request.head.ref, 'candidate/')))))
+    # One run at a time across the repo: two pull requests opened together must not
+    # create two candidates. The group is the job's, so only a run whose job passes the
+    # condition above takes a slot: a skipped run (Dependabot, a fork, a pull request
+    # into a candidate) never replaces a pending one. GitHub keeps one running and one
+    # pending job per group, and a newer pending job cancels the older one. A dropped
+    # merge into a candidate is recorded by the next run, which rebuilds the lists from
+    # every merged pull request; every run also sweeps pull requests stranded on a
+    # candidate that is no longer open onto the open one, and brings the open candidate
+    # up to date with the default branch, so a dropped push is followed by the next
+    # run. A dropped `opened` is redone from a terminal with
+    # `pnpm exec lntt ci candidate --pr <n>`, a dropped push with
+    # `pnpm exec lntt ci candidate --follow`; both run outside this group: one at a time.
+    concurrency:
+      group: candidate
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -65,7 +84,7 @@ jobs:
           if [ -n "$CLIENT_ID" ] && [ "$HAS_KEY" = true ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice title=Candidate automation off::the variable CANDIDATE_APP_CLIENT_ID or the secret CANDIDATE_APP_PRIVATE_KEY is missing; pull request #${{ github.event.pull_request.number }} stays where it is (docs/process/delivery.md)"
+            echo "::notice title=Candidate automation off::the variable CANDIDATE_APP_CLIENT_ID or the secret CANDIDATE_APP_PRIVATE_KEY is missing; the ${{ github.event_name }} run changes nothing (docs/process/delivery.md)"
           fi
       # GITHUB_TOKEN may not open a pull request while the repository keeps "Allow
       # GitHub Actions to create and approve pull requests" off, and turning it on would
@@ -80,6 +99,23 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
           permission-issues: write
+      # GitHub attributes a commit to the app's bot only by the email
+      # <user id>+<slug>[bot]@users.noreply.github.com: the id is the bot user's. A
+      # failed read of the id is a warning, and the commits carry
+      # <slug>[bot]@users.noreply.github.com, which GitHub links to no account.
+      - id: bot
+        if: steps.credentials.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          id=$(gh api "/users/${SLUG}[bot]" --jq .id) || id=''
+          if [[ "$id" =~ ^[0-9]+$ ]]; then
+            echo "email=${id}+${SLUG}[bot]@users.noreply.github.com" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=Candidate bot id not read::the id of ${SLUG}[bot] could not be read; its commits carry ${SLUG}[bot]@users.noreply.github.com"
+            echo "email=${SLUG}[bot]@users.noreply.github.com" >> "$GITHUB_OUTPUT"
+          fi
       # The Projects permission is an organization permission of the app, asked in a
       # step of its own: a token request for a permission the app has not been granted
       # fails, and that must not stop the candidate. Without this token the script
@@ -94,11 +130,15 @@ jobs:
           permission-organization-projects: write
       # The script and the configuration come from the default branch; the workflow
       # file is the pull request's own, as for every pull_request run. A pull request
-      # from this repo gets nothing its author lacks, and a fork's gets no secrets.
+      # from this repo gets nothing its author lacks, and a fork's gets no secrets. The
+      # whole history: the candidate is rebased on, or merged with, the default branch
+      # in this clone. The script's git authenticates with GH_TOKEN through its own
+      # environment, so no credential is left in the clone.
       - if: steps.credentials.outputs.ready == 'true'
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
           persist-credentials: false
       - if: steps.credentials.outputs.ready == 'true'
         uses: pnpm/action-setup@v6
@@ -110,9 +150,14 @@ jobs:
       # Only @lntt/lntt and what it depends on.
       - if: steps.credentials.outputs.ready == 'true'
         run: pnpm install --frozen-lockfile --filter '@lntt/lntt...'
-      - name: Move or record the pull request, close or tell its issues
+      # The rebase and the merge commit are the app's: its bot is their committer.
+      - name: Move or record the pull request, close or tell its issues, follow the default branch
         if: steps.credentials.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PROJECTS_GH_TOKEN: ${{ steps.projects-token.outputs.token }}
+          GIT_AUTHOR_NAME: ${{ steps.app-token.outputs.app-slug }}[bot]
+          GIT_AUTHOR_EMAIL: ${{ steps.bot.outputs.email }}
+          GIT_COMMITTER_NAME: ${{ steps.app-token.outputs.app-slug }}[bot]
+          GIT_COMMITTER_EMAIL: ${{ steps.bot.outputs.email }}
         run: node packages/lntt/bin/lntt.ts ci candidate
