@@ -94,13 +94,9 @@ describe('the commands a hook runs', () => {
     assert.equal(spawnSync(process.execPath, [BIN, 'validate'], { cwd: root, encoding: 'utf8' }).status, 0)
   })
 
-  test('local.hooks.format is still accepted and ignored: validate says so, and stays valid', () => {
-    config({ hooks: { format: 'biome format --write', typecheck: 'tsc' } })
-    const r = spawnSync(process.execPath, [BIN, 'validate'], { cwd: root, encoding: 'utf8' })
-    assert.equal(r.status, 0)
-    assert.match(r.stderr, /^lntt validate: warning: local\.hooks\.format is ignored: .*pre-commit/m)
-    config({ hooks: { typecheck: 'tsc' } })
-    assert.equal(spawnSync(process.execPath, [BIN, 'validate'], { cwd: root, encoding: 'utf8' }).stderr, '')
+  test('local.hooks.format is gone: the schema refuses it', () => {
+    config({ hooks: { format: 'biome format --write' } })
+    assert.equal(spawnSync(process.execPath, [BIN, 'validate'], { cwd: root, encoding: 'utf8' }).status, 1)
   })
 })
 
@@ -353,21 +349,13 @@ describe('the hook lines of .claude/settings.json', () => {
 })
 
 describe('lntt hook usage', () => {
-  for (const args of [['hook', 'typecheck', 'extra'], ['hook', 'format', 'extra'], ['hook', 'lint'], ['hook']]) {
+  for (const args of [['hook', 'typecheck', 'extra'], ['hook', 'format'], ['hook', 'lint'], ['hook']]) {
     test(`lntt ${args.join(' ')} is a usage error, exit 2`, () => {
       const r = spawnSync(process.execPath, [BIN, ...args], { cwd: root, encoding: 'utf8', input: '' })
       assert.equal(r.status, 2)
       assert.match(r.stderr, /usage: lntt hook/)
     })
   }
-
-  // The line an earlier sync wrote for the format hook meets this lntt before its sync
-  // removes it: it exits 0 and says nothing, rather than telling the person to upgrade.
-  test('the format hook of an earlier sync does nothing, quietly', () => {
-    const r = spawnSync(process.execPath, [BIN, 'hook', 'format'], { cwd: root, encoding: 'utf8', input: '{}' })
-    assert.equal(r.status, 0)
-    assert.equal(r.stdout + r.stderr, '')
-  })
 
   // What an lntt older than `hook` does with it, which the settings lines read as exit 2.
   test('a command lntt does not know is a usage error, exit 2', () => {

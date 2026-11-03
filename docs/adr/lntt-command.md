@@ -221,9 +221,6 @@ So:
     the old name. Renaming one of the fixed areas of the
     [agent layer](./agent-layer.md#an-installed-skill-is-never-edited) is such a
     change, and these two releases are its coordination.
-  - A removed key that has no replacement and whose absence changes nothing stays
-    accepted by the schema, and `lntt validate` warns that it is ignored instead of
-    failing: `local.hooks.format`, since formatting is the pre-commit's.
 - **When the split's trigger fires**, the agent tools leave `@lntt/lntt` for a second
   command at its latest version, shipped with the plugin and through `npx`. The pinned
   group stays where it is. The skills become full files beside the agent tools and the

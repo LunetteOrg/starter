@@ -46,14 +46,6 @@ function write(value: unknown): void {
   writeFileSync(settings(), `${JSON.stringify(value, null, 2)}\n`)
 }
 
-// The format hook lntt sync wrote up to 0.6.3, told by its status message.
-const LEGACY_FORMAT = {
-  type: 'command',
-  command: 'an older line that ran lntt hook format',
-  timeout: 120,
-  statusMessage: 'lntt: formatting the file written',
-}
-
 const off = () => checkClaudeSettings(root).filter((c) => c.state !== 'ok')
 
 describe('the Claude Code settings lntt sync writes', () => {
@@ -241,63 +233,10 @@ describe('the Claude Code settings lntt sync writes', () => {
     assert.deepEqual(off(), [])
   })
 
-  test('a project synced by an earlier version: check names the format hook stale, sync removes only it', () => {
-    const own = { type: 'command', command: 'echo ours' }
-    write({
-      hooks: {
-        PostToolUse: [
-          { matcher: 'Bash', hooks: [own] },
-          { matcher: 'Write|Edit', hooks: [own, LEGACY_FORMAT] },
-          { matcher: 'Write', hooks: [LEGACY_FORMAT] },
-        ],
-      },
-    })
-    assert.deepEqual(
-      off().filter((c) => c.state === 'stale'),
-      [{ key: 'hooks.PostToolUse', state: 'stale' }],
-    )
-    syncClaudeSettings(root)
-    assert.deepEqual(read().hooks.PostToolUse, [
-      { matcher: 'Bash', hooks: [own] },
-      { matcher: 'Write|Edit', hooks: [own] },
-    ])
-    assert.deepEqual(off(), [])
-  })
-
-  test('the event left with no entry after the removal goes with it', () => {
-    write({ hooks: { PostToolUse: [{ matcher: 'Write|Edit', hooks: [LEGACY_FORMAT] }] } })
-    syncClaudeSettings(root)
-    assert.equal('PostToolUse' in read().hooks, false)
-    assert.deepEqual(off(), [])
-  })
-
-  test('lntt check plugin fails on a leftover format hook, and passes once sync removed it', () => {
-    syncClaudeSettings(root)
-    const s = read()
-    write({ ...s, hooks: { ...s.hooks, PostToolUse: [{ matcher: 'Write|Edit', hooks: [LEGACY_FORMAT] }] } })
-    const run = () => spawnSync(process.execPath, [BIN, 'check', 'plugin'], { cwd: root, encoding: 'utf8' })
-    const before = run()
-    assert.equal(before.status, 1)
-    assert.match(
-      before.stdout,
-      /hooks\.PostToolUse: the format hook is stale: the pre-commit formats; run pnpm exec lntt sync/,
-    )
-    syncClaudeSettings(root)
-    assert.equal(run().status, 0)
-  })
-
   test('an older typecheck line lntt wrote is replaced', () => {
     write({ hooks: { Stop: [{ hooks: [{ ...TYPECHECK_HOOK, command: 'an older line' }] }] } })
     syncClaudeSettings(root)
     assert.deepEqual(read().hooks.Stop, [{ hooks: [TYPECHECK_HOOK] }])
-  })
-
-  test('a PostToolUse entry whose hooks are not a list is not the shape Claude Code reads', () => {
-    write({ hooks: { PostToolUse: [{ hooks: 'x' }] } })
-    assert.deepEqual(
-      off().map((c) => `${c.state} ${c.key}`),
-      ['invalid .claude/settings.json'],
-    )
   })
 
   test('a PostToolUse of the project’s own, even empty, is left as it is', () => {

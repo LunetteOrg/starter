@@ -96,8 +96,7 @@ what to run. Beside it goes one line of `lntt hook`: `lntt hook typecheck`
 at `Stop`, in the background, which wakes the agent with a failure only when it differs
 from the last one. Its command is `local.hooks.typecheck`
 (one command or a list), else the `package.json` script of that name, else none.
-Formatting is the pre-commit's: `lntt sync` writes no format hook and removes the one
-an earlier version wrote, and `lntt validate` says that `local.hooks.format` is ignored:
+Formatting is the pre-commit's: `lntt sync` writes no format hook:
 
 ```jsonc
 "local": { "hooks": { "typecheck": ["tsc --noEmit", "uv run mypy ."] } }

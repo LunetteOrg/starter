@@ -170,11 +170,7 @@ message and a different line, so the message of a hook stays the same across ver
   the same way stays quiet, and a green run clears it.
 
 Formatting is the pre-commit's alone: it formats the staged files and stages the fix
-(`lefthook.yml`), and no hook formats the file while the agent works on it. The
-`PostToolUse` format hook that `lntt sync` wrote up to 0.6.3 is stale: `lntt sync`
-removes it (its own entry, by its status message; the project's other hooks stay) and
-`lntt check plugin` reports a leftover one. `lntt validate` says that `local.hooks.format`
-is ignored; the schema keeps accepting the key.
+(`lefthook.yml`), and no hook formats the file while the agent works on it.
 
 The typecheck command is a project's: `local.hooks.typecheck` of
 `.agents/config`, one command or a list run in order (a project with more than one
@@ -189,9 +185,7 @@ the agent up to 64 MB.
 
 `lntt hook` answers its settings line with an exit code: 0 nothing to report, 1 a
 typecheck failure not reported yet (the line exits 2, which wakes the agent with the
-output), 2 the usage, which an `lntt` older than `hook` also answers. `lntt hook format`,
-the name of the line an earlier sync wrote, exits 0 and does nothing until `lntt sync`
-removes that line. A defect of the
+output), 2 the usage, which an `lntt` older than `hook` also answers. A defect of the
 typecheck hook itself (its own error, a state it cannot read or write) never wakes the
 agent: it exits 0 with a `systemMessage`, which Claude Code gives the agent at its next
 turn. It is said once per session, told by the `session_id` of the hook input (a marker

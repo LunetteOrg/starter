@@ -1,8 +1,7 @@
 // `lntt hook <name>`: what the lines lntt sync writes into .claude/settings.json run
 // (./hook.ts), with lntt's exit codes, which the lines translate: 1 a typecheck failure
 // not reported yet, on stderr (the line exits 2, which wakes the agent); 2 the usage, which
-// is also what an lntt older than `hook` answers. `hook format`, for which an earlier sync
-// wrote a line, does nothing. Otherwise 0, with any notice on stdout as
+// is also what an lntt older than `hook` answers. Otherwise 0, with any notice on stdout as
 // a systemMessage: of the typecheck hook, which runs in the background, a defect of its
 // own (its error, a state it cannot keep), which Claude Code gives the agent at its next
 // turn without waking it, once per session.
@@ -51,9 +50,6 @@ function firstInSession(session: string | null): boolean {
 
 export async function main(args: string[]): Promise<void> {
   const [name, ...rest] = args
-  // The line of the format hook an earlier lntt sync wrote, before this lntt's sync removes
-  // it: nothing to run and nothing to report (the pre-commit formats).
-  if (name === 'format' && rest.length === 0) return
   if (rest.length > 0 || name !== 'typecheck') {
     stderr.write(`${USAGE}\n`)
     exit(2)
