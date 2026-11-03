@@ -411,11 +411,17 @@ Date.now = () => now() + (existsSync(${JSON.stringify(jump)}) ? 121 * 60_000 : 0
 describe('lntt ci candidate', () => {
   const CONFIG = { delivery: { candidate: { prefix: 'candidate/' } } }
 
+  // A gh that answers the open-candidate query and the comparison of the base with it
+  // (`cases`, shell case branches, first), and records every call.
   function candidate(event: unknown, ...args: string[]) {
-    write(root, { '.git/event.json': JSON.stringify(event) })
-    // A gh that answers the open-candidate query and records every call.
+    return candidateWith('', event, ...args)
+  }
+
+  // A null event: no GITHUB_EVENT_PATH, as in a terminal.
+  function candidateWith(cases: string, event: unknown, ...args: string[]) {
+    if (event !== null) write(root, { '.git/event.json': JSON.stringify(event) })
     write(root, {
-      '.git/bin/gh': `#!/bin/sh\necho "$*" >> "${root}/.git/gh.log"\ncase "$*" in *"--state open"*) echo '[{"number":40,"headRefName":"candidate/4","body":""}]';; esac\n`,
+      '.git/bin/gh': `#!/bin/sh\necho "$*" >> "${root}/.git/gh.log"\ncase "$*" in ${cases} *"--state open"*) echo '[{"number":40,"headRefName":"candidate/4","body":""}]';; *compare/*) echo '{"behindBy":0,"base":"b"}';; esac\n`,
     })
     execFileSync('chmod', ['+x', join(root, '.git/bin/gh')])
     return spawnSync(process.execPath, [BIN, 'ci', 'candidate', ...args], {
@@ -425,7 +431,12 @@ describe('lntt ci candidate', () => {
         ...process.env,
         PATH: `${join(root, '.git/bin')}:${process.env.PATH}`,
         GITHUB_REPOSITORY: 'o/r',
-        GITHUB_EVENT_PATH: join(root, '.git/event.json'),
+        GITHUB_EVENT_PATH: event === null ? '' : join(root, '.git/event.json'),
+        // The identity the workflow gives git, for the rebase the follow step makes.
+        GIT_AUTHOR_NAME: 'bot',
+        GIT_AUTHOR_EMAIL: 'bot@example.com',
+        GIT_COMMITTER_NAME: 'bot',
+        GIT_COMMITTER_EMAIL: 'bot@example.com',
       },
     })
   }
@@ -463,6 +474,85 @@ describe('lntt ci candidate', () => {
     const out = candidate(opened({ head: { ref: 'hotfix/login' } }))
     assert.equal(out.status, 0, out.stderr)
     assert.match(out.stdout, /it stays, a hotfix stays on main/)
+  })
+
+  test('a push event follows the base and does not crash on the missing pull request', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidate({ ref: 'refs/heads/main', before: 'a', after: 'b' })
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /candidate: follow main: main is an ancestor of candidate\/4/)
+  })
+
+  test('--follow --dry-run prints the path and its reason, and the push it would make', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    // origin holds main and candidate/4 (an empty commit on main); main then moves.
+    const remote = join(root, '.git/remote.git')
+    git(root, 'init', '-q', '--bare', '-b', 'main', remote)
+    git(root, 'remote', 'add', 'origin', remote)
+    git(root, 'switch', '-q', '-c', 'candidate/4', 'main')
+    git(root, 'commit', '-q', '--allow-empty', '-m', 'chore: open candidate 4')
+    const head = git(root, 'rev-parse', 'HEAD')
+    git(root, 'switch', '-q', 'main')
+    write(root, { 'fix.txt': 'hotfix\n' })
+    git(root, 'add', 'fix.txt')
+    git(root, 'commit', '-q', '-m', 'fix: hotfix')
+    const base = git(root, 'rev-parse', 'HEAD')
+    git(root, 'push', '-q', 'origin', 'main', 'candidate/4')
+    const out = candidateWith(
+      `*"--state open"*) echo '[{"number":40,"headRefName":"candidate/4","headRefOid":"${head}","body":""}]';; *compare/*) echo '{"behindBy":1,"base":"${base}"}';; *graphql*) echo '[]';;`,
+      null,
+      '--follow',
+      '--dry-run',
+    )
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /candidate: follow main: main moved and no pull request is open into candidate\/4: rebase/)
+    assert.match(
+      out.stdout,
+      new RegExp(`\\[dry-run\\] git push --force-with-lease=refs/heads/candidate/4:${head} origin`),
+    )
+    assert.match(out.stdout, /\[dry-run\] gh pr comment 40/)
+    assert.equal(git(remote, 'rev-parse', 'refs/heads/candidate/4'), head)
+  })
+
+  test('--pr from a terminal handles its pull request and does not follow the base', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidateWith(
+      `*"pr view 7"*) echo '{"number":7,"title":"t","body":"Closes #3","baseRefName":"main","headRefName":"feat/3/x","labels":[],"mergedAt":null}';; *compare/*) echo '{"behindBy":1,"base":"b"}';;`,
+      null,
+      '--pr',
+      '7',
+      '--dry-run',
+    )
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /\[dry-run\] gh pr edit 7 --repo o\/r --base candidate\/4/)
+    assert.match(out.stdout, /candidate: follow main: no git client in this run.*--follow/)
+    assert.doesNotMatch(out.stdout, /git push/)
+    assert.doesNotMatch(readFileSync(join(root, '.git/gh.log'), 'utf8'), /compare\//)
+  })
+
+  for (const flags of [
+    ['--pr', '7'],
+    ['--event', 'opened'],
+    ['--head-ref', 'feat/3/x'],
+    ['--labels', 'a'],
+    ['--merged'],
+  ]) {
+    test(`--follow with ${flags[0]} is a usage error`, () => {
+      root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+      const out = candidateWith('', null, '--follow', ...flags)
+      assert.equal(out.status, 2)
+      assert.match(out.stderr, new RegExp(`--follow takes no ${flags[0]}`))
+      assert.equal(existsSync(join(root, '.git/gh.log')), false)
+    })
+  }
+
+  test('an event without a pull request that is no push to the base does nothing', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidate({ ref: 'refs/heads/other', before: 'a', after: 'b' })
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /^candidate: event refs\/heads\/other, nothing to do\.$/m)
+    assert.doesNotMatch(out.stdout, /candidate: follow/)
+    assert.equal(existsSync(join(root, '.git/gh.log')), false)
   })
 })
 
