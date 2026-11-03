@@ -182,7 +182,7 @@ describe('the shared skills', () => {
     writeFileSync(join(root, '.claude/skills/review/SKILL.md'), 'our own review\n')
     assert.throws(
       () => syncSkills(root),
-      /\.claude\/skills\/review: a skill of the project's own with the name of a shared skill/,
+      /\.claude\/skills\/review: a skill of the project's own with the name of a shared skill; rename it, then run pnpm exec lntt sync$/,
     )
     assert.equal(existsSync(join(root, '.agents/skills/review')), false, 'nothing written')
     assert.equal(readFileSync(join(root, '.claude/skills/review/SKILL.md'), 'utf8'), 'our own review\n')
@@ -214,8 +214,8 @@ describe('the shared skills', () => {
     staleStub('.agents/skills', 'gone')
     writeFileSync(join(root, '.agents/skills/review/SKILL.md'), 'our own review\n')
     const out = lntt(['check', 'skills']).stdout
-    assert.match(out, /\.claude\/skills\/decisions — differs from the stub lntt sync writes; run lntt sync/)
-    assert.match(out, /\.agents\/skills\/gone — a stub of a skill @lntt\/lntt does not have; run lntt sync/)
+    assert.match(out, /\.claude\/skills\/decisions — differs from the stub lntt sync writes; run pnpm exec lntt sync/)
+    assert.match(out, /\.agents\/skills\/gone — a stub of a skill @lntt\/lntt does not have; run pnpm exec lntt sync/)
     assert.match(
       out,
       /\.agents\/skills\/review — a skill of the project's own with the name of a shared skill; rename it/,
@@ -225,7 +225,7 @@ describe('the shared skills', () => {
   test('lntt sync writes the stubs and lntt check skills fails until it has', () => {
     const before = lntt(['check', 'skills'])
     assert.equal(before.status, 1)
-    assert.match(before.stdout, /FAIL {5}skills\/installed {2}\.agents\/skills\/decisions — .*run lntt sync/)
+    assert.match(before.stdout, /FAIL {5}skills\/installed {2}\.agents\/skills\/decisions — .*run pnpm exec lntt sync/)
     assert.equal(lntt(['sync']).status, 0)
     assert.ok(existsSync(join(root, 'AGENTS.md')), 'sync still writes the managed block')
     const after = lntt(['check', 'skills'])
@@ -397,7 +397,7 @@ describe('the board skills', () => {
     const guide = readFileSync(join(SKILLS, 'github-board', 'SKILL.md'), 'utf8').replace(/\s+/g, ' ')
     assert.match(
       guide,
-      /`lntt board sync` shows what it would add \(a dry run\), and `lntt board sync --apply` adds it, with the person's go/,
+      /`pnpm exec lntt board sync` shows what it would add \(a dry run\), and `pnpm exec lntt board sync --apply` adds it, with the person's go/,
     )
     const reference = readFileSync(resolve(HERE, '../skills/github-board/references/github-project.md'), 'utf8')
     assert.match(reference, /An option passed with its `id`\s+keeps it, and every item keeps its value/)
@@ -485,5 +485,83 @@ describe('the mutation-check skill', () => {
     assert.ok(guide().includes('A test is accepted when it fails for the right reason, not when it passes'))
     assert.match(section(5), /^5\. Report In the pull request body/)
     assert.match(section(5), /one line per test that guards a line, with the mutation and its outcome/)
+  })
+})
+
+describe('the retrospective skill, harvest', () => {
+  const skill = () => readFileSync(join(SKILLS, 'retrospective', 'SKILL.md'), 'utf8')
+  const section4 = () =>
+    skill()
+      .split(/^## /m)
+      .find((s) => s.startsWith('4. ')) ?? ''
+  // The harvest steps (numbered list items), whitespace folded; the paragraphs after the last step apart.
+  const steps = () => section4().split(/\n\n(?=[A-Z])/)[0] ?? ''
+  const step = (n: number) =>
+    steps()
+      .replace(/\s+/g, ' ')
+      .match(new RegExp(`(?:^| )${n}\\. \\*\\*(.*?)(?= \\d+\\. \\*\\*|$)`))?.[1] ?? ''
+  const after = () => section4().replace(/\s+/g, ' ')
+  const guardrails = () =>
+    skill()
+      .split(/^## Guardrails/m)[1]
+      ?.replace(/\s+/g, ' ') ?? ''
+
+  test('publishing opens no issue: the proposals are numbered and discussed first, one at a time', () => {
+    assert.match(step(9), /Publish\*\* at/)
+    assert.match(step(9), /numbered in order in the published body/)
+    assert.match(step(9), /Publishing opens no issue for any proposal/)
+    assert.match(step(10), /^Discuss the proposals with the person,\*\* after publishing, one proposal at a time/)
+    assert.match(step(10), /the proposals still marked `later` in the previous Discussion included/)
+  })
+
+  test('each proposal ends adopted, dropped with its reason, or later', () => {
+    assert.match(step(10), /\*\*adopted:\*\*/)
+    assert.match(step(10), /\*\*dropped:\*\* it will not, and the reason is said/)
+    assert.match(step(10), /\*\*later:\*\*/)
+  })
+
+  test('the outcome of each proposal is written in the Discussion, in a line the next harvest reads', () => {
+    assert.match(step(11), /as a comment per proposal \(or an edit of the body\)/)
+    assert.ok(step(11).includes('`Proposal <n>: adopted #<issue>`'))
+    assert.ok(step(11).includes('`Proposal <n>: dropped, <reason>`'))
+    assert.ok(step(11).includes('`Proposal <n>: later`'))
+    assert.match(step(11), /`<n>` is the number the proposal has in the published body/)
+    assert.match(step(11), /a proposal carried over as `later` takes a new number and cites the one it had/)
+    assert.match(step(11), /Where `adopted` has no issue number yet, step 12 comes first/)
+  })
+
+  test('only an adopted proposal becomes an issue, citing the Discussion and its cluster', () => {
+    assert.match(step(12), /^Open an issue only for an adopted proposal\*\* \(the `github-board` skill\)/)
+    assert.match(step(12), /citing the Discussion and the proposal's cluster/)
+    assert.match(step(12), /Nothing is opened before the discussion/)
+    assert.match(step(12), /a proposal that is dropped or later gets no issue/)
+  })
+
+  test('a proposal with no outcome is never built and is asked again; the guardrail says the same', () => {
+    assert.match(
+      after(),
+      /without an outcome written in its Discussion, is never built and is asked again at the next harvest/,
+    )
+    assert.match(guardrails(), /An issue exists only for a proposal the person adopted in the discussion/)
+  })
+
+  test('the next harvest reads the outcomes for its previous proposals, and asks a later one again', () => {
+    assert.match(step(5), /starts from the outcome written in the previous retrospective's Discussion/)
+    assert.match(step(5), /`dropped` keeps its reason and is not proposed again unless new signals say otherwise/)
+    assert.match(step(5), /a cluster that recurs after a drop is such a signal/)
+    assert.match(step(5), /a proposal still marked `later` is asked again/)
+    assert.match(step(5), /A proposal with no outcome was never discussed: say so, and put it in the discussion too/)
+  })
+
+  test('the steps cited in the text are the steps that carry those titles', () => {
+    assert.match(step(5), /\(step 11\)/)
+    assert.match(step(5), /\(step 10\)/)
+    assert.match(step(12), /\(step 11\)/)
+    assert.match(step(11), /\(step 9 numbers them in order\)/)
+    assert.match(step(9), /^Publish\*\*/)
+    assert.match(guardrails(), /steps 10–12/)
+    assert.match(step(11), /^Write each outcome in the Discussion/)
+    assert.match(step(10), /^Discuss the proposals/)
+    assert.match(step(12), /^Open an issue only/)
   })
 })

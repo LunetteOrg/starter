@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-10-17
+date: 2026-11-02
 tags: [agents, coordinator, worktrees, messaging, models]
 ---
 
@@ -35,8 +35,10 @@ two.
   `[upstream:<owner/name>]`: one for Lunette's repository is sent with `lntt issue` only
   once the operator approves it, one for another repository is printed for the operator
   to file by hand ([delivery](../process/delivery.md#the-retrospective)).
-- **Child:** one per issue, in its own worktree and branch, started from `main` or, when it
-  depends on a sibling, from the sibling's branch (`--base`). It follows the single-issue
+- **Child:** one per issue, in its own worktree and branch, started from the base `lntt`
+  resolves ([worktree tooling](./worktree-tooling.md#decision): the open candidate, else
+  the default branch, from origin) or, when it depends on a sibling, from the sibling's
+  branch (`--base`). It follows the single-issue
   brief ([worktree tooling](./worktree-tooling.md)) and stops at a draft pull request.
 
 The coordinator's instructions are the shared `coordinate` skill (`lntt guide coordinate`); the

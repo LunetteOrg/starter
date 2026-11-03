@@ -181,7 +181,7 @@ export function checkClaudeSettings(cwd: string): SettingsEntry[] {
   return entries(loaded.settings)
 }
 
-export const INVALID = `${SETTINGS} is not JSON, or not the shape Claude Code reads: fix it, then run lntt sync`
+export const INVALID = `${SETTINGS} is not JSON, or not the shape Claude Code reads: fix it, then run pnpm exec lntt sync`
 
 const FORMAT = { formattingOptions: { insertSpaces: true, tabSize: 2 } }
 

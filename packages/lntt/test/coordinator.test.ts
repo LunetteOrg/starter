@@ -168,10 +168,10 @@ describe('the coordinator’s brief', () => {
     assert.match(brief, /Every wait goes through the mailbox/)
     assert.match(brief, /1Password/)
     assert.match(brief, /review limit/)
-    assert.match(brief, /`lntt inbox --as coordinator --theme release-0-6-1`/)
-    assert.match(brief, /`lntt ask --to orchestrator`, batched, with a recommendation/)
+    assert.match(brief, /`pnpm exec lntt inbox --as coordinator --theme release-0-6-1`/)
+    assert.match(brief, /`pnpm exec lntt ask --to orchestrator`, batched, with a recommendation/)
     assert.match(brief, /re-reads its mailbox/)
-    assert.match(brief, /`lntt ask --to child --issue <n>`/)
+    assert.match(brief, /`pnpm exec lntt ask --to child --issue <n>`/)
   })
 
   test('on a host with no Orca there is no Orca line', () => {
@@ -182,7 +182,7 @@ describe('the coordinator’s brief', () => {
   test('under propose, names the approved children and the proposal flow', () => {
     const brief = coordinatorBrief(VALUES)
     assert.match(brief, /Approved to start now: #89/)
-    assert.match(brief, /`lntt worktree start --theme` asks the orchestrator/)
+    assert.match(brief, /`pnpm exec lntt worktree start --theme` asks the orchestrator/)
     assert.match(brief, /#84/)
   })
 
@@ -240,7 +240,7 @@ describe('the child’s brief', () => {
         '  else; its Definition of Done is what finishes the work. `AGENTS.md` applies.',
         '- **Work only in this worktree:** `/w`, on branch `feat/84/coordinator-mode`. Run every',
         '  command from it, never from the main checkout or another worktree.',
-        '- **Before publishing:** the review (`lntt review`, with the `review` skill) until a',
+        '- **Before publishing:** the review (`pnpm exec lntt review`, with the `review` skill) until a',
         '  round finds nothing, and `pnpm ci:local` green on the commit you push. At',
         '  `lntt review: limit:` (`delivery.review.maxRounds`) stop: the round sends what is',
         '  still open to whoever you report to, who decides (below).',
@@ -252,9 +252,9 @@ describe('the child’s brief', () => {
         '',
         '## Every wait goes through the mailbox',
         '',
-        'Nobody watches your terminal: whatever you wait for, ask with `lntt ask --to orchestrator --issue 84 "<…>"`,',
+        'Nobody watches your terminal: whatever you wait for, ask with `pnpm exec lntt ask --to orchestrator --issue 84 "<…>"`,',
         'which waits for the answer and prints it, never only in your tab. Run it in the',
-        'background (or with `--timeout <s>`, then `lntt ask --wait <id>`), so that you re-read',
+        'background (or with `--timeout <s>`, then `pnpm exec lntt ask --wait <id>`), so that you re-read',
         'your mailbox between polls.',
         '',
         '- **An answer** the issue, the decision records and the code do not give.',
@@ -262,11 +262,11 @@ describe('the child’s brief', () => {
         '  it unlocks, and retry once it is answered.',
         '- **The review limit:** at `lntt review: limit:` the round sends the open findings',
         '  itself and prints the id of its message; wait for the answer with',
-        '  `lntt ask --wait <id>`. An answer that grants rounds is the go: run',
-        '  `lntt review allow <rounds>` yourself, then the next round.',
+        '  `pnpm exec lntt ask --wait <id>`. An answer that grants rounds is the go: run',
+        '  `pnpm exec lntt review allow <rounds>` yourself, then the next round.',
         '',
         'While you wait, and before you resume after any pause, re-read your mailbox:',
-        '`lntt inbox --as child --issue 84`. A decision sent there holds over what you',
+        '`pnpm exec lntt inbox --as child --issue 84`. A decision sent there holds over what you',
         'assumed.',
         '',
       ].join('\n'),
@@ -278,20 +278,20 @@ describe('the child’s brief', () => {
   test('a child of a theme routes every wait to its coordinator, and re-reads its mailbox', () => {
     const brief = childBrief(base, { theme: 'release-0-6-1' })
     assert.match(brief, /## Every wait goes through the mailbox/)
-    assert.match(brief, /ask with `lntt ask --to coordinator --theme release-0-6-1 --issue 84 "<…>"`/)
+    assert.match(brief, /ask with `pnpm exec lntt ask --to coordinator --theme release-0-6-1 --issue 84 "<…>"`/)
     assert.doesNotMatch(brief, /--to orchestrator/)
     assert.match(brief, /1Password/)
     assert.match(brief, /at `lntt review: limit:` the round sends the open findings/)
     assert.match(brief, /lntt ask --wait <id>/)
-    assert.match(brief, /re-read your mailbox:\n`lntt inbox --as child --issue 84`/)
+    assert.match(brief, /re-read your mailbox:\n`pnpm exec lntt inbox --as child --issue 84`/)
     assert.doesNotMatch(brief, /workflow|orca/i)
   })
 
   test('with a context and a parent it carries the theme section and how to report', () => {
     const brief = childBrief(base, { theme: 'release-0-6-1', context: 'Your neighbours: #89 and #111.\n' })
     assert.match(brief, /## The theme\n\nYour neighbours: #89 and #111\./)
-    assert.match(brief, /`lntt ask --to coordinator --theme release-0-6-1 --issue 84 "<question>"`/)
-    assert.match(brief, /`lntt ask --to coordinator --theme release-0-6-1 --issue 84 "#84 ready: /)
+    assert.match(brief, /`pnpm exec lntt ask --to coordinator --theme release-0-6-1 --issue 84 "<question>"`/)
+    assert.match(brief, /`pnpm exec lntt ask --to coordinator --theme release-0-6-1 --issue 84 "#84 ready: /)
     assert.match(brief, /lntt inbox --as child --issue 84/)
     assert.doesNotMatch(brief, /\{\{/)
   })

@@ -121,7 +121,7 @@ function gateText(config: Config, issues: { issue: number }[], approved: number[
   if (gateOf(config) === 'free') return 'start the children as soon as their order allows.'
   const first = issues.map((i) => i.issue).filter((n) => !approved.includes(n))
   return [
-    '`lntt worktree start --theme` asks the orchestrator to approve a child before it creates anything, and waits for the answer.',
+    '`pnpm exec lntt worktree start --theme` asks the orchestrator to approve a child before it creates anything, and waits for the answer.',
     approved.length > 0
       ? `Approved to start now: ${approved.map((n) => `#${n}`).join(', ')}.`
       : 'No child is approved yet.',

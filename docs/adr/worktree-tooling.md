@@ -1,7 +1,7 @@
 ---
 status: accepted
-date: 2026-10-17
-tags: [worktrees, agents, orca, herdr, branches, setup]
+date: 2026-11-02
+tags: [worktrees, agents, orca, herdr, branches, setup, base-branch]
 ---
 
 # Worktree tooling: the rules in `lntt`, the tools as adapters
@@ -69,14 +69,41 @@ small adapter that makes the calls it understands.
     (`OPENCODE_CONFIG_CONTENT`) on a standalone server, started as a shell command in a
     terminal or pane of its own, and prompted once the tool sees it ready.
   - Herdr: `herdr agent start --kind` with the model and effort after `--`.
+- **One base, found one way** (`packages/lntt/src/base.ts`) by `lntt worktree start` on
+  every host, `lntt review` and `lntt ci local`; an explicit `--base` wins in each
+  (`origin/<base>`, else the branch of that name, which a stacked child's sibling may
+  have only locally). Without `--base` the base is the open candidate when there is one,
+  else the default branch (`delivery.candidate.base`, else the branch `origin/HEAD`
+  names, else `main`), and always the remote's copy (#224):
+  - a new worktree starts from `origin/<candidate>` while a candidate is open, else from
+    `origin/<default branch>`; a hotfix (`delivery.candidate.hotfix`: the branch prefix or
+    the issue's label) starts from `origin/<default branch>`, where its pull request stays;
+  - an existing branch that descends from the open candidate (its fork point with the
+    candidate holds commits `origin/<default branch>` lacks) is compared with the
+    candidate from that fork point, a branch just started on it included; the candidate
+    itself (the branch of its name, or a detached HEAD at its head) goes into the
+    default branch; any other branch is compared with `origin/<default branch>`.
+
+  Which candidate is open is asked to GitHub (`gh pr list`, the query of the candidate
+  automation): a merged candidate's branch stays on origin and its commits reach the
+  default branch rebased, so the refs cannot tell an open one. When GitHub cannot
+  answer, the base is `origin/<default branch>` and the command says so. A resolved base
+  whose `origin/` ref is not in the clone is an error that asks for `git fetch origin`;
+  nothing is fetched. An explicit `--base` with neither `origin/<base>` nor a local
+  branch of that name goes to the host as given in `lntt worktree start`, which says
+  what it cannot find, is an error in `lntt review`, and leaves `ci:local` with no diff
+  to choose its tests from.
+  A detached HEAD at a candidate's head is that candidate: `lntt branch check` and
+  `ci:local`'s branch name are the `delivery.candidate.prefix` branch whose `origin/`
+  ref points at HEAD, so a candidate is checked without a local branch named after it.
 - **What cannot start is refused before anything is created**, never dropped or left
   half done: an agent flag the agent cannot take (one started on another model or
   effort than the one asked for is a different agent), and in a batch any issue that
   cannot be read or named, so several `--issue` start whole or not at all.
 - **Worktrees made by `lntt`** (git, Herdr) go under `<main checkout>/.worktrees/`,
   ignored by git with `.claude/worktrees/` of the agent harnesses. Their branch has no
-  upstream until it is first pushed: created from `origin/<base>`, it would otherwise
-  track the base.
+  upstream until it is first pushed: created from the base's `origin/` ref, it would
+  otherwise track the base.
 - **`rename` never fails a setup.** A name it cannot fix, or one the issue cannot give
   (a title with nothing to slug), is reported and the branch stays; the pre-push check
   (on the branches being pushed) and CI stop it if it stays wrong.
@@ -125,6 +152,15 @@ small adapter that makes the calls it understands.
   agent ready, or not at all.
 - **Ignoring a model or an effort the agent cannot take.** The run would look right and
   be on another model.
+- **The local branch as the base.** A local `main` or candidate branch is as old as the
+  last pull: a worktree started from it, or a review and a `ci:local` diffed against
+  it, read commits that are already merged.
+- **The base from the refs alone, without asking GitHub.** `origin/HEAD` names the
+  default branch, not the open candidate, and the candidate branches left on origin
+  after their merge look the same as the open one.
+- **A base per command** (`delivery.candidate.base` for the worktree and the review,
+  `origin/HEAD` for `ci:local`). A branch started on the candidate would be reviewed and
+  checked against the default branch, with the candidate's commits in its diff.
 - **`--prompt` in place of the brief.** Every use wanted to add context to it; a
   coordinator started that way had none of its issues and approvals.
 - **The review round waiting for the answer at the limit.** The round holds the review

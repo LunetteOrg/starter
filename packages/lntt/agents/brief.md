@@ -4,7 +4,7 @@ You are working on issue #{{issue}}: {{title}}.
   else; its Definition of Done is what finishes the work. `AGENTS.md` applies.
 - **Work only in this worktree:** `{{worktree}}`, on branch `{{branch}}`. Run every
   command from it, never from the main checkout or another worktree.
-- **Before publishing:** the review (`lntt review`, with the `review` skill) until a
+- **Before publishing:** the review (`pnpm exec lntt review`, with the `review` skill) until a
   round finds nothing, and `pnpm ci:local` green on the commit you push. At
   `lntt review: limit:` (`delivery.review.maxRounds`) stop: the round sends what is
   still open to whoever you report to, who decides (below).

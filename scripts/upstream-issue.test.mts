@@ -336,6 +336,24 @@ describe('report', () => {
     assert.equal(untyped.writes.length, 1)
   })
 
+  test('a typed create refused and the untyped retry failing too throws the retry error and touches no board', () => {
+    const gh = fakeGh(issues(), (payload: { type?: string }) => {
+      throw new Error(
+        payload.type
+          ? 'Command failed: gh api repos/o/r/issues: HTTP 422 Validation Failed'
+          : 'Command failed: gh api repos/o/r/issues: HTTP 502 Bad Gateway',
+      )
+    })
+    const board = fakeGh(project())
+    const { out, log } = lines()
+    assert.throws(() => report({ gh, board, repo: 'o/r', target, log }, failure()), /HTTP 502 Bad Gateway/)
+    assert.equal(gh.writes.length, 2)
+    assert.equal(JSON.parse(gh.writes[0]?.input ?? '{}').type, 'Bug')
+    assert.equal(JSON.parse(gh.writes[1]?.input ?? '{}').type, undefined)
+    assert.deepEqual(board.writes, [])
+    assert.doesNotMatch(out.join('\n'), /opened #/)
+  })
+
   test('a read-back with no item logs no status, not a failure', () => {
     const gh = fakeGh(issues())
     const board = fakeGh({ ...project(), 'node(id:': { data: { node: null } } })

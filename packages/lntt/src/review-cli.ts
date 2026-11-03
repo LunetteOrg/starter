@@ -16,8 +16,10 @@ import {
 import { join } from 'node:path'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
+import { projectBase } from './base.ts'
 import { type BranchRules, branchRules, fromToolName } from './branch.ts'
 import { cite, formatJson, isArea, projectFiles, runArea } from './check.ts'
+import { localRef } from './ci/event.ts'
 import { NoConfigError } from './files.ts'
 import {
   type HeadlessAgent as Agent,
@@ -184,7 +186,7 @@ function askAtLimit(marker: Started, branch: string, text: string): Asked | null
     const earlier = pendingLimit(box.dir, marker, branch)
     const sent = earlier ?? send(box, marker.to, text, { topic: 'review-limit', ...address })
     stderr.write(
-      `lntt review: limit: ${earlier ? 'already sent' : 'sent'} ${sent.id} to ${who}; wait with: lntt ask --wait ${sent.id}\n`,
+      `lntt review: limit: ${earlier ? 'already sent' : 'sent'} ${sent.id} to ${who}; wait with: pnpm exec lntt ask --wait ${sent.id}\n`,
     )
     return { id: sent.id, to: marker.to, path: sent.path }
   } catch (error) {
@@ -215,7 +217,7 @@ function stopAtLimit(
   const still = listed.length === 0 ? 'nothing' : listed.join(', ')
   stderr.write(
     `lntt review: limit: ${passing} on ${branch}; still open: ${still}\n` +
-      'lntt review: the person decides: the pull request as it is, more rounds for this branch (lntt review allow <rounds>), or an issue for what is open\n',
+      'lntt review: the person decides: the pull request as it is, more rounds for this branch (pnpm exec lntt review allow <rounds>), or an issue for what is open\n',
   )
   // A branch lntt worktree start started reports to its parent as well: the open
   // findings in full, so the answer needs nothing else.
@@ -548,17 +550,18 @@ function acquireLock(): void {
   throw new LockedError('a round is already running in this worktree (pid unknown)')
 }
 
-function configuredBase(data: Record<string, unknown>): string {
-  return (data.delivery as { candidate?: { base?: string } } | undefined)?.candidate?.base ?? 'main'
-}
-
-function mergeBase(base: string): string {
-  for (const ref of [`origin/${base}`, base]) {
-    try {
-      return git('merge-base', 'HEAD', ref)
-    } catch {}
+// Where the branch left its base: --base as given (origin/<base>, else <base>), else the
+// base every lntt command resolves (src/base.ts), which the plan names.
+function mergeBase(root: string, given: string | undefined): string {
+  if (given === undefined) {
+    const base = projectBase(root, 'head')
+    stderr.write(`lntt review: ${base.warning ?? `base ${base.reason}`}\n`)
+    return git('merge-base', 'HEAD', base.ref)
   }
-  throw new Error(`no ${base} or origin/${base} to compare the branch with; give --base`)
+  const ref = localRef(root, given)
+  if (ref === null)
+    throw new Error(`no ${given} or origin/${given} to compare the branch with: run git fetch origin, or check --base`)
+  return git('merge-base', 'HEAD', ref)
 }
 
 // The mutations the reviewers proposed, run on a scratch copy of the head: the tree the
@@ -601,20 +604,14 @@ async function round(args: string[]): Promise<number> {
   const head = git('rev-parse', '--short', 'HEAD')
   const root = git('rev-parse', '--show-toplevel')
   const state = readState()
-  const range = roundRange(
-    state,
-    branch,
-    head,
-    git('rev-parse', '--short', mergeBase(values.base ?? configuredBase(data))),
-    (a, b) => {
-      try {
-        git('merge-base', '--is-ancestor', a, b)
-        return true
-      } catch {
-        return false
-      }
-    },
-  )
+  const range = roundRange(state, branch, head, git('rev-parse', '--short', mergeBase(root, values.base)), (a, b) => {
+    try {
+      git('merge-base', '--is-ancestor', a, b)
+      return true
+    } catch {
+      return false
+    }
+  })
   const files = git('diff', '--name-only', `${range.from}..${head}`).split('\n').filter(Boolean)
   // A run with nothing new to read keeps the round's number: it is not a round more.
   const pastLimit = files.length > 0 && range.round > roundLimit(state, branch, config.maxRounds)
