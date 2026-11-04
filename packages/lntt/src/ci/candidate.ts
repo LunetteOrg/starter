@@ -169,13 +169,14 @@ export function isDependabot({ headRef, author }: { headRef: string; author?: st
 // reports blocks the merge too, so the guard holds when Actions drops every event.
 // A branch name counts only from this repository, where pushing one takes write
 // access: a fork can name its branch `candidate/1` or `hotfix/x`. The hotfix label
-// counts from anywhere: only a person with triage access puts it on.
+// counts from anywhere: only a person with triage access puts it on. A head whose
+// repository the source does not give counts as a fork.
 export function guardDecision(
   config: CandidateConfig,
   pr: { number: number; baseRef: string; headRef: string; labels?: string[]; author?: string; fromFork?: boolean },
 ): { pass: boolean; reason: string } {
   if (pr.baseRef !== config.base) return { pass: true, reason: `it targets ${pr.baseRef}, not ${config.base}` }
-  const own = !pr.fromFork
+  const own = pr.fromFork === false
   if (own && pr.headRef.startsWith(config.prefix)) return { pass: true, reason: `${pr.headRef} is the candidate` }
   if (isHotfix(config, { headRef: own ? pr.headRef : '', labels: pr.labels ?? [] }))
     return { pass: true, reason: `a hotfix stays on ${config.base}` }

@@ -229,7 +229,7 @@ function candidateRun(args: string[]): number {
   let pr: candidate.PullRequest
   const number = values.pr
   if (number !== undefined) {
-    if (!/^\d+$/.test(number)) usage(`--pr takes a number, not ${number}`)
+    if (!/^[1-9]\d*$/.test(number)) usage(`--pr takes a number, not ${number}`)
     pr = candidate.prFromGh(gh, repo, Number(number))
     action = values.event ?? (pr.merged ? 'closed' : 'opened')
   } else {
@@ -259,7 +259,7 @@ function candidateRun(args: string[]): number {
 function guardRun(config: candidate.CandidateConfig, number: string | undefined, log: (line: string) => void): number {
   let pr: candidate.PullRequest
   if (number !== undefined) {
-    if (!/^\d+$/.test(number)) usage(`--pr takes a number, not ${number}`)
+    if (!/^[1-9]\d*$/.test(number)) usage(`--pr takes a number, not ${number}`)
     const gh = candidate.makeGh({ dryRun: true, log })
     const repo = env.GITHUB_REPOSITORY || gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])
     pr = candidate.prFromGh(gh, repo, Number(number))

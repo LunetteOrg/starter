@@ -261,7 +261,8 @@ got no run of any workflow for forty minutes). A pull request whose `opened` and
   candidate (the `delivery.candidate.prefix` branch), a hotfix (the hotfix prefix or
   label) and a Dependabot pull request; any other pull request into `main` gets it red,
   with the remedy in the error. A branch name counts only from this repository, where
-  pushing a branch takes write access: a fork's `candidate/1` or `hotfix/x` is red, and
+  pushing a branch takes write access (the event's head and base repositories, or
+  `isCrossRepository` from `gh`; a head whose repository is not given counts as a fork): a fork's `candidate/1` or `hotfix/x` is red, and
   the hotfix label, which only triage access puts on, counts from a fork too. On a pull
   request into any other branch it is green at once. A project without
   `delivery.candidate` gets it green with a notice: there is no candidate to be on. It runs on every event that can change the answer (opened, reopened, a push,

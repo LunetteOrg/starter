@@ -101,7 +101,7 @@ describe('isHotfix and retargetDecision', () => {
 })
 
 describe('guardDecision', () => {
-  const pr = { number: 7, baseRef: 'main', headRef: 'feat/31/x', labels: [], author: 'octocat' }
+  const pr = { number: 7, baseRef: 'main', headRef: 'feat/31/x', labels: [], author: 'octocat', fromFork: false }
 
   test('a pull request into another branch, the candidate, a hotfix, a Dependabot one pass', () => {
     assert.equal(guardDecision(config, { ...pr, baseRef: 'candidate/3' }).pass, true)
@@ -136,6 +136,12 @@ describe('guardDecision', () => {
     assert.equal(guardDecision(config, { ...bump, fromFork: true }).pass, false)
     // An older gh names the bot dependabot.
     assert.equal(guardDecision(config, { ...bump, author: 'dependabot' }).pass, true)
+  })
+
+  test('a head whose repository is unknown counts as a fork', () => {
+    const unknown = { ...pr, fromFork: undefined }
+    assert.equal(guardDecision(config, { ...unknown, headRef: 'candidate/3' }).pass, false)
+    assert.equal(guardDecision(config, { ...unknown, labels: ['hotfix'] }).pass, true)
   })
 })
 

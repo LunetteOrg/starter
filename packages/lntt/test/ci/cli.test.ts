@@ -530,9 +530,23 @@ describe('lntt ci candidate', () => {
     assert.doesNotMatch(readFileSync(join(root, '.git/gh.log'), 'utf8'), /compare\//)
   })
 
+  // An event of a pull request from this repository: its head and base repositories.
+  const REPO = { full_name: 'o/r' }
+  const own = (fields: { head?: { ref: string; repo?: unknown }; [key: string]: unknown } = {}) => {
+    const event = opened(fields)
+    return {
+      ...event,
+      pull_request: {
+        ...event.pull_request,
+        base: { ...event.pull_request.base, repo: REPO },
+        head: { ...event.pull_request.head, repo: REPO, ...fields.head },
+      },
+    }
+  }
+
   test('--guard passes a pull request into main that is the candidate, and reads nothing', () => {
     root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
-    const out = candidate(opened({ head: { ref: 'candidate/4' } }), '--guard')
+    const out = candidate(own({ head: { ref: 'candidate/4' } }), '--guard')
     assert.equal(out.status, 0, out.stderr)
     assert.match(out.stdout, /candidate guard: #7 passes: candidate\/4 is the candidate/)
     assert.equal(existsSync(join(root, '.git/gh.log')), false)
@@ -540,7 +554,7 @@ describe('lntt ci candidate', () => {
 
   test('--guard fails a pull request left on main, naming the remedy as an error annotation', () => {
     root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
-    const out = candidate(opened({ action: 'synchronize', user: { login: 'octocat' } }), '--guard')
+    const out = candidate(own({ action: 'synchronize', user: { login: 'octocat' } }), '--guard')
     assert.equal(out.status, 1, out.stdout)
     assert.match(out.stdout, /::error title=Not on the candidate::#7 targets main.*pnpm exec lntt ci candidate --pr 7/)
     assert.equal(existsSync(join(root, '.git/gh.log')), false)
@@ -549,7 +563,7 @@ describe('lntt ci candidate', () => {
   test("--guard reads the pull request's author from the event: Dependabot passes", () => {
     root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
     const out = candidate(
-      opened({ head: { ref: 'dependabot/npm_and_yarn/vite-7.1.0' }, user: { login: 'dependabot[bot]' } }),
+      own({ head: { ref: 'dependabot/npm_and_yarn/vite-7.1.0' }, user: { login: 'dependabot[bot]' } }),
       '--guard',
     )
     assert.equal(out.status, 0, out.stdout)
@@ -573,7 +587,7 @@ describe('lntt ci candidate', () => {
     root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
     const out = candidateWith(
       // The author only when --json asks for it, as gh does.
-      `*"pr view 7"*author*) echo '{"number":7,"title":"t","body":"","baseRefName":"main","headRefName":"dependabot/npm_and_yarn/x","labels":[],"mergedAt":null,"author":{"login":"app/dependabot"}}';; *"pr view 7"*) echo '{"number":7,"title":"t","body":"","baseRefName":"main","headRefName":"dependabot/npm_and_yarn/x","labels":[],"mergedAt":null}';;`,
+      `*"pr view 7"*author*) echo '{"number":7,"title":"t","body":"","baseRefName":"main","headRefName":"dependabot/npm_and_yarn/x","labels":[],"mergedAt":null,"author":{"login":"app/dependabot"},"isCrossRepository":false}';; *"pr view 7"*) echo '{"number":7,"title":"t","body":"","baseRefName":"main","headRefName":"dependabot/npm_and_yarn/x","labels":[],"mergedAt":null}';;`,
       null,
       '--guard',
       '--pr',
@@ -581,6 +595,13 @@ describe('lntt ci candidate', () => {
     )
     assert.equal(out.status, 0, out.stdout)
     assert.match(out.stdout, /Dependabot/)
+  })
+
+  test('--guard reads the fork from the event: a fork named like the candidate fails', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidate(own({ head: { ref: 'candidate/1', repo: { full_name: 'someone/r' } } }), '--guard')
+    assert.equal(out.status, 1, out.stdout)
+    assert.match(out.stdout, /::error title=Not on the candidate::#7 targets main/)
   })
 
   for (const flags of [
