@@ -102,7 +102,7 @@ describe('lntt check tests mutate', () => {
     const { result } = mutate('docs/note.md:1', 'Nothing', 'Something')
     assert.match(
       result.message,
-      /survived: no test runs this line \(no test imports the file or names its path or directory\)/,
+      /survived: no test runs this line \(no test imports the file or names its path or a directory\)/,
     )
   })
 
