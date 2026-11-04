@@ -2019,8 +2019,8 @@ describe('reading a part of the review state', () => {
           round: 4,
           base: 'b',
           head: 'h',
-          scope: '',
-          lenses: [],
+          scope: 'first round',
+          lenses: ['code'],
           findings: [
             finding('f1', 'note', 'unverified'),
             finding('f2', 'blocker', 'confirmed'),
@@ -2150,7 +2150,7 @@ describe('reading a part of the review state', () => {
       assert.deepEqual(ids(state.closed), ['a', 'b', 'c', 'd', 'e'])
       assert.deepEqual(state.repeated[0].closedBy, 'f0')
       assert.deepEqual(state.repeated[0].closedWhat, 'the old text')
-      assert.deepEqual([state.scope, state.lenses], ['', []])
+      assert.deepEqual([state.scope, state.lenses], ['first round', ['code']])
       assert.deepEqual(
         state.rounds.map((c: { round: number }) => c.round),
         [1, 2, 3, 4],
