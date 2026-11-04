@@ -200,10 +200,9 @@ So:
     A newer `lntt` therefore reads an older file;
     `packages/lntt/test/released-configs.test.ts` validates a configuration of each
     released version against the current schema, and checks that it sets every field
-    the schema of its tag knew. A key removed on purpose is listed in `REMOVED` of that
-    test, which drops it before validating the fixture (`local.hooks.format`). What the
-    schema cannot say, and what every reader
-    would fail on if the schema required it, `lntt validate` checks
+    the schema of its tag knew. A key removed on purpose (below) is listed in `REMOVED`
+    of that test, which drops it before validating the fixture. What the schema cannot
+    say, and what every reader would fail on if the schema required it, `lntt validate` checks
     (`packages/lntt/src/references.ts`): those checks may grow, since they fail the
     gate and never a read; the release notes name each new one
     ([delivery](../process/delivery.md#releasing)).
@@ -217,12 +216,18 @@ So:
     `packages/lntt/src/review-cli.ts`). An invalid file gets an error, not the
     defaults, in every command that reads the configuration, `lntt worktree start`
     (`projectConfig`) and the commitlint configuration (`commits`) included.
-  - A removal or a rename is a breaking change, the one release where an older file
-    stops validating: the release knows both names, the gate fails on the old one and
-    names the new one while the agent tools still read it, and a later release drops
-    the old name. Renaming one of the fixed areas of the
-    [agent layer](./agent-layer.md#an-installed-skill-is-never-edited) is such a
-    change, and these two releases are its coordination.
+  - A removal or a rename is a breaking change, told apart by whether the user of the
+    old name has something to move to.
+    - A rename, where a replacement exists, takes two releases: the release knows both
+      names, the gate fails on the old one and names the new one while the agent tools
+      still read it, and a later release drops the old name. Renaming one of the fixed
+      areas of the [agent layer](./agent-layer.md#an-installed-skill-is-never-edited) is
+      such a change, and these two releases are its coordination.
+    - A removal with no replacement takes one release: `lntt validate` fails on the key
+      with a message that names it, the release that removed it and what to do
+      (`local.hooks.format was removed in 0.6.4: delete it, formatting is the
+      pre-commit's`), not the generic unknown-property error. The key goes in `REMOVED`
+      of `released-configs.test.ts`, and the release notes name it as a breaking change.
 - **When the split's trigger fires**, the agent tools leave `@lntt/lntt` for a second
   command at its latest version, shipped with the plugin and through `npx`. The pinned
   group stays where it is. The skills become full files beside the agent tools and the

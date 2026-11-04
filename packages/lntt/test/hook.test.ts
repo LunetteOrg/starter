@@ -94,9 +94,15 @@ describe('the commands a hook runs', () => {
     assert.equal(spawnSync(process.execPath, [BIN, 'validate'], { cwd: root, encoding: 'utf8' }).status, 0)
   })
 
-  test('local.hooks.format is gone: the schema refuses it', () => {
+  test('local.hooks.format is gone: validate fails naming the key, the release and what to do', () => {
     config({ hooks: { format: 'biome format --write' } })
-    assert.equal(spawnSync(process.execPath, [BIN, 'validate'], { cwd: root, encoding: 'utf8' }).status, 1)
+    const r = spawnSync(process.execPath, [BIN, 'validate'], { cwd: root, encoding: 'utf8' })
+    assert.equal(r.status, 1)
+    assert.match(r.stderr, /local\.hooks\.format was removed in 0\.6\.4: delete it, formatting is the pre-commit's/)
+    assert.doesNotMatch(r.stderr, /must NOT have additional properties/)
+    // Another unknown hook still gets the generic error.
+    config({ hooks: { lint: 'x' } })
+    assert.match(spawnSync(process.execPath, [BIN, 'validate'], { cwd: root, encoding: 'utf8' }).stderr, /\(lint\)/)
   })
 })
 
