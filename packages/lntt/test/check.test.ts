@@ -611,13 +611,13 @@ describe('lntt check cite', () => {
 })
 
 describe('lntt check', () => {
-  test('alone runs every area: the AGENTS.md block, the installed skills, the plugin settings, the decision logs, the tests and (not run, with no body) the pull request body', () => {
+  test('alone runs every area: the AGENTS.md block, the installed skills, the plugin settings, the synced workflow lines, the decision logs, the tests and (not run, with no body) the pull request body', () => {
     project('clean')
     const r = results(['check'])
     assert.equal(r.status, 0)
     assert.deepEqual(
       [...new Set(r.results.map((x) => x.area))],
-      ['agents-md', 'skills', 'plugin', 'decisions', 'tests', 'body'],
+      ['agents-md', 'skills', 'plugin', 'workflows', 'decisions', 'tests', 'body'],
     )
   })
 

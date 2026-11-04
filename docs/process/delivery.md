@@ -12,7 +12,8 @@ into `main`, has a person's go: an agent never merges on its own.
 `<type>/<issue>/<slug>`, or `<type>/no-issue/<slug>` for work without an issue:
 `feat/77/worktree-branch-names`, `docs/no-issue/version-numbering`. The types are
 `delivery.branches.types`, plus the hotfix prefix; the slug is one to four lower-case
-words joined by `-`. The base, the candidates and Dependabot's branches are exempt.
+words joined by `-`. The base, the candidates and the bots' branches
+(`delivery.automated`) are exempt.
 
 The rules live in `lntt branch`, so the tool that creates a branch does not decide its
 name:
@@ -228,13 +229,14 @@ label, keeps the pull request on `main`, where it gets the full CI and merges on
 own. A pull request moved by mistake goes back with the label and
 `gh pr edit <n> --base main`.
 
-**Pull requests from forks and from Dependabot** stay on `main`: the runs they start
-get no repository secrets, so no app token. A maintainer moves one onto the candidate with
-`pnpm exec lntt ci candidate --pr <n>`, or merges it on `main` as a hotfix. A
-Dependabot pull request runs the CI once an owner, member or collaborator approves it
-([CI](./ci.md#dependabot-pull-requests)), and merges on `main`: the guard lets
-through a pull request from a `dependabot/` branch of this repository opened by
-Dependabot. A fork's pull request is red on the guard until it is moved or labelled.
+**Pull requests from forks and from bots** stay on `main`. A fork's runs get no
+repository secrets, so no app token; a bot's pull request (`delivery.automated`: its
+author and branch prefix) is left there by the automation. A maintainer moves one onto
+the candidate with `pnpm exec lntt ci candidate --pr <n>`, or merges it on `main` as a
+hotfix. A bot's pull request runs the CI its entry names, after the approval of its
+head for Dependabot's ([CI](./ci.md#automated-pull-requests)), and merges on `main`:
+the guard lets through a pull request from a bot's branch of this repository opened by
+that bot. A fork's pull request is red on the guard until it is moved or labelled.
 
 The automation runs from a terminal too: `pnpm exec lntt ci candidate --pr <n>` does
 what the workflow would do on that pull request's event (move it, rebuild a
@@ -259,7 +261,8 @@ got no run of any workflow for forty minutes). A pull request whose `opened` and
 - **The signal: the `candidate guard` check** (`.github/workflows/candidate-guard.yml`,
   `lntt ci candidate --guard`). On a pull request into `main` it is green for the
   candidate (the `delivery.candidate.prefix` branch), a hotfix (the hotfix prefix or
-  label) and a Dependabot pull request; any other pull request into `main` gets it red,
+  label) and a bot's pull request (`delivery.automated`); any other pull request into
+  `main` gets it red,
   with the remedy in the error. A branch name counts only from this repository, where
   pushing a branch takes write access (the event's head and base repositories, or
   `isCrossRepository` from `gh`; a head whose repository is not given counts as a fork): a fork's `candidate/1` or `hotfix/x` is red, and
@@ -293,9 +296,9 @@ got no run of any workflow for forty minutes). A pull request whose `opened` and
   It is added to the ruleset's `rules` (Settings → Rules → Rulesets, or
   `gh api -X PUT repos/<owner>/<repo>/rulesets/<id>` with the whole `rules` list), once
   `candidate-guard.yml` and `ci-approval.yml` are on `main`: before that, no pull
-  request into `main` reports the guard, and an approved Dependabot pull request keeps
-  a red `ci` beside the approval's ([CI](./ci.md#dependabot-pull-requests)). With them,
-  a Dependabot pull request's one `ci` check turns green when its head is approved. A required check that never reports blocks the merge, so the guard holds
+  request into `main` reports the guard, and an approved bot's pull request keeps a red
+  `ci` beside the approval's ([CI](./ci.md#automated-pull-requests)). With them, a bot's
+  pull request has one `ci` check, which turns green when its head is approved. A required check that never reports blocks the merge, so the guard holds
   when Actions drops every event of the pull request: on a pull request whose required
   check never reported, `gh pr merge --rebase` answers "the base branch policy
   prohibits the merge" and offers `--admin`; on one whose required `ci` is red, a later

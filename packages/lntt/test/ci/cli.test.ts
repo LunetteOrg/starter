@@ -409,7 +409,12 @@ Date.now = () => now() + (existsSync(${JSON.stringify(jump)}) ? 121 * 60_000 : 0
 })
 
 describe('lntt ci candidate', () => {
-  const CONFIG = { delivery: { candidate: { prefix: 'candidate/' } } }
+  const CONFIG = {
+    delivery: {
+      candidate: { prefix: 'candidate/' },
+      automated: [{ author: 'dependabot[bot]', branch: 'dependabot/', runs: 'after-approval', ci: 'full' }],
+    },
+  }
 
   // A gh that answers the open-candidate query and the comparison of the base with it
   // (`cases`, shell case branches, first), and records every call.
@@ -567,7 +572,7 @@ describe('lntt ci candidate', () => {
       '--guard',
     )
     assert.equal(out.status, 0, out.stdout)
-    assert.match(out.stdout, /a Dependabot pull request stays on main/)
+    assert.match(out.stdout, /a pull request of dependabot\[bot\] \(delivery\.automated\) stays on main/)
   })
 
   test('--guard --pr reads whether the head is a fork: a fork named like the candidate fails', () => {
@@ -594,7 +599,7 @@ describe('lntt ci candidate', () => {
       '7',
     )
     assert.equal(out.status, 0, out.stdout)
-    assert.match(out.stdout, /Dependabot/)
+    assert.match(out.stdout, /a pull request of app\/dependabot \(delivery\.automated\) stays on main/)
   })
 
   test('--guard reads the fork from the event: a fork named like the candidate fails', () => {

@@ -52,6 +52,7 @@ const config: CandidateConfig = {
   hotfix: { prefix: 'hotfix/', label: 'hotfix' },
   status: { inRelease: 'In release', done: 'Done' },
   retrospective: '## 🔁 Retro\n<!-- retro:start -->\n- **Friction:**\n<!-- retro:end -->\n',
+  automated: [{ author: 'dependabot[bot]', branch: 'dependabot/', runs: 'after-approval', ci: 'full' }],
 }
 // pelion's shape: release/<N>, same base and hotfix markers.
 const pelion: CandidateConfig = { ...config, prefix: 'release/' }
@@ -97,6 +98,12 @@ describe('isHotfix and retargetDecision', () => {
     assert.equal(retargetDecision(config, { ...pr, headRef: 'hotfix/x' }).move, false)
     assert.equal(retargetDecision(config, { ...pr, labels: ['hotfix'] }).move, false)
     assert.equal(retargetDecision({ ...config, base: 'trunk' }, pr).move, false)
+  })
+
+  test("a bot's pull request (delivery.automated) stays; the same branch from someone else moves", () => {
+    const bump = { ...pr, headRef: 'dependabot/npm/x' }
+    assert.equal(retargetDecision(config, { ...bump, author: 'dependabot[bot]' }).move, false)
+    assert.equal(retargetDecision(config, { ...bump, author: 'octocat' }).move, true)
   })
 })
 
@@ -493,7 +500,7 @@ describe('carryOverDecision', () => {
     assert.deepEqual(decision.move, [11, 12])
   })
 
-  test('others, hotfixes, candidates and Dependabot stay', () => {
+  test('others, hotfixes, candidates and the bots of delivery.automated stay', () => {
     const fromCandidate = { lastBaseChange: { from: 'candidate/4', to: 'main' } }
     const decision = carryOverDecision(config, {
       candidateBranch: 'candidate/4',
@@ -504,7 +511,7 @@ describe('carryOverDecision', () => {
         open(4, { ...fromCandidate, labels: ['hotfix'] }),
         open(5, { ...fromCandidate, headRef: 'hotfix/y' }),
         open(6, { ...fromCandidate, headRef: 'candidate/5' }),
-        open(7, { ...fromCandidate, author: 'dependabot[bot]' }),
+        open(7, { ...fromCandidate, headRef: 'dependabot/npm/x', author: 'dependabot[bot]' }),
       ],
     })
     assert.deepEqual(decision.move, [])
@@ -707,7 +714,7 @@ describe('sweepDecision', () => {
         open(3, { baseRef: 'candidate/5' }),
         open(4, { lastBaseChange: { from: 'candidate/5', to: 'main' } }),
         open(5, { baseRef: 'candidate/4', labels: ['hotfix'] }),
-        open(6, { baseRef: 'candidate/4', author: 'dependabot[bot]' }),
+        open(6, { baseRef: 'candidate/4', headRef: 'dependabot/npm/x', author: 'dependabot[bot]' }),
         open(7, { baseRef: 'main', headRef: 'candidate/5' }),
         open(8),
       ],

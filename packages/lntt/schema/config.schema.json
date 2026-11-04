@@ -360,7 +360,7 @@
       "properties": {
         "branches": {
           "type": "object",
-          "description": "Branch names: <type>/<issue>/<slug>, or <type>/no-issue/<slug>, computed, checked and fixed by lntt branch. The base, the candidates (candidate.base, candidate.prefix) and Dependabot's branches are exempt; the hotfix prefix counts as one more type.",
+          "description": "Branch names: <type>/<issue>/<slug>, or <type>/no-issue/<slug>, computed, checked and fixed by lntt branch. The base, the candidates (candidate.base, candidate.prefix) and the branches of delivery.automated are exempt; the hotfix prefix counts as one more type.",
           "additionalProperties": false,
           "properties": {
             "types": {
@@ -372,6 +372,35 @@
               },
               "minItems": 1,
               "uniqueItems": true
+            }
+          }
+        },
+        "automated": {
+          "type": "array",
+          "description": "The pull requests a bot opens, and how the CI treats them. They stay on the base: the candidate automation leaves them there, the candidate guard lets them through, the branch check exempts their branches. lntt sync writes the entries into every workflow line ending with `# lntt sync: delivery.automated`; lntt check workflows fails on a line that differs.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["author", "branch", "runs", "ci"],
+            "properties": {
+              "author": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The bot's login as the pull request event names it: dependabot[bot], renovate[bot]. gh's app/<slug> and the bare slug match it too."
+              },
+              "branch": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The prefix of the bot's branches: dependabot/. A pull request matches an entry by its author and its branch, both."
+              },
+              "runs": {
+                "enum": ["after-approval", "always"],
+                "description": "after-approval: the CI fails in its first step, before checkout, until an owner, member or collaborator approves the head commit, and a review re-runs it. always: the CI runs on every push, as for a person's pull request."
+              },
+              "ci": {
+                "enum": ["full", "minimal"],
+                "description": "full: the CI its base calls for. minimal: the CI a pull request into a candidate runs, even into the base; a push to the base still runs the full CI."
+              }
             }
           }
         },

@@ -159,6 +159,12 @@
     }
   },
   "delivery": {
+    // The pull requests a bot opens: they stay on main, and their CI waits for the
+    // approval of the head (docs/process/ci.md#automated-pull-requests). lntt sync writes
+    // this list into the workflows' marked lines.
+    "automated": [
+      { "author": "dependabot[bot]", "branch": "dependabot/", "runs": "after-approval", "ci": "full" }
+    ],
     // Pull requests into main collect on candidate/<N>, which reaches main with a
     // rebase merge (docs/process/delivery.md).
     "candidate": {

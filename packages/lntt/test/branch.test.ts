@@ -8,7 +8,7 @@ describe('the rules', () => {
   test('default: the conventional types, no-issue, the base and candidates exempt', () => {
     assert.ok(rules.types.includes('feat') && rules.types.includes('fix') && rules.types.includes('docs'))
     assert.ok(rules.types.includes('hotfix'), 'the hotfix prefix is a type')
-    assert.deepEqual(rules.exempt, ['main', 'candidate/', 'dependabot/'])
+    assert.deepEqual(rules.exempt, ['main', 'candidate/'])
   })
 
   test('read from delivery: branches.types, the candidate base and prefix, the hotfix prefix', () => {
@@ -16,10 +16,11 @@ describe('the rules', () => {
       delivery: {
         branches: { types: ['feat', 'fix'] },
         candidate: { base: 'trunk', prefix: 'rc-', hotfix: { prefix: 'urgent/' } },
+        automated: [{ branch: 'dependabot/' }, { branch: 'renovate/' }],
       },
     })
     assert.deepEqual(r.types, ['feat', 'fix', 'urgent'])
-    assert.deepEqual(r.exempt, ['trunk', 'rc-', 'dependabot/'])
+    assert.deepEqual(r.exempt, ['trunk', 'rc-', 'dependabot/', 'renovate/'])
   })
 })
 
@@ -78,10 +79,12 @@ describe('checkBranch', () => {
     }
   })
 
-  test('lets the base, candidates and dependabot through', () => {
+  test('lets the base, candidates and the branches of delivery.automated through', () => {
+    const bots = branchRules({ delivery: { automated: [{ branch: 'dependabot/' }] } })
     for (const name of ['main', 'candidate/3', 'dependabot/npm_and_yarn/yaml-2.9.2']) {
-      assert.deepEqual(checkBranch(name, rules), { ok: true }, name)
+      assert.deepEqual(checkBranch(name, bots), { ok: true }, name)
     }
+    assert.equal(checkBranch('dependabot/npm_and_yarn/yaml-2.9.2', rules).ok, false)
   })
 
   test('refuses anything else, saying why', () => {

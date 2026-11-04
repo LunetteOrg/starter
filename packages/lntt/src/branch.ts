@@ -6,7 +6,7 @@ export interface BranchRules {
   // Accepted types: delivery.branches.types, plus the hotfix prefix as one more type.
   types: string[]
   // Branches outside the convention by design, as exact names or prefixes ending in a
-  // separator: the base, the candidates, Dependabot's.
+  // separator: the base, the candidates, the bots' (delivery.automated).
   exempt: string[]
 }
 
@@ -28,6 +28,7 @@ const STOP_WORDS = new Set(
 interface Delivery {
   branches?: { types?: string[] }
   candidate?: { base?: string; prefix?: string; hotfix?: { prefix?: string } }
+  automated?: Array<{ branch: string }>
 }
 
 export function branchRules(config: { delivery?: Delivery }): BranchRules {
@@ -35,7 +36,11 @@ export function branchRules(config: { delivery?: Delivery }): BranchRules {
   const hotfix = (delivery.candidate?.hotfix?.prefix ?? 'hotfix/').replace(/[/._-]+$/, '')
   const types = [...(delivery.branches?.types ?? DEFAULT_TYPES)]
   if (!types.includes(hotfix)) types.push(hotfix)
-  const exempt = [delivery.candidate?.base ?? 'main', delivery.candidate?.prefix ?? CANDIDATE_PREFIX, 'dependabot/']
+  const exempt = [
+    delivery.candidate?.base ?? 'main',
+    delivery.candidate?.prefix ?? CANDIDATE_PREFIX,
+    ...(delivery.automated ?? []).map((entry) => entry.branch),
+  ]
   return { types, exempt }
 }
 

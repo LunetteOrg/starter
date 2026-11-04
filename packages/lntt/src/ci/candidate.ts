@@ -40,6 +40,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { type Automated, matchAutomated } from '../automated.ts'
 import { retroComment } from '../pull-request.ts'
 
 export interface CandidateConfig {
@@ -56,6 +57,8 @@ export interface CandidateConfig {
   // The empty retrospective block (`lntt pr block`): the comment a new candidate opens
   // with, which `lntt retro add` fills as the batch goes.
   retrospective: string
+  // The bots' pull requests (delivery.automated): they stay on the base.
+  automated: Automated[]
 }
 
 export interface PullRequest {
@@ -144,31 +147,28 @@ export function isHotfix(config: CandidateConfig, { headRef, labels = [] }: { he
 // Whether a pull request just opened or marked ready moves onto the candidate.
 export function retargetDecision(
   config: CandidateConfig,
-  { baseRef, headRef, labels = [] }: { baseRef: string; headRef: string; labels?: string[] },
+  {
+    baseRef,
+    headRef,
+    labels = [],
+    author,
+  }: { baseRef: string; headRef: string; labels?: string[]; author?: string | undefined },
 ): { move: boolean; reason: string } {
   if (baseRef !== config.base) return { move: false, reason: `it targets ${baseRef}, not ${config.base}` }
   if (headRef.startsWith(config.prefix)) return { move: false, reason: `${headRef} is a candidate` }
   if (isHotfix(config, { headRef, labels })) return { move: false, reason: `a hotfix stays on ${config.base}` }
+  if (matchAutomated(config.automated, { author, headRef }))
+    return { move: false, reason: `a pull request of ${author} (delivery.automated) stays on ${config.base}` }
   return { move: true, reason: `it targets ${config.base}` }
-}
-
-// Dependabot's pull requests stay on the base, where they are approved and merged
-// (docs/process/ci.md): its branch prefix and its login, as the event names it
-// (`dependabot[bot]`) or as gh does (`app/dependabot`, `dependabot` on older versions).
-export function isDependabot({ headRef, author }: { headRef: string; author?: string }) {
-  return (
-    headRef.startsWith('dependabot/') &&
-    (author === 'dependabot[bot]' || author === 'app/dependabot' || author === 'dependabot')
-  )
 }
 
 // The guard on pull requests into the base (`lntt ci candidate --guard`, the
 // `candidate guard` check): a pull request into the base is the candidate, a hotfix or
-// Dependabot's, or the automation did not move it (an event GitHub dropped, a fork) and
+// a bot's (delivery.automated), or the automation did not move it (an event GitHub dropped, a fork) and
 // the check fails with the remedy. Required by the base's ruleset, a check that never
 // reports blocks the merge too, so the guard holds when Actions drops every event.
 // A branch name counts only from this repository, where pushing one takes write
-// access: a fork can name its branch `candidate/1` or `hotfix/x`. The hotfix label
+// access: a fork can name its branch `candidate/1`, `hotfix/x` or a bot's. The hotfix label
 // counts from anywhere: only a person with triage access puts it on. A head whose
 // repository the source does not give counts as a fork.
 export function guardDecision(
@@ -180,7 +180,8 @@ export function guardDecision(
   if (own && pr.headRef.startsWith(config.prefix)) return { pass: true, reason: `${pr.headRef} is the candidate` }
   if (isHotfix(config, { headRef: own ? pr.headRef : '', labels: pr.labels ?? [] }))
     return { pass: true, reason: `a hotfix stays on ${config.base}` }
-  if (own && isDependabot(pr)) return { pass: true, reason: `a Dependabot pull request stays on ${config.base}` }
+  if (own && matchAutomated(config.automated, pr))
+    return { pass: true, reason: `a pull request of ${pr.author} (delivery.automated) stays on ${config.base}` }
   return {
     pass: false,
     reason:
@@ -250,7 +251,7 @@ export function isCandidateMerge(config: CandidateConfig, pr: Pick<PullRequest, 
 
 // The open pull requests a merged candidate leaves behind: those still on it, and
 // those on the base whose last base change came from it (GitHub's own move when it
-// deletes the merged branch). Hotfixes, candidates and Dependabot stay.
+// deletes the merged branch). Hotfixes, candidates and the bots' (delivery.automated) stay.
 export function carryOverDecision(
   config: CandidateConfig,
   { candidateBranch, openPrs }: { candidateBranch: string; openPrs: OpenPullRequest[] },
@@ -259,9 +260,7 @@ export function carryOverDecision(
     .filter((pr) => {
       const leftBehind =
         pr.baseRef === candidateBranch || (pr.baseRef === config.base && pr.lastBaseChange?.from === candidateBranch)
-      return (
-        leftBehind && pr.author !== 'dependabot[bot]' && retargetDecision(config, { ...pr, baseRef: config.base }).move
-      )
+      return leftBehind && retargetDecision(config, { ...pr, baseRef: config.base }).move
     })
     .map((pr) => pr.number)
     .sort((a, b) => a - b)
@@ -284,7 +283,6 @@ export function sweepDecision(
     .filter(
       (pr) =>
         (stranded(pr.baseRef) || (pr.baseRef === config.base && stranded(pr.lastBaseChange?.from))) &&
-        pr.author !== 'dependabot[bot]' &&
         retargetDecision(config, { ...pr, baseRef: config.base }).move,
     )
     .map((pr) => pr.number)

@@ -102,12 +102,24 @@ Formatting is the pre-commit's: `lntt sync` writes no format hook:
 "local": { "hooks": { "typecheck": ["tsc --noEmit", "uv run mypy ."] } }
 ```
 
+And into the workflows: every line of `.github/workflows/*.yml` that ends with
+`# lntt sync: delivery.automated` gets the entries of `delivery.automated` (the pull
+requests a bot opens: author, branch prefix, `runs`, `ci`), minified, single-quoted,
+keeping the line's key and indent. A step that decides before any checkout, where lntt
+cannot run, reads them from there:
+
+```yaml
+env:
+  AUTOMATED: '[{"author":"dependabot[bot]","branch":"dependabot/","runs":"after-approval","ci":"full"}]' # lntt sync: delivery.automated
+```
+
 So the skills, the plugin and the `lntt` they call are one version, the project's
 lockfile: a bump of `@lntt/lntt` updates the guides and the plugin with no other step.
 `lntt check agents-md` fails when the block differs from its source; `lntt check
 skills` when a stub is missing or edited, or names a skill the package no longer has;
 `lntt check plugin` when an entry of `.claude/settings.json` is missing, disabled or
-points elsewhere. Either way, `lntt sync` runs on the branch of the bump and its diff
+points elsewhere; `lntt check workflows` when a marked workflow line differs from
+`delivery.automated`. Either way, `lntt sync` runs on the branch of the bump and its diff
 goes in the same pull request ([agent layer](../../docs/adr/agent-layer.md)).
 
 ## Checks (`lntt check`)
@@ -120,6 +132,7 @@ lntt check                                              # every area: what CI ru
 lntt check agents-md                                    # the managed block of AGENTS.md
 lntt check skills                                       # the stubs of the shared skills
 lntt check plugin                                       # the plugin and the hooks in .claude/settings.json
+lntt check workflows                                    # the workflow lines that hold delivery.automated
 lntt check decisions                                    # the decision logs of recording
 lntt check decisions --base main                        # … and what the diff from main touches
 lntt check decisions board-refs docs/product/pricing.md # the board references of those files
@@ -208,8 +221,8 @@ lntt branch rename                   # fix the name a tool gave the current bran
 ```
 
 The convention is `<type>/<issue>/<slug>` or `<type>/no-issue/<slug>`; the types are
-`delivery.branches.types` plus the hotfix prefix, and the base, the candidates and
-Dependabot's branches are exempt. `name` reads the issue with `gh` (its native type,
+`delivery.branches.types` plus the hotfix prefix, and the base, the candidates and the
+branches of `delivery.automated` are exempt. `name` reads the issue with `gh` (its native type,
 else the labels `bug` and `documentation`, else `feat`). `rename` reads the convention
 back from a flattened name (Orca's `<user>/<type>-<issue>-<slug>`, the agent harness's
 `worktree-<type>+<issue>+<slug>`) or, inside Orca, builds it from the issue linked to the
@@ -684,8 +697,9 @@ comment on its pull request either way, or one naming the conflict. Without
 `--dry-run`, `--follow` pushes the candidate right away from the operator's clone (a
 force push with a lease on the rebase path): run it with `--dry-run` first.
 `--guard` only reads: a pull request into the base passes when it is the candidate, a
-hotfix (the branch prefix or the label of `delivery.candidate.hotfix`) or Dependabot's,
-and any pull request into another branch passes; any other one fails (exit 1) with an
+hotfix (the branch prefix or the label of `delivery.candidate.hotfix`) or a bot's
+(`delivery.automated`: its author and branch prefix), a branch name counting only from
+the same repository, and any pull request into another branch passes; any other one fails (exit 1) with an
 error annotation naming the remedy, `lntt ci candidate --pr <n>`. It takes no other
 flag but `--pr`.
 `--dry-run` prints the push and the comments; the fetch, merge and rebase still run on

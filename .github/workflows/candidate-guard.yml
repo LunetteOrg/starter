@@ -1,7 +1,8 @@
 name: Candidate guard
 
 # The `candidate guard` check: a pull request into the default branch is the candidate,
-# a hotfix (delivery.candidate.hotfix: branch prefix or label) or Dependabot's, or the
+# a hotfix (delivery.candidate.hotfix: branch prefix or label) or a bot's
+# (delivery.automated), or the
 # candidate automation did not move it, and the check fails with the remedy
 # (`pnpm exec lntt ci candidate --pr <n>`). A pull request into any other branch passes
 # at once. The logic: `lntt ci candidate --guard` (packages/lntt/src/ci/candidate.ts);
@@ -56,6 +57,6 @@ jobs:
       # Only @lntt/lntt and what it depends on.
       - if: steps.base.outputs.guard == 'true'
         run: pnpm install --frozen-lockfile --filter '@lntt/lntt...'
-      - name: A pull request into the default branch is the candidate, a hotfix or Dependabot's
+      - name: A pull request into the default branch is the candidate, a hotfix or a bot's
         if: steps.base.outputs.guard == 'true'
         run: node packages/lntt/bin/lntt.ts ci candidate --guard

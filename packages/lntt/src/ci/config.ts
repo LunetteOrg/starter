@@ -3,6 +3,7 @@
 // only, a machine-wide lock, 30 minutes per step) and `delivery.candidate` (without
 // it: no candidate).
 
+import { automatedEntries } from '../automated.ts'
 import { ConfigError, loadConfig } from '../index.ts'
 import { retrospectiveBlock, retrospectiveRules } from '../pull-request.ts'
 import type { CandidateConfig } from './candidate.ts'
@@ -72,5 +73,6 @@ export function candidateConfig(cwd: string): CandidateConfig | null {
     hotfix: { prefix: section.hotfix?.prefix ?? 'hotfix/', label: section.hotfix?.label ?? 'hotfix' },
     status: { ...CANDIDATE_STATUS, ...section.status },
     retrospective: retrospectiveBlock(retrospectiveRules(config)),
+    automated: automatedEntries(config),
   }
 }

@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, join, relative } from 'node:path'
 import { checkAgentsBlock } from './agents.ts'
+import { checkAutomated } from './automated.ts'
 import { checkDecisions, decisionBoardRefs, decisionFigures } from './check-decisions.ts'
 import { runTests } from './check-tests.ts'
 import { checkClaudeSettings, HOOK_LABELS, INVALID, SETTINGS } from './claude-settings.ts'
@@ -24,7 +25,7 @@ export interface Result {
   message: string
 }
 
-export const AREAS = ['agents-md', 'skills', 'plugin', 'decisions', 'tests', 'body'] as const
+export const AREAS = ['agents-md', 'skills', 'plugin', 'workflows', 'decisions', 'tests', 'body'] as const
 export type Area = (typeof AREAS)[number]
 
 export function isArea(name: string): name is Area {
@@ -215,6 +216,7 @@ export function runArea(area: Area, check: string | undefined, files: string[], 
   if (area === 'agents-md') return agentsMd(options.root)
   if (area === 'skills') return skills(options.root)
   if (area === 'plugin') return plugin(options.root)
+  if (area === 'workflows') return checkAutomated(options.root, options.data)
   if (area === 'tests') return runTests(check, files, options)
   if (area === 'body') return body(check, options)
   if (check === 'numbers') return decisionFigures(options, files)

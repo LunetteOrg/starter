@@ -1,15 +1,17 @@
 name: CI approval
 
-# A review of a Dependabot pull request by an owner, member or collaborator re-runs the
-# `ci` run of its head (ci.yml), whose first step reads the reviews again: an approval
-# of the head turns that same `ci` check green with the whole job, a request for
-# changes or a dismissed approval turns it red. The head keeps one `ci` check, which
-# main's ruleset can require (docs/process/ci.md#dependabot-pull-requests). A review of
-# any other pull request skips this job; its entry is `rerun`, never `ci`.
+# A review by an owner, member or collaborator of a bot's pull request whose CI waits
+# for the approval (delivery.automated, `runs: after-approval`) re-runs the `ci` run of
+# its head (ci.yml), whose first step reads the reviews again: an approval of the head
+# turns that same `ci` check green with the whole job, a request for changes or a
+# dismissed approval turns it red. The head keeps one `ci` check, which main's ruleset
+# requires (docs/process/ci.md#automated-pull-requests). On any other pull request the
+# job ends in its first step; its entry is `rerun`, never `ci`. No bot is named here:
+# the entries are the line lntt sync writes from the configuration.
 #
-# The run is the reviewer's, not Dependabot's, so its token gets the actions: write it
-# asks for; the re-run keeps the privileges of the run it repeats: Dependabot's, read
-# only. Nothing here checks out or runs the pull request's code.
+# The run is the reviewer's, not the bot's, so its token gets the actions: write it asks
+# for; the re-run keeps the privileges of the run it repeats (a Dependabot run: read
+# only, no secrets). Nothing here checks out or runs the pull request's code.
 on:
   pull_request_review:
     types: [submitted, dismissed]
@@ -19,8 +21,6 @@ permissions: {}
 jobs:
   rerun:
     if: >-
-      startsWith(github.event.pull_request.head.ref, 'dependabot/') &&
-      github.event.pull_request.user.login == 'dependabot[bot]' &&
       !github.event.pull_request.draft &&
       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association)
     runs-on: ubuntu-latest
@@ -28,14 +28,25 @@ jobs:
     permissions:
       actions: write
     steps:
-      # The newest pull_request run of ci.yml on the head: a run still going is waited
-      # for (a re-run needs a completed run). A push after the review has a run of its
-      # own, which reads the reviews when it starts: nothing to re-run here.
+      # The entry as ci.yml's first step matches it: the author and the branch prefix.
+      # Then the newest pull_request run of ci.yml on the head: a run still going is
+      # waited for (a re-run needs a completed run). A push after the review has a run of
+      # its own, which reads the reviews when it starts: nothing to re-run here.
       - env:
+          AUTOMATED: '[{"author":"dependabot[bot]","branch":"dependabot/","runs":"after-approval","ci":"full"}]' # lntt sync: delivery.automated
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
           SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          author=$(jq -r '.pull_request.user.login // empty' "$GITHUB_EVENT_PATH")
+          runs=$(jq -r --arg author "$author" --arg ref "$HEAD_REF" '
+            def bot: sub("^app/"; "") | sub("\\[bot\\]$"; "");
+            first(.[] | select(. as $e | $author != "" and ($e.author | bot) == ($author | bot) and ($ref | startswith($e.branch))) | .runs) // empty' <<< "$AUTOMATED")
+          if [ "$runs" != after-approval ]; then
+            echo "not a pull request whose CI waits for the approval (delivery.automated): nothing to re-run"
+            exit 0
+          fi
           for attempt in $(seq 1 80); do
             run=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$SHA&per_page=1" \
               --jq '.workflow_runs[0] // empty | "\(.id) \(.status) \(.html_url)"')
