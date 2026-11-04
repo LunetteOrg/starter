@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, test } from 'node:test'
+import { parse } from 'yaml'
 import {
   collect,
   drawn,
@@ -140,6 +141,37 @@ describe('upstream helpers', () => {
     assert.equal(usageLimit('{"type":"error","error":{"status":429}}'), 'usage limit reached')
     assert.equal(usageLimit('{"type":"text","error":{"status":429,"message":"not an error event"}}'), null)
     assert.equal(usageLimit('{"type":"text","part":{"text":"ok"}}\nnot json'), null)
+    // A line that parses to a non-object is skipped, not a crash.
+    assert.equal(usageLimit('null'), null)
+    assert.equal(usageLimit('429'), null)
+    assert.equal(usageLimit('"error"'), null)
+    assert.equal(usageLimit('[{"type":"error","error":{"status":429}}]'), null)
+    assert.equal(usageLimit('null\n{"type":"error","error":{"status":429,"message":"after a null"}}'), 'after a null')
+  })
+
+  test('every cache save of upstream.yml is skipped when the check was inconclusive', () => {
+    // A real run cannot be forced from a pull request (it needs a new tool release and a
+    // provider at its usage limit), so the workflow's own text is what is checked.
+    const workflow = parse(readFileSync(new URL('../../../.github/workflows/upstream.yml', import.meta.url), 'utf8'))
+    const steps = Object.values<{ steps?: { id?: string; uses?: string; if?: string; run?: string }[] }>(
+      workflow.jobs,
+    ).flatMap((job) => job.steps ?? [])
+    // The step the guard reads: it must exist and write the output the guard compares.
+    const marker = steps.find((step) => step.id === 'inconclusive')
+    assert.match(marker?.if ?? '', /!cancelled\(\)/)
+    assert.match(marker?.run ?? '', /echo "inconclusive=true" >> "\$GITHUB_OUTPUT"/)
+    const saves = steps.filter((step) => step.uses?.startsWith('actions/cache/save'))
+    assert.ok(saves.length >= 2, `expected the job's cache saves, found ${saves.length}`)
+    // The guard is one clause of an AND, not negated and not in an OR.
+    const guard = "steps.inconclusive.outputs.inconclusive != 'true'"
+    for (const save of saves) {
+      const clauses = (save.if ?? '')
+        .replace(/^\$\{\{|\}\}$/g, '')
+        .split('&&')
+        .map((clause) => clause.trim())
+      assert.ok(!(save.if ?? '').includes('||'), `a cache save has an OR in its condition: ${save.if}`)
+      assert.ok(clauses.includes(guard), `a cache save lacks the inconclusive guard: ${save.if}`)
+    }
   })
 
   test('inconclusive writes the reason to the file UPSTREAM_INCONCLUSIVE names, and to none without it', () => {
