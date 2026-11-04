@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import {
   existsSync,
   mkdirSync,
@@ -144,6 +144,15 @@ describe('the installed package', () => {
         assert.match(readFileSync(join(project, dir, name, 'SKILL.md'), 'utf8'), new RegExp(`lntt guide ${name}\n`))
     }
     execFileSync('node', [bin, 'check', 'skills'], { cwd: project })
+  })
+
+  test('lntt review status --query loads jq from the installed dependencies', () => {
+    const manifest = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8'))
+    assert.ok(manifest.dependencies['jq-wasm'], 'a dependency, not a dev one')
+    const repo = mktmp('lntt-installed-repo-')
+    execFileSync('git', ['init', '-q', '-b', 'feat/1/x'], { cwd: repo })
+    const r = spawnSync('node', [bin, 'review', 'status', '--query=.branch, .state'], { cwd: repo, encoding: 'utf8' })
+    assert.deepEqual([r.status, r.stdout], [4, 'feat/1/x\nnull\n'], r.stderr)
   })
 
   test('a project imports the package, its ci entry and its schemas by name', () => {

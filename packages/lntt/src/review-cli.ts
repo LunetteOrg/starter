@@ -67,7 +67,7 @@ export { formatTokens }
 const USAGE = `usage: lntt review [--base <branch>] [--plan]
        lntt review reply <finding> <answer>
        lntt review allow <rounds>
-       lntt review status [--json] [--clear]
+       lntt review status [--json] [--query <jq>] [--clear]
        lntt review cost [--json]`
 
 function usage(message?: string): never {
@@ -210,7 +210,7 @@ function askAtLimit(marker: Started, branch: string, text: string): Asked | null
 
 // The round past the limit does not start: the person decides on what the last round
 // left, its findings not withdrawn and its failures. Exit 3, with a `limit:` line the
-// review skill watches for.
+// review skill watches for, and the summary of a round on stdout.
 function stopAtLimit(
   state: ReviewState | null,
   branch: string,
@@ -218,7 +218,7 @@ function stopAtLimit(
   config: ReviewConfig,
   rules: BranchRules,
 ): number {
-  const own = state?.branch === branch ? state : null
+  const own = state?.branch === branch ? withDefaults(state) : null
   const allowed = own?.allowed ?? 0
   const open = (own?.result.findings ?? []).filter((f) => f.verdict !== 'withdrawn')
   const failed = own?.result.failed ?? []
@@ -262,17 +262,8 @@ function stopAtLimit(
     failed: failed.length,
     ...(asked ? { asked } : {}),
   })
-  // The branch's total so far, with its line: what the pull request's Review cost takes.
-  const total = {
-    rounds: cost.rounds,
-    tokens: cost.tokens,
-    usd: cost.usd,
-    unrecorded: cost.unrecorded,
-    line: cost.line,
-  }
-  stdout.write(
-    `${JSON.stringify({ limit: { round, maxRounds: config.maxRounds, allowed }, findings: open, failed, total, ...(asked ? { asked } : {}) }, null, 2)}\n`,
-  )
+  const lines = own ? summary(own, stateView(own, config.maxRounds), '') : [noRoundLine(branch, '')]
+  stdout.write(`${lines.join('\n')}\n`)
   return 3
 }
 
@@ -753,7 +744,8 @@ async function round(args: string[]): Promise<number> {
     tokens: result.tokens,
     clean: roundClean(result),
   })
-  stdout.write(`${JSON.stringify(result, null, 2)}\n`)
+  // The summary alone: the round's whole result is in the state, read with lntt review status.
+  stdout.write(`${summary(saved, stateView(saved, config.maxRounds), '').join('\n')}\n`)
   return roundClean(result) ? 0 : 1
 }
 
@@ -858,7 +850,7 @@ function allow(args: string[]): number {
 class UnreadableStateError extends Error {}
 
 // The state as `lntt review status` reads it: an error when it cannot be read, never a
-// round started on a guess. A state written before a field existed reads with its default.
+// round started on a guess.
 function statusState(): { state: ReviewState; updated: Date } | null {
   const path = statePath()
   if (!existsSync(path)) return null
@@ -877,15 +869,24 @@ function statusState(): { state: ReviewState; updated: Date } | null {
     !Array.isArray(result.findings)
   )
     throw new UnreadableStateError(`${path} cannot be read: pnpm exec lntt review status --clear removes it`)
-  state.result = {
-    ...result,
-    blocking: result.blocking ?? ['blocker', 'warning'],
-    refuted: result.refuted ?? [],
-    failed: result.failed ?? [],
-    partial: result.partial ?? [],
-    skipped: result.skipped ?? [],
-  } as ReviewState['result']
-  return { state, updated: statSync(path).mtime }
+  return { state: withDefaults(state), updated: statSync(path).mtime }
+}
+
+// A state written before a field existed, with that field's default.
+function withDefaults(state: ReviewState): ReviewState {
+  const result: Partial<ReviewState['result']> = state.result
+  return {
+    ...state,
+    result: {
+      ...result,
+      blocking: result.blocking ?? ['blocker', 'warning'],
+      refuted: result.refuted ?? [],
+      failed: result.failed ?? [],
+      partial: result.partial ?? [],
+      skipped: result.skipped ?? [],
+      closed: result.closed ?? [],
+    } as ReviewState['result'],
+  }
 }
 
 // The ledger as it is on disk, whatever branch it names: {} when it cannot be read.
@@ -986,17 +987,125 @@ function clear(root: string, current: string | null): number {
   return 0
 }
 
+// What the views of a state share: its limit, and what is left of its last round.
+function stateView(state: ReviewState, maxRounds: number) {
+  const { result } = state
+  const allowed = state.allowed ?? 0
+  const limit = maxRounds + allowed
+  const clean = roundClean(result)
+  const ledger = ledgerFile()
+  return {
+    allowed,
+    limit,
+    clean,
+    atLimit: state.round >= limit && !clean,
+    open: result.findings.filter((f) => f.verdict !== 'withdrawn'),
+    replied: result.findings.filter((f) => f.reply !== undefined || f.verdict === 'withdrawn'),
+    closed: ledger?.branch === state.branch && Array.isArray(ledger.closed) ? ledger.closed : [],
+    // The last round's own tokens and USD; the branch's total is lntt review cost.
+    tokens: result.tokens ?? null,
+    cost: result.cost ?? null,
+  }
+}
+
+// One line of outcome and one per thing to act on: what a round, the limit and status print.
+function summary(state: ReviewState, view: ReturnType<typeof stateView>, running: string): string[] {
+  const { result } = state
+  const { open, replied, closed, tokens, cost } = view
+  const outcome = [
+    `round ${state.round} of ${view.limit}`,
+    `reviewed ${state.reviewed ?? 'nothing'}`,
+    view.clean ? 'clean' : 'not clean',
+    ...(view.atLimit ? ['at the limit'] : []),
+    ...(running ? [running] : []),
+  ]
+  const blocked = open.filter((f) => result.blocking.includes(f.severity)).length
+  const counts = [
+    `${open.length} open${open.length > 0 ? ` (${blocked} blocking)` : ''}`,
+    `${replied.length} replied`,
+    `${closed.length} closed`,
+    ...(result.failed.length > 0 ? [`${result.failed.length} failed`] : []),
+    ...(result.partial.length > 0 ? [`${result.partial.length} partial`] : []),
+    ...(tokens === null ? [] : [formatTokens(tokens)]),
+    ...(cost === null ? [] : [`$${cost.toFixed(2)}`]),
+  ]
+  // Blocking severities first: what keeps the round from being clean.
+  const rank = (f: Checked) => (result.blocking.includes(f.severity) ? 0 : 1)
+  return [
+    `lntt review: ${state.branch}: ${outcome.join(', ')}; ${counts.join(', ')}`,
+    ...[...open]
+      .sort((a, b) => rank(a) - rank(b))
+      .map((f) => `  ${f.id} ${f.severity} ${f.verdict} ${anchor(f)} — ${f.what}`),
+    ...result.failed.map((f) => `  ${f.lens} · ${f.agent} failed: ${f.error}`),
+    ...result.partial.map((p) => `  ${p.lens} · ${p.agent}: ${p.lines.length} lines not read`),
+    ...result.closed.map((f) => `  ${f.id} ${f.severity} repeats ${f.closedBy} ${anchor(f)} — ${f.what}`),
+  ]
+}
+
+// Each level of the state as its count, named as its key under `.state`: what is there to ask
+// for with --query.
+function folded(state: ReviewState, view: ReturnType<typeof stateView>): string[] {
+  const { result } = state
+  return [
+    `findings: ${result.findings.length} (${view.open.length} open)`,
+    `refuted: ${result.refuted.length}`,
+    `repeated: ${result.closed.length}`,
+    `closed: ${view.closed.length}`,
+    `failed: ${result.failed.length}`,
+    `partial: ${result.partial.length}`,
+    `skipped: ${result.skipped.length}`,
+    `rounds: ${(state.rounds ?? []).length}`,
+  ]
+}
+
+function noRoundLine(here: string, running: string): string {
+  return `lntt review: no round on ${here} yet${running ? `; ${running}` : ''}`
+}
+
+// A jq expression on the document --json prints, run by jq-wasm, loaded here so that no other
+// call pays for it. Strings raw unless --json. `--` ends jq's flags: an expression that starts
+// with a dash stays an expression. A success exits as status does; any failure of jq exits 2
+// with nothing on stdout, what it printed before failing included. With no state at all, a
+// failure while running only says what status says: there is no round to read.
+async function runQuery(
+  document: { state: unknown },
+  expression: string,
+  json: boolean,
+  code: number,
+  noRound: string,
+): Promise<number> {
+  const { raw } = await import('jq-wasm')
+  const jq = await raw(JSON.stringify(document), expression, [...(json ? [] : ['-r']), '-c', '--'])
+  if (jq.exitCode === 5 && document.state === null) {
+    stderr.write(`${noRound}\n`)
+    return 4
+  }
+  if (jq.exitCode !== 0) {
+    stderr.write(`${jq.stderr || `jq exited ${jq.exitCode}`}\n`)
+    return 2
+  }
+  if (jq.stderr) stderr.write(`${jq.stderr}\n`)
+  if (jq.stdout) stdout.write(`${jq.stdout}\n`)
+  return code
+}
+
 // What `lntt review status` reads: the worktree's own state, through lntt review and
-// never from its files, which live in each worktree's git directory. One line of outcome
-// and one per thing to act on, or the whole of it with --json; the exit code says which:
-// 0 clean, 1 something to act on, 3 at the limit, 4 no round on this branch. It never
-// takes the lock and never writes the progress file: a running round keeps both.
-function status(args: string[]): number {
+// never from its files, which live in each worktree's git directory. Each level folded, one
+// line of outcome and one per thing to act on; the whole of it with --json, a part with
+// --query. The exit code says which: 0 clean, 1 something to act on, 3 at the limit, 4 no
+// round on this branch. It never takes the lock and never writes the progress file: a
+// running round keeps both.
+async function status(args: string[]): Promise<number> {
   const { values } = parseArgs({
     args,
-    options: { json: { type: 'boolean', default: false }, clear: { type: 'boolean', default: false } },
+    options: {
+      json: { type: 'boolean', default: false },
+      clear: { type: 'boolean', default: false },
+      query: { type: 'string' },
+    },
   })
   if (values.clear && values.json) usage('--clear does not take --json')
+  if (values.clear && values.query !== undefined) usage('--clear does not take --query')
   const root = git('rev-parse', '--show-toplevel')
   // The branch HEAD names, also before its first commit; null when HEAD is detached.
   let current: string | null = null
@@ -1012,27 +1121,19 @@ function status(args: string[]): number {
   const own = statusState()
   const here = current ?? 'detached HEAD'
   if (!own) {
-    if (values.json) stdout.write(`${JSON.stringify({ branch: current, running, state: null }, null, 2)}\n`)
-    else stdout.write(`lntt review: no round on ${here} yet${runningText ? `; ${runningText}` : ''}\n`)
+    const line = noRoundLine(here, runningText)
+    const none = { branch: current, running, state: null }
+    if (values.query !== undefined) return runQuery(none, values.query, values.json, 4, line)
+    stdout.write(values.json ? `${JSON.stringify(none, null, 2)}\n` : `${line}\n`)
     return 4
   }
   const { state, updated } = own
   const result = state.result
   const isCurrent = state.branch === current
   const { maxRounds } = reviewConfig(loaded())
-  const allowed = state.allowed ?? 0
-  const limit = maxRounds + allowed
-  const clean = roundClean(result)
-  const atLimit = state.round >= limit && !clean
-  const open = result.findings.filter((f) => f.verdict !== 'withdrawn')
-  const replied = result.findings.filter((f) => f.reply !== undefined || f.verdict === 'withdrawn')
-  const ledger = ledgerFile()
-  const closed = ledger?.branch === state.branch && Array.isArray(ledger.closed) ? ledger.closed : []
-  // The last round's own tokens and USD; the branch's total is lntt review cost.
-  const tokens = result.tokens ?? null
-  const cost = result.cost ?? null
-  const code = !isCurrent ? 4 : clean ? 0 : atLimit ? 3 : 1
-  if (values.json) {
+  const view = stateView(state, maxRounds)
+  const code = !isCurrent ? 4 : view.clean ? 0 : view.atLimit ? 3 : 1
+  if (values.json || values.query !== undefined) {
     const out = {
       branch: current,
       running,
@@ -1043,24 +1144,31 @@ function status(args: string[]): number {
         merged: mergedInto(root, state.branch, result.head).merged,
         round: state.round,
         maxRounds,
-        allowed,
-        limit,
+        allowed: view.allowed,
+        limit: view.limit,
         reviewed: state.reviewed,
         base: result.base,
         head: result.head,
-        clean,
-        atLimit,
+        clean: view.clean,
+        atLimit: view.atLimit,
         blocking: result.blocking,
-        open,
-        replied,
-        closed,
+        open: view.open,
+        replied: view.replied,
+        closed: view.closed,
         failed: result.failed,
         partial: result.partial,
         skipped: result.skipped,
-        tokens,
-        cost,
+        tokens: view.tokens,
+        cost: view.cost,
+        // The last round whole, and the cost of each round.
+        findings: result.findings,
+        refuted: result.refuted,
+        // Not `closed`, which is the ledger: the fresh findings that repeat an entry of it.
+        repeated: result.closed,
+        rounds: state.rounds ?? [],
       },
     }
+    if (values.query !== undefined) return runQuery(out, values.query, values.json, code, '')
     stdout.write(`${JSON.stringify(out, null, 2)}\n`)
     return code
   }
@@ -1072,41 +1180,14 @@ function status(args: string[]): number {
     )
     return code
   }
-  const outcome = [
-    `round ${state.round} of ${limit}`,
-    `reviewed ${state.reviewed ?? 'nothing'}`,
-    clean ? 'clean' : 'not clean',
-    ...(atLimit ? ['at the limit'] : []),
-    ...(runningText ? [runningText] : []),
-  ]
-  const blocked = open.filter((f) => result.blocking.includes(f.severity)).length
-  const counts = [
-    `${open.length} open${open.length > 0 ? ` (${blocked} blocking)` : ''}`,
-    `${replied.length} replied`,
-    `${closed.length} closed`,
-    ...(result.failed.length > 0 ? [`${result.failed.length} failed`] : []),
-    ...(result.partial.length > 0 ? [`${result.partial.length} partial`] : []),
-    ...(tokens === null ? [] : [formatTokens(tokens)]),
-    ...(cost === null ? [] : [`$${cost.toFixed(2)}`]),
-  ]
-  // Blocking severities first: what keeps the round from being clean.
-  const rank = (f: Checked) => (result.blocking.includes(f.severity) ? 0 : 1)
-  const lines = [
-    `lntt review: ${state.branch}: ${outcome.join(', ')}; ${counts.join(', ')}`,
-    ...[...open]
-      .sort((a, b) => rank(a) - rank(b))
-      .map((f) => `  ${f.id} ${f.severity} ${f.verdict} ${anchor(f)} — ${f.what}`),
-    ...result.failed.map((f) => `  ${f.lens} · ${f.agent} failed: ${f.error}`),
-    ...result.partial.map((p) => `  ${p.lens} · ${p.agent}: ${p.lines.length} lines not read`),
-  ]
-  stdout.write(`${lines.join('\n')}\n`)
+  stdout.write(`${[...folded(state, view), ...summary(state, view, runningText)].join('\n')}\n`)
   return code
 }
 
 export async function main([command, ...args]: string[]): Promise<void> {
   try {
     if (command === 'allow') exit(allow(args))
-    if (command === 'status') exit(status(args))
+    if (command === 'status') exit(await status(args))
     if (command === 'cost') exit(cost(args))
     exit(command === 'reply' ? await reply(args) : await round(command === undefined ? [] : [command, ...args]))
   } catch (error) {

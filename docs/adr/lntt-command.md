@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-11-02
+date: 2026-11-04
 tags: [cli, packages, agents, ci, commands]
 ---
 
@@ -30,7 +30,7 @@ lntt branch name | check | rename
 lntt pr block
 lntt retro add
 lntt dump | issue [search]
-lntt review [reply | allow | status]
+lntt review [reply | allow | status | cost]
 lntt worktree start
 lntt ask | inbox | answer
 lntt ci local | candidate | proved
@@ -72,12 +72,23 @@ lntt ci local | candidate | proved
   person who will start one; `lntt check --json`), a document for an agent (`lntt guide
   <skill>`: a comment naming the folder its relative links start from, then the guide;
   `lntt browser`: the driver, then one line per operation),
+  a summary for an agent (`lntt review` and `lntt review status`: one line of outcome, one
+  per thing to act on, the whole result left to `--json` or `--query`),
   or a report for a person (`lntt check` without `--json`); progress and child-process output go to stderr. Exit codes:
   0 ok, 1 a configuration error, a red result or a check that cannot run (one line on
   stderr), 2 a usage error, 3 a stop that a person decides on (`lntt review` past
   `delivery.review.maxRounds`), 4 nothing to report on (`lntt review status` with no round
   on the current branch), an interrupted command 128 plus the signal (130 for
   Ctrl-C); a defect of `lntt` itself exits 1 with its stack trace.
+- **A reading command gives a summary by default, and jq for a part of its output.** An
+  agent reads through a limited window and pays for every character, so the default is
+  short and each level is shown folded, as its key and its count (`findings: 14 (3 open)`).
+  `--query <jq>` runs a jq expression on the command's `--json` document, the same
+  expressions as `gh --jq`, starting with `lntt review status`: `jq-wasm` (jq 1.8.2
+  compiled to WebAssembly) runs it, loaded only when `--query` is given, so no other call
+  pays for it. It adds about 22 ms to that call (load 3.8 ms, first query 17.9 ms, node 24,
+  median of 21 fresh processes, against node's own 31 ms start) and 3.9 MB to the install.
+  A jq failure exits 2 with jq's message on stderr and nothing on stdout.
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
   `decisions` and `tests`, whose results their review lenses read, and `agents-md`,
   `skills`, `plugin` (the Lunette plugin and the install and typecheck hooks in `.claude/settings.json`)
@@ -186,7 +197,7 @@ So:
 
   | Pinned by the project: gates and what CI runs | Agent tools |
   |---|---|
-  | `lntt check [area]`, `lntt check cite`: deterministic, read only the commit, or for `body` the pull request body (a candidate's retrospective comment) they are given | `lntt review [reply \| allow \| status]`: its outcome is an opinion, wired into no CI |
+  | `lntt check [area]`, `lntt check cite`: deterministic, read only the commit, or for `body` the pull request body (a candidate's retrospective comment) they are given | `lntt review [reply \| allow \| status \| cost]`: its outcome is an opinion, wired into no CI |
   | `lntt ci local`: CI's jobs on the machine; `lntt ci candidate`: what the candidate workflow runs on GitHub, at the default branch's version, which the workflow checks out, and which brings the open candidate up to date with the default branch, pushing it (`--follow` from a terminal) ([delivery](../process/delivery.md#the-candidate-automation)); `lntt ci proved`: what the push run asks before its checks, read from GitHub, so not a gate (criterion 1), but CI calls it ([CI](../process/ci.md#a-tree-already-proved)) | `lntt worktree start`: the Orca and Herdr adapters |
   | `lntt branch check`, and `branch name` and `branch rename`, so the name an agent gets is the one the gate accepts | `lntt ask \| inbox \| answer` |
   | `lntt validate \| get \| set \| path`: they hold the schema; `set` writes a tracked file | `lntt guide`: it prints the skills |
@@ -258,6 +269,9 @@ So:
   `npx @lntt/lntt`, never in daily use.
 - A host's change reaches a project's agent tools only with a release and that
   project's bump, until the split's trigger fires.
+- Every project installs `jq-wasm` (3.9 MB, MIT, no dependencies, no install script) for
+  a flag not every call uses, pinned to an exact version: accepted, since a query costs a
+  call nothing until it is asked for.
 
 ### When to deviate (revisit triggers)
 
@@ -271,10 +285,16 @@ So:
   groups are coupled tighter than the table says, and a split would make each such
   change a breaking release of the gates.
 - The command is rewritten in a compiled language: one binary keeps the same command
-  surface.
+  surface. A future `lntt` in Go embeds gojq, which takes the same expressions.
 
 ## Discarded directions
 
+- **JMESPath for `--query`.** It has a formal spec and a pure-JS library, but it only
+  queries, and agents know it less than jq.
+- **A path syntax of `lntt`'s own.** One more grammar to learn and to maintain.
+- **The system `jq` alone.** It is missing on some machines and its version differs from
+  one to the next.
+- **`node-jq`.** It downloads the binary in a postinstall script, which pnpm blocks.
 - **A package per concern** (`@lntt/project-config` with `lntt-config`, `@lntt/ci` with
   `lntt-ci`). Two names to learn and two versions to keep for tools that are always
   installed together; the CI one already depended on the configuration one.

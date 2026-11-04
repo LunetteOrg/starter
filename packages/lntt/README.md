@@ -413,13 +413,14 @@ its answer).
 ## Reviewing a change
 
 ```sh
-lntt review                       # one round on the current branch; JSON on stdout
+lntt review                       # one round on the current branch; a summary on stdout
 lntt review --base <branch>       # against another base than the resolved one (a stacked pull request)
 lntt review --plan                # the range, the lenses and their agents; runs nothing
 lntt review reply f2 "line 120 excludes it"   # answer the reviewers who found f2
 lntt review allow 2               # two rounds more for this branch, past maxRounds
-lntt review status                # the worktree's state: one line, then what to act on
+lntt review status                # the worktree's state: each level folded, the outcome, what to act on
 lntt review status --json         # the whole state, one shape whatever the case
+lntt review status --query '.state.rounds[1:3][] | {round,usd}'   # a part of it, in jq
 lntt review status --clear        # remove another or a merged branch's state, ledger, progress
 lntt review cost                  # the branch's rounds, tokens and USD: the pull request's Review cost line
 lntt review cost --json           # each round's cost and the total
@@ -437,8 +438,37 @@ could not name, no commit of the branch; with `delivery.candidate` set, status a
 GitHub for the open candidate, as every lntt command that resolves the base does), the round, `limit`
 (maxRounds and the rounds allowed), `reviewed`, `clean`, `atLimit`, `open`, `replied`
 (with the `reply` the author gave), `closed` (the ledger), `failed`, `partial`, `skipped`,
-`tokens` and `cost`. A state that cannot be read is an error, exit 1, with nothing on
-stdout even with `--json`. `--clear` also removes it; it never runs while a round holds
+`tokens`, `cost`, `findings` (the last round's, every verdict), `refuted`, `repeated` (the
+fresh findings that repeat a ledger entry, with `closedWhat` and `closedBy`) and `rounds`
+(each round's cost). A state that cannot be read is an error, exit 1, with nothing on
+stdout even with `--json`.
+
+Without a flag, on this branch's state, status folds each level before the outcome line,
+each label the key under `.state`:
+
+```
+findings: 14 (3 open)
+refuted: 2
+repeated: 1
+closed: 5
+failed: 1
+partial: 0
+skipped: 0
+rounds: 4
+lntt review: feat/1/x: round 4 of 5, reviewed abc1234, not clean; 3 open (1 blocking), ...
+  f1 blocker confirmed a.ts:1 — what
+  code · claude sonnet failed: the error
+  tests · claude sonnet: 2 lines not read
+  f3 warning repeats f1 a.ts:1 — what
+```
+
+`--query <jq>` runs a jq expression on the `--json` document (`{ branch, running, state }`,
+`state` null with no round): `.state.findings[] | select(.id=="f12")`,
+`.state.rounds[1:3][] | {round,usd}`. Strings come raw and the rest compact, one per line;
+with `--json` too, JSON values one per line. It exits as status does. A jq failure exits 2
+with jq's message on stderr and nothing on stdout, what it printed before failing included;
+with no state, a failure while running (`.state.open[]`) exits 4 with the no-round line on
+stderr. `--clear` also removes it; it never runs while a round holds
 the lock, never removes the lock, and refuses on the current branch until it is merged
 into the base.
 
@@ -484,8 +514,10 @@ for a band beside the agent. Under Claude Code in Orca each agent shows as a sub
 of the session; agents never inherit the host's hook variables. On macOS `caffeinate`
 keeps the machine awake for the round.
 
-stdout is the round: `findings` to act on, `refuted` with their proofs, `failed`
-reviewers and verifiers, `cost` in USD when the agents report it (claude does). Exit 0
+stdout is the round's summary: the outcome line and the lines per thing to act on that
+`lntt review status` prints, without the folded levels. The whole result stays in the state:
+`findings` to act on, `refuted` with their proofs, `failed` reviewers and verifiers, `cost`
+in USD when the agents report it (claude does), read with `lntt review status`. Exit 0
 when no blocker or warning is left and nothing failed, 1 otherwise; notes are reported
 and do not block, nor are they carried to the next round. From the round after
 `delivery.review.warningRounds` a warning does not block either: the round's `blocking`
@@ -493,7 +525,7 @@ names only `blocker`, and the warnings left go in the pull request as open items
 branch keeps a ledger of the findings it closed (fixed, refuted, accepted open) in
 `<git dir>/lntt-review-ledger.json`: each round's reviewers read the entries on the files of
 the change and those with no anchor, each verifier those on its finding's file; a
-fresh finding that repeats one on a line that did not change goes to `closed`, not
+fresh finding that repeats one on a line that did not change goes to `repeated`, not
 verified and not blocking. A reply that is neither
 finding lines nor `no findings` counts as a failed reviewer; after a failure the next
 round reads the same range again. A reviewer is stopped after
@@ -513,9 +545,9 @@ A finding whose reviewer cannot be resumed is refused: the person decides on it.
 
 A branch takes at most `delivery.review.maxRounds` rounds, one with a failure among
 them. The round past the limit does not start: `lntt review: limit: …` on stderr with the findings still open, the
-same findings as JSON on stdout, a `limit` event in the progress file, exit 3. On a branch
+last round's summary on stdout, a `limit` event in the progress file, exit 3. On a branch
 `lntt worktree start` started, the open findings also go to its coordinator or the
-orchestrator as a message the round does not wait for (`asked` in the JSON and the event,
+orchestrator as a message the round does not wait for (`asked` in the event,
 `lntt review: limit: sent <id>` on stderr). `allow`
 gives the current branch more rounds, kept in its state; the configuration and the
 other branches stay as they are. A run with no new commit is not a round and is never
