@@ -514,6 +514,36 @@ describe('the open decisions of a child', () => {
   })
 })
 
+// The review state is read through lntt review status, never from the files in a git
+// directory: each worktree keeps its own (#225).
+describe('the review state, read with lntt review status', () => {
+  const text = (name: string) => readFileSync(join(SKILLS, name, 'SKILL.md'), 'utf8').replace(/\s+/g, ' ')
+
+  test('the review skill names the verdict, the command, its exit codes and --clear', () => {
+    const review = text('review')
+    assert.match(
+      review,
+      /`findings`, one list, each with a `verdict` \(`confirmed`, `undecided`, `unverified`; `withdrawn` after a reply/,
+    )
+    assert.match(
+      review,
+      /The state between rounds is read only with `lntt review status`, never by opening files in the git directory/,
+    )
+    assert.match(
+      review,
+      /Exit 0: this branch's last round is clean\. 1: something to act on\. 3: at the limit\. 4: no round on this branch\./,
+    )
+    assert.match(review, /`pnpm exec lntt review status --clear` removes it/)
+  })
+
+  test("the coordinate skill reads a child's state in its worktree", () => {
+    assert.match(
+      text('coordinate'),
+      /A child's review state is read in its worktree\*\* with `pnpm exec lntt review status` \(or asked of the child\), never from files in a git directory/,
+    )
+  })
+})
+
 describe('the retrospective skill, harvest', () => {
   const skill = () => readFileSync(join(SKILLS, 'retrospective', 'SKILL.md'), 'utf8')
   const section4 = () =>

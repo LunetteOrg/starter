@@ -418,9 +418,29 @@ lntt review --base <branch>       # against another base than the resolved one (
 lntt review --plan                # the range, the lenses and their agents; runs nothing
 lntt review reply f2 "line 120 excludes it"   # answer the reviewers who found f2
 lntt review allow 2               # two rounds more for this branch, past maxRounds
+lntt review status                # the worktree's state: one line, then what to act on
+lntt review status --json         # the whole state, one shape whatever the case
+lntt review status --clear        # remove another or a merged branch's state, ledger, progress
 lntt review cost                  # the branch's rounds, tokens and USD: the pull request's Review cost line
 lntt review cost --json           # each round's cost and the total
 ```
+
+`lntt review status` is how the state is read: never from the files in the git directory,
+which are each worktree's own (in the main checkout the git directory is also the common
+one, so a file there is the main checkout's). Its exit code is 0 when this branch's last
+round is clean, 1 with something to act on (a blocking finding open, a failed or partial
+lens), 3 at the limit, 4 with no round on this branch (none yet, a detached HEAD, or
+another branch's state, named with its date). `--json` gives `branch`, `running` (the pid
+of a round holding the lock) and `state`: its `branch`, `current`, `updated`, `merged`
+(null when it cannot be told: no base to compare with, an open candidate GitHub
+could not name, no commit of the branch; with `delivery.candidate` set, status asks
+GitHub for the open candidate, as every lntt command that resolves the base does), the round, `limit`
+(maxRounds and the rounds allowed), `reviewed`, `clean`, `atLimit`, `open`, `replied`
+(with the `reply` the author gave), `closed` (the ledger), `failed`, `partial`, `skipped`,
+`tokens` and `cost`. A state that cannot be read is an error, exit 1, with nothing on
+stdout even with `--json`. `--clear` also removes it; it never runs while a round holds
+the lock, never removes the lock, and refuses on the current branch until it is merged
+into the base.
 
 A round, on a clean working tree:
 

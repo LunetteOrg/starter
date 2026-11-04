@@ -67,6 +67,7 @@ export { formatTokens }
 const USAGE = `usage: lntt review [--base <branch>] [--plan]
        lntt review reply <finding> <answer>
        lntt review allow <rounds>
+       lntt review status [--json] [--clear]
        lntt review cost [--json]`
 
 function usage(message?: string): never {
@@ -536,10 +537,15 @@ function lockHolder(lock: string): number | 'held' | null {
   }
 }
 
+// The lock of the worktree's rounds, next to its state.
+function lockPath(): string {
+  return join(git('rev-parse', '--absolute-git-dir'), 'lntt-review.lock')
+}
+
 // Created atomically (`wx`): of two runs started together, one gets it. A lock whose
 // process is gone, or that names none, is removed and tried once more.
 function acquireLock(): void {
-  const lock = join(git('rev-parse', '--absolute-git-dir'), 'lntt-review.lock')
+  const lock = lockPath()
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const fd = openSync(lock, 'wx')
@@ -793,6 +799,8 @@ async function reply(args: string[]): Promise<number> {
     ...(a.ok ? parseWithdrawal(a.reply.text) : { withdrawn: false, reason: a.error }),
   }))
   const withdrawn = replies.every((r) => r.withdrawn)
+  // Kept or withdrawn, the answer stays with the finding: lntt review status lists it.
+  ;(finding as Checked).reply = { answer: words.join(' '), withdrawn }
   if (withdrawn) {
     ;(finding as Checked).verdict = 'withdrawn'
     const proof = `withdrawn by its reviewers after the answer: ${words.join(' ')}`
@@ -845,9 +853,260 @@ function allow(args: string[]): number {
   return 0
 }
 
+// A state file that is not a state (a write cut short, a hand edit): `status` says so and
+// `--clear` removes it, the only way out that does not open the git directory.
+class UnreadableStateError extends Error {}
+
+// The state as `lntt review status` reads it: an error when it cannot be read, never a
+// round started on a guess. A state written before a field existed reads with its default.
+function statusState(): { state: ReviewState; updated: Date } | null {
+  const path = statePath()
+  if (!existsSync(path)) return null
+  let state: ReviewState
+  try {
+    state = JSON.parse(readFileSync(path, 'utf8')) as ReviewState
+  } catch {
+    state = null as unknown as ReviewState
+  }
+  const result = state?.result as Partial<ReviewState['result']> | undefined
+  if (
+    typeof state?.branch !== 'string' ||
+    typeof state.round !== 'number' ||
+    typeof result !== 'object' ||
+    result === null ||
+    !Array.isArray(result.findings)
+  )
+    throw new UnreadableStateError(`${path} cannot be read: pnpm exec lntt review status --clear removes it`)
+  state.result = {
+    ...result,
+    blocking: result.blocking ?? ['blocker', 'warning'],
+    refuted: result.refuted ?? [],
+    failed: result.failed ?? [],
+    partial: result.partial ?? [],
+    skipped: result.skipped ?? [],
+  } as ReviewState['result']
+  return { state, updated: statSync(path).mtime }
+}
+
+// The ledger as it is on disk, whatever branch it names: {} when it cannot be read.
+function ledgerFile(): Partial<Ledger> | null {
+  const path = ledgerPath()
+  if (!existsSync(path)) return null
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as Partial<Ledger>
+  } catch {
+    return {}
+  }
+}
+
+// A branch is merged when its tip (its local ref, else the head its last round read) is
+// in the base every lntt command resolves (src/base.ts), which may ask GitHub for the open
+// candidate. Null, with the reason, when that cannot be told: no base to compare with, a
+// candidate GitHub could not name, no tip. Never a guess of "not merged".
+function mergedInto(root: string, branch: string, head: string | null): { merged: boolean | null; why: string } {
+  let ref: string
+  try {
+    const base = projectBase(root, 'head')
+    if (base.warning) return { merged: null, why: base.warning }
+    ref = base.ref
+    git('rev-parse', '--verify', '--quiet', `${ref}^{commit}`)
+  } catch (error) {
+    return { merged: null, why: `no base to compare with (${(error as Error).message.split('\n')[0]})` }
+  }
+  let tip = head
+  try {
+    tip = git('rev-parse', '--verify', '--quiet', `refs/heads/${branch}^{commit}`)
+  } catch {}
+  if (!tip) return { merged: null, why: `no commit of ${branch} to compare with ${ref}` }
+  try {
+    git('merge-base', '--is-ancestor', tip, ref)
+    return { merged: true, why: `in ${ref}` }
+  } catch {
+    return { merged: false, why: `not in ${ref}` }
+  }
+}
+
+function anchor(f: { path: string | null; line: number | null }): string {
+  return f.path === null ? '(no anchor)' : `${f.path}${f.line === null ? '' : `:${f.line}`}`
+}
+
+// A date as a person reads it, in local time: YYYY-MM-DD HH:MM.
+function localTime(date: Date): string {
+  const two = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())} ${two(date.getHours())}:${two(date.getMinutes())}`
+}
+
+// "a", "a and b", "a, b and c".
+function listed(words: string[]): string {
+  return words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`
+}
+
+// The worktree's state, ledger and progress of another branch, or of a merged one, go;
+// never while a round holds the lock, and never the lock itself. The ledger of the
+// current branch stays while that branch is not merged.
+function clear(root: string, current: string | null): number {
+  const holder = lockHolder(lockPath())
+  if (holder !== null)
+    throw new Error(
+      `a round is running in this worktree (pid ${holder === 'held' ? 'starting' : holder}): nothing cleared`,
+    )
+  let own: ReturnType<typeof statusState> = null
+  let unreadable = false
+  try {
+    own = statusState()
+  } catch (error) {
+    if (!(error instanceof UnreadableStateError)) throw error
+    unreadable = true
+  }
+  const ledger = ledgerFile()
+  const target = unreadable ? 'an unreadable state' : (own?.state.branch ?? ledger?.branch ?? null)
+  if (!target) {
+    stdout.write('lntt review: nothing to clear\n')
+    return 0
+  }
+  const head = own?.state.branch === current ? (own?.state.result.head ?? null) : null
+  const check = current === null ? null : mergedInto(root, current, head)
+  const currentMerged = check?.merged === true
+  if (target === current && !currentMerged)
+    throw new Error(
+      check?.merged === null
+        ? `the state is ${target}'s, the current branch, and whether it is merged cannot be told (${check.why}): nothing cleared`
+        : `the state is ${target}'s, the current branch, and it is not merged (${check?.why}): nothing cleared`,
+    )
+  const removed: string[] = []
+  const remove = (name: string, path: string) => {
+    if (!existsSync(path)) return
+    unlinkSync(path)
+    removed.push(name)
+  }
+  remove('state', statePath())
+  if (!(ledger?.branch === current && !currentMerged)) remove('ledger', ledgerPath())
+  remove('progress', progressPath())
+  stdout.write(`lntt review: cleared ${unreadable ? 'an unreadable state: its' : `${target}'s`} ${listed(removed)}\n`)
+  return 0
+}
+
+// What `lntt review status` reads: the worktree's own state, through lntt review and
+// never from its files, which live in each worktree's git directory. One line of outcome
+// and one per thing to act on, or the whole of it with --json; the exit code says which:
+// 0 clean, 1 something to act on, 3 at the limit, 4 no round on this branch. It never
+// takes the lock and never writes the progress file: a running round keeps both.
+function status(args: string[]): number {
+  const { values } = parseArgs({
+    args,
+    options: { json: { type: 'boolean', default: false }, clear: { type: 'boolean', default: false } },
+  })
+  if (values.clear && values.json) usage('--clear does not take --json')
+  const root = git('rev-parse', '--show-toplevel')
+  // The branch HEAD names, also before its first commit; null when HEAD is detached.
+  let current: string | null = null
+  try {
+    current = git('symbolic-ref', '--short', '-q', 'HEAD') || null
+  } catch {}
+  if (values.clear) return clear(root, current)
+  // A lock created an instant ago names no pid yet: not a round running, for the summary as
+  // for the JSON; --clear still waits for it.
+  const holder = lockHolder(lockPath())
+  const running = typeof holder === 'number' ? holder : null
+  const runningText = running === null ? '' : `a round is running (pid ${running})`
+  const own = statusState()
+  const here = current ?? 'detached HEAD'
+  if (!own) {
+    if (values.json) stdout.write(`${JSON.stringify({ branch: current, running, state: null }, null, 2)}\n`)
+    else stdout.write(`lntt review: no round on ${here} yet${runningText ? `; ${runningText}` : ''}\n`)
+    return 4
+  }
+  const { state, updated } = own
+  const result = state.result
+  const isCurrent = state.branch === current
+  const { maxRounds } = reviewConfig(loaded())
+  const allowed = state.allowed ?? 0
+  const limit = maxRounds + allowed
+  const clean = roundClean(result)
+  const atLimit = state.round >= limit && !clean
+  const open = result.findings.filter((f) => f.verdict !== 'withdrawn')
+  const replied = result.findings.filter((f) => f.reply !== undefined || f.verdict === 'withdrawn')
+  const ledger = ledgerFile()
+  const closed = ledger?.branch === state.branch && Array.isArray(ledger.closed) ? ledger.closed : []
+  // The last round's own tokens and USD; the branch's total is lntt review cost.
+  const tokens = result.tokens ?? null
+  const cost = result.cost ?? null
+  const code = !isCurrent ? 4 : clean ? 0 : atLimit ? 3 : 1
+  if (values.json) {
+    const out = {
+      branch: current,
+      running,
+      state: {
+        branch: state.branch,
+        current: isCurrent,
+        updated: updated.toISOString(),
+        merged: mergedInto(root, state.branch, result.head).merged,
+        round: state.round,
+        maxRounds,
+        allowed,
+        limit,
+        reviewed: state.reviewed,
+        base: result.base,
+        head: result.head,
+        clean,
+        atLimit,
+        blocking: result.blocking,
+        open,
+        replied,
+        closed,
+        failed: result.failed,
+        partial: result.partial,
+        skipped: result.skipped,
+        tokens,
+        cost,
+      },
+    }
+    stdout.write(`${JSON.stringify(out, null, 2)}\n`)
+    return code
+  }
+  if (!isCurrent) {
+    // Another branch's findings are not this branch's to act on: only its name and date.
+    const merged = mergedInto(root, state.branch, result.head).merged ? ', merged' : ''
+    stdout.write(
+      `lntt review: no round on ${here}; the state here is ${state.branch}'s, round ${state.round}, ${localTime(updated)}${merged}: pnpm exec lntt review status --clear removes it${runningText ? `; ${runningText}` : ''}\n`,
+    )
+    return code
+  }
+  const outcome = [
+    `round ${state.round} of ${limit}`,
+    `reviewed ${state.reviewed ?? 'nothing'}`,
+    clean ? 'clean' : 'not clean',
+    ...(atLimit ? ['at the limit'] : []),
+    ...(runningText ? [runningText] : []),
+  ]
+  const blocked = open.filter((f) => result.blocking.includes(f.severity)).length
+  const counts = [
+    `${open.length} open${open.length > 0 ? ` (${blocked} blocking)` : ''}`,
+    `${replied.length} replied`,
+    `${closed.length} closed`,
+    ...(result.failed.length > 0 ? [`${result.failed.length} failed`] : []),
+    ...(result.partial.length > 0 ? [`${result.partial.length} partial`] : []),
+    ...(tokens === null ? [] : [formatTokens(tokens)]),
+    ...(cost === null ? [] : [`$${cost.toFixed(2)}`]),
+  ]
+  // Blocking severities first: what keeps the round from being clean.
+  const rank = (f: Checked) => (result.blocking.includes(f.severity) ? 0 : 1)
+  const lines = [
+    `lntt review: ${state.branch}: ${outcome.join(', ')}; ${counts.join(', ')}`,
+    ...[...open]
+      .sort((a, b) => rank(a) - rank(b))
+      .map((f) => `  ${f.id} ${f.severity} ${f.verdict} ${anchor(f)} — ${f.what}`),
+    ...result.failed.map((f) => `  ${f.lens} · ${f.agent} failed: ${f.error}`),
+    ...result.partial.map((p) => `  ${p.lens} · ${p.agent}: ${p.lines.length} lines not read`),
+  ]
+  stdout.write(`${lines.join('\n')}\n`)
+  return code
+}
+
 export async function main([command, ...args]: string[]): Promise<void> {
   try {
     if (command === 'allow') exit(allow(args))
+    if (command === 'status') exit(status(args))
     if (command === 'cost') exit(cost(args))
     exit(command === 'reply' ? await reply(args) : await round(command === undefined ? [] : [command, ...args]))
   } catch (error) {
@@ -858,8 +1117,11 @@ export async function main([command, ...args]: string[]): Promise<void> {
     stderr.write(`lntt review: error: ${(error as Error).message}\n`)
     // A refused lock means another round owns the progress file: leave it alone.
     const own = !(error instanceof LockedError)
+    // lntt review status never writes the progress file: it only reads the state.
+    const reads = command === 'status'
     if (
       own &&
+      !reads &&
       command !== 'reply' &&
       command !== 'allow' &&
       command !== 'cost' &&

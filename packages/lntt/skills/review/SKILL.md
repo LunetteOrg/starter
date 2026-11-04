@@ -27,8 +27,8 @@ the rest (including `skipped`, an optional agent that did not answer) is for the
 In Claude Code the `lunette` plugin shows the round in a band above the prompt, and
 `/review-status` prints it.
 
-stdout is JSON: `findings` (`confirmed`, `undecided`, `unverified`; blockers and
-warnings block the round, notes do not),
+stdout is JSON: `findings`, one list, each with a `verdict` (`confirmed`, `undecided`,
+`unverified`; `withdrawn` after a reply; blockers and warnings block the round, notes do not),
 `refuted` (with the verifiers' proofs, or `lntt check cite`'s for a finding on a line past
 the end of its file; nothing to do), `failed` (a reviewer that did not answer; its `reply` is whole), `partial` (a lens whose reply had lines that could not be read: `lines`, and the whole `reply`). Exit 0: a clean round. Exit 1: findings or a failure. Exit 3: the limit (section 3).
 
@@ -49,10 +49,29 @@ problem, treat it as a finding of this round, otherwise there is nothing to do.
 `blocking` says which severities keep the round from being clean: blockers and warnings
 in the first `delivery.review.warningRounds` rounds, blockers alone after them.
 
+### Reading the state
+
+The state between rounds is read only with `lntt review status`, never by opening
+files in the git directory: each worktree has its own, and in the main checkout the
+git directory is also the common one, so a file there is the main checkout's.
+
+```sh
+pnpm exec lntt review status            # one line, then one per thing to act on
+pnpm exec lntt review status --json     # the whole state
+```
+
+`--json`: `branch`, `running` (the pid of a round in progress), `state` (`round`,
+`limit`, `reviewed`, `clean`, `atLimit`, `blocking`, `open`, `replied`, `closed`,
+`failed`, `partial`, `skipped`, `tokens`, `cost`). Exit 0: this branch's last round
+is clean. 1: something to act on. 3: at the limit. 4: no round on this branch. A state
+left by another branch is named as such, with its date, never as this branch's;
+`pnpm exec lntt review status --clear` removes it (refused while a round runs, and on
+the current branch until it is merged).
+
 ## 2. Each finding
 
-- **`confirmed`:** fix it with a local commit. No push.
-- **`undecided` or `unverified`:** read the proofs, then fix it, or answer it.
+- **`verdict: confirmed`:** fix it with a local commit. No push.
+- **`verdict: undecided` or `unverified`:** read the proofs, then fix it, or answer it.
 - **Wrong, in your reading:** answer the reviewers who found it, with the `path:line`
   that shows it:
 
@@ -60,7 +79,8 @@ in the first `delivery.review.warningRounds` rounds, blockers alone after them.
   pnpm exec lntt review reply <id> "<the answer, with path:line>"
   ```
 
-  It resumes their sessions; `withdrawn: true` closes the finding. A reviewer that
+  It resumes their sessions; `withdrawn: true` closes the finding (its `verdict`
+  becomes `withdrawn`). A reviewer that
   cannot be resumed makes it a question for the person.
 - **A note:** fix it if it is cheap, or list it in the pull request; it does not block.
 - **A warning past `warningRounds`** (`blocking` is only `blocker`): fix it if it is
