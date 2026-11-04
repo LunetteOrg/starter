@@ -92,11 +92,11 @@ of the file (an edited entry is reformatted): the `directory` marketplace this p
 `SessionStart` hook that installs the dependencies when `node_modules/.bin/lntt` is
 missing: with pnpm, or `npm ci` in a project with only a `package-lock.json`, within ten
 minutes. The hook never fails a session: when the install cannot run it says, once,
-what to run. Beside it go two lines of `lntt hook`: `lntt hook format` after `Write` and
-`Edit`, which passes the written file to the format commands, and `lntt hook typecheck`
+what to run. Beside it goes one line of `lntt hook`: `lntt hook typecheck`
 at `Stop`, in the background, which wakes the agent with a failure only when it differs
-from the last one. Their commands are `local.hooks.format` and `local.hooks.typecheck`
-(one command or a list), else the `package.json` script of that name, else none:
+from the last one. Its command is `local.hooks.typecheck`
+(one command or a list), else the `package.json` script of that name, else none.
+Formatting is the pre-commit's: `lntt sync` writes no format hook:
 
 ```jsonc
 "local": { "hooks": { "typecheck": ["tsc --noEmit", "uv run mypy ."] } }

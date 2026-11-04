@@ -1,9 +1,9 @@
 // The command hooks lntt sync writes into .claude/settings.json
 // (docs/adr/agent-layer.md#where-hooks-live): the settings hold a thin line, the logic is
-// here. `format` formats the file just written; `typecheck` runs after the turn and wakes
-// the agent only on a failure it has not seen.
+// here. `typecheck` runs after the turn and wakes the agent only on a failure it has not
+// seen. Formatting is the pre-commit's, not a hook's.
 //
-// Which commands run, in order: `local.hooks.<name>` of .agents/config (one command or a
+// Which commands run, in order: `local.hooks.typecheck` of .agents/config (one command or a
 // list, for a project with more than one toolchain); else the package.json script of that
 // name, run with pnpm, or npm in a project with only a package-lock.json, as the install
 // hook installs; else none, and the hook does nothing.
@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { findConfig, loadConfig, NoConfigError } from './index.ts'
 
-export type HookName = 'format' | 'typecheck'
+export type HookName = 'typecheck'
 
 // The project root: the configuration's, or the directory the hook runs in when there is
 // none. Any other error of finding it is the caller's to report.
@@ -60,12 +60,10 @@ export function hookCommands(cwd: string, name: HookName): string[] {
   return configured(root, name) ?? script(root, name)
 }
 
-const quote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`
-
 // The time a hook's commands have, all of them together, below the hook's own timeout in
 // the settings (claude-settings.ts), so Claude Code never kills the hook with a command
 // still running.
-export const LIMIT_MS: Record<HookName, number> = { format: 60_000, typecheck: 600_000 }
+export const LIMIT_MS: Record<HookName, number> = { typecheck: 600_000 }
 // A typecheck's output can be long; past this many bytes it is cut.
 const OUTPUT_LIMIT = 64 * 1024 * 1024
 // How long the output may stay open once the command has exited, or once its group was
@@ -146,7 +144,7 @@ export function runLimited(
 }
 
 // The commands in order, within one limit for all of them: the outcome of each.
-async function runAll(commands: string[], root: string, ms: number, suffix = '') {
+async function runAll(commands: string[], root: string, ms: number) {
   const deadline = Date.now() + ms
   const secs = `${Math.round(ms / 100) / 10}`
   const results: { command: string; ok: boolean; output: string }[] = []
@@ -156,22 +154,11 @@ async function runAll(commands: string[], root: string, ms: number, suffix = '')
       results.push({ command, ok: false, output: `(not run: the limit of ${secs} s was reached)\n` })
       continue
     }
-    const r = await runLimited(`${command}${suffix}`, root, left)
+    const r = await runLimited(command, root, left)
     const note = r.stopped ? `(lntt hook: stopped at the limit of ${secs} s for the hook's commands)\n` : ''
     results.push({ command, ok: r.ok, output: `${r.output}${note}` })
   }
   return results
-}
-
-// The path of the file the tool wrote, from the hook's input; null when there is none.
-function writtenPath(input: string): string | null {
-  try {
-    const j = JSON.parse(input)
-    const path = j?.tool_response?.filePath ?? j?.tool_input?.file_path
-    return typeof path === 'string' && path !== '' ? path : null
-  } catch {
-    return null
-  }
 }
 
 // The terminal's colour sequences (ESC [ … m).
@@ -226,29 +213,6 @@ function once(file: string, text: string | null): string | null {
 }
 
 const failure = (e: unknown) => `lntt: ${e instanceof Error ? e.message : String(e)}`
-
-// Each command gets the path as its last argument. One that fails (a file type it does
-// not handle, a command that takes no path) is skipped: the commit's own check is the gate.
-// A configuration lntt cannot read is the notice returned, once until it changes.
-export async function runFormat(cwd: string, input: string, ms = LIMIT_MS.format): Promise<string | null> {
-  const path = writtenPath(input)
-  if (path === null) return null
-  let root = cwd
-  let commands: string[]
-  try {
-    root = projectRoot(cwd)
-    commands = hookCommands(root, 'format')
-  } catch (e) {
-    return once(stateFile(root, 'format-notice'), `lntt hook format is off until this is fixed: ${failure(e)}`)
-  }
-  try {
-    once(stateFile(root, 'format-notice'), null)
-  } catch {
-    // A notice lntt cannot clear: the file is formatted all the same.
-  }
-  await runAll(commands, root, ms, ` ${quote(path)}`)
-  return null
-}
 
 // Every command runs, within the limit. The output of the failing ones, or a
 // configuration lntt cannot read, when it is not what the last run reported; null when

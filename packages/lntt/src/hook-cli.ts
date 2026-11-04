@@ -2,20 +2,18 @@
 // (./hook.ts), with lntt's exit codes, which the lines translate: 1 a typecheck failure
 // not reported yet, on stderr (the line exits 2, which wakes the agent); 2 the usage, which
 // is also what an lntt older than `hook` answers. Otherwise 0, with any notice on stdout as
-// a systemMessage: of the format hook, a configuration it cannot read, which Claude Code
-// shows the person; of the typecheck hook, which runs in the background, a defect of its
+// a systemMessage: of the typecheck hook, which runs in the background, a defect of its
 // own (its error, a state it cannot keep), which Claude Code gives the agent at its next
-// turn without waking it, once per session. A defect of the format hook is quiet: the
-// commit's own check is the gate.
+// turn without waking it, once per session.
 
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import process, { cwd, exit, stderr, stdout } from 'node:process'
-import { runFormat, runTypecheck } from './hook.ts'
+import { runTypecheck } from './hook.ts'
 
-const USAGE = 'usage: lntt hook format | typecheck   (the hook input on stdin)'
+const USAGE = 'usage: lntt hook typecheck   (the hook input on stdin)'
 
 const notice = (text: string) => stdout.write(`${JSON.stringify({ systemMessage: text })}\n`)
 
@@ -52,20 +50,11 @@ function firstInSession(session: string | null): boolean {
 
 export async function main(args: string[]): Promise<void> {
   const [name, ...rest] = args
-  if (rest.length > 0 || (name !== 'format' && name !== 'typecheck')) {
+  if (rest.length > 0 || name !== 'typecheck') {
     stderr.write(`${USAGE}\n`)
     exit(2)
   }
   const input = readInput()
-  if (name === 'format') {
-    try {
-      const text = await runFormat(cwd(), input)
-      if (text !== null) notice(text)
-    } catch {
-      // A defect of the format hook: the commit's own check is the gate.
-    }
-    return
-  }
   let failure: string | null
   try {
     failure = await runTypecheck(cwd())
