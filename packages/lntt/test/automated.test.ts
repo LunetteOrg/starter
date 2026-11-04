@@ -98,6 +98,18 @@ describe('the synced line', () => {
     )
   })
 
+  test('a .yaml workflow counts too; a project with no workflows has nothing to sync', () => {
+    writeFileSync(join(root, '.agents/config.jsonc'), config([DEPENDABOT]))
+    writeFileSync(join(root, '.github/workflows/ci.yaml'), workflow(`AUTOMATED: '[]' ${AUTOMATED_MARKER}`))
+    assert.deepEqual(syncAutomated(root), ['.github/workflows/ci.yaml'])
+    rmSync(join(root, '.github'), { recursive: true })
+    assert.deepEqual(syncAutomated(root), [])
+    assert.deepEqual(
+      checkAutomated(root).map((r) => r.status),
+      ['NOT RUN'],
+    )
+  })
+
   test('with no marked line there is nothing to check', () => {
     writeFileSync(join(root, '.agents/config.jsonc'), config([DEPENDABOT]))
     writeFileSync(join(root, '.github/workflows/ci.yml'), 'name: CI\n')

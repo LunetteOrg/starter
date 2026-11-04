@@ -16,7 +16,7 @@ batch for what is expensive ([delivery](./delivery.md) has the flow):
 | Event | What runs |
 |---|---|
 | A draft, into any base | no CI in the cloud (only the candidate guard, below); `pnpm ci:local` on the machine |
-| A ready pull request into a candidate, or into any branch other than `main` (a stacked pull request) | the minimal CI: frozen install, lint, typecheck, `lntt check` (the AGENTS.md block, the installed skills, the plugin settings, the decision logs), the branch name, `claude plugin validate`, one version for the packages and the plugin (`packages-version.mts check`), the tests but the scaffold level, unless the change touches `packages/create`; the retrospective block of the body, as a warning (not on a Dependabot pull request) |
+| A ready pull request into a candidate, or into any branch other than `main` (a stacked pull request) | the minimal CI: frozen install, lint, typecheck, `lntt check` (the AGENTS.md block, the installed skills, the plugin settings, the decision logs), the branch name, `claude plugin validate`, one version for the packages and the plugin (`packages-version.mts check`), the tests but the scaffold level, unless the change touches `packages/create`; the retrospective block of the body, as a warning (not on a bot's pull request, `delivery.automated`) |
 | The candidate's pull request into `main`, ready; a hotfix | the full CI: the minimal CI plus the scaffold level (`packages/create`) and its smoke; the body's retrospective block only on a hotfix (the candidate's block is its retrospective comment, which `lntt check body --pr <n>` checks before the candidate is marked ready, [delivery](./delivery.md#the-candidate)) |
 | A push to `main` | the full CI, which gates a release, unless its tree is one a full CI has [already proved](#a-tree-already-proved) |
 | A push to `main`, beside the CI | the [candidate automation](./delivery.md#the-candidate-automation) (`candidate.yml`), not CI: one short job that brings the open candidate, when there is one, up to date with `main` |
@@ -177,8 +177,7 @@ The pull requests a bot opens are `delivery.automated` in
 [`.agents/config.jsonc`](../../.agents/config.jsonc): one entry per bot, with its login
 as the pull request event names it (`dependabot[bot]`), the prefix of its branches,
 when its CI runs (`runs`) and which CI (`ci`). A pull request matches an entry by its
-author and its branch, both. Here the only entry is Dependabot's, `after-approval` and
-`full`. These pull requests stay on `main` and merge as hotfixes, when a person decides
+author and its branch, both. These pull requests stay on `main` and merge as hotfixes, when a person decides
 ([delivery](./delivery.md#the-candidate)): the candidate automation leaves them there,
 the candidate guard lets them through, the branch check exempts their branches.
 
@@ -198,13 +197,13 @@ the candidate guard lets them through, the branch check exempts their branches.
   counts, as on GitHub; a comment changes nothing. The repository is public, so anyone
   can submit a review: an approval from anyone else counts for nothing. `runs:
   always` runs the CI on every push, as for a person's pull request.
-- **A review re-runs the same run.** A review of such a pull request by an owner,
-  member or collaborator, submitted or dismissed, starts `ci-approval.yml`, which
+- **A review re-runs the same run.** An approval, a request for changes or a dismissed
+  review of such a pull request by an owner, member or collaborator starts `ci-approval.yml`, which
   re-runs the newest `ci` run of the head (waiting for it when it is still going). The
   re-run reads the reviews again: after an approval the same `ci` check runs the whole
   job on the pull request's merge ref, after a request for changes or a dismissal it is
   red again. A new push (a rebase) starts a run of its own, red until the head is
-  approved. The head has one `ci` check at every moment: a review starts no run of
+  approved. A comment re-runs nothing. The head has one `ci` check at every moment: a review starts no run of
   `ci.yml`, and the `ci-approval.yml` job is named `rerun`.
 - **`ci: minimal`** runs the minimal CI, the one of a pull request into a candidate,
   even into `main`, without the `Full CI` marker: such a pull request never proves a

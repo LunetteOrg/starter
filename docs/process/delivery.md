@@ -384,8 +384,8 @@ and pull requests stay where they are opened. To turn it on:
 7. **Require the checks on `main`** where the plan has rulesets: the
    `required_status_checks` rule of
    [a pull request left on `main`](#a-pull-request-left-on-main), added to *main:
-   rebase merge only* once `candidate-guard.yml` and `ci-approval.yml` are on `main`.
-   Neither needs the app or a secret.
+   rebase merge only* when that section says. Neither check needs the app or a
+   secret.
 
 **Rotating the key.** A pull request from this repository runs its own copy of the
 workflow file, with the app's key in reach, so anyone with write access can use the

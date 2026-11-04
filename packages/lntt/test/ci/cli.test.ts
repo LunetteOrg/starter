@@ -474,6 +474,17 @@ describe('lntt ci candidate', () => {
     assert.match(out.stdout, /\[dry-run\] gh pr comment 7/)
   })
 
+  test("a bot's pull request (delivery.automated) opened into main stays there, with no write", () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidate(
+      opened({ head: { ref: 'dependabot/npm_and_yarn/vite-7.1.0' }, user: { login: 'dependabot[bot]' } }),
+      '--dry-run',
+    )
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /it stays, a pull request of dependabot\[bot\] \(delivery\.automated\) stays on main/)
+    assert.doesNotMatch(out.stdout, /\[dry-run\] gh pr (edit|comment) 7/)
+  })
+
   test('a hotfix stays on main and reads nothing', () => {
     root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
     const out = candidate(opened({ head: { ref: 'hotfix/login' } }))
@@ -629,6 +640,7 @@ describe('lntt ci candidate', () => {
     ['without an event or --pr', null, [], /--guard without --pr reads the pull request from GITHUB_EVENT_PATH/],
     ['on a push event', { ref: 'refs/heads/main' }, [], /--guard runs on a pull_request event/],
     ['with --pr that is not a number', null, ['--pr', 'x'], /--pr takes a number, not x/],
+    ['with --pr 0', null, ['--pr', '0'], /--pr takes a number, not 0/],
   ] as const) {
     test(`--guard ${what} is a usage error`, () => {
       root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })

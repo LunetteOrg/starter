@@ -1,6 +1,7 @@
 name: CI approval
 
-# A review by an owner, member or collaborator of a bot's pull request whose CI waits
+# An approval, a request for changes or a dismissed review by an owner, member or
+# collaborator of a bot's pull request whose CI waits
 # for the approval (delivery.automated, `runs: after-approval`) re-runs the `ci` run of
 # its head (ci.yml), whose first step reads the reviews again: an approval of the head
 # turns that same `ci` check green with the whole job, a request for changes or a
@@ -20,7 +21,9 @@ permissions: {}
 
 jobs:
   rerun:
+    # A comment changes nothing the first step of ci.yml counts.
     if: >-
+      github.event.review.state != 'commented' &&
       !github.event.pull_request.draft &&
       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association)
     runs-on: ubuntu-latest
