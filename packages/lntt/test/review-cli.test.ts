@@ -2131,6 +2131,15 @@ describe('reading a part of the review state', () => {
       assert.match(r.out, /^lntt review: no round on feat\/2\/y; the state here is feat\/1\/x's/)
     })
 
+    test('a state saved before scope and lenses existed reads with their defaults', () => {
+      fullState()
+      const saved = JSON.parse(readFileSync(gitDir('lntt-review.json'), 'utf8'))
+      delete saved.result.scope
+      delete saved.result.lenses
+      writeFileSync(gitDir('lntt-review.json'), JSON.stringify(saved))
+      assert.equal(query('.state | [.scope, .lenses]').out, '["",[]]\n')
+    })
+
     test('--json carries the last round whole, and the rounds', () => {
       fullState()
       const { state } = JSON.parse(lntt(['status', '--json']).out)

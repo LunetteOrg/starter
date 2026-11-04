@@ -887,6 +887,8 @@ function withDefaults(state: ReviewState): ReviewState {
     ...state,
     result: {
       ...result,
+      scope: result.scope ?? '',
+      lenses: result.lenses ?? [],
       findings: result.findings ?? [],
       blocking: result.blocking ?? ['blocker', 'warning'],
       refuted: result.refuted ?? [],
