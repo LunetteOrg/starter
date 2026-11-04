@@ -1,0 +1,56 @@
+name: CI approval
+
+# A review of a Dependabot pull request by an owner, member or collaborator re-runs the
+# `ci` run of its head (ci.yml), whose first step reads the reviews again: an approval
+# of the head turns that same `ci` check green with the whole job, a request for
+# changes or a dismissed approval turns it red. The head keeps one `ci` check, which
+# main's ruleset can require (docs/process/ci.md#dependabot-pull-requests). A review of
+# any other pull request skips this job; its entry is `rerun`, never `ci`.
+#
+# The run is the reviewer's, not Dependabot's, so its token gets the actions: write it
+# asks for; the re-run keeps the privileges of the run it repeats: Dependabot's, read
+# only. Nothing here checks out or runs the pull request's code.
+on:
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions: {}
+
+jobs:
+  rerun:
+    if: >-
+      startsWith(github.event.pull_request.head.ref, 'dependabot/') &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      !github.event.pull_request.draft &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: write
+    steps:
+      # The newest pull_request run of ci.yml on the head: a run still going is waited
+      # for (a re-run needs a completed run). A push after the review has a run of its
+      # own, which reads the reviews when it starts: nothing to re-run here.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          for attempt in $(seq 1 80); do
+            run=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$SHA&per_page=1" \
+              --jq '.workflow_runs[0] // empty | "\(.id) \(.status) \(.html_url)"')
+            if [ -z "$run" ]; then
+              echo "::error title=No CI run::ci.yml has no pull_request run on ${SHA}: push to the pull request, or close and reopen it, to start one"
+              exit 1
+            fi
+            read -r id status url <<< "$run"
+            [ "$status" = completed ] && break
+            echo "waiting for ${url} (${status})"
+            sleep 20
+          done
+          if [ "$status" != completed ]; then
+            echo "::error title=CI still running::${url} did not complete in time; re-run it once it has: gh run rerun ${id} --repo ${REPO}"
+            exit 1
+          fi
+          gh run rerun "$id" --repo "$REPO"
+          echo "re-ran ${url}: its first step reads the reviews again"

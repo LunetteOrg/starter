@@ -292,8 +292,10 @@ got no run of any workflow for forty minutes). A pull request whose `opened` and
 
   It is added to the ruleset's `rules` (Settings → Rules → Rulesets, or
   `gh api -X PUT repos/<owner>/<repo>/rulesets/<id>` with the whole `rules` list), once
-  `candidate-guard.yml` is on `main`: before that, no pull request into `main` reports
-  the check. A required check that never reports blocks the merge, so the guard holds
+  `candidate-guard.yml` and `ci-approval.yml` are on `main`: before that, no pull
+  request into `main` reports the guard, and an approved Dependabot pull request keeps
+  a red `ci` beside the approval's ([CI](./ci.md#dependabot-pull-requests)). With them,
+  a Dependabot pull request's one `ci` check turns green when its head is approved. A required check that never reports blocks the merge, so the guard holds
   when Actions drops every event of the pull request: on a pull request whose required
   check never reported, `gh pr merge --rebase` answers "the base branch policy
   prohibits the merge" and offers `--admin`; on one whose required `ci` is red, a later
@@ -379,8 +381,8 @@ and pull requests stay where they are opened. To turn it on:
 7. **Require the checks on `main`** where the plan has rulesets: the
    `required_status_checks` rule of
    [a pull request left on `main`](#a-pull-request-left-on-main), added to *main:
-   rebase merge only* once `candidate-guard.yml` is on `main`. The guard needs no app
-   and no secret.
+   rebase merge only* once `candidate-guard.yml` and `ci-approval.yml` are on `main`.
+   Neither needs the app or a secret.
 
 **Rotating the key.** A pull request from this repository runs its own copy of the
 workflow file, with the app's key in reach, so anyone with write access can use the
