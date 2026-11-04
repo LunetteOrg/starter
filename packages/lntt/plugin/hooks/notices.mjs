@@ -14,7 +14,6 @@ const MARKETPLACE_PATH = './node_modules/@lntt/lntt'
 const PLUGIN = 'lunette@lunette'
 const HOOK_STATUS = {
   SessionStart: 'lntt: checking the dependencies are installed',
-  PostToolUse: 'lntt: formatting the file written',
   Stop: 'lntt: typecheck',
 }
 

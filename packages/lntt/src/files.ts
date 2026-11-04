@@ -57,6 +57,15 @@ export function parse(text: string, located: Located): unknown {
   return doc.toJS()
 }
 
+// Keys removed with no replacement: the schema no longer has them, and the error for one
+// names it, the release that removed it and what to do, where the generic
+// unknown-property error would only name the property (docs/adr/lntt-command.md).
+const REMOVED_KEYS: Record<string, Record<string, string>> = {
+  '/local/hooks': {
+    format: "local.hooks.format was removed in 0.6.4: delete it, formatting is the pre-commit's",
+  },
+}
+
 export function check(validate: ValidateFunction, data: unknown, path: string): Record<string, unknown> {
   if (validate(data)) return data as Record<string, unknown>
   const lines = (validate.errors ?? []).map((e: ErrorObject) => {
@@ -64,6 +73,11 @@ export function check(validate: ValidateFunction, data: unknown, path: string): 
       e.keyword === 'additionalProperties'
         ? ` (${(e.params as { additionalProperty: string }).additionalProperty})`
         : ''
+    const removed =
+      e.keyword === 'additionalProperties'
+        ? REMOVED_KEYS[e.instancePath]?.[(e.params as { additionalProperty: string }).additionalProperty]
+        : undefined
+    if (removed !== undefined) return `  ${e.instancePath} ${removed}`
     return `  ${e.instancePath || '/'} ${e.message}${extra}`
   })
   throw new ConfigError(`${path} does not match the schema:\n${lines.join('\n')}`)

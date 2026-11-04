@@ -137,7 +137,7 @@ function plugin(root: string): Result[] {
     return [
       result(
         'PASS',
-        'the Lunette plugin loads from node_modules/@lntt/lntt, and the install, format and typecheck hooks are in place',
+        'the Lunette plugin loads from node_modules/@lntt/lntt, and the install and typecheck hooks are in place',
       ),
     ]
   }

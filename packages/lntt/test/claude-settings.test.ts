@@ -17,7 +17,6 @@ import { fileURLToPath } from 'node:url'
 import * as jsonc from 'jsonc-parser'
 import {
   checkClaudeSettings,
-  FORMAT_HOOK,
   INSTALL_HOOK,
   MARKETPLACE,
   PLUGIN,
@@ -104,7 +103,6 @@ describe('the Claude Code settings lntt sync writes', () => {
         'elsewhere extraKnownMarketplaces.lunette',
         'off enabledPlugins.lunette@lunette',
         'edited hooks.SessionStart',
-        'missing hooks.PostToolUse',
         'missing hooks.Stop',
       ],
     )
@@ -129,7 +127,6 @@ describe('the Claude Code settings lntt sync writes', () => {
         'missing extraKnownMarketplaces.lunette',
         'missing enabledPlugins.lunette@lunette',
         'edited hooks.SessionStart',
-        'missing hooks.PostToolUse',
         'missing hooks.Stop',
       ],
     )
@@ -198,7 +195,7 @@ describe('the Claude Code settings lntt sync writes', () => {
   test('a byte order mark at the start is read past, and sync writes the file without it', () => {
     write({ permissions: { deny: [] } })
     writeFileSync(settings(), `\uFEFF${readFileSync(settings(), 'utf8')}`)
-    assert.equal(off().length, 5)
+    assert.equal(off().length, 4)
     syncClaudeSettings(root)
     assert.deepEqual(read().permissions, { deny: [] })
     assert.deepEqual(off(), [])
@@ -221,41 +218,31 @@ describe('the Claude Code settings lntt sync writes', () => {
         'missing extraKnownMarketplaces.lunette',
         'missing enabledPlugins.lunette@lunette',
         'missing hooks.SessionStart',
-        'missing hooks.PostToolUse',
         'missing hooks.Stop',
       ],
     )
   })
 
-  test('the format hook goes after Write and Edit, the typecheck at Stop, beside the project’s own', () => {
+  test('the typecheck goes at Stop beside the project’s own, and no format hook is written', () => {
     const own = { type: 'command', command: 'echo ours' }
     write({ hooks: { Stop: [{ hooks: [own] }], PostToolUse: [{ matcher: 'Bash', hooks: [own] }] } })
     syncClaudeSettings(root)
     const s = read()
-    assert.deepEqual(s.hooks.PostToolUse, [
-      { matcher: 'Bash', hooks: [own] },
-      { matcher: 'Write|Edit', hooks: [FORMAT_HOOK] },
-    ])
+    assert.deepEqual(s.hooks.PostToolUse, [{ matcher: 'Bash', hooks: [own] }])
     assert.deepEqual(s.hooks.Stop, [{ hooks: [own] }, { hooks: [TYPECHECK_HOOK] }])
     assert.deepEqual(off(), [])
-  })
-
-  test('the format hook under another matcher is an edit; sync puts it back under Write|Edit', () => {
-    write({ hooks: { PostToolUse: [{ matcher: 'Write', hooks: [FORMAT_HOOK] }] } })
-    assert.deepEqual(
-      off()
-        .filter((c) => c.key === 'hooks.PostToolUse')
-        .map((c) => c.state),
-      ['edited'],
-    )
-    syncClaudeSettings(root)
-    assert.deepEqual(read().hooks.PostToolUse, [{ matcher: 'Write|Edit', hooks: [FORMAT_HOOK] }])
   })
 
   test('an older typecheck line lntt wrote is replaced', () => {
     write({ hooks: { Stop: [{ hooks: [{ ...TYPECHECK_HOOK, command: 'an older line' }] }] } })
     syncClaudeSettings(root)
     assert.deepEqual(read().hooks.Stop, [{ hooks: [TYPECHECK_HOOK] }])
+  })
+
+  test('a PostToolUse of the project’s own, even empty, is left as it is', () => {
+    write({ hooks: { PostToolUse: [] } })
+    syncClaudeSettings(root)
+    assert.deepEqual(read().hooks.PostToolUse, [])
   })
 
   test('a Stop that is not a list is not the shape Claude Code reads', () => {
