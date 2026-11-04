@@ -141,7 +141,7 @@ describe('lntt check tests mutate', () => {
   test('a line no test imports survives: no test runs it', () => {
     const { status, result } = mutate('src/orphan.ts:1', 'true', 'false')
     assert.equal(status, 1)
-    assert.match(result.message, /survived: no test runs this line/)
+    assert.match(result.message, /survived: no test runs this line$/)
   })
 
   test('uncommitted tests count: a new test file kills what the committed ones let live', () => {
