@@ -184,8 +184,9 @@ the candidate guard lets them through, the branch check exempts their branches.
 - **The workflows read the entries without lntt.** The first step of the `ci` job runs
   before checkout and install, where lntt cannot: `lntt sync` writes the entries,
   minified, into every workflow line that ends with `# lntt sync: delivery.automated`
-  (`ci.yml`, `ci-approval.yml`, `candidate.yml`), and `lntt check workflows` fails, in
-  the pre-commit and in the CI, on a line that differs from the configuration. No
+  (`ci.yml`, `ci-approval.yml`, `candidate.yml`), and `lntt check workflows` (part of
+  `lntt check`, which the CI and `ci:local` run) fails on a line that differs from the
+  configuration. No
   workflow names a bot.
 - **`runs: after-approval`: the CI runs once an owner, member or collaborator
   approves.** A bot rebases its pull requests often, and each rebase would start a

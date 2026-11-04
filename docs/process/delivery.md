@@ -295,9 +295,9 @@ got no run of any workflow for forty minutes). A pull request whose `opened` and
 
   It is added to the ruleset's `rules` (Settings → Rules → Rulesets, or
   `gh api -X PUT repos/<owner>/<repo>/rulesets/<id>` with the whole `rules` list), once
-  `candidate-guard.yml` and `ci-approval.yml` are on `main`: before that, no pull
-  request into `main` reports the guard, and an approved bot's pull request keeps a red
-  `ci` beside the approval's ([CI](./ci.md#automated-pull-requests)). With them, a bot's
+  `candidate-guard.yml` and `ci-approval.yml` are on `main`: a pull request whose head
+  does not hold them yet reports no guard, and an approved bot's pull request without
+  them keeps a red `ci` beside the approval's ([CI](./ci.md#automated-pull-requests)). With them, a bot's
   pull request has one `ci` check, which turns green when its head is approved. A required check that never reports blocks the merge, so the guard holds
   when Actions drops every event of the pull request: on a pull request whose required
   check never reported, `gh pr merge --rebase` answers "the base branch policy
