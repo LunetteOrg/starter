@@ -42,6 +42,7 @@ import {
   type Closed,
   closedEntry,
   closeRound,
+  formatTokens,
   type Ledger,
   lensApplies,
   type MutationAnswer,
@@ -50,19 +51,24 @@ import {
   type ReviewState,
   renderReplyPrompt,
   reviewConfig,
+  reviewCost,
   reviewedAfter,
   reviewWarnings,
   roundClean,
+  roundCosts,
   roundLimit,
   roundRange,
   runRound,
 } from './review.ts'
 import { commandExists } from './viewer.ts'
 
+export { formatTokens }
+
 const USAGE = `usage: lntt review [--base <branch>] [--plan]
        lntt review reply <finding> <answer>
        lntt review allow <rounds>
-       lntt review status [--json] [--clear]`
+       lntt review status [--json] [--clear]
+       lntt review cost [--json]`
 
 function usage(message?: string): never {
   if (message) stderr.write(`lntt review: ${message}\n`)
@@ -123,6 +129,12 @@ function readState(): ReviewState | null {
 // verifiers of every round read it. Another branch's ledger is none.
 function ledgerPath(): string {
   return join(git('rev-parse', '--absolute-git-dir'), 'lntt-review-ledger.json')
+}
+
+// A state saved before the rounds were kept: the rounds it ran, none of them with a cost.
+// A state of this version keeps `rounds` (empty too) and its gaps show in the numbers.
+function legacyRounds(state: ReviewState | null): number {
+  return state && state.rounds === undefined ? state.round : 0
 }
 
 // A ledger that cannot be read (a write cut short) costs the reviewers what it told them,
@@ -214,11 +226,13 @@ function stopAtLimit(
     ...open.map((f) => `${f.id} (${f.severity}, ${f.verdict})`),
     ...failed.map((f) => `${f.lens} · ${f.agent} failed`),
   ]
+  const cost = reviewCost(own?.rounds ?? [], legacyRounds(own))
   const passing = `round ${round} would pass delivery.review.maxRounds (${config.maxRounds})${allowed > 0 ? ` and ${allowed} allowed` : ''}`
   const still = listed.length === 0 ? 'nothing' : listed.join(', ')
   stderr.write(
     `lntt review: limit: ${passing} on ${branch}; still open: ${still}\n` +
-      'lntt review: the person decides: the pull request as it is, more rounds for this branch (pnpm exec lntt review allow <rounds>), or an issue for what is open\n',
+      'lntt review: the person decides: the pull request as it is, more rounds for this branch (pnpm exec lntt review allow <rounds>), or an issue for what is open\n' +
+      `lntt review: branch total: ${cost.line}\n`,
   )
   // A branch lntt worktree start started reports to its parent as well: the open
   // findings in full, so the answer needs nothing else.
@@ -233,6 +247,8 @@ function stopAtLimit(
         branch,
         [
           `${marker.issue === null ? '' : `#${marker.issue} `}${branch}: lntt review limit, ${passing}; still open: ${still}; decide: the pull request as it is, pnpm exec lntt review allow <rounds>, or an issue for what is open`,
+          '',
+          `review cost: ${cost.line}`,
           ...(details.length > 0 ? ['', ...details] : []),
         ].join('\n'),
       )
@@ -246,8 +262,16 @@ function stopAtLimit(
     failed: failed.length,
     ...(asked ? { asked } : {}),
   })
+  // The branch's total so far, with its line: what the pull request's Review cost takes.
+  const total = {
+    rounds: cost.rounds,
+    tokens: cost.tokens,
+    usd: cost.usd,
+    unrecorded: cost.unrecorded,
+    line: cost.line,
+  }
   stdout.write(
-    `${JSON.stringify({ limit: { round, maxRounds: config.maxRounds, allowed }, findings: open, failed, ...(asked ? { asked } : {}) }, null, 2)}\n`,
+    `${JSON.stringify({ limit: { round, maxRounds: config.maxRounds, allowed }, findings: open, failed, total, ...(asked ? { asked } : {}) }, null, 2)}\n`,
   )
   return 3
 }
@@ -270,13 +294,6 @@ function agentProblems(agents: Agent[]): string[] {
 function duration(ms: number): string {
   const s = Math.round(ms / 1000)
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`
-}
-
-export function formatTokens(n: number | null): string {
-  if (n === null) return ''
-  if (n < 1000) return `${n} tokens`
-  if (n < 1_000_000) return `${Math.round(n / 100) / 10}k tokens`.replace('.0k', 'k')
-  return `${Math.round(n / 100_000) / 10}M tokens`.replace('.0M', 'M')
 }
 
 // Where a round's progress goes as JSON events, one per line, for whatever shows it
@@ -707,6 +724,7 @@ async function round(args: string[]): Promise<number> {
     reviewed: reviewedAfter(result, previous, head),
     result,
     ...(state?.branch === branch && state.allowed ? { allowed: state.allowed } : {}),
+    rounds: roundCosts(state, branch, result, range.round, files.length > 0),
   }
   writeFileSync(statePath(), `${JSON.stringify(saved, null, 2)}\n`)
   // Only a round that read its range whole closes anything: the next one reads it again.
@@ -715,7 +733,8 @@ async function round(args: string[]): Promise<number> {
   report.stop()
   const tokens = result.tokens === null ? '' : `, ${formatTokens(result.tokens)}`
   stderr.write(
-    `lntt review: round ${saved.round} done in ${duration(Date.now() - began)}: ${result.findings.length} findings, ${result.refuted.length} refuted, ${result.failed.length} failed, ${result.partial.length} partial, ${result.skipped.length} skipped, ${result.closed.length} closed${tokens}\n`,
+    `lntt review: round ${saved.round} done in ${duration(Date.now() - began)}: ${result.findings.length} findings, ${result.refuted.length} refuted, ${result.failed.length} failed, ${result.partial.length} partial, ${result.skipped.length} skipped, ${result.closed.length} closed${tokens}\n` +
+      `lntt review: branch total: ${reviewCost(saved.rounds ?? []).line}\n`,
   )
   // Past delivery.review.warningRounds a warning does not block: it goes in the pull
   // request as an open item.
@@ -793,6 +812,22 @@ async function reply(args: string[]): Promise<number> {
   writeFileSync(statePath(), `${JSON.stringify(state, null, 2)}\n`)
   stdout.write(`${JSON.stringify({ id, withdrawn, replies }, null, 2)}\n`)
   return withdrawn ? 0 : 1
+}
+
+// What the branch's rounds cost, from its state alone: the line the pull request's Review
+// cost takes, or with --json each round and the total.
+function cost(args: string[]): number {
+  const { values } = parseArgs({ args, options: { json: { type: 'boolean', default: false } } })
+  const branch = git('rev-parse', '--abbrev-ref', 'HEAD')
+  const state = readState()
+  const rounds = state?.branch === branch ? (state.rounds ?? []) : []
+  const total = reviewCost(rounds, legacyRounds(state?.branch === branch ? state : null))
+  stdout.write(
+    values.json
+      ? `${JSON.stringify({ branch, rounds, total: { rounds: total.rounds, tokens: total.tokens, usd: total.usd, unrecorded: total.unrecorded, line: total.line } }, null, 2)}\n`
+      : `${total.line}\n`,
+  )
+  return 0
 }
 
 // A person allows the branch more rounds past delivery.review.maxRounds, kept in its
@@ -993,7 +1028,7 @@ function status(args: string[]): number {
   const replied = result.findings.filter((f) => f.reply !== undefined || f.verdict === 'withdrawn')
   const ledger = ledgerFile()
   const closed = ledger?.branch === state.branch && Array.isArray(ledger.closed) ? ledger.closed : []
-  // The round's cost moves to reviewCost(state) when #223 stores it per round.
+  // The last round's own tokens and USD; the branch's total is lntt review cost.
   const tokens = result.tokens ?? null
   const cost = result.cost ?? null
   const code = !isCurrent ? 4 : clean ? 0 : atLimit ? 3 : 1
@@ -1072,6 +1107,7 @@ export async function main([command, ...args]: string[]): Promise<void> {
   try {
     if (command === 'allow') exit(allow(args))
     if (command === 'status') exit(status(args))
+    if (command === 'cost') exit(cost(args))
     exit(command === 'reply' ? await reply(args) : await round(command === undefined ? [] : [command, ...args]))
   } catch (error) {
     if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
@@ -1088,6 +1124,7 @@ export async function main([command, ...args]: string[]): Promise<void> {
       !reads &&
       command !== 'reply' &&
       command !== 'allow' &&
+      command !== 'cost' &&
       !progressFile &&
       ![command, ...args].includes('--plan')
     )

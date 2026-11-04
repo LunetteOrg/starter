@@ -74,9 +74,9 @@ such as `Refs #91`, has no colon.)
   `  - [upstream:<owner/name>] …`. In the middle of a sentence it is no marker.
 - **`none` is an answer** (the configured `none`): write it where nothing applies. A label
   left empty means the block was not filled in, and the harvest counts it apart.
-- **A line about the review's cost**, when the configuration has one: the rounds of
-  `lntt review` on the branch, the sum of their `tokens` and of their `cost` (USD), from
-  each round's JSON; a round whose agents reported no cost says so.
+- **A line about the review's cost**, when the configuration has one: the line
+  `pnpm exec lntt review cost` prints, copied as it is (the branch's rounds, their tokens
+  and USD, and the rounds whose agents reported none).
 - What surfaces after the pull request is open goes into the body's block, or into a
   comment that holds a block of its own: the harvest reads both.
 

@@ -92,11 +92,11 @@ of the file (an edited entry is reformatted): the `directory` marketplace this p
 `SessionStart` hook that installs the dependencies when `node_modules/.bin/lntt` is
 missing: with pnpm, or `npm ci` in a project with only a `package-lock.json`, within ten
 minutes. The hook never fails a session: when the install cannot run it says, once,
-what to run. Beside it go two lines of `lntt hook`: `lntt hook format` after `Write` and
-`Edit`, which passes the written file to the format commands, and `lntt hook typecheck`
+what to run. Beside it goes one line of `lntt hook`: `lntt hook typecheck`
 at `Stop`, in the background, which wakes the agent with a failure only when it differs
-from the last one. Their commands are `local.hooks.format` and `local.hooks.typecheck`
-(one command or a list), else the `package.json` script of that name, else none:
+from the last one. Its command is `local.hooks.typecheck`
+(one command or a list), else the `package.json` script of that name, else none.
+Formatting is the pre-commit's: `lntt sync` writes no format hook:
 
 ```jsonc
 "local": { "hooks": { "typecheck": ["tsc --noEmit", "uv run mypy ."] } }
@@ -421,6 +421,8 @@ lntt review allow 2               # two rounds more for this branch, past maxRou
 lntt review status                # the worktree's state: one line, then what to act on
 lntt review status --json         # the whole state, one shape whatever the case
 lntt review status --clear        # remove another or a merged branch's state, ledger, progress
+lntt review cost                  # the branch's rounds, tokens and USD: the pull request's Review cost line
+lntt review cost --json           # each round's cost and the total
 ```
 
 `lntt review status` is how the state is read: never from the files in the git directory,
@@ -445,7 +447,12 @@ A round, on a clean working tree:
 1. **What to read:** the branch from where it left the base
    ([the base of a branch](#the-base-of-a-branch)) the first time, then only
    the commits after the last reviewed one (after a rebase, the whole branch again).
-   The state is `lntt-review.json` in the worktree's git directory.
+   The state is `lntt-review.json` in the worktree's git directory. Its `rounds` keep
+   each round that read files: `round`, `head`, `tokens`, `usd` (null when no agent
+   reported them), `noTokens` and `noUsd` (the agents that reported none, a failed one
+   included). After `round N done`, stderr says `lntt review: branch total: <line>`; the
+   line names the rounds a state saved before `rounds` existed has no entry for
+   (`not recorded: rounds 1, 2`).
 2. **Checks**: a lens named after an area of `lntt check` (`decisions`, `tests`) gets
    `lntt check <area> --base <first commit read> --json` in its prompt, and its brief
    keeps only what needs judgement.

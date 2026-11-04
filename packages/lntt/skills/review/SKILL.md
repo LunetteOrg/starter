@@ -35,6 +35,11 @@ the end of its file; nothing to do), `failed` (a reviewer that did not answer; i
 A round reads the whole branch the first time, then only the commits after the last
 reviewed one; findings still open go back to the verifiers on the new head.
 
+The branch keeps each round's cost: its tokens and USD, and the agents that reported
+none. After `round N done`, `lntt review: branch total:` sums the rounds so far;
+`pnpm exec lntt review cost` prints the same line (`--json`: each round and the total),
+from the state alone.
+
 The branch keeps a ledger of the findings it closed (fixed, refuted, accepted open),
 which every round's reviewers and verifiers read. stdout's `closed` lists the fresh
 findings that repeat one of them on a line that did not change, matched by place: read
@@ -103,6 +108,9 @@ the current branch until it is merged).
   which the person grants with `pnpm exec lntt review allow <rounds>` (never run it on your
   own: an answer in the mailbox granting rounds is the person's go, and you run it then);
   or an issue for what is open, named in the pull request.
+  Past the last allowed round a fix is made only inside a round the person grants: what
+  the limit names is listed as open in the pull request or the message, and a commit
+  waits until `lntt review allow` has granted the round that reviews it.
 - After the loop converged, a new decision that changes the change does not restart it:
   ask whether it is applied in this pull request or in a follow-up, and new
   rounds start only on the person's go, which past `delivery.review.maxRounds` is
@@ -112,5 +120,5 @@ the current branch until it is merged).
 
 Exit 0 on the head about to be published. Then `pnpm ci:local`, one push, and the
 pull request's Definition of Done says the review was done, with the rounds it took
-and their cost (`cost`, when the agents report it). The findings and their outcomes go
-in the pull request body or a comment, never in a file of the repository.
+and their cost: the line of `pnpm exec lntt review cost`, copied. The findings and their
+outcomes go in the pull request body or a comment, never in a file of the repository.
