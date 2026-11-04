@@ -61,6 +61,9 @@ lntt ci local | candidate | proved
   resolved when the view is written, and a field the Project does not return then
   stops the run with its name, the writes before it applied.
   `--check` exits 1 on any difference, an entry left to a person included.
+- **`lntt board ready --apply` writes only a status value.** It sets the option
+  `board.fields.status.ready` on the items of the eligible issues, and creates nothing on
+  the Project; the candidate's merge does the same (`packages/lntt/src/board-ready.ts`).
 - **What a person types is what an agent runs.** Skills, workflows, git hooks and
   `orca.yaml` call `lntt`, never a package's files by path, with one exception: the
   candidate workflow runs `node packages/lntt/bin/lntt.ts`, because it installs only
@@ -160,9 +163,10 @@ rests on these criteria:
    calls `lntt get` and `lntt check tests mutate` (gates); `run-local`
    calls `lntt get`, `lntt local app` and `lntt viewer`; `retrospective` calls `lntt get`,
    `lntt pr block` and `lntt check body` (gates) and `lntt retro add`, `lntt dump` and `lntt issue` (agent tools); `github-board` calls `lntt get` and `lntt set`
-   (gates) and `lntt board sync` (an agent tool); `commit-message` (`lntt get`,
-   commitlint), `plan-round` and `roadmap` (`lntt get`, `lntt set`) stay on the gate
-   side. In the code, `lntt review` imports the check
+   (gates) and `lntt board sync` and `lntt board ready` (agent tools); `plan-round` calls
+   `lntt get` and `lntt set` (gates) and `lntt board ready` (an agent tool);
+   `commit-message` (`lntt get`, commitlint) and `roadmap` (`lntt get`, `lntt set`) stay on
+   the gate side. In the code, `lntt review` imports the check
    areas and the mutations and runs them in-process (`packages/lntt/src/review-cli.ts`
    imports `runArea` and `mutateAll`), and `lntt worktree start` names branches with
    the gate's code (`packages/lntt/src/worktree-cli.ts` imports `branchName` and

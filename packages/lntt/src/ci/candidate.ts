@@ -44,7 +44,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Graphql } from '../board.ts'
 import { same } from '../board.ts'
-import { moveToReady, NotOnBoard, type ReadyRules, readIssueOnBoard, readWaiting } from '../board-ready.ts'
+import { holdsLine, moveToReady, NotOnBoard, type ReadyRules, readIssueOnBoard, readWaiting } from '../board-ready.ts'
 import { retroComment } from '../pull-request.ts'
 
 export interface CandidateConfig {
@@ -1419,32 +1419,40 @@ export function readyComment(rules: ReadyRules, candidateBranch: string, report:
 }
 
 // Which pull request closed which issue: those merged into the candidate; an issue none
-// of them names is the candidate's own.
-function closers({ gh, repo }: Run, pr: PullRequest): (issue: number) => number {
-  const merged = JSON.parse(
-    gh.read([
-      'pr',
-      'list',
-      '--repo',
-      repo,
-      '--state',
-      'merged',
-      '--base',
-      pr.headRef,
-      '--limit',
-      '500',
-      '--json',
-      'number,body',
-    ]),
-  ) as Array<{ number: number; body: string | null }>
+// of them names is the candidate's own. The list is only evidence: when it cannot be
+// read, every issue is the candidate's own and the moves go on.
+function closers({ gh, repo, log }: Run, pr: PullRequest): (issue: number) => number {
+  let merged: Array<{ number: number; body: string | null }> = []
+  try {
+    merged = JSON.parse(
+      gh.read([
+        'pr',
+        'list',
+        '--repo',
+        repo,
+        '--state',
+        'merged',
+        '--base',
+        pr.headRef,
+        '--limit',
+        '500',
+        '--json',
+        'number,body',
+      ]),
+    ) as typeof merged
+  } catch (error) {
+    log(
+      `::notice title=Ready check evidence::the pull requests merged into ${pr.headRef} could not be read, the comment names #${pr.number}: ${(error as Error).message.split('\n')[0]}`,
+    )
+  }
   return (issue) =>
     merged.find((m) => closingReferences(m.body).some((ref) => issueNumber(ref, repo) === issue))?.number ?? pr.number
 }
 
 // The candidate is merged, so its issues are closed: the issues blocked by one of them
 // that meet the criteria move from the first status to Ready, and the candidate's pull
-// request says what moved and what is missing for the rest. An issue past the first
-// status is someone's already, and is left alone. The Projects token's refusals and a
+// request says what moved and what is missing for the rest. An issue already at Ready is
+// listed there, and one further along is someone's already and is left alone. The Projects token's refusals and a
 // Project without the statuses are notices, as for every board move here.
 export function readyAfterMerge(run: Run, pr: PullRequest): ReadyReport | null {
   const { gh, board, repo, log, config } = run
@@ -1488,7 +1496,7 @@ export function readyAfterMerge(run: Run, pr: PullRequest): ReadyReport | null {
             moveToReady(overGh(board.write), target)
             report.moved.push({ number, evidence: why })
           } else if (verdict.kind === 'holds') {
-            report.left.push({ number, evidence: why, why: `holds ${verdict.open} open sub-issues` })
+            report.left.push({ number, evidence: why, why: holdsLine(verdict.open) })
           } else {
             report.left.push({ number, evidence: why, why: `missing ${verdict.missing.join(', ')}` })
           }

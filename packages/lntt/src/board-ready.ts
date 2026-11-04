@@ -93,11 +93,15 @@ export interface ReadyFacts {
   // null: a blocker the token cannot read.
   blockers: Array<{ number: number; repo: string; open: boolean } | null>
   moreBlockers: boolean
+  // It has more issue fields than one read holds: one not seen may still be set.
+  moreFields: boolean
   // The names of the priority and the size, when set.
   fields: string[]
 }
 
 export type Verdict = { kind: 'eligible' } | { kind: 'missing'; missing: string[] } | { kind: 'holds'; open: number }
+
+export const holdsLine = (open: number) => `holds ${open} open sub-issue${open === 1 ? '' : 's'}`
 
 // An issue that holds open sub-issues is picked up through them, and is out of the check.
 // A blocker that cannot be read counts as open: a wrong move costs a status change, and
@@ -116,7 +120,11 @@ export function assess(rules: ReadyRules, issue: ReadyFacts, repo: string): Verd
     if (rules.subIssues && isChild && !alone && issue.parent === null) missing.push('parent')
   }
   for (const rule of [rules.priority, rules.size]) {
-    if (rule && !issue.fields.includes(rule.name)) missing.push(rule.name)
+    if (rule && !issue.fields.includes(rule.name)) {
+      missing.push(
+        rule.onIssue && issue.moreFields ? `${rule.name} (more issue fields than one read holds)` : rule.name,
+      )
+    }
   }
   if (rules.blockedBy) {
     for (const blocker of issue.blockers) {
@@ -158,7 +166,7 @@ const issueFields = (rules: ReadyRules) => `number title state repository{ nameW
   blockedBy(first:50){ pageInfo{ hasNextPage } nodes{ number state repository{ nameWithOwner } } }
   ${
     rules.priority?.onIssue || rules.size?.onIssue
-      ? `issueFieldValues(first:20){ nodes{
+      ? `issueFieldValues(first:100){ pageInfo{ hasNextPage } nodes{
     ... on IssueFieldDateValue{ field ${ISSUE_FIELD_NAME} }
     ... on IssueFieldMultiSelectValue{ field ${ISSUE_FIELD_NAME} }
     ... on IssueFieldNumberValue{ field ${ISSUE_FIELD_NAME} }
@@ -179,7 +187,10 @@ interface LiveIssue {
     pageInfo: { hasNextPage: boolean }
     nodes: Array<{ number: number; state: string; repository: { nameWithOwner: string } } | null>
   } | null
-  issueFieldValues?: { nodes: Array<{ field?: { name?: string } | null } | null> } | null
+  issueFieldValues?: {
+    pageInfo?: { hasNextPage: boolean }
+    nodes: Array<{ field?: { name?: string } | null } | null>
+  } | null
 }
 
 interface LiveValues {
@@ -215,6 +226,7 @@ function factsOf(rules: ReadyRules, issue: LiveIssue, item: LiveValues | null): 
       node ? { number: node.number, repo: node.repository.nameWithOwner, open: isOpen(node.state) } : null,
     ),
     moreBlockers: issue.blockedBy?.pageInfo.hasNextPage ?? false,
+    moreFields: issue.issueFieldValues?.pageInfo?.hasNextPage ?? false,
     fields,
   }
 }

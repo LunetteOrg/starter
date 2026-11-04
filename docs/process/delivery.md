@@ -186,8 +186,8 @@ candidate exists on a day without pull requests.
   automation reads the open issues blocked by them. Each one at the first status that
   meets the criteria of [Ready](./board.md#status) moves there, and one comment on the
   candidate's pull request says what moved, with the blocker and the pull request that
-  closed it, and what is missing for those left at the first status. An issue past the
-  first status is left alone. It needs `board.blockedBy`, and it writes with the same
+  closed it, and what is missing for those left at the first status. An issue already at
+  Ready is listed there and one further along is left alone. It needs `board.blockedBy`, and it writes with the same
   Projects token; the same refusals are notices. Issues a hotfix unblocks wait for
   `lntt board ready`.
 - **Issues close on the candidate's merge.** GitHub ignores closing keywords in a pull

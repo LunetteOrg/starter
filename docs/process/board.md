@@ -73,7 +73,8 @@ An issue moves through `board.fields.status` this way:
 - **Ready** when it can be picked up: its body lets an agent start cold (the
   `github-board` skill's *Write an issue*), it has its type, its priority and its size,
   a parent when its type is a child type that cannot stand alone
-  (`board.issueTypes.standalone`), and no open blocker. An issue gets there in three ways:
+  (`board.issueTypes.standalone`) on a board with sub-issues (`board.subIssues`), and no
+  open blocker. An issue gets there in three ways:
   - **the candidate's merge**, on its own: the candidate automation checks the issues
     waiting on what the merge closed, moves those that meet the criteria, and says on
     the candidate's pull request what it moved, with the blocker and the pull request

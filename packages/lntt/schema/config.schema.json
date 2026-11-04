@@ -143,7 +143,7 @@
             },
             "standalone": {
               "type": "array",
-              "description": "The child types an issue may have with no parent: lntt board ready asks a parent of every other child type. Each is one of children: lntt validate checks it. Absent: every child needs a parent.",
+              "description": "The child types an issue may have with no parent: with board.subIssues, lntt board ready asks a parent of every other child type. Each is one of children: lntt validate checks it. Absent: every child needs a parent.",
               "items": {
                 "type": "string",
                 "minLength": 1

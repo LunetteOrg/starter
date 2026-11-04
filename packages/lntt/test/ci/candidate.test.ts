@@ -1583,6 +1583,7 @@ describe("the Ready check on the candidate's merge", () => {
   interface FakeIssue {
     state?: string
     blocking?: number[]
+    moreBlocking?: boolean
     blockedBy?: Array<{ number: number; state: string }>
     type?: string | null
     parent?: number | null
@@ -1596,7 +1597,7 @@ describe("the Ready check on the candidate's merge", () => {
   // the item's. `refused` makes the board's read fail as a token without the permission.
   function fakeBoard(
     issues: Record<number, FakeIssue>,
-    { merged = [] as unknown[], refused = false, comments = [] as string[] } = {},
+    { merged = [] as unknown[], refused = false, comments = [] as string[], noPrList = false } = {},
   ) {
     const writes: string[] = []
     const inputs: string[] = []
@@ -1610,7 +1611,10 @@ describe("the Ready check on the candidate's merge", () => {
     const gh: Gh = {
       read: (args) => {
         const line = args.join(' ')
-        if (line.includes('pr list')) return JSON.stringify(merged)
+        if (line.includes('pr list')) {
+          if (noPrList) throw new Error('gh: HTTP 502\nsecond line')
+          return JSON.stringify(merged)
+        }
         if (line.includes('/comments')) return comments.map((body) => JSON.stringify({ id: 1, body })).join('\n')
         const issue = of(args)
         if (line.includes('blocking(first')) {
@@ -1620,7 +1624,7 @@ describe("the Ready check on the candidate's merge", () => {
                 issue: {
                   state: issue.state ?? 'CLOSED',
                   blocking: {
-                    pageInfo: { hasNextPage: false },
+                    pageInfo: { hasNextPage: issue.moreBlocking === true },
                     nodes: (issue.blocking ?? []).map((n) => repoNode(n, issues[n]?.state ?? 'OPEN')),
                   },
                 },
@@ -1710,6 +1714,29 @@ describe("the Ready check on the candidate's merge", () => {
     assert.deepEqual(fake.writes, ['board item=I_486 option=b', 'pr comment 40 --repo o/r --body-file -'])
     assert.match(fake.inputs[0], /<!-- candidate:ready:candidate\/4 -->/)
     assert.match(fake.inputs[0], /Moved to Pronta:\n\n- #486: #69 closed by #70\./)
+  })
+
+  test('the merged pull requests are only evidence: when they cannot be read the move goes on', () => {
+    const fake = fakeBoard({ 69: { blocking: [486] }, 486: {} }, { noPrList: true })
+    lines.length = 0
+    const report = go(fake)
+    assert.deepEqual(report?.moved, [{ number: 486, evidence: '#69 closed by #40' }])
+    assert.ok(
+      lines.some((l) => /^::notice title=Ready check evidence::.*candidate\/4.*#40: gh: HTTP 502$/.test(l)),
+      lines.join('\n'),
+    )
+  })
+
+  test('an issue blocking more than one read holds is a notice, and alone writes no comment', () => {
+    const fake = fakeBoard({ 69: { blocking: [], moreBlocking: true } }, { merged })
+    lines.length = 0
+    const report = go(fake)
+    assert.deepEqual(report, { moved: [], already: [], left: [] })
+    assert.ok(
+      lines.some((l) => l.startsWith('::notice title=Ready check partial::#69 blocks more issues')),
+      lines.join('\n'),
+    )
+    assert.deepEqual(fake.writes, [])
   })
 
   test('one still blocked stays, and the comment says by what', () => {

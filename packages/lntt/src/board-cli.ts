@@ -20,7 +20,14 @@ import {
   planBoard,
   readBoard,
 } from './board.ts'
-import { moveToReady, type ProjectIssue, type ReadyRules, readFirstStatus, readyRules } from './board-ready.ts'
+import {
+  holdsLine,
+  moveToReady,
+  type ProjectIssue,
+  type ReadyRules,
+  readFirstStatus,
+  readyRules,
+} from './board-ready.ts'
 import { ConfigError, getValue, loadConfig } from './index.ts'
 
 const USAGE = 'usage: lntt board sync [--apply | --check]\n       lntt board ready [--apply]'
@@ -63,7 +70,7 @@ function printReady(issues: ProjectIssue[]): void {
     issue.verdict.kind === 'missing' ? `${head(issue)}: missing ${issue.verdict.missing.join(', ')}` : head(issue),
   )
   section('picked up through their sub-issues', of('holds'), (issue) =>
-    issue.verdict.kind === 'holds' ? `${head(issue)}: holds ${issue.verdict.open} open sub-issues` : head(issue),
+    issue.verdict.kind === 'holds' ? `${head(issue)}: ${holdsLine(issue.verdict.open)}` : head(issue),
   )
   if (issues.length === 0) stdout.write('  no issue at the first status\n')
 }
@@ -104,7 +111,9 @@ function ready(args: string[]): void {
   try {
     repo = currentRepo()
   } catch (error) {
-    failReady(`reading the repository: ${(error as Error).message}`)
+    failReady(
+      `reading the repository: ${(error as Error).message}\n(gh repo set-default, or GITHUB_REPOSITORY, names it)`,
+    )
   }
   const { project, status } = known
   const title = project.title ? ` (${project.title})` : ''

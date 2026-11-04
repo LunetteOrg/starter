@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { assess, type ReadyFacts, readIssueOnBoard, readWaiting, readyRules } from '../src/board-ready.ts'
+import { assess, holdsLine, type ReadyFacts, readIssueOnBoard, readWaiting, readyRules } from '../src/board-ready.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
 
@@ -36,6 +36,7 @@ const facts = (over: Partial<ReadyFacts> = {}): ReadyFacts => ({
   openSubIssues: 0,
   blockers: [],
   moreBlockers: false,
+  moreFields: false,
   fields: ['Priority', 'Size'],
   ...over,
 })
@@ -122,6 +123,33 @@ describe('assess', () => {
     assert.equal(assess(rules(), facts({ type: 'Bug', parent: null }), 'o/r').kind, 'eligible')
   })
 
+  test('a stand-alone type matches whatever its case, and with no standalone every child needs a parent', () => {
+    assert.equal(assess(rules(), facts({ type: 'BUG', parent: null }), 'o/r').kind, 'eligible')
+    const every = readyRules({
+      board: { ...BOARD, issueTypes: { parents: ['Feature'], children: ['Task', 'Bug'] } },
+    })
+    assert.ok(every)
+    assert.deepEqual(assess(every, facts({ type: 'Bug', parent: null }), 'o/r'), {
+      kind: 'missing',
+      missing: ['parent'],
+    })
+  })
+
+  test('an issue field past one read is named as such, a field on the item never is', () => {
+    const onIssue = readyRules({
+      board: { ...BOARD, fields: { ...BOARD.fields, priority: { ...BOARD.fields.priority, kind: 'issue' } } },
+    })
+    assert.ok(onIssue)
+    assert.deepEqual(assess(onIssue, facts({ fields: ['Size'], moreFields: true }), 'o/r'), {
+      kind: 'missing',
+      missing: ['Priority (more issue fields than one read holds)'],
+    })
+    assert.deepEqual(assess(rules(), facts({ fields: ['Size'], moreFields: true }), 'o/r'), {
+      kind: 'missing',
+      missing: ['Priority'],
+    })
+  })
+
   test('with no sub-issues on the board, a child type needs no parent', () => {
     const r = readyRules({ board: { ...BOARD, subIssues: false } })
     assert.ok(r)
@@ -145,6 +173,8 @@ describe('assess', () => {
       kind: 'holds',
       open: 3,
     })
+    assert.equal(holdsLine(3), 'holds 3 open sub-issues')
+    assert.equal(holdsLine(1), 'holds 1 open sub-issue')
     assert.equal(assess(rules(), facts({ type: 'Feature', parent: null, openSubIssues: 0 }), 'o/r').kind, 'eligible')
   })
 })
@@ -215,12 +245,16 @@ describe('the reads of one issue', () => {
 // item's status there. Each write is logged in $GH_LOG.
 const GH = `#!/usr/bin/env node
 const fs = require('node:fs')
-if (process.argv[2] === 'repo') { process.stdout.write('o/r\\n'); process.exit(0) }
+if (process.argv[2] === 'repo') {
+  if (process.env.GH_REPO_FAIL) { process.stderr.write('gh: no default repository\\n'); process.exit(1) }
+  process.stdout.write('o/r\\n')
+  process.exit(0)
+}
 const state = JSON.parse(fs.readFileSync(process.env.GH_STATE, 'utf8'))
 const { query, variables: v } = JSON.parse(fs.readFileSync(0, 'utf8'))
 const log = (line) => fs.appendFileSync(process.env.GH_LOG, line + '\\n')
 if (query.includes('updateProjectV2ItemFieldValue')) {
-  if (process.env.GH_FAIL) { process.stderr.write('gh: Resource not accessible\\n'); process.exit(1) }
+  if (process.env.GH_FAIL && (process.env.GH_FAIL === '1' || process.env.GH_FAIL === v.item)) { process.stderr.write('gh: Resource not accessible\\n'); process.exit(1) }
   log('move ' + v.item + ' ' + v.option)
   if (!process.env.GH_NOOP) {
     const item = state.items.find((i) => i.id === v.item)
@@ -412,6 +446,29 @@ describe('lntt board ready', () => {
     const r = lntt(['--apply'], { GH_FAIL: '1' })
     assert.equal(r.status, 1)
     assert.match(r.stderr, /#10.*Resource not accessible/)
+  })
+
+  test('a move that fails on the second eligible says how many moved before it', () => {
+    writeFileSync(
+      gh.state,
+      JSON.stringify({ options: STATE.options, items: [item('I_40', 'Todo', 40), item('I_41', 'Todo', 41)] }),
+    )
+    const r = lntt(['--apply'], { GH_FAIL: 'I_41' })
+    assert.equal(r.status, 1)
+    assert.match(r.stderr, /#41.*Resource not accessible/)
+    assert.match(r.stderr, /moved 1 before it/)
+    assert.deepEqual(writes(), ['move I_40 o_ready'])
+  })
+
+  test('a configuration that does not validate, or a repository gh cannot name, stops with why', () => {
+    const noRepo = lntt([], { GH_REPO_FAIL: '1' })
+    assert.equal(noRepo.status, 1)
+    assert.match(noRepo.stderr, /reading the repository: .*no default repository/)
+    assert.match(noRepo.stderr, /gh repo set-default, or GITHUB_REPOSITORY/)
+    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify({ board: { nope: true } }))
+    const bad = lntt([])
+    assert.equal(bad.status, 1)
+    assert.match(bad.stderr, /nope/)
   })
 
   test('--apply reads the board back, and says what did not move', () => {
