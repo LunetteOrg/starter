@@ -200,7 +200,9 @@ So:
     A newer `lntt` therefore reads an older file;
     `packages/lntt/test/released-configs.test.ts` validates a configuration of each
     released version against the current schema, and checks that it sets every field
-    the schema of its tag knew. What the schema cannot say, and what every reader
+    the schema of its tag knew. A key removed on purpose is listed in `REMOVED` of that
+    test, which drops it before validating the fixture (`local.hooks.format`). What the
+    schema cannot say, and what every reader
     would fail on if the schema required it, `lntt validate` checks
     (`packages/lntt/src/references.ts`): those checks may grow, since they fail the
     gate and never a read; the release notes name each new one
