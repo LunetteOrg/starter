@@ -418,6 +418,8 @@ lntt review --base <branch>       # against another base than the resolved one (
 lntt review --plan                # the range, the lenses and their agents; runs nothing
 lntt review reply f2 "line 120 excludes it"   # answer the reviewers who found f2
 lntt review allow 2               # two rounds more for this branch, past maxRounds
+lntt review cost                  # the branch's rounds, tokens and USD: the pull request's Review cost line
+lntt review cost --json           # each round's cost and the total
 ```
 
 A round, on a clean working tree:
@@ -425,7 +427,12 @@ A round, on a clean working tree:
 1. **What to read:** the branch from where it left the base
    ([the base of a branch](#the-base-of-a-branch)) the first time, then only
    the commits after the last reviewed one (after a rebase, the whole branch again).
-   The state is `lntt-review.json` in the worktree's git directory.
+   The state is `lntt-review.json` in the worktree's git directory. Its `rounds` keep
+   each round that read files: `round`, `head`, `tokens`, `usd` (null when no agent
+   reported them), `noTokens` and `noUsd` (the agents that reported none, a failed one
+   included). After `round N done`, stderr says `lntt review: branch total: <line>`; the
+   line names the rounds a state saved before `rounds` existed has no entry for
+   (`not recorded: rounds 1, 2`).
 2. **Checks**: a lens named after an area of `lntt check` (`decisions`, `tests`) gets
    `lntt check <area> --base <first commit read> --json` in its prompt, and its brief
    keeps only what needs judgement.

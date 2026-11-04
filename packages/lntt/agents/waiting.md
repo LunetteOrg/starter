@@ -11,7 +11,9 @@ your mailbox between polls.
 - **The review limit:** at `lntt review: limit:` the round sends the open findings
   itself and prints the id of its message; wait for the answer with
   `pnpm exec lntt ask --wait <id>`. An answer that grants rounds is the go: run
-  `pnpm exec lntt review allow <rounds>` yourself, then the next round.
+  `pnpm exec lntt review allow <rounds>` yourself, then the next round. Past the last
+  allowed round a fix is made only inside a granted round: what is open stays listed as
+  open, and a commit waits until `lntt review allow` has granted the round that reviews it.
 
 ## Open decisions come before the first commit
 

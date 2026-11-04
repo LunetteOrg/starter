@@ -39,7 +39,8 @@ stops at the draft pull request.
 2. **Review on the machine.** Before the first round, the author checks each test the
    change adds or alters that guards a line with the `mutation-check` skill
    ([test checks](../adr/test-checks.md#decision)). The review runs on the local branch with `lntt review`
-   (the `review` skill), and fixes are local commits. Reviewers start with no context
+   (the `review` skill), and fixes are local commits, each inside a round the branch may
+   still take: past `delivery.review.maxRounds`, only once the person grants one. Reviewers start with no context
    of the conversation that wrote the change, each lens on the agents and models of
    `delivery.review`; verifiers try to refute every blocker and warning; later rounds
    read only the new commits, with the findings the branch already closed. The branch
