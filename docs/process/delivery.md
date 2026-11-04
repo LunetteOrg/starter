@@ -187,7 +187,9 @@ candidate exists on a day without pull requests.
   meets the criteria of [Ready](./board.md#status) moves there, and one comment on the
   candidate's pull request says what moved, with the blocker and the pull request that
   closed it, and what is missing for those left at the first status. An issue already at
-  Ready is listed there and one further along is left alone. It needs `board.blockedBy`, and it writes with the same
+  Ready is listed there and one further along is left alone. What one read does not hold is
+  a notice or a missing line, never a move; when the pull requests merged into the candidate
+  cannot be read, the comment credits the candidate's own. It needs `board.blockedBy`, and it writes with the same
   Projects token; the same refusals are notices. Issues a hotfix unblocks wait for
   `lntt board ready`.
 - **Issues close on the candidate's merge.** GitHub ignores closing keywords in a pull

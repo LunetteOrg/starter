@@ -233,6 +233,34 @@ describe('the reads of one issue', () => {
     assert.equal(onBoard([boardItem('other', 'SomeoneElse')]).target, null)
   })
 
+  test('an issue field past the read comes back as such, from the query that asks for it', () => {
+    const onIssue = readyRules({
+      board: { ...BOARD, fields: { ...BOARD.fields, priority: { ...BOARD.fields.priority, kind: 'issue' } } },
+    })
+    assert.ok(onIssue)
+    const queries: string[] = []
+    const graphql = (query: string) => {
+      queries.push(query)
+      return {
+        repository: {
+          issue: {
+            number: 7,
+            title: 'a task',
+            state: 'OPEN',
+            repository: { nameWithOwner: 'o/r' },
+            issueType: { name: 'Task' },
+            parent: { number: 1 },
+            issueFieldValues: { pageInfo: { hasNextPage: true }, nodes: [] },
+          },
+        },
+      }
+    }
+    const board = () => ({ repository: { issue: { projectItems: { nodes: [boardItem('ours', 'DemoOrg')] } } } })
+    const found = readIssueOnBoard(graphql, board, onIssue, 'o/r', 7)
+    assert.equal(found.facts.moreFields, true)
+    assert.match(queries[0] ?? '', /issueFieldValues\(first:100\)\{ pageInfo\{ hasNextPage \}/)
+  })
+
   test('an archived item is not on the board', () => {
     const found = onBoard([boardItem('old', 'DemoOrg', { isArchived: true })])
     assert.equal(found.status, null)
