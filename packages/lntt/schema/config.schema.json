@@ -141,6 +141,16 @@
               "minItems": 1,
               "uniqueItems": true
             },
+            "standalone": {
+              "type": "array",
+              "description": "The child types an issue may have with no parent: lntt board ready asks a parent of every other child type. Each is one of children: lntt validate checks it. Absent: every child needs a parent.",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
             "permanent": {
               "type": "array",
               "description": "The parent types that never close (ongoing work): the roadmap gives them no dates and leaves them out of its forecast and of the parents velocity counts; they keep their horizon, and the children done under them count. Each is one of parents: lntt validate checks it.",

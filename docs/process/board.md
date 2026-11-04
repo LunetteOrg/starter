@@ -71,7 +71,23 @@ An issue moves through `board.fields.status` this way:
 - **Todo** when it is opened: the `github-board` skill's fast path, or the Project's
   auto-add.
 - **Ready** when it can be picked up: its body lets an agent start cold (the
-  `github-board` skill's *Write an issue*), and it has its type and its priority.
+  `github-board` skill's *Write an issue*), it has its type, its priority and its size,
+  a parent when its type is a child type that cannot stand alone
+  (`board.issueTypes.standalone`), and no open blocker. An issue gets there in three ways:
+  - **the candidate's merge**, on its own: the candidate automation checks the issues
+    waiting on what the merge closed, moves those that meet the criteria, and says on
+    the candidate's pull request what it moved, with the blocker and the pull request
+    that closed it, and what is missing for the rest
+    ([delivery](./delivery.md#the-candidate-automation));
+  - **`lntt board ready`**, on demand, and in the `plan-round` skill: it lists every
+    issue of this repository at the first status, Ready-eligible or with what is
+    missing, and `--apply` moves the eligible ones;
+  - **a person or an agent**, by hand, for anything else.
+
+  The machine checks only what is mechanical. Whether the body lets an agent start cold
+  is a judgement: an issue written badly can reach Ready, and the status goes back to
+  Todo when someone finds it. An issue that holds open sub-issues is picked up through
+  them, so the check leaves it out and says so.
 - **In progress** when someone, a person or an agent in a worktree, works on it.
 - **In review** when its pull request is ready for review.
 - **In release** and **Done** are the candidate automation's
@@ -132,6 +148,12 @@ grouping is set in the UI only. What each view is for:
 
 ## Discarded directions
 
+- **CI proposes, the operator confirms each move to Ready.** The criteria are mechanical
+  and a wrong move is one status change back: a confirmation adds a wait for no
+  protection.
+- **The Ready check at every squash into the candidate.** The squashed issue stays open
+  until the candidate reaches `main`: the check would have to pretend it closed, and be
+  wrong if the candidate does not land.
 - **Removing the Task type.** Every issue type would be a kind of work, and the board
   would have no child type for the work under a parent, and every issue of the
   organization typed Task, in any repository, would lose its type.

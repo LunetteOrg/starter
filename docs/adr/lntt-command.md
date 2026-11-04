@@ -24,7 +24,7 @@ command, so a reader who sees `lntt` in a script knows which package provides it
 ```
 lntt path | validate | get | set | operator | sync | guide | local app | viewer | browser | refs
 lntt hook typecheck
-lntt board sync
+lntt board sync | ready
 lntt check [agents-md | skills | plugin | decisions [structure | board-refs | numbers] | tests [levels | focus | rules | touched | mutate] | body] | check cite
 lntt branch name | check | rename
 lntt pr block
@@ -190,7 +190,7 @@ So:
   | `lntt branch check`, and `branch name` and `branch rename`, so the name an agent gets is the one the gate accepts | `lntt ask \| inbox \| answer` |
   | `lntt validate \| get \| set \| path`: they hold the schema; `set` writes a tracked file | `lntt guide`: it prints the skills |
   | `lntt sync`: it writes tracked files (the `AGENTS.md` block, the skill stubs, the entries of `.claude/settings.json`) that `lntt check` verifies | `lntt operator`: personal context, read by no gate; `lntt pr block`: the empty retrospective block, for the template and the skill; `lntt retro add`: it writes a comment on GitHub, not the commit; `lntt dump` and `lntt issue`: a report on Lunette, filed upstream on the operator's approval |
-  | the commitlint configuration (the `@lntt/lntt` export) | `lntt local app`, `lntt viewer`; `lntt board sync`: it reads and writes GitHub, not the commit, so its `--check` is a verdict on the board's state that a hook or a scheduled job runs, never a pull request's gate |
+  | the commitlint configuration (the `@lntt/lntt` export) | `lntt local app`, `lntt viewer`; `lntt board sync`: it reads and writes GitHub, not the commit, so its `--check` is a verdict on the board's state that a hook or a scheduled job runs, never a pull request's gate; `lntt board ready`, for the same reason |
   | the configuration schema | the plugin's hooks, `lntt hook` (what the settings hooks run) and `lntt refs`; once it exists, `lntt doctor` (#124) |
 
 - **The configuration schema follows one compatibility rule.** Its version is the

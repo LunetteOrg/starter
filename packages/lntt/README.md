@@ -620,6 +620,26 @@ configuration error, a read or a write `gh` refuses (with the changes applied be
 it), a change that does not show on the read-back, or with `--check` a board that
 differs (a change or an entry by hand); 2 a usage error.
 
+## The Ready check (`lntt board ready`)
+
+```sh
+lntt board ready           # the issues at the first status: Ready-eligible, or what is missing
+lntt board ready --apply   # moves the eligible ones, then reads the board back
+```
+
+It reads the open issues of this repository at the first status
+(`board.fields.status.initial`) of `board.github.project`, every page, and checks what a
+machine can: the type (`board.issueTypes`), the fields `priority` and `size` of
+`board.fields`, on the item or, with `kind: issue`, on the issue; a parent for a child
+type outside `board.issueTypes.standalone`, with `board.subIssues`; no open blocker, with
+`board.blockedBy`. What the configuration leaves out is no criterion. An issue with open
+sub-issues is listed apart and never moved. `--apply` moves the eligible ones to
+`board.fields.status.ready`, 1.2 s apart. The same check runs on a candidate's merge for
+the issues it unblocked (`lntt ci candidate`). Exit codes: 0 the list, or every move
+applied and read back; 1 a configuration with no board, a read or a write `gh` refuses, a
+ready status the Project does not have, a move that does not show on the read-back; 2 a
+usage error.
+
 ## CI (`lntt ci`)
 
 Runs a project's CI on the local machine, and moves pull requests through the
