@@ -85,6 +85,53 @@ describe('lntt check tests mutate', () => {
     assert.match(result.message, /survived: no test runs this line/)
   })
 
+  test('a by-name test that still passes survives, and the output says it was chosen by name', () => {
+    const { status, result } = mutate('docs/pinned.md:2', 'does not check', 'checks')
+    assert.equal(status, 1)
+    assert.match(result.message, /survived: 1 test file still pass \(chosen by name: test\/pinned\.test\.ts\)/)
+  })
+
+  test('a non-code file some test imports gets its importers only, not the tests that name it', () => {
+    const { result } = mutate('src/limits.json:1', '"max": 3', '"max": 4')
+    assert.equal(result.status, 'PASS')
+    assert.doesNotMatch(result.message, /chosen by name/)
+    assert.match(result.message, /killed by the limit is read as text/)
+  })
+
+  test('a directory of one segment names too much: docs/note.md is not run by a test that says docs', () => {
+    const { result } = mutate('docs/note.md:1', 'Nothing', 'Something')
+    assert.match(
+      result.message,
+      /survived: no test runs this line \(no test imports the file or names its path or directory\)/,
+    )
+  })
+
+  test('a listed test file that is gone from the working tree is skipped, not run', () => {
+    rmSync(join(repo, 'test/skill.test.ts'))
+    const { status, result } = mutate('skills/review/SKILL.md:6', 'Never merge', 'Always merge')
+    assert.equal(status, 1)
+    assert.match(result.message, /survived: no test runs this line/)
+  })
+
+  test('by-name tests keep the level they sit at: each level runs its own', () => {
+    writeFileSync(
+      join(repo, '.agents/config.jsonc'),
+      JSON.stringify({
+        tests: {
+          levels: [
+            { name: 'a', files: ['test/other.test.ts'], run: 'node --test {files}' },
+            { name: 'b', files: ['test/skill.test.ts'], run: 'exit 7 # {files}' },
+          ],
+        },
+      }),
+    )
+    writeFileSync(join(repo, 'test/other.test.ts'), '// names skills/review/SKILL.md\n')
+    git('add', '-A')
+    const { result } = mutate('skills/review/SKILL.md:6', 'Never merge', 'Always merge')
+    assert.equal(result.status, 'NOT RUN')
+    assert.match(result.message, /level b fails without the mutation/)
+  })
+
   test('a non-code file no test names survives: no test runs this line', () => {
     const { status, result } = mutate('docs/note.md:1', 'Nothing', 'Something')
     assert.equal(status, 1)

@@ -25,6 +25,7 @@ import {
   commandFor,
   ImportGraph,
   type Level,
+  NOT_CODE,
   testsConfig,
 } from './test-files.ts'
 
@@ -290,7 +291,7 @@ export function describeOutcome(mutation: Mutation, outcome: Outcome): Pick<Resu
       status: 'FAIL',
       message:
         outcome.ran.length === 0
-          ? `${what} survived: no test runs this line`
+          ? `${what} survived: no test runs this line${NOT_CODE.test(mutation.path) ? ' (no test imports the file or names its path or directory)' : ''}`
           : `${what} survived: ${outcome.ran.length} test file${outcome.ran.length === 1 ? '' : 's'} still pass (${outcome.byName ? 'chosen by name: ' : ''}${outcome.ran.join(', ')})`,
     }
   }

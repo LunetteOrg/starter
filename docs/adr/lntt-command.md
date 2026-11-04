@@ -125,7 +125,8 @@ rests on these criteria:
 
 1. **A gate is reproducible on the same commit.** The CI workflow runs
    `pnpm exec lntt check` and `lntt branch check` (`.github/workflows/ci.yml`), the
-   git hooks run `lntt check decisions board-refs` on the staged files,
+   git hooks run `lntt check decisions board-refs`, and `lntt check tests levels` and
+   `lntt check plugin` when a test file or the Claude settings are staged,
    `lntt branch check --pre-push` and commitlint with `@lntt/lntt`'s configuration
    (`lefthook.yml`, `pre-commit`, `pre-push` and `commit-msg`). Their answer is fixed
    only by the project's lockfile. A red of `lntt ci local` for a timeout is the
