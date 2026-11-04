@@ -188,7 +188,11 @@ project's check.
 - **mutate** `path:line --text=<on that line> --to=<mutated>`: applied in a scratch git
   worktree (the head and the uncommitted files, dependencies shared; the working tree is
   never written), runs the tests that import the file with the `run` command of their
-  level, `repeat` times in a row. `PASS` is killed (the failing test and its message),
+  level, `repeat` times in a row. For a file that is not code (`.md`, `.json`, `.yml`…)
+  that no test imports, such as a `SKILL.md` a test reads as text, it runs the test files
+  whose text names the file's path or its directory, or the last two segments of either
+  (`skills/review`, `review/SKILL.md`), and the output says the tests were chosen by
+  name. `PASS` is killed (the failing test and its message),
   `FAIL` survived, `NOT RUN` when the text is not once on the line or the tests fail
   without the mutation. Write `--text=...` with the `=` when the text starts with `-`.
 

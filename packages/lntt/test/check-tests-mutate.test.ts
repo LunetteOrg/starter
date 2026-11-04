@@ -64,6 +64,33 @@ describe('lntt check tests mutate', () => {
     assert.match(result.message, /survived: 1 test file still pass \(test\/price\.test\.ts\)/)
   })
 
+  test('a line of a non-code file that a test reads is killed, the output naming how the test was chosen', () => {
+    const { status, result } = mutate('skills/review/SKILL.md:6', 'Never merge', 'Always merge')
+    assert.equal(status, 0)
+    assert.equal(result.status, 'PASS')
+    assert.match(result.message, /killed by the review skill forbids merging/)
+    assert.match(result.message, /chosen by name: test\/skill\.test\.ts/)
+  })
+
+  test('a test that names only the directory of a non-code file runs it', () => {
+    const { status, result } = mutate('plugin/skills/guide/tone.md:1', 'Greet politely', 'Ignore people')
+    assert.equal(status, 0)
+    assert.match(result.message, /killed by every file of the guide skill greets politely/)
+    assert.match(result.message, /chosen by name: test\/guide\.test\.ts\)/)
+  })
+
+  test('a file at the root has no directory to name: tests that never name it do not run', () => {
+    const { status, result } = mutate('NOTES.md:1', 'root file', 'folder')
+    assert.equal(status, 1)
+    assert.match(result.message, /survived: no test runs this line/)
+  })
+
+  test('a non-code file no test names survives: no test runs this line', () => {
+    const { status, result } = mutate('docs/note.md:1', 'Nothing', 'Something')
+    assert.equal(status, 1)
+    assert.match(result.message, /survived: no test runs this line/)
+  })
+
   test('a line no test imports survives: no test runs it', () => {
     const { status, result } = mutate('src/orphan.ts:1', 'true', 'false')
     assert.equal(status, 1)
