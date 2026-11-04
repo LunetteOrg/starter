@@ -189,6 +189,8 @@ state of the theme and the friction. Also say:
 - **A review stops where the coordinator says.** Name the rule in the child's context: a round
   cap, or stop when only notes and findings outside the issue remain, and list those in the
   pull request. A round that is not empty at the cap is reported as such.
+- **A child's review state is read in its worktree** with `pnpm exec lntt review status`
+  (or asked of the child), never from files in a git directory: each worktree keeps its own.
 - **Ask each child for its review cost in one line:** rounds, tokens and USD. Agents report
   cost differently (tokens, USD, nothing).
 - **A skipped optional verifier** (a free model that timed out or was rate limited) is
