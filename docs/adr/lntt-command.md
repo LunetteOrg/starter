@@ -72,23 +72,27 @@ lntt ci local | candidate | proved
   person who will start one; `lntt check --json`), a document for an agent (`lntt guide
   <skill>`: a comment naming the folder its relative links start from, then the guide;
   `lntt browser`: the driver, then one line per operation),
-  a summary for an agent (`lntt review` and `lntt review status`: one line of outcome, one
-  per thing to act on, the whole result left to `--json` or `--query`),
+  a summary for an agent (`lntt review`: one line of outcome, one per thing to act on;
+  `lntt review status`: each level folded, then the same; the whole result left to `--json`
+  or `--query`),
   or a report for a person (`lntt check` without `--json`); progress and child-process output go to stderr. Exit codes:
   0 ok, 1 a configuration error, a red result or a check that cannot run (one line on
-  stderr), 2 a usage error, 3 a stop that a person decides on (`lntt review` past
+  stderr), 2 a usage error or a failing jq expression, 3 a stop that a person decides on (`lntt review` past
   `delivery.review.maxRounds`), 4 nothing to report on (`lntt review status` with no round
   on the current branch), an interrupted command 128 plus the signal (130 for
   Ctrl-C); a defect of `lntt` itself exits 1 with its stack trace.
 - **A reading command gives a summary by default, and jq for a part of its output.** An
   agent reads through a limited window and pays for every character, so the default is
   short and each level is shown folded, as its key and its count (`findings: 14 (3 open)`).
-  `--query <jq>` runs a jq expression on the command's `--json` document, the same
-  expressions as `gh --jq`, starting with `lntt review status`: `jq-wasm` (jq 1.8.2
-  compiled to WebAssembly) runs it, loaded only when `--query` is given, so no other call
-  pays for it. It adds about 22 ms to that call (load 3.8 ms, first query 17.9 ms, node 24,
-  median of 21 fresh processes, against node's own 31 ms start) and 3.9 MB to the install.
-  A jq failure exits 2 with jq's message on stderr and nothing on stdout.
+  `--query <jq>` runs a jq expression on the command's `--json` document, starting with
+  `lntt review status`, in the language `gh --jq` also takes: `jq-wasm` (jq 1.8.2 compiled
+  to WebAssembly) runs it, loaded only when `--query` is given, so no other call pays for
+  it. Measured on 2026-11-04, it adds about 22 ms to that call (load 3.8 ms, first query
+  17.9 ms, node 24, median of 21 fresh processes, against node's own 31 ms start) and
+  3.9 MB to the install. A jq failure exits 2 with jq's message on stderr and nothing on
+  stdout; with no round to read, a failure while running (`.state.open[]`) exits 4, the
+  no-round line before jq's message. A query that does not end is ended by a signal: a
+  reading command keeps the default handling of SIGINT and SIGTERM.
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
   `decisions` and `tests`, whose results their review lenses read, and `agents-md`,
   `skills`, `plugin` (the Lunette plugin and the install and typecheck hooks in `.claude/settings.json`)

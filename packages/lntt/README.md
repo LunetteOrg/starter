@@ -436,12 +436,14 @@ of a round holding the lock) and `state`: its `branch`, `current`, `updated`, `m
 (null when it cannot be told: no base to compare with, an open candidate GitHub
 could not name, no commit of the branch; with `delivery.candidate` set, status asks
 GitHub for the open candidate, as every lntt command that resolves the base does), the round, `limit`
-(maxRounds and the rounds allowed), `reviewed`, `clean`, `atLimit`, `open`, `replied`
+(maxRounds and the rounds allowed), `reviewed`, `clean`, `atLimit`, `scope`, `lenses`, `open`, `replied`
 (with the `reply` the author gave), `closed` (the ledger), `failed`, `partial`, `skipped`,
 `tokens`, `cost`, `findings` (the last round's, every verdict), `refuted`, `repeated` (the
 fresh findings that repeat a ledger entry, with `closedWhat` and `closedBy`) and `rounds`
 (each round's cost). A state that cannot be read is an error, exit 1, with nothing on
-stdout even with `--json`.
+stdout even with `--json`. `--clear` also removes it; it never runs while a round holds
+the lock, never removes the lock, and refuses on the current branch until it is merged
+into the base.
 
 Without a flag, on this branch's state, status folds each level before the outcome line,
 each label the key under `.state`:
@@ -467,10 +469,9 @@ lntt review: feat/1/x: round 4 of 5, reviewed abc1234, not clean; 3 open (1 bloc
 `.state.rounds[1:3][] | {round,usd}`. Strings come raw and the rest compact, one per line;
 with `--json` too, JSON values one per line. It exits as status does. A jq failure exits 2
 with jq's message on stderr and nothing on stdout, what it printed before failing included;
-with no state, a failure while running (`.state.open[]`) exits 4 with the no-round line on
-stderr. `--clear` also removes it; it never runs while a round holds
-the lock, never removes the lock, and refuses on the current branch until it is merged
-into the base.
+with no state, a failure while running (`.state.open[]`) exits 4 with the no-round line and
+jq's message on stderr. A query runs in jq's sandbox: `env` is not the process's. A signal
+ends a query that does not end.
 
 A round, on a clean working tree:
 

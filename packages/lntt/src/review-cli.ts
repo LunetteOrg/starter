@@ -262,7 +262,11 @@ function stopAtLimit(
     failed: failed.length,
     ...(asked ? { asked } : {}),
   })
-  const lines = own ? summary(own, stateView(own, config.maxRounds), '') : [noRoundLine(branch, '')]
+  // No own state never gets here (a first round is round 1, and maxRounds is at least 1);
+  // the type allows it.
+  const lines = own
+    ? summary(own, stateView(own, config.maxRounds), `round ${round} refused at the limit`)
+    : [noRoundLine(branch, '')]
   stdout.write(`${lines.join('\n')}\n`)
   return 3
 }
@@ -431,17 +435,21 @@ export function agentEnv(
 // An interrupt keeps the agents still waiting from starting, gives the running ones
 // SIGTERM and up to five seconds to go before exiting; the exit handler kills what is left.
 const interrupted = new AbortController()
-for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(signal, () => {
-    interrupted.abort(`interrupted by ${signal}`)
-    stopGroups()
-    const until = Date.now() + 5000
-    const wait = setInterval(() => {
-      if (groups.size > 0 && Date.now() < until) return
-      clearInterval(wait)
-      exit(130)
-    }, 100)
-  })
+// Only for the commands that run agents: a handler cannot run while a jq query holds the event
+// loop, so status keeps the default, and a signal ends a query that does not end.
+function stopAgentsOnInterrupt() {
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(signal, () => {
+      interrupted.abort(`interrupted by ${signal}`)
+      stopGroups()
+      const until = Date.now() + 5000
+      const wait = setInterval(() => {
+        if (groups.size > 0 && Date.now() < until) return
+        clearInterval(wait)
+        exit(130)
+      }, 100)
+    })
+  }
 }
 
 function spawner(timeoutMinutes: number): Spawn {
@@ -879,6 +887,7 @@ function withDefaults(state: ReviewState): ReviewState {
     ...state,
     result: {
       ...result,
+      findings: result.findings ?? [],
       blocking: result.blocking ?? ['blocker', 'warning'],
       refuted: result.refuted ?? [],
       failed: result.failed ?? [],
@@ -1008,8 +1017,16 @@ function stateView(state: ReviewState, maxRounds: number) {
   }
 }
 
+// An error as one short line: a reviewer's can run for lines and pages. The whole of it is in
+// `.state.failed`.
+function oneLine(text: string): string {
+  const [first = ''] = text.split('\n')
+  return first.length > 200 ? `${first.slice(0, 200)}…` : first === text ? text : `${first} …`
+}
+
 // One line of outcome and one per thing to act on: what a round, the limit and status print.
-function summary(state: ReviewState, view: ReturnType<typeof stateView>, running: string): string[] {
+// `also` is one more clause of the outcome: a round running, a round refused.
+function summary(state: ReviewState, view: ReturnType<typeof stateView>, also: string): string[] {
   const { result } = state
   const { open, replied, closed, tokens, cost } = view
   const outcome = [
@@ -1017,7 +1034,7 @@ function summary(state: ReviewState, view: ReturnType<typeof stateView>, running
     `reviewed ${state.reviewed ?? 'nothing'}`,
     view.clean ? 'clean' : 'not clean',
     ...(view.atLimit ? ['at the limit'] : []),
-    ...(running ? [running] : []),
+    ...(also ? [also] : []),
   ]
   const blocked = open.filter((f) => result.blocking.includes(f.severity)).length
   const counts = [
@@ -1026,6 +1043,7 @@ function summary(state: ReviewState, view: ReturnType<typeof stateView>, running
     `${closed.length} closed`,
     ...(result.failed.length > 0 ? [`${result.failed.length} failed`] : []),
     ...(result.partial.length > 0 ? [`${result.partial.length} partial`] : []),
+    ...(result.skipped.length > 0 ? [`${result.skipped.length} skipped`] : []),
     ...(tokens === null ? [] : [formatTokens(tokens)]),
     ...(cost === null ? [] : [`$${cost.toFixed(2)}`]),
   ]
@@ -1036,7 +1054,7 @@ function summary(state: ReviewState, view: ReturnType<typeof stateView>, running
     ...[...open]
       .sort((a, b) => rank(a) - rank(b))
       .map((f) => `  ${f.id} ${f.severity} ${f.verdict} ${anchor(f)} — ${f.what}`),
-    ...result.failed.map((f) => `  ${f.lens} · ${f.agent} failed: ${f.error}`),
+    ...result.failed.map((f) => `  ${f.lens} · ${f.agent} failed: ${oneLine(f.error)}`),
     ...result.partial.map((p) => `  ${p.lens} · ${p.agent}: ${p.lines.length} lines not read`),
     ...result.closed.map((f) => `  ${f.id} ${f.severity} repeats ${f.closedBy} ${anchor(f)} — ${f.what}`),
   ]
@@ -1065,8 +1083,9 @@ function noRoundLine(here: string, running: string): string {
 // A jq expression on the document --json prints, run by jq-wasm, loaded here so that no other
 // call pays for it. Strings raw unless --json. `--` ends jq's flags: an expression that starts
 // with a dash stays an expression. A success exits as status does; any failure of jq exits 2
-// with nothing on stdout, what it printed before failing included. With no state at all, a
-// failure while running only says what status says: there is no round to read.
+// with nothing on stdout, what it printed before failing included, and so does the wasm giving
+// up (out of memory, too deep a recursion). With no state at all, a failure while running exits
+// 4, there being no round to read, with jq's message: the expression may be at fault too.
 async function runQuery(
   document: { state: unknown },
   expression: string,
@@ -1075,9 +1094,15 @@ async function runQuery(
   noRound: string,
 ): Promise<number> {
   const { raw } = await import('jq-wasm')
-  const jq = await raw(JSON.stringify(document), expression, [...(json ? [] : ['-r']), '-c', '--'])
+  let jq: Awaited<ReturnType<typeof raw>>
+  try {
+    jq = await raw(JSON.stringify(document), expression, [...(json ? [] : ['-r']), '-c', '--'])
+  } catch (error) {
+    stderr.write(`lntt review: jq gave up: ${(error as Error).message}\n`)
+    return 2
+  }
   if (jq.exitCode === 5 && document.state === null) {
-    stderr.write(`${noRound}\n`)
+    stderr.write(`${noRound}\n${jq.stderr}\n`)
     return 4
   }
   if (jq.exitCode !== 0) {
@@ -1152,6 +1177,8 @@ async function status(args: string[]): Promise<number> {
         clean: view.clean,
         atLimit: view.atLimit,
         blocking: result.blocking,
+        scope: result.scope,
+        lenses: result.lenses,
         open: view.open,
         replied: view.replied,
         closed: view.closed,
@@ -1184,12 +1211,22 @@ async function status(args: string[]): Promise<number> {
   return code
 }
 
+// process.exit drops what a pipe has not taken yet, so a long document would arrive cut, with
+// no sign of it: stdout is flushed first.
+async function leave(code: number): Promise<never> {
+  await new Promise<void>((resolve) => stdout.write('', () => resolve()))
+  exit(code)
+}
+
 export async function main([command, ...args]: string[]): Promise<void> {
+  // A reader that left (`| head`) is its own business: the exit code still says the outcome.
+  stdout.on('error', () => {})
   try {
-    if (command === 'allow') exit(allow(args))
-    if (command === 'status') exit(await status(args))
-    if (command === 'cost') exit(cost(args))
-    exit(command === 'reply' ? await reply(args) : await round(command === undefined ? [] : [command, ...args]))
+    if (command === 'allow') await leave(allow(args))
+    if (command === 'status') await leave(await status(args))
+    if (command === 'cost') await leave(cost(args))
+    stopAgentsOnInterrupt()
+    await leave(command === 'reply' ? await reply(args) : await round(command === undefined ? [] : [command, ...args]))
   } catch (error) {
     if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
       usage(error.message)

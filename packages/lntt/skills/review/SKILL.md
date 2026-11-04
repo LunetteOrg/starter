@@ -76,10 +76,11 @@ The default names what is there (`findings: 14 (3 open)`, `rounds: 4`); ask only
 part you need. `--query` takes a jq expression on the `--json` document: strings raw and
 the rest compact, one per line, or JSON values one per line with `--json` too. A jq
 failure (an expression that does not compile, a failure while running) exits 2, with its
-message on stderr and nothing on stdout.
+message on stderr and nothing on stdout; with no round on this branch, a failure while
+running (`.state.open[]`) exits 4.
 
 `--json`: `branch`, `running` (the pid of a round in progress), `state` (`round`,
-`limit`, `reviewed`, `clean`, `atLimit`, `blocking`, `open` (`findings` not withdrawn),
+`limit`, `reviewed`, `clean`, `atLimit`, `blocking`, `scope`, `lenses`, `open` (`findings` not withdrawn),
 `replied`, `closed` (the ledger), `failed`, `partial`, `skipped`, `tokens`, `cost`,
 `findings` (the last round's, every verdict), `refuted`, `repeated`, `rounds` (each
 round's cost)). Exit 0: this branch's last round

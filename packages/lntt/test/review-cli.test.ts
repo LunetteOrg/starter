@@ -927,6 +927,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
     )
     assert.match(r.err, /pnpm exec lntt review allow <rounds>/)
     assert.match(r.out, /^ {2}f1 warning confirmed a\.ts:1 — w$/m)
+    assert.match(r.out, /^lntt review: feat\/1\/x: round 1 of 1, .*, round 2 refused at the limit; /)
     assert.equal(readFileSync(log, 'utf8'), calls, 'no agent started')
     assert.equal(state().round, 1)
     assert.deepEqual(events().at(-1), {
@@ -2097,6 +2098,29 @@ describe('reading a part of the review state', () => {
       )
     })
 
+    test('a failed agent takes one short line, its whole error left in the state', () => {
+      fullState()
+      const saved = JSON.parse(readFileSync(gitDir('lntt-review.json'), 'utf8'))
+      saved.result.failed = [
+        { lens: 'code', agent: 'a', error: 'first\nsecond' },
+        { lens: 'code', agent: 'b', error: 'x'.repeat(40_000) },
+      ]
+      writeFileSync(gitDir('lntt-review.json'), JSON.stringify(saved))
+      const lines = lntt(['status']).out.split('\n')
+      assert.ok(lines.includes('  code · a failed: first …'), lines.join('\n'))
+      assert.ok(lines.includes(`  code · b failed: ${'x'.repeat(200)}…`), 'capped')
+      assert.equal(lines.includes('second'), false)
+      assert.equal(query('.state.failed[0].error').out, 'first\nsecond\n')
+    })
+
+    test('a skipped agent is counted on the outcome line', () => {
+      fullState()
+      const saved = JSON.parse(readFileSync(gitDir('lntt-review.json'), 'utf8'))
+      saved.result.skipped = [{ lens: 'code', agent: 'a', error: 'e' }]
+      writeFileSync(gitDir('lntt-review.json'), JSON.stringify(saved))
+      assert.match(lntt(['status']).out, /, 1 partial, 1 skipped, /)
+    })
+
     test("no state, and another branch's: the one line, nothing folded", () => {
       assert.equal(lntt(['status']).out, 'lntt review: no round on feat/1/x yet\n')
       fullState()
@@ -2117,6 +2141,7 @@ describe('reading a part of the review state', () => {
       assert.deepEqual(ids(state.closed), ['a', 'b', 'c', 'd', 'e'])
       assert.deepEqual(state.repeated[0].closedBy, 'f0')
       assert.deepEqual(state.repeated[0].closedWhat, 'the old text')
+      assert.deepEqual([state.scope, state.lenses], ['', []])
       assert.deepEqual(
         state.rounds.map((c: { round: number }) => c.round),
         [1, 2, 3, 4],
@@ -2171,7 +2196,7 @@ describe('reading a part of the review state', () => {
       const failing = query('.state.open[]')
       assert.equal(failing.code, 4)
       assert.equal(failing.out, '')
-      assert.equal(failing.err, 'lntt review: no round on feat/1/x yet\n')
+      assert.match(failing.err, /^lntt review: no round on feat\/1\/x yet\njq: error .*Cannot iterate over null/)
       const state = query('.state')
       assert.deepEqual([state.code, state.out], [4, 'null\n'])
       const bad = query('.state |')
@@ -2193,6 +2218,54 @@ describe('reading a part of the review state', () => {
       withMaxRounds(1)
       const limit = query('.state.atLimit')
       assert.deepEqual([limit.code, limit.out], [3, 'true\n'])
+    })
+
+    test('the wasm giving up is a jq failure: exit 2, whatever the state says', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      const r = query('def f: 1+f; f')
+      assert.equal(r.code, 2, r.err)
+      assert.equal(r.out, '')
+      assert.match(r.err, /jq gave up/)
+    })
+
+    test('a signal ends a query that does not end', async () => {
+      const child = spawn(process.execPath, [BIN, 'review', 'status', '--query=repeat(1)|empty'], {
+        cwd: repo,
+        env: { HOME: repo, PATH: [bin, dirname(process.execPath), '/usr/bin', '/bin'].join(':') },
+        stdio: 'ignore',
+      })
+      const ended = new Promise<string | null>((resolve) => child.on('exit', (_, signal) => resolve(signal)))
+      // The time to reach the query; a slow machine only signals it sooner, which also ends it.
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+      child.kill('SIGTERM')
+      const hung = setTimeout(() => child.kill('SIGKILL'), 8000)
+      const signal = await ended
+      clearTimeout(hung)
+      assert.equal(signal, 'SIGTERM')
+    })
+
+    test('a long document arrives whole through a pipe', () => {
+      fullState()
+      const saved = JSON.parse(readFileSync(gitDir('lntt-review.json'), 'utf8'))
+      saved.result.findings[0].what = 'x'.repeat(500_000)
+      writeFileSync(gitDir('lntt-review.json'), JSON.stringify(saved))
+      const json = lntt(['status', '--json'])
+      assert.equal(JSON.parse(json.out).state.findings[0].what.length, 500_000)
+      assert.equal(query('.state.findings[0].what').out.length, 500_001)
+    })
+
+    test('a reader that leaves early does not make it fail', () => {
+      fullState()
+      const saved = JSON.parse(readFileSync(gitDir('lntt-review.json'), 'utf8'))
+      saved.result.findings[0].what = 'x'.repeat(1_000_000)
+      writeFileSync(gitDir('lntt-review.json'), JSON.stringify(saved))
+      const shell = `{ '${process.execPath}' '${BIN}' review status --json; echo "code $?" >&2; } | head -c 1 >/dev/null`
+      const r = spawnSync('sh', ['-c', shell], {
+        cwd: repo,
+        encoding: 'utf8',
+        env: { HOME: repo, PATH: [bin, dirname(process.execPath), '/usr/bin', '/bin'].join(':') },
+      })
+      assert.equal(r.stderr, 'code 3\n')
     })
 
     test('--clear does not take it, and it needs an expression', () => {
@@ -2313,9 +2386,12 @@ describe('reading a part of the review state', () => {
       assert.equal(r.code, 3, r.err)
       assert.match(
         r.out,
-        /^lntt review: feat\/1\/x: round 1 of 1, reviewed \w+, not clean, at the limit; 1 open \(1 blocking\), 0 replied, 0 closed, 3k tokens, \$0\.02\n {2}f1 blocker confirmed a\.ts:1 — wrong\n$/,
+        /^lntt review: feat\/1\/x: round 1 of 1, reviewed \w+, not clean, at the limit, round 2 refused at the limit; 1 open \(1 blocking\), 0 replied, 0 closed, 3k tokens, \$0\.02\n {2}f1 blocker confirmed a\.ts:1 — wrong\n$/,
       )
-      assert.equal(r.out, lntt(['status']).out.split('\n').slice(8).join('\n'))
+      assert.equal(
+        r.out.replace(', round 2 refused at the limit', ''),
+        lntt(['status']).out.split('\n').slice(8).join('\n'),
+      )
       assert.match(r.err, /lntt review: branch total: 1 round, 3k tokens, 0\.02 USD/)
     })
 
