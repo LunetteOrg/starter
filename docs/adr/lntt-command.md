@@ -30,7 +30,7 @@ lntt branch name | check | rename
 lntt pr block
 lntt retro add
 lntt dump | issue [search]
-lntt review [reply | allow]
+lntt review [reply | allow | status]
 lntt worktree start
 lntt ask | inbox | answer
 lntt ci local | candidate | proved
@@ -75,7 +75,8 @@ lntt ci local | candidate | proved
   or a report for a person (`lntt check` without `--json`); progress and child-process output go to stderr. Exit codes:
   0 ok, 1 a configuration error, a red result or a check that cannot run (one line on
   stderr), 2 a usage error, 3 a stop that a person decides on (`lntt review` past
-  `delivery.review.maxRounds`), an interrupted command 128 plus the signal (130 for
+  `delivery.review.maxRounds`), 4 nothing to report on (`lntt review status` with no round
+  on the current branch), an interrupted command 128 plus the signal (130 for
   Ctrl-C); a defect of `lntt` itself exits 1 with its stack trace.
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
   `decisions` and `tests`, whose results their review lenses read, and `agents-md`,
@@ -185,7 +186,7 @@ So:
 
   | Pinned by the project: gates and what CI runs | Agent tools |
   |---|---|
-  | `lntt check [area]`, `lntt check cite`: deterministic, read only the commit, or for `body` the pull request body (a candidate's retrospective comment) they are given | `lntt review [reply \| allow]`: its outcome is an opinion, wired into no CI |
+  | `lntt check [area]`, `lntt check cite`: deterministic, read only the commit, or for `body` the pull request body (a candidate's retrospective comment) they are given | `lntt review [reply \| allow \| status]`: its outcome is an opinion, wired into no CI |
   | `lntt ci local`: CI's jobs on the machine; `lntt ci candidate`: what the candidate workflow runs on GitHub, at the default branch's version, which the workflow checks out, and which brings the open candidate up to date with the default branch, pushing it (`--follow` from a terminal) ([delivery](../process/delivery.md#the-candidate-automation)); `lntt ci proved`: what the push run asks before its checks, read from GitHub, so not a gate (criterion 1), but CI calls it ([CI](../process/ci.md#a-tree-already-proved)) | `lntt worktree start`: the Orca and Herdr adapters |
   | `lntt branch check`, and `branch name` and `branch rename`, so the name an agent gets is the one the gate accepts | `lntt ask \| inbox \| answer` |
   | `lntt validate \| get \| set \| path`: they hold the schema; `set` writes a tracked file | `lntt guide`: it prints the skills |
