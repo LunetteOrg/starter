@@ -1,0 +1,23 @@
+name: Proof 233e open
+# Throwaway (#233's proof e): opens the pull request as the candidate app's bot.
+on:
+  push:
+    branches: ['bot-proof/233e']
+permissions: {}
+jobs:
+  open:
+    runs-on: ubuntu-latest
+    steps:
+      - id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.CANDIDATE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CANDIDATE_APP_PRIVATE_KEY }}
+          permission-contents: read
+          permission-pull-requests: write
+      - env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          gh pr create --repo "$GITHUB_REPOSITORY" --base proof/233e-base --head bot-proof/233e \
+            --title "chore: proof #233e, opened by the candidate app" \
+            --body "Throwaway pull request for #233's proof (e): closed when the proof ends, and its branches deleted."

@@ -1,0 +1,85 @@
+name: CI approval
+
+# An approval, a request for changes or a dismissed review, by someone with write
+# access, of a bot's pull request whose CI waits for the approval (delivery.automated,
+# `runs: after-approval`) re-runs the `ci` run of its head (ci.yml), whose first step reads the reviews again: an approval of the head
+# turns that same `ci` check green with the whole job, a request for changes or a
+# dismissed approval turns it red. The head keeps one `ci` check, which main's ruleset
+# requires (docs/process/ci.md#automated-pull-requests). On any other pull request the
+# job ends in its first step; its entry is `rerun`, never `ci`. No bot is named here:
+# the entries are the line lntt sync writes from the configuration.
+#
+# The run is the reviewer's, not the bot's, so its token gets the actions: write it asks
+# for; the re-run keeps the privileges of the run it repeats (a Dependabot run: read
+# only, no secrets). Nothing here checks out or runs the pull request's code.
+on:
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions: {}
+
+jobs:
+  rerun:
+    # A comment changes nothing the first step of ci.yml counts. Whether the reviewer
+    # has write access is a question to the API, so the step asks it, not this condition:
+    # the review's author_association says CONTRIBUTOR for a member whose membership is
+    # private, GitHub's default.
+    if: >-
+      github.event.review.state != 'commented' &&
+      !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: write
+    steps:
+      # The entry as ci.yml's first step matches it: the author and the branch prefix.
+      # Then the reviewer's permission on the repository, as ci.yml's first step counts
+      # it: write or admin, or the review changes nothing that step counts. Then
+      # the newest pull_request run of ci.yml on the head: a run still going is waited
+      # for (a re-run needs a completed run). A push after the review has a run of its
+      # own, which reads the reviews when it starts: nothing to re-run here.
+      - env:
+          AUTOMATED: '[{"author":"lunette-candidates[bot]","branch":"bot-proof/","runs":"after-approval","ci":"full"}]' # lntt sync: delivery.automated
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          REVIEWER: ${{ github.event.review.user.login }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          author=$(jq -r '.pull_request.user.login // empty' "$GITHUB_EVENT_PATH")
+          runs=$(jq -r --arg author "$author" --arg ref "$HEAD_REF" '
+            def bot: sub("^app/"; "") | sub("\\[bot\\]$"; "");
+            first(.[] | select(. as $e | $author != "" and ($e.author | bot) == ($author | bot) and ($ref | startswith($e.branch))) | .runs) // empty' <<< "$AUTOMATED")
+          if [ "$runs" != after-approval ]; then
+            echo "not a pull request whose CI waits for the approval (delivery.automated): nothing to re-run"
+            exit 0
+          fi
+          if ! permission=$(gh api "repos/$REPO/collaborators/$REVIEWER/permission" --jq .permission); then
+            echo "::error title=No re-run::Cannot read the permission of ${REVIEWER}, who reviewed: re-run this job"
+            exit 1
+          fi
+          case $permission in
+            admin | write) ;;
+            *)
+              echo "a review by ${REVIEWER} (${permission:-no access}): only a review by someone with write access counts; nothing to re-run"
+              exit 0
+              ;;
+          esac
+          for attempt in $(seq 1 80); do
+            run=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$SHA&per_page=1" \
+              --jq '.workflow_runs[0] // empty | "\(.id) \(.status) \(.html_url)"')
+            if [ -z "$run" ]; then
+              echo "::error title=No CI run::ci.yml has no pull_request run on ${SHA}: push to the pull request, or close and reopen it, to start one"
+              exit 1
+            fi
+            read -r id status url <<< "$run"
+            [ "$status" = completed ] && break
+            echo "waiting for ${url} (${status})"
+            sleep 20
+          done
+          if [ "$status" != completed ]; then
+            echo "::error title=CI still running::${url} did not complete in time; re-run it once it has: gh run rerun ${id} --repo ${REPO}"
+            exit 1
+          fi
+          gh run rerun "$id" --repo "$REPO"
+          echo "re-ran ${url}: its first step reads the reviews again"

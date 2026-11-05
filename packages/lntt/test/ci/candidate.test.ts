@@ -21,6 +21,7 @@ import {
   type Gh,
   type Git,
   gitAuthEnv,
+  guardDecision,
   handle,
   handlePush,
   isAnnounced,
@@ -33,6 +34,7 @@ import {
   orphanCandidate,
   type PullRequest,
   pickBoard,
+  prFromEvent,
   type Run,
   readyAfterMerge,
   readyMarker,
@@ -53,6 +55,7 @@ const config: CandidateConfig = {
   hotfix: { prefix: 'hotfix/', label: 'hotfix' },
   status: { inRelease: 'In release', done: 'Done' },
   retrospective: '## 🔁 Retro\n<!-- retro:start -->\n- **Friction:**\n<!-- retro:end -->\n',
+  automated: [{ author: 'dependabot[bot]', branch: 'dependabot/', runs: 'after-approval', ci: 'full' }],
 }
 // pelion's shape: release/<N>, same base and hotfix markers.
 const pelion: CandidateConfig = { ...config, prefix: 'release/' }
@@ -98,6 +101,85 @@ describe('isHotfix and retargetDecision', () => {
     assert.equal(retargetDecision(config, { ...pr, headRef: 'hotfix/x' }).move, false)
     assert.equal(retargetDecision(config, { ...pr, labels: ['hotfix'] }).move, false)
     assert.equal(retargetDecision({ ...config, base: 'trunk' }, pr).move, false)
+  })
+
+  test("a bot's pull request (delivery.automated) stays; the same branch from someone else moves", () => {
+    const bump = { ...pr, headRef: 'dependabot/npm/x' }
+    assert.equal(retargetDecision(config, { ...bump, author: 'dependabot[bot]' }).move, false)
+    assert.equal(retargetDecision(config, { ...bump, author: 'octocat' }).move, true)
+  })
+})
+
+describe('guardDecision', () => {
+  const pr = { number: 7, baseRef: 'main', headRef: 'feat/31/x', labels: [], author: 'octocat', fromFork: false }
+
+  test('a pull request into another branch, the candidate, a hotfix, a Dependabot one pass', () => {
+    assert.equal(guardDecision(config, { ...pr, baseRef: 'candidate/3' }).pass, true)
+    assert.equal(guardDecision(config, { ...pr, headRef: 'candidate/3' }).pass, true)
+    assert.equal(guardDecision(pelion, { ...pr, headRef: 'release/3' }).pass, true)
+    assert.equal(guardDecision(config, { ...pr, headRef: 'hotfix/login' }).pass, true)
+    assert.equal(guardDecision(config, { ...pr, labels: ['Hotfix'] }).pass, true)
+    const bump = { ...pr, headRef: 'dependabot/npm_and_yarn/vite-7.1.0' }
+    assert.equal(guardDecision(config, { ...bump, author: 'dependabot[bot]' }).pass, true)
+    // gh names the same bot app/dependabot.
+    assert.equal(guardDecision(config, { ...bump, author: 'app/dependabot' }).pass, true)
+  })
+
+  test('any other pull request into the base fails, with the remedy', () => {
+    const decision = guardDecision(config, pr)
+    assert.equal(decision.pass, false)
+    assert.match(decision.reason, /#7 targets main and is neither the candidate nor a hotfix/)
+    assert.match(decision.reason, /pnpm exec lntt ci candidate --pr 7/)
+    assert.match(decision.reason, /`hotfix` label/)
+    // A Dependabot branch from someone else, a person's branch named like Dependabot's.
+    assert.equal(guardDecision(config, { ...pr, headRef: 'dependabot/npm_and_yarn/x' }).pass, false)
+    assert.equal(guardDecision(config, { ...pr, author: 'dependabot[bot]' }).pass, false)
+    assert.equal(guardDecision(pelion, { ...pr, headRef: 'candidate/3' }).pass, false)
+  })
+
+  test('a branch name counts only from this repository; the hotfix label from anywhere', () => {
+    const fork = { ...pr, fromFork: true }
+    assert.equal(guardDecision(config, { ...fork, headRef: 'candidate/3' }).pass, false)
+    assert.equal(guardDecision(config, { ...fork, headRef: 'hotfix/login' }).pass, false)
+    assert.equal(guardDecision(config, { ...fork, labels: ['hotfix'] }).pass, true)
+    const bump = { ...pr, headRef: 'dependabot/npm_and_yarn/x', author: 'dependabot[bot]' }
+    assert.equal(guardDecision(config, { ...bump, fromFork: true }).pass, false)
+    // An older gh names the bot dependabot.
+    assert.equal(guardDecision(config, { ...bump, author: 'dependabot' }).pass, true)
+  })
+
+  test('a head whose repository is unknown counts as a fork', () => {
+    const unknown = { ...pr, fromFork: undefined }
+    assert.equal(guardDecision(config, { ...unknown, headRef: 'candidate/3' }).pass, false)
+    assert.equal(guardDecision(config, { ...unknown, labels: ['hotfix'] }).pass, true)
+  })
+})
+
+describe('prFromEvent', () => {
+  const event = (fields = {}) => ({
+    pull_request: {
+      number: 7,
+      title: 't',
+      body: null,
+      base: { ref: 'main', repo: { full_name: 'o/r' } },
+      head: { ref: 'feat/3/x', repo: { full_name: 'o/r' } },
+      user: { login: 'octocat' },
+      ...fields,
+    },
+  })
+
+  test('the author and whether the head is a fork', () => {
+    assert.equal(prFromEvent(event()).author, 'octocat')
+    assert.equal(prFromEvent(event()).fromFork, false)
+    assert.equal(prFromEvent(event({ head: { ref: 'x', repo: { full_name: 'someone/r' } } })).fromFork, true)
+    // A deleted fork has no head repository: not this one.
+    assert.equal(prFromEvent(event({ head: { ref: 'x', repo: null } })).fromFork, true)
+  })
+
+  test('a deleted account (user null) leaves the author out, an event without repositories the fork out', () => {
+    assert.equal(prFromEvent(event({ user: null })).author, undefined)
+    const bare = prFromEvent(event({ base: { ref: 'main' }, head: { ref: 'x' } }))
+    assert.equal(bare.fromFork, undefined)
   })
 })
 
@@ -421,7 +503,7 @@ describe('carryOverDecision', () => {
     assert.deepEqual(decision.move, [11, 12])
   })
 
-  test('others, hotfixes, candidates and Dependabot stay', () => {
+  test('others, hotfixes, candidates and the bots of delivery.automated stay', () => {
     const fromCandidate = { lastBaseChange: { from: 'candidate/4', to: 'main' } }
     const decision = carryOverDecision(config, {
       candidateBranch: 'candidate/4',
@@ -432,7 +514,7 @@ describe('carryOverDecision', () => {
         open(4, { ...fromCandidate, labels: ['hotfix'] }),
         open(5, { ...fromCandidate, headRef: 'hotfix/y' }),
         open(6, { ...fromCandidate, headRef: 'candidate/5' }),
-        open(7, { ...fromCandidate, author: 'dependabot[bot]' }),
+        open(7, { ...fromCandidate, headRef: 'dependabot/npm/x', author: 'dependabot[bot]' }),
       ],
     })
     assert.deepEqual(decision.move, [])
@@ -635,7 +717,7 @@ describe('sweepDecision', () => {
         open(3, { baseRef: 'candidate/5' }),
         open(4, { lastBaseChange: { from: 'candidate/5', to: 'main' } }),
         open(5, { baseRef: 'candidate/4', labels: ['hotfix'] }),
-        open(6, { baseRef: 'candidate/4', author: 'dependabot[bot]' }),
+        open(6, { baseRef: 'candidate/4', headRef: 'dependabot/npm/x', author: 'dependabot[bot]' }),
         open(7, { baseRef: 'main', headRef: 'candidate/5' }),
         open(8),
       ],
