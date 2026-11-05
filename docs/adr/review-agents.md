@@ -66,14 +66,16 @@ same way every time; the `review` skill keeps the judgement.
   `lntt` command resolves: [worktree tooling](./worktree-tooling.md#decision)), later ones the commits after the
   last reviewed one, with fresh reviewers; findings still open go back to the verifiers
   on the new head, except notes and the warnings the ledger accepted open (below). The
-  state and the ledger are one file each per branch, named by the branch (percent-encoded:
-  `feat/1/x` is `feat%2F1%2Fx`), so a round on one branch touches nothing of another's
-  and closing a worktree takes nothing with it. They live in the clone's common git
+  state and the ledger are one file each per branch, named by the branch, every character
+  percent-encoded and a capital as `%` and its lower-case hexadecimal code (`feat/1/x` is
+  `feat%2F1%2Fx`, `Fix/A` is `%46ix%2F%41`), so a round on one branch touches nothing of
+  another's, two names differing in case stay apart on a case-insensitive filesystem, and
+  closing a worktree takes nothing with it. They live in the clone's common git
   directory (`<common dir>/lntt-review/state/` and `ledger/`), which every worktree of
   the clone reaches; `review.stateDir` in the operator's profile (`lntt operator`), else
   `delivery.review.stateDir` in the project configuration, names another place, with a
   folder per repository (`<org>/<repo>`, from the origin URL; a hash of the clone's common git
-  directory with no origin) inside it. The operator's own place is personal and never in the project
+  directory with no origin, or when an org or repo is `.` or `..`) inside it. The operator's own place is personal and never in the project
   configuration; a project value is its default for everyone. The lock and the progress
   file belong to a running process and stay in each worktree's own git directory. The
   state is read with `lntt review status` (each level folded and a summary, `--json`, or
@@ -82,7 +84,8 @@ same way every time; the `review` skill keeps the judgement.
   once when it cannot be read, never while a round holds the lock; `--prune` removes
   the state and ledger of every branch that is gone (no local or remote-tracking branch of
   that name, or a local one whose upstream is gone, as GitHub deletes the head branch on
-  merge), never a branch checked out in a worktree; `--dry-run` says what it would remove.
+  merge), never a branch checked out in a worktree, and leaves any file whose name is not
+  the key of a branch; `--dry-run` says what it would remove.
   The command's exit codes and JSON fields are in the package
   README. A round prints the same summary on stdout, its whole result staying in the
   state. A

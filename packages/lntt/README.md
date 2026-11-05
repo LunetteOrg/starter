@@ -562,7 +562,8 @@ stopped.
 ### Where the state is kept
 
 The state of a branch and its ledger of closed findings are one file each per branch,
-named by the branch with its characters percent-encoded (`feat/1/x` is `feat%2F1%2Fx`):
+named by the branch with its characters percent-encoded, a capital as `%` and its lower-case
+hexadecimal code (`feat/1/x` is `feat%2F1%2Fx`, `Fix/A` is `%46ix%2F%41`):
 `<place>/state/<branch>.json` and `<place>/ledger/<branch>.json`. A round on one branch
 touches nothing of another's, every worktree of the clone finds a branch's state, and
 closing a worktree takes nothing with it. The place is, in order:
@@ -574,7 +575,8 @@ closing a worktree takes nothing with it. The place is, in order:
 3. The clone's common git directory: `<git common dir>/lntt-review/`.
 
 A configured place may be shared by clones, so a folder per repository is made inside it:
-`<org>/<repo>` from the origin URL, or `local/<hash of the git directory>` with no origin.
+`<org>/<repo>` from the origin URL, or `local/<hash of the git directory>` with no origin or
+when an org or repo is `.` or `..`.
 The lock and the progress file the band reads belong to a running process and stay in each
 worktree's own git directory.
 

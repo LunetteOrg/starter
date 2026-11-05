@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { branchKey } from '../src/review-store.ts'
 import { type Clone, clone } from './clone.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
@@ -143,13 +144,11 @@ afterEach(() => {
   rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
-const key = (branch: string) =>
-  [...branch].map((c) => (/[A-Z]/.test(c) ? `%${c.charCodeAt(0).toString(16)}` : encodeURIComponent(c))).join('')
 // Where lntt review keeps a branch's state and ledger: one file each, named by the branch
 // (percent-encoded), in the clone's common git directory unless a place is configured.
 const storeDir = (...names: string[]) => join(repo, '.git/lntt-review', ...names)
-const stateFile = (branch = 'feat/1/x', dir = storeDir()) => join(dir, 'state', `${key(branch)}.json`)
-const ledgerFile = (branch = 'feat/1/x', dir = storeDir()) => join(dir, 'ledger', `${key(branch)}.json`)
+const stateFile = (branch = 'feat/1/x', dir = storeDir()) => join(dir, 'state', `${branchKey(branch)}.json`)
+const ledgerFile = (branch = 'feat/1/x', dir = storeDir()) => join(dir, 'ledger', `${branchKey(branch)}.json`)
 const put = (path: string, text: string) => {
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, text)
@@ -2748,10 +2747,12 @@ describe("where lntt review keeps a branch's rounds", () => {
     git('fetch', '-q', 'origin')
     git('remote', 'set-head', 'origin', 'main')
     put(join(storeDir(), 'state', '%E0.json'), '{}')
+    put(join(storeDir(), 'state', 'Feat%2FOld.json'), '{}')
     put(stateFile('HEAD'), '{}')
     const r = lntt(['status', '--prune'])
     assert.equal(r.out, 'lntt review: pruned HEAD (no branch of that name is left): state\n')
     assert.equal(existsSync(join(storeDir(), 'state', '%E0.json')), true)
+    assert.equal(existsSync(join(storeDir(), 'state', 'Feat%2FOld.json')), true, 'not listed, not removed')
   })
 
   describe('a state in the old place, more cases', () => {

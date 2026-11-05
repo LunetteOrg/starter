@@ -88,7 +88,7 @@ export function resolvePlace(input: PlaceInput): Place {
   }
   // Outside the clone the repository is part of the key; with no origin, its git directory is.
   // An origin whose org or repo is `.` or `..` would leave the place: the git directory keys it.
-  const named = input.slug?.split('/').every((part) => part !== '' && part !== '.' && part !== '..')
+  const named = input.slug?.split('/').every((part) => part !== '.' && part !== '..')
   const repository =
     named && input.slug ? input.slug : join('local', createHash('sha1').update(input.common).digest('hex').slice(0, 12))
   return { dir: join(base, repository), source }
@@ -105,10 +105,14 @@ function keysIn(folder: string): string[] {
 }
 
 // The branches that have a state or a ledger in the place, by the name of their file: a
-// file that cannot be read is listed too.
+// file that cannot be read is listed too. A name that is not the key of any branch (not
+// percent-encoded, or encoded another way) names no branch and is left alone.
 export function branchesIn(dir: string): string[] {
   const keys = new Set([...keysIn(join(dir, 'state')), ...keysIn(join(dir, 'ledger'))])
-  return [...keys].map(keyBranch).filter((b): b is string => b !== null)
+  return [...keys].flatMap((key) => {
+    const branch = keyBranch(key)
+    return branch !== null && branchKey(branch) === key ? [branch] : []
+  })
 }
 
 export interface Refs {
@@ -164,13 +168,16 @@ export function removeBranch(dir: string, branch: string): string[] {
   return removed
 }
 
-// A place on another filesystem than the git directory cannot be reached by a rename.
-function move(from: string, to: string): void {
+// A place on another filesystem than the git directory cannot be reached by a rename: the
+// file is copied beside its destination, which is then renamed in place, so a copy cut short
+// leaves a `.partial` file (never read: it does not end in `.json`) and not a truncated state.
+export function move(from: string, to: string, rename: typeof renameSync = renameSync): void {
   try {
-    renameSync(from, to)
+    rename(from, to)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error
-    copyFileSync(from, to)
+    copyFileSync(from, `${to}.partial`)
+    renameSync(`${to}.partial`, to)
     unlinkSync(from)
   }
 }
