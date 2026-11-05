@@ -114,7 +114,7 @@ same way every time; the `review` skill keeps the judgement.
   left go in the pull request as open items. A confirmed warning enters the ledger as
   accepted open and is no longer carried; an undecided or unverified one stays carried,
   to be verified again, without blocking. A run with no new commit, which is not a round
-  and does not count toward `maxRounds`, blocks as the round whose number it keeps. A
+  and does not count toward `maxRounds`, blocks as the round whose number it keeps; a branch with no state of its own starts at round 1. A
   `warningRounds` not below `maxRounds` leaves no round where only
   blockers block: the schema cannot compare two keys, so `lntt validate` says it as a
   warning (the file stays valid), and so do `lntt review --plan` and every round.

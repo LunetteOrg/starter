@@ -577,6 +577,9 @@ describe('lntt review, end to end with a fake agent', () => {
     assert.deepEqual([state().branch, state().reviewed], ['feat/2/y', null])
   })
 
+  const firstEvent = () =>
+    JSON.parse(readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8').split('\n')[0] as string)
+
   test("an empty delta on a branch whose state is another branch's saves round 1, with nothing carried", () => {
     assert.equal(lntt(['--base', 'main']).code, 0)
     writeFileSync(join(repo, 'a.ts'), 'export const a = 5\n')
@@ -586,7 +589,19 @@ describe('lntt review, end to end with a fake agent', () => {
     git('switch', '-q', 'main')
     git('switch', '-qc', 'feat/3/z')
     assert.equal(lntt(['--base', 'main']).code, 0)
-    assert.deepEqual([state().branch, state().round, state().rounds ?? []], ['feat/3/z', 1, []])
+    assert.equal(firstEvent().files, 0, 'the delta was empty')
+    assert.deepEqual([state().branch, state().round, state().rounds], ['feat/3/z', 1, []])
+  })
+
+  test("an empty delta on the branch's own state keeps its round and its costs", () => {
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    writeFileSync(join(repo, 'a.ts'), 'export const a = 5\n')
+    git('commit', '-qam', 'again')
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    git('commit', '-q', '--allow-empty', '-m', 'empty')
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    assert.equal(firstEvent().files, 0, 'the delta was empty')
+    assert.deepEqual([state().round, state().rounds.length], [2, 2])
   })
 
   test('--plan as the first argument: an error leaves the progress file of the last round alone', () => {
