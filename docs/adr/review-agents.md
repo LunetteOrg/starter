@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-11-02
+date: 2026-11-04
 tags: [review, agents, models, cost, lntt]
 ---
 
@@ -67,11 +67,13 @@ same way every time; the `review` skill keeps the judgement.
   last reviewed one, with fresh reviewers; findings still open go back to the verifiers
   on the new head, except notes and the warnings the ledger accepted open (below). The
   state stays in the worktree's git directory, each worktree with its own, and is read
-  with `lntt review status` (a summary, or `--json`), never from those files; a state
+  with `lntt review status` (each level folded and a summary, `--json`, or `--query` for
+  a part), never from those files; a state
   left by another branch is reported as that branch's, and `lntt review status --clear`
   removes the state, ledger and progress of another branch or a merged one, never while
   a round holds the lock. The command's exit codes and JSON fields are in the package
-  README. A
+  README. A round prints the same summary on stdout, its whole result staying in the
+  state. A
   clean round (exit 0) has no blocker or warning left and no reviewer or verifier that
   failed; notes are reported, never blocking. Past `warningRounds` a round is clean with
   warnings left too (below). A finding is a bullet with its severity,
@@ -101,7 +103,7 @@ same way every time; the `review` skill keeps the judgement.
   change and those with no anchor, each verifier the entries on its finding's file, and
   both are told that a finding a closed entry covers is reported again only when the
   code it cites changed. A fresh finding at the place of a refuted or accepted entry, on
-  a line that reads the same and at a severity no higher, goes to the round's `closed`
+  a line that reads the same and at a severity no higher, goes to the round's `repeated`
   list with the entry it repeats and that entry's text: shown, never verified, never
   blocking. The match is by place, so the author reads each against the entry's text. A finding on a
   changed line, or at a higher severity, is a new finding.
@@ -126,9 +128,9 @@ same way every time; the `review` skill keeps the judgement.
   them sent to whoever it reports to, without waiting
   ([worktree tooling](./worktree-tooling.md)): stderr says `lntt review: limit: sent <id>`
   (`already sent <id>` while that branch's earlier message waits for its answer), and the
-  stdout JSON and the `limit` event carry `asked` (`id`, `to`, `path`). The stdout JSON,
-  stderr and the message carry the branch's review cost so far (`total`: `rounds`,
-  `tokens`, `usd`, `line`), the one `lntt review cost` prints. A run with no new
+  `limit` event carries `asked` (`id`, `to`, `path`). stdout is the last round's summary;
+  stderr and the message carry the branch's review cost so far, the line
+  `lntt review cost` prints. A run with no new
   commit to read is not a round and is never stopped.
 - **Load:** at most `perProvider` required agents of one provider run at once, and as
   many optional ones in a queue of their own, the others waiting their turn; a provider

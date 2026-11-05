@@ -143,6 +143,9 @@ afterEach(() => {
 
 const state = () => JSON.parse(readFileSync(join(repo, '.git/lntt-review.json'), 'utf8'))
 
+// The last round as an agent reads it: through the command, never from the state's file.
+const reading = () => JSON.parse(lntt(['status', '--json']).out).state
+
 describe('lntt review with lntt check', () => {
   test('the decisions lens gets lntt check decisions; a finding on a line that does not exist never reaches a verifier', () => {
     writeFileSync(
@@ -179,7 +182,7 @@ describe('lntt review with lntt check', () => {
       .find((p) => p.includes('Lens: decisions')) as string
     assert.match(decisions, /"check":"index","status":"FAIL","path":"docs\/adr\/storage\.md"/)
     assert.match(decisions, /"check":"inventory","status":"INFO","path":"docs\/adr\/storage\.md"/)
-    const result = JSON.parse(r.out)
+    const result = reading()
     assert.deepEqual(result.findings, [])
     assert.deepEqual(
       result.refuted.map((f: { proofs: { by: string; proof: string }[] }) => f.proofs),
@@ -191,10 +194,11 @@ describe('lntt review with lntt check', () => {
 })
 
 describe('lntt review, end to end with a fake agent', () => {
-  test('a clean round: exit 0, the JSON on stdout, the head saved as reviewed', () => {
+  test('a clean round: exit 0, its summary on stdout, the head saved as reviewed', () => {
     const r = lntt(['--base', 'main'])
     assert.equal(r.code, 0, r.err)
-    assert.deepEqual(JSON.parse(r.out).findings, [])
+    assert.match(r.out, /^lntt review: feat\/1\/x: round 1 of 4, reviewed \w+, clean; 0 open, 0 replied, 0 closed/)
+    assert.deepEqual(reading().findings, [])
     assert.match(r.err, /round 1 done/)
     assert.match(r.err, /the diff goes to: anthropic \(claude\)/)
     assert.equal(state().reviewed, git('rev-parse', '--short', 'HEAD'))
@@ -208,7 +212,7 @@ describe('lntt review, end to end with a fake agent', () => {
     const env = { FAKE_REVIEW: '- [blocker] a.ts:1 — wrong — fix', FAKE_VERIFY: 'confirmed\\na.ts:1 shows it' }
     const r = lntt(['--base', 'main'], env)
     assert.equal(r.code, 1, r.err)
-    const finding = JSON.parse(r.out).findings[0]
+    const finding = reading().findings[0]
     assert.deepEqual([finding.id, finding.verdict], ['f1', 'confirmed'])
 
     const reply = lntt(['reply', 'f1', 'line 1 is the point'], { FAKE_REPLY: 'withdrawn\\nfair' })
@@ -231,7 +235,7 @@ describe('lntt review, end to end with a fake agent', () => {
   test('a reviewer that fails: exit 1, listed in failed, and the range is read again next time', () => {
     const r = lntt(['--base', 'main'], { FAKE_FAIL_REVIEW: '1' })
     assert.equal(r.code, 1)
-    assert.match(JSON.parse(r.out).failed[0].error, /claude exited 1: boom/)
+    assert.match(reading().failed[0].error, /claude exited 1: boom/)
     assert.equal(state().reviewed, null)
     const again = lntt(['--base', 'main'])
     assert.match(again.err, /round 2, no round read the whole branch/)
@@ -299,8 +303,8 @@ describe('lntt review, end to end with a fake agent', () => {
       }),
     )
     git('commit', '-qam', 'two reviewers')
-    const r = lntt(['--base', 'main'], { FAKE_REVIEW: '- [warning] a.ts:1 — w — a' })
-    assert.equal(JSON.parse(r.out).findings[0].foundBy.length, 2)
+    lntt(['--base', 'main'], { FAKE_REVIEW: '- [warning] a.ts:1 — w — a' })
+    assert.equal(reading().findings[0].foundBy.length, 2)
     const reply = lntt(['reply', 'f1', 'it is fine'], {
       FAKE_REPLY_sonnet: 'withdrawn\\nok',
       FAKE_REPLY_opus: 'kept\\nno',
@@ -336,7 +340,7 @@ describe('lntt review, end to end with a fake agent', () => {
     git('commit', '-qam', 'optional')
     const r = lntt(['--base', 'main'], { FAKE_FAIL_REVIEW_opus: '1' })
     assert.equal(r.code, 0, r.err)
-    assert.equal(JSON.parse(r.out).skipped[0].agent, 'claude opus')
+    assert.equal(reading().skipped[0].agent, 'claude opus')
     assert.equal(state().reviewed, git('rev-parse', '--short', 'HEAD'), 'the next round reads only what comes after')
     assert.match(r.err, /lntt review: skipped code · claude opus/)
     const starts = readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8')
@@ -386,7 +390,7 @@ describe('lntt review, end to end with a fake agent', () => {
     const r = lntt(['--base', 'main'], { FAKE_SLEEP_opus: '1' })
     assert.equal(r.code, 0, r.err)
     assert.ok(Date.now() - began < 20000, 'not awaited')
-    assert.match(JSON.parse(r.out).skipped[0].error, /stopped: the other agents answered/)
+    assert.match(reading().skipped[0].error, /stopped: the other agents answered/)
   })
 
   test('the progress goes to stderr with tokens, and to a file of JSON events the band reads', () => {
@@ -527,7 +531,7 @@ describe('lntt review, end to end with a fake agent', () => {
     git('commit', '-qam', 'short round')
     const r = lntt(['--base', 'main'], { FAKE_SLEEP_sonnet: '1', FAKE_SLEEP_haiku: '1' })
     assert.equal(r.code, 1)
-    assert.match(JSON.parse(r.out).failed[0].error, /the round took longer than/)
+    assert.match(reading().failed[0].error, /the round took longer than/)
   })
 
   test('the progress names the Claude Code session that started the round, or none', () => {
@@ -561,7 +565,7 @@ describe('lntt review, end to end with a fake agent', () => {
   test('a branch that changes while the round runs makes the round fail', () => {
     const r = lntt(['--base', 'main'], { FAKE_DIRTY: '1' })
     assert.equal(r.code, 1)
-    assert.match(JSON.parse(r.out).failed.at(-1).error, /the branch moved/)
+    assert.match(reading().failed.at(-1).error, /the branch moved/)
   })
 
   test('a round that fails on another branch than the saved one keeps no reviewed commit', () => {
@@ -681,7 +685,7 @@ describe('lntt review, end to end with a fake agent', () => {
     // The round runs with the usual deadline: on a slow machine a short one would stop the
     // round itself. Only the reply gets the short deadline.
     const r = lntt(['--base', 'main'], { FAKE_REVIEW: '- [warning] a.ts:1 — w — a' })
-    assert.equal(JSON.parse(r.out).findings[0].id, 'f1', r.err)
+    assert.equal(reading().findings[0].id, 'f1', r.err)
     writeFileSync(
       join(repo, '.agents/config.jsonc'),
       JSON.stringify({ delivery: { review: { roundTimeoutMinutes: 0.02, verify: false } } }),
@@ -750,9 +754,8 @@ describe('lntt review, with the findings the branch already closed', () => {
     git('commit', '-qam', 'b')
     const second = lntt(['--base', 'main'], { ...env, FAKE_VERIFY: 'confirmed\\nyes' })
     assert.equal(second.code, 0, second.err)
-    const out = JSON.parse(second.out)
     assert.deepEqual(
-      out.closed.map((f: { id: string; closedBy: string }) => [f.id, f.closedBy]),
+      reading().repeated.map((f: { id: string; closedBy: string }) => [f.id, f.closedBy]),
       [['f2', 'f1']],
     )
     assert.match(second.err, /round 2 done in \d+s: 0 findings, 0 refuted, 0 failed, 0 partial, 0 skipped, 1 closed/)
@@ -781,7 +784,7 @@ describe('lntt review, with the findings the branch already closed', () => {
     const env = { FAKE_REVIEW: '- [warning] a.ts:1 — w — a', FAKE_VERIFY: 'refuted\\nno', FAKE_PROMPTS: prompts }
     const r = lntt(['--base', 'main'], env)
     assert.equal(r.code, 0, r.err)
-    assert.deepEqual(JSON.parse(r.out).closed, [])
+    assert.deepEqual(reading().repeated, [])
     assert.doesNotMatch(readFileSync(prompts, 'utf8'), /Findings this branch already closed/)
     assert.equal(ledger().branch, 'feat/1/x')
 
@@ -842,16 +845,16 @@ describe('lntt review, with the findings the branch already closed', () => {
     const env = { FAKE_REVIEW: '- [warning] a.ts:1 — w — a', FAKE_VERIFY: 'confirmed\\nshown' }
     const first = lntt(['--base', 'main'], env)
     assert.equal(first.code, 1, 'round 1: a warning blocks')
-    assert.deepEqual(JSON.parse(first.out).blocking, ['blocker', 'warning'])
+    assert.deepEqual(reading().blocking, ['blocker', 'warning'])
     assert.doesNotMatch(first.err, /past delivery\.review\.warningRounds/)
 
     writeFileSync(join(repo, 'a.ts'), 'export const a = 3\n')
     git('commit', '-qam', 'more')
     const second = lntt(['--base', 'main'], env)
     assert.equal(second.code, 0, second.err)
-    assert.deepEqual(JSON.parse(second.out).blocking, ['blocker'])
+    assert.deepEqual(reading().blocking, ['blocker'])
     assert.deepEqual(
-      JSON.parse(second.out).findings.map((f: { id: string; verdict: string }) => [f.id, f.verdict]),
+      reading().findings.map((f: { id: string; verdict: string }) => [f.id, f.verdict]),
       [['f1', 'confirmed']],
       'the warning is still listed, for the pull request',
     )
@@ -923,17 +926,20 @@ describe('lntt review at delivery.review.maxRounds', () => {
       /^lntt review: limit: round 2 would pass delivery\.review\.maxRounds \(1\) on feat\/1\/x; still open: f1 \(warning, confirmed\)$/m,
     )
     assert.match(r.err, /pnpm exec lntt review allow <rounds>/)
-    const out = JSON.parse(r.out)
-    assert.deepEqual(
-      out.findings.map((f: { id: string }) => f.id),
-      ['f1'],
-    )
-    assert.deepEqual(out.limit, { round: 2, maxRounds: 1, allowed: 0 })
+    assert.match(r.out, /^ {2}f1 warning confirmed a\.ts:1 — w$/m)
+    assert.match(r.out, /^lntt review: feat\/1\/x: round 1 of 1, .*, round 2 refused at the limit; /)
     assert.equal(readFileSync(log, 'utf8'), calls, 'no agent started')
     assert.equal(state().round, 1)
-    assert.deepEqual(events().at(-1), { ...events().at(-1), type: 'limit', round: 2, maxRounds: 1, open: 1, failed: 0 })
+    assert.deepEqual(events().at(-1), {
+      ...events().at(-1),
+      type: 'limit',
+      round: 2,
+      maxRounds: 1,
+      allowed: 0,
+      open: 1,
+      failed: 0,
+    })
     // A branch nobody started with lntt worktree start sends nothing.
-    assert.equal(out.asked, undefined)
     assert.equal(events().at(-1).asked, undefined)
     assert.doesNotMatch(r.err, /limit: sent/)
     const box = join(repo, '.git/lntt-messages')
@@ -969,10 +975,11 @@ describe('lntt review at delivery.review.maxRounds', () => {
       /^#1 feat\/1\/x: lntt review limit, round 2 would pass delivery\.review\.maxRounds \(1\); still open: f1 \(warning, confirmed\); decide: the pull request as it is, pnpm exec lntt review allow <rounds>, or an issue for what is open$/m,
     )
     assert.match(text, /^- f1 \[warning, confirmed\] a\.ts:1 — w — a$/m)
-    const out = JSON.parse(r.out)
-    assert.equal(out.asked.id, id)
-    assert.equal(out.asked.to, 'coordinator')
-    assert.equal(out.asked.path, join(repo, '.git/lntt-messages/to-coordinator-alpha', file as string))
+    assert.deepEqual(events().at(-1).asked, {
+      id,
+      to: 'coordinator',
+      path: join(repo, '.git/lntt-messages/to-coordinator-alpha', file as string),
+    })
     assert.match(
       r.err,
       new RegExp(
@@ -980,7 +987,6 @@ describe('lntt review at delivery.review.maxRounds', () => {
         'm',
       ),
     )
-    assert.equal(events().at(-1).asked.id, id)
   })
 
   test('a plain child sends what is open to the orchestrator, the topic tagged with its issue', () => {
@@ -994,7 +1000,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
     const [file, ...more] = messages('to-orchestrator')
     assert.equal(more.length, 0)
     assert.match(file as string, /^\d{8}-\d{6}-issue-1-review-limit\.md$/)
-    assert.equal(JSON.parse(r.out).asked.id, (file as string).replace(/\.md$/, ''))
+    assert.equal(events().at(-1).asked.id, (file as string).replace(/\.md$/, ''))
     assert.match(r.err, /limit: sent \S+ to the orchestrator; wait with: pnpm exec lntt ask --wait /)
   })
 
@@ -1006,11 +1012,10 @@ describe('lntt review at delivery.review.maxRounds', () => {
 
     const first = lntt(['--base', 'main'], open)
     assert.equal(first.code, 3, first.err)
-    const id = JSON.parse(first.out).asked.id
+    const id = events().at(-1).asked.id
     const again = lntt(['--base', 'main'], open)
     assert.equal(again.code, 3, again.err)
     assert.deepEqual(messages('to-coordinator-alpha'), [`${id}.md`])
-    assert.equal(JSON.parse(again.out).asked.id, id)
     assert.equal(events().at(-1).asked.id, id)
     assert.match(
       again.err,
@@ -1024,7 +1029,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
     const after = lntt(['--base', 'main'], open)
     assert.equal(after.code, 3, after.err)
     assert.equal(messages('to-coordinator-alpha').length, 2)
-    assert.notEqual(JSON.parse(after.out).asked.id, id)
+    assert.notEqual(events().at(-1).asked.id, id)
     assert.match(after.err, /limit: sent /)
   })
 
@@ -1039,7 +1044,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
     const r = lntt(['--base', 'main'], open)
     assert.equal(r.code, 3, r.err)
     assert.deepEqual(messages('to-coordinator-alpha'), [`${id}.md`])
-    assert.equal(JSON.parse(r.out).asked.id, id)
+    assert.equal(events().at(-1).asked.id, id)
   })
 
   test('another branch’s pending limit does not stand for this one', () => {
@@ -1100,7 +1105,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
     const r = lntt(['--base', 'main'], open)
     assert.equal(r.code, 3, r.err)
     assert.match(r.err, /^lntt review: limit: could not send to the orchestrator: /m)
-    assert.equal(JSON.parse(r.out).asked, undefined)
+    assert.equal(events().at(-1).asked, undefined)
   })
 
   test('what is open at the limit: a withdrawn finding is not, a failed reviewer is', () => {
@@ -1111,7 +1116,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
     const r = lntt(['--base', 'main'])
     assert.equal(r.code, 3, r.err)
     assert.match(r.err, /still open: nothing$/m)
-    assert.deepEqual(JSON.parse(r.out).findings, [])
+    assert.doesNotMatch(r.out, /^ {2}f1 /m)
     assert.equal(events().at(-1).open, 0)
 
     git('switch', '-qc', 'feat/2/y')
@@ -1122,7 +1127,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
     const failed = lntt(['--base', 'main'])
     assert.equal(failed.code, 3, failed.err)
     assert.match(failed.err, /still open: code · claude sonnet failed$/m)
-    assert.equal(JSON.parse(failed.out).failed[0].agent, 'claude sonnet')
+    assert.match(failed.out, /^ {2}code · claude sonnet failed: claude exited 1: boom$/m)
     assert.equal(events().at(-1).failed, 1)
     assert.equal(readFileSync(log, 'utf8'), calls, 'no agent started')
   })
@@ -1165,8 +1170,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
     const r = lntt(['--base', 'main'])
     assert.equal(r.code, 3, r.err)
     assert.match(r.err, /delivery\.review\.maxRounds \(1\) and 1 allowed on feat\/1\/x/)
-    assert.deepEqual(JSON.parse(r.out).limit, { round: 3, maxRounds: 1, allowed: 1 })
-    assert.equal(events().at(-1).allowed, 1)
+    assert.deepEqual(events().at(-1), { ...events().at(-1), round: 3, maxRounds: 1, allowed: 1 })
 
     git('switch', '-qc', 'feat/2/y')
     commit(5)
@@ -1218,11 +1222,12 @@ describe("the cost of the branch's rounds", () => {
     const first = lntt(['--base', 'main'])
     assert.equal(first.code, 0, first.err)
     assert.match(first.err, /round 1 done[^\n]*\nlntt review: branch total: 1 round, 1\.5k tokens, 0\.01 USD$/m)
+    const one = reading()
     commit(3)
     const second = lntt(['--base', 'main'], found)
     assert.equal(second.code, 1, second.err)
     assert.match(second.err, /round 2 done[^\n]*\nlntt review: branch total: 2 rounds, 4\.5k tokens, 0\.03 USD$/m)
-    const [one, two] = [JSON.parse(first.out), JSON.parse(second.out)]
+    const two = reading()
     const rounds = [
       { round: 1, head: one.head, tokens: one.tokens, usd: one.cost, noTokens: [], noUsd: [] },
       { round: 2, head: two.head, tokens: two.tokens, usd: two.cost, noTokens: [], noUsd: [] },
@@ -1293,7 +1298,7 @@ describe("the cost of the branch's rounds", () => {
     assert.equal(readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8'), progress)
   })
 
-  test('at the limit: the branch total on stderr, in the message to the parent and in the JSON', () => {
+  test('at the limit: the branch total on stderr and in the message to the parent', () => {
     const config = JSON.parse(CONFIG)
     config.delivery.review.maxRounds = 1
     writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify(config))
@@ -1309,7 +1314,6 @@ describe("the cost of the branch's rounds", () => {
     assert.equal(r.code, 3, r.err)
     const line = '1 round, 3k tokens, 0.02 USD'
     assert.match(r.err, new RegExp(`^lntt review: branch total: ${line.replace(/\./g, '\\.')}$`, 'm'))
-    assert.deepEqual(JSON.parse(r.out).total, { rounds: 1, tokens: 3000, usd: 0.02, unrecorded: [], line })
     const dir = join(repo, '.git/lntt-messages/to-orchestrator')
     const [file] = readdirSync(dir).filter((name) => name.endsWith('.md') && !name.endsWith('.answer.md'))
     assert.match(readFileSync(join(dir, file as string), 'utf8'), new RegExp(`^review cost: ${line}$`, 'm'))
@@ -1405,7 +1409,7 @@ describe('the lock of a worktree, held by a live process', () => {
 
   test('a reply takes it: refused while a round holds it, and the lock goes with the reply', () => {
     const r = lntt(['--base', 'main'], { FAKE_REVIEW: '- [warning] a.ts:1 — w — a' })
-    assert.equal(JSON.parse(r.out).findings[0].id, 'f1', r.err)
+    assert.equal(reading().findings[0].id, 'f1', r.err)
     writeFileSync(lock(), String(process.pid))
     const refused = lntt(['reply', 'f1', 'no'])
     assert.equal(refused.code, 1)
@@ -1595,10 +1599,10 @@ describe('lntt review status', () => {
     const r = lntt(['status', '--json', ...args], env)
     return { code: r.code, out: JSON.parse(r.out), err: r.err }
   }
-  const first = (out: string) => out.split('\n')[0] as string
+  const first = (out: string) => out.split('\n').find((line) => line.startsWith('lntt review: ')) as string
   const blocker = { FAKE_REVIEW: '- [blocker] a.ts:1 — wrong — fix', FAKE_VERIFY: 'confirmed\\na.ts:1 shows it' }
 
-  test('an own clean round: exit 0, one line, and the JSON', () => {
+  test('an own clean round: exit 0, the outcome line, and the JSON', () => {
     assert.equal(lntt(['--base', 'main']).code, 0)
     const head = git('rev-parse', '--short', 'HEAD')
     const r = lntt(['status'])
@@ -1609,7 +1613,7 @@ describe('lntt review status', () => {
         `^lntt review: feat/1/x: round 1 of 4, reviewed ${head}, clean; 0 open, 0 replied, 0 closed, 1\\.5k tokens, \\$0\\.01$`,
       ),
     )
-    assert.equal(r.out.trimEnd().split('\n').length, 1, 'nothing to act on: one line')
+    assert.equal(r.out.split('\n').at(-2), first(r.out), 'nothing to act on: the outcome line ends it')
     const j = json()
     assert.equal(j.code, 0)
     assert.equal(j.out.branch, 'feat/1/x')
@@ -1630,7 +1634,7 @@ describe('lntt review status', () => {
     assert.equal(j.out.state.tokens, 1500)
     assert.equal(j.out.state.cost, 0.01)
     assert.match(j.out.state.updated, /^\d{4}-\d\d-\d\dT/)
-    assert.deepEqual(Object.keys(j.out.state), [
+    for (const key of [
       'branch',
       'current',
       'updated',
@@ -1653,7 +1657,17 @@ describe('lntt review status', () => {
       'skipped',
       'tokens',
       'cost',
+      'findings',
+      'refuted',
+      'repeated',
+      'rounds',
     ])
+      assert.ok(key in j.out.state, key)
+    assert.deepEqual([j.out.state.findings, j.out.state.refuted, j.out.state.repeated], [[], [], []])
+    assert.deepEqual(
+      j.out.state.rounds.map((c: { round: number; usd: number }) => [c.round, c.usd]),
+      [[1, 0.01]],
+    )
   })
 
   test('a confirmed blocker: exit 1 and its line; kept by a reply it stays open, withdrawn it is closed', () => {
@@ -1789,6 +1803,8 @@ describe('lntt review status', () => {
     const old = state()
     delete old.result.blocking
     delete old.result.skipped
+    delete old.result.closed
+    delete old.rounds
     // A note listed before the blocker: the summary still puts what blocks first.
     old.result.findings.reverse()
     writeFileSync(gitDir('lntt-review.json'), JSON.stringify(old))
@@ -1801,6 +1817,8 @@ describe('lntt review status', () => {
     const json = JSON.parse(lntt(['status', '--json']).out)
     assert.deepEqual(json.state.blocking, ['blocker', 'warning'])
     assert.deepEqual(json.state.skipped, [])
+    assert.deepEqual(json.state.repeated, [])
+    assert.deepEqual(json.state.rounds, [])
   })
 
   test('a branch with no commit yet is named, not taken for a detached HEAD', () => {
@@ -1839,7 +1857,7 @@ describe('lntt review status', () => {
       const own = lntt(['status'])
       assert.equal(own.code, 0, own.err)
       assert.match(first(own.out), /^lntt review: feat\/1\/x: round 1 of 4, reviewed \w+, clean/)
-      assert.doesNotMatch(own.out, /f1|feat\/3\/z/)
+      assert.doesNotMatch(own.out, /^ {2}f1 |feat\/3\/z/m, 'a line of f1: the reviewed sha may hold those letters')
     } finally {
       repo = main
       rmSync(dir, { recursive: true, force: true })
@@ -1957,5 +1975,448 @@ describe('lntt review status', () => {
   test('--clear with --json, and an unknown flag: usage, exit 2', () => {
     assert.equal(lntt(['status', '--clear', '--json']).code, 2)
     assert.equal(lntt(['status', '--nope']).code, 2)
+  })
+})
+
+// What an agent reads of a round: a summary by default, each level folded, a part of the
+// state with a jq query.
+describe('reading a part of the review state', () => {
+  const gitDir = (...names: string[]) => join(repo, '.git', ...names)
+  const blocker = { FAKE_REVIEW: '- [blocker] a.ts:1 — wrong — fix', FAKE_VERIFY: 'confirmed\\na.ts:1 shows it' }
+  const commit = (value: number) => {
+    writeFileSync(join(repo, 'a.ts'), `export const a = ${value}\n`)
+    git('commit', '-qam', `a = ${value}`)
+  }
+  const query = (expression: string, ...flags: string[]) => lntt(['status', `--query=${expression}`, ...flags])
+  const withMaxRounds = (n: number) => {
+    const config = JSON.parse(CONFIG)
+    config.delivery.review.maxRounds = n
+    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify(config))
+    git('commit', '-qam', `maxRounds ${n}`)
+  }
+
+  const finding = (id: string, severity: string, verdict: string) => ({
+    id,
+    severity,
+    verdict,
+    path: 'a.ts',
+    line: 1,
+    what: `${id} what`,
+    action: 'act',
+    foundBy: [],
+    proofs: [],
+  })
+  // A state with something in every list, written by hand: no round produces all of it.
+  const fullState = () => {
+    const cost = (round: number) => ({ round, head: 'h', tokens: 1, usd: 0.5, noTokens: [], noUsd: [] })
+    writeFileSync(
+      gitDir('lntt-review.json'),
+      JSON.stringify({
+        branch: 'feat/1/x',
+        round: 4,
+        reviewed: 'abc',
+        result: {
+          round: 4,
+          base: 'b',
+          head: 'h',
+          scope: 'first round',
+          lenses: ['code'],
+          findings: [
+            finding('f1', 'note', 'unverified'),
+            finding('f2', 'blocker', 'confirmed'),
+            finding('f3', 'warning', 'withdrawn'),
+          ],
+          refuted: [finding('f4', 'warning', 'refuted'), finding('f5', 'blocker', 'refuted')],
+          failed: [{ lens: 'code', agent: 'claude x', error: 'boom' }],
+          partial: [{ lens: 'tests', agent: 'claude y', lines: ['l1', 'l2'], reply: 'r' }],
+          skipped: [],
+          closed: [{ ...finding('f6', 'warning', 'unverified'), closedBy: 'f0', closedWhat: 'the old text' }],
+          blocking: ['blocker', 'warning'],
+          cost: 1.5,
+          tokens: 2000,
+          noTokens: [],
+          noUsd: [],
+        },
+        rounds: [cost(1), cost(2), cost(3), cost(4)],
+      }),
+    )
+    writeFileSync(
+      gitDir('lntt-review-ledger.json'),
+      JSON.stringify({ branch: 'feat/1/x', closed: ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id })) }),
+    )
+  }
+
+  describe('status, folded', () => {
+    const THINGS = [
+      'lntt review: feat/1/x: round 4 of 4, reviewed abc, not clean, at the limit; 2 open (1 blocking), 1 replied, 5 closed, 1 failed, 1 partial, 2k tokens, $1.50',
+      '  f2 blocker confirmed a.ts:1 — f2 what',
+      '  f1 note unverified a.ts:1 — f1 what',
+      '  code · claude x failed: boom',
+      '  tests · claude y: 2 lines not read',
+      '  f6 warning repeats f0 a.ts:1 — f6 what',
+    ]
+
+    test('each level as its count, a zero shown, then the outcome and what to act on', () => {
+      fullState()
+      const r = lntt(['status'])
+      assert.equal(r.code, 3, r.err)
+      assert.equal(
+        r.out,
+        `${[
+          'findings: 3 (2 open)',
+          'refuted: 2',
+          'repeated: 1',
+          'closed: 5',
+          'failed: 1',
+          'partial: 1',
+          'skipped: 0',
+          'rounds: 4',
+          ...THINGS,
+        ].join('\n')}\n`,
+      )
+    })
+
+    test('a clean round has every count at zero, and its one line', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      const head = git('rev-parse', '--short', 'HEAD')
+      const r = lntt(['status'])
+      assert.equal(r.code, 0, r.err)
+      assert.equal(
+        r.out,
+        [
+          'findings: 0 (0 open)',
+          'refuted: 0',
+          'repeated: 0',
+          'closed: 0',
+          'failed: 0',
+          'partial: 0',
+          'skipped: 0',
+          'rounds: 1',
+          `lntt review: feat/1/x: round 1 of 4, reviewed ${head}, clean; 0 open, 0 replied, 0 closed, 1.5k tokens, $0.01`,
+          '',
+        ].join('\n'),
+      )
+    })
+
+    test('a failed agent takes one short line, its whole error left in the state', () => {
+      fullState()
+      const saved = JSON.parse(readFileSync(gitDir('lntt-review.json'), 'utf8'))
+      saved.result.failed = [
+        { lens: 'code', agent: 'a', error: 'first\nsecond' },
+        { lens: 'code', agent: 'b', error: 'x'.repeat(40_000) },
+      ]
+      writeFileSync(gitDir('lntt-review.json'), JSON.stringify(saved))
+      const lines = lntt(['status']).out.split('\n')
+      assert.ok(lines.includes('  code · a failed: first …'), lines.join('\n'))
+      assert.ok(lines.includes(`  code · b failed: ${'x'.repeat(200)}…`), 'capped')
+      assert.equal(lines.includes('second'), false)
+      assert.equal(query('.state.failed[0].error').out, 'first\nsecond\n')
+    })
+
+    test('a skipped agent is counted on the outcome line', () => {
+      fullState()
+      const saved = JSON.parse(readFileSync(gitDir('lntt-review.json'), 'utf8'))
+      saved.result.skipped = [{ lens: 'code', agent: 'a', error: 'e' }]
+      writeFileSync(gitDir('lntt-review.json'), JSON.stringify(saved))
+      assert.match(lntt(['status']).out, /, 1 partial, 1 skipped, /)
+    })
+
+    test("no state, and another branch's: the one line, nothing folded", () => {
+      assert.equal(lntt(['status']).out, 'lntt review: no round on feat/1/x yet\n')
+      fullState()
+      git('switch', '-qc', 'feat/2/y')
+      const r = lntt(['status'])
+      assert.equal(r.code, 4, r.err)
+      assert.equal(r.out.split('\n').length, 2, r.out)
+      assert.match(r.out, /^lntt review: no round on feat\/2\/y; the state here is feat\/1\/x's/)
+    })
+
+    test('a state saved before scope and lenses existed reads with their defaults', () => {
+      fullState()
+      const saved = JSON.parse(readFileSync(gitDir('lntt-review.json'), 'utf8'))
+      delete saved.result.scope
+      delete saved.result.lenses
+      writeFileSync(gitDir('lntt-review.json'), JSON.stringify(saved))
+      assert.equal(query('.state | [.scope, .lenses]').out, '["",[]]\n')
+    })
+
+    test('--json carries the last round whole, and the rounds', () => {
+      fullState()
+      const { state } = JSON.parse(lntt(['status', '--json']).out)
+      const ids = (list: { id: string }[]) => list.map((f) => f.id)
+      assert.deepEqual(ids(state.findings), ['f1', 'f2', 'f3'])
+      assert.deepEqual(ids(state.open), ['f1', 'f2'])
+      assert.deepEqual(ids(state.refuted), ['f4', 'f5'])
+      assert.deepEqual(ids(state.closed), ['a', 'b', 'c', 'd', 'e'])
+      assert.deepEqual(state.repeated[0].closedBy, 'f0')
+      assert.deepEqual(state.repeated[0].closedWhat, 'the old text')
+      assert.deepEqual([state.scope, state.lenses], ['first round', ['code']])
+      assert.deepEqual(
+        state.rounds.map((c: { round: number }) => c.round),
+        [1, 2, 3, 4],
+      )
+    })
+  })
+
+  describe('status --query', () => {
+    test('a path, a slice and the shorthand for several fields; exit as status', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      const clean = query('.state.clean')
+      assert.deepEqual([clean.code, clean.out], [0, 'true\n'])
+      commit(3)
+      assert.equal(lntt(['--base', 'main'], blocker).code, 1)
+      const path = query('.state.findings[] | select(.id=="f1") | .severity')
+      assert.deepEqual([path.code, path.out], [1, 'blocker\n'])
+      const slice = query('.state.rounds[1:3][] | {round,usd}')
+      assert.deepEqual([slice.code, slice.out], [1, '{"round":2,"usd":0.02}\n'])
+    })
+
+    test('a string is raw, and quoted with --json; several outputs take a line each', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      assert.equal(query('.branch').out, 'feat/1/x\n')
+      assert.equal(query('.branch', '--json').out, '"feat/1/x"\n')
+      assert.equal(query('.branch, .state.round').out, 'feat/1/x\n1\n')
+      assert.equal(query('.branch, .state.round', '--json').out, '"feat/1/x"\n1\n')
+      assert.equal(query('.state.blocking', '--json').out, '["blocker","warning"]\n', 'compact')
+      assert.equal(query('empty').out, '', 'no output, no empty line')
+    })
+
+    test('an expression that does not compile: exit 2, nothing on stdout, the message on stderr', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      const r = query('.state |')
+      assert.equal(r.code, 2)
+      assert.equal(r.out, '')
+      assert.match(r.err, /jq: error: syntax error/)
+    })
+
+    test('a failure while running: exit 2, and what jq had printed is dropped', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      const r = query('.state.round, error("boom")')
+      assert.equal(r.code, 2)
+      assert.equal(r.out, '')
+      assert.match(r.err, /boom/)
+      const halted = query('.state.round, ("stop" | halt_error(7))')
+      assert.equal(halted.code, 2, 'whatever exit jq halts with')
+      assert.equal(halted.out, '')
+      assert.match(halted.err, /stop/)
+    })
+
+    test('no state: exit 4, a failure on what is not there says no round, and a bad expression stays a usage error', () => {
+      const failing = query('.state.open[]')
+      assert.equal(failing.code, 4)
+      assert.equal(failing.out, '')
+      assert.match(failing.err, /^lntt review: no round on feat\/1\/x yet\njq: error .*Cannot iterate over null/)
+      const state = query('.state')
+      assert.deepEqual([state.code, state.out], [4, 'null\n'])
+      const bad = query('.state |')
+      assert.equal(bad.code, 2)
+      assert.match(bad.err, /syntax error/)
+    })
+
+    test("another branch's state is read and exits 4; a failure on it is exit 2", () => {
+      fullState()
+      git('switch', '-qc', 'feat/2/y')
+      const r = query('.state.branch')
+      assert.deepEqual([r.code, r.out], [4, 'feat/1/x\n'])
+      assert.equal(query('.state.round[]').code, 2)
+    })
+
+    test('not clean exits 1, at the limit 3', () => {
+      assert.equal(lntt(['--base', 'main'], blocker).code, 1)
+      assert.equal(query('.state.clean').code, 1)
+      withMaxRounds(1)
+      const limit = query('.state.atLimit')
+      assert.deepEqual([limit.code, limit.out], [3, 'true\n'])
+    })
+
+    test('the wasm giving up is a jq failure: exit 2, whatever the state says', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      const r = query('def f: 1+f; f')
+      assert.equal(r.code, 2, r.err)
+      assert.equal(r.out, '')
+      assert.match(r.err, /jq gave up/)
+    })
+
+    test('a signal ends a query that does not end', async () => {
+      const child = spawn(process.execPath, [BIN, 'review', 'status', '--query=repeat(1)|empty'], {
+        cwd: repo,
+        env: { HOME: repo, PATH: [bin, dirname(process.execPath), '/usr/bin', '/bin'].join(':') },
+        stdio: 'ignore',
+      })
+      const ended = new Promise<string | null>((resolve) => child.on('exit', (_, signal) => resolve(signal)))
+      // The time to reach the query; a slow machine only signals it sooner, which also ends it.
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+      child.kill('SIGTERM')
+      const hung = setTimeout(() => child.kill('SIGKILL'), 8000)
+      const signal = await ended
+      clearTimeout(hung)
+      assert.equal(signal, 'SIGTERM')
+    })
+
+    test('a long document arrives whole through a pipe', () => {
+      fullState()
+      const saved = JSON.parse(readFileSync(gitDir('lntt-review.json'), 'utf8'))
+      saved.result.findings[0].what = 'x'.repeat(500_000)
+      writeFileSync(gitDir('lntt-review.json'), JSON.stringify(saved))
+      const json = lntt(['status', '--json'])
+      assert.equal(JSON.parse(json.out).state.findings[0].what.length, 500_000)
+      assert.equal(query('.state.findings[0].what').out.length, 500_001)
+    })
+
+    test('a reader that leaves early does not make it fail', () => {
+      fullState()
+      const saved = JSON.parse(readFileSync(gitDir('lntt-review.json'), 'utf8'))
+      saved.result.findings[0].what = 'x'.repeat(1_000_000)
+      writeFileSync(gitDir('lntt-review.json'), JSON.stringify(saved))
+      const shell = `{ '${process.execPath}' '${BIN}' review status --json; echo "code $?" >&2; } | head -c 1 >/dev/null`
+      const r = spawnSync('sh', ['-c', shell], {
+        cwd: repo,
+        encoding: 'utf8',
+        env: { HOME: repo, PATH: [bin, dirname(process.execPath), '/usr/bin', '/bin'].join(':') },
+      })
+      assert.equal(r.stderr, 'code 3\n')
+    })
+
+    test('--clear does not take it, and it needs an expression', () => {
+      assert.equal(lntt(['status', '--clear', '--query=.']).code, 2)
+      assert.equal(lntt(['status', '--query']).code, 2)
+      assert.equal(lntt(['status', '--query=']).code, 2)
+    })
+
+    test('an expression starting with a dash is an expression, never a flag of jq', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      for (const expression of ['--help', '--version', '-h', '-n', '-e', '--arg', '--']) {
+        const r = query(expression)
+        assert.equal(r.code, 2, expression)
+        assert.equal(r.out, '', expression)
+        assert.match(r.err, /jq: error/, expression)
+      }
+      assert.deepEqual([query('-1').code, query('-1').out], [0, '-1\n'], 'one that is a valid expression runs as one')
+    })
+
+    test('what jq itself sends to stderr on a success goes there', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      const r = query('.branch | debug')
+      assert.equal(r.code, 0)
+      assert.equal(r.out, 'feat/1/x\n')
+      assert.match(r.err, /DEBUG/)
+    })
+  })
+
+  describe("a round's stdout", () => {
+    // The lines of status past its folded block: what a round prints.
+    const statusThings = () => `${lntt(['status']).out.split('\n').slice(8).join('\n')}`
+
+    test('is the summary of status, a finding per line and no JSON', () => {
+      const r = lntt(['--base', 'main'], blocker)
+      assert.equal(r.code, 1, r.err)
+      const head = git('rev-parse', '--short', 'HEAD')
+      assert.equal(
+        r.out,
+        [
+          `lntt review: feat/1/x: round 1 of 4, reviewed ${head}, not clean; 1 open (1 blocking), 0 replied, 0 closed, 3k tokens, $0.02`,
+          '  f1 blocker confirmed a.ts:1 — wrong',
+          '',
+        ].join('\n'),
+      )
+      assert.equal(r.out, statusThings())
+    })
+
+    test('a clean round is its one line', () => {
+      const r = lntt(['--base', 'main'])
+      assert.equal(r.code, 0, r.err)
+      assert.equal(r.out.split('\n').length, 2, r.out)
+      assert.equal(r.out, statusThings())
+    })
+
+    test('names a failed reviewer', () => {
+      const r = lntt(['--base', 'main'], { FAKE_FAIL_REVIEW: '1' })
+      assert.equal(r.code, 1)
+      assert.equal(
+        r.out,
+        [
+          'lntt review: feat/1/x: round 1 of 4, reviewed nothing, not clean; 0 open, 0 replied, 0 closed, 1 failed',
+          '  code · claude sonnet failed: claude exited 1: boom',
+          '',
+        ].join('\n'),
+      )
+      assert.equal(r.out, statusThings())
+    })
+
+    test('names a lens read in part, and the lines stay in the state', () => {
+      const r = lntt(['--base', 'main'], {
+        FAKE_REVIEW: '- [warning] a.ts:1 — x — y\\n- [blocker] something went wrong',
+        FAKE_VERIFY: 'confirmed\\nshown',
+      })
+      assert.equal(r.code, 1, r.err)
+      assert.match(r.out, /^ {2}code · claude sonnet: 1 lines not read$/m)
+      assert.equal(r.out, statusThings())
+      assert.equal(query('.state.partial[0].lines[0]').out, '- [blocker] something went wrong\n')
+    })
+
+    test('names a finding that repeats a closed one; its text and the refuted ones are read with status', () => {
+      const env = { FAKE_REVIEW: '- [warning] a.ts:1 — a may be 2 — check it', FAKE_VERIFY: 'refuted\\nthe point' }
+      const first = lntt(['--base', 'main'], env)
+      assert.equal(first.code, 0, first.err)
+      assert.doesNotMatch(first.out, /a may be 2/, 'a refuted finding is nothing to do')
+      assert.equal(query('.state.refuted[] | .what').out, 'a may be 2\n')
+
+      writeFileSync(join(repo, 'a.ts'), 'export const a = 2\nexport const b = 1\n')
+      git('commit', '-qam', 'b')
+      const second = lntt(['--base', 'main'], env)
+      assert.equal(second.code, 0, second.err)
+      assert.match(second.out, /^ {2}f2 warning repeats f1 a\.ts:1 — a may be 2$/m)
+      assert.equal(second.out, statusThings())
+      assert.equal(query('.state.repeated[] | "\\(.id) \\(.closedBy) \\(.closedWhat)"').out, 'f2 f1 a may be 2\n')
+    })
+
+    test('--json is not a flag of a round; stderr still ends the round as it did', () => {
+      const refused = lntt(['--json'])
+      assert.equal(refused.code, 2)
+      assert.equal(refused.out, '')
+      const r = lntt(['--base', 'main'], blocker)
+      assert.match(r.err, /round 1 done in \d+s: 1 findings, 0 refuted/)
+      assert.match(r.err, /lntt review: branch total: 1 round/)
+    })
+
+    test('a reply answers in JSON, as it did', () => {
+      assert.equal(lntt(['--base', 'main'], blocker).code, 1)
+      const reply = lntt(['reply', 'f1', 'no'], { FAKE_REPLY: 'kept\\nstill wrong' })
+      assert.equal(JSON.parse(reply.out).id, 'f1')
+    })
+  })
+
+  describe("the limit's stdout", () => {
+    test('is the summary, with exit 3; what was asked and the total are on stderr', () => {
+      withMaxRounds(1)
+      assert.equal(lntt(['--base', 'main'], blocker).code, 1)
+      commit(3)
+      const r = lntt(['--base', 'main'], blocker)
+      assert.equal(r.code, 3, r.err)
+      assert.match(
+        r.out,
+        /^lntt review: feat\/1\/x: round 1 of 1, reviewed \w+, not clean, at the limit, round 2 refused at the limit; 1 open \(1 blocking\), 0 replied, 0 closed, 3k tokens, \$0\.02\n {2}f1 blocker confirmed a\.ts:1 — wrong\n$/,
+      )
+      assert.equal(
+        r.out.replace(', round 2 refused at the limit', ''),
+        lntt(['status']).out.split('\n').slice(8).join('\n'),
+      )
+      assert.match(r.err, /lntt review: branch total: 1 round, 3k tokens, 0\.02 USD/)
+    })
+
+    test('a state written before a field existed is summed up too', () => {
+      withMaxRounds(1)
+      assert.equal(lntt(['--base', 'main'], blocker).code, 1)
+      const old = state()
+      delete old.result.blocking
+      delete old.result.failed
+      delete old.result.partial
+      delete old.result.closed
+      writeFileSync(gitDir('lntt-review.json'), JSON.stringify(old))
+      commit(3)
+      const r = lntt(['--base', 'main'], blocker)
+      assert.equal(r.code, 3, r.err)
+      assert.match(r.out, /^ {2}f1 blocker confirmed a\.ts:1 — wrong$/m)
+    })
   })
 })

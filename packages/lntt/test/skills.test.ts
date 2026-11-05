@@ -523,7 +523,7 @@ describe('the review state, read with lntt review status', () => {
     const review = text('review')
     assert.match(
       review,
-      /`findings`, one list, each with a `verdict` \(`confirmed`, `undecided`, `unverified`; `withdrawn` after a reply/,
+      /`\.state\.findings`, one list, each with a `verdict` \(`confirmed`, `undecided`, `unverified`; `withdrawn` after a reply/,
     )
     assert.match(
       review,
@@ -534,6 +534,10 @@ describe('the review state, read with lntt review status', () => {
       /Exit 0: this branch's last round is clean\. 1: something to act on\. 3: at the limit\. 4: no round on this branch\./,
     )
     assert.match(review, /`pnpm exec lntt review status --clear` removes it/)
+    assert.match(review, /stdout is a summary/)
+    assert.match(review, /`\.state\.refuted`/)
+    assert.match(review, /`\.state\.repeated`/)
+    assert.match(review, /`closedWhat`, entry `closedBy`/)
   })
 
   test("the coordinate skill reads a child's state in its worktree", () => {
