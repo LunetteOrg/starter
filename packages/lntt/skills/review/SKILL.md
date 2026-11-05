@@ -61,8 +61,8 @@ in the first `delivery.review.warningRounds` rounds, blockers alone after them.
 ### Reading the state
 
 The state between rounds is read only with `lntt review status`, never by opening
-files in the git directory: each worktree has its own, and in the main checkout the
-git directory is also the common one, so a file there is the main checkout's.
+its files: they are one per branch, in a place the operator or the project may have moved
+(`review.stateDir`, `delivery.review.stateDir`), shared by every worktree of the clone.
 
 ```sh
 pnpm exec lntt review status            # each level as its count, the outcome, one line per thing to act on
@@ -84,10 +84,10 @@ running (`.state.open[]`) exits 4.
 `replied`, `closed` (the ledger), `failed`, `partial`, `skipped`, `tokens`, `cost`,
 `findings` (the last round's, every verdict), `refuted`, `repeated`, `rounds` (each
 round's cost)). Exit 0: this branch's last round
-is clean. 1: something to act on. 3: at the limit. 4: no round on this branch. A state
-left by another branch is named as such, with its date, never as this branch's;
-`pnpm exec lntt review status --clear` removes it (refused while a round runs, and on
-the current branch until it is merged).
+is clean. 1: something to act on. 3: at the limit. 4: no round on this branch.
+`pnpm exec lntt review status --clear` removes the current branch's state once it is merged
+(refused while a round runs), or a state that cannot be read; `pnpm exec lntt review status
+--prune` removes those of branches that are gone (`--dry-run` lists them).
 
 ## 2. Each finding
 
