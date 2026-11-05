@@ -33,8 +33,8 @@ jobs:
       actions: write
     steps:
       # The entry as ci.yml's first step matches it: the author and the branch prefix.
-      # Then the reviewer's role on the repository, as ci.yml's first step counts it:
-      # write, maintain or admin, or the review changes nothing that step counts. Then
+      # Then the reviewer's permission on the repository, as ci.yml's first step counts
+      # it: write or admin, or the review changes nothing that step counts. Then
       # the newest pull_request run of ci.yml on the head: a run still going is waited
       # for (a re-run needs a completed run). A push after the review has a run of its
       # own, which reads the reviews when it starts: nothing to re-run here.
@@ -54,14 +54,14 @@ jobs:
             echo "not a pull request whose CI waits for the approval (delivery.automated): nothing to re-run"
             exit 0
           fi
-          if ! role=$(gh api "repos/$REPO/collaborators/$REVIEWER/permission" --jq .role_name); then
+          if ! permission=$(gh api "repos/$REPO/collaborators/$REVIEWER/permission" --jq .permission); then
             echo "::error title=No re-run::Cannot read the permission of ${REVIEWER}, who reviewed: re-run this job"
             exit 1
           fi
-          case $role in
-            admin | maintain | write) ;;
+          case $permission in
+            admin | write) ;;
             *)
-              echo "a review by ${REVIEWER} (${role:-no access}): only a review by someone with write access counts; nothing to re-run"
+              echo "a review by ${REVIEWER} (${permission:-no access}): only a review by someone with write access counts; nothing to re-run"
               exit 0
               ;;
           esac

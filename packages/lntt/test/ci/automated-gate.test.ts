@@ -192,11 +192,17 @@ describe("ci.yml's first step: the approval of a bot's pull request", () => {
     assert.equal(runStep(gate(), context()).status, 0)
   })
 
-  test('a permission the token cannot read fails the step, naming the reviewer', () => {
+  test('an approval whose permission the token cannot read does not count, with a warning naming the reviewer', () => {
     fixture('reviews.json', [review('maintainer', 'APPROVED')])
-    const out = runStep(gate(), context())
-    assert.equal(out.status, 1)
-    assert.match(out.output, /::error title=CI not run::.*maintainer/)
+    const alone = runStep(gate(), context())
+    assert.equal(alone.status, 1)
+    assert.match(alone.output, /::warning title=Approval not counted::.*maintainer/)
+    assert.match(alone.output, /::error title=CI not run::/)
+    fixture('reviews.json', [review('maintainer', 'APPROVED'), review('admin-user', 'APPROVED')])
+    permission('admin-user', 'admin')
+    const beside = runStep(gate(), context())
+    assert.equal(beside.status, 0, beside.output)
+    assert.match(beside.output, /::warning title=Approval not counted::.*maintainer/)
   })
 })
 

@@ -195,10 +195,11 @@ the candidate guard lets them through, the branch check exempts their branches.
   since a skipped job counts as passed. Each reviewer's latest approval, request for
   changes or dismissed review of the head counts, as on GitHub; a comment changes
   nothing. The repository is public, so anyone can submit a review: an approval counts
-  when the reviewer's role on the repository is write, maintain or admin, as `GET
-  repos/{repo}/collaborators/{user}/permission` answers it (`role_name`). Both
-  workflows' tokens read that endpoint, `ci.yml`'s read-only one included (a run of
-  each token's permissions on a throwaway branch, 2026-11-05, #233). The review's
+  when the reviewer's permission on the repository is `write` or `admin`, as `GET
+  repos/{repo}/collaborators/{user}/permission` answers it in `permission`, where
+  GitHub reports the maintain role as `write` and triage as `read`. Both workflows'
+  tokens read that endpoint, `ci.yml`'s read-only one included (a run of each token's
+  permissions on a throwaway branch, 2026-11-05, #233). The review's
   `author_association` does not decide: it says `CONTRIBUTOR` for a member whose
   membership of the organization is private, GitHub's default, to everyone but that
   member, and in the review's event as well: the approval of #278 started no re-run

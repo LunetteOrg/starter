@@ -58,9 +58,9 @@ jobs:
       # someone with write access (the repository is public: anyone can submit a review):
       # each reviewer's latest approval, request for changes or dismissed review of the
       # head counts, as on GitHub; a comment changes nothing. Write access is the
-      # reviewer's role on the repository (write, maintain or admin, from
-      # collaborators/{user}/permission, which this read-only token can read), never the
-      # review's author_association: a member whose membership is private, GitHub's
+      # reviewer's permission on the repository, from collaborators/{user}/permission,
+      # which this read-only token can read: `write` (GitHub reports the maintain role as
+      # write) or `admin`. Never the review's author_association: a member whose membership is private, GitHub's
       # default, is CONTRIBUTOR there. The reviews are read when the run starts, so the
       # re-run a review starts (ci-approval.yml) finds them.
       - name: Automated pull request
@@ -93,13 +93,13 @@ jobs:
           approvals=0
           while read -r user; do
             [ -n "$user" ] || continue
-            if ! role=$(gh api "repos/$REPO/collaborators/$user/permission" --jq .role_name); then
-              echo "::error title=CI not run::Cannot read the permission of ${user}, who approved the head commit: re-run this check"
-              exit 1
+            if ! permission=$(gh api "repos/$REPO/collaborators/$user/permission" --jq .permission); then
+              echo "::warning title=Approval not counted::Cannot read the permission of ${user}, who approved the head commit"
+              continue
             fi
-            case $role in
-              admin | maintain | write) approvals=$((approvals + 1)) ;;
-              *) echo "the approval of ${user} (${role:-no access}) does not count: it takes write access" ;;
+            case $permission in
+              admin | write) approvals=$((approvals + 1)) ;;
+              *) echo "the approval of ${user} (${permission:-no access}) does not count: it takes write access" ;;
             esac
           done <<< "$approvers"
           if [ "$approvals" -gt 0 ]; then
