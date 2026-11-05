@@ -577,6 +577,18 @@ describe('lntt review, end to end with a fake agent', () => {
     assert.deepEqual([state().branch, state().reviewed], ['feat/2/y', null])
   })
 
+  test("an empty delta on a branch whose state is another branch's saves round 1, with nothing carried", () => {
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    writeFileSync(join(repo, 'a.ts'), 'export const a = 5\n')
+    git('commit', '-qam', 'again')
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    assert.equal(state().round, 2)
+    git('switch', '-q', 'main')
+    git('switch', '-qc', 'feat/3/z')
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    assert.deepEqual([state().branch, state().round, state().rounds ?? []], ['feat/3/z', 1, []])
+  })
+
   test('--plan as the first argument: an error leaves the progress file of the last round alone', () => {
     lntt(['--base', 'main'])
     const before = readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8')

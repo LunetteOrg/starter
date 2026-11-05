@@ -714,12 +714,12 @@ async function round(args: string[]): Promise<number> {
   const moved = git('rev-parse', '--short', 'HEAD') !== head || git('status', '--porcelain') !== ''
   if (moved)
     result.failed.push({ lens: 'round', agent: 'lntt', error: `the branch moved from ${head} during the round` })
-  // An empty delta keeps the last round's number: nothing new was read. A round with a
+  // An empty delta keeps this branch's last round number (1 when the state is another branch's): nothing new was read. A round with a
   // failure or a line left unread does not move the reviewed commit, so the next one reads this range again.
   const previous = state?.branch === branch ? state.reviewed : null
   const saved: ReviewState = {
     branch,
-    round: files.length > 0 ? range.round : (state?.round ?? 1),
+    round: files.length > 0 ? range.round : state?.branch === branch ? state.round : 1,
     reviewed: reviewedAfter(result, previous, head),
     result,
     ...(state?.branch === branch && state.allowed ? { allowed: state.allowed } : {}),
