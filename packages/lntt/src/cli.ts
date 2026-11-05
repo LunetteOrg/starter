@@ -2,7 +2,9 @@
 
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
+import { dirname } from 'node:path'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
+import { syncAutomated } from './automated.ts'
 import {
   browserApp,
   browserPlan,
@@ -119,6 +121,7 @@ function run(command: string | undefined, key: string | undefined, raw: string |
       syncSkills(cwd())
       syncAgentsBlock(cwd())
       syncClaudeSettings(cwd())
+      syncAutomated(dirname(dirname(findConfig(cwd()).path)))
       break
     case 'guide': {
       if (key === undefined) {
