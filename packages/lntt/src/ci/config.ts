@@ -4,6 +4,7 @@
 // it: no candidate).
 
 import { automatedEntries } from '../automated.ts'
+import { readyRules } from '../board-ready.ts'
 import { ConfigError, loadConfig } from '../index.ts'
 import { retrospectiveBlock, retrospectiveRules } from '../pull-request.ts'
 import type { CandidateConfig } from './candidate.ts'
@@ -67,6 +68,7 @@ export function candidateConfig(cwd: string): CandidateConfig | null {
   const section = (config.delivery as { candidate?: Partial<CandidateConfig> & { prefix: string } } | undefined)
     ?.candidate
   if (!section) return null
+  const ready = readyRules(config)
   return {
     base: section.base ?? 'main',
     prefix: section.prefix,
@@ -74,5 +76,6 @@ export function candidateConfig(cwd: string): CandidateConfig | null {
     status: { ...CANDIDATE_STATUS, ...section.status },
     retrospective: retrospectiveBlock(retrospectiveRules(config)),
     automated: automatedEntries(config),
+    ...(ready ? { ready } : {}),
   }
 }

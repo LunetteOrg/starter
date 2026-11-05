@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-11-02
+date: 2026-11-04
 tags: [cli, packages, agents, ci, commands]
 ---
 
@@ -24,13 +24,13 @@ command, so a reader who sees `lntt` in a script knows which package provides it
 ```
 lntt path | validate | get | set | operator | sync | guide | local app | viewer | browser | refs
 lntt hook typecheck
-lntt board sync
+lntt board sync | ready
 lntt check [agents-md | skills | plugin | decisions [structure | board-refs | numbers] | tests [levels | focus | rules | touched | mutate] | body] | check cite
 lntt branch name | check | rename
 lntt pr block
 lntt retro add
 lntt dump | issue [search]
-lntt review [reply | allow | status]
+lntt review [reply | allow | status | cost]
 lntt worktree start
 lntt ask | inbox | answer
 lntt ci local | candidate | proved
@@ -61,6 +61,9 @@ lntt ci local | candidate | proved
   resolved when the view is written, and a field the Project does not return then
   stops the run with its name, the writes before it applied.
   `--check` exits 1 on any difference, an entry left to a person included.
+- **`lntt board ready --apply` writes only a status value.** It sets the option
+  `board.fields.status.ready` on the items of the eligible issues, and creates nothing on
+  the Project; the candidate's merge does the same (`packages/lntt/src/board-ready.ts`).
 - **What a person types is what an agent runs.** Skills, workflows, git hooks and
   `orca.yaml` call `lntt`, never a package's files by path, with one exception: the
   candidate workflow runs `node packages/lntt/bin/lntt.ts`, because it installs only
@@ -72,12 +75,27 @@ lntt ci local | candidate | proved
   person who will start one; `lntt check --json`), a document for an agent (`lntt guide
   <skill>`: a comment naming the folder its relative links start from, then the guide;
   `lntt browser`: the driver, then one line per operation),
+  a summary for an agent (`lntt review`: one line of outcome, one per thing to act on;
+  `lntt review status`: each level folded, then the same; the whole result left to `--json`
+  or `--query`),
   or a report for a person (`lntt check` without `--json`); progress and child-process output go to stderr. Exit codes:
   0 ok, 1 a configuration error, a red result or a check that cannot run (one line on
-  stderr), 2 a usage error, 3 a stop that a person decides on (`lntt review` past
+  stderr), 2 a usage error or a failing jq expression, 3 a stop that a person decides on (`lntt review` past
   `delivery.review.maxRounds`), 4 nothing to report on (`lntt review status` with no round
-  on the current branch), an interrupted command 128 plus the signal (130 for
+  on the current branch, also when a jq query fails on the missing state), an interrupted command 128 plus the signal (130 for
   Ctrl-C); a defect of `lntt` itself exits 1 with its stack trace.
+- **A reading command gives a summary by default, and jq for a part of its output.** An
+  agent reads through a limited window and pays for every character, so the default is
+  short and each level is shown folded, as its key and its count (`findings: 14 (3 open)`).
+  `--query <jq>` runs a jq expression on the command's `--json` document, starting with
+  `lntt review status`, in the language `gh --jq` also takes: `jq-wasm` (jq 1.8.2 compiled
+  to WebAssembly) runs it, loaded only when `--query` is given, so no other call pays for
+  it. Measured on 2026-11-04, it adds about 22 ms to that call (load 3.8 ms, first query
+  17.9 ms, node 24, median of 21 fresh processes, against node's own 31 ms start) and
+  3.9 MB to the install. A jq failure exits 2 with jq's message on stderr and nothing on
+  stdout; with no round to read, a failure while running (`.state.open[]`) exits 4, the
+  no-round line before jq's message. A query that does not end is ended by a signal: a
+  reading command keeps the default handling of SIGINT and SIGTERM.
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
   `decisions` and `tests`, whose results their review lenses read, and `agents-md`,
   `skills`, `plugin` (the Lunette plugin and the install and typecheck hooks in `.claude/settings.json`)
@@ -126,7 +144,10 @@ rests on these criteria:
 
 1. **A gate is reproducible on the same commit.** The CI workflow runs
    `pnpm exec lntt check` and `lntt branch check` (`.github/workflows/ci.yml`), the
-   git hooks run `lntt check decisions board-refs` on the staged files,
+   git hooks run `lntt check decisions board-refs`, and `lntt check tests levels` when
+   a file named `*.test.*` or `*.spec.*` is staged (a test file a level takes under
+   another name is checked by CI), `lntt check plugin` when the Claude settings or
+   `claude-settings.ts` are staged,
    `lntt branch check --pre-push` and commitlint with `@lntt/lntt`'s configuration
    (`lefthook.yml`, `pre-commit`, `pre-push` and `commit-msg`). Their answer is fixed
    only by the project's lockfile. A red of `lntt ci local` for a timeout is the
@@ -160,9 +181,10 @@ rests on these criteria:
    calls `lntt get` and `lntt check tests mutate` (gates); `run-local`
    calls `lntt get`, `lntt local app` and `lntt viewer`; `retrospective` calls `lntt get`,
    `lntt pr block` and `lntt check body` (gates) and `lntt retro add`, `lntt dump` and `lntt issue` (agent tools); `github-board` calls `lntt get` and `lntt set`
-   (gates) and `lntt board sync` (an agent tool); `commit-message` (`lntt get`,
-   commitlint), `plan-round` and `roadmap` (`lntt get`, `lntt set`) stay on the gate
-   side. In the code, `lntt review` imports the check
+   (gates) and `lntt board sync` and `lntt board ready` (agent tools); `plan-round` calls
+   `lntt get` and `lntt set` (gates) and `lntt board ready` (an agent tool);
+   `commit-message` (`lntt get`, commitlint) and `roadmap` (`lntt get`, `lntt set`) stay on
+   the gate side. In the code, `lntt review` imports the check
    areas and the mutations and runs them in-process (`packages/lntt/src/review-cli.ts`
    imports `runArea` and `mutateAll`), and `lntt worktree start` names branches with
    the gate's code (`packages/lntt/src/worktree-cli.ts` imports `branchName` and
@@ -186,12 +208,12 @@ So:
 
   | Pinned by the project: gates and what CI runs | Agent tools |
   |---|---|
-  | `lntt check [area]`, `lntt check cite`: deterministic, read only the commit, or for `body` the pull request body (a candidate's retrospective comment) they are given | `lntt review [reply \| allow \| status]`: its outcome is an opinion, wired into no CI |
+  | `lntt check [area]`, `lntt check cite`: deterministic, read only the commit, or for `body` the pull request body (a candidate's retrospective comment) they are given | `lntt review [reply \| allow \| status \| cost]`: its outcome is an opinion, wired into no CI |
   | `lntt ci local`: CI's jobs on the machine; `lntt ci candidate`: what the candidate workflow runs on GitHub, at the default branch's version, which the workflow checks out, and which brings the open candidate up to date with the default branch, pushing it (`--follow` from a terminal) ([delivery](../process/delivery.md#the-candidate-automation)); `lntt ci proved`: what the push run asks before its checks, read from GitHub, so not a gate (criterion 1), but CI calls it ([CI](../process/ci.md#a-tree-already-proved)) | `lntt worktree start`: the Orca and Herdr adapters |
   | `lntt branch check`, and `branch name` and `branch rename`, so the name an agent gets is the one the gate accepts | `lntt ask \| inbox \| answer` |
   | `lntt validate \| get \| set \| path`: they hold the schema; `set` writes a tracked file | `lntt guide`: it prints the skills |
   | `lntt sync`: it writes tracked files (the `AGENTS.md` block, the skill stubs, the entries of `.claude/settings.json`) that `lntt check` verifies | `lntt operator`: personal context, read by no gate; `lntt pr block`: the empty retrospective block, for the template and the skill; `lntt retro add`: it writes a comment on GitHub, not the commit; `lntt dump` and `lntt issue`: a report on Lunette, filed upstream on the operator's approval |
-  | the commitlint configuration (the `@lntt/lntt` export) | `lntt local app`, `lntt viewer`; `lntt board sync`: it reads and writes GitHub, not the commit, so its `--check` is a verdict on the board's state that a hook or a scheduled job runs, never a pull request's gate |
+  | the commitlint configuration (the `@lntt/lntt` export) | `lntt local app`, `lntt viewer`; `lntt board sync`: it reads and writes GitHub, not the commit, so its `--check` is a verdict on the board's state that a hook or a scheduled job runs, never a pull request's gate; `lntt board ready`, for the same reason |
   | the configuration schema | the plugin's hooks, `lntt hook` (what the settings hooks run) and `lntt refs`; once it exists, `lntt doctor` (#124) |
 
 - **The configuration schema follows one compatibility rule.** Its version is the
@@ -258,6 +280,9 @@ So:
   `npx @lntt/lntt`, never in daily use.
 - A host's change reaches a project's agent tools only with a release and that
   project's bump, until the split's trigger fires.
+- Every project installs `jq-wasm` (3.9 MB, MIT, no dependencies, no install script) for
+  a flag not every call uses, pinned to an exact version: accepted, since a query costs a
+  call nothing until it is asked for.
 
 ### When to deviate (revisit triggers)
 
@@ -271,10 +296,16 @@ So:
   groups are coupled tighter than the table says, and a split would make each such
   change a breaking release of the gates.
 - The command is rewritten in a compiled language: one binary keeps the same command
-  surface.
+  surface. A future `lntt` in Go embeds gojq, which takes the same expressions.
 
 ## Discarded directions
 
+- **JMESPath for `--query`.** It has a formal spec and a pure-JS library, but it only
+  queries, and agents know it less than jq.
+- **A path syntax of `lntt`'s own.** One more grammar to learn and to maintain.
+- **The system `jq` alone.** It is missing on some machines and its version differs from
+  one to the next.
+- **`node-jq`.** It downloads the binary in a postinstall script, which pnpm blocks.
 - **A package per concern** (`@lntt/project-config` with `lntt-config`, `@lntt/ci` with
   `lntt-ci`). Two names to learn and two versions to keep for tools that are always
   installed together; the CI one already depended on the configuration one.

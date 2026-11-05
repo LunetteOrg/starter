@@ -18,7 +18,16 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import { CannotRunError, type Result } from './check.ts'
-import { type Candidate, candidates, commandFor, ImportGraph, type Level, testsConfig } from './test-files.ts'
+import {
+  type Candidate,
+  candidates,
+  candidatesByName,
+  commandFor,
+  ImportGraph,
+  type Level,
+  NOT_CODE,
+  testsConfig,
+} from './test-files.ts'
 
 export interface Mutation {
   path: string
@@ -29,8 +38,8 @@ export interface Mutation {
 }
 
 export type Outcome =
-  | { outcome: 'killed'; test: string; message: string; ran: string[] }
-  | { outcome: 'survived'; ran: string[] }
+  | { outcome: 'killed'; test: string; message: string; ran: string[]; byName?: boolean }
+  | { outcome: 'survived'; ran: string[]; byName?: boolean }
   | { outcome: 'not run'; reason: string }
 
 function git(root: string, ...args: string[]): string {
@@ -226,7 +235,12 @@ export function mutate(context: MutateContext, mutation: Mutation): Outcome {
   const config = testsConfig(context.data)
   if (config.levels.length === 0) return { outcome: 'not run', reason: 'tests.levels is not configured' }
   const graph = new ImportGraph(context.root, new Set(context.files))
-  const groups: Candidate[] = candidates(context.root, config, context.files, mutation.path, graph)
+  let groups: Candidate[] = candidates(context.root, config, context.files, mutation.path, graph)
+  // A non-code file no test imports: the tests that name its path or directory.
+  const named = groups.length === 0 ? candidatesByName(context.root, config, context.files, mutation.path) : []
+  const byName = named.length > 0
+  if (byName) groups = named
+  const chosen = byName ? { byName } : {}
   const noRun = groups.find((g) => g.level.run === null)
   if (noRun) return { outcome: 'not run', reason: `tests.levels ${noRun.level.name} has no run command` }
   const ran = groups.flatMap((g) => g.files)
@@ -258,9 +272,9 @@ export function mutate(context: MutateContext, mutation: Mutation): Outcome {
           reason: `level ${group.level.name} fails without the mutation (${why.test}: ${why.message})`,
         }
       }
-      return { outcome: 'killed', ...failureOf(run.output), ran }
+      return { outcome: 'killed', ...failureOf(run.output), ran, ...chosen }
     }
-    return { outcome: 'survived', ran }
+    return { outcome: 'survived', ran, ...chosen }
   } finally {
     writeFileSync(target, original)
   }
@@ -269,15 +283,16 @@ export function mutate(context: MutateContext, mutation: Mutation): Outcome {
 export function describeOutcome(mutation: Mutation, outcome: Outcome): Pick<Result, 'status' | 'message'> {
   const what = `${JSON.stringify(mutation.text)} → ${JSON.stringify(mutation.to)}`
   if (outcome.outcome === 'killed') {
-    return { status: 'PASS', message: `${what} killed by ${outcome.test}: ${outcome.message}` }
+    const via = outcome.byName ? ` (tests chosen by name: ${outcome.ran.join(', ')})` : ''
+    return { status: 'PASS', message: `${what} killed by ${outcome.test}: ${outcome.message}${via}` }
   }
   if (outcome.outcome === 'survived') {
     return {
       status: 'FAIL',
       message:
         outcome.ran.length === 0
-          ? `${what} survived: no test runs this line`
-          : `${what} survived: ${outcome.ran.length} test file${outcome.ran.length === 1 ? '' : 's'} still pass (${outcome.ran.join(', ')})`,
+          ? `${what} survived: no test runs this line${NOT_CODE.test(mutation.path) ? ' (no test imports the file or names its path or a directory)' : ''}`
+          : `${what} survived: ${outcome.ran.length} test file${outcome.ran.length === 1 ? '' : 's'} still pass (${outcome.byName ? 'chosen by name: ' : ''}${outcome.ran.join(', ')})`,
     }
   }
   return { status: 'NOT RUN', message: `${what}: ${outcome.reason}` }

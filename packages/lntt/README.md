@@ -201,7 +201,12 @@ project's check.
 - **mutate** `path:line --text=<on that line> --to=<mutated>`: applied in a scratch git
   worktree (the head and the uncommitted files, dependencies shared; the working tree is
   never written), runs the tests that import the file with the `run` command of their
-  level, `repeat` times in a row. `PASS` is killed (the failing test and its message),
+  level, `repeat` times in a row. For a file that is not code (`.md`, `.json`, `.yml`…)
+  that no test imports (a file some test imports gets only its importers), such as a
+  `SKILL.md` a test reads as text, it runs the test files whose text names the file's
+  path or its last two segments (`review/SKILL.md`), or a directory of two segments or
+  more, whole or by its last two (`skills/review`); a directory of one segment (`docs`)
+  is no name. The output says the tests were chosen by name. `PASS` is killed (the failing test and its message),
   `FAIL` survived, `NOT RUN` when the text is not once on the line or the tests fail
   without the mutation. Write `--text=...` with the `=` when the text starts with `-`.
 
@@ -426,41 +431,72 @@ its answer).
 ## Reviewing a change
 
 ```sh
-lntt review                       # one round on the current branch; JSON on stdout
+lntt review                       # one round on the current branch; a summary on stdout
 lntt review --base <branch>       # against another base than the resolved one (a stacked pull request)
 lntt review --plan                # the range, the lenses and their agents; runs nothing
 lntt review reply f2 "line 120 excludes it"   # answer the reviewers who found f2
 lntt review allow 2               # two rounds more for this branch, past maxRounds
-lntt review status                # the worktree's state: one line, then what to act on
+lntt review status                # the worktree's state: each level folded, the outcome, what to act on
 lntt review status --json         # the whole state, one shape whatever the case
-lntt review status --clear        # remove another or a merged branch's state, ledger, progress
+lntt review status --query '.state.rounds[1:3][] | {round,usd}'   # a part of it, in jq
+lntt review status --clear        # remove this merged branch's state, ledger, progress (or an unreadable state)
+lntt review status --prune        # remove the state and ledger of branches that are gone; --dry-run says which
 lntt review cost                  # the branch's rounds, tokens and USD: the pull request's Review cost line
 lntt review cost --json           # each round's cost and the total
 ```
 
-`lntt review status` is how the state is read: never from the files in the git directory,
-which are each worktree's own (in the main checkout the git directory is also the common
-one, so a file there is the main checkout's). Its exit code is 0 when this branch's last
-round is clean, 1 with something to act on (a blocking finding open, a failed or partial
-lens), 3 at the limit, 4 with no round on this branch (none yet, a detached HEAD, or
-another branch's state, named with its date). `--json` gives `branch`, `running` (the pid
-of a round holding the lock) and `state`: its `branch`, `current`, `updated`, `merged`
+`lntt review status` is how the state is read: never from the files, which are one per
+branch in the place described under [Where the state is kept](#where-the-state-is-kept).
+Its exit code is 0 when this branch's last round is clean, 1 with something to act on (a
+blocking finding open, a failed or partial lens), 3 at the limit, 4 with no round on this
+branch (none yet, or a detached HEAD). `--json` gives `branch`, `running` (the pid
+of a round holding the lock) and `state`: its `branch`, `current` (always true), `updated`, `merged`
 (null when it cannot be told: no base to compare with, an open candidate GitHub
 could not name, no commit of the branch; with `delivery.candidate` set, status asks
 GitHub for the open candidate, as every lntt command that resolves the base does), the round, `limit`
-(maxRounds and the rounds allowed), `reviewed`, `clean`, `atLimit`, `open`, `replied`
+(maxRounds and the rounds allowed), `reviewed`, `clean`, `atLimit`, `scope`, `lenses`, `open`, `replied`
 (with the `reply` the author gave), `closed` (the ledger), `failed`, `partial`, `skipped`,
-`tokens` and `cost`. A state that cannot be read is an error, exit 1, with nothing on
+`tokens`, `cost`, `findings` (the last round's, every verdict), `refuted`, `repeated` (the
+fresh findings that repeat a ledger entry, with `closedWhat` and `closedBy`) and `rounds`
+(each round's cost). A state that cannot be read is an error, exit 1, with nothing on
 stdout even with `--json`. `--clear` also removes it; it never runs while a round holds
 the lock, never removes the lock, and refuses on the current branch until it is merged
 into the base.
+
+Without a flag, on this branch's state, status folds each level before the outcome line,
+each label the key under `.state`:
+
+```
+findings: 14 (3 open)
+refuted: 2
+repeated: 1
+closed: 5
+failed: 1
+partial: 0
+skipped: 0
+rounds: 4
+lntt review: feat/1/x: round 4 of 5, reviewed abc1234, not clean; 3 open (1 blocking), ...
+  f1 blocker confirmed a.ts:1 — what
+  code · claude sonnet failed: the error
+  tests · claude sonnet: 2 lines not read
+  f3 warning repeats f1 a.ts:1 — what
+```
+
+`--query <jq>` runs a jq expression on the `--json` document (`{ branch, running, state }`,
+`state` null with no round): `.state.findings[] | select(.id=="f12")`,
+`.state.rounds[1:3][] | {round,usd}`. Strings come raw and the rest compact, one per line;
+with `--json` too, JSON values one per line. It exits as status does. A jq failure exits 2
+with jq's message on stderr and nothing on stdout, what it printed before failing included;
+with no state, a failure while running (`.state.open[]`) exits 4 with the no-round line and
+jq's message on stderr. A query runs in jq's sandbox: `env` is not the process's. A signal
+ends a query that does not end.
 
 A round, on a clean working tree:
 
 1. **What to read:** the branch from where it left the base
    ([the base of a branch](#the-base-of-a-branch)) the first time, then only
    the commits after the last reviewed one (after a rebase, the whole branch again).
-   The state is `lntt-review.json` in the worktree's git directory. Its `rounds` keep
+   The state is the branch's file in [the place](#where-the-state-is-kept). Its `rounds` keep
    each round that read files: `round`, `head`, `tokens`, `usd` (null when no agent
    reported them), `noTokens` and `noUsd` (the agents that reported none, a failed one
    included). After `round N done`, stderr says `lntt review: branch total: <line>`; the
@@ -497,16 +533,18 @@ for a band beside the agent. Under Claude Code in Orca each agent shows as a sub
 of the session; agents never inherit the host's hook variables. On macOS `caffeinate`
 keeps the machine awake for the round.
 
-stdout is the round: `findings` to act on, `refuted` with their proofs, `failed`
-reviewers and verifiers, `cost` in USD when the agents report it (claude does). Exit 0
+stdout is the round's summary: the outcome line and the lines per thing to act on that
+`lntt review status` prints, without the folded levels. The whole result stays in the state:
+`findings` to act on, `refuted` with their proofs, `failed` reviewers and verifiers, `cost`
+in USD when the agents report it (claude does), read with `lntt review status`. Exit 0
 when no blocker or warning is left and nothing failed, 1 otherwise; notes are reported
 and do not block, nor are they carried to the next round. From the round after
 `delivery.review.warningRounds` a warning does not block either: the round's `blocking`
 names only `blocker`, and the warnings left go in the pull request as open items. The
 branch keeps a ledger of the findings it closed (fixed, refuted, accepted open) in
-`<git dir>/lntt-review-ledger.json`: each round's reviewers read the entries on the files of
+its own file next to the state: each round's reviewers read the entries on the files of
 the change and those with no anchor, each verifier those on its finding's file; a
-fresh finding that repeats one on a line that did not change goes to `closed`, not
+fresh finding that repeats one on a line that did not change goes to `repeated`, not
 verified and not blocking. A reply that is neither
 finding lines nor `no findings` counts as a failed reviewer; after a failure the next
 round reads the same range again. A reviewer is stopped after
@@ -526,13 +564,47 @@ A finding whose reviewer cannot be resumed is refused: the person decides on it.
 
 A branch takes at most `delivery.review.maxRounds` rounds, one with a failure among
 them. The round past the limit does not start: `lntt review: limit: …` on stderr with the findings still open, the
-same findings as JSON on stdout, a `limit` event in the progress file, exit 3. On a branch
+last round's summary on stdout, a `limit` event in the progress file, exit 3. On a branch
 `lntt worktree start` started, the open findings also go to its coordinator or the
-orchestrator as a message the round does not wait for (`asked` in the JSON and the event,
+orchestrator as a message the round does not wait for (`asked` in the event,
 `lntt review: limit: sent <id>` on stderr). `allow`
 gives the current branch more rounds, kept in its state; the configuration and the
 other branches stay as they are. A run with no new commit is not a round and is never
 stopped.
+
+### Where the state is kept
+
+The state of a branch and its ledger of closed findings are one file each per branch,
+named by the branch with its characters percent-encoded, a capital as `%` and its lower-case
+hexadecimal code (`feat/1/x` is `feat%2F1%2Fx`, `Fix/A` is `%46ix%2F%41`):
+`<place>/state/<branch>.json` and `<place>/ledger/<branch>.json`. A round on one branch
+touches nothing of another's, every worktree of the clone finds a branch's state, and
+closing a worktree takes nothing with it. The place is, in order:
+
+1. `review.stateDir` in the operator's profile (`lntt operator`): an absolute path or one
+   starting with `~`. Personal: it never goes in the project configuration.
+2. `delivery.review.stateDir` in the project configuration: the project's default; a
+   relative path starts at the main checkout.
+3. The clone's common git directory: `<git common dir>/lntt-review/`.
+
+A configured place may be shared by clones, so a folder per repository is made inside it:
+`<org>/<repo>` from the origin URL, or `local/<hash of the git directory>` with no origin or
+when an org or repo is `.` or `..`.
+The lock and the progress file the band reads belong to a running process and stay in each
+worktree's own git directory.
+
+`lntt review status --prune` removes the state and ledger of the branches that are gone:
+no local branch and no remote-tracking one of that name, or a local branch whose upstream is
+gone (GitHub deletes the head branch on merge and the local one stays). A branch checked
+out in any worktree stays. `--prune --dry-run` lists them and removes nothing.
+`--clear` is for the current branch: it removes its state, ledger and progress once the
+branch is merged, or its state alone when that cannot be read.
+
+A state kept before the place existed, in `lntt-review.json` and `lntt-review-ledger.json`
+of a worktree's git directory, is read once, on the first run in that worktree: moved to the
+file of the branch it names with a line on stderr (the newer wins when the place already has
+one for that branch), one that cannot be read is set aside as `*.unreadable`. After that the
+old paths are not read.
 
 ## Running the apps locally
 
@@ -652,6 +724,26 @@ plan, or every change applied and read back, or with `--check` a board as declar
 configuration error, a read or a write `gh` refuses (with the changes applied before
 it), a change that does not show on the read-back, or with `--check` a board that
 differs (a change or an entry by hand); 2 a usage error.
+
+## The Ready check (`lntt board ready`)
+
+```sh
+lntt board ready           # the issues at the first status: Ready-eligible, or what is missing
+lntt board ready --apply   # moves the eligible ones, then reads the board back
+```
+
+It reads the open issues of this repository at the first status
+(`board.fields.status.initial`) of `board.github.project`, every page, and checks what a
+machine can: the type (`board.issueTypes`), the fields `priority` and `size` of
+`board.fields`, on the item or, with `kind: issue`, on the issue; a parent for a child
+type outside `board.issueTypes.standalone`, with `board.subIssues`; no open blocker, with
+`board.blockedBy`. What the configuration leaves out is no criterion. An issue with open
+sub-issues is listed apart and never moved. `--apply` moves the eligible ones to
+`board.fields.status.ready`, 1.2 s apart. The same check runs on a candidate's merge for
+the issues it unblocked (`lntt ci candidate`). Exit codes: 0 the list, or every move
+applied and read back; 1 a configuration with no board, a read or a write `gh` refuses, a
+ready status the Project does not have, a move that does not show on the read-back; 2 a
+usage error.
 
 ## CI (`lntt ci`)
 

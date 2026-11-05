@@ -170,6 +170,17 @@ describe('the command line', () => {
     assert.equal(spawnSync('node', [BIN, 'validate'], { cwd: root, encoding: 'utf8' }).stderr, '')
   })
 
+  test('delivery.review.stateDir is a path; anything else does not validate', () => {
+    write('.agents/config.jsonc', '{ "delivery": { "review": { "stateDir": ".git/review" } } }')
+    assert.equal(spawnSync('node', [BIN, 'validate'], { cwd: root, encoding: 'utf8' }).status, 0)
+    for (const bad of ['3', '""', 'false']) {
+      write('.agents/config.jsonc', `{ "delivery": { "review": { "stateDir": ${bad} } } }`)
+      const run = spawnSync('node', [BIN, 'validate'], { cwd: root, encoding: 'utf8' })
+      assert.equal(run.status, 1, bad)
+      assert.match(run.stderr, /stateDir/, bad)
+    }
+  })
+
   test('an invalid file exits 1 with the reason on stderr', () => {
     write('.agents/config.jsonc', `{ "recordin": {} }`)
     const run = spawnSync('node', [BIN, 'validate'], { cwd: root, encoding: 'utf8' })
@@ -403,6 +414,13 @@ describe('the board section', () => {
     const size = { name: 'Size', type: 'singleSelect', options: ['S'], on: 'features' }
     assertRejected({ board: { fields: { size } } }, /\/board\/fields\/size\/on/)
     for (const on of ['parents', 'children']) assertValid({ board: withHorizon({ fields: { size: { ...size, on } } }) })
+  })
+
+  test('lntt validate: a stand-alone issue type is one of the children', () => {
+    assertBadReference(
+      { board: { issueTypes: { parents: ['Feature'], children: ['Bug'], standalone: ['Feature'] } } },
+      /board\.issueTypes\.standalone is "Feature", not one of: Bug/,
+    )
   })
 
   test('lntt validate: a permanent issue type is one of the parents', () => {

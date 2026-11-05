@@ -27,6 +27,11 @@
 //                             API cannot do or is risky listed for the UI, with the steps.
 //                             A dry run unless --apply; --check exits 1 when the board differs
 //
+//   lntt board ready [--apply]
+//                             the issues of this repository at the board's first status,
+//                             Ready-eligible or with what is missing; --apply moves the eligible
+//                             ones to board.fields.status.ready
+//
 //   lntt hook typecheck
 //                             what the hook line lntt sync writes into .claude/settings.json
 //                             runs: local.hooks.typecheck or the typecheck script, exit 1 on a
@@ -109,15 +114,18 @@
 //   lntt review [--base <branch>] [--plan]
 //                             one review round on the current branch: the lenses and agents of
 //                             delivery.review, headless and read-only, then verifiers that try to
-//                             refute each blocker and warning; JSON on stdout, exit 1 with findings,
-//                             exit 3 past delivery.review.maxRounds (the round does not start)
+//                             refute each blocker and warning; a summary on stdout, exit 1 with
+//                             findings, exit 3 past delivery.review.maxRounds (the round does not
+//                             start)
 //   lntt review reply <finding> <answer>
 //                             the author's answer, to the sessions of the reviewers who found it
 //   lntt review allow <rounds>
 //                             more rounds for the current branch, past delivery.review.maxRounds
-//   lntt review status [--json] [--clear]
-//                             the worktree's review state: a summary, or the whole with --json; exit
-//                             0 clean, 1 to act on, 3 at the limit, 4 no round on this branch.
+//   lntt review status [--json] [--query <jq>] [--clear]
+//                             the worktree's review state: each level folded and a summary, the
+//                             whole with --json, a part with a jq expression on that document;
+//                             exit 0 clean, 1 to act on, 3 at the limit, 4 no round on this branch,
+//                             2 a jq failure.
 //                             --clear removes another or a merged branch's state, ledger, progress
 //   lntt review cost [--json]
 //                             what the current branch's rounds cost, from its review state: the

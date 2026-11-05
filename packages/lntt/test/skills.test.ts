@@ -523,23 +523,25 @@ describe('the review state, read with lntt review status', () => {
     const review = text('review')
     assert.match(
       review,
-      /`findings`, one list, each with a `verdict` \(`confirmed`, `undecided`, `unverified`; `withdrawn` after a reply/,
+      /`\.state\.findings`, one list, each with a `verdict` \(`confirmed`, `undecided`, `unverified`; `withdrawn` after a reply/,
     )
-    assert.match(
-      review,
-      /The state between rounds is read only with `lntt review status`, never by opening files in the git directory/,
-    )
+    assert.match(review, /The state between rounds is read only with `lntt review status`, never by opening its files/)
     assert.match(
       review,
       /Exit 0: this branch's last round is clean\. 1: something to act on\. 3: at the limit\. 4: no round on this branch\./,
     )
-    assert.match(review, /`pnpm exec lntt review status --clear` removes it/)
+    assert.match(review, /`pnpm exec lntt review status --clear` removes the current branch's state once it is merged/)
+    assert.match(review, /`pnpm exec lntt review status\s+--prune` removes those of branches that are gone/)
+    assert.match(review, /stdout is a summary/)
+    assert.match(review, /`\.state\.refuted`/)
+    assert.match(review, /`\.state\.repeated`/)
+    assert.match(review, /`closedWhat`, entry `closedBy`/)
   })
 
   test("the coordinate skill reads a child's state in its worktree", () => {
     assert.match(
       text('coordinate'),
-      /A child's review state is read in its worktree\*\* with `pnpm exec lntt review status` \(or asked of the child\), never from files in a git directory/,
+      /A child's review state is read in its worktree\*\* with `pnpm exec lntt review status` \(or asked of the child\), never from its files/,
     )
   })
 })

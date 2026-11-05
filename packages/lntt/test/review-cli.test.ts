@@ -8,14 +8,17 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { branchKey } from '../src/review-store.ts'
 import { type Clone, clone } from './clone.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
@@ -84,9 +87,9 @@ function git(...args: string[]): string {
   return execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim()
 }
 
-function lntt(args: string[], env: Record<string, string> = {}) {
+function lntt(args: string[], env: Record<string, string> = {}, at: string = repo) {
   const r = spawnSync(process.execPath, [BIN, 'review', ...args], {
-    cwd: repo,
+    cwd: at,
     encoding: 'utf8',
     // A run that hangs fails its test instead of blocking the suite.
     timeout: 20_000,
@@ -141,7 +144,20 @@ afterEach(() => {
   rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
-const state = () => JSON.parse(readFileSync(join(repo, '.git/lntt-review.json'), 'utf8'))
+// Where lntt review keeps a branch's state and ledger: one file each, named by the branch
+// (percent-encoded), in the clone's common git directory unless a place is configured.
+const storeDir = (...names: string[]) => join(repo, '.git/lntt-review', ...names)
+const stateFile = (branch = 'feat/1/x', dir = storeDir()) => join(dir, 'state', `${branchKey(branch)}.json`)
+const ledgerFile = (branch = 'feat/1/x', dir = storeDir()) => join(dir, 'ledger', `${branchKey(branch)}.json`)
+const put = (path: string, text: string) => {
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, text)
+}
+
+const state = (branch = 'feat/1/x') => JSON.parse(readFileSync(stateFile(branch), 'utf8'))
+
+// The last round as an agent reads it: through the command, never from the state's file.
+const reading = () => JSON.parse(lntt(['status', '--json']).out).state
 
 describe('lntt review with lntt check', () => {
   test('the decisions lens gets lntt check decisions; a finding on a line that does not exist never reaches a verifier', () => {
@@ -179,7 +195,7 @@ describe('lntt review with lntt check', () => {
       .find((p) => p.includes('Lens: decisions')) as string
     assert.match(decisions, /"check":"index","status":"FAIL","path":"docs\/adr\/storage\.md"/)
     assert.match(decisions, /"check":"inventory","status":"INFO","path":"docs\/adr\/storage\.md"/)
-    const result = JSON.parse(r.out)
+    const result = reading()
     assert.deepEqual(result.findings, [])
     assert.deepEqual(
       result.refuted.map((f: { proofs: { by: string; proof: string }[] }) => f.proofs),
@@ -191,10 +207,11 @@ describe('lntt review with lntt check', () => {
 })
 
 describe('lntt review, end to end with a fake agent', () => {
-  test('a clean round: exit 0, the JSON on stdout, the head saved as reviewed', () => {
+  test('a clean round: exit 0, its summary on stdout, the head saved as reviewed', () => {
     const r = lntt(['--base', 'main'])
     assert.equal(r.code, 0, r.err)
-    assert.deepEqual(JSON.parse(r.out).findings, [])
+    assert.match(r.out, /^lntt review: feat\/1\/x: round 1 of 4, reviewed \w+, clean; 0 open, 0 replied, 0 closed/)
+    assert.deepEqual(reading().findings, [])
     assert.match(r.err, /round 1 done/)
     assert.match(r.err, /the diff goes to: anthropic \(claude\)/)
     assert.equal(state().reviewed, git('rev-parse', '--short', 'HEAD'))
@@ -208,7 +225,7 @@ describe('lntt review, end to end with a fake agent', () => {
     const env = { FAKE_REVIEW: '- [blocker] a.ts:1 — wrong — fix', FAKE_VERIFY: 'confirmed\\na.ts:1 shows it' }
     const r = lntt(['--base', 'main'], env)
     assert.equal(r.code, 1, r.err)
-    const finding = JSON.parse(r.out).findings[0]
+    const finding = reading().findings[0]
     assert.deepEqual([finding.id, finding.verdict], ['f1', 'confirmed'])
 
     const reply = lntt(['reply', 'f1', 'line 1 is the point'], { FAKE_REPLY: 'withdrawn\\nfair' })
@@ -231,7 +248,7 @@ describe('lntt review, end to end with a fake agent', () => {
   test('a reviewer that fails: exit 1, listed in failed, and the range is read again next time', () => {
     const r = lntt(['--base', 'main'], { FAKE_FAIL_REVIEW: '1' })
     assert.equal(r.code, 1)
-    assert.match(JSON.parse(r.out).failed[0].error, /claude exited 1: boom/)
+    assert.match(reading().failed[0].error, /claude exited 1: boom/)
     assert.equal(state().reviewed, null)
     const again = lntt(['--base', 'main'])
     assert.match(again.err, /round 2, no round read the whole branch/)
@@ -243,7 +260,7 @@ describe('lntt review, end to end with a fake agent', () => {
     const bad = lntt(['--base', 'main'])
     assert.equal(bad.code, 1)
     assert.match(bad.err, /lntt review: error: [\s\S]*timeoutMinutes must be >= 1/)
-    assert.equal(existsSync(join(repo, '.git/lntt-review.json')), false, 'no round on the defaults')
+    assert.equal(existsSync(stateFile()), false, 'no round on the defaults')
 
     git('revert', '--no-edit', 'HEAD')
     writeFileSync(join(repo, 'a.ts'), 'dirty\n')
@@ -299,8 +316,8 @@ describe('lntt review, end to end with a fake agent', () => {
       }),
     )
     git('commit', '-qam', 'two reviewers')
-    const r = lntt(['--base', 'main'], { FAKE_REVIEW: '- [warning] a.ts:1 — w — a' })
-    assert.equal(JSON.parse(r.out).findings[0].foundBy.length, 2)
+    lntt(['--base', 'main'], { FAKE_REVIEW: '- [warning] a.ts:1 — w — a' })
+    assert.equal(reading().findings[0].foundBy.length, 2)
     const reply = lntt(['reply', 'f1', 'it is fine'], {
       FAKE_REPLY_sonnet: 'withdrawn\\nok',
       FAKE_REPLY_opus: 'kept\\nno',
@@ -336,7 +353,7 @@ describe('lntt review, end to end with a fake agent', () => {
     git('commit', '-qam', 'optional')
     const r = lntt(['--base', 'main'], { FAKE_FAIL_REVIEW_opus: '1' })
     assert.equal(r.code, 0, r.err)
-    assert.equal(JSON.parse(r.out).skipped[0].agent, 'claude opus')
+    assert.equal(reading().skipped[0].agent, 'claude opus')
     assert.equal(state().reviewed, git('rev-parse', '--short', 'HEAD'), 'the next round reads only what comes after')
     assert.match(r.err, /lntt review: skipped code · claude opus/)
     const starts = readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8')
@@ -386,7 +403,7 @@ describe('lntt review, end to end with a fake agent', () => {
     const r = lntt(['--base', 'main'], { FAKE_SLEEP_opus: '1' })
     assert.equal(r.code, 0, r.err)
     assert.ok(Date.now() - began < 20000, 'not awaited')
-    assert.match(JSON.parse(r.out).skipped[0].error, /stopped: the other agents answered/)
+    assert.match(reading().skipped[0].error, /stopped: the other agents answered/)
   })
 
   test('the progress goes to stderr with tokens, and to a file of JSON events the band reads', () => {
@@ -527,7 +544,7 @@ describe('lntt review, end to end with a fake agent', () => {
     git('commit', '-qam', 'short round')
     const r = lntt(['--base', 'main'], { FAKE_SLEEP_sonnet: '1', FAKE_SLEEP_haiku: '1' })
     assert.equal(r.code, 1)
-    assert.match(JSON.parse(r.out).failed[0].error, /the round took longer than/)
+    assert.match(reading().failed[0].error, /the round took longer than/)
   })
 
   test('the progress names the Claude Code session that started the round, or none', () => {
@@ -561,7 +578,7 @@ describe('lntt review, end to end with a fake agent', () => {
   test('a branch that changes while the round runs makes the round fail', () => {
     const r = lntt(['--base', 'main'], { FAKE_DIRTY: '1' })
     assert.equal(r.code, 1)
-    assert.match(JSON.parse(r.out).failed.at(-1).error, /the branch moved/)
+    assert.match(reading().failed.at(-1).error, /the branch moved/)
   })
 
   test('a round that fails on another branch than the saved one keeps no reviewed commit', () => {
@@ -570,7 +587,36 @@ describe('lntt review, end to end with a fake agent', () => {
     writeFileSync(join(repo, 'a.ts'), 'export const a = 9\n')
     git('commit', '-qam', 'other branch')
     lntt(['--base', 'main'], { FAKE_FAIL_REVIEW: '1' })
-    assert.deepEqual([state().branch, state().reviewed], ['feat/2/y', null])
+    assert.deepEqual([state('feat/2/y').branch, state('feat/2/y').reviewed], ['feat/2/y', null])
+  })
+
+  const firstEvent = () =>
+    JSON.parse(readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8').split('\n')[0] as string)
+
+  test('an empty delta on a new branch saves round 1, and the branch reviewed before it keeps its round', () => {
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    writeFileSync(join(repo, 'a.ts'), 'export const a = 5\n')
+    git('commit', '-qam', 'again')
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    assert.equal(state().round, 2)
+    git('switch', '-q', 'main')
+    git('switch', '-qc', 'feat/3/z')
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    assert.equal(firstEvent().files, 0, 'the delta was empty')
+    const own = state('feat/3/z')
+    assert.deepEqual([own.branch, own.round, own.rounds], ['feat/3/z', 1, []])
+    assert.equal(state().round, 2, 'the branch reviewed before keeps its round')
+  })
+
+  test("an empty delta on the branch's own state keeps its round and its costs", () => {
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    writeFileSync(join(repo, 'a.ts'), 'export const a = 5\n')
+    git('commit', '-qam', 'again')
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    git('commit', '-q', '--allow-empty', '-m', 'empty')
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    assert.equal(firstEvent().files, 0, 'the delta was empty')
+    assert.deepEqual([state().round, state().rounds.length], [2, 2])
   })
 
   test('--plan as the first argument: an error leaves the progress file of the last round alone', () => {
@@ -681,7 +727,7 @@ describe('lntt review, end to end with a fake agent', () => {
     // The round runs with the usual deadline: on a slow machine a short one would stop the
     // round itself. Only the reply gets the short deadline.
     const r = lntt(['--base', 'main'], { FAKE_REVIEW: '- [warning] a.ts:1 — w — a' })
-    assert.equal(JSON.parse(r.out).findings[0].id, 'f1', r.err)
+    assert.equal(reading().findings[0].id, 'f1', r.err)
     writeFileSync(
       join(repo, '.agents/config.jsonc'),
       JSON.stringify({ delivery: { review: { roundTimeoutMinutes: 0.02, verify: false } } }),
@@ -726,7 +772,7 @@ describe('lntt review, end to end with a fake agent', () => {
 })
 
 describe('lntt review, with the findings the branch already closed', () => {
-  const ledger = () => JSON.parse(readFileSync(join(repo, '.git/lntt-review-ledger.json'), 'utf8'))
+  const ledger = () => JSON.parse(readFileSync(ledgerFile(), 'utf8'))
   const verifies = () => readFileSync(log, 'utf8').match(/^VERIFY /gm)?.length ?? 0
 
   test('a refuted finding is kept with its proof; repeated on the unchanged line, it is dropped and asks no verifier', () => {
@@ -750,9 +796,8 @@ describe('lntt review, with the findings the branch already closed', () => {
     git('commit', '-qam', 'b')
     const second = lntt(['--base', 'main'], { ...env, FAKE_VERIFY: 'confirmed\\nyes' })
     assert.equal(second.code, 0, second.err)
-    const out = JSON.parse(second.out)
     assert.deepEqual(
-      out.closed.map((f: { id: string; closedBy: string }) => [f.id, f.closedBy]),
+      reading().repeated.map((f: { id: string; closedBy: string }) => [f.id, f.closedBy]),
       [['f2', 'f1']],
     )
     assert.match(second.err, /round 2 done in \d+s: 0 findings, 0 refuted, 0 failed, 0 partial, 0 skipped, 1 closed/)
@@ -763,8 +808,8 @@ describe('lntt review, with the findings the branch already closed', () => {
     )
   })
 
-  test("another branch's ledger is none, a ledger that cannot be read is said and replaced", () => {
-    const path = join(repo, '.git/lntt-review-ledger.json')
+  test('a ledger file that names another branch is none, a ledger that cannot be read is said and replaced', () => {
+    const path = ledgerFile()
     const prompts = join(repo, '.git/prompts')
     const other = {
       id: 'f1',
@@ -777,28 +822,28 @@ describe('lntt review, with the findings the branch already closed', () => {
       outcome: 'refuted',
       proof: 'p',
     }
-    writeFileSync(path, JSON.stringify({ branch: 'feat/2/y', closed: [other] }))
+    put(path, JSON.stringify({ branch: 'feat/2/y', closed: [other] }))
     const env = { FAKE_REVIEW: '- [warning] a.ts:1 — w — a', FAKE_VERIFY: 'refuted\\nno', FAKE_PROMPTS: prompts }
     const r = lntt(['--base', 'main'], env)
     assert.equal(r.code, 0, r.err)
-    assert.deepEqual(JSON.parse(r.out).closed, [])
+    assert.deepEqual(reading().repeated, [])
     assert.doesNotMatch(readFileSync(prompts, 'utf8'), /Findings this branch already closed/)
     assert.equal(ledger().branch, 'feat/1/x')
 
-    writeFileSync(path, '{"branch": "feat/1/x", "clo')
+    put(path, '{"branch": "feat/1/x", "clo')
     writeFileSync(join(repo, 'a.ts'), 'export const a = 3\n')
     git('commit', '-qam', 'more')
     const cut = lntt(['--base', 'main'])
     assert.equal(cut.code, 0, cut.err)
-    assert.match(cut.err, /lntt-review-ledger\.json cannot be read: the branch starts a new ledger/)
+    assert.match(cut.err, /ledger\/feat%2F1%2Fx\.json cannot be read: the branch starts a new ledger/)
     assert.deepEqual(ledger().closed, [])
 
-    writeFileSync(path, '{"branch": "feat/1/x"}')
+    put(path, '{"branch": "feat/1/x"}')
     writeFileSync(join(repo, 'a.ts'), 'export const a = 4\n')
     git('commit', '-qam', 'again')
     const shapeless = lntt(['--base', 'main'])
     assert.equal(shapeless.code, 0, shapeless.err)
-    assert.match(shapeless.err, /lntt-review-ledger\.json cannot be read/, 'valid JSON with no closed list')
+    assert.match(shapeless.err, /ledger\/feat%2F1%2Fx\.json cannot be read/, 'valid JSON with no closed list')
     assert.deepEqual(ledger().closed, [])
   })
 
@@ -809,7 +854,7 @@ describe('lntt review, with the findings the branch already closed', () => {
       FAKE_FAIL_VERIFY: '1',
     })
     assert.equal(failed.code, 1, failed.err)
-    assert.equal(existsSync(join(repo, '.git/lntt-review-ledger.json')), false, 'a failed verifier: nothing closed')
+    assert.equal(existsSync(ledgerFile()), false, 'a failed verifier: nothing closed')
     assert.equal(lntt(['--base', 'main'], { FAKE_REVIEW: note, FAKE_VERIFY: 'refuted\\nno' }).code, 0)
     assert.deepEqual(
       ledger().closed.map((c: { id: string; severity: string; outcome: string }) => [c.id, c.severity, c.outcome]),
@@ -819,9 +864,9 @@ describe('lntt review, with the findings the branch already closed', () => {
       ],
       'the warning the failed round left, and the note of this one',
     )
-    const before = readFileSync(join(repo, '.git/lntt-review-ledger.json'), 'utf8')
+    const before = readFileSync(ledgerFile(), 'utf8')
     assert.equal(lntt(['--base', 'main'], { FAKE_REVIEW: note }).code, 0)
-    assert.equal(readFileSync(join(repo, '.git/lntt-review-ledger.json'), 'utf8'), before, 'an empty delta')
+    assert.equal(readFileSync(ledgerFile(), 'utf8'), before, 'an empty delta')
   })
 
   test('a finding its reviewers withdraw is closed, with the answer as the proof', () => {
@@ -842,16 +887,16 @@ describe('lntt review, with the findings the branch already closed', () => {
     const env = { FAKE_REVIEW: '- [warning] a.ts:1 — w — a', FAKE_VERIFY: 'confirmed\\nshown' }
     const first = lntt(['--base', 'main'], env)
     assert.equal(first.code, 1, 'round 1: a warning blocks')
-    assert.deepEqual(JSON.parse(first.out).blocking, ['blocker', 'warning'])
+    assert.deepEqual(reading().blocking, ['blocker', 'warning'])
     assert.doesNotMatch(first.err, /past delivery\.review\.warningRounds/)
 
     writeFileSync(join(repo, 'a.ts'), 'export const a = 3\n')
     git('commit', '-qam', 'more')
     const second = lntt(['--base', 'main'], env)
     assert.equal(second.code, 0, second.err)
-    assert.deepEqual(JSON.parse(second.out).blocking, ['blocker'])
+    assert.deepEqual(reading().blocking, ['blocker'])
     assert.deepEqual(
-      JSON.parse(second.out).findings.map((f: { id: string; verdict: string }) => [f.id, f.verdict]),
+      reading().findings.map((f: { id: string; verdict: string }) => [f.id, f.verdict]),
       [['f1', 'confirmed']],
       'the warning is still listed, for the pull request',
     )
@@ -923,17 +968,20 @@ describe('lntt review at delivery.review.maxRounds', () => {
       /^lntt review: limit: round 2 would pass delivery\.review\.maxRounds \(1\) on feat\/1\/x; still open: f1 \(warning, confirmed\)$/m,
     )
     assert.match(r.err, /pnpm exec lntt review allow <rounds>/)
-    const out = JSON.parse(r.out)
-    assert.deepEqual(
-      out.findings.map((f: { id: string }) => f.id),
-      ['f1'],
-    )
-    assert.deepEqual(out.limit, { round: 2, maxRounds: 1, allowed: 0 })
+    assert.match(r.out, /^ {2}f1 warning confirmed a\.ts:1 — w$/m)
+    assert.match(r.out, /^lntt review: feat\/1\/x: round 1 of 1, .*, round 2 refused at the limit; /)
     assert.equal(readFileSync(log, 'utf8'), calls, 'no agent started')
     assert.equal(state().round, 1)
-    assert.deepEqual(events().at(-1), { ...events().at(-1), type: 'limit', round: 2, maxRounds: 1, open: 1, failed: 0 })
+    assert.deepEqual(events().at(-1), {
+      ...events().at(-1),
+      type: 'limit',
+      round: 2,
+      maxRounds: 1,
+      allowed: 0,
+      open: 1,
+      failed: 0,
+    })
     // A branch nobody started with lntt worktree start sends nothing.
-    assert.equal(out.asked, undefined)
     assert.equal(events().at(-1).asked, undefined)
     assert.doesNotMatch(r.err, /limit: sent/)
     const box = join(repo, '.git/lntt-messages')
@@ -969,10 +1017,11 @@ describe('lntt review at delivery.review.maxRounds', () => {
       /^#1 feat\/1\/x: lntt review limit, round 2 would pass delivery\.review\.maxRounds \(1\); still open: f1 \(warning, confirmed\); decide: the pull request as it is, pnpm exec lntt review allow <rounds>, or an issue for what is open$/m,
     )
     assert.match(text, /^- f1 \[warning, confirmed\] a\.ts:1 — w — a$/m)
-    const out = JSON.parse(r.out)
-    assert.equal(out.asked.id, id)
-    assert.equal(out.asked.to, 'coordinator')
-    assert.equal(out.asked.path, join(repo, '.git/lntt-messages/to-coordinator-alpha', file as string))
+    assert.deepEqual(events().at(-1).asked, {
+      id,
+      to: 'coordinator',
+      path: join(repo, '.git/lntt-messages/to-coordinator-alpha', file as string),
+    })
     assert.match(
       r.err,
       new RegExp(
@@ -980,7 +1029,6 @@ describe('lntt review at delivery.review.maxRounds', () => {
         'm',
       ),
     )
-    assert.equal(events().at(-1).asked.id, id)
   })
 
   test('a plain child sends what is open to the orchestrator, the topic tagged with its issue', () => {
@@ -994,7 +1042,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
     const [file, ...more] = messages('to-orchestrator')
     assert.equal(more.length, 0)
     assert.match(file as string, /^\d{8}-\d{6}-issue-1-review-limit\.md$/)
-    assert.equal(JSON.parse(r.out).asked.id, (file as string).replace(/\.md$/, ''))
+    assert.equal(events().at(-1).asked.id, (file as string).replace(/\.md$/, ''))
     assert.match(r.err, /limit: sent \S+ to the orchestrator; wait with: pnpm exec lntt ask --wait /)
   })
 
@@ -1006,11 +1054,10 @@ describe('lntt review at delivery.review.maxRounds', () => {
 
     const first = lntt(['--base', 'main'], open)
     assert.equal(first.code, 3, first.err)
-    const id = JSON.parse(first.out).asked.id
+    const id = events().at(-1).asked.id
     const again = lntt(['--base', 'main'], open)
     assert.equal(again.code, 3, again.err)
     assert.deepEqual(messages('to-coordinator-alpha'), [`${id}.md`])
-    assert.equal(JSON.parse(again.out).asked.id, id)
     assert.equal(events().at(-1).asked.id, id)
     assert.match(
       again.err,
@@ -1024,7 +1071,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
     const after = lntt(['--base', 'main'], open)
     assert.equal(after.code, 3, after.err)
     assert.equal(messages('to-coordinator-alpha').length, 2)
-    assert.notEqual(JSON.parse(after.out).asked.id, id)
+    assert.notEqual(events().at(-1).asked.id, id)
     assert.match(after.err, /limit: sent /)
   })
 
@@ -1039,7 +1086,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
     const r = lntt(['--base', 'main'], open)
     assert.equal(r.code, 3, r.err)
     assert.deepEqual(messages('to-coordinator-alpha'), [`${id}.md`])
-    assert.equal(JSON.parse(r.out).asked.id, id)
+    assert.equal(events().at(-1).asked.id, id)
   })
 
   test('another branch’s pending limit does not stand for this one', () => {
@@ -1100,7 +1147,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
     const r = lntt(['--base', 'main'], open)
     assert.equal(r.code, 3, r.err)
     assert.match(r.err, /^lntt review: limit: could not send to the orchestrator: /m)
-    assert.equal(JSON.parse(r.out).asked, undefined)
+    assert.equal(events().at(-1).asked, undefined)
   })
 
   test('what is open at the limit: a withdrawn finding is not, a failed reviewer is', () => {
@@ -1111,7 +1158,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
     const r = lntt(['--base', 'main'])
     assert.equal(r.code, 3, r.err)
     assert.match(r.err, /still open: nothing$/m)
-    assert.deepEqual(JSON.parse(r.out).findings, [])
+    assert.doesNotMatch(r.out, /^ {2}f1 /m)
     assert.equal(events().at(-1).open, 0)
 
     git('switch', '-qc', 'feat/2/y')
@@ -1122,7 +1169,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
     const failed = lntt(['--base', 'main'])
     assert.equal(failed.code, 3, failed.err)
     assert.match(failed.err, /still open: code · claude sonnet failed$/m)
-    assert.equal(JSON.parse(failed.out).failed[0].agent, 'claude sonnet')
+    assert.match(failed.out, /^ {2}code · claude sonnet failed: claude exited 1: boom$/m)
     assert.equal(events().at(-1).failed, 1)
     assert.equal(readFileSync(log, 'utf8'), calls, 'no agent started')
   })
@@ -1165,16 +1212,15 @@ describe('lntt review at delivery.review.maxRounds', () => {
     const r = lntt(['--base', 'main'])
     assert.equal(r.code, 3, r.err)
     assert.match(r.err, /delivery\.review\.maxRounds \(1\) and 1 allowed on feat\/1\/x/)
-    assert.deepEqual(JSON.parse(r.out).limit, { round: 3, maxRounds: 1, allowed: 1 })
-    assert.equal(events().at(-1).allowed, 1)
+    assert.deepEqual(events().at(-1), { ...events().at(-1), round: 3, maxRounds: 1, allowed: 1 })
 
     git('switch', '-qc', 'feat/2/y')
     commit(5)
     assert.match(lntt(['allow', '1']).err, /no round on feat\/2\/y yet/)
-    assert.equal(state().branch, 'feat/1/x', "the other branch's state untouched")
-    assert.equal(state().allowed, 1)
+    assert.equal(state().allowed, 1, "the other branch's state untouched")
     assert.equal(lntt(['--base', 'main']).code, 0)
-    assert.equal(state().allowed, undefined, 'a new branch starts with nothing allowed')
+    assert.equal(state('feat/2/y').allowed, undefined, 'a new branch starts with nothing allowed')
+    assert.equal(state().allowed, 1)
   })
 
   test('--plan names the limit; a run with no new commit is not a round and is not stopped', () => {
@@ -1191,11 +1237,11 @@ describe('lntt review at delivery.review.maxRounds', () => {
     assert.match(lntt(['allow', '1']).err, /no round on feat\/1\/x yet/)
     assert.equal(existsSync(join(repo, '.git/lntt-review.progress')), false, 'a refused allow starts no progress')
     lntt(['--base', 'main'])
-    const before = readFileSync(join(repo, '.git/lntt-review.json'), 'utf8')
+    const before = readFileSync(stateFile(), 'utf8')
     for (const count of [['0'], [], ['abc'], ['1.5'], ['-1'], ['1', '2']]) {
       assert.equal(lntt(['allow', ...count]).code, 2, `allow ${count.join(' ')}`)
     }
-    assert.equal(readFileSync(join(repo, '.git/lntt-review.json'), 'utf8'), before)
+    assert.equal(readFileSync(stateFile(), 'utf8'), before)
   })
 
   test('a maxRounds below 1 does not validate', () => {
@@ -1218,11 +1264,12 @@ describe("the cost of the branch's rounds", () => {
     const first = lntt(['--base', 'main'])
     assert.equal(first.code, 0, first.err)
     assert.match(first.err, /round 1 done[^\n]*\nlntt review: branch total: 1 round, 1\.5k tokens, 0\.01 USD$/m)
+    const one = reading()
     commit(3)
     const second = lntt(['--base', 'main'], found)
     assert.equal(second.code, 1, second.err)
     assert.match(second.err, /round 2 done[^\n]*\nlntt review: branch total: 2 rounds, 4\.5k tokens, 0\.03 USD$/m)
-    const [one, two] = [JSON.parse(first.out), JSON.parse(second.out)]
+    const two = reading()
     const rounds = [
       { round: 1, head: one.head, tokens: one.tokens, usd: one.cost, noTokens: [], noUsd: [] },
       { round: 2, head: two.head, tokens: two.tokens, usd: two.cost, noTokens: [], noUsd: [] },
@@ -1263,14 +1310,15 @@ describe("the cost of the branch's rounds", () => {
     assert.equal(lntt(['cost']).out, 'no rounds\n')
     assert.equal(lntt(['--base', 'main']).code, 0)
     assert.deepEqual(
-      state().rounds.map((r: { head: string }) => r.head),
+      state('feat/2/y').rounds.map((r: { head: string }) => r.head),
       [git('rev-parse', '--short', 'HEAD')],
     )
+    assert.equal(state().rounds.length, 1, "the other branch's list is its own")
   })
 
   test('a state saved before the rounds were kept names the rounds it has no cost for', () => {
     lntt(['--base', 'main'])
-    const path = join(repo, '.git/lntt-review.json')
+    const path = stateFile()
     const saved = JSON.parse(readFileSync(path, 'utf8'))
     delete saved.rounds
     writeFileSync(path, JSON.stringify({ ...saved, round: 2 }))
@@ -1286,14 +1334,14 @@ describe("the cost of the branch's rounds", () => {
   test('a cost that cannot be read is an error, and leaves the progress of the last round alone', () => {
     lntt(['--base', 'main'])
     const progress = readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8')
-    writeFileSync(join(repo, '.git/lntt-review.json'), '{ cut short')
+    put(stateFile(), '{ cut short')
     const r = lntt(['cost'])
     assert.equal(r.code, 1)
     assert.match(r.err, /^lntt review: error: /m)
     assert.equal(readFileSync(join(repo, '.git/lntt-review.progress'), 'utf8'), progress)
   })
 
-  test('at the limit: the branch total on stderr, in the message to the parent and in the JSON', () => {
+  test('at the limit: the branch total on stderr and in the message to the parent', () => {
     const config = JSON.parse(CONFIG)
     config.delivery.review.maxRounds = 1
     writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify(config))
@@ -1309,7 +1357,6 @@ describe("the cost of the branch's rounds", () => {
     assert.equal(r.code, 3, r.err)
     const line = '1 round, 3k tokens, 0.02 USD'
     assert.match(r.err, new RegExp(`^lntt review: branch total: ${line.replace(/\./g, '\\.')}$`, 'm'))
-    assert.deepEqual(JSON.parse(r.out).total, { rounds: 1, tokens: 3000, usd: 0.02, unrecorded: [], line })
     const dir = join(repo, '.git/lntt-messages/to-orchestrator')
     const [file] = readdirSync(dir).filter((name) => name.endsWith('.md') && !name.endsWith('.answer.md'))
     assert.match(readFileSync(join(dir, file as string), 'utf8'), new RegExp(`^review cost: ${line}$`, 'm'))
@@ -1405,7 +1452,7 @@ describe('the lock of a worktree, held by a live process', () => {
 
   test('a reply takes it: refused while a round holds it, and the lock goes with the reply', () => {
     const r = lntt(['--base', 'main'], { FAKE_REVIEW: '- [warning] a.ts:1 — w — a' })
-    assert.equal(JSON.parse(r.out).findings[0].id, 'f1', r.err)
+    assert.equal(reading().findings[0].id, 'f1', r.err)
     writeFileSync(lock(), String(process.pid))
     const refused = lntt(['reply', 'f1', 'no'])
     assert.equal(refused.code, 1)
@@ -1595,10 +1642,10 @@ describe('lntt review status', () => {
     const r = lntt(['status', '--json', ...args], env)
     return { code: r.code, out: JSON.parse(r.out), err: r.err }
   }
-  const first = (out: string) => out.split('\n')[0] as string
+  const first = (out: string) => out.split('\n').find((line) => line.startsWith('lntt review: ')) as string
   const blocker = { FAKE_REVIEW: '- [blocker] a.ts:1 — wrong — fix', FAKE_VERIFY: 'confirmed\\na.ts:1 shows it' }
 
-  test('an own clean round: exit 0, one line, and the JSON', () => {
+  test('an own clean round: exit 0, the outcome line, and the JSON', () => {
     assert.equal(lntt(['--base', 'main']).code, 0)
     const head = git('rev-parse', '--short', 'HEAD')
     const r = lntt(['status'])
@@ -1609,7 +1656,7 @@ describe('lntt review status', () => {
         `^lntt review: feat/1/x: round 1 of 4, reviewed ${head}, clean; 0 open, 0 replied, 0 closed, 1\\.5k tokens, \\$0\\.01$`,
       ),
     )
-    assert.equal(r.out.trimEnd().split('\n').length, 1, 'nothing to act on: one line')
+    assert.equal(r.out.split('\n').at(-2), first(r.out), 'nothing to act on: the outcome line ends it')
     const j = json()
     assert.equal(j.code, 0)
     assert.equal(j.out.branch, 'feat/1/x')
@@ -1630,7 +1677,7 @@ describe('lntt review status', () => {
     assert.equal(j.out.state.tokens, 1500)
     assert.equal(j.out.state.cost, 0.01)
     assert.match(j.out.state.updated, /^\d{4}-\d\d-\d\dT/)
-    assert.deepEqual(Object.keys(j.out.state), [
+    for (const key of [
       'branch',
       'current',
       'updated',
@@ -1653,7 +1700,17 @@ describe('lntt review status', () => {
       'skipped',
       'tokens',
       'cost',
+      'findings',
+      'refuted',
+      'repeated',
+      'rounds',
     ])
+      assert.ok(key in j.out.state, key)
+    assert.deepEqual([j.out.state.findings, j.out.state.refuted, j.out.state.repeated], [[], [], []])
+    assert.deepEqual(
+      j.out.state.rounds.map((c: { round: number; usd: number }) => [c.round, c.usd]),
+      [[1, 0.01]],
+    )
   })
 
   test('a confirmed blocker: exit 1 and its line; kept by a reply it stays open, withdrawn it is closed', () => {
@@ -1730,30 +1787,22 @@ describe('lntt review status', () => {
     assert.match(first(lntt(['status']).out), /round 1 of 1, reviewed \w+, clean;/)
   })
 
-  test("another branch's state is named as such, with no finding of it; a detached HEAD has no round", () => {
+  test("another branch's state is none here and stays where it is; a detached HEAD has no round", () => {
     assert.equal(lntt(['--base', 'main'], blocker).code, 1)
     git('switch', '-qc', 'feat/2/y')
     const r = lntt(['status'])
     assert.equal(r.code, 4, r.err)
-    assert.match(
-      r.out,
-      /^lntt review: no round on feat\/2\/y; the state here is feat\/1\/x's, round 1, \d{4}-\d\d-\d\d \d\d:\d\d: pnpm exec lntt review status --clear removes it\n$/,
-    )
-    assert.doesNotMatch(r.out, /f1/)
-    const j = json()
-    assert.equal(j.code, 4)
-    assert.equal(j.out.branch, 'feat/2/y')
-    assert.equal(j.out.state.branch, 'feat/1/x')
-    assert.equal(j.out.state.current, false)
+    assert.equal(r.out, 'lntt review: no round on feat/2/y yet\n')
+    assert.deepEqual(json().out, { branch: 'feat/2/y', running: null, state: null })
+    assert.equal(existsSync(stateFile()), true, "feat/1/x's state is where it was")
 
+    git('switch', '-q', 'feat/1/x')
+    assert.equal(lntt(['status']).code, 1, 'found again on its own branch')
     git('switch', '-q', '--detach')
     const detached = lntt(['status'])
     assert.equal(detached.code, 4)
-    assert.match(detached.out, /^lntt review: no round on detached HEAD; the state here is feat\/1\/x's/)
-    const dj = json()
-    assert.equal(dj.code, 4)
-    assert.equal(dj.out.branch, null)
-    assert.equal(dj.out.state.current, false)
+    assert.equal(detached.out, 'lntt review: no round on detached HEAD yet\n')
+    assert.deepEqual(json().out, { branch: null, running: null, state: null })
   })
 
   test('no state: exit 4, and state null', () => {
@@ -1765,19 +1814,19 @@ describe('lntt review status', () => {
 
   test('a state that cannot be read: an error, exit 1, and --clear removes it', () => {
     for (const text of ['{', 'null', '[]', '{"branch":"feat/1/x","round":1,"reviewed":null}']) {
-      writeFileSync(gitDir('lntt-review.json'), text)
+      put(stateFile(), text)
       const r = lntt(['status'])
       assert.equal(r.code, 1, text)
       assert.match(
         r.err,
-        /^lntt review: error: .*lntt-review\.json cannot be read: pnpm exec lntt review status --clear removes it$/m,
+        /^lntt review: error: .*state\/feat%2F1%2Fx\.json cannot be read: pnpm exec lntt review status --clear removes it$/m,
         text,
       )
     }
     const cleared = lntt(['status', '--clear'])
     assert.equal(cleared.code, 0, cleared.err)
     assert.match(cleared.out, /^lntt review: cleared an unreadable state: its state$/m)
-    assert.ok(!existsSync(gitDir('lntt-review.json')))
+    assert.ok(!existsSync(stateFile()))
   })
 
   test('a state written before a field existed reads with its default', () => {
@@ -1789,9 +1838,11 @@ describe('lntt review status', () => {
     const old = state()
     delete old.result.blocking
     delete old.result.skipped
+    delete old.result.closed
+    delete old.rounds
     // A note listed before the blocker: the summary still puts what blocks first.
     old.result.findings.reverse()
-    writeFileSync(gitDir('lntt-review.json'), JSON.stringify(old))
+    put(stateFile(), JSON.stringify(old))
     const summary = lntt(['status'])
     assert.equal(summary.code, 1, summary.err)
     assert.match(
@@ -1801,6 +1852,8 @@ describe('lntt review status', () => {
     const json = JSON.parse(lntt(['status', '--json']).out)
     assert.deepEqual(json.state.blocking, ['blocker', 'warning'])
     assert.deepEqual(json.state.skipped, [])
+    assert.deepEqual(json.state.repeated, [])
+    assert.deepEqual(json.state.rounds, [])
   })
 
   test('a branch with no commit yet is named, not taken for a detached HEAD', () => {
@@ -1839,7 +1892,7 @@ describe('lntt review status', () => {
       const own = lntt(['status'])
       assert.equal(own.code, 0, own.err)
       assert.match(first(own.out), /^lntt review: feat\/1\/x: round 1 of 4, reviewed \w+, clean/)
-      assert.doesNotMatch(own.out, /f1|feat\/3\/z/)
+      assert.doesNotMatch(own.out, /^ {2}f1 |feat\/3\/z/m, 'a line of f1: the reviewed sha may hold those letters')
     } finally {
       repo = main
       rmSync(dir, { recursive: true, force: true })
@@ -1859,14 +1912,14 @@ describe('lntt review status', () => {
       const clear = lntt(['status', '--clear'])
       assert.equal(clear.code, 1)
       assert.match(clear.err, /^lntt review: error: /m)
-      assert.equal(existsSync(gitDir('lntt-review.json')), true)
+      assert.equal(existsSync(stateFile()), true)
       assert.equal(readFileSync(gitDir('lntt-review.lock'), 'utf8'), String(sleeper.pid))
     } finally {
       sleeper.kill()
     }
   })
 
-  test("--clear: refused on the current unmerged branch; another branch's state, ledger and progress go, the lock stays", () => {
+  test('--clear: refused on the current unmerged branch, whose state stays; the lock is never removed', () => {
     assert.equal(lntt(['--base', 'main'], blocker).code, 1)
     assert.equal(lntt(['reply', 'f1', 'fair'], { FAKE_REPLY: 'withdrawn\\nfair' }).code, 0)
     const refused = lntt(['status', '--clear'])
@@ -1875,45 +1928,40 @@ describe('lntt review status', () => {
       refused.err,
       /^lntt review: error: the state is feat\/1\/x's, the current branch, and whether it is merged cannot be told \(.+\): nothing cleared$/m,
     )
-    assert.equal(existsSync(gitDir('lntt-review.json')), true)
+    assert.equal(existsSync(stateFile()), true)
 
-    git('switch', '-qc', 'feat/2/y')
     const dead = spawnSync('true').pid as number
     writeFileSync(gitDir('lntt-review.lock'), String(dead))
     assert.equal(json().out.running, null, 'a lock whose process is gone is no round running')
-    const r = lntt(['status', '--clear'])
-    assert.equal(r.code, 0, r.err)
-    assert.equal(r.out, "lntt review: cleared feat/1/x's state, ledger and progress\n")
-    assert.equal(existsSync(gitDir('lntt-review.json')), false)
-    assert.equal(existsSync(gitDir('lntt-review-ledger.json')), false)
-    assert.equal(existsSync(gitDir('lntt-review.progress')), false)
+    assert.equal(lntt(['status', '--clear']).code, 1, 'still not merged')
+    assert.equal(existsSync(stateFile()), true)
+    assert.equal(existsSync(ledgerFile()), true)
     assert.equal(readFileSync(gitDir('lntt-review.lock'), 'utf8'), String(dead), 'the lock is never removed')
 
+    git('switch', '-qc', 'feat/2/y')
     const nothing = lntt(['status', '--clear'])
     assert.equal(nothing.code, 0)
     assert.equal(nothing.out, 'lntt review: nothing to clear\n')
+    assert.equal(existsSync(stateFile()), true, "another branch's state is not this branch's to clear")
   })
 
-  test("--clear keeps the current branch's ledger while it removes another branch's state", () => {
-    assert.equal(lntt(['--base', 'main'], blocker).code, 1)
-    git('switch', '-qc', 'feat/2/y')
-    const ledger = JSON.stringify({ branch: 'feat/2/y', closed: [] })
-    writeFileSync(gitDir('lntt-review-ledger.json'), ledger)
-    const r = lntt(['status', '--clear'])
-    assert.equal(r.code, 0, r.err)
-    assert.equal(r.out, "lntt review: cleared feat/1/x's state and progress\n")
-    assert.equal(existsSync(gitDir('lntt-review.json')), false)
-    assert.equal(readFileSync(gitDir('lntt-review-ledger.json'), 'utf8'), ledger)
-  })
-
-  test('a ledger that cannot be read closes nothing in status, and --clear removes it', () => {
+  test('--clear of a state that cannot be read keeps the ledger of a branch that is not merged', () => {
     assert.equal(lntt(['--base', 'main'], blocker).code, 1)
     assert.equal(lntt(['reply', 'f1', 'fair'], { FAKE_REPLY: 'withdrawn\\nfair' }).code, 0)
-    writeFileSync(gitDir('lntt-review-ledger.json'), '{')
+    const ledger = readFileSync(ledgerFile(), 'utf8')
+    put(stateFile(), '{')
+    const r = lntt(['status', '--clear'])
+    assert.equal(r.code, 0, r.err)
+    assert.equal(r.out, 'lntt review: cleared an unreadable state: its state and progress\n')
+    assert.equal(existsSync(stateFile()), false)
+    assert.equal(readFileSync(ledgerFile(), 'utf8'), ledger)
+  })
+
+  test('a ledger that cannot be read closes nothing in status', () => {
+    assert.equal(lntt(['--base', 'main'], blocker).code, 1)
+    assert.equal(lntt(['reply', 'f1', 'fair'], { FAKE_REPLY: 'withdrawn\\nfair' }).code, 0)
+    put(ledgerFile(), '{')
     assert.deepEqual(json().out.state.closed, [])
-    git('switch', '-qc', 'feat/2/y')
-    assert.equal(lntt(['status', '--clear']).code, 0)
-    assert.equal(existsSync(gitDir('lntt-review-ledger.json')), false)
   })
 
   test('--clear on the current branch once it is merged into the base', () => {
@@ -1942,13 +1990,10 @@ describe('lntt review status', () => {
       assert.equal(unknown.code, 1)
       assert.match(unknown.err, /whether it is merged cannot be told \(the open candidate is unknown/)
       git('checkout', '-q', '--', '.agents/config.jsonc')
-      git('switch', '-qc', 'feat/2/y', 'main')
-      assert.match(lntt(['status']).out, /the state here is feat\/1\/x's, round 1, [^:]+:\d\d, merged: /)
-      git('switch', '-q', 'feat/1/x')
       const r = lntt(['status', '--clear'])
       assert.equal(r.code, 0, r.err)
       assert.equal(r.out, "lntt review: cleared feat/1/x's state, ledger and progress\n")
-      assert.equal(existsSync(gitDir('lntt-review.json')), false)
+      assert.equal(existsSync(stateFile()), false)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -1957,5 +2002,782 @@ describe('lntt review status', () => {
   test('--clear with --json, and an unknown flag: usage, exit 2', () => {
     assert.equal(lntt(['status', '--clear', '--json']).code, 2)
     assert.equal(lntt(['status', '--nope']).code, 2)
+  })
+})
+
+// What an agent reads of a round: a summary by default, each level folded, a part of the
+// state with a jq query.
+describe('reading a part of the review state', () => {
+  const blocker = { FAKE_REVIEW: '- [blocker] a.ts:1 — wrong — fix', FAKE_VERIFY: 'confirmed\\na.ts:1 shows it' }
+  const commit = (value: number) => {
+    writeFileSync(join(repo, 'a.ts'), `export const a = ${value}\n`)
+    git('commit', '-qam', `a = ${value}`)
+  }
+  const query = (expression: string, ...flags: string[]) => lntt(['status', `--query=${expression}`, ...flags])
+  const withMaxRounds = (n: number) => {
+    const config = JSON.parse(CONFIG)
+    config.delivery.review.maxRounds = n
+    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify(config))
+    git('commit', '-qam', `maxRounds ${n}`)
+  }
+
+  const finding = (id: string, severity: string, verdict: string) => ({
+    id,
+    severity,
+    verdict,
+    path: 'a.ts',
+    line: 1,
+    what: `${id} what`,
+    action: 'act',
+    foundBy: [],
+    proofs: [],
+  })
+  // A state with something in every list, written by hand: no round produces all of it.
+  const fullState = () => {
+    const cost = (round: number) => ({ round, head: 'h', tokens: 1, usd: 0.5, noTokens: [], noUsd: [] })
+    put(
+      stateFile(),
+      JSON.stringify({
+        branch: 'feat/1/x',
+        round: 4,
+        reviewed: 'abc',
+        result: {
+          round: 4,
+          base: 'b',
+          head: 'h',
+          scope: 'first round',
+          lenses: ['code'],
+          findings: [
+            finding('f1', 'note', 'unverified'),
+            finding('f2', 'blocker', 'confirmed'),
+            finding('f3', 'warning', 'withdrawn'),
+          ],
+          refuted: [finding('f4', 'warning', 'refuted'), finding('f5', 'blocker', 'refuted')],
+          failed: [{ lens: 'code', agent: 'claude x', error: 'boom' }],
+          partial: [{ lens: 'tests', agent: 'claude y', lines: ['l1', 'l2'], reply: 'r' }],
+          skipped: [],
+          closed: [{ ...finding('f6', 'warning', 'unverified'), closedBy: 'f0', closedWhat: 'the old text' }],
+          blocking: ['blocker', 'warning'],
+          cost: 1.5,
+          tokens: 2000,
+          noTokens: [],
+          noUsd: [],
+        },
+        rounds: [cost(1), cost(2), cost(3), cost(4)],
+      }),
+    )
+    put(ledgerFile(), JSON.stringify({ branch: 'feat/1/x', closed: ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id })) }))
+  }
+
+  describe('status, folded', () => {
+    const THINGS = [
+      'lntt review: feat/1/x: round 4 of 4, reviewed abc, not clean, at the limit; 2 open (1 blocking), 1 replied, 5 closed, 1 failed, 1 partial, 2k tokens, $1.50',
+      '  f2 blocker confirmed a.ts:1 — f2 what',
+      '  f1 note unverified a.ts:1 — f1 what',
+      '  code · claude x failed: boom',
+      '  tests · claude y: 2 lines not read',
+      '  f6 warning repeats f0 a.ts:1 — f6 what',
+    ]
+
+    test('each level as its count, a zero shown, then the outcome and what to act on', () => {
+      fullState()
+      const r = lntt(['status'])
+      assert.equal(r.code, 3, r.err)
+      assert.equal(
+        r.out,
+        `${[
+          'findings: 3 (2 open)',
+          'refuted: 2',
+          'repeated: 1',
+          'closed: 5',
+          'failed: 1',
+          'partial: 1',
+          'skipped: 0',
+          'rounds: 4',
+          ...THINGS,
+        ].join('\n')}\n`,
+      )
+    })
+
+    test('a clean round has every count at zero, and its one line', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      const head = git('rev-parse', '--short', 'HEAD')
+      const r = lntt(['status'])
+      assert.equal(r.code, 0, r.err)
+      assert.equal(
+        r.out,
+        [
+          'findings: 0 (0 open)',
+          'refuted: 0',
+          'repeated: 0',
+          'closed: 0',
+          'failed: 0',
+          'partial: 0',
+          'skipped: 0',
+          'rounds: 1',
+          `lntt review: feat/1/x: round 1 of 4, reviewed ${head}, clean; 0 open, 0 replied, 0 closed, 1.5k tokens, $0.01`,
+          '',
+        ].join('\n'),
+      )
+    })
+
+    test('a failed agent takes one short line, its whole error left in the state', () => {
+      fullState()
+      const saved = JSON.parse(readFileSync(stateFile(), 'utf8'))
+      saved.result.failed = [
+        { lens: 'code', agent: 'a', error: 'first\nsecond' },
+        { lens: 'code', agent: 'b', error: 'x'.repeat(40_000) },
+      ]
+      put(stateFile(), JSON.stringify(saved))
+      const lines = lntt(['status']).out.split('\n')
+      assert.ok(lines.includes('  code · a failed: first …'), lines.join('\n'))
+      assert.ok(lines.includes(`  code · b failed: ${'x'.repeat(200)}…`), 'capped')
+      assert.equal(lines.includes('second'), false)
+      assert.equal(query('.state.failed[0].error').out, 'first\nsecond\n')
+    })
+
+    test('a skipped agent is counted on the outcome line', () => {
+      fullState()
+      const saved = JSON.parse(readFileSync(stateFile(), 'utf8'))
+      saved.result.skipped = [{ lens: 'code', agent: 'a', error: 'e' }]
+      put(stateFile(), JSON.stringify(saved))
+      assert.match(lntt(['status']).out, /, 1 partial, 1 skipped, /)
+    })
+
+    test("no state, and another branch's: the one line, nothing folded", () => {
+      assert.equal(lntt(['status']).out, 'lntt review: no round on feat/1/x yet\n')
+      fullState()
+      git('switch', '-qc', 'feat/2/y')
+      const r = lntt(['status'])
+      assert.equal(r.code, 4, r.err)
+      assert.equal(r.out.split('\n').length, 2, r.out)
+      assert.equal(r.out, 'lntt review: no round on feat/2/y yet\n')
+    })
+
+    test('a state saved before scope and lenses existed reads with their defaults', () => {
+      fullState()
+      const saved = JSON.parse(readFileSync(stateFile(), 'utf8'))
+      delete saved.result.scope
+      delete saved.result.lenses
+      put(stateFile(), JSON.stringify(saved))
+      assert.equal(query('.state | [.scope, .lenses]').out, '["",[]]\n')
+    })
+
+    test('--json carries the last round whole, and the rounds', () => {
+      fullState()
+      const { state } = JSON.parse(lntt(['status', '--json']).out)
+      const ids = (list: { id: string }[]) => list.map((f) => f.id)
+      assert.deepEqual(ids(state.findings), ['f1', 'f2', 'f3'])
+      assert.deepEqual(ids(state.open), ['f1', 'f2'])
+      assert.deepEqual(ids(state.refuted), ['f4', 'f5'])
+      assert.deepEqual(ids(state.closed), ['a', 'b', 'c', 'd', 'e'])
+      assert.deepEqual(state.repeated[0].closedBy, 'f0')
+      assert.deepEqual(state.repeated[0].closedWhat, 'the old text')
+      assert.deepEqual([state.scope, state.lenses], ['first round', ['code']])
+      assert.deepEqual(
+        state.rounds.map((c: { round: number }) => c.round),
+        [1, 2, 3, 4],
+      )
+    })
+  })
+
+  describe('status --query', () => {
+    test('a path, a slice and the shorthand for several fields; exit as status', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      const clean = query('.state.clean')
+      assert.deepEqual([clean.code, clean.out], [0, 'true\n'])
+      commit(3)
+      assert.equal(lntt(['--base', 'main'], blocker).code, 1)
+      const path = query('.state.findings[] | select(.id=="f1") | .severity')
+      assert.deepEqual([path.code, path.out], [1, 'blocker\n'])
+      const slice = query('.state.rounds[1:3][] | {round,usd}')
+      assert.deepEqual([slice.code, slice.out], [1, '{"round":2,"usd":0.02}\n'])
+    })
+
+    test('a string is raw, and quoted with --json; several outputs take a line each', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      assert.equal(query('.branch').out, 'feat/1/x\n')
+      assert.equal(query('.branch', '--json').out, '"feat/1/x"\n')
+      assert.equal(query('.branch, .state.round').out, 'feat/1/x\n1\n')
+      assert.equal(query('.branch, .state.round', '--json').out, '"feat/1/x"\n1\n')
+      assert.equal(query('.state.blocking', '--json').out, '["blocker","warning"]\n', 'compact')
+      assert.equal(query('empty').out, '', 'no output, no empty line')
+    })
+
+    test('an expression that does not compile: exit 2, nothing on stdout, the message on stderr', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      const r = query('.state |')
+      assert.equal(r.code, 2)
+      assert.equal(r.out, '')
+      assert.match(r.err, /jq: error: syntax error/)
+    })
+
+    test('a failure while running: exit 2, and what jq had printed is dropped', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      const r = query('.state.round, error("boom")')
+      assert.equal(r.code, 2)
+      assert.equal(r.out, '')
+      assert.match(r.err, /boom/)
+      const halted = query('.state.round, ("stop" | halt_error(7))')
+      assert.equal(halted.code, 2, 'whatever exit jq halts with')
+      assert.equal(halted.out, '')
+      assert.match(halted.err, /stop/)
+    })
+
+    test('no state: exit 4, a failure on what is not there says no round, and a bad expression stays a usage error', () => {
+      const failing = query('.state.open[]')
+      assert.equal(failing.code, 4)
+      assert.equal(failing.out, '')
+      assert.match(failing.err, /^lntt review: no round on feat\/1\/x yet\njq: error .*Cannot iterate over null/)
+      const state = query('.state')
+      assert.deepEqual([state.code, state.out], [4, 'null\n'])
+      const bad = query('.state |')
+      assert.equal(bad.code, 2)
+      assert.match(bad.err, /syntax error/)
+    })
+
+    test("another branch's state is none here: exit 4, and a failure on it too", () => {
+      fullState()
+      git('switch', '-qc', 'feat/2/y')
+      const r = query('.state')
+      assert.deepEqual([r.code, r.out], [4, 'null\n'])
+      assert.equal(query('.state.round[]').code, 4)
+    })
+
+    test('not clean exits 1, at the limit 3', () => {
+      assert.equal(lntt(['--base', 'main'], blocker).code, 1)
+      assert.equal(query('.state.clean').code, 1)
+      withMaxRounds(1)
+      const limit = query('.state.atLimit')
+      assert.deepEqual([limit.code, limit.out], [3, 'true\n'])
+    })
+
+    test('the wasm giving up is a jq failure: exit 2, whatever the state says', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      const r = query('def f: 1+f; f')
+      assert.equal(r.code, 2, r.err)
+      assert.equal(r.out, '')
+      assert.match(r.err, /jq gave up/)
+    })
+
+    test('a signal ends a query that does not end', async () => {
+      const child = spawn(process.execPath, [BIN, 'review', 'status', '--query=repeat(1)|empty'], {
+        cwd: repo,
+        env: { HOME: repo, PATH: [bin, dirname(process.execPath), '/usr/bin', '/bin'].join(':') },
+        stdio: 'ignore',
+      })
+      const ended = new Promise<string | null>((resolve) => child.on('exit', (_, signal) => resolve(signal)))
+      // The time to reach the query; a slow machine only signals it sooner, which also ends it.
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+      child.kill('SIGTERM')
+      const hung = setTimeout(() => child.kill('SIGKILL'), 8000)
+      const signal = await ended
+      clearTimeout(hung)
+      assert.equal(signal, 'SIGTERM')
+    })
+
+    test('a long document arrives whole through a pipe', () => {
+      fullState()
+      const saved = JSON.parse(readFileSync(stateFile(), 'utf8'))
+      saved.result.findings[0].what = 'x'.repeat(500_000)
+      put(stateFile(), JSON.stringify(saved))
+      const json = lntt(['status', '--json'])
+      assert.equal(JSON.parse(json.out).state.findings[0].what.length, 500_000)
+      assert.equal(query('.state.findings[0].what').out.length, 500_001)
+    })
+
+    test('a reader that leaves early does not make it fail', () => {
+      fullState()
+      const saved = JSON.parse(readFileSync(stateFile(), 'utf8'))
+      saved.result.findings[0].what = 'x'.repeat(1_000_000)
+      put(stateFile(), JSON.stringify(saved))
+      const shell = `{ '${process.execPath}' '${BIN}' review status --json; echo "code $?" >&2; } | head -c 1 >/dev/null`
+      const r = spawnSync('sh', ['-c', shell], {
+        cwd: repo,
+        encoding: 'utf8',
+        env: { HOME: repo, PATH: [bin, dirname(process.execPath), '/usr/bin', '/bin'].join(':') },
+      })
+      assert.equal(r.stderr, 'code 3\n')
+    })
+
+    test('--clear does not take it, and it needs an expression', () => {
+      assert.equal(lntt(['status', '--clear', '--query=.']).code, 2)
+      assert.equal(lntt(['status', '--query']).code, 2)
+      assert.equal(lntt(['status', '--query=']).code, 2)
+    })
+
+    test('an expression starting with a dash is an expression, never a flag of jq', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      for (const expression of ['--help', '--version', '-h', '-n', '-e', '--arg', '--']) {
+        const r = query(expression)
+        assert.equal(r.code, 2, expression)
+        assert.equal(r.out, '', expression)
+        assert.match(r.err, /jq: error/, expression)
+      }
+      assert.deepEqual([query('-1').code, query('-1').out], [0, '-1\n'], 'one that is a valid expression runs as one')
+    })
+
+    test('what jq itself sends to stderr on a success goes there', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      const r = query('.branch | debug')
+      assert.equal(r.code, 0)
+      assert.equal(r.out, 'feat/1/x\n')
+      assert.match(r.err, /DEBUG/)
+    })
+  })
+
+  describe("a round's stdout", () => {
+    // The lines of status past its folded block: what a round prints.
+    const statusThings = () => `${lntt(['status']).out.split('\n').slice(8).join('\n')}`
+
+    test('is the summary of status, a finding per line and no JSON', () => {
+      const r = lntt(['--base', 'main'], blocker)
+      assert.equal(r.code, 1, r.err)
+      const head = git('rev-parse', '--short', 'HEAD')
+      assert.equal(
+        r.out,
+        [
+          `lntt review: feat/1/x: round 1 of 4, reviewed ${head}, not clean; 1 open (1 blocking), 0 replied, 0 closed, 3k tokens, $0.02`,
+          '  f1 blocker confirmed a.ts:1 — wrong',
+          '',
+        ].join('\n'),
+      )
+      assert.equal(r.out, statusThings())
+    })
+
+    test('a clean round is its one line', () => {
+      const r = lntt(['--base', 'main'])
+      assert.equal(r.code, 0, r.err)
+      assert.equal(r.out.split('\n').length, 2, r.out)
+      assert.equal(r.out, statusThings())
+    })
+
+    test('names a failed reviewer', () => {
+      const r = lntt(['--base', 'main'], { FAKE_FAIL_REVIEW: '1' })
+      assert.equal(r.code, 1)
+      assert.equal(
+        r.out,
+        [
+          'lntt review: feat/1/x: round 1 of 4, reviewed nothing, not clean; 0 open, 0 replied, 0 closed, 1 failed',
+          '  code · claude sonnet failed: claude exited 1: boom',
+          '',
+        ].join('\n'),
+      )
+      assert.equal(r.out, statusThings())
+    })
+
+    test('names a lens read in part, and the lines stay in the state', () => {
+      const r = lntt(['--base', 'main'], {
+        FAKE_REVIEW: '- [warning] a.ts:1 — x — y\\n- [blocker] something went wrong',
+        FAKE_VERIFY: 'confirmed\\nshown',
+      })
+      assert.equal(r.code, 1, r.err)
+      assert.match(r.out, /^ {2}code · claude sonnet: 1 lines not read$/m)
+      assert.equal(r.out, statusThings())
+      assert.equal(query('.state.partial[0].lines[0]').out, '- [blocker] something went wrong\n')
+    })
+
+    test('names a finding that repeats a closed one; its text and the refuted ones are read with status', () => {
+      const env = { FAKE_REVIEW: '- [warning] a.ts:1 — a may be 2 — check it', FAKE_VERIFY: 'refuted\\nthe point' }
+      const first = lntt(['--base', 'main'], env)
+      assert.equal(first.code, 0, first.err)
+      assert.doesNotMatch(first.out, /a may be 2/, 'a refuted finding is nothing to do')
+      assert.equal(query('.state.refuted[] | .what').out, 'a may be 2\n')
+
+      writeFileSync(join(repo, 'a.ts'), 'export const a = 2\nexport const b = 1\n')
+      git('commit', '-qam', 'b')
+      const second = lntt(['--base', 'main'], env)
+      assert.equal(second.code, 0, second.err)
+      assert.match(second.out, /^ {2}f2 warning repeats f1 a\.ts:1 — a may be 2$/m)
+      assert.equal(second.out, statusThings())
+      assert.equal(query('.state.repeated[] | "\\(.id) \\(.closedBy) \\(.closedWhat)"').out, 'f2 f1 a may be 2\n')
+    })
+
+    test('--json is not a flag of a round; stderr still ends the round as it did', () => {
+      const refused = lntt(['--json'])
+      assert.equal(refused.code, 2)
+      assert.equal(refused.out, '')
+      const r = lntt(['--base', 'main'], blocker)
+      assert.match(r.err, /round 1 done in \d+s: 1 findings, 0 refuted/)
+      assert.match(r.err, /lntt review: branch total: 1 round/)
+    })
+
+    test('a reply answers in JSON, as it did', () => {
+      assert.equal(lntt(['--base', 'main'], blocker).code, 1)
+      const reply = lntt(['reply', 'f1', 'no'], { FAKE_REPLY: 'kept\\nstill wrong' })
+      assert.equal(JSON.parse(reply.out).id, 'f1')
+    })
+  })
+
+  describe("the limit's stdout", () => {
+    test('is the summary, with exit 3; what was asked and the total are on stderr', () => {
+      withMaxRounds(1)
+      assert.equal(lntt(['--base', 'main'], blocker).code, 1)
+      commit(3)
+      const r = lntt(['--base', 'main'], blocker)
+      assert.equal(r.code, 3, r.err)
+      assert.match(
+        r.out,
+        /^lntt review: feat\/1\/x: round 1 of 1, reviewed \w+, not clean, at the limit, round 2 refused at the limit; 1 open \(1 blocking\), 0 replied, 0 closed, 3k tokens, \$0\.02\n {2}f1 blocker confirmed a\.ts:1 — wrong\n$/,
+      )
+      assert.equal(
+        r.out.replace(', round 2 refused at the limit', ''),
+        lntt(['status']).out.split('\n').slice(8).join('\n'),
+      )
+      assert.match(r.err, /lntt review: branch total: 1 round, 3k tokens, 0\.02 USD/)
+    })
+
+    test('a state written before a field existed is summed up too', () => {
+      withMaxRounds(1)
+      assert.equal(lntt(['--base', 'main'], blocker).code, 1)
+      const old = state()
+      delete old.result.blocking
+      delete old.result.failed
+      delete old.result.partial
+      delete old.result.closed
+      put(stateFile(), JSON.stringify(old))
+      commit(3)
+      const r = lntt(['--base', 'main'], blocker)
+      assert.equal(r.code, 3, r.err)
+      assert.match(r.out, /^ {2}f1 blocker confirmed a\.ts:1 — wrong$/m)
+    })
+  })
+})
+
+// One state and one ledger per branch, in the clone's common git directory unless the
+// operator or the project names another place.
+describe("where lntt review keeps a branch's rounds", () => {
+  const note = '- [note] (no anchor) — n — a'
+  const commit = (value: number) => {
+    writeFileSync(join(repo, 'a.ts'), `export const a = ${value}\n`)
+    git('commit', '-qam', `a = ${value}`)
+  }
+  const dirs: string[] = []
+  const temp = (name: string) => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), `lntt-review-${name}-`)))
+    dirs.push(dir)
+    return dir
+  }
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  })
+  // A home with an operator profile; HOME decides which profile lntt reads.
+  const home = (profile: object) => {
+    const dir = temp('home')
+    mkdirSync(join(dir, '.agents'))
+    writeFileSync(join(dir, '.agents/operator.jsonc'), JSON.stringify(profile))
+    return dir
+  }
+
+  test('two branches reviewed in turn in one worktree each keep their round and their ledger', () => {
+    assert.equal(lntt(['--base', 'main'], { FAKE_REVIEW: note }).code, 0)
+    commit(3)
+    assert.equal(lntt(['--base', 'main'], { FAKE_REVIEW: note }).code, 0)
+    const x = readFileSync(ledgerFile('feat/1/x'), 'utf8')
+    git('switch', '-q', 'main')
+    git('switch', '-qc', 'feat/2/y')
+    commit(7)
+    assert.equal(lntt(['--base', 'main'], { FAKE_REVIEW: note }).code, 0)
+    assert.deepEqual([state('feat/2/y').round, state('feat/2/y').rounds.length], [1, 1])
+    assert.equal(JSON.parse(readFileSync(ledgerFile('feat/2/y'), 'utf8')).branch, 'feat/2/y')
+    assert.deepEqual([state('feat/1/x').round, state('feat/1/x').rounds.length], [2, 2], "x's rounds are x's")
+    assert.equal(readFileSync(ledgerFile('feat/1/x'), 'utf8'), x, "x's ledger is untouched")
+
+    git('switch', '-q', 'feat/1/x')
+    commit(4)
+    assert.equal(lntt(['--base', 'main'], { FAKE_REVIEW: note }).code, 0)
+    assert.equal(state('feat/1/x').round, 3, 'back on x, the next round is its third')
+    assert.equal(state('feat/2/y').round, 1)
+  })
+
+  test("a branch's state is found from another worktree of the clone, and the lock and progress stay with each", () => {
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    git('switch', '-q', 'main')
+    const other = join(temp('worktree'), 'wt')
+    git('worktree', 'add', '-q', other, 'feat/1/x')
+    const seen = JSON.parse(lntt(['status', '--json'], {}, other).out)
+    assert.equal(seen.state.round, 1)
+    assert.equal(seen.state.branch, 'feat/1/x')
+
+    writeFileSync(join(other, 'a.ts'), 'export const a = 8\n')
+    execFileSync('git', ['commit', '-qam', 'from the worktree'], { cwd: other })
+    const r = lntt(['--base', 'main'], {}, other)
+    assert.equal(r.code, 0, r.err)
+    assert.equal(state().round, 2, 'the worktree continued the branch where the first left it')
+    const own = join(repo, '.git/worktrees/wt')
+    assert.equal(existsSync(join(own, 'lntt-review.progress')), true, "the worktree's own progress")
+    assert.equal(existsSync(join(repo, '.git/lntt-review.progress')), true, "and the main checkout's own")
+    assert.deepEqual(readdirSync(storeDir()).sort(), ['ledger', 'state'], 'no lock or progress in the place')
+  })
+
+  test("the operator's place is used, with a folder per repository; the project's is the default and loses to it", () => {
+    git('remote', 'add', 'origin', 'git@github.com:org/proj.git')
+    const mine = temp('mine')
+    const theirs = temp('theirs')
+    const config = JSON.parse(CONFIG)
+    config.delivery.review.stateDir = theirs
+    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify(config))
+    git('commit', '-qam', 'the project names a place')
+
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    assert.equal(existsSync(stateFile('feat/1/x', join(theirs, 'org/proj'))), true, "the project's place")
+    assert.equal(existsSync(stateFile()), false, 'not the common directory')
+
+    const env = { HOME: home({ review: { stateDir: mine } }) }
+    commit(5)
+    assert.equal(lntt(['--base', 'main'], env).code, 0)
+    assert.equal(existsSync(stateFile('feat/1/x', join(mine, 'org/proj'))), true, "the operator's place wins")
+    assert.equal(JSON.parse(lntt(['status', '--json'], env).out).state.round, 1, 'and holds the branch from now on')
+  })
+
+  test('a place with ~ starts at the home; with no origin the repository is keyed by its git directory', () => {
+    const env = { HOME: home({ review: { stateDir: '~/store' } }) }
+    assert.equal(lntt(['--base', 'main'], env).code, 0)
+    const [keyed] = readdirSync(join(env.HOME, 'store/local'))
+    assert.match(keyed as string, /^[0-9a-f]{12}$/)
+    assert.equal(existsSync(stateFile('feat/1/x', join(env.HOME, 'store/local', keyed as string))), true)
+  })
+
+  test("the project's place, relative, starts at the main checkout", () => {
+    git('remote', 'add', 'origin', 'https://github.com/org/proj')
+    const config = JSON.parse(CONFIG)
+    config.delivery.review.stateDir = '.git/elsewhere'
+    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify(config))
+    git('commit', '-qam', 'a relative place')
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    assert.equal(existsSync(stateFile('feat/1/x', join(repo, '.git/elsewhere/org/proj'))), true)
+  })
+
+  test("the operator's place must be absolute or start with ~", () => {
+    const r = lntt(['--base', 'main'], { HOME: home({ review: { stateDir: 'relative/dir' } }) })
+    assert.equal(r.code, 1)
+    assert.match(r.err, /review\.stateDir must be an absolute path or start with ~: relative\/dir/)
+  })
+
+  describe('--prune', () => {
+    const origin = () => {
+      const dir = temp('origin')
+      execFileSync('git', ['init', '-q', '--bare', '-b', 'main', join(dir, 'origin.git')])
+      git('remote', 'add', 'origin', join(dir, 'origin.git'))
+      git('push', '-q', 'origin', 'main:main')
+      return dir
+    }
+    // A local branch whose upstream the remote then deleted, as GitHub does when it merges.
+    const merged = (name: string) => {
+      git('branch', name, 'main')
+      git('push', '-q', '-u', 'origin', name)
+      git('push', '-q', 'origin', '--delete', name)
+      git('fetch', '-q', '--prune', 'origin')
+    }
+    const record = (branch: string) => {
+      put(stateFile(branch), JSON.stringify({ branch }))
+      put(ledgerFile(branch), JSON.stringify({ branch, closed: [] }))
+    }
+
+    test('removes what no branch holds any more or whose upstream is gone, and keeps the rest', () => {
+      origin()
+      merged('feat/merged')
+      merged('feat/busy')
+      git('branch', 'feat/live', 'main')
+      git('push', '-q', 'origin', 'main:refs/heads/feat/remote-only')
+      git('fetch', '-q', 'origin')
+      git('worktree', 'add', '-q', join(temp('worktree'), 'busy'), 'feat/busy')
+      for (const b of ['feat/1/x', 'feat/old', 'feat/merged', 'feat/busy', 'feat/live', 'feat/remote-only']) record(b)
+      // A file that cannot be read goes with its branch.
+      put(stateFile('feat/old'), '{')
+
+      const dry = lntt(['status', '--prune', '--dry-run'])
+      assert.equal(dry.code, 0, dry.err)
+      assert.equal(
+        dry.out,
+        'lntt review: would prune feat/merged (its upstream is gone)\n' +
+          'lntt review: would prune feat/old (no branch of that name is left)\n',
+      )
+      assert.equal(existsSync(stateFile('feat/old')), true, 'a dry run removes nothing')
+
+      const r = lntt(['status', '--prune'])
+      assert.equal(r.code, 0, r.err)
+      assert.equal(
+        r.out,
+        'lntt review: pruned feat/merged (its upstream is gone): state and ledger\n' +
+          'lntt review: pruned feat/old (no branch of that name is left): state and ledger\n',
+      )
+      for (const gone of ['feat/merged', 'feat/old']) {
+        assert.equal(existsSync(stateFile(gone)) || existsSync(ledgerFile(gone)), false, gone)
+      }
+      // The current branch, one checked out in a worktree, a live one, one that only a remote holds.
+      for (const kept of ['feat/1/x', 'feat/busy', 'feat/live', 'feat/remote-only']) {
+        assert.equal(existsSync(stateFile(kept)) && existsSync(ledgerFile(kept)), true, kept)
+      }
+      assert.equal(lntt(['status', '--prune']).out, 'lntt review: nothing to prune\n')
+    })
+
+    test('takes nothing else, and --dry-run goes with it', () => {
+      assert.equal(lntt(['status', '--prune', '--json']).code, 2)
+      assert.equal(lntt(['status', '--prune', '--clear']).code, 2)
+      assert.equal(lntt(['status', '--prune', '--query=.']).code, 2)
+      assert.equal(lntt(['status', '--dry-run']).code, 2)
+    })
+  })
+
+  describe('a state in the old place, the worktree’s git directory', () => {
+    const old = (name = 'lntt-review.json') => join(repo, '.git', name)
+
+    test('is read once: moved to the file of the branch it names, with a line saying so', () => {
+      assert.equal(lntt(['--base', 'main'], { FAKE_REVIEW: note }).code, 0)
+      renameSync(stateFile(), old())
+      renameSync(ledgerFile(), old('lntt-review-ledger.json'))
+      const r = lntt(['status', '--json'])
+      assert.equal(JSON.parse(r.out).state.round, 1)
+      assert.match(
+        r.err,
+        /^lntt review: moved the state of feat\/1\/x from .+lntt-review\.json to .+feat%2F1%2Fx\.json$/m,
+      )
+      assert.match(r.err, /^lntt review: moved the ledger of feat\/1\/x /m)
+      assert.equal(existsSync(old()) || existsSync(old('lntt-review-ledger.json')), false, 'never read again')
+      assert.equal(existsSync(stateFile()) && existsSync(ledgerFile()), true)
+      assert.equal(lntt(['status']).err, '', 'said once')
+    })
+
+    test("is moved to its own branch's file, whichever branch is checked out", () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      renameSync(stateFile(), old())
+      git('switch', '-q', 'main')
+      git('switch', '-qc', 'feat/2/y')
+      assert.equal(lntt(['status']).code, 4)
+      assert.equal(existsSync(stateFile()), true, "feat/1/x's state is kept, not dropped")
+      assert.equal(existsSync(old()), false)
+    })
+
+    test('does not replace a newer one of the place, and a file that cannot be read is set aside', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      const before = readFileSync(stateFile(), 'utf8')
+      writeFileSync(old(), JSON.stringify({ branch: 'feat/1/x', round: 9 }))
+      utimesSync(old(), new Date(2000, 0, 1), new Date(2000, 0, 1))
+      const r = lntt(['status'])
+      assert.match(
+        r.err,
+        /^lntt review: the state of feat\/1\/x in .+lntt-review\.json is older than the one in .+: dropped$/m,
+      )
+      assert.equal(readFileSync(stateFile(), 'utf8'), before)
+      assert.equal(existsSync(old()), false)
+
+      writeFileSync(old('lntt-review-ledger.json'), '{ cut')
+      assert.match(
+        lntt(['status']).err,
+        /lntt-review-ledger\.json cannot be read: set aside as lntt-review-ledger\.json\.unreadable/,
+      )
+      assert.equal(existsSync(old('lntt-review-ledger.json.unreadable')), true)
+    })
+  })
+
+  test('a state file that names another branch than its own file is not read', () => {
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    const saved = JSON.parse(readFileSync(stateFile(), 'utf8'))
+    put(stateFile('feat/2/y'), JSON.stringify(saved))
+    git('switch', '-qc', 'feat/2/y')
+    const r = lntt(['status'])
+    assert.equal(r.code, 1)
+    assert.match(r.err, /state\/feat%2F2%2Fy\.json cannot be read: pnpm exec lntt review status --clear removes it/)
+    // A round or the cost would otherwise write over it.
+    for (const args of [['cost'], ['--base', 'main']]) {
+      const refused = lntt(args)
+      assert.equal(refused.code, 1, args.join(' '))
+      assert.match(refused.err, /state\/feat%2F2%2Fy\.json cannot be read/, args.join(' '))
+    }
+  })
+
+  test('a branch name is a file name with its capitals encoded, so a case-insensitive filesystem tells two apart', () => {
+    git('switch', '-qc', 'Fix/A', 'feat/1/x')
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    assert.equal(existsSync(join(storeDir(), 'state', '%46ix%2F%41.json')), true)
+    assert.equal(state('Fix/A').branch, 'Fix/A')
+  })
+
+  test('a place of ~ alone, and a project place starting with ~/', () => {
+    git('remote', 'add', 'origin', 'git@github.com:org/proj.git')
+    const bare = home({ review: { stateDir: '~' } })
+    assert.equal(lntt(['--base', 'main'], { HOME: bare }).code, 0)
+    assert.equal(existsSync(stateFile('feat/1/x', join(bare, 'org/proj'))), true)
+
+    const config = JSON.parse(CONFIG)
+    config.delivery.review.stateDir = '~/shared'
+    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify(config))
+    git('commit', '-qam', 'a place in the home')
+    const plain = temp('plain')
+    assert.equal(lntt(['--base', 'main'], { HOME: plain }).code, 0)
+    assert.equal(existsSync(stateFile('feat/1/x', join(plain, 'shared/org/proj'))), true)
+  })
+
+  test('an origin whose org is .. cannot take the state out of its place', () => {
+    git('remote', 'add', 'origin', 'https://example.com/../proj')
+    const mine = temp('mine')
+    assert.equal(lntt(['--base', 'main'], { HOME: home({ review: { stateDir: mine } }) }).code, 0)
+    assert.deepEqual(readdirSync(mine), ['local'], 'keyed by the git directory, inside the place')
+  })
+
+  test('--clear of a ledger with no state: refused until the branch is merged; a detached HEAD has nothing', () => {
+    put(ledgerFile(), JSON.stringify({ branch: 'feat/1/x', closed: [] }))
+    const refused = lntt(['status', '--clear'])
+    assert.equal(refused.code, 1)
+    assert.match(refused.err, /nothing cleared$/m)
+    assert.equal(existsSync(ledgerFile()), true)
+
+    const dir = temp('origin')
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', join(dir, 'origin.git')])
+    git('remote', 'add', 'origin', join(dir, 'origin.git'))
+    git('push', '-q', 'origin', 'feat/1/x:main')
+    git('fetch', '-q', 'origin')
+    const r = lntt(['status', '--clear'])
+    assert.equal(r.code, 0, r.err)
+    assert.equal(r.out, "lntt review: cleared feat/1/x's ledger\n")
+    assert.equal(existsSync(ledgerFile()), false)
+
+    put(ledgerFile(), JSON.stringify({ branch: 'feat/1/x', closed: [] }))
+    git('switch', '-q', '--detach')
+    assert.equal(lntt(['status', '--clear']).out, 'lntt review: nothing to clear\n')
+    assert.equal(existsSync(ledgerFile()), true)
+  })
+
+  test('--prune leaves a file whose name is not an encoded branch, and takes a state for HEAD that no ref holds', () => {
+    const dir = temp('origin')
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', join(dir, 'origin.git')])
+    git('remote', 'add', 'origin', join(dir, 'origin.git'))
+    git('push', '-q', 'origin', 'main:main')
+    git('fetch', '-q', 'origin')
+    git('remote', 'set-head', 'origin', 'main')
+    put(join(storeDir(), 'state', '%E0.json'), '{}')
+    put(join(storeDir(), 'state', 'Feat%2FOld.json'), '{}')
+    put(stateFile('HEAD'), '{}')
+    const r = lntt(['status', '--prune'])
+    assert.equal(r.out, 'lntt review: pruned HEAD (no branch of that name is left): state\n')
+    assert.equal(existsSync(join(storeDir(), 'state', '%E0.json')), true)
+    assert.equal(existsSync(join(storeDir(), 'state', 'Feat%2FOld.json')), true, 'not listed, not removed')
+  })
+
+  describe('a state in the old place, more cases', () => {
+    const old = (name = 'lntt-review.json') => join(repo, '.git', name)
+
+    test('a state that cannot be read is set aside, and an older ledger does not replace the place’s', () => {
+      writeFileSync(old(), '{ cut')
+      const set = lntt(['status'])
+      assert.match(set.err, /lntt-review\.json cannot be read: set aside as lntt-review\.json\.unreadable/)
+      assert.equal(existsSync(old('lntt-review.json.unreadable')), true)
+
+      assert.equal(lntt(['--base', 'main'], { FAKE_REVIEW: note }).code, 0)
+      const ledger = readFileSync(ledgerFile(), 'utf8')
+      writeFileSync(old('lntt-review-ledger.json'), JSON.stringify({ branch: 'feat/1/x', closed: [{ id: 'old' }] }))
+      utimesSync(old('lntt-review-ledger.json'), new Date(2000, 0, 1), new Date(2000, 0, 1))
+      assert.match(lntt(['status']).err, /the ledger of feat\/1\/x in .+ is older than the one in .+: dropped/)
+      assert.equal(readFileSync(ledgerFile(), 'utf8'), ledger)
+    })
+
+    test('a newer one replaces the place’s', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      utimesSync(stateFile(), new Date(2000, 0, 1), new Date(2000, 0, 1))
+      writeFileSync(old(), JSON.stringify({ ...state(), round: 7 }))
+      assert.match(lntt(['status']).err, /moved the state of feat\/1\/x/)
+      assert.equal(state().round, 7)
+    })
   })
 })

@@ -141,6 +141,16 @@
               "minItems": 1,
               "uniqueItems": true
             },
+            "standalone": {
+              "type": "array",
+              "description": "The child types an issue may have with no parent: with board.subIssues, lntt board ready asks a parent of every other child type. Each is one of children: lntt validate checks it. Absent: every child needs a parent.",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
             "permanent": {
               "type": "array",
               "description": "The parent types that never close (ongoing work): the roadmap gives them no dates and leaves them out of its forecast and of the parents velocity counts; they keep their horizon, and the children done under them count. Each is one of parents: lntt validate checks it.",
@@ -657,6 +667,11 @@
               "type": "number",
               "exclusiveMinimum": 0,
               "description": "How long a whole round may take; then every agent still running is stopped, the round fails and keeps what it gathered. Default 60."
+            },
+            "stateDir": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Where lntt review keeps each branch's state and ledger of closed findings, for everyone on the project; the operator's own review.stateDir (lntt operator) overrides it. A path relative to the main checkout, absolute, or starting with ~; a folder per repository (<org>/<repo>) is made inside it. Default: the clone's common git directory."
             },
             "maxRounds": {
               "type": "integer",

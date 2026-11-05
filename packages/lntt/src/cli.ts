@@ -36,7 +36,7 @@ const USAGE = [
   '       lntt sync | guide [<skill>] | local app <name> | viewer detect|open <url> | browser [<app>] [--json]',
   '       lntt check [<area> [<check>]] [--base <ref>] [--json] | check cite <path:line>...',
   '       lntt refs [--cached] [<text>...]',
-  '       lntt board sync [--apply | --check]',
+  '       lntt board sync [--apply | --check] | board ready [--apply]',
   '       lntt branch name|check|rename [...]',
   '       lntt worktree start --issue <n> [...]',
   '       lntt ci local|candidate [...]',

@@ -8,8 +8,10 @@ name: Candidate
 # close it, and moves it to the board status delivery.candidate.status.inRelease. When
 # the candidate is merged, closes the issues of its `Closes` lines still open (keywords
 # written by the automation link nothing), moves them to delivery.candidate.status.done
-# and moves the pull requests still open on it onto the next candidate. Hotfixes stay on
-# the default branch. Prefix, base, hotfix markers and board statuses:
+# and moves the pull requests still open on it onto the next candidate, moves to Ready
+# the issues that waited on the closed ones and meet the criteria, and comments on the
+# candidate's pull request what it moved and what is missing for the rest. Hotfixes stay
+# on the default branch. Prefix, base, hotfix markers and board statuses:
 # delivery.candidate in .agents/config.jsonc; the logic: `lntt ci candidate`
 # (packages/lntt/src/ci/candidate.ts); the flow:
 # docs/process/delivery.md.

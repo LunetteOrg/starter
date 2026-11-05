@@ -64,10 +64,84 @@ describe('lntt check tests mutate', () => {
     assert.match(result.message, /survived: 1 test file still pass \(test\/price\.test\.ts\)/)
   })
 
+  test('a line of a non-code file that a test reads is killed, the output naming how the test was chosen', () => {
+    const { status, result } = mutate('skills/review/SKILL.md:6', 'Never merge', 'Always merge')
+    assert.equal(status, 0)
+    assert.equal(result.status, 'PASS')
+    assert.match(result.message, /killed by the review skill forbids merging/)
+    assert.match(result.message, /chosen by name: test\/skill\.test\.ts/)
+  })
+
+  test('a test that names only the directory of a non-code file runs it', () => {
+    const { status, result } = mutate('plugin/skills/guide/tone.md:1', 'Greet politely', 'Ignore people')
+    assert.equal(status, 0)
+    assert.match(result.message, /killed by every file of the guide skill greets politely/)
+    assert.match(result.message, /chosen by name: test\/guide\.test\.ts\)/)
+  })
+
+  test('a file at the root has no directory to name: tests that never name it do not run', () => {
+    const { status, result } = mutate('NOTES.md:1', 'root file', 'folder')
+    assert.equal(status, 1)
+    assert.match(result.message, /survived: no test runs this line/)
+  })
+
+  test('a by-name test that still passes survives, and the output says it was chosen by name', () => {
+    const { status, result } = mutate('docs/pinned.md:2', 'does not check', 'checks')
+    assert.equal(status, 1)
+    assert.match(result.message, /survived: 1 test file still pass \(chosen by name: test\/pinned\.test\.ts\)/)
+  })
+
+  test('a non-code file some test imports gets its importers only, not the tests that name it', () => {
+    const { result } = mutate('src/limits.json:1', '"max": 3', '"max": 4')
+    assert.equal(result.status, 'PASS')
+    assert.doesNotMatch(result.message, /chosen by name/)
+    assert.match(result.message, /killed by the limit is read as text/)
+  })
+
+  test('a directory of one segment names too much: docs/note.md is not run by a test that says docs', () => {
+    const { result } = mutate('docs/note.md:1', 'Nothing', 'Something')
+    assert.match(
+      result.message,
+      /survived: no test runs this line \(no test imports the file or names its path or a directory\)/,
+    )
+  })
+
+  test('a listed test file that is gone from the working tree is skipped, not run', () => {
+    rmSync(join(repo, 'test/skill.test.ts'))
+    const { status, result } = mutate('skills/review/SKILL.md:6', 'Never merge', 'Always merge')
+    assert.equal(status, 1)
+    assert.match(result.message, /survived: no test runs this line/)
+  })
+
+  test('by-name tests keep the level they sit at: each level runs its own', () => {
+    writeFileSync(
+      join(repo, '.agents/config.jsonc'),
+      JSON.stringify({
+        tests: {
+          levels: [
+            { name: 'a', files: ['test/other.test.ts'], run: 'node --test {files}' },
+            { name: 'b', files: ['test/skill.test.ts'], run: 'exit 7 # {files}' },
+          ],
+        },
+      }),
+    )
+    writeFileSync(join(repo, 'test/other.test.ts'), '// names skills/review/SKILL.md\n')
+    git('add', '-A')
+    const { result } = mutate('skills/review/SKILL.md:6', 'Never merge', 'Always merge')
+    assert.equal(result.status, 'NOT RUN')
+    assert.match(result.message, /level b fails without the mutation/)
+  })
+
+  test('a non-code file no test names survives: no test runs this line', () => {
+    const { status, result } = mutate('docs/note.md:1', 'Nothing', 'Something')
+    assert.equal(status, 1)
+    assert.match(result.message, /survived: no test runs this line/)
+  })
+
   test('a line no test imports survives: no test runs it', () => {
     const { status, result } = mutate('src/orphan.ts:1', 'true', 'false')
     assert.equal(status, 1)
-    assert.match(result.message, /survived: no test runs this line/)
+    assert.match(result.message, /survived: no test runs this line$/)
   })
 
   test('uncommitted tests count: a new test file kills what the committed ones let live', () => {
