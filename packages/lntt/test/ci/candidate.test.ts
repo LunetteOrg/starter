@@ -3,6 +3,7 @@ import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
+import { readyRules } from '../../src/board-ready.ts'
 import {
   announce,
   announceComment,
@@ -33,6 +34,8 @@ import {
   type PullRequest,
   pickBoard,
   type Run,
+  readyAfterMerge,
+  readyMarker,
   record,
   recordMerges,
   retarget,
@@ -1558,3 +1561,316 @@ function makeDryGh(answers: Record<string, unknown>, log: (line: string) => void
   const dry = makeGh({ dryRun: true, log })
   return { read: fake.read, write: dry.write }
 }
+
+describe("the Ready check on the candidate's merge", () => {
+  const rules = readyRules({
+    board: {
+      github: { project: { owner: 'o', number: 1 } },
+      issueTypes: { parents: ['Feature'], children: ['Task'] },
+      subIssues: true,
+      blockedBy: true,
+      fields: {
+        status: { name: 'Stato', type: 'singleSelect', options: ['Nuova', 'Pronta'], ready: 'Pronta' },
+        priority: { name: 'Priority', type: 'singleSelect', options: ['P0'] },
+        size: { name: 'Size', type: 'singleSelect', options: ['S'] },
+      },
+    },
+  })
+  assert.ok(rules)
+  const withReady: CandidateConfig = { ...config, ready: rules }
+  const set = { __typename: 'ProjectV2ItemFieldSingleSelectValue' }
+
+  interface FakeIssue {
+    state?: string
+    blocking?: number[]
+    moreBlocking?: boolean
+    blockedBy?: Array<{ number: number; state: string }>
+    type?: string | null
+    parent?: number | null
+    size?: boolean
+    status?: string
+    project?: number
+    open?: number
+  }
+
+  // The issues by number; the repository's client answers the issue's reads, the board's
+  // the item's. `refused` makes the board's read fail as a token without the permission.
+  function fakeBoard(
+    issues: Record<number, FakeIssue>,
+    { merged = [] as unknown[], refused = false, comments = [] as string[], noPrList = false } = {},
+  ) {
+    const writes: string[] = []
+    const inputs: string[] = []
+    const numberOf = (args: string[]) => Number(args.find((a) => a.startsWith('number='))?.slice('number='.length))
+    const of = (args: string[]) => {
+      const issue = issues[numberOf(args)]
+      if (!issue) throw new Error(`no issue in ${args.join(' ')}`)
+      return issue
+    }
+    const repoNode = (number: number, state = 'OPEN') => ({ number, state, repository: { nameWithOwner: 'o/r' } })
+    const gh: Gh = {
+      read: (args) => {
+        const line = args.join(' ')
+        if (line.includes('pr list')) {
+          if (noPrList) throw new Error('gh: HTTP 502\nsecond line')
+          return JSON.stringify(merged)
+        }
+        if (line.includes('/comments')) return comments.map((body) => JSON.stringify({ id: 1, body })).join('\n')
+        const issue = of(args)
+        if (line.includes('blocking(first')) {
+          return JSON.stringify({
+            data: {
+              repository: {
+                issue: {
+                  state: issue.state ?? 'CLOSED',
+                  blocking: {
+                    pageInfo: { hasNextPage: issue.moreBlocking === true },
+                    nodes: (issue.blocking ?? []).map((n) => repoNode(n, issues[n]?.state ?? 'OPEN')),
+                  },
+                },
+              },
+            },
+          })
+        }
+        return JSON.stringify({
+          data: {
+            repository: {
+              issue: {
+                number: numberOf(args),
+                title: 't',
+                state: issue.state ?? 'OPEN',
+                repository: { nameWithOwner: 'o/r' },
+                issueType: issue.type === null ? null : { name: issue.type ?? 'Task' },
+                parent: issue.parent === null ? null : { number: issue.parent ?? 1 },
+                subIssuesSummary: { total: issue.open ?? 0, completed: 0 },
+                blockedBy: {
+                  pageInfo: { hasNextPage: false },
+                  nodes: (issue.blockedBy ?? []).map((b) => repoNode(b.number, b.state)),
+                },
+              },
+            },
+          },
+        })
+      },
+      write: (args, input) => {
+        writes.push(args.join(' '))
+        if (input) inputs.push(input)
+        return ''
+      },
+    }
+    const board: Gh = {
+      read: (args) => {
+        if (refused) throw new Error('gh: Resource not accessible by integration')
+        const issue = of(args)
+        const node = {
+          id: `I_${numberOf(args)}`,
+          isArchived: false,
+          status: { name: issue.status ?? 'Nuova' },
+          f0: set,
+          f1: issue.size === false ? null : set,
+          project: {
+            id: 'PVT',
+            number: issue.project ?? 1,
+            owner: { login: 'o' },
+            field: {
+              id: 'F',
+              options: [
+                { id: 'a', name: 'Nuova' },
+                { id: 'b', name: 'Pronta' },
+              ],
+            },
+          },
+        }
+        return JSON.stringify({ data: { repository: { issue: { projectItems: { nodes: [node] } } } } })
+      },
+      write: (args) => {
+        writes.push(`board ${args.filter((a) => /^(item|option)=/.test(a)).join(' ')}`)
+        return ''
+      },
+    }
+    return { gh, board, writes, inputs }
+  }
+
+  const merge = {
+    ...pr,
+    number: 40,
+    baseRef: 'main',
+    headRef: 'candidate/4',
+    merged: true,
+    body: recordMerges(candidateBody(config, 4), [{ number: 70, title: 't', closes: ['#69'] }]),
+  }
+  const merged = [{ number: 70, body: 'Closes #69' }]
+  const lines: string[] = []
+  const go = ({ gh, board }: { gh: Gh; board: Gh }, c = withReady, r = merge) =>
+    readyAfterMerge({ gh, board, repo: 'o/r', config: c, log: (l) => lines.push(l) }, r)
+
+  test('an issue the merge unblocked moves, with the evidence on the candidate', () => {
+    const fake = fakeBoard(
+      { 69: { blocking: [486] }, 486: { blockedBy: [{ number: 69, state: 'CLOSED' }] } },
+      { merged },
+    )
+    const report = go(fake)
+    assert.deepEqual(report?.moved, [{ number: 486, evidence: '#69 closed by #70' }])
+    assert.deepEqual(fake.writes, ['board item=I_486 option=b', 'pr comment 40 --repo o/r --body-file -'])
+    assert.match(fake.inputs[0], /<!-- candidate:ready:candidate\/4 -->/)
+    assert.match(fake.inputs[0], /Moved to Pronta:\n\n- #486: #69 closed by #70\./)
+  })
+
+  test('the merged pull requests are only evidence: when they cannot be read the move goes on', () => {
+    const fake = fakeBoard({ 69: { blocking: [486] }, 486: {} }, { noPrList: true })
+    lines.length = 0
+    const report = go(fake)
+    assert.deepEqual(report?.moved, [{ number: 486, evidence: '#69 closed by #40' }])
+    assert.ok(
+      lines.some((l) => /^::notice title=Ready check evidence::.*candidate\/4.*#40: gh: HTTP 502$/.test(l)),
+      lines.join('\n'),
+    )
+  })
+
+  test('an issue blocking more than one read holds is a notice, and alone writes no comment', () => {
+    const fake = fakeBoard({ 69: { blocking: [], moreBlocking: true } }, { merged })
+    lines.length = 0
+    const report = go(fake)
+    assert.deepEqual(report, { moved: [], already: [], left: [] })
+    assert.ok(
+      lines.some((l) => l.startsWith('::notice title=Ready check partial::#69 blocks more issues')),
+      lines.join('\n'),
+    )
+    assert.deepEqual(fake.writes, [])
+  })
+
+  test('one still blocked stays, and the comment says by what', () => {
+    const fake = fakeBoard(
+      {
+        69: { blocking: [486] },
+        486: {
+          blockedBy: [
+            { number: 69, state: 'CLOSED' },
+            { number: 5, state: 'OPEN' },
+          ],
+        },
+      },
+      { merged },
+    )
+    const report = go(fake)
+    assert.deepEqual(report?.moved, [])
+    assert.deepEqual(fake.writes, ['pr comment 40 --repo o/r --body-file -'])
+    assert.match(fake.inputs[0], /Left at Nuova:\n\n- #486: missing open blocker #5 \(#69 closed by #70\)\./)
+  })
+
+  test('one missing a field stays, and the comment names the field', () => {
+    const fake = fakeBoard({ 69: { blocking: [486] }, 486: { size: false } }, { merged })
+    go(fake)
+    assert.deepEqual(fake.writes, ['pr comment 40 --repo o/r --body-file -'])
+    assert.match(fake.inputs[0], /- #486: missing Size \(#69 closed by #70\)\./)
+  })
+
+  test('one holding open sub-issues stays, and is said so', () => {
+    const fake = fakeBoard({ 69: { blocking: [33] }, 33: { type: 'Feature', open: 2 } }, { merged })
+    go(fake)
+    assert.deepEqual(fake.writes, ['pr comment 40 --repo o/r --body-file -'])
+    assert.match(fake.inputs[0], /- #33: holds 2 open sub-issues/)
+  })
+
+  test('nothing waited: no comment', () => {
+    const fake = fakeBoard({ 69: {} }, { merged })
+    assert.deepEqual(go(fake), { moved: [], already: [], left: [] })
+    assert.deepEqual(fake.writes, [])
+  })
+
+  test('a blocker still open unblocks nothing', () => {
+    const fake = fakeBoard({ 69: { state: 'OPEN', blocking: [486] }, 486: {} }, { merged })
+    go(fake)
+    assert.deepEqual(fake.writes, [])
+  })
+
+  test('an issue past the first status is left alone; one at Ready is reported, not moved', () => {
+    const fake = fakeBoard(
+      { 69: { blocking: [1, 2] }, 1: { status: 'In progress' }, 2: { status: 'Pronta' } },
+      { merged },
+    )
+    const report = go(fake)
+    assert.deepEqual(report?.moved, [])
+    assert.deepEqual(report?.already, [{ number: 2, evidence: '#69 closed by #70' }])
+    assert.deepEqual(fake.writes, ['pr comment 40 --repo o/r --body-file -'])
+    assert.doesNotMatch(fake.inputs[0], /#1:/)
+  })
+
+  test('an issue on another Project only is left alone', () => {
+    const fake = fakeBoard({ 69: { blocking: [486] }, 486: { project: 9 } }, { merged })
+    assert.deepEqual(go(fake), { moved: [], already: [], left: [] })
+    assert.deepEqual(fake.writes, [])
+  })
+
+  test("a blocker no merged pull request names is the candidate's own", () => {
+    const fake = fakeBoard({ 69: { blocking: [486] }, 486: {} }, { merged: [] })
+    assert.deepEqual(go(fake)?.moved, [{ number: 486, evidence: '#69 closed by #40' }])
+  })
+
+  test('a refused token and a missing status are notices, and the run stays green', () => {
+    lines.length = 0
+    const refused = fakeBoard({ 69: { blocking: [486] }, 486: {} }, { merged, refused: true })
+    assert.deepEqual(go(refused), { moved: [], already: [], left: [] })
+    assert.match(lines.join('\n'), /::notice title=Board not moved::#486 is not moved to "Pronta"/)
+    lines.length = 0
+    assert.ok(rules)
+    const other = { ...withReady, ready: { ...rules, status: { ...rules.status, ready: 'Mancante' } } }
+    go(fakeBoard({ 69: { blocking: [486] }, 486: {} }, { merged }), other)
+    assert.match(lines.join('\n'), /"Mancante" is not an option of Stato \(Nuova, Pronta\)/)
+  })
+
+  test('no Projects token: a notice and nothing else', () => {
+    lines.length = 0
+    const { gh, writes } = fakeBoard({ 69: { blocking: [486] }, 486: {} }, { merged })
+    assert.equal(readyAfterMerge({ gh, repo: 'o/r', config: withReady, log: (l) => lines.push(l) }, merge), null)
+    assert.match(lines.join('\n'), /no token with the Projects permission/)
+    assert.deepEqual(writes, [])
+  })
+
+  test('a project with no board or no blocked-by relation has no check', () => {
+    const fake = fakeBoard({})
+    assert.equal(go(fake, config), null)
+    assert.ok(rules)
+    assert.equal(go(fake, { ...config, ready: { ...rules, blockedBy: false } }), null)
+    assert.deepEqual(fake.writes, [])
+  })
+
+  test('a rerun does not write the comment twice', () => {
+    const fake = fakeBoard(
+      { 69: { blocking: [486] }, 486: { status: 'Pronta' } },
+      {
+        merged,
+        comments: [`${readyMarker('candidate/4')}\nbefore`],
+      },
+    )
+    go(fake)
+    assert.deepEqual(fake.writes, [])
+  })
+
+  test('an issue that cannot be read does not stop the others, and fails the run after the comment', () => {
+    const fake = fakeBoard({ 69: { blocking: [1, 2] }, 2: {} }, { merged })
+    assert.throws(() => go(fake), /#1: /)
+    assert.deepEqual(fake.writes, ['board item=I_2 option=b', 'pr comment 40 --repo o/r --body-file -'])
+  })
+
+  test("the candidate's merge closes its issues before it checks who waited on them", () => {
+    const order: string[] = []
+    const fake = fakeBoard({ 69: { blocking: [486] }, 486: {} }, { merged })
+    const gh: Gh = {
+      read: (args) => {
+        const line = args.join(' ')
+        if (line.includes('issues/69') && line.includes('--jq')) return JSON.stringify({ state: 'open', isPr: false })
+        if (line.includes('blocking(first')) order.push('check')
+        if (line.includes('api graphql') && line.includes('pullRequests')) return JSON.stringify([])
+        if (line.includes('--state open') || line.includes('search')) return '[]'
+        return fake.gh.read(args)
+      },
+      write: (args, input) => {
+        if (args[0] === 'issue') order.push('close')
+        return fake.gh.write(args, input)
+      },
+    }
+    candidateMerged({ gh, board: fake.board, repo: 'o/r', config: withReady, log: silent }, merge)
+    assert.deepEqual(order, ['close', 'check'])
+  })
+})

@@ -174,7 +174,9 @@ on by its key, and each adds to the base without replacing it.
   much an issue matters, with or without a horizon; inside one horizon it orders the
   parents when its `on` lets parents carry it, otherwise the person orders them in the
   plan. **What to do now** is the children at `board.fields.status.ready` of the parents in
-  the nearest horizon, by priority.
+  the nearest horizon, by priority. `pnpm exec lntt board ready` lists the issues at the
+  first status that meet its mechanical criteria and what the others lack; `--apply`
+  moves the eligible ones.
 - **Milestones** (`board.milestones`): a milestone is a release unless
   `docs/process/board.md` says otherwise, carried by parents and children alike. It
   says what ships in which release, never when work is taken up: it never replaces the horizon.

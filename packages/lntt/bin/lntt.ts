@@ -27,6 +27,11 @@
 //                             API cannot do or is risky listed for the UI, with the steps.
 //                             A dry run unless --apply; --check exits 1 when the board differs
 //
+//   lntt board ready [--apply]
+//                             the issues of this repository at the board's first status,
+//                             Ready-eligible or with what is missing; --apply moves the eligible
+//                             ones to board.fields.status.ready
+//
 //   lntt hook typecheck
 //                             what the hook line lntt sync writes into .claude/settings.json
 //                             runs: local.hooks.typecheck or the typecheck script, exit 1 on a

@@ -175,6 +175,12 @@ Read the result back from GitHub: each parent's children, the types, the iterati
 membership (no parent in it), the assignees, the fields. Report the tree with links, the
 track split and the suggested starting order.
 
+Then `pnpm exec lntt board ready` lists the issues at the first status that are
+Ready-eligible and what is missing for the others. Bring the list to the person, and
+with their go `--apply` moves the eligible ones: whether each body lets an agent start
+cold is the part the command cannot check. With a provider other than `github`, the
+command does not apply: check the same criteria through the adapter.
+
 ## Intake — a client meeting
 
 A transcript runs through the same phases. Two things change: what comes out (decision
