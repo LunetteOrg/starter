@@ -1,7 +1,7 @@
 // The pull requests a bot opens (`delivery.automated`): which ones, and how the CI treats
 // them. One entry per bot: its login as the pull request event names it
 // (`dependabot[bot]`), the prefix of its branches, when its CI runs (`after-approval` of
-// the head by an owner, member or collaborator, or `always`) and which CI (`full`, or
+// the head by someone with write access, or `always`) and which CI (`full`, or
 // the `minimal` one a pull request into a candidate runs). They stay on the base: the
 // candidate automation leaves them there and the candidate guard lets them through.
 //

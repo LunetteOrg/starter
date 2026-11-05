@@ -405,7 +405,7 @@
               },
               "runs": {
                 "enum": ["after-approval", "always"],
-                "description": "after-approval: the CI fails in its first step, before checkout, until an owner, member or collaborator approves the head commit, and a review re-runs it. always: the CI runs on every push, as for a person's pull request."
+                "description": "after-approval: the CI fails in its first step, before checkout, until someone with write access to the repository approves the head commit, and a review re-runs it. always: the CI runs on every push, as for a person's pull request."
               },
               "ci": {
                 "enum": ["full", "minimal"],

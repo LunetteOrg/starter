@@ -20,7 +20,7 @@ batch for what is expensive ([delivery](./delivery.md) has the flow):
 | The candidate's pull request into `main`, ready; a hotfix | the full CI: the minimal CI plus the scaffold level (`packages/create`) and its smoke; the body's retrospective block only on a hotfix (the candidate's block is its retrospective comment, which `lntt check body --pr <n>` checks before the candidate is marked ready, [delivery](./delivery.md#the-candidate)) |
 | A push to `main` | the full CI, which gates a release, unless its tree is one a full CI has [already proved](#a-tree-already-proved) |
 | A push to `main`, beside the CI | the [candidate automation](./delivery.md#the-candidate-automation) (`candidate.yml`), not CI: one short job that brings the open candidate, when there is one, up to date with `main` |
-| A bot's pull request (`delivery.automated`) | with `runs: after-approval`, the `ci` check red in seconds until an owner, member or collaborator approves its head; the approval re-runs that same check (`ci-approval.yml`) with the CI of its entry (`full`: the one its base calls for, or `minimal`), and a later push turns it red again ([automated pull requests](#automated-pull-requests)) |
+| A bot's pull request (`delivery.automated`) | with `runs: after-approval`, the `ci` check red in seconds until someone with write access approves its head; the approval re-runs that same check (`ci-approval.yml`) with the CI of its entry (`full`: the one its base calls for, or `minimal`), and a later push turns it red again ([automated pull requests](#automated-pull-requests)) |
 | Any pull request, drafts included, at each event that changes its base, labels or head | the [candidate guard](./delivery.md#a-pull-request-left-on-main) (`candidate-guard.yml`), not CI: one short job, green unless the pull request targets `main` and is neither the candidate, a hotfix nor Dependabot's |
 | A merge into a candidate | nothing |
 | Every day (the `schedule` of `upstream.yml`), or by hand (`workflow_dispatch`) | the [upstream check](#upstream-tools) of each new release of Orca, Herdr, claude and opencode |
@@ -186,26 +186,33 @@ the candidate guard lets them through, the branch check exempts their branches.
   minified, into every workflow line that ends with `# lntt sync: delivery.automated`
   (`ci.yml`, `ci-approval.yml`, `candidate.yml`), and `lntt check workflows` (part of
   `lntt check`, which the CI and `ci:local` run) fails on a line that differs from the
-  configuration. No
-  workflow names a bot.
-- **`runs: after-approval`: the CI runs once an owner, member or collaborator
-  approves.** A bot rebases its pull requests often, and each rebase would start a
-  full CI on a head nobody merges. The first step of the `ci` job reads the pull
-  request's reviews: with no approval of the head commit by an owner, member or
-  collaborator it fails with "Approve this pull request's head commit to run the CI
-  before merging", red, never skipped, since a skipped job counts as passed. Each
-  reviewer's latest approval, request for changes or dismissed review of the head
-  counts, as on GitHub; a comment changes nothing. The repository is public, so anyone
-  can submit a review: an approval from anyone else counts for nothing. `runs:
-  always` runs the CI on every push, as for a person's pull request.
+  configuration. No workflow names a bot.
+- **`runs: after-approval`: the CI runs once someone with write access approves.** A
+  bot rebases its pull requests often, and each rebase would start a full CI on a head
+  nobody merges. The first step of the `ci` job reads the pull request's reviews: with
+  no approval of the head commit by someone with write access it fails with "Approve
+  this pull request's head commit to run the CI before merging", red, never skipped,
+  since a skipped job counts as passed. Each reviewer's latest approval, request for
+  changes or dismissed review of the head counts, as on GitHub; a comment changes
+  nothing. The repository is public, so anyone can submit a review: an approval counts
+  when the reviewer's role on the repository is write, maintain or admin, as `GET
+  repos/{repo}/collaborators/{user}/permission` answers it (`role_name`). Both
+  workflows' tokens read that endpoint, `ci.yml`'s read-only one included (a run of
+  each token's permissions on a throwaway branch, 2026-11-05, #233). The review's
+  `author_association` does not decide: it says `CONTRIBUTOR` for a member whose
+  membership of the organization is private, GitHub's default, to everyone but that
+  member, and in the review's event as well: the approval of #278 started no re-run
+  under a condition on it (2026-11-05). `runs: always` runs the CI on every push, as
+  for a person's pull request.
 - **A review re-runs the same run.** An approval, a request for changes or a dismissed
-  review of such a pull request by an owner, member or collaborator starts `ci-approval.yml`, which
-  re-runs the newest `ci` run of the head (waiting for it when it is still going). The
-  re-run reads the reviews again: after an approval the same `ci` check runs the whole
-  job on the pull request's merge ref, after a request for changes or a dismissal it is
-  red again. A new push (a rebase) starts a run of its own, red until the head is
-  approved. A comment re-runs nothing. The head has one `ci` check at every moment: a review starts no run of
-  `ci.yml`, and the `ci-approval.yml` job is named `rerun`.
+  review of such a pull request starts `ci-approval.yml`; when the reviewer has write
+  access, as above, it re-runs the newest `ci` run of the head (waiting for it when it
+  is still going). The re-run reads the reviews again: after an approval the same `ci`
+  check runs the whole job on the pull request's merge ref, after a request for
+  changes or a dismissal it is red again. A new push (a rebase) starts a run of its
+  own, red until the head is approved. A comment, or a review by anyone without write
+  access, re-runs nothing. The head has one `ci` check at every moment: a review
+  starts no run of `ci.yml`, and the `ci-approval.yml` job is named `rerun`.
 - **`ci: minimal`** runs the minimal CI, the one of a pull request into a candidate,
   even into `main`, without the `Full CI` marker: such a pull request never proves a
   tree, and the push of its merge to `main` runs the full CI. `ci: full` runs the CI
