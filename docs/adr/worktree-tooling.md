@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-11-02
+date: 2026-11-04
 tags: [worktrees, agents, orca, herdr, branches, setup, base-branch]
 ---
 
@@ -53,7 +53,7 @@ small adapter that makes the calls it understands.
   reads it (a branch still on the name Orca gave it reads the marker of its conventional
   name) and sends the open findings there with the mailbox, without waiting for the
   answer, and prints the id to wait on (`lntt ask --wait <id>`). A branch with no marker
-  stops at the limit with the findings on stdout and stderr only.
+  stops at the limit with what is open on stdout and stderr only.
 - **The agent, its model and its effort** (`--kind`, `--model`, `--effort`) reach each
   tool in the form it accepts:
   - Orca: one `worktree create --issue --agent --prompt`, with `--model` and

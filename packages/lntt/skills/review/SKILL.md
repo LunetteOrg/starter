@@ -27,10 +27,18 @@ the rest (including `skipped`, an optional agent that did not answer) is for the
 In Claude Code the `lunette` plugin shows the round in a band above the prompt, and
 `/review-status` prints it.
 
-stdout is JSON: `findings`, one list, each with a `verdict` (`confirmed`, `undecided`,
-`unverified`; `withdrawn` after a reply; blockers and warnings block the round, notes do not),
-`refuted` (with the verifiers' proofs, or `lntt check cite`'s for a finding on a line past
-the end of its file; nothing to do), `failed` (a reviewer that did not answer; its `reply` is whole), `partial` (a lens whose reply had lines that could not be read: `lines`, and the whole `reply`). Exit 0: a clean round. Exit 1: findings or a failure. Exit 3: the limit (section 3).
+stdout is a summary: one line of outcome, then a line per thing to act on, the open
+findings blocking first, each with its id, severity, verdict, `path:line` and sentence,
+then the failed reviewers, the lenses read in part and the repeated findings. Exit 0: a
+clean round. Exit 1: findings or a failure. Exit 3: the limit (section 3).
+
+The whole result stays in the state, and the details are read with
+`pnpm exec lntt review status --query` (below): `.state.findings`, one list, each with a
+`verdict` (`confirmed`, `undecided`, `unverified`; `withdrawn` after a reply; blockers and
+warnings block the round, notes do not), `.state.refuted` (with the verifiers' proofs, or
+`lntt check cite`'s for a finding on a line past the end of its file; nothing to do),
+`.state.failed` (a reviewer that did not answer; its `reply` is whole), `.state.partial`
+(a lens whose reply had lines that could not be read: `lines`, and the whole `reply`).
 
 A round reads the whole branch the first time, then only the commits after the last
 reviewed one; findings still open go back to the verifiers on the new head.
@@ -41,12 +49,13 @@ none. After `round N done`, `lntt review: branch total:` sums the rounds so far;
 from the state alone.
 
 The branch keeps a ledger of the findings it closed (fixed, refuted, accepted open),
-which every round's reviewers and verifiers read. stdout's `closed` lists the fresh
-findings that repeat one of them on a line that did not change, matched by place: read
-each against the entry's text (`closedWhat`, entry `closedBy`); when it names another
-problem, treat it as a finding of this round, otherwise there is nothing to do.
+which every round's reviewers and verifiers read. The summary's `repeats` lines, and
+`.state.repeated` in the state, are the fresh findings that repeat one of them on a line
+that did not change, matched by place: read each against the entry's text (`closedWhat`,
+entry `closedBy`); when it names another problem, treat it as a finding of this round,
+otherwise there is nothing to do.
 
-`blocking` says which severities keep the round from being clean: blockers and warnings
+`.state.blocking` says which severities keep the round from being clean: blockers and warnings
 in the first `delivery.review.warningRounds` rounds, blockers alone after them.
 
 ### Reading the state
@@ -56,13 +65,25 @@ files in the git directory: each worktree has its own, and in the main checkout 
 git directory is also the common one, so a file there is the main checkout's.
 
 ```sh
-pnpm exec lntt review status            # one line, then one per thing to act on
+pnpm exec lntt review status            # each level as its count, the outcome, one line per thing to act on
 pnpm exec lntt review status --json     # the whole state
+pnpm exec lntt review status --query '.state.findings[] | select(.id=="f12")'
+pnpm exec lntt review status --query '.state.rounds[1:3][] | {round,usd}'
+pnpm exec lntt review status --query '.state.repeated[] | {id,closedBy,closedWhat}'
 ```
 
+The default names what is there (`findings: 14 (3 open)`, `rounds: 4`); ask only for the
+part you need. `--query` takes a jq expression on the `--json` document: strings raw and
+the rest compact, one per line, or JSON values one per line with `--json` too. A jq
+failure (an expression that does not compile, a failure while running) exits 2, with its
+message on stderr and nothing on stdout; with no round on this branch, a failure while
+running (`.state.open[]`) exits 4.
+
 `--json`: `branch`, `running` (the pid of a round in progress), `state` (`round`,
-`limit`, `reviewed`, `clean`, `atLimit`, `blocking`, `open`, `replied`, `closed`,
-`failed`, `partial`, `skipped`, `tokens`, `cost`). Exit 0: this branch's last round
+`limit`, `reviewed`, `clean`, `atLimit`, `blocking`, `scope`, `lenses`, `open` (`findings` not withdrawn),
+`replied`, `closed` (the ledger), `failed`, `partial`, `skipped`, `tokens`, `cost`,
+`findings` (the last round's, every verdict), `refuted`, `repeated`, `rounds` (each
+round's cost)). Exit 0: this branch's last round
 is clean. 1: something to act on. 3: at the limit. 4: no round on this branch. A state
 left by another branch is named as such, with its date, never as this branch's;
 `pnpm exec lntt review status --clear` removes it (refused while a round runs, and on
@@ -99,7 +120,7 @@ the current branch until it is merged).
   your answer: the person decides, not one more agent.
 - At the limit: a branch takes at most `delivery.review.maxRounds` rounds.
   The round past it does not start: `lntt review: limit: …` names what is still open,
-  exit 3, and stdout lists those findings. Stop there. In a worktree `lntt worktree start`
+  exit 3, and stdout is the summary of the last round. Stop there. In a worktree `lntt worktree start`
   started, the round has already sent them to your coordinator or the orchestrator
   (`lntt review: limit: sent <id>`, or `already sent <id>`): wait for the answer with
   `pnpm exec lntt ask --wait <id>`, never only in your terminal. Elsewhere, bring them to the
