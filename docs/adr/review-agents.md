@@ -72,8 +72,8 @@ same way every time; the `review` skill keeps the judgement.
   directory (`<common dir>/lntt-review/state/` and `ledger/`), which every worktree of
   the clone reaches; `review.stateDir` in the operator's profile (`lntt operator`), else
   `delivery.review.stateDir` in the project configuration, names another place, with a
-  folder per repository (`<org>/<repo>`, from the origin URL; a hash of the git directory
-  with no origin) inside it. The operator's own place is personal and never in the project
+  folder per repository (`<org>/<repo>`, from the origin URL; a hash of the clone's common git
+  directory with no origin) inside it. The operator's own place is personal and never in the project
   configuration; a project value is its default for everyone. The lock and the progress
   file belong to a running process and stay in each worktree's own git directory. The
   state is read with `lntt review status` (each level folded and a summary, `--json`, or
@@ -83,9 +83,7 @@ same way every time; the `review` skill keeps the judgement.
   the state and ledger of every branch that is gone (no local or remote-tracking branch of
   that name, or a local one whose upstream is gone, as GitHub deletes the head branch on
   merge), never a branch checked out in a worktree; `--dry-run` says what it would remove.
-  What a worktree kept in its git directory before the place existed is read once, on the
-  first run: moved to the file of the branch it names (the newer wins when the place
-  already has one), after which the old paths are not read. The command's exit codes and JSON fields are in the package
+  The command's exit codes and JSON fields are in the package
   README. A round prints the same summary on stdout, its whole result staying in the
   state. A
   clean round (exit 0) has no blocker or warning left and no reviewer or verifier that
@@ -105,8 +103,8 @@ same way every time; the `review` skill keeps the judgement.
   goes to `skipped` with the agent's readable findings standing. A failed reply
   keeps its whole text in `failed`. A fresh finding at the anchor of an open one joins it. A round runs
   on a branch (a detached HEAD is refused) whose head does not move until it ends.
-- **The branch keeps a ledger of what it closed**, next to its state in the git
-  directory: every finding the branch is done with, with its outcome. *Fixed*: one
+- **The branch keeps a ledger of what it closed**, next to its state, in the place
+  described above: every finding the branch is done with, with its outcome. *Fixed*: one
   carried from an earlier round and refuted on a later head, with that head. *Refuted*:
   a fresh one refuted, with the proof (the verifiers', `lntt check cite`'s, a killed
   mutant's), or withdrawn by its reviewers, with the author's answer. *Accepted open*: a
@@ -232,6 +230,13 @@ same way every time; the `review` skill keeps the judgement.
   of `lntt check` named after the lens, and its brief drops them.
 
 ## Discarded directions
+
+- **One state per worktree, in the worktree's git directory.** A review on another branch
+  in the same worktree overwrote the state and the ledger of the branch before it, closing
+  the worktree deleted them, and the other worktrees of the clone could not see them.
+  One file per branch in the common git directory has none of the three.
+- **A state file named by the branch as it is written.** On a case-insensitive filesystem
+  `Fix/A` and `fix/a` would share a file; the name encodes capitals too.
 
 - **A repeat of a closed finding matched by its wording.** A reviewer words the same
   finding differently every round, so a match on the text would almost never hold; the

@@ -11,7 +11,16 @@
 // directory: they belong to the process, not to the branch.
 
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+} from 'node:fs'
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 
@@ -33,10 +42,11 @@ export interface Place {
   source: 'the operator profile (review.stateDir)' | 'delivery.review.stateDir' | 'the git common directory'
 }
 
-// A branch name as a file name: percent-encoded, so `feat/1/x` is `feat%2F1%2Fx`, no two
-// branches share a file and the name can be read back.
+// A branch name as a file name: percent-encoded, capitals too, so `feat/1/x` is `feat%2F1%2Fx`
+// and `Fix/A` is `%46ix%2F%41`. No two branches share a file, not even on a case-insensitive
+// filesystem, and the name can be read back.
 export function branchKey(branch: string): string {
-  return encodeURIComponent(branch)
+  return [...branch].map((c) => (/[A-Z]/.test(c) ? `%${c.charCodeAt(0).toString(16)}` : encodeURIComponent(c))).join('')
 }
 
 export function keyBranch(key: string): string | null {
@@ -77,7 +87,10 @@ export function resolvePlace(input: PlaceInput): Place {
     return { dir: join(input.common, 'lntt-review'), source: 'the git common directory' }
   }
   // Outside the clone the repository is part of the key; with no origin, its git directory is.
-  const repository = input.slug ?? join('local', createHash('sha1').update(input.common).digest('hex').slice(0, 12))
+  // An origin whose org or repo is `.` or `..` would leave the place: the git directory keys it.
+  const named = input.slug?.split('/').every((part) => part !== '' && part !== '.' && part !== '..')
+  const repository =
+    named && input.slug ? input.slug : join('local', createHash('sha1').update(input.common).digest('hex').slice(0, 12))
   return { dir: join(base, repository), source }
 }
 
@@ -151,6 +164,17 @@ export function removeBranch(dir: string, branch: string): string[] {
   return removed
 }
 
+// A place on another filesystem than the git directory cannot be reached by a rename.
+function move(from: string, to: string): void {
+  try {
+    renameSync(from, to)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error
+    copyFileSync(from, to)
+    unlinkSync(from)
+  }
+}
+
 // What a worktree kept in its own git directory before the place existed. Each file is read
 // once: moved to the file of the branch it names (the newer wins when the place already has
 // one), then it is gone from the old name, so the old place is never read again. One that
@@ -178,7 +202,7 @@ export function migrateOld(gitDir: string, dir: string, say: (line: string) => v
       continue
     }
     mkdirSync(join(to, '..'), { recursive: true })
-    renameSync(old, to)
+    move(old, to)
     say(`moved the ${kind} of ${branch} from ${old} to ${to}`)
   }
 }

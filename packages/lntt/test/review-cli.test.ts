@@ -143,11 +143,13 @@ afterEach(() => {
   rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
+const key = (branch: string) =>
+  [...branch].map((c) => (/[A-Z]/.test(c) ? `%${c.charCodeAt(0).toString(16)}` : encodeURIComponent(c))).join('')
 // Where lntt review keeps a branch's state and ledger: one file each, named by the branch
 // (percent-encoded), in the clone's common git directory unless a place is configured.
 const storeDir = (...names: string[]) => join(repo, '.git/lntt-review', ...names)
-const stateFile = (branch = 'feat/1/x', dir = storeDir()) => join(dir, 'state', `${encodeURIComponent(branch)}.json`)
-const ledgerFile = (branch = 'feat/1/x', dir = storeDir()) => join(dir, 'ledger', `${encodeURIComponent(branch)}.json`)
+const stateFile = (branch = 'feat/1/x', dir = storeDir()) => join(dir, 'state', `${key(branch)}.json`)
+const ledgerFile = (branch = 'feat/1/x', dir = storeDir()) => join(dir, 'ledger', `${key(branch)}.json`)
 const put = (path: string, text: string) => {
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, text)
@@ -2684,5 +2686,97 @@ describe("where lntt review keeps a branch's rounds", () => {
       assert.equal(refused.code, 1, args.join(' '))
       assert.match(refused.err, /state\/feat%2F2%2Fy\.json cannot be read/, args.join(' '))
     }
+  })
+
+  test('a branch name is a file name with its capitals encoded, so a case-insensitive filesystem tells two apart', () => {
+    git('switch', '-qc', 'Fix/A', 'feat/1/x')
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    assert.equal(existsSync(join(storeDir(), 'state', '%46ix%2F%41.json')), true)
+    assert.equal(state('Fix/A').branch, 'Fix/A')
+  })
+
+  test('a place of ~ alone, and a project place starting with ~/', () => {
+    git('remote', 'add', 'origin', 'git@github.com:org/proj.git')
+    const bare = home({ review: { stateDir: '~' } })
+    assert.equal(lntt(['--base', 'main'], { HOME: bare }).code, 0)
+    assert.equal(existsSync(stateFile('feat/1/x', join(bare, 'org/proj'))), true)
+
+    const config = JSON.parse(CONFIG)
+    config.delivery.review.stateDir = '~/shared'
+    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify(config))
+    git('commit', '-qam', 'a place in the home')
+    const plain = temp('plain')
+    assert.equal(lntt(['--base', 'main'], { HOME: plain }).code, 0)
+    assert.equal(existsSync(stateFile('feat/1/x', join(plain, 'shared/org/proj'))), true)
+  })
+
+  test('an origin whose org is .. cannot take the state out of its place', () => {
+    git('remote', 'add', 'origin', 'https://example.com/../proj')
+    const mine = temp('mine')
+    assert.equal(lntt(['--base', 'main'], { HOME: home({ review: { stateDir: mine } }) }).code, 0)
+    assert.deepEqual(readdirSync(mine), ['local'], 'keyed by the git directory, inside the place')
+  })
+
+  test('--clear of a ledger with no state: refused until the branch is merged; a detached HEAD has nothing', () => {
+    put(ledgerFile(), JSON.stringify({ branch: 'feat/1/x', closed: [] }))
+    const refused = lntt(['status', '--clear'])
+    assert.equal(refused.code, 1)
+    assert.match(refused.err, /nothing cleared$/m)
+    assert.equal(existsSync(ledgerFile()), true)
+
+    const dir = temp('origin')
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', join(dir, 'origin.git')])
+    git('remote', 'add', 'origin', join(dir, 'origin.git'))
+    git('push', '-q', 'origin', 'feat/1/x:main')
+    git('fetch', '-q', 'origin')
+    const r = lntt(['status', '--clear'])
+    assert.equal(r.code, 0, r.err)
+    assert.equal(r.out, "lntt review: cleared feat/1/x's ledger\n")
+    assert.equal(existsSync(ledgerFile()), false)
+
+    put(ledgerFile(), JSON.stringify({ branch: 'feat/1/x', closed: [] }))
+    git('switch', '-q', '--detach')
+    assert.equal(lntt(['status', '--clear']).out, 'lntt review: nothing to clear\n')
+    assert.equal(existsSync(ledgerFile()), true)
+  })
+
+  test('--prune leaves a file whose name is not an encoded branch, and takes a state for HEAD that no ref holds', () => {
+    const dir = temp('origin')
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', join(dir, 'origin.git')])
+    git('remote', 'add', 'origin', join(dir, 'origin.git'))
+    git('push', '-q', 'origin', 'main:main')
+    git('fetch', '-q', 'origin')
+    git('remote', 'set-head', 'origin', 'main')
+    put(join(storeDir(), 'state', '%E0.json'), '{}')
+    put(stateFile('HEAD'), '{}')
+    const r = lntt(['status', '--prune'])
+    assert.equal(r.out, 'lntt review: pruned HEAD (no branch of that name is left): state\n')
+    assert.equal(existsSync(join(storeDir(), 'state', '%E0.json')), true)
+  })
+
+  describe('a state in the old place, more cases', () => {
+    const old = (name = 'lntt-review.json') => join(repo, '.git', name)
+
+    test('a state that cannot be read is set aside, and an older ledger does not replace the place’s', () => {
+      writeFileSync(old(), '{ cut')
+      const set = lntt(['status'])
+      assert.match(set.err, /lntt-review\.json cannot be read: set aside as lntt-review\.json\.unreadable/)
+      assert.equal(existsSync(old('lntt-review.json.unreadable')), true)
+
+      assert.equal(lntt(['--base', 'main'], { FAKE_REVIEW: note }).code, 0)
+      const ledger = readFileSync(ledgerFile(), 'utf8')
+      writeFileSync(old('lntt-review-ledger.json'), JSON.stringify({ branch: 'feat/1/x', closed: [{ id: 'old' }] }))
+      utimesSync(old('lntt-review-ledger.json'), new Date(2000, 0, 1), new Date(2000, 0, 1))
+      assert.match(lntt(['status']).err, /the ledger of feat\/1\/x in .+ is older than the one in .+: dropped/)
+      assert.equal(readFileSync(ledgerFile(), 'utf8'), ledger)
+    })
+
+    test('a newer one replaces the place’s', () => {
+      assert.equal(lntt(['--base', 'main']).code, 0)
+      utimesSync(stateFile(), new Date(2000, 0, 1), new Date(2000, 0, 1))
+      writeFileSync(old(), JSON.stringify({ ...state(), round: 7 }))
+      assert.match(lntt(['status']).err, /moved the state of feat\/1\/x/)
+      assert.equal(state().round, 7)
+    })
   })
 })
