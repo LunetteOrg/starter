@@ -55,7 +55,11 @@ reason, and sits at the lowest level where its assertion can.
     alone when a level has no `coverage`. Coverage says which tests to run and which
     lines no test reaches; it is not an acceptance criterion.
   - `mutate <path:line> --text <on the line> --to <mutated>`: applies the mutation,
-    runs the tests that import the file (a level's `repeat` times in a row), and
+    runs the tests that import the file (a level's `repeat` times in a row; for a
+    file that is not code and that no test imports, such as a `SKILL.md` a test reads
+    as text, the test files whose text names the file's path or its last two
+    segments (`review/SKILL.md`), or a directory of two segments or more of it, whole or
+    by its last two (`skills/review`); the output says they were chosen by name), and
     reports killed (the failing test and its message, `PASS`), survived (`FAIL`), or
     `NOT RUN` when the path leaves the project, the text is not once on that line, the
     tests fail without the mutation, they outlast `timeoutSeconds`, or the file is one
@@ -98,9 +102,12 @@ reason, and sits at the lowest level where its assertion can.
 ### Negative / accepted risks
 
 - A project must write `tests.levels` with a `run` command before `mutate` works; the
-  tests of a line are found from imports, so a test that reaches code only through a
-  package name or a spawned process path that is not a string in the test is missed
-  and the mutant may survive for want of a test that does run it.
+  tests of a line are found from imports, and for a file that is not code from the
+  path or directory a test names, so a test that reaches code only through a package
+  name or a spawned process path that is not a string in the test is missed and the
+  mutant may survive for want of a test that does run it. A directory of one segment
+  (`docs`) is no name: it would select almost every test, and a survivor would claim
+  coverage it does not have.
 - A mutation is proposed in a line whose text and mutated text hold no
   backtick: the reviewer reports other lines as notes.
 - An interrupted run (SIGINT, SIGTERM) leaves its scratch worktree registered under the

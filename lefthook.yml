@@ -21,6 +21,21 @@ pre-commit:
     decisions-board-refs:
       glob: "**/*.{md,mdx}"
       run: pnpm exec lntt check decisions board-refs {staged_files}
+    # A test file at no level, at two, or off its level's harness: found at the commit
+    # (as in #207, where moved tests sat at no level until after it). Runs only when a
+    # test file named *.test.* or *.spec.* is staged; a test file a level takes under
+    # another name is checked by CI (lntt check). Which file sits at which level is
+    # tests.levels' call (.agents/config.jsonc).
+    test-levels:
+      glob: "**/*.{test,spec}.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"
+      run: pnpm exec lntt check tests levels
+    # The entries `lntt sync` writes in .claude/settings.json, against what the code
+    # writes: runs only when either side is staged.
+    claude-settings:
+      glob:
+        - ".claude/settings.json"
+        - "packages/lntt/src/claude-settings.ts"
+      run: pnpm exec lntt check plugin
 
 pre-push:
   commands:
