@@ -15,7 +15,9 @@
 // - `closed` and merged, the candidate itself: close the issues of its `Closes` lines
 //   still open, then move the pull requests still open on it (GitHub moves them onto
 //   the base when it deletes the branch) onto the next candidate, created only when
-//   there are some.
+//   there are some. The issues that waited on what closed move to Ready when they meet
+//   the criteria (src/board-ready.ts), and the candidate's pull request says which,
+//   with what is missing for the rest.
 // - every run, and alone on a push to the base (`handlePush`): when the base moved
 //   while a candidate is open, the candidate follows it. Nobody on it (no pull request
 //   open into it): its commits are rebased on the base and pushed with a lease on the
@@ -40,6 +42,9 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { Graphql } from '../board.ts'
+import { same } from '../board.ts'
+import { holdsLine, moveToReady, NotOnBoard, type ReadyRules, readIssueOnBoard, readWaiting } from '../board-ready.ts'
 import { retroComment } from '../pull-request.ts'
 
 export interface CandidateConfig {
@@ -56,6 +61,8 @@ export interface CandidateConfig {
   // The empty retrospective block (`lntt pr block`): the comment a new candidate opens
   // with, which `lntt retro add` fills as the batch goes.
   retrospective: string
+  // The Ready check run on the candidate's merge; none when the project has no board.
+  ready?: ReadyRules
 }
 
 export interface PullRequest {
@@ -1366,11 +1373,157 @@ function followOrWarn(run: Run) {
   }
 }
 
-// The candidate is merged: its issues close, and the pull requests it left behind
-// move. One failing does not stop the other; the run fails after both.
+// --- The Ready check on the candidate's merge --------------------------------------
+
+// A Graphql over a client of `gh`: a dry run's write answers nothing.
+const overGh =
+  (client: (args: string[]) => string): Graphql =>
+  (query, variables) => {
+    const flags = Object.entries(variables).flatMap(([key, value]) => [
+      typeof value === 'number' ? '-F' : '-f',
+      `${key}=${value}`,
+    ])
+    const out = client(['api', 'graphql', '-f', `query=${query}`, ...flags])
+    return out ? ((JSON.parse(out) as { data?: Record<string, unknown> }).data ?? {}) : {}
+  }
+
+export function readyMarker(candidateBranch: string): string {
+  return `<!-- candidate:ready:${candidateBranch} -->`
+}
+
+export interface ReadyReport {
+  moved: Array<{ number: number; evidence: string }>
+  already: Array<{ number: number; evidence: string }>
+  left: Array<{ number: number; evidence: string; why: string }>
+}
+
+export function readyComment(rules: ReadyRules, candidateBranch: string, report: ReadyReport): string {
+  const { initial, ready } = rules.status
+  const section = (title: string, lines: string[]) => (lines.length > 0 ? ['', title, '', ...lines] : [])
+  return [
+    readyMarker(candidateBranch),
+    `The merge of \`${candidateBranch}\` closed issues that others were waiting on (the Ready check, docs/process/board.md).`,
+    ...section(
+      `Moved to ${ready}:`,
+      report.moved.map(({ number, evidence }) => `- #${number}: ${evidence}.`),
+    ),
+    ...section(
+      `Already at ${ready}:`,
+      report.already.map(({ number, evidence }) => `- #${number}: ${evidence}.`),
+    ),
+    ...section(
+      `Left at ${initial}:`,
+      report.left.map(({ number, evidence, why }) => `- #${number}: ${why} (${evidence}).`),
+    ),
+  ].join('\n')
+}
+
+// Which pull request closed which issue: those merged into the candidate; an issue none
+// of them names is the candidate's own. The list is only evidence: when it cannot be
+// read, every issue is the candidate's own and the moves go on.
+function closers({ gh, repo, log }: Run, pr: PullRequest): (issue: number) => number {
+  let merged: Array<{ number: number; body: string | null }> = []
+  try {
+    merged = JSON.parse(
+      gh.read([
+        'pr',
+        'list',
+        '--repo',
+        repo,
+        '--state',
+        'merged',
+        '--base',
+        pr.headRef,
+        '--limit',
+        '500',
+        '--json',
+        'number,body',
+      ]),
+    ) as typeof merged
+  } catch (error) {
+    log(
+      `::notice title=Ready check evidence::the pull requests merged into ${pr.headRef} could not be read, the comment names #${pr.number}: ${(error as Error).message.split('\n')[0]}`,
+    )
+  }
+  return (issue) =>
+    merged.find((m) => closingReferences(m.body).some((ref) => issueNumber(ref, repo) === issue))?.number ?? pr.number
+}
+
+// The candidate is merged, so its issues are closed: the issues blocked by one of them
+// that meet the criteria move from the first status to Ready, and the candidate's pull
+// request says what moved and what is missing for the rest. An issue already at Ready is
+// listed there, and one further along is someone's already and is left alone. The Projects token's refusals and a
+// Project without the statuses are notices, as for every board move here.
+export function readyAfterMerge(run: Run, pr: PullRequest): ReadyReport | null {
+  const { gh, board, repo, log, config } = run
+  const rules = config.ready
+  if (!rules?.blockedBy) return null
+  const notice = (message: string) => log(`::notice title=Board not moved::${message}`)
+  if (!board) {
+    notice(
+      'no token with the Projects permission: the Ready check of this merge did not run (docs/process/delivery.md)',
+    )
+    return null
+  }
+  const read = overGh(gh.read)
+  const waiting = new Map<number, number[]>()
+  const failed = eachIssue(localIssues(run, candidateClosingReferences(pr.body)), (number) => {
+    const { closed, blocked, more } = readWaiting(read, repo, number)
+    if (!closed) return
+    if (more)
+      log(
+        `::notice title=Ready check partial::#${number} blocks more issues than one read holds: lntt board ready lists the rest.`,
+      )
+    for (const issue of blocked) waiting.set(issue, [...(waiting.get(issue) ?? []), number])
+  })
+  const report: ReadyReport = { moved: [], already: [], left: [] }
+  if (waiting.size > 0) {
+    const closer = closers(run, pr)
+    const evidence = (blockers: number[]) => blockers.map((b) => `#${b} closed by #${closer(b)}`).join(', ')
+    const issues = [...waiting.keys()].sort((a, b) => a - b)
+    failed.push(
+      ...eachIssue(issues, (number) => {
+        const why = evidence(waiting.get(number) ?? [])
+        try {
+          const { verdict, status, target } = readIssueOnBoard(read, overGh(board.read), rules, repo, number)
+          if (!target) {
+            log(`candidate: #${number} is not on the board, the Ready check leaves it.`)
+          } else if (same(status ?? '', rules.status.ready)) {
+            report.already.push({ number, evidence: why })
+          } else if (!same(status ?? '', rules.status.initial)) {
+            log(`candidate: #${number} is at ${status ?? 'no status'}, the Ready check leaves it.`)
+          } else if (verdict.kind === 'eligible') {
+            moveToReady(overGh(board.write), target)
+            report.moved.push({ number, evidence: why })
+          } else if (verdict.kind === 'holds') {
+            report.left.push({ number, evidence: why, why: holdsLine(verdict.open) })
+          } else {
+            report.left.push({ number, evidence: why, why: `missing ${verdict.missing.join(', ')}` })
+          }
+        } catch (error) {
+          const message = (error as Error).message
+          if (!(error instanceof NotOnBoard) && !NOT_PERMITTED.test(message)) throw error
+          notice(`#${number} is not moved to "${rules.status.ready}": ${message.split('\n')[0]}`)
+        }
+      }),
+    )
+  }
+  log(
+    `candidate: Ready check: moved ${list(report.moved.map((i) => i.number))}; left ${list(report.left.map((i) => i.number))}.`,
+  )
+  if (report.moved.length + report.already.length + report.left.length > 0) {
+    commentOnce(run, pr.number, readyMarker(pr.headRef), readyComment(rules, pr.headRef, report))
+  }
+  failIfAny(failed, `issues the Ready check could not read or move`)
+  return report
+}
+
+// The candidate is merged: its issues close, the pull requests it left behind move, and
+// the issues that waited on the closed ones are checked. One failing does not stop the
+// others; the run fails after all of them.
 export function candidateMerged(run: Run, pr: PullRequest) {
   const errors: string[] = []
-  for (const step of [closeCandidateIssues, carryOver]) {
+  for (const step of [closeCandidateIssues, carryOver, readyAfterMerge]) {
     try {
       step(run, pr)
     } catch (error) {

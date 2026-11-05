@@ -5,13 +5,14 @@
 // only when the list it names is present, and a value left unset is checked by its
 // default, which is what the skills will use.
 
+import { DEFAULT_READY } from './board-ready.ts'
 import { CANDIDATE_STATUS } from './ci/config.ts'
 
 // The roles of board.fields.status and their defaults; initial defaults to the first
 // option, always one of them.
 const STATUS_ROLES: Record<string, string | undefined> = {
   initial: undefined,
-  ready: 'Ready',
+  ready: DEFAULT_READY,
   inProgress: 'In progress',
   inReview: 'In review',
   done: 'Done',
@@ -86,6 +87,9 @@ export function checkReferences(data: Record<string, unknown>): string[] {
   const types = at(data, 'board', 'issueTypes') as Tree
   for (const type of (types?.permanent ?? []) as string[]) {
     expect('board.issueTypes.permanent', type, (types?.parents ?? []) as string[])
+  }
+  for (const type of (types?.standalone ?? []) as string[]) {
+    expect('board.issueTypes.standalone', type, (types?.children ?? []) as string[])
   }
 
   const listed = [...((types?.parents ?? []) as string[]), ...((types?.children ?? []) as string[])]

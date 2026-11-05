@@ -405,6 +405,13 @@ describe('the board section', () => {
     for (const on of ['parents', 'children']) assertValid({ board: withHorizon({ fields: { size: { ...size, on } } }) })
   })
 
+  test('lntt validate: a stand-alone issue type is one of the children', () => {
+    assertBadReference(
+      { board: { issueTypes: { parents: ['Feature'], children: ['Bug'], standalone: ['Feature'] } } },
+      /board\.issueTypes\.standalone is "Feature", not one of: Bug/,
+    )
+  })
+
   test('lntt validate: a permanent issue type is one of the parents', () => {
     assertValid({ board: withHorizon({ issueTypes: board.issueTypes }) })
     assertBadReference(

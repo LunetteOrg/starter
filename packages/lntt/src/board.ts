@@ -123,7 +123,7 @@ const DATA_TYPES: Record<string, string> = {
   iteration: 'ITERATION',
 }
 
-const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+export const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? ' has' : 's have'} it`
 
 export function planBoard(board: BoardConfig, state: BoardState, count: Count): { steps: Step[]; manual: Manual[] } {
