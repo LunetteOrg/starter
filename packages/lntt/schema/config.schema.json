@@ -639,6 +639,11 @@
               "exclusiveMinimum": 0,
               "description": "How long a whole round may take; then every agent still running is stopped, the round fails and keeps what it gathered. Default 60."
             },
+            "stateDir": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Where lntt review keeps each branch's state and ledger of closed findings, for everyone on the project; the operator's own review.stateDir (lntt operator) overrides it. A path relative to the main checkout, absolute, or starting with ~; a folder per repository (<org>/<repo>) is made inside it. Default: the clone's common git directory."
+            },
             "maxRounds": {
               "type": "integer",
               "minimum": 1,

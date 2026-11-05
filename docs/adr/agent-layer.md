@@ -108,7 +108,8 @@ relies on it. The template takes it when it adopts `@lntt/lntt` (#60).
 
 The operator profile has its own schema (`packages/lntt/schema/operator.schema.json`:
 name, handle, role, language, confidence per topic, accounts, workspace with the
-preferred viewers and browsers in order) and is read,
+preferred viewers and browsers in order, and `review.stateDir`, the place `lntt review`
+keeps its rounds in) and is read,
 in merge order, from:
 
 1. `~/.agents/operator.{jsonc,yml}`, for every project;

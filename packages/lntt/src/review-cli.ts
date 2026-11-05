@@ -6,6 +6,7 @@ import {
   appendFileSync,
   closeSync,
   existsSync,
+  mkdirSync,
   openSync,
   readFileSync,
   statSync,
@@ -13,7 +14,7 @@ import {
   writeFileSync,
   writeSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { projectBase } from './base.ts'
@@ -35,6 +36,7 @@ import { findConfig, loadConfig } from './index.ts'
 import { type Message, pending, type Started, send, startedBy } from './messages.ts'
 import { messagesRoot, systemMailbox } from './messages-cli.ts'
 import { describeOutcome, mutateAll } from './mutate.ts'
+import { loadOperator, slug } from './operator.ts'
 import { orcaSubagents, type Subagents } from './orca-subagents.ts'
 import {
   agentLabel,
@@ -60,6 +62,17 @@ import {
   roundRange,
   runRound,
 } from './review.ts'
+import {
+  branchesIn,
+  ledgerPathIn,
+  migrateOld,
+  type Place,
+  parseRefs,
+  pruneReason,
+  removeBranch,
+  resolvePlace,
+  statePathIn,
+} from './review-store.ts'
 import { commandExists } from './viewer.ts'
 
 export { formatTokens }
@@ -67,7 +80,7 @@ export { formatTokens }
 const USAGE = `usage: lntt review [--base <branch>] [--plan]
        lntt review reply <finding> <answer>
        lntt review allow <rounds>
-       lntt review status [--json] [--query <jq>] [--clear]
+       lntt review status [--json] [--query <jq>] [--clear | --prune [--dry-run]]
        lntt review cost [--json]`
 
 function usage(message?: string): never {
@@ -114,21 +127,50 @@ function records(data: Record<string, unknown>): string {
     .join('\n')
 }
 
-// What the round lntt review keeps between runs: in the worktree's own git directory,
-// so each worktree has its own and nothing reaches a commit.
-function statePath(): string {
-  return join(git('rev-parse', '--absolute-git-dir'), 'lntt-review.json')
+// Where each branch's state and ledger are kept between runs: one file of each per branch,
+// in the place the operator, the project or the clone names (src/review-store.ts). The first
+// look also takes in what this worktree kept in its git directory before the place existed.
+let placed: Place | null = null
+function place(): Place {
+  if (placed) return placed
+  const common = git('rev-parse', '--path-format=absolute', '--git-common-dir')
+  const review = (loaded().delivery as { review?: { stateDir?: unknown } } | undefined)?.review
+  const operator = (loadOperator(cwd()).profile.review as { stateDir?: unknown } | undefined)?.stateDir
+  placed = resolvePlace({
+    common,
+    main: common.endsWith('/.git') ? common.slice(0, -'/.git'.length) : common,
+    slug: slug(cwd()),
+    operator,
+    project: review?.stateDir,
+  })
+  migrateOld(git('rev-parse', '--absolute-git-dir'), placed.dir, (line) => stderr.write(`lntt review: ${line}\n`))
+  return placed
 }
 
-function readState(): ReviewState | null {
-  const path = statePath()
-  return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as ReviewState) : null
+function statePath(branch: string): string {
+  return statePathIn(place().dir, branch)
+}
+
+function readState(branch: string): ReviewState | null {
+  const path = statePath(branch)
+  if (!existsSync(path)) return null
+  const state = JSON.parse(readFileSync(path, 'utf8')) as ReviewState | null
+  if (state?.branch !== branch) {
+    throw new Error(`${path} cannot be read: pnpm exec lntt review status --clear removes it`)
+  }
+  return state
+}
+
+function writeState(state: ReviewState): void {
+  const path = statePath(state.branch)
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, `${JSON.stringify(state, null, 2)}\n`)
 }
 
 // The findings the branch closed, round after round, next to the state: the reviewers and
-// verifiers of every round read it. Another branch's ledger is none.
-function ledgerPath(): string {
-  return join(git('rev-parse', '--absolute-git-dir'), 'lntt-review-ledger.json')
+// verifiers of every round read it.
+function ledgerPath(branch: string): string {
+  return ledgerPathIn(place().dir, branch)
 }
 
 // A state saved before the rounds were kept: the rounds it ran, none of them with a cost.
@@ -140,7 +182,7 @@ function legacyRounds(state: ReviewState | null): number {
 // A ledger that cannot be read (a write cut short) costs the reviewers what it told them,
 // not the round: it is said, and the branch starts a new one.
 function readLedger(branch: string): Closed[] {
-  const path = ledgerPath()
+  const path = ledgerPath(branch)
   if (!existsSync(path)) return []
   try {
     const ledger = JSON.parse(readFileSync(path, 'utf8')) as Partial<Ledger>
@@ -152,7 +194,8 @@ function readLedger(branch: string): Closed[] {
 }
 
 function writeLedger(branch: string, closed: Closed[]): void {
-  writeFileSync(ledgerPath(), `${JSON.stringify({ branch, closed } satisfies Ledger, null, 2)}\n`)
+  mkdirSync(dirname(ledgerPath(branch)), { recursive: true })
+  writeFileSync(ledgerPath(branch), `${JSON.stringify({ branch, closed } satisfies Ledger, null, 2)}\n`)
 }
 
 type Asked = { id: string; to: string; path: string }
@@ -625,7 +668,7 @@ async function round(args: string[]): Promise<number> {
   if (branch === 'HEAD') throw new Error('HEAD is detached; the review keeps its rounds per branch: switch to one')
   const head = git('rev-parse', '--short', 'HEAD')
   const root = git('rev-parse', '--show-toplevel')
-  const state = readState()
+  const state = readState(branch)
   const range = roundRange(state, branch, head, git('rev-parse', '--short', mergeBase(root, values.base)), (a, b) => {
     try {
       git('merge-base', '--is-ancestor', a, b)
@@ -714,8 +757,9 @@ async function round(args: string[]): Promise<number> {
   const moved = git('rev-parse', '--short', 'HEAD') !== head || git('status', '--porcelain') !== ''
   if (moved)
     result.failed.push({ lens: 'round', agent: 'lntt', error: `the branch moved from ${head} during the round` })
-  // An empty delta keeps the last round's number: nothing new was read. A round with a
-  // failure or a line left unread does not move the reviewed commit, so the next one reads this range again.
+  // An empty delta keeps this branch's last round number, 1 with no state of its own: nothing new
+  // was read. A round with a failure or a line left unread does not move the reviewed commit,
+  // so the next one reads this range again.
   const previous = state?.branch === branch ? state.reviewed : null
   const saved: ReviewState = {
     branch,
@@ -725,7 +769,7 @@ async function round(args: string[]): Promise<number> {
     ...(state?.branch === branch && state.allowed ? { allowed: state.allowed } : {}),
     rounds: roundCosts(state, branch, result, range.round, files.length > 0),
   }
-  writeFileSync(statePath(), `${JSON.stringify(saved, null, 2)}\n`)
+  writeState(saved)
   // Only a round that read its range whole closes anything: the next one reads it again.
   if (files.length > 0 && result.failed.length === 0 && result.partial.length === 0)
     writeLedger(branch, closeRound(ledger, result, open, config.warningRounds))
@@ -757,12 +801,19 @@ async function round(args: string[]): Promise<number> {
   return roundClean(result) ? 0 : 1
 }
 
+// The branch HEAD names; the review keeps its rounds per branch.
+function headBranch(): string {
+  const branch = git('rev-parse', '--abbrev-ref', 'HEAD')
+  if (branch === 'HEAD') throw new Error('HEAD is detached; the review keeps its rounds per branch: switch to one')
+  return branch
+}
+
 // The reviewers that found it, each resumed in its own session with the author's
 // answer. Withdrawn when every one of them withdraws it.
 async function reply(args: string[]): Promise<number> {
   const [id, ...words] = args
   if (!id || words.length === 0) usage('give the finding and the answer')
-  const state = readState()
+  const state = readState(headBranch())
   const finding = state?.result.findings.find((f) => f.id === id)
   if (!state || !finding) throw new Error(`no open finding ${id} in the last round`)
   acquireLock()
@@ -809,7 +860,7 @@ async function reply(args: string[]): Promise<number> {
       closedEntry(finding, state.round, 'refuted', { proof }),
     ])
   }
-  writeFileSync(statePath(), `${JSON.stringify(state, null, 2)}\n`)
+  writeState(state)
   stdout.write(`${JSON.stringify({ id, withdrawn, replies }, null, 2)}\n`)
   return withdrawn ? 0 : 1
 }
@@ -819,9 +870,9 @@ async function reply(args: string[]): Promise<number> {
 function cost(args: string[]): number {
   const { values } = parseArgs({ args, options: { json: { type: 'boolean', default: false } } })
   const branch = git('rev-parse', '--abbrev-ref', 'HEAD')
-  const state = readState()
-  const rounds = state?.branch === branch ? (state.rounds ?? []) : []
-  const total = reviewCost(rounds, legacyRounds(state?.branch === branch ? state : null))
+  const state = branch === 'HEAD' ? null : readState(branch)
+  const rounds = state?.rounds ?? []
+  const total = reviewCost(rounds, legacyRounds(state))
   stdout.write(
     values.json
       ? `${JSON.stringify({ branch, rounds, total: { rounds: total.rounds, tokens: total.tokens, usd: total.usd, unrecorded: total.unrecorded, line: total.line } }, null, 2)}\n`
@@ -838,12 +889,12 @@ function allow(args: string[]): number {
   if (rest.length > 0 || !count || !/^\d+$/.test(count) || rounds < 1)
     usage('give the rounds to allow, a whole number from 1')
   acquireLock()
-  const branch = git('rev-parse', '--abbrev-ref', 'HEAD')
-  const state = readState()
-  if (!state || state.branch !== branch) throw new Error(`no round on ${branch} yet: nothing to allow more rounds to`)
+  const branch = headBranch()
+  const state = readState(branch)
+  if (!state) throw new Error(`no round on ${branch} yet: nothing to allow more rounds to`)
   const { maxRounds } = reviewConfig(loaded())
   state.allowed = (state.allowed ?? 0) + rounds
-  writeFileSync(statePath(), `${JSON.stringify(state, null, 2)}\n`)
+  writeState(state)
   // The band stops showing the limit: the next round may run.
   startProgress()
   emit({ type: 'allow', allowed: state.allowed })
@@ -859,8 +910,9 @@ class UnreadableStateError extends Error {}
 
 // The state as `lntt review status` reads it: an error when it cannot be read, never a
 // round started on a guess.
-function statusState(): { state: ReviewState; updated: Date } | null {
-  const path = statePath()
+function statusState(branch: string | null): { state: ReviewState; updated: Date } | null {
+  if (branch === null) return null
+  const path = statePath(branch)
   if (!existsSync(path)) return null
   let state: ReviewState
   try {
@@ -870,7 +922,7 @@ function statusState(): { state: ReviewState; updated: Date } | null {
   }
   const result = state?.result as Partial<ReviewState['result']> | undefined
   if (
-    typeof state?.branch !== 'string' ||
+    state?.branch !== branch ||
     typeof state.round !== 'number' ||
     typeof result !== 'object' ||
     result === null ||
@@ -901,8 +953,8 @@ function withDefaults(state: ReviewState): ReviewState {
 }
 
 // The ledger as it is on disk, whatever branch it names: {} when it cannot be read.
-function ledgerFile(): Partial<Ledger> | null {
-  const path = ledgerPath()
+function ledgerFile(branch: string): Partial<Ledger> | null {
+  const path = ledgerPath(branch)
   if (!existsSync(path)) return null
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as Partial<Ledger>
@@ -942,20 +994,15 @@ function anchor(f: { path: string | null; line: number | null }): string {
   return f.path === null ? '(no anchor)' : `${f.path}${f.line === null ? '' : `:${f.line}`}`
 }
 
-// A date as a person reads it, in local time: YYYY-MM-DD HH:MM.
-function localTime(date: Date): string {
-  const two = (n: number) => String(n).padStart(2, '0')
-  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())} ${two(date.getHours())}:${two(date.getMinutes())}`
-}
-
 // "a", "a and b", "a, b and c".
 function listed(words: string[]): string {
   return words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`
 }
 
-// The worktree's state, ledger and progress of another branch, or of a merged one, go;
-// never while a round holds the lock, and never the lock itself. The ledger of the
-// current branch stays while that branch is not merged.
+// The current branch's state, ledger and progress go once the branch is merged, or at once
+// when its state cannot be read; never while a round holds the lock, and never the lock itself.
+// The ledger of a branch that is not merged stays when only an unreadable state goes. The
+// states of branches that no longer exist go with --prune.
 function clear(root: string, current: string | null): number {
   const holder = lockHolder(lockPath())
   if (holder !== null)
@@ -965,25 +1012,23 @@ function clear(root: string, current: string | null): number {
   let own: ReturnType<typeof statusState> = null
   let unreadable = false
   try {
-    own = statusState()
+    own = statusState(current)
   } catch (error) {
     if (!(error instanceof UnreadableStateError)) throw error
     unreadable = true
   }
-  const ledger = ledgerFile()
-  const target = unreadable ? 'an unreadable state' : (own?.state.branch ?? ledger?.branch ?? null)
-  if (!target) {
+  const ledger = current === null ? null : ledgerFile(current)
+  if (current === null || (!own && !unreadable && !ledger)) {
     stdout.write('lntt review: nothing to clear\n')
     return 0
   }
-  const head = own?.state.branch === current ? (own?.state.result.head ?? null) : null
-  const check = current === null ? null : mergedInto(root, current, head)
-  const currentMerged = check?.merged === true
-  if (target === current && !currentMerged)
+  const check = mergedInto(root, current, own?.state.result.head ?? null)
+  const merged = check.merged === true
+  if (!merged && !unreadable)
     throw new Error(
-      check?.merged === null
-        ? `the state is ${target}'s, the current branch, and whether it is merged cannot be told (${check.why}): nothing cleared`
-        : `the state is ${target}'s, the current branch, and it is not merged (${check?.why}): nothing cleared`,
+      check.merged === null
+        ? `the state is ${current}'s, the current branch, and whether it is merged cannot be told (${check.why}): nothing cleared`
+        : `the state is ${current}'s, the current branch, and it is not merged (${check.why}): nothing cleared`,
     )
   const removed: string[] = []
   const remove = (name: string, path: string) => {
@@ -991,10 +1036,34 @@ function clear(root: string, current: string | null): number {
     unlinkSync(path)
     removed.push(name)
   }
-  remove('state', statePath())
-  if (!(ledger?.branch === current && !currentMerged)) remove('ledger', ledgerPath())
+  remove('state', statePath(current))
+  if (merged) remove('ledger', ledgerPath(current))
   remove('progress', progressPath())
-  stdout.write(`lntt review: cleared ${unreadable ? 'an unreadable state: its' : `${target}'s`} ${listed(removed)}\n`)
+  stdout.write(`lntt review: cleared ${unreadable ? 'an unreadable state: its' : `${current}'s`} ${listed(removed)}\n`)
+  return 0
+}
+
+// The states and ledgers of branches that are gone: no local branch and no remote-tracking
+// one of that name, or a local branch whose upstream is gone (GitHub deletes the head branch
+// when it merges and the local one stays). A branch checked out in a worktree stays: a round
+// may be running there. --dry-run says what would go.
+function prune(dry: boolean): number {
+  const dir = place().dir
+  const refs = parseRefs(
+    git('for-each-ref', '--format=%(refname)%09%(upstream:track)', 'refs/heads', 'refs/remotes'),
+    git('worktree', 'list', '--porcelain'),
+  )
+  let gone = 0
+  for (const branch of branchesIn(dir).sort()) {
+    const reason = pruneReason(branch, refs)
+    if (reason === null) continue
+    gone++
+    const removed = dry ? [] : removeBranch(dir, branch)
+    stdout.write(
+      `lntt review: ${dry ? 'would prune' : 'pruned'} ${branch} (${reason})${dry ? '' : `: ${listed(removed)}`}\n`,
+    )
+  }
+  if (gone === 0) stdout.write('lntt review: nothing to prune\n')
   return 0
 }
 
@@ -1004,7 +1073,7 @@ function stateView(state: ReviewState, maxRounds: number) {
   const allowed = state.allowed ?? 0
   const limit = maxRounds + allowed
   const clean = roundClean(result)
-  const ledger = ledgerFile()
+  const ledger = ledgerFile(state.branch)
   return {
     allowed,
     limit,
@@ -1128,11 +1197,17 @@ async function status(args: string[]): Promise<number> {
     options: {
       json: { type: 'boolean', default: false },
       clear: { type: 'boolean', default: false },
+      prune: { type: 'boolean', default: false },
+      'dry-run': { type: 'boolean', default: false },
       query: { type: 'string' },
     },
   })
   if (values.clear && values.json) usage('--clear does not take --json')
   if (values.clear && values.query !== undefined) usage('--clear does not take --query')
+  if (values.prune && (values.clear || values.json || values.query !== undefined)) {
+    usage('--prune takes only --dry-run')
+  }
+  if (values['dry-run'] && !values.prune) usage('--dry-run goes with --prune')
   const root = git('rev-parse', '--show-toplevel')
   // The branch HEAD names, also before its first commit; null when HEAD is detached.
   let current: string | null = null
@@ -1140,12 +1215,13 @@ async function status(args: string[]): Promise<number> {
     current = git('symbolic-ref', '--short', '-q', 'HEAD') || null
   } catch {}
   if (values.clear) return clear(root, current)
+  if (values.prune) return prune(values['dry-run'])
   // A lock created an instant ago names no pid yet: not a round running, for the summary as
   // for the JSON; --clear still waits for it.
   const holder = lockHolder(lockPath())
   const running = typeof holder === 'number' ? holder : null
   const runningText = running === null ? '' : `a round is running (pid ${running})`
-  const own = statusState()
+  const own = statusState(current)
   const here = current ?? 'detached HEAD'
   if (!own) {
     const line = noRoundLine(here, runningText)
@@ -1156,17 +1232,17 @@ async function status(args: string[]): Promise<number> {
   }
   const { state, updated } = own
   const result = state.result
-  const isCurrent = state.branch === current
   const { maxRounds } = reviewConfig(loaded())
   const view = stateView(state, maxRounds)
-  const code = !isCurrent ? 4 : view.clean ? 0 : view.atLimit ? 3 : 1
+  const code = view.clean ? 0 : view.atLimit ? 3 : 1
   if (values.json || values.query !== undefined) {
     const out = {
       branch: current,
       running,
       state: {
         branch: state.branch,
-        current: isCurrent,
+        // The place holds a branch's own state: it is always the current branch's.
+        current: true,
         updated: updated.toISOString(),
         merged: mergedInto(root, state.branch, result.head).merged,
         round: state.round,
@@ -1199,14 +1275,6 @@ async function status(args: string[]): Promise<number> {
     }
     if (values.query !== undefined) return runQuery(out, values.query, values.json, code, '')
     stdout.write(`${JSON.stringify(out, null, 2)}\n`)
-    return code
-  }
-  if (!isCurrent) {
-    // Another branch's findings are not this branch's to act on: only its name and date.
-    const merged = mergedInto(root, state.branch, result.head).merged ? ', merged' : ''
-    stdout.write(
-      `lntt review: no round on ${here}; the state here is ${state.branch}'s, round ${state.round}, ${localTime(updated)}${merged}: pnpm exec lntt review status --clear removes it${runningText ? `; ${runningText}` : ''}\n`,
-    )
     return code
   }
   stdout.write(`${[...folded(state, view), ...summary(state, view, runningText)].join('\n')}\n`)
