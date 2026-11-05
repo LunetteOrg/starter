@@ -170,6 +170,17 @@ describe('the command line', () => {
     assert.equal(spawnSync('node', [BIN, 'validate'], { cwd: root, encoding: 'utf8' }).stderr, '')
   })
 
+  test('delivery.review.stateDir is a path; anything else does not validate', () => {
+    write('.agents/config.jsonc', '{ "delivery": { "review": { "stateDir": ".git/review" } } }')
+    assert.equal(spawnSync('node', [BIN, 'validate'], { cwd: root, encoding: 'utf8' }).status, 0)
+    for (const bad of ['3', '""', 'false']) {
+      write('.agents/config.jsonc', `{ "delivery": { "review": { "stateDir": ${bad} } } }`)
+      const run = spawnSync('node', [BIN, 'validate'], { cwd: root, encoding: 'utf8' })
+      assert.equal(run.status, 1, bad)
+      assert.match(run.stderr, /stateDir/, bad)
+    }
+  })
+
   test('an invalid file exits 1 with the reason on stderr', () => {
     write('.agents/config.jsonc', `{ "recordin": {} }`)
     const run = spawnSync('node', [BIN, 'validate'], { cwd: root, encoding: 'utf8' })

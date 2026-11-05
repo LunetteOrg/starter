@@ -426,18 +426,18 @@ lntt review allow 2               # two rounds more for this branch, past maxRou
 lntt review status                # the worktree's state: each level folded, the outcome, what to act on
 lntt review status --json         # the whole state, one shape whatever the case
 lntt review status --query '.state.rounds[1:3][] | {round,usd}'   # a part of it, in jq
-lntt review status --clear        # remove another or a merged branch's state, ledger, progress
+lntt review status --clear        # remove this merged branch's state, ledger, progress (or an unreadable state)
+lntt review status --prune        # remove the state and ledger of branches that are gone; --dry-run says which
 lntt review cost                  # the branch's rounds, tokens and USD: the pull request's Review cost line
 lntt review cost --json           # each round's cost and the total
 ```
 
-`lntt review status` is how the state is read: never from the files in the git directory,
-which are each worktree's own (in the main checkout the git directory is also the common
-one, so a file there is the main checkout's). Its exit code is 0 when this branch's last
-round is clean, 1 with something to act on (a blocking finding open, a failed or partial
-lens), 3 at the limit, 4 with no round on this branch (none yet, a detached HEAD, or
-another branch's state, named with its date). `--json` gives `branch`, `running` (the pid
-of a round holding the lock) and `state`: its `branch`, `current`, `updated`, `merged`
+`lntt review status` is how the state is read: never from the files, which are one per
+branch in the place described under [Where the state is kept](#where-the-state-is-kept).
+Its exit code is 0 when this branch's last round is clean, 1 with something to act on (a
+blocking finding open, a failed or partial lens), 3 at the limit, 4 with no round on this
+branch (none yet, or a detached HEAD). `--json` gives `branch`, `running` (the pid
+of a round holding the lock) and `state`: its `branch`, `current` (always true), `updated`, `merged`
 (null when it cannot be told: no base to compare with, an open candidate GitHub
 could not name, no commit of the branch; with `delivery.candidate` set, status asks
 GitHub for the open candidate, as every lntt command that resolves the base does), the round, `limit`
@@ -483,7 +483,7 @@ A round, on a clean working tree:
 1. **What to read:** the branch from where it left the base
    ([the base of a branch](#the-base-of-a-branch)) the first time, then only
    the commits after the last reviewed one (after a rebase, the whole branch again).
-   The state is `lntt-review.json` in the worktree's git directory. Its `rounds` keep
+   The state is the branch's file in [the place](#where-the-state-is-kept). Its `rounds` keep
    each round that read files: `round`, `head`, `tokens`, `usd` (null when no agent
    reported them), `noTokens` and `noUsd` (the agents that reported none, a failed one
    included). After `round N done`, stderr says `lntt review: branch total: <line>`; the
@@ -529,7 +529,7 @@ and do not block, nor are they carried to the next round. From the round after
 `delivery.review.warningRounds` a warning does not block either: the round's `blocking`
 names only `blocker`, and the warnings left go in the pull request as open items. The
 branch keeps a ledger of the findings it closed (fixed, refuted, accepted open) in
-`<git dir>/lntt-review-ledger.json`: each round's reviewers read the entries on the files of
+its own file next to the state: each round's reviewers read the entries on the files of
 the change and those with no anchor, each verifier those on its finding's file; a
 fresh finding that repeats one on a line that did not change goes to `repeated`, not
 verified and not blocking. A reply that is neither
@@ -558,6 +558,38 @@ orchestrator as a message the round does not wait for (`asked` in the event,
 gives the current branch more rounds, kept in its state; the configuration and the
 other branches stay as they are. A run with no new commit is not a round and is never
 stopped.
+
+### Where the state is kept
+
+The state of a branch and its ledger of closed findings are one file each per branch,
+named by the branch with its characters percent-encoded (`feat/1/x` is `feat%2F1%2Fx`):
+`<place>/state/<branch>.json` and `<place>/ledger/<branch>.json`. A round on one branch
+touches nothing of another's, every worktree of the clone finds a branch's state, and
+closing a worktree takes nothing with it. The place is, in order:
+
+1. `review.stateDir` in the operator's profile (`lntt operator`): an absolute path or one
+   starting with `~`. Personal: it never goes in the project configuration.
+2. `delivery.review.stateDir` in the project configuration: the project's default; a
+   relative path starts at the main checkout.
+3. The clone's common git directory: `<git common dir>/lntt-review/`.
+
+A configured place may be shared by clones, so a folder per repository is made inside it:
+`<org>/<repo>` from the origin URL, or `local/<hash of the git directory>` with no origin.
+The lock and the progress file the band reads belong to a running process and stay in each
+worktree's own git directory.
+
+`lntt review status --prune` removes the state and ledger of the branches that are gone:
+no local branch and no remote-tracking one of that name, or a local branch whose upstream is
+gone (GitHub deletes the head branch on merge and the local one stays). A branch checked
+out in any worktree stays. `--prune --dry-run` lists them and removes nothing.
+`--clear` is for the current branch: it removes its state, ledger and progress once the
+branch is merged, or its state alone when that cannot be read.
+
+A state kept before the place existed, in `lntt-review.json` and `lntt-review-ledger.json`
+of a worktree's git directory, is read once, on the first run in that worktree: moved to the
+file of the branch it names with a line on stderr (the newer wins when the place already has
+one for that branch), one that cannot be read is set aside as `*.unreadable`. After that the
+old paths are not read.
 
 ## Running the apps locally
 
