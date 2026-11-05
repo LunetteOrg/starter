@@ -181,7 +181,11 @@ describe("ci.yml's first step: the approval of a bot's pull request", () => {
   test("only each reviewer's latest review of the head counts", () => {
     permission('maintainer', 'write')
     fixture('reviews.json', [review('maintainer', 'APPROVED'), review('maintainer', 'CHANGES_REQUESTED')])
-    assert.equal(runStep(gate(), context()).status, 1)
+    const changes = runStep(gate(), context())
+    assert.equal(changes.status, 1)
+    // No approver left: no permission is asked, and no warning names an empty reviewer.
+    assert.ok(!changes.calls.some((c) => c.includes('/collaborators/')), changes.calls.join('\n'))
+    assert.doesNotMatch(changes.output, /::warning/)
     fixture('reviews.json', [review('maintainer', 'APPROVED', 'an-older-head')])
     assert.equal(runStep(gate(), context()).status, 1)
     fixture('reviews.json', [
