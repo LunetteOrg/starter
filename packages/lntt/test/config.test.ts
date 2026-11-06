@@ -135,6 +135,8 @@ describe("the project's phase", () => {
   })
 
   test('only project.phase reads its default: another missing key, one with a default in the schema too, exits 1', () => {
+    const schema = JSON.parse(readFileSync(resolve(dirname(BIN), '../schema/config.schema.json'), 'utf8'))
+    assert.equal(schema.properties.board.properties.provider.default, 'github')
     write('.agents/config.jsonc', `{ "board": {} }`)
     const r = spawnSync('node', [BIN, 'get', 'board.provider'], { cwd: root, encoding: 'utf8' })
     assert.equal(r.status, 1)

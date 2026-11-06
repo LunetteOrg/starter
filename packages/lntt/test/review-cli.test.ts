@@ -789,7 +789,7 @@ describe("lntt review, with the project's phase", () => {
       .filter((p) => p.trim())
     assert.ok(read.some((p) => p.startsWith('You are reviewing')))
     assert.ok(read.some((p) => p.startsWith('You are checking')))
-    for (const p of read) assert.match(p, /## Before production/)
+    for (const p of read) assert.match(p, /## Before production[\s\S]*Not a finding yet[\s\S]*Findings anyway/)
   })
 
   test('in production, or with no phase, they do not', () => {

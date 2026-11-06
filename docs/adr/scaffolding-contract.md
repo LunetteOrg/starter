@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-10-14
+date: 2026-11-06
 tags: [scaffolding, contract, cli, packages]
 ---
 
@@ -61,11 +61,10 @@ templates writes its own repository there.
 ### The project's phase
 
 Every template ships `project.phase: "development"` in the same file, with a comment
-saying when to switch it: a scaffolded project has no release, so no users, data or links
-to keep, and the review lenses do not ask for what only protects those. The CLI copies the
+saying when to switch it: a scaffolded project has no release yet. The CLI copies the
 value as it is; the project's team sets `production` when its first release reaches
-production. What the key changes is described with the configuration
-(`packages/lntt/README.md`).
+production. What the key changes is in the configuration's schema and
+`packages/lntt/README.md`.
 
 ### After the copy
 

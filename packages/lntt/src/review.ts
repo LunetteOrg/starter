@@ -70,10 +70,10 @@ interface RawReview {
   warningRounds?: number
 }
 
-// delivery.review over the defaults, lens by lens. A lens with no agents is off.
 // Where the project stands (project.phase, read with projectPhase).
 export type Phase = 'development' | 'production'
 
+// delivery.review over the defaults, lens by lens. A lens with no agents is off.
 export function reviewConfig(data: Record<string, unknown>): ReviewConfig {
   const raw = ((data.delivery as { review?: RawReview } | undefined)?.review ?? {}) as RawReview
   const reviewers: Record<string, Lens> = { ...DEFAULT.reviewers }
