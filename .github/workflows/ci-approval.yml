@@ -32,7 +32,8 @@ jobs:
     permissions:
       actions: write
     steps:
-      # The entry as ci.yml's first step matches it: the author and the branch prefix.
+      # The entry as ci.yml's first step matches it: the author (a bot's login, ending in
+      # [bot]) and the branch prefix.
       # Then the reviewer's permission on the repository, as ci.yml's first step counts
       # it: write or admin, or the review changes nothing that step counts. Then
       # the newest pull_request run of ci.yml on the head: a run still going is waited
@@ -49,7 +50,7 @@ jobs:
           author=$(jq -r '.pull_request.user.login // empty' "$GITHUB_EVENT_PATH")
           runs=$(jq -r --arg author "$author" --arg ref "$HEAD_REF" '
             def bot: sub("^app/"; "") | sub("\\[bot\\]$"; "");
-            first(.[] | select(. as $e | $author != "" and ($e.author | bot) == ($author | bot) and ($ref | startswith($e.branch))) | .runs) // empty' <<< "$AUTOMATED")
+            first(.[] | select(. as $e | ($author | endswith("[bot]")) and ($e.author | bot) == ($author | bot) and ($ref | startswith($e.branch))) | .runs) // empty' <<< "$AUTOMATED")
           if [ "$runs" != after-approval ]; then
             echo "not a pull request whose CI waits for the approval (delivery.automated): nothing to re-run"
             exit 0

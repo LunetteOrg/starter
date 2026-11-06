@@ -177,7 +177,11 @@ The pull requests a bot opens are `delivery.automated` in
 [`.agents/config.jsonc`](../../.agents/config.jsonc): one entry per bot, with its login
 as the pull request event names it (`dependabot[bot]`), the prefix of its branches,
 when its CI runs (`runs`) and which CI (`ci`). A pull request matches an entry by its
-author and its branch, both. These pull requests stay on `main` and merge as hotfixes, when a person decides
+author and its branch, both. The author is compared by the bot's slug, so `app/dependabot`
+(gh's name) and `dependabot[bot]` are the same entry. The workflows also want the
+event's login to end in `[bot]`, so a person whose login is the slug is not the bot;
+`lntt ci candidate` reads authors from gh, which can give the bare slug, and compares
+the slug only. These pull requests stay on `main` and merge as hotfixes, when a person decides
 ([delivery](./delivery.md#the-candidate)): the candidate automation leaves them there,
 the candidate guard lets them through, the branch check exempts their branches.
 

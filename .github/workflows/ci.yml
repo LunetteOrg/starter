@@ -52,7 +52,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # A bot's pull request (delivery.automated): its entry, matched by the author (read
-      # from the event file: ci:local has none, so a local run is never a bot's) and the
+      # from the event file: ci:local has none, so a local run is never a bot's; a bot's
+      # event login ends in [bot], so a person named as the bot's slug is not it) and the
       # branch prefix, goes to the next steps as AUTOMATED_RUNS and AUTOMATED_CI. With
       # `runs: after-approval` the step goes on only when the head commit is approved by
       # someone with write access (the repository is public: anyone can submit a review):
@@ -77,7 +78,7 @@ jobs:
           author=$(jq -r '.pull_request.user.login // empty' "${GITHUB_EVENT_PATH:-/dev/null}" 2>/dev/null || true)
           entry=$(jq -c --arg author "$author" --arg ref "$HEAD_REF" '
             def bot: sub("^app/"; "") | sub("\\[bot\\]$"; "");
-            first(.[] | select(. as $e | $author != "" and ($e.author | bot) == ($author | bot) and ($ref | startswith($e.branch)))) // empty' <<< "$AUTOMATED")
+            first(.[] | select(. as $e | ($author | endswith("[bot]")) and ($e.author | bot) == ($author | bot) and ($ref | startswith($e.branch)))) // empty' <<< "$AUTOMATED")
           if [ -z "$entry" ]; then
             echo "not a pull request of delivery.automated"
             exit 0

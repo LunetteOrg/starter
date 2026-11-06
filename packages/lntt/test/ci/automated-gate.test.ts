@@ -159,20 +159,37 @@ function pullRequest(s: Step, who: { login: string; ref: string } = bot(s)) {
   return { number: 7, draft: false, user: { login: who.login }, head: { ref: who.ref, sha: SHA } }
 }
 
-// The pull requests that match no entry, though one half of them does: the bot's
-// author on a branch under no prefix, and someone else on the bot's branch.
-function halfMatches(s: Step) {
+// The bot's slug: its login without what gh or the event add (app/<slug>, <slug>[bot]).
+function slug(s: Step): string {
+  return bot(s)
+    .login.replace(/^app\//, '')
+    .replace(/\[bot\]$/, '')
+}
+
+// The pull requests that match no entry, though they come close: the bot's author on a
+// branch under no prefix, someone else on the bot's branch, a person whose login is the
+// bot's slug (a bot's event login always ends in [bot]), and an event with no author.
+function nearMisses(s: Step) {
+  for (const e of entries(s)) {
+    assert.ok(!NOBODY.ref.startsWith(e.branch), `${NOBODY.ref} is under the prefix ${e.branch}`)
+    assert.ok(!e.author.includes(NOBODY.login), `an entry names ${NOBODY.login}`)
+  }
   return [
     { login: bot(s).login, ref: NOBODY.ref },
     { login: NOBODY.login, ref: bot(s).ref },
+    { login: slug(s), ref: bot(s).ref },
+    { login: '', ref: bot(s).ref },
   ]
 }
 
-// The bot's entry written as gh names an app, app/<slug>: the event's <slug>[bot] matches it.
-function appNamed(s: Step): Step {
-  const { entry } = bot(s)
-  const slug = entry.author.replace(/^app\//, '').replace(/\[bot\]$/, '')
-  return withEntries(s, [{ ...entry, author: `app/${slug}` }])
+// The bot's entry written as gh names an app (app/<slug>), and the pull request of its
+// event login (<slug>[bot]).
+function appNamed(s: Step) {
+  const name = slug(s)
+  return {
+    step: withEntries(s, [{ ...bot(s).entry, author: `app/${name}` }]),
+    who: { login: `${name}[bot]`, ref: bot(s).ref },
+  }
 }
 
 describe("ci.yml's first step: the approval of a bot's pull request", () => {
@@ -186,7 +203,7 @@ describe("ci.yml's first step: the approval of a bot's pull request", () => {
   })
 
   test('a pull request of no delivery.automated entry passes, and asks nothing', () => {
-    for (const who of [NOBODY, ...halfMatches(gate())]) {
+    for (const who of [NOBODY, ...nearMisses(gate())]) {
       const out = runStep(gate(), context(pullRequest(gate(), who)))
       assert.equal(out.status, 0, `${who.login} on ${who.ref}: ${out.output}`)
       assert.deepEqual(out.calls, [], `${who.login} on ${who.ref}`)
@@ -196,7 +213,8 @@ describe("ci.yml's first step: the approval of a bot's pull request", () => {
 
   test('an entry naming the bot as app/<slug> matches its event login', () => {
     fixture('reviews.json', [])
-    const out = runStep(appNamed(gate()), context())
+    const { step: s, who } = appNamed(gate())
+    const out = runStep(s, context(pullRequest(gate(), who)))
     assert.equal(out.status, 1, out.output)
     assert.match(out.output, /::error title=CI not run::/)
   })
@@ -312,7 +330,7 @@ describe("ci-approval.yml: a review re-runs the bot's ci run", () => {
   })
 
   test('a pull request of no delivery.automated entry asks nothing', () => {
-    for (const who of [NOBODY, ...halfMatches(rerun())]) {
+    for (const who of [NOBODY, ...nearMisses(rerun())]) {
       const out = runStep(rerun(), context('approved', 'maintainer', pullRequest(rerun(), who)))
       assert.equal(out.status, 0, `${who.login} on ${who.ref}: ${out.output}`)
       assert.deepEqual(out.calls, [], `${who.login} on ${who.ref}`)
@@ -322,7 +340,8 @@ describe("ci-approval.yml: a review re-runs the bot's ci run", () => {
   test('an entry naming the bot as app/<slug> matches its event login', () => {
     permission('maintainer', 'write')
     fixture('runs.json', { workflow_runs: [{ id: 99, status: 'completed', html_url: 'https://x/99' }] })
-    const out = runStep(appNamed(rerun()), context('approved'))
+    const { step: s, who } = appNamed(rerun())
+    const out = runStep(s, context('approved', 'maintainer', pullRequest(rerun(), who)))
     assert.equal(out.status, 0, out.output)
     assert.ok(out.calls.includes(`run rerun 99 --repo ${REPO}`), out.calls.join('\n'))
   })
