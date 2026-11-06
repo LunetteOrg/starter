@@ -34,15 +34,35 @@ function step(file: string, job: string, index: number): Step {
   return workflow(file).jobs[job].steps[index]
 }
 
-// The bot comes from the delivery.automated line the step carries (lntt sync writes it
-// from the configuration), as the gate reads it: the first `runs: after-approval` entry.
-// A copy of the repo whose configuration names another bot runs the same tests.
-function bot(s: Step) {
-  const entries: { author: string; branch: string; runs: string }[] = JSON.parse(s.env?.AUTOMATED ?? '[]')
-  const entry = entries.find((e) => e.runs === 'after-approval')
-  assert.ok(entry, `no delivery.automated entry with runs: after-approval in ${s.name}`)
-  return { login: entry.author, ref: `${entry.branch}npm_and_yarn/vite-7.0.1` }
+interface Entry {
+  author: string
+  branch: string
+  runs: string
 }
+
+// The delivery.automated entries of the line the step carries, which lntt sync writes
+// from the configuration and the gate reads.
+function entries(s: Step): Entry[] {
+  return JSON.parse(s.env?.AUTOMATED ?? '[]')
+}
+
+// The step with its AUTOMATED line holding these entries instead.
+function withEntries(s: Step, list: Entry[]): Step {
+  return { ...s, env: { ...s.env, AUTOMATED: JSON.stringify(list) } }
+}
+
+// The bot of the tests: the step's first `runs: after-approval` entry, with a ref under
+// its branch prefix. A copy of the repo whose configuration names another bot runs the
+// same tests.
+function bot(s: Step) {
+  const entry = entries(s).find((e) => e.runs === 'after-approval')
+  assert.ok(entry, `no delivery.automated entry with runs: after-approval in ${s.name}`)
+  assert.ok(entry.branch, `the entry of ${entry.author} has an empty branch prefix`)
+  return { entry, login: entry.author, ref: `${entry.branch}npm_and_yarn/vite-7.0.1` }
+}
+
+// A name outside every entry: another author, a branch under no prefix.
+const NOBODY = { login: 'octocat', ref: 'feat/1/x' }
 
 const FAKE_GH = `#!/bin/bash
 # The fake gh: one line per call in $GH_LOG; gh api answers the fixture of its path
@@ -134,9 +154,25 @@ function runStep(s: Step, context: Context) {
   return { status: out.status, output: out.stdout + out.stderr, calls, env: readFileSync(join(dir, 'env'), 'utf8') }
 }
 
-// A pull request of the bot of step s, or of author and ref.
-function pullRequest(s: Step, author = bot(s).login, ref = bot(s).ref) {
-  return { number: 7, draft: false, user: { login: author }, head: { ref, sha: SHA } }
+// A pull request of who: by default, the bot of step s.
+function pullRequest(s: Step, who: { login: string; ref: string } = bot(s)) {
+  return { number: 7, draft: false, user: { login: who.login }, head: { ref: who.ref, sha: SHA } }
+}
+
+// The pull requests that match no entry, though one half of them does: the bot's
+// author on a branch under no prefix, and someone else on the bot's branch.
+function halfMatches(s: Step) {
+  return [
+    { login: bot(s).login, ref: NOBODY.ref },
+    { login: NOBODY.login, ref: bot(s).ref },
+  ]
+}
+
+// The bot's entry written as gh names an app, app/<slug>: the event's <slug>[bot] matches it.
+function appNamed(s: Step): Step {
+  const { entry } = bot(s)
+  const slug = entry.author.replace(/^app\//, '').replace(/\[bot\]$/, '')
+  return withEntries(s, [{ ...entry, author: `app/${slug}` }])
 }
 
 describe("ci.yml's first step: the approval of a bot's pull request", () => {
@@ -150,10 +186,19 @@ describe("ci.yml's first step: the approval of a bot's pull request", () => {
   })
 
   test('a pull request of no delivery.automated entry passes, and asks nothing', () => {
-    const out = runStep(gate(), context(pullRequest(gate(), 'octocat', 'feat/1/x')))
-    assert.equal(out.status, 0, out.output)
-    assert.deepEqual(out.calls, [])
-    assert.equal(out.env, '')
+    for (const who of [NOBODY, ...halfMatches(gate())]) {
+      const out = runStep(gate(), context(pullRequest(gate(), who)))
+      assert.equal(out.status, 0, `${who.login} on ${who.ref}: ${out.output}`)
+      assert.deepEqual(out.calls, [], `${who.login} on ${who.ref}`)
+      assert.equal(out.env, '', `${who.login} on ${who.ref}`)
+    }
+  })
+
+  test('an entry naming the bot as app/<slug> matches its event login', () => {
+    fixture('reviews.json', [])
+    const out = runStep(appNamed(gate()), context())
+    assert.equal(out.status, 1, out.output)
+    assert.match(out.output, /::error title=CI not run::/)
   })
 
   test("a private member's approval counts: the permission decides, not the association", () => {
@@ -267,9 +312,19 @@ describe("ci-approval.yml: a review re-runs the bot's ci run", () => {
   })
 
   test('a pull request of no delivery.automated entry asks nothing', () => {
-    const out = runStep(rerun(), context('approved', 'maintainer', pullRequest(rerun(), 'octocat', 'feat/1/x')))
+    for (const who of [NOBODY, ...halfMatches(rerun())]) {
+      const out = runStep(rerun(), context('approved', 'maintainer', pullRequest(rerun(), who)))
+      assert.equal(out.status, 0, `${who.login} on ${who.ref}: ${out.output}`)
+      assert.deepEqual(out.calls, [], `${who.login} on ${who.ref}`)
+    }
+  })
+
+  test('an entry naming the bot as app/<slug> matches its event login', () => {
+    permission('maintainer', 'write')
+    fixture('runs.json', { workflow_runs: [{ id: 99, status: 'completed', html_url: 'https://x/99' }] })
+    const out = runStep(appNamed(rerun()), context('approved'))
     assert.equal(out.status, 0, out.output)
-    assert.deepEqual(out.calls, [])
+    assert.ok(out.calls.includes(`run rerun 99 --repo ${REPO}`), out.calls.join('\n'))
   })
 
   test('a permission the token cannot read fails the job, naming the reviewer', () => {
