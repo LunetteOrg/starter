@@ -77,7 +77,8 @@
     "local": {
       "cloudOnly": {
         "release.yml": "publishes the @lntt packages to npm with the OIDC token of a published GitHub Release",
-        "candidate.yml": "moves pull requests and edits the candidate with the GitHub App's token"
+        "candidate.yml": "moves pull requests and edits the candidate with the GitHub App's token",
+        "candidate-guard.yml": "reads the pull request's labels and author from the event, which a local run does not have"
       }
     }
   },
@@ -160,6 +161,12 @@
     }
   },
   "delivery": {
+    // The pull requests a bot opens: they stay on main, and their CI waits for the
+    // approval of the head (docs/process/ci.md#automated-pull-requests). lntt sync writes
+    // this list into the workflows' marked lines.
+    "automated": [
+      { "author": "dependabot[bot]", "branch": "dependabot/", "runs": "after-approval", "ci": "full" }
+    ],
     // Pull requests into main collect on candidate/<N>, which reaches main with a
     // rebase merge (docs/process/delivery.md).
     "candidate": {

@@ -40,35 +40,59 @@ on:
 permissions: {}
 
 jobs:
+  # A bot's pull request (delivery.automated) stays where it was opened, and its events
+  # must not take the candidate job's place in the concurrency group below. A job's
+  # condition cannot read the configuration: this job matches the line lntt sync writes,
+  # in seconds and with no checkout, and the candidate job reads its answer.
+  automated:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    outputs:
+      automated: ${{ steps.match.outputs.automated }}
+    steps:
+      - id: match
+        env:
+          AUTOMATED: '[{"author":"dependabot[bot]","branch":"dependabot/","runs":"after-approval","ci":"full"}]' # lntt sync: delivery.automated
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          entry=$(jq -c --arg author "$AUTHOR" --arg ref "$HEAD_REF" '
+            def bot: sub("^app/"; "") | sub("\\[bot\\]$"; "");
+            first(.[] | select(. as $e | $author != "" and ($e.author | bot) == ($author | bot) and ($ref | startswith($e.branch)))) // empty' <<< "$AUTOMATED")
+          if [ -n "$entry" ]; then echo "automated=true" >> "$GITHUB_OUTPUT"; echo "a pull request of ${AUTHOR} (delivery.automated): it stays where it was opened"; fi
   candidate:
-    # Dependabot's events and a fork's pull requests get no repo secrets, hence no app
-    # token: those stay where they were opened. Only the events with something to do
-    # start a runner: a pull request opened or ready into the default branch, not a
-    # candidate itself; a merge into another branch (a candidate); the candidate's own
-    # merge; and every push to the default branch. `candidate/` is
+    # A fork's pull requests get no repo secrets, hence no app token: those stay where
+    # they were opened, and so do the bots' (the job above). Only the events with
+    # something to do start a runner: a pull request opened or ready into the default
+    # branch, not a candidate itself; a merge into another branch (a candidate); the
+    # candidate's own merge; and every push to the default branch. `candidate/` is
     # delivery.candidate.prefix, repeated here because a job's condition cannot read the
-    # configuration; the script decides the rest from it.
+    # configuration; the script decides the rest from it. always() lets a push, which
+    # skips the job above, through.
+    needs: automated
     if: >-
-      github.event_name == 'push' ||
-      (github.event.pull_request.user.login != 'dependabot[bot]' &&
+      always() && (github.event_name == 'push' ||
+      (needs.automated.result == 'success' && needs.automated.outputs.automated != 'true' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       ((github.event.action != 'closed' &&
       github.event.pull_request.base.ref == github.event.repository.default_branch &&
       !startsWith(github.event.pull_request.head.ref, 'candidate/')) ||
       (github.event.action == 'closed' && github.event.pull_request.merged &&
       (github.event.pull_request.base.ref != github.event.repository.default_branch ||
-      startsWith(github.event.pull_request.head.ref, 'candidate/')))))
+      startsWith(github.event.pull_request.head.ref, 'candidate/'))))))
     # One run at a time across the repo: two pull requests opened together must not
     # create two candidates. The group is the job's, so only a run whose job passes the
-    # condition above takes a slot: a skipped run (Dependabot, a fork, a pull request
+    # condition above takes a slot: a skipped run (a bot's, a fork, a pull request
     # into a candidate) never replaces a pending one. GitHub keeps one running and one
     # pending job per group, and a newer pending job cancels the older one. A dropped
     # merge into a candidate is recorded by the next run, which rebuilds the lists from
     # every merged pull request; every run also sweeps pull requests stranded on a
     # candidate that is no longer open onto the open one, and brings the open candidate
     # up to date with the default branch, so a dropped push is followed by the next
-    # run. A dropped `opened` is redone from a terminal with
-    # `pnpm exec lntt ci candidate --pr <n>`, a dropped push with
+    # run. A dropped `opened` turns the `candidate guard` check red (candidate-guard.yml)
+    # and is redone from a terminal with `pnpm exec lntt ci candidate --pr <n>`, a dropped push with
     # `pnpm exec lntt ci candidate --follow`; both run outside this group: one at a time.
     concurrency:
       group: candidate

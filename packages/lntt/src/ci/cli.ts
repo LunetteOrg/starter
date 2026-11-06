@@ -33,6 +33,7 @@ const USAGE = [
   'usage: lntt ci local [--event pull_request|push] [--base <branch>] [--job <key>]... [--list] [--strict] [--container] [--no-lock]',
   '       lntt ci candidate [--pr <n>] [--event <action>] [--head-ref <ref>] [--labels a,b] [--merged] [--dry-run]',
   '       lntt ci candidate --follow [--dry-run]',
+  '       lntt ci candidate --guard [--pr <n>]',
   '       lntt ci proved --job <name>... [--step <name>] [--workflow <file>] [--sha <sha>] [--before <sha>] [--branch <name>]',
 ].join('\n')
 
@@ -184,6 +185,7 @@ function candidateRun(args: string[]): number {
         labels: { type: 'string' },
         merged: { type: 'boolean', default: false },
         follow: { type: 'boolean', default: false },
+        guard: { type: 'boolean', default: false },
         'dry-run': { type: 'boolean', default: false },
       },
     }),
@@ -193,12 +195,19 @@ function candidateRun(args: string[]): number {
     if (flag !== undefined || values.merged)
       usage(`--follow takes no --${flag ?? 'merged'}: it handles no pull request`)
   }
+  if (values.guard) {
+    const flag = ['follow', 'event', 'head-ref', 'labels', 'merged', 'dry-run'].find(
+      (name) => values[name as keyof typeof values] === true || typeof values[name as keyof typeof values] === 'string',
+    )
+    if (flag !== undefined) usage(`--guard takes no --${flag}: it only reads the pull request`)
+  }
   const log = (line: string) => stdout.write(`${line}\n`)
   const config = candidateConfig(cwd())
   if (!config) {
     log('::notice::no delivery.candidate in .agents/config: the candidate automation does nothing')
     return 0
   }
+  if (values.guard) return guardRun(config, values.pr, log)
   const gh = candidate.makeGh({ dryRun: values['dry-run'], log })
   // The Projects permission is another token in the workflow (PROJECTS_GH_TOKEN); from
   // a terminal the operator's own gh login is the one in use.
@@ -220,7 +229,7 @@ function candidateRun(args: string[]): number {
   let pr: candidate.PullRequest
   const number = values.pr
   if (number !== undefined) {
-    if (!/^\d+$/.test(number)) usage(`--pr takes a number, not ${number}`)
+    if (!/^[1-9]\d*$/.test(number)) usage(`--pr takes a number, not ${number}`)
     pr = candidate.prFromGh(gh, repo, Number(number))
     action = values.event ?? (pr.merged ? 'closed' : 'opened')
   } else {
@@ -243,6 +252,30 @@ function candidateRun(args: string[]): number {
   if (values.merged) pr.merged = true
   candidate.handle(run, action, pr)
   return 0
+}
+
+// `--guard`: the `candidate guard` check on the event's pull request, or on --pr's. It
+// writes nothing and asks gh only for --pr; a failure is an error annotation and exit 1.
+function guardRun(config: candidate.CandidateConfig, number: string | undefined, log: (line: string) => void): number {
+  let pr: candidate.PullRequest
+  if (number !== undefined) {
+    if (!/^[1-9]\d*$/.test(number)) usage(`--pr takes a number, not ${number}`)
+    const gh = candidate.makeGh({ dryRun: true, log })
+    const repo = env.GITHUB_REPOSITORY || gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])
+    pr = candidate.prFromGh(gh, repo, Number(number))
+  } else {
+    if (!env.GITHUB_EVENT_PATH) usage('--guard without --pr reads the pull request from GITHUB_EVENT_PATH')
+    const event = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8'))
+    if (!event.pull_request) usage('--guard runs on a pull_request event')
+    pr = candidate.prFromEvent(event)
+  }
+  const decision = candidate.guardDecision(config, pr)
+  if (decision.pass) {
+    log(`candidate guard: #${pr.number} passes: ${decision.reason}.`)
+    return 0
+  }
+  log(`::error title=Not on the candidate::${decision.reason}`)
+  return 1
 }
 
 // The push event's previous tip, when the run has one: an unreadable event has none,
