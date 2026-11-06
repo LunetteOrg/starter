@@ -139,6 +139,7 @@ const config: CandidateConfig = {
   hotfix: { prefix: 'hotfix/', label: 'hotfix' },
   status: { inRelease: 'In release', done: 'Done' },
   retrospective: EMPTY,
+  automated: [],
 }
 
 // A gh double: reads answered by the first key the command line contains (a string is

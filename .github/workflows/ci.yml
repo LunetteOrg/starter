@@ -10,20 +10,18 @@ name: CI
 # - a pull request into the default branch (the candidate itself, a hotfix) and a push
 #   to it run the full CI: every test, the scaffold level and its smoke included. The
 #   push gates a release;
-# - a Dependabot pull request runs the CI only once an owner, member or collaborator
-#   approves it: until then the job fails in its first step, before checkout, so the `ci` check
-#   is red, never skipped (a skipped job counts as passed). Every review of a Dependabot
-#   pull request starts a run: an approval runs the whole job on the pull request's
-#   merge ref, any other review fails in the first step like the unapproved run, so the
-#   newest `ci` of a Dependabot head is either red or the whole job. A later push turns
-#   it red again until the next approval. Dependabot rebases often, and a run on every
-#   head nobody merges is minutes spent for nothing. A review of any other pull request
-#   starts a run whose job is skipped: an entry of its own, `ci (pull_request_review)`,
-#   beside the `ci (pull_request)` it does not replace. On a review event
-#   `github.head_ref` and `github.base_ref` are empty: the steps read
-#   `github.event.pull_request`.
-#   No concurrency group: the unapproved run ends in seconds, and a group shared by the
-#   review runs would let a review of any pull request cancel or queue its real run.
+# - a bot's pull request (delivery.automated: its author and branch prefix) runs the CI
+#   its entry names. `runs: after-approval`: only once someone with write access
+#   approves its head commit; until then the job fails in its first step, before
+#   checkout, so the `ci` check is red, never skipped (a skipped job counts as passed).
+#   That step asks the reviews API; each review re-runs this same run
+#   (ci-approval.yml), so the head keeps one `ci` check, red until the approval and
+#   then the whole job: a required `ci` reads that one. A later push turns it red again
+#   until the next approval. A bot rebases often, and a run on every head nobody merges
+#   is minutes spent for nothing. `ci: minimal`: the minimal CI, even into the default
+#   branch, and no `Full CI` marker. No bot is named here: the entries are the line
+#   lntt sync writes from the configuration (docs/process/ci.md#automated-pull-requests).
+#   No concurrency group: the unapproved run ends in seconds.
 # - a push to the default branch whose tree a pull request's full CI already proved green
 #   (`lntt ci proved`: the same tree, the base an ancestor of the head, the `ci` job and
 #   its `Full CI` step green) skips the checks and ends green, with a notice naming the
@@ -37,12 +35,10 @@ on:
     branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  pull_request_review:
-    types: [submitted]
 
-# No job writes. The approval of a Dependabot pull request runs the bumped dependencies'
-# code with this token: read only, for every run. lntt ci proved reads the merged pull
-# request and the runs and jobs of its head.
+# No job writes. The approval of a bot's pull request runs its code (a bump's
+# dependencies) with this token: read only, for every run. lntt ci proved reads the
+# merged pull request and the runs and jobs of its head; the bots' gate reads its reviews.
 permissions:
   contents: read
   pull-requests: read
@@ -50,34 +46,69 @@ permissions:
 
 jobs:
   ci:
-    # Each branch tests the event first: ci:local simulates only push and pull_request,
-    # and an operand it cannot know (the author) evaluated first would leave the job
-    # blocked. Every review of a Dependabot pull request runs the job: the first step
-    # decides whether it is an approval.
     if: >-
       github.event_name == 'push' ||
-      (github.event_name == 'pull_request' && !github.event.pull_request.draft) ||
-      (github.event_name == 'pull_request_review' &&
-      startsWith(github.event.pull_request.head.ref, 'dependabot/') &&
-      github.event.pull_request.user.login == 'dependabot[bot]' &&
-      !github.event.pull_request.draft)
+      (github.event_name == 'pull_request' && !github.event.pull_request.draft)
     runs-on: ubuntu-latest
     steps:
-      # A Dependabot pull request waits for the approval of an owner, member or
-      # collaborator (the repository is public: anyone can submit a review): its pull
-      # request run and any other review stop here. The branch prefix comes before the
-      # author: ci:local knows the branch but not the author, so on any other branch it
-      # knows the condition false.
-      - name: Dependabot pull request not approved
-        if: >-
-          (github.event_name == 'pull_request' || github.event_name == 'pull_request_review') &&
-          startsWith(github.event.pull_request.head.ref, 'dependabot/') &&
-          github.event.pull_request.user.login == 'dependabot[bot]' &&
-          (github.event_name == 'pull_request' || github.event.review.state != 'approved' ||
-          !contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association))
+      # A bot's pull request (delivery.automated): its entry, matched by the author (read
+      # from the event file: ci:local has none, so a local run is never a bot's; a bot's
+      # event login ends in [bot], so a person named as the bot's slug is not it) and the
+      # branch prefix, goes to the next steps as AUTOMATED_RUNS and AUTOMATED_CI. With
+      # `runs: after-approval` the step goes on only when the head commit is approved by
+      # someone with write access (the repository is public: anyone can submit a review):
+      # each reviewer's latest approval, request for changes or dismissed review of the
+      # head counts, as on GitHub; a comment changes nothing. Write access is the
+      # reviewer's permission on the repository, from collaborators/{user}/permission,
+      # which this read-only token can read: `write` (GitHub reports the maintain role as
+      # write) or `admin`. Never the review's author_association: a member whose membership is private, GitHub's
+      # default, is CONTRIBUTOR there. The reviews are read when the run starts, so the
+      # re-run a review starts (ci-approval.yml) finds them.
+      - name: Automated pull request
+        if: github.event_name == 'pull_request'
+        env:
+          AUTOMATED: '[{"author":"lunette-candidates[bot]","branch":"bot-proof/","runs":"after-approval","ci":"full"}]' # lntt sync: delivery.automated
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          APPROVAL: APPROVED
         run: |
-          echo "::error title=CI not run::Approve this Dependabot pull request to run the CI before merging"
-          exit 1
+          author=$(jq -r '.pull_request.user.login // empty' "${GITHUB_EVENT_PATH:-/dev/null}" 2>/dev/null || true)
+          entry=$(jq -c --arg author "$author" --arg ref "$HEAD_REF" '
+            def bot: sub("^app/"; "") | sub("\\[bot\\]$"; "");
+            first(.[] | select(. as $e | ($author | endswith("[bot]")) and ($e.author | bot) == ($author | bot) and ($ref | startswith($e.branch)))) // empty' <<< "$AUTOMATED")
+          if [ -z "$entry" ]; then
+            echo "not a pull request of delivery.automated"
+            exit 0
+          fi
+          runs=$(jq -r .runs <<< "$entry")
+          ci=$(jq -r .ci <<< "$entry")
+          echo "a pull request of ${author} (delivery.automated): runs ${runs}, ci ${ci}"
+          { echo "AUTOMATED_RUNS=${runs}"; echo "AUTOMATED_CI=${ci}"; } >> "$GITHUB_ENV"
+          [ "$runs" = after-approval ] || exit 0
+          approvers=$(gh api --paginate "repos/$REPO/pulls/$NUMBER/reviews?per_page=100" \
+            --jq ".[] | select(.commit_id == \"$SHA\") | select(.state == \"$APPROVAL\" or .state == \"CHANGES_REQUESTED\" or .state == \"DISMISSED\") | [.user.login, .state] | @tsv" |
+            awk -F '\t' -v ok="$APPROVAL" '{ state[$1] = $2 } END { for (u in state) if (state[u] == ok) print u }')
+          approvals=0
+          while read -r user; do
+            [ -n "$user" ] || continue
+            if ! permission=$(gh api "repos/$REPO/collaborators/$user/permission" --jq .permission); then
+              echo "::warning title=Approval not counted::Cannot read the permission of ${user}, who approved the head commit"
+              continue
+            fi
+            case $permission in
+              admin | write) approvals=$((approvals + 1)) ;;
+              *) echo "the approval of ${user} (${permission:-no access}) does not count: it takes write access" ;;
+            esac
+          done <<< "$approvers"
+          if [ "$approvals" -gt 0 ]; then
+            echo "approved: ${approvals} approval(s) of the head commit ${SHA} by someone with write access"
+          else
+            echo "::error title=CI not run::Approve this pull request's head commit to run the CI before merging: the approval runs this check again"
+            exit 1
+          fi
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -105,20 +136,20 @@ jobs:
       - if: env.PROVED != 'true'
         run: pnpm exec lntt check
       # The branch follows type/issue/slug, whatever tool created it (lntt branch).
-      - if: env.PROVED != 'true' && (github.event_name == 'pull_request' || github.event_name == 'pull_request_review')
+      - if: env.PROVED != 'true' && github.event_name == 'pull_request'
         env:
           BRANCH: ${{ github.event.pull_request.head.ref }}
         run: pnpm exec lntt branch check --branch "$BRANCH"
       # The retrospective block of the body is filled (the retrospective skill): a
       # warning, not a gate. A body edit starts no run, so a red step would stay red
       # after the fix; each FAIL is an annotation on the pull request until the next push.
-      # Dependabot writes no block; a candidate's is its retrospective comment, which
+      # A bot (delivery.automated) writes no block; a candidate's is its retrospective comment, which
       # lntt check body --pr <n> reads before it is marked ready. ci:local has no body
       # and reports the step as not run; the skill runs lntt check body before ready.
       - if: >-
           env.PROVED != 'true' && (github.event_name == 'pull_request' &&
           !startsWith(github.event.pull_request.head.ref, 'candidate/') &&
-          !startsWith(github.event.pull_request.head.ref, 'dependabot/'))
+          !env.AUTOMATED_RUNS)
         continue-on-error: true
         shell: bash
         env:
@@ -144,8 +175,6 @@ jobs:
       # installs, lints and typechecks a generated project) is slow and depends on the
       # machine: on a pull request into a candidate it runs only when the change touches
       # packages/create; the full CI runs it always, with the smoke.
-      # BASE_REF reads the review's pull request only on a review event: ci:local has no
-      # pull request on a push, and an unknown value would keep the step from running.
       - if: env.PROVED != 'true'
         run: |
           if [ "$FULL" = true ]; then SCAFFOLD_SMOKE=1 pnpm test
@@ -153,13 +182,13 @@ jobs:
           else pnpm test:minimal
           fi
         env:
-          FULL: ${{ github.event_name == 'push' || github.event.pull_request.base.ref == github.event.repository.default_branch }}
-          BASE_REF: ${{ github.event_name == 'pull_request_review' && github.event.pull_request.base.ref || github.base_ref }}
+          FULL: ${{ (github.event_name == 'push' || github.event.pull_request.base.ref == github.event.repository.default_branch) && env.AUTOMATED_CI != 'minimal' }}
+          BASE_REF: ${{ github.base_ref }}
       # The marker of a full CI that ran to its end: lntt ci proved accepts a pull request
       # run as the proof of a push's tree only when this step is green in it
       # (docs/process/ci.md#a-tree-already-proved). Keep it last and keep its name.
       - name: Full CI
         if: >-
-          env.PROVED != 'true' && (github.event_name == 'push' ||
+          env.PROVED != 'true' && env.AUTOMATED_CI != 'minimal' && (github.event_name == 'push' ||
           github.event.pull_request.base.ref == github.event.repository.default_branch)
         run: echo "the full CI ran on tree $(git rev-parse 'HEAD^{tree}')"

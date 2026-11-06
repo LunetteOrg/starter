@@ -409,7 +409,12 @@ Date.now = () => now() + (existsSync(${JSON.stringify(jump)}) ? 121 * 60_000 : 0
 })
 
 describe('lntt ci candidate', () => {
-  const CONFIG = { delivery: { candidate: { prefix: 'candidate/' } } }
+  const CONFIG = {
+    delivery: {
+      candidate: { prefix: 'candidate/' },
+      automated: [{ author: 'dependabot[bot]', branch: 'dependabot/', runs: 'after-approval', ci: 'full' }],
+    },
+  }
 
   // A gh that answers the open-candidate query and the comparison of the base with it
   // (`cases`, shell case branches, first), and records every call.
@@ -467,6 +472,17 @@ describe('lntt ci candidate', () => {
     assert.equal(out.status, 0, out.stderr)
     assert.match(out.stdout, /\[dry-run\] gh pr edit 7 --repo o\/r --base candidate\/4/)
     assert.match(out.stdout, /\[dry-run\] gh pr comment 7/)
+  })
+
+  test("a bot's pull request (delivery.automated) opened into main stays there, with no write", () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidate(
+      opened({ head: { ref: 'dependabot/npm_and_yarn/vite-7.1.0' }, user: { login: 'dependabot[bot]' } }),
+      '--dry-run',
+    )
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /it stays, a pull request of dependabot\[bot\] \(delivery\.automated\) stays on main/)
+    assert.doesNotMatch(out.stdout, /\[dry-run\] gh pr (edit|comment) 7/)
   })
 
   test('a hotfix stays on main and reads nothing', () => {
@@ -529,6 +545,110 @@ describe('lntt ci candidate', () => {
     assert.doesNotMatch(out.stdout, /git push/)
     assert.doesNotMatch(readFileSync(join(root, '.git/gh.log'), 'utf8'), /compare\//)
   })
+
+  // An event of a pull request from this repository: its head and base repositories.
+  const REPO = { full_name: 'o/r' }
+  const own = (fields: { head?: { ref: string; repo?: unknown }; [key: string]: unknown } = {}) => {
+    const event = opened(fields)
+    return {
+      ...event,
+      pull_request: {
+        ...event.pull_request,
+        base: { ...event.pull_request.base, repo: REPO },
+        head: { ...event.pull_request.head, repo: REPO, ...fields.head },
+      },
+    }
+  }
+
+  test('--guard passes a pull request into main that is the candidate, and reads nothing', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidate(own({ head: { ref: 'candidate/4' } }), '--guard')
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /candidate guard: #7 passes: candidate\/4 is the candidate/)
+    assert.equal(existsSync(join(root, '.git/gh.log')), false)
+  })
+
+  test('--guard fails a pull request left on main, naming the remedy as an error annotation', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidate(own({ action: 'synchronize', user: { login: 'octocat' } }), '--guard')
+    assert.equal(out.status, 1, out.stdout)
+    assert.match(out.stdout, /::error title=Not on the candidate::#7 targets main.*pnpm exec lntt ci candidate --pr 7/)
+    assert.equal(existsSync(join(root, '.git/gh.log')), false)
+  })
+
+  test("--guard reads the pull request's author from the event: Dependabot passes", () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidate(
+      own({ head: { ref: 'dependabot/npm_and_yarn/vite-7.1.0' }, user: { login: 'dependabot[bot]' } }),
+      '--guard',
+    )
+    assert.equal(out.status, 0, out.stdout)
+    assert.match(out.stdout, /a pull request of dependabot\[bot\] \(delivery\.automated\) stays on main/)
+  })
+
+  test('--guard --pr reads whether the head is a fork: a fork named like the candidate fails', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidateWith(
+      `*"pr view 8"*isCrossRepository*) echo '{"number":8,"title":"t","body":"","baseRefName":"main","headRefName":"candidate/1","labels":[],"mergedAt":null,"isCrossRepository":true}';;`,
+      null,
+      '--guard',
+      '--pr',
+      '8',
+    )
+    assert.equal(out.status, 1, out.stdout)
+    assert.match(out.stdout, /::error title=Not on the candidate::#8 targets main/)
+  })
+
+  test('--guard --pr reads the pull request with gh, its author included', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidateWith(
+      // The author only when --json asks for it, as gh does.
+      `*"pr view 7"*author*) echo '{"number":7,"title":"t","body":"","baseRefName":"main","headRefName":"dependabot/npm_and_yarn/x","labels":[],"mergedAt":null,"author":{"login":"app/dependabot"},"isCrossRepository":false}';; *"pr view 7"*) echo '{"number":7,"title":"t","body":"","baseRefName":"main","headRefName":"dependabot/npm_and_yarn/x","labels":[],"mergedAt":null}';;`,
+      null,
+      '--guard',
+      '--pr',
+      '7',
+    )
+    assert.equal(out.status, 0, out.stdout)
+    assert.match(out.stdout, /a pull request of app\/dependabot \(delivery\.automated\) stays on main/)
+  })
+
+  test('--guard reads the fork from the event: a fork named like the candidate fails', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidate(own({ head: { ref: 'candidate/1', repo: { full_name: 'someone/r' } } }), '--guard')
+    assert.equal(out.status, 1, out.stdout)
+    assert.match(out.stdout, /::error title=Not on the candidate::#7 targets main/)
+  })
+
+  for (const flags of [
+    ['--follow'],
+    ['--dry-run'],
+    ['--merged'],
+    ['--event', 'opened'],
+    ['--head-ref', 'x'],
+    ['--labels', 'a'],
+  ]) {
+    test(`--guard with ${flags[0]} is a usage error`, () => {
+      root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+      const out = candidate(opened(), '--guard', ...flags)
+      assert.equal(out.status, 2)
+      assert.match(out.stderr, new RegExp(`--guard takes no ${flags[0]}`))
+    })
+  }
+
+  for (const [what, event, flags, message] of [
+    ['without an event or --pr', null, [], /--guard without --pr reads the pull request from GITHUB_EVENT_PATH/],
+    ['on a push event', { ref: 'refs/heads/main' }, [], /--guard runs on a pull_request event/],
+    ['with --pr that is not a number', null, ['--pr', 'x'], /--pr takes a number, not x/],
+    ['with --pr 0', null, ['--pr', '0'], /--pr takes a number, not 0/],
+  ] as const) {
+    test(`--guard ${what} is a usage error`, () => {
+      root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+      const out = candidate(event, '--guard', ...flags)
+      assert.equal(out.status, 2, out.stdout)
+      assert.match(out.stderr, message)
+    })
+  }
 
   for (const flags of [
     ['--pr', '7'],
