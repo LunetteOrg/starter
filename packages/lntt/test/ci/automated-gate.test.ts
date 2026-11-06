@@ -18,7 +18,6 @@ import { type Context, evaluate, interpolate } from '../../src/ci/expressions.ts
 const WORKFLOWS = new URL('../../../../.github/workflows/', import.meta.url)
 const REPO = 'acme/app'
 const SHA = 'a1b2c3'
-const BOT = { login: 'dependabot[bot]', ref: 'dependabot/npm_and_yarn/vite-7.0.1' }
 
 interface Step {
   name?: string
@@ -33,6 +32,16 @@ function workflow(file: string) {
 
 function step(file: string, job: string, index: number): Step {
   return workflow(file).jobs[job].steps[index]
+}
+
+// The bot comes from the delivery.automated line the step carries (lntt sync writes it
+// from the configuration), as the gate reads it: the first `runs: after-approval` entry.
+// A copy of the repo whose configuration names another bot runs the same tests.
+function bot(s: Step) {
+  const entries: { author: string; branch: string; runs: string }[] = JSON.parse(s.env?.AUTOMATED ?? '[]')
+  const entry = entries.find((e) => e.runs === 'after-approval')
+  assert.ok(entry, `no delivery.automated entry with runs: after-approval in ${s.name}`)
+  return { login: entry.author, ref: `${entry.branch}npm_and_yarn/vite-7.0.1` }
 }
 
 const FAKE_GH = `#!/bin/bash
@@ -125,13 +134,14 @@ function runStep(s: Step, context: Context) {
   return { status: out.status, output: out.stdout + out.stderr, calls, env: readFileSync(join(dir, 'env'), 'utf8') }
 }
 
-function pullRequest(author = BOT.login, ref = BOT.ref) {
+// A pull request of the bot of step s, or of author and ref.
+function pullRequest(s: Step, author = bot(s).login, ref = bot(s).ref) {
   return { number: 7, draft: false, user: { login: author }, head: { ref, sha: SHA } }
 }
 
 describe("ci.yml's first step: the approval of a bot's pull request", () => {
   const gate = () => step('ci.yml', 'ci', 0)
-  const context = (pr = pullRequest()) => ({
+  const context = (pr = pullRequest(gate())) => ({
     github: { event_name: 'pull_request', repository: REPO, token: 'tok', event: { pull_request: pr } },
   })
 
@@ -140,7 +150,7 @@ describe("ci.yml's first step: the approval of a bot's pull request", () => {
   })
 
   test('a pull request of no delivery.automated entry passes, and asks nothing', () => {
-    const out = runStep(gate(), context(pullRequest('octocat', 'feat/1/x')))
+    const out = runStep(gate(), context(pullRequest(gate(), 'octocat', 'feat/1/x')))
     assert.equal(out.status, 0, out.output)
     assert.deepEqual(out.calls, [])
     assert.equal(out.env, '')
@@ -213,7 +223,7 @@ describe("ci.yml's first step: the approval of a bot's pull request", () => {
 describe("ci-approval.yml: a review re-runs the bot's ci run", () => {
   const rerun = () => step('ci-approval.yml', 'rerun', 0)
   const condition = () => workflow('ci-approval.yml').jobs.rerun.if as string
-  const context = (state: string, reviewer = 'maintainer', pr = pullRequest()) => ({
+  const context = (state: string, reviewer = 'maintainer', pr = pullRequest(rerun())) => ({
     github: {
       event_name: 'pull_request_review',
       repository: REPO,
@@ -235,7 +245,7 @@ describe("ci-approval.yml: a review re-runs the bot's ci run", () => {
       const out = evaluate(condition(), context(state), { failed: false })
       assert.deepEqual(out, { known: true, value: runs }, state)
     }
-    const draft = context('approved', 'maintainer', { ...pullRequest(), draft: true })
+    const draft = context('approved', 'maintainer', { ...pullRequest(rerun()), draft: true })
     assert.deepEqual(evaluate(condition(), draft, { failed: false }), { known: true, value: false })
   })
 
@@ -257,7 +267,7 @@ describe("ci-approval.yml: a review re-runs the bot's ci run", () => {
   })
 
   test('a pull request of no delivery.automated entry asks nothing', () => {
-    const out = runStep(rerun(), context('approved', 'maintainer', pullRequest('octocat', 'feat/1/x')))
+    const out = runStep(rerun(), context('approved', 'maintainer', pullRequest(rerun(), 'octocat', 'feat/1/x')))
     assert.equal(out.status, 0, out.output)
     assert.deepEqual(out.calls, [])
   })
