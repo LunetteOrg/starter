@@ -342,6 +342,9 @@ describe('the prompt', () => {
       }
       assert.match(renderReviewPrompt('code', values('development'), 'A brief of the project.'), relaxed)
       assert.match(renderVerifyPrompt(found, values('development')), relaxed)
+      // The section ends before what follows it, a blank line apart.
+      assert.match(renderReviewPrompt('code', values('development')), /phase\.\n\n## How to answer/)
+      assert.match(renderVerifyPrompt(found, values('development')), /phase\.\n\nYou can only read/)
     })
 
     test('in production, or with no phase, nothing of it is in a prompt', () => {

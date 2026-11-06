@@ -35,7 +35,7 @@
         "phase": {
           "enum": ["development", "production"],
           "default": "production",
-          "description": "development: no release has reached production, so there are no users, data or links to keep; the lntt review lenses and verifiers read a list of what is not a finding before production (migrations against existing data, redirects for changed routes, backward compatibility, the size of a rewrite) and of what holds anyway (security, tests, the decision records). production: every check holds. Switch to production when the first release reaches production; a beta with real users is production. Missing: production, and lntt get project.phase prints it."
+          "description": "Where the project stands. development: no release has reached production yet; lntt review gives its reviewers and verifiers the list of what is not a finding before production (packages/lntt/agents/review/before-production.md in @lntt/lntt). production: every check holds. Switch to production when the first release reaches production; a beta with real users is production. Missing: production, and lntt get project.phase prints it."
         }
       }
     },

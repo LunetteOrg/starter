@@ -121,6 +121,8 @@ describe("the project's phase", () => {
       assert.equal(JSON.parse(out), phase)
       assert.equal(projectPhase(loadConfig(root).data), phase)
     }
+    const section = execFileSync('node', [BIN, 'get', 'project'], { cwd: root, encoding: 'utf8' })
+    assert.deepEqual(JSON.parse(section), { phase: 'production' }, 'the section reads as it is written')
     write('.agents/config.jsonc', `{ "project": { "phase": "beta" } }`)
     assert.throws(() => loadConfig(root), /\/project\/phase/)
   })

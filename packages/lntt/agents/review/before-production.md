@@ -22,5 +22,7 @@ citing this section.
   a dependency with a known vulnerability.
 - **Tests:** behaviour with no test that would catch it wrong, a test that cannot fail.
 - **The decision records:** a change that contradicts an accepted record, or a decision
-  that no record covers. A record that requires one of the items above still holds.
+  that no record covers. A record of the project that asks for one of the items above
+  (say, no unexplained `DROP` in a migration) still holds: a change against it is a
+  finding.
 - **Correctness:** code that does the wrong thing now, whatever the phase.
