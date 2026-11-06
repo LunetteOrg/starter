@@ -163,9 +163,10 @@ jobs:
 `
   const lock = () => join(root, '.git', 'locks', 'ci-local.lock')
   const go = () => writeFileSync(join(root, '.git', 'runner.log.go'), '')
-  // The lock is taken and the step's group recorded: the run writes nothing more in the
-  // lock's folder until the step ends, which these tests hold back. A test that removes the
-  // folder earlier races the run's own write of the group, which can put the record back.
+  // The lock is taken and its step's process group recorded. The run rewrites the record
+  // at the start and at the close of each step, so while a step is held back (a single
+  // step, with HOLD set) it writes nothing more in the lock's folder. A test that removes
+  // the folder before this can overlap the rewrite, which can put the record back.
   const held = () =>
     until(() => {
       try {
@@ -245,7 +246,7 @@ jobs:
       const pidFile = join(root, '.git', 'runner.log.child')
       await until(() => existsSync(pidFile) && readFileSync(pidFile, 'utf8').endsWith('\n'))
       // The running step's group is in the lock's record.
-      await until(() => typeof JSON.parse(readFileSync(lock(), 'utf8')).group === 'number')
+      await held()
       child.kill(signal)
       assert.equal(await closed, code)
       assert.match(stderr, new RegExp(`lntt ci: interrupted \\(${signal}\\)`))
@@ -281,7 +282,7 @@ jobs:
       stderr += chunk
     })
     const closed = new Promise<number | null>((resolve) => child.on('close', resolve))
-    await until(() => existsSync(lock()) && typeof JSON.parse(readFileSync(lock(), 'utf8')).group === 'number')
+    await held()
     child.kill('SIGINT')
     await until(() => /interrupted/.test(stderr))
     child.kill('SIGINT')
@@ -331,7 +332,7 @@ Date.now = () => now() + (existsSync(${JSON.stringify(jump)}) ? 121 * 60_000 : 0
     })
     const closed = new Promise<number | null>((resolve) => child.on('close', resolve))
     // The first step is running: its group is in the lock's record.
-    await until(() => existsSync(lock()) && typeof JSON.parse(readFileSync(lock(), 'utf8')).group === 'number')
+    await held()
     writeFileSync(jump, '')
     go()
     assert.equal(await closed, 1, stdout)
@@ -344,7 +345,7 @@ Date.now = () => now() + (existsSync(${JSON.stringify(jump)}) ? 121 * 60_000 : 0
     const holder = spawn(process.execPath, [BIN, 'ci', 'local'], { cwd: root, env: { ...env(), HOLD: '1' } })
     // 'exit', not 'close': the orphaned step keeps the holder's output pipes open.
     const killed = new Promise((resolve) => holder.on('exit', resolve))
-    await until(() => existsSync(lock()) && typeof JSON.parse(readFileSync(lock(), 'utf8')).group === 'number')
+    await held()
     const { group } = JSON.parse(readFileSync(lock(), 'utf8'))
     holder.kill('SIGKILL')
     await killed
