@@ -163,6 +163,17 @@ jobs:
 `
   const lock = () => join(root, '.git', 'locks', 'ci-local.lock')
   const go = () => writeFileSync(join(root, '.git', 'runner.log.go'), '')
+  // The lock is taken and the step's group recorded: the run writes nothing more in the
+  // lock's folder until the step ends, which these tests hold back. A test that removes the
+  // folder earlier races the run's own write of the group, which can put the record back.
+  const held = () =>
+    until(() => {
+      try {
+        return typeof JSON.parse(readFileSync(lock(), 'utf8')).group === 'number'
+      } catch {
+        return false
+      }
+    })
 
   test('two runs at once queue: the second says whom it waits for, then runs', async () => {
     root = repo({ '.github/workflows/ci.yml': SLOW })
@@ -281,7 +292,7 @@ jobs:
   test('a lock that cannot be given back is one line, and the run keeps its exit code', async () => {
     root = repo({ '.github/workflows/ci.yml': SLOW })
     const first = backgroundWith({ HOLD: '1' }, 'local')
-    await until(() => existsSync(lock()))
+    await held()
     rmSync(join(root, '.git', 'locks'), { recursive: true, force: true, ...RETRY })
     go()
     const a = await first.done
@@ -294,7 +305,7 @@ jobs:
   test('an interrupt that cannot give the lock back still exits 128 plus the signal', async () => {
     root = repo({ '.github/workflows/ci.yml': SLOW })
     const first = backgroundWith({ HOLD: '1' }, 'local')
-    await until(() => existsSync(lock()))
+    await held()
     rmSync(join(root, '.git', 'locks'), { recursive: true, force: true, ...RETRY })
     first.child.kill('SIGINT')
     const a = await first.done
