@@ -23,7 +23,7 @@ import {
 } from './coordinator.ts'
 import { NoConfigError } from './files.ts'
 import { loadConfig } from './index.ts'
-import { recordStarted, type Started, send, startedBy, waitForAnswer } from './messages.ts'
+import { forgetStarted, recordStarted, type Started, send, startedBy, waitForAnswer } from './messages.ts'
 import { messagesRoot, pollInterval, systemMailbox } from './messages-cli.ts'
 import {
   type Agent,
@@ -336,17 +336,25 @@ function start(args: string[]): void {
     }
   }
   if (coordinator && approved.length > 0) approve(messagesRoot(), theme as string, approved)
-  if (!coordinator && theme) passTheGate(config, theme, jobs, values.size)
+  // The gate is the coordinator's: with none, the orchestrator is the one starting.
+  if (!coordinator && theme && coordinated) passTheGate(config, theme, jobs, values.size)
 
   for (const job of jobs) {
     // Before the host starts: a start that fails once the worktree exists still leaves it.
     recordMarker(marker(job, coordinator, theme, coordinated))
-    const started =
-      host === 'orca'
-        ? startOrca(job, runner, setupScript)
-        : host === 'herdr'
-          ? startHerdr(job, runner, setupScript)
-          : startGit(job, runner, setupScript)
+    let started: ReturnType<typeof startOrca>
+    try {
+      started =
+        host === 'orca'
+          ? startOrca(job, runner, setupScript)
+          : host === 'herdr'
+            ? startHerdr(job, runner, setupScript)
+            : startGit(job, runner, setupScript)
+    } catch (error) {
+      // A coordinator that never started is none: later children of the theme must not wait on it.
+      if (coordinator) forgetStarted(messagesRoot(), job.branch)
+      throw error
+    }
     stdout.write(`${JSON.stringify(started)}\n`)
     // Nobody was asked to start an agent: the command and the brief are for the person who will.
     if (job.agent === null) {

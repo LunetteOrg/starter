@@ -149,6 +149,7 @@ describe('lntt worktree start --coordinator', () => {
     assert.doesNotMatch(brief, /ultracode/i)
     assert.match(brief, new RegExp(`${join(tmp, 'bin', 'orca')} worktree set`))
     assert.equal(JSON.parse(r.stdout.trim()).issue, null)
+    assert.doesNotMatch(r.stderr, /has no coordinator worktree/)
     assert.equal(readFileSync(join(mailbox(), 'approved-release-0-6-1.txt'), 'utf8'), '89\n')
     assert.deepEqual(started('coordinator'), {
       branch: 'chore/no-issue/release-0-6-1',
@@ -217,6 +218,7 @@ describe('lntt worktree start --theme (a coordinator’s child)', () => {
     assert.match(brief, /lntt ask --to coordinator --theme release-0-6-1/)
     assert.match(brief, /At most 6 agents/)
     assert.equal(JSON.parse(r.stdout.trim()).parent, 'current')
+    assert.doesNotMatch(r.stderr, /has no coordinator worktree/)
     const marker = started()
     assert.match(marker.branch, /^[a-z]+\/89\//)
     assert.deepEqual(marker, { branch: marker.branch, issue: 89, to: 'coordinator', theme: 'release-0-6-1' })
@@ -237,6 +239,17 @@ describe('lntt worktree start --theme (a coordinator’s child)', () => {
     assert.doesNotMatch(brief, /--to coordinator|your coordinator|the coordinator/i)
     assert.deepEqual(started(), { branch: started().branch, issue: 89, to: 'orchestrator' })
     assert.match(r.stderr, /theme release-0-6-1 has no coordinator worktree/)
+  })
+
+  test('a coordinator whose start failed leaves no marker: the theme has none, and no gate waits', () => {
+    rmSync(join(mailbox(), 'started'), { recursive: true })
+    const failed = lntt(['--coordinator', '--theme', 'release-0-6-1', '--issue', '84'], { FAKE_ORCA_FAIL: '1' })
+    assert.equal(failed.status, 1)
+    rmSync(log, { force: true })
+    const r = lntt(child())
+    assert.equal(r.status, 0, r.stderr)
+    assert.doesNotMatch(r.stderr, /sent to the orchestrator; no child is created/)
+    assert.match(after(creates()[0] as string[], '--prompt') as string, /lntt ask --to orchestrator --issue 89/)
   })
 
   test('a marker of the theme that is not the coordinator’s (a child’s, on an issue) is no coordinator', () => {

@@ -209,6 +209,11 @@ export function recordStarted(root: string, marker: Started): void {
   }
 }
 
+// A start that failed leaves no worktree: its marker goes, so nothing reads it as a coordinator.
+export function forgetStarted(root: string, branch: string): void {
+  rmSync(startedFile(root, branch), { force: true })
+}
+
 // Null for a branch with no marker, or with one that is not its own or cannot be read.
 export function startedBy(root: string, branch: string): Started | null {
   const file = startedFile(root, branch)
