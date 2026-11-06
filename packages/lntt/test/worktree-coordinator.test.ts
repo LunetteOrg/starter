@@ -253,14 +253,13 @@ describe('lntt worktree start --theme (a coordinator’s child)', () => {
   })
 
   test('a second coordinator start that fails leaves the live coordinator’s marker', () => {
+    // The live coordinator's marker carries a field the start would not write: only a restore keeps it.
+    const branch = 'chore/no-issue/release-0-6-1'
+    const live = { branch, issue: null, to: 'orchestrator', theme: 'release-0-6-1', since: 'the first start' }
+    writeFileSync(join(mailbox(), 'started', `${encodeURIComponent(branch)}.json`), `${JSON.stringify(live)}\n`)
     const r = lntt(['--coordinator', '--theme', 'release-0-6-1', '--issue', '84'], { FAKE_ORCA_FAIL: '1' })
     assert.equal(r.status, 1)
-    assert.deepEqual(started('coordinator'), {
-      branch: 'chore/no-issue/release-0-6-1',
-      issue: null,
-      to: 'orchestrator',
-      theme: 'release-0-6-1',
-    })
+    assert.deepEqual(started('coordinator'), live)
   })
 
   test('a marker of the theme that is not the coordinator’s (a child’s, on an issue) is no coordinator', () => {
