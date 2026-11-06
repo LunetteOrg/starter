@@ -209,7 +209,7 @@ export function recordStarted(root: string, marker: Started): void {
   }
 }
 
-// A start that failed leaves no worktree: its marker goes, so nothing reads it as a coordinator.
+// Drops the marker of a start that failed, so nothing reads it as a coordinator.
 export function forgetStarted(root: string, branch: string): void {
   rmSync(startedFile(root, branch), { force: true })
 }

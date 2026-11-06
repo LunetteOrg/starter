@@ -65,7 +65,8 @@ A `<slug>` is lower-case letters and digits in groups joined by single hyphens; 
   `--size XS|S|M|L|XL` picks its model, and `--workflow` adds the brief section that asks for
   a multi-agent workflow. A theme with no coordinator worktree (no marker of
   `--coordinator` for it in the mailbox) has no parent either: its children keep the
-  context and the Size, no gate (the orchestrator is the one starting them), and their brief and marker send to the orchestrator.
+  context and the Size, no gate (the orchestrator is the one starting them), and their
+  brief and marker send to the orchestrator.
 - The multi-agent workflow of the harness is switched by `--workflow`, which `lntt` turns
   into the harness's opt-in keyword when it renders the child's brief. The coordinator's
   brief names the flag and never the keyword, so the coordinator is not opted in through the
@@ -80,7 +81,7 @@ would nest git worktrees inside one the host does not track.
 ### The gate
 
 `coordinator.gate` in `.agents/config.jsonc` is `propose` (default) or `free`. Under
-`propose`, `lntt worktree start --theme` sends one message to the orchestrator for the
+`propose`, `lntt worktree start --theme` of a theme that has a coordinator sends one message to the orchestrator for the
 children not yet approved and creates nothing until the answer is `approve`, `approved`,
 `yes` or `ok`, with at most a final `.` or `!`. Approvals are kept per theme in the shared mailbox directory
 (`approved-<theme>.txt`), written by `--approve` at the coordinator's start and by an

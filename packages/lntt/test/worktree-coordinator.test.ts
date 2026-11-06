@@ -252,6 +252,17 @@ describe('lntt worktree start --theme (a coordinator’s child)', () => {
     assert.match(after(creates()[0] as string[], '--prompt') as string, /lntt ask --to orchestrator --issue 89/)
   })
 
+  test('a second coordinator start that fails leaves the live coordinator’s marker', () => {
+    const r = lntt(['--coordinator', '--theme', 'release-0-6-1', '--issue', '84'], { FAKE_ORCA_FAIL: '1' })
+    assert.equal(r.status, 1)
+    assert.deepEqual(started('coordinator'), {
+      branch: 'chore/no-issue/release-0-6-1',
+      issue: null,
+      to: 'orchestrator',
+      theme: 'release-0-6-1',
+    })
+  })
+
   test('a marker of the theme that is not the coordinator’s (a child’s, on an issue) is no coordinator', () => {
     rmSync(join(mailbox(), 'started'), { recursive: true })
     mkdirSync(join(mailbox(), 'started'), { recursive: true })

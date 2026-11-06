@@ -341,6 +341,8 @@ function start(args: string[]): void {
 
   for (const job of jobs) {
     // Before the host starts: a start that fails once the worktree exists still leaves it.
+    // A second start of a coordinator that fails must not take the live one's marker with it.
+    const earlier = coordinator ? startedBy(messagesRoot(), job.branch) : null
     recordMarker(marker(job, coordinator, theme, coordinated))
     let started: ReturnType<typeof startOrca>
     try {
@@ -351,8 +353,12 @@ function start(args: string[]): void {
             ? startHerdr(job, runner, setupScript)
             : startGit(job, runner, setupScript)
     } catch (error) {
-      // A coordinator that never started is none: later children of the theme must not wait on it.
-      if (coordinator) forgetStarted(messagesRoot(), job.branch)
+      // A coordinator whose start failed is none: later children of the theme must not wait on it.
+      // The marker of an earlier start of it stays.
+      if (coordinator) {
+        if (earlier) recordMarker(earlier)
+        else forgetStarted(messagesRoot(), job.branch)
+      }
       throw error
     }
     stdout.write(`${JSON.stringify(started)}\n`)
