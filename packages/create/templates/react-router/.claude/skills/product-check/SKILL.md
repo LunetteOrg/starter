@@ -27,7 +27,8 @@ only. This is the product-side sibling of `adr-check` and `story-check`.
      single source of truth).
 
 3. **Check the sources.** A PDR cites `docs/` and `compliance/`, never `reference/`
-   ([the rule on sources](../../../docs/adr/product-and-reference-spaces.md)). Flag:
+   ([the rule on sources](../../../docs/adr/product-and-reference-spaces.md#the-rule-on-sources)).
+   Flag:
    - **A PDR citing `reference/`** — a relative link or a path in its text, with its
      `path:line`; the fact it needs is to be written in the PDR, in words. A PDR in
      the cleanup list of `packages/test-utils/src/meta-pdr-sources.spec.ts` is
@@ -49,7 +50,8 @@ only. This is the product-side sibling of `adr-check` and `story-check`.
 
 6. **Report.** For each finding: `path:line`, one-line explanation, and the
    recommended action (scaffold a page via `product-decision`, fix an import, wire
-   the prototype, write the cited fact into the PDR, rewrite the PDR in place). If everything aligns, say so.
+   the prototype, write the cited fact into the PDR, rewrite the PDR in
+   place). If everything aligns, say so.
 
 ## Notes
 

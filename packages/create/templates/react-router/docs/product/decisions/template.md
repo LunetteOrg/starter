@@ -9,7 +9,8 @@
 
 The product/user problem. What we know, what the constraint is. A fact drawn
 from the raw material (legacy, dumps, prototypes) is written here, in words: a
-PDR cites `docs/` and `compliance/` only.
+PDR cites `docs/` and `compliance/` only (the rule on sources in
+docs/adr/product-and-reference-spaces.md).
 
 ## Decision
 

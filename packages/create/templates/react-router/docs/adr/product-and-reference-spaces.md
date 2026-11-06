@@ -48,10 +48,10 @@ Ship four spaces in every scaffolded project:
 - **`compliance/`** — a top-level space beside `reference/` for the **stable texts the
   project receives and must comply with**: legal texts (statute, regulations, policy
   conditions) and external norms such as a client's brand or design-system
-  guidelines. Each is dated at delivery, a new version goes beside the old one, and
-  each `.docx` or `.pdf` has its text extraction beside it. It is excluded from the
-  toolchain like `reference/`: the project receives these texts, it does not write
-  them ([`compliance/README.md`](../../compliance/README.md)). A design system the
+  guidelines. They change only by a new version, so a decision can rest on one; how
+  they are kept is in [`compliance/README.md`](../../compliance/README.md). It is
+  excluded from the toolchain like `reference/`: the project receives these texts, it
+  does not write them. A design system the
   project builds itself is its own code and decisions, not `compliance/`.
 - **A `Product/` section in the design-system Storybook** — the **review surface**.
   One MDX page per PDR imports the markdown `?raw` and renders it with the

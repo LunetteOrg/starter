@@ -19,12 +19,8 @@ corrected in place, the same rules as the [ADRs](../adr/README.md)
    [`decisions/template.md`](./decisions/template.md) and named after its subject,
    only for a new subject. The `product-decision` skill does both.
 2. Keep it short: Context, Decision, Consequences, and the options not taken in
-   *Discarded directions*. **Cite `docs/` and `compliance/`, never `reference/`**: a
-   fact the decision draws from `reference/` is written in the PDR, in words, so the
-   PDR reads on its own and does not age with a working document. An external law not
-   in the repository is cited by its official link and the date of the version the
-   decision rests on ([the rule on sources](../adr/product-and-reference-spaces.md);
-   enforced by `packages/test-utils/src/meta-pdr-sources.spec.ts`).
+   *Discarded directions*. **Cite `docs/` and `compliance/`, never `reference/`**
+   ([the rule on sources](../adr/product-and-reference-spaces.md#the-rule-on-sources)).
 3. Show it to the reviewers on its Storybook page before it is accepted.
 
 ## Reviewing a PDR (with non-technical stakeholders)

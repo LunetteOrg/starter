@@ -12,11 +12,9 @@
 
 - **Source of truth:** one markdown PDR per product subject in
   `docs/product/decisions/`, corrected in place. Greppable, versioned.
-- **Sources:** a PDR cites `docs/` and `compliance/`, never `reference/`. A fact it
-  needs from `reference/` is written in the PDR, in words; an external law not in the
-  repository is cited by its official link and the date of the version the decision
-  rests on. The rule covers the PDR's text, not its review page
-  ([the rule on sources](../adr/product-and-reference-spaces.md)).
+- **Sources:** a PDR cites `docs/` and `compliance/`, never `reference/`; its review
+  page still embeds from `reference/`
+  ([the rule on sources](../adr/product-and-reference-spaces.md#the-rule-on-sources)).
 - **Review surface:** one Storybook page per PDR under `Product/`. It imports the
   markdown `?raw` and renders it with the `Markdown` block, then embeds the
   interactive prototype and the "before" from `reference/`. **No duplication** —

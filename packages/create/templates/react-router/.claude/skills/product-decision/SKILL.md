@@ -25,10 +25,8 @@ it for review, keeping the markdown as the single source of truth (see
    Decision, Consequences, Discarded directions; Date is when the decision last
    changed. Keep it short and in active voice; show the user the file, or the diff
    of a rewritten one, before saving. Cite other PDRs, the ADRs and the texts in
-   `compliance/` by relative path, never `reference/`: a fact the decision draws from
-   `reference/` is written in the PDR, in words. An external law not in the repository
-   is cited by its official link and the date of the version the decision rests on
-   ([the rule on sources](../../../docs/adr/product-and-reference-spaces.md)).
+   `compliance/` by relative path, never `reference/`
+   ([the rule on sources](../../../docs/adr/product-and-reference-spaces.md#the-rule-on-sources)).
 
 4. **Write the Storybook page.** Copy the shape of
    `apps/design-system/src/Product/Example.mdx` to

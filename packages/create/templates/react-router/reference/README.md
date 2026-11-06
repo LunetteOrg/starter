@@ -40,12 +40,9 @@ brand guidelines) are not raw input: they go in [`compliance/`](../compliance/RE
   naming the commit it comes from. Never a git submodule; why is in
   [the reference-spaces ADR](../docs/adr/product-and-reference-spaces.md).
 - **A decision does not link it.** Material here gets new versions or goes stale, and
-  a decision that links it ages with it. A PDR cites `docs/` and `compliance/`, never
-  this folder: a fact it needs from here is written in the PDR, in words. Its
-  Storybook review page still embeds the prototype and the legacy "before" from here.
-  An ADR cites this folder only as the proof of a measured fact (the `path:line` of
-  the legacy code it describes). The rule and its enforcement are in
-  [the reference-spaces ADR](../docs/adr/product-and-reference-spaces.md).
+  a decision that links it ages with it: a PDR never cites this folder, an ADR only as
+  the proof of a measured fact; a PDR's Storybook review page still embeds from here
+  ([the rule on sources](../docs/adr/product-and-reference-spaces.md#the-rule-on-sources)).
 - **Sunset it.** When a reference has been fully digested into decisions and code,
   it can be archived or removed.
 
