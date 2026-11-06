@@ -168,13 +168,7 @@ jobs:
   // step, with HOLD set) it writes nothing more in the lock's folder. A test that removes
   // the folder before this can overlap the rewrite, which can put the record back.
   const held = () =>
-    until(() => {
-      try {
-        return typeof JSON.parse(readFileSync(lock(), 'utf8')).group === 'number'
-      } catch {
-        return false
-      }
-    })
+    until(() => existsSync(lock()) && typeof JSON.parse(readFileSync(lock(), 'utf8')).group === 'number')
 
   test('two runs at once queue: the second says whom it waits for, then runs', async () => {
     root = repo({ '.github/workflows/ci.yml': SLOW })
