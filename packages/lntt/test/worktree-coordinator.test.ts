@@ -236,6 +236,21 @@ describe('lntt worktree start --theme (a coordinator’s child)', () => {
     assert.match(brief, /lntt ask --to orchestrator --issue 89 "<question>"/)
     assert.doesNotMatch(brief, /--to coordinator|your coordinator|the coordinator/i)
     assert.deepEqual(started(), { branch: started().branch, issue: 89, to: 'orchestrator' })
+    assert.match(r.stderr, /theme release-0-6-1 has no coordinator worktree/)
+  })
+
+  test('a marker of the theme that is not the coordinator’s (a child’s, on an issue) is no coordinator', () => {
+    rmSync(join(mailbox(), 'started'), { recursive: true })
+    mkdirSync(join(mailbox(), 'started'), { recursive: true })
+    const branch = 'chore/no-issue/release-0-6-1'
+    writeFileSync(
+      join(mailbox(), 'started', `${encodeURIComponent(branch)}.json`),
+      `${JSON.stringify({ branch, issue: 89, to: 'coordinator', theme: 'release-0-6-1' })}\n`,
+    )
+    approved()
+    const r = lntt(child())
+    assert.equal(r.status, 0, r.stderr)
+    assert.match(after(creates()[0] as string[], '--prompt') as string, /lntt ask --to orchestrator --issue 89/)
   })
 
   test('--prompt adds to a child’s brief, with --context and --workflow', () => {

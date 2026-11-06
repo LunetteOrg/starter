@@ -269,7 +269,12 @@ function start(args: string[]): void {
   // Every issue is read and named before anything is created: a batch either starts
   // whole or not at all.
   const jobs: Start[] = []
-  const coordinated = Boolean(theme) && !coordinator && hasCoordinator(theme as string)
+  const coordinated = Boolean(theme) && hasCoordinator(theme as string)
+  if (theme && !coordinator && !coordinated) {
+    stderr.write(
+      `lntt worktree start: theme ${theme} has no coordinator worktree: the children report to the orchestrator\n`,
+    )
+  }
   if (coordinator) {
     const themeName = theme as string
     const branch = branchName('chore', null, themeName)

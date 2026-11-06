@@ -328,6 +328,12 @@ describe('the child’s brief', () => {
     assert.doesNotMatch(brief, /\{\{/)
   })
 
+  test('explicitly coordinated is the default: the coordinator is asked', () => {
+    const brief = childBrief(base, { theme: 't', coordinator: true })
+    assert.equal(brief, childBrief(base, { theme: 't' }))
+    assert.match(brief, /--to coordinator --theme t --issue 84/)
+  })
+
   test('with a context and a parent it carries the theme section and how to report', () => {
     const brief = childBrief(base, { theme: 'release-0-6-1', context: 'Your neighbours: #89 and #111.\n' })
     assert.match(brief, /## The theme\n\nYour neighbours: #89 and #111\./)

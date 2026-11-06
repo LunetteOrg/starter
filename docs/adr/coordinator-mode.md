@@ -29,7 +29,9 @@ two.
 - **Coordinator:** one per theme, in a worktree of its own on a placeholder branch
   (`chore/no-issue/<theme>`) that is never committed or pushed. It writes no code and runs
   no workflow; its context holds briefs, summaries and the merge order, never diffs. It
-  starts one child per issue, or per separable part of one. When the theme ends it
+  starts one child per issue, or per separable part of one. A theme can have none: the
+  orchestrator then starts the children itself, with `--theme` for the context and the
+  Size, and they report to the orchestrator. When the theme ends it
   leaves the theme's own friction in a comment on the candidate pull request (the
   `retrospective` skill), and drafts a report from each cluster of items marked
   `[upstream:<owner/name>]`: one for Lunette's repository is sent with `lntt issue` only
@@ -61,7 +63,9 @@ A `<slug>` is lower-case letters and digits in groups joined by single hyphens; 
   git have none and the child reaches its coordinator through the mailbox),
   `--context <file>` is the child's section of the theme, rendered into its brief,
   `--size XS|S|M|L|XL` picks its model, and `--workflow` adds the brief section that asks for
-  a multi-agent workflow.
+  a multi-agent workflow. A theme with no coordinator worktree (no marker of
+  `--coordinator` for it in the mailbox) has no parent either: its children keep the
+  context, the Size and the gate, and their brief and marker send to the orchestrator.
 - The multi-agent workflow of the harness is switched by `--workflow`, which `lntt` turns
   into the harness's opt-in keyword when it renders the child's brief. The coordinator's
   brief names the flag and never the keyword, so the coordinator is not opted in through the
@@ -120,7 +124,8 @@ host, with no messaging command of Orca or Herdr:
   which `lntt review` sends the open findings itself to whoever the branch reports to and
   prints the id to wait on. A plain child asks the orchestrator
   (`--to orchestrator --issue <n>`), a child of a theme its coordinator
-  (`--to coordinator --theme <theme> --issue <n>`), a coordinator the orchestrator. A
+  (`--to coordinator --theme <theme> --issue <n>`) unless the theme has no coordinator
+  worktree, then the orchestrator like a plain child, a coordinator the orchestrator. A
   child runs the wait in the background and re-reads its mailbox between polls, so an
   answer for it goes there; an answer that grants review rounds is the go for
   `lntt review allow`. Both briefs say so.
