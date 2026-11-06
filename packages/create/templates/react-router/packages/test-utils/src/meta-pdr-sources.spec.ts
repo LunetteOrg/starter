@@ -132,7 +132,9 @@ describe('the check reports what it should, and only that', () => {
       `${DECISIONS}/gone.md`,
     ])
   })
-  afterAll(() => rmSync(root, { recursive: true, force: true }))
+  afterAll(() => {
+    if (root) rmSync(root, { recursive: true, force: true })
+  })
 
   it('checks the markdown files of the log at any depth, not other files, directories or the cleanup list', () => {
     expect(report.checked).toEqual([

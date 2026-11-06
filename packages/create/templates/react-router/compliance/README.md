@@ -4,9 +4,8 @@ The **stable texts the project receives and must comply with**: legal texts (a
 statute, regulations, policy conditions) and external norms such as a client's brand
 or design-system guidelines. They change only by a new, dated version, and the
 decisions in [`docs/product/`](../docs/product/README.md) and
-[`docs/adr/`](../docs/adr/README.md) may cite them: with `docs/`, this is the only
-material a PDR cites ([the spaces ADR](../docs/adr/product-and-reference-spaces.md),
-*the rule on sources*).
+[`docs/adr/`](../docs/adr/README.md) may cite them, where a PDR never cites
+`reference/` ([the rule on sources](../docs/adr/product-and-reference-spaces.md#the-rule-on-sources)).
 
 Raw and intermediate input — functional specs, analyses, prototype exports, legacy
 dumps — goes in [`reference/`](../reference/README.md), not here. A design system the
