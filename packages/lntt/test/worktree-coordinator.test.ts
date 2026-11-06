@@ -95,12 +95,22 @@ function creates(): string[][] {
 const after = (call: string[], flag: string) => call[call.indexOf(flag) + 1]
 const mailbox = () => join(repo, '.git', 'lntt-messages')
 // The one start marker in the mailbox, under its branch's URL-encoded name.
-const started = () => {
-  const [file, ...more] = readdirSync(join(mailbox(), 'started'))
-  assert.deepEqual(more, [])
-  const marker = JSON.parse(readFileSync(join(mailbox(), 'started', file as string), 'utf8'))
-  assert.equal(file, `${encodeURIComponent(marker.branch)}.json`)
-  return marker
+// A theme's coordinator leaves its own marker, on no issue; a child's is the other one.
+const started = (of: 'child' | 'coordinator' = 'child') => {
+  const markers = readdirSync(join(mailbox(), 'started')).map((file) => {
+    const marker = JSON.parse(readFileSync(join(mailbox(), 'started', file), 'utf8'))
+    assert.equal(file, `${encodeURIComponent(marker.branch)}.json`)
+    return marker
+  })
+  const own = markers.filter((marker) => (marker.issue === null) === (of === 'coordinator'))
+  assert.equal(own.length, 1, JSON.stringify(markers))
+  return own[0]
+}
+// The theme has a coordinator when its worktree was started by `lntt worktree start --coordinator`.
+const coordinated = (theme: string) => {
+  const r = lntt(['--coordinator', '--theme', theme, '--issue', '84'])
+  assert.equal(r.status, 0, r.stderr)
+  rmSync(log, { force: true })
 }
 
 beforeEach(() => {
@@ -140,7 +150,7 @@ describe('lntt worktree start --coordinator', () => {
     assert.match(brief, new RegExp(`${join(tmp, 'bin', 'orca')} worktree set`))
     assert.equal(JSON.parse(r.stdout.trim()).issue, null)
     assert.equal(readFileSync(join(mailbox(), 'approved-release-0-6-1.txt'), 'utf8'), '89\n')
-    assert.deepEqual(started(), {
+    assert.deepEqual(started('coordinator'), {
       branch: 'chore/no-issue/release-0-6-1',
       issue: null,
       to: 'orchestrator',
@@ -188,6 +198,7 @@ describe('lntt worktree start --theme (a coordinator’s child)', () => {
     ...more,
   ]
   const approved = () => writeFileSync(join(mailbox(), 'approved-release-0-6-1.txt'), '89\n')
+  beforeEach(() => coordinated('release-0-6-1'))
 
   test('an approved child is started under its parent, on the model of its Size, with the theme in its brief', () => {
     mkdirSync(mailbox(), { recursive: true })
@@ -209,6 +220,22 @@ describe('lntt worktree start --theme (a coordinator’s child)', () => {
     const marker = started()
     assert.match(marker.branch, /^[a-z]+\/89\//)
     assert.deepEqual(marker, { branch: marker.branch, issue: 89, to: 'coordinator', theme: 'release-0-6-1' })
+  })
+
+  test('a theme with no coordinator worktree: the child reports to the orchestrator, the theme’s context and Size kept', () => {
+    rmSync(join(mailbox(), 'started'), { recursive: true })
+    mkdirSync(mailbox(), { recursive: true })
+    approved()
+    const r = lntt(child('--size', 'M'))
+    assert.equal(r.status, 0, r.stderr)
+    const [call] = creates()
+    assert.equal(after(call as string[], '--model'), 'opus')
+    const brief = after(call as string[], '--prompt') as string
+    assert.match(brief, /## The theme\n\nYour neighbours: #89/)
+    assert.match(brief, /lntt ask --to orchestrator --issue 89 "#89 ready: /)
+    assert.match(brief, /lntt ask --to orchestrator --issue 89 "<question>"/)
+    assert.doesNotMatch(brief, /--to coordinator|your coordinator|the coordinator/i)
+    assert.deepEqual(started(), { branch: started().branch, issue: 89, to: 'orchestrator' })
   })
 
   test('--prompt adds to a child’s brief, with --context and --workflow', () => {

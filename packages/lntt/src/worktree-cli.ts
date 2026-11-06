@@ -23,7 +23,7 @@ import {
 } from './coordinator.ts'
 import { NoConfigError } from './files.ts'
 import { loadConfig } from './index.ts'
-import { recordStarted, type Started, send, waitForAnswer } from './messages.ts'
+import { recordStarted, type Started, send, startedBy, waitForAnswer } from './messages.ts'
 import { messagesRoot, pollInterval, systemMailbox } from './messages-cli.ts'
 import {
   type Agent,
@@ -147,10 +147,10 @@ export function withPrompt(brief: string, prompt: string | undefined): string {
 
 // Who the agent started on a branch reports to, for `lntt review` at its limit: a
 // coordinator to the orchestrator, a child of a theme to its coordinator, a plain issue
-// to the orchestrator.
-function marker(job: Start, coordinator: boolean, theme: string | undefined): Started {
+// to the orchestrator, and so is a child of a theme that has no coordinator.
+function marker(job: Start, coordinator: boolean, theme: string | undefined, coordinated: boolean): Started {
   if (coordinator) return { branch: job.branch, issue: null, to: 'orchestrator', theme: theme as string }
-  if (theme) return { branch: job.branch, issue: job.issue, to: 'coordinator', theme }
+  if (theme && coordinated) return { branch: job.branch, issue: job.issue, to: 'coordinator', theme }
   return { branch: job.branch, issue: job.issue, to: 'orchestrator' }
 }
 
@@ -190,6 +190,14 @@ function passTheGate(config: Config, theme: string, jobs: Start[], size: string 
   const reply = waitForAnswer(box, sent, { intervalMs: pollInterval() })
   if (!isApproval(reply)) throw new Error(`not approved by the orchestrator: ${reply.trim()}`)
   approve(root, theme, issues)
+}
+
+// Whether the theme has a coordinator worktree: the one `lntt worktree start --coordinator`
+// left its marker for. A child started with --theme for the context and the Size alone
+// has none, and reports to the orchestrator.
+function hasCoordinator(theme: string): boolean {
+  const marker = startedBy(messagesRoot(), branchName('chore', null, theme))
+  return marker?.issue === null && marker.theme === theme
 }
 
 function start(args: string[]): void {
@@ -261,6 +269,7 @@ function start(args: string[]): void {
   // Every issue is read and named before anything is created: a batch either starts
   // whole or not at all.
   const jobs: Start[] = []
+  const coordinated = Boolean(theme) && !coordinator && hasCoordinator(theme as string)
   if (coordinator) {
     const themeName = theme as string
     const branch = branchName('chore', null, themeName)
@@ -308,7 +317,13 @@ function start(args: string[]): void {
         ...(values.parent ? { parent: values.parent } : {}),
         brief: withPrompt(
           theme
-            ? childBrief(common, { theme, ...(context ? { context } : {}), workflow: values.workflow, orca })
+            ? childBrief(common, {
+                theme,
+                coordinator: coordinated,
+                ...(context ? { context } : {}),
+                workflow: values.workflow,
+                orca,
+              })
             : renderBrief(undefined, common),
           values.prompt,
         ),
@@ -320,7 +335,7 @@ function start(args: string[]): void {
 
   for (const job of jobs) {
     // Before the host starts: a start that fails once the worktree exists still leaves it.
-    recordMarker(marker(job, coordinator, theme))
+    recordMarker(marker(job, coordinator, theme, coordinated))
     const started =
       host === 'orca'
         ? startOrca(job, runner, setupScript)

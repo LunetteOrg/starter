@@ -311,6 +311,23 @@ describe('the child’s brief', () => {
     assert.doesNotMatch(brief, /workflow|orca/i)
   })
 
+  test('a child of a theme with no coordinator reports and waits to the orchestrator, with the theme’s context', () => {
+    const brief = childBrief(base, {
+      theme: 'standalone',
+      coordinator: false,
+      context: 'Touch only the brief.',
+      orca: '/usr/local/bin/orca',
+    })
+    assert.match(brief, /## You are a child of the theme `standalone`/)
+    assert.match(brief, /## The theme\n\nTouch only the brief\./)
+    assert.match(brief, /`pnpm exec lntt ask --to orchestrator --issue 84 "<question>"`/)
+    assert.match(brief, /`pnpm exec lntt ask --to orchestrator --issue 84 "#84 ready: /)
+    assert.match(brief, /lntt inbox --as child --issue 84/)
+    assert.match(brief, /the orchestrator reads it/)
+    assert.doesNotMatch(brief, /--to coordinator|your coordinator|the coordinator/i)
+    assert.doesNotMatch(brief, /\{\{/)
+  })
+
   test('with a context and a parent it carries the theme section and how to report', () => {
     const brief = childBrief(base, { theme: 'release-0-6-1', context: 'Your neighbours: #89 and #111.\n' })
     assert.match(brief, /## The theme\n\nYour neighbours: #89 and #111\./)
