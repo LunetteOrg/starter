@@ -32,7 +32,7 @@ import {
   type Spawn,
   timerMs,
 } from './headless.ts'
-import { findConfig, loadConfig } from './index.ts'
+import { findConfig, loadConfig, projectPhase } from './index.ts'
 import { type Message, pending, type Started, send, startedBy } from './messages.ts'
 import { messagesRoot, systemMailbox } from './messages-cli.ts'
 import { describeOutcome, mutateAll } from './mutate.ts'
@@ -735,6 +735,7 @@ async function round(args: string[]): Promise<number> {
       files,
       diff: files.length > 0 ? git('diff', `${range.from}..${head}`) : '',
       records: records(data),
+      phase: projectPhase(data),
       range,
       readBrief: (path) => readFileSync(join(root, path), 'utf8'),
       checks,

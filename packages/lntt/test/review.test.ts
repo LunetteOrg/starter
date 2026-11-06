@@ -19,6 +19,7 @@ import {
   type ReviewState,
   type RoundCost,
   renderReviewPrompt,
+  renderVerifyPrompt,
   reviewConfig,
   reviewCost,
   reviewedAfter,
@@ -316,6 +317,39 @@ describe('the prompt', () => {
     assert.match(decisions, /\{"status":"FAIL"\}/)
     assert.doesNotMatch(renderReviewPrompt('code', values), /lntt check|"status"/)
     assert.doesNotMatch(renderReviewPrompt('code', values), /\{\{/)
+  })
+
+  // Before production some findings are noise: the reviewer and the verifier read one
+  // list of what is not a finding yet and of what holds anyway.
+  describe("the project's phase", () => {
+    const values = (phase?: 'development' | 'production') => ({
+      base: 'mb',
+      head: 'h',
+      files: ['a.ts'],
+      diff: 'DIFF',
+      records: 'R',
+      ...(phase === undefined ? {} : { phase }),
+    })
+    const found: Found = { id: 'f1', severity: 'warning', path: 'a.ts', line: 1, what: 'w', action: 'a', foundBy: [] }
+    const relaxed =
+      /## Before production[\s\S]*Not a finding yet[\s\S]*Migrations[\s\S]*Redirects[\s\S]*Backward compatibility[\s\S]*rewrite[\s\S]*Findings anyway[\s\S]*Security[\s\S]*Tests[\s\S]*decision records/
+
+    test('in development every lens and the verifier read what is not a finding yet and what holds anyway', () => {
+      for (const lens of ['decisions', 'code', 'tests']) {
+        const prompt = renderReviewPrompt(lens, values('development'))
+        assert.match(prompt, relaxed, lens)
+        assert.doesNotMatch(prompt, /\{\{/, lens)
+      }
+      assert.match(renderReviewPrompt('code', values('development'), 'A brief of the project.'), relaxed)
+      assert.match(renderVerifyPrompt(found, values('development')), relaxed)
+    })
+
+    test('in production, or with no phase, nothing of it is in a prompt', () => {
+      for (const phase of ['production', undefined] as const) {
+        assert.doesNotMatch(renderReviewPrompt('code', values(phase)), /Before production|\{\{/, String(phase))
+        assert.doesNotMatch(renderVerifyPrompt(found, values(phase)), /Before production|\{\{/, String(phase))
+      }
+    })
   })
 })
 

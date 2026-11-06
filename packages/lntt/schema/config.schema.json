@@ -27,6 +27,18 @@
         }
       }
     },
+    "project": {
+      "type": "object",
+      "description": "Where the project stands.",
+      "additionalProperties": false,
+      "properties": {
+        "phase": {
+          "enum": ["development", "production"],
+          "default": "production",
+          "description": "development: no release has reached production, so there are no users, data or links to keep; the lntt review lenses and verifiers read a list of what is not a finding before production (migrations against existing data, redirects for changed routes, backward compatibility, the size of a rewrite) and of what holds anyway (security, tests, the decision records). production: every check holds. Switch to production when the first release reaches production; a beta with real users is production. Missing: production, and lntt get project.phase prints it."
+        }
+      }
+    },
     "board": {
       "type": "object",
       "description": "The board the work is planned on, read by the board skills (plan-round, roadmap, and the adapter of the provider: github-board for github): where the board lives, the issue types, the mechanisms the project uses, its fields and their options, the track labels. The keys of one provider sit under its name (github); the others are concepts every provider shares. What the section leaves out the project does not use, and the skills do without it. How they are used is in docs/process/board.md, when the project has one.",

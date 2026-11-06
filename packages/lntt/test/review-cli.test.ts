@@ -771,6 +771,40 @@ describe('lntt review, end to end with a fake agent', () => {
   })
 })
 
+describe("lntt review, with the project's phase", () => {
+  const phased = (phase: string | undefined) => {
+    const config = JSON.parse(CONFIG)
+    if (phase !== undefined) config.project = { phase }
+    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify(config))
+    git('commit', '-qam', `phase ${phase}`)
+  }
+
+  test('in development the reviewers and the verifiers read what is not a finding before production', () => {
+    phased('development')
+    const prompts = join(repo, '.git/prompts')
+    const r = lntt(['--base', 'main'], { FAKE_REVIEW: '- [warning] a.ts:1 — w — a', FAKE_PROMPTS: prompts })
+    assert.equal(r.code, 1, r.err)
+    const read = readFileSync(prompts, 'utf8')
+      .split('\n=====\n')
+      .filter((p) => p.trim())
+    assert.ok(read.some((p) => p.startsWith('You are reviewing')))
+    assert.ok(read.some((p) => p.startsWith('You are checking')))
+    for (const p of read) assert.match(p, /## Before production/)
+  })
+
+  test('in production, or with no phase, they do not', () => {
+    for (const phase of ['production', undefined]) {
+      phased(phase)
+      const prompts = join(repo, '.git/prompts')
+      writeFileSync(prompts, '')
+      const r = lntt(['--base', 'main'], { FAKE_REVIEW: '- [warning] a.ts:1 — w — a', FAKE_PROMPTS: prompts })
+      assert.equal(r.code, 1, r.err)
+      assert.match(readFileSync(prompts, 'utf8'), /You are reviewing[\s\S]*You are checking/)
+      assert.doesNotMatch(readFileSync(prompts, 'utf8'), /Before production/, String(phase))
+    }
+  })
+})
+
 describe('lntt review, with the findings the branch already closed', () => {
   const ledger = () => JSON.parse(readFileSync(ledgerFile(), 'utf8'))
   const verifies = () => readFileSync(log, 'utf8').match(/^VERIFY /gm)?.length ?? 0

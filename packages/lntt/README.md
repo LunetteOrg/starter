@@ -10,7 +10,7 @@ machine with the candidate automation ([`lntt ci`](#ci-lntt-ci)).
 Reads, validates and edits a Lunette project's configuration: the values skills and
 scripts need, in `.agents/config.jsonc` **or** `.agents/config.yml` at the repository
 root (one of the two; both is an error). Sections are named after process areas
-(`recording`, `board`, `ci`, `delivery`, `cycle`, `spaces`, `team`, `local`) and the
+(`project`, `recording`, `board`, `ci`, `delivery`, `cycle`, `spaces`, `team`, `local`) and the
 tools that read them; [`schema/config.schema.json`](./schema/config.schema.json) says
 what each one holds.
 
@@ -26,6 +26,18 @@ lntt set recording.language '"it"'   # a JSON value, comments kept
 ```
 
 Exit codes: 0 ok, 1 configuration error, 2 usage error.
+
+`project.phase` says where the project stands: `development` until a release reaches
+production, then `production`. A missing key is `production`, the schema's default, so an
+existing project keeps every check until its team says otherwise: `lntt get project.phase`
+prints it, the one key `lntt get` reads a default for (any other missing key exits 1). In `development` the reviewers and the
+verifiers of `lntt review` read one list, in
+[`agents/review/before-production.md`](./agents/review/before-production.md), of what is
+not a finding before production (migrations against existing data, redirects for
+changed routes, backward compatibility, the size of a rewrite) and of what holds anyway
+(security, tests, the decision records, correctness). Switch it with
+`lntt set project.phase '"production"'` when the first release reaches production; a
+beta with real users is production. The templates start in `development`.
 
 ## The operator profile
 
@@ -513,6 +525,8 @@ A round, on a clean working tree:
    standalone server with an inline agent that denies every tool and allows read, grep,
    glob and list back. `--plan` and every round name where the diff goes: the provider
    of each configured agent.
+   With `project.phase` set to `development`, every lens prompt carries
+   [what is not a finding before production](#the-configuration).
 4. **Citations**: `lntt check cite` reads the line of every finding (the working tree,
    clean at the head). A finding on a line past the end of its file is refuted there,
    with no verifier; the others take the line's text to their verifiers. A file that is
@@ -523,7 +537,7 @@ A round, on a clean working tree:
    being the proof, with no verifier asked.
 5. **Verifiers**, all at once: each blocker and warning (`delivery.review.verify`) goes
    to every verifier but the agents that found it, briefed to refute it
-   ([`agents/verify.md`](./agents/verify.md)). All confirm: confirmed. All refute:
+   ([`agents/verify.md`](./agents/verify.md)), with the same list in `development`. All confirm: confirmed. All refute:
    refuted. Otherwise undecided. Findings still open from the last round go back to
    them on the new head.
 

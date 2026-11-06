@@ -8,6 +8,15 @@
     "version": "__LNTT_CREATE_VERSION__"
   },
 
+  // Where the project stands. In development the review lenses do not ask for what only
+  // protects users and data it does not have yet (migrations against existing data,
+  // redirects for changed routes, backward compatibility); security, tests and the
+  // decision records hold anyway. Switch it to "production" when the first release
+  // reaches production, a beta with real users included: lntt set project.phase '"production"'
+  "project": {
+    "phase": "development"
+  },
+
   // Friction that comes from Lunette itself (lntt, a shared skill, the template) starts
   // with [upstream:LunetteOrg/starter] in the retrospective blocks, and the retrospective
   // skill reports it there with lntt issue, on the operator's approval.
