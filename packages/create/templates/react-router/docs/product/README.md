@@ -9,6 +9,7 @@ corrected in place, the same rules as the [ADRs](../adr/README.md)
 |---|---|---|
 | [`../adr/`](../adr/README.md) | architectural decisions | one file per subject, corrected in place |
 | **`decisions/`** | product/design decisions (PDR) | one file per product subject, corrected in place; the source of truth |
+| [`../../compliance/`](../../compliance/README.md) | stable texts the project complies with (statute, regulations, brand guidelines) | received, dated, a new version beside the old; quarantined |
 | [`../../reference/`](../../reference/README.md) | raw input (legacy, dumps, prototypes) | read-only history, quarantined |
 
 ## Recording a product decision
@@ -18,7 +19,12 @@ corrected in place, the same rules as the [ADRs](../adr/README.md)
    [`decisions/template.md`](./decisions/template.md) and named after its subject,
    only for a new subject. The `product-decision` skill does both.
 2. Keep it short: Context, Decision, Consequences, and the options not taken in
-   *Discarded directions*. Link the `reference/` material it draws on.
+   *Discarded directions*. **Cite `docs/` and `compliance/`, never `reference/`**: a
+   fact the decision draws from `reference/` is written in the PDR, in words, so the
+   PDR reads on its own and does not age with a working document. An external law not
+   in the repository is cited by its official link and the date of the version the
+   decision rests on ([the rule on sources](../adr/product-and-reference-spaces.md);
+   enforced by `packages/test-utils/src/meta-pdr-sources.spec.ts`).
 3. Show it to the reviewers on its Storybook page before it is accepted.
 
 ## Reviewing a PDR (with non-technical stakeholders)

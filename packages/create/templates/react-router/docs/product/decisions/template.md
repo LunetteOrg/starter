@@ -7,8 +7,9 @@
 
 ## Context
 
-The product/user problem. What we know, what the reference material
-(`reference/…`) tells us, what the constraint is.
+The product/user problem. What we know, what the constraint is. A fact drawn
+from the raw material (legacy, dumps, prototypes) is written here, in words: a
+PDR cites `docs/` and `compliance/` only.
 
 ## Decision
 
@@ -26,6 +27,8 @@ designer or engineer can act on it without asking.
 
 <!--
 Renders in Storybook under `Product/` via a page that imports this file `?raw`.
-Link the prototype and the "before" it replaces so the whole evolution reads on
-one screen. See docs/guidances/product-decisions.md.
+The page, not this file, embeds the prototype and the "before" it replaces, so the
+whole evolution reads on one screen. Cite other PDRs, the ADRs and the texts in
+`compliance/`; an external law not in the repository by its official link and the
+date of the version this decision rests on. See docs/guidances/product-decisions.md.
 -->

@@ -2,8 +2,9 @@
 
 > **Recommended, not enforced.** The template ships the *shape* — a granular PDR
 > log ([`docs/product/`](../product/README.md)) rendered for review in Storybook's
-> `Product/` section, and a quarantined [`reference/`](../../reference/README.md)
-> for the raw material. How you run the review is up to you; this is the path we
+> `Product/` section, a quarantined [`reference/`](../../reference/README.md)
+> for the raw material, and [`compliance/`](../../compliance/README.md) for the
+> stable texts the project must comply with. How you run the review is up to you; this is the path we
 > recommend. See [product & reference spaces](../adr/product-and-reference-spaces.md) for why
 > these spaces exist.
 
@@ -11,6 +12,11 @@
 
 - **Source of truth:** one markdown PDR per product subject in
   `docs/product/decisions/`, corrected in place. Greppable, versioned.
+- **Sources:** a PDR cites `docs/` and `compliance/`, never `reference/`. A fact it
+  needs from `reference/` is written in the PDR, in words; an external law not in the
+  repository is cited by its official link and the date of the version the decision
+  rests on. The rule covers the PDR's text, not its review page
+  ([the rule on sources](../adr/product-and-reference-spaces.md)).
 - **Review surface:** one Storybook page per PDR under `Product/`. It imports the
   markdown `?raw` and renders it with the `Markdown` block, then embeds the
   interactive prototype and the "before" from `reference/`. **No duplication** —
@@ -21,8 +27,8 @@
 
 Use the [`product-decision`](../../.claude/skills/product-decision/) skill to
 scaffold a PDR + its page, and [`product-check`](../../.claude/skills/product-check/)
-to catch drift (a PDR with no page, a page importing a missing file, an `iframe`
-pointing at absent `reference/` material).
+to catch drift (a PDR with no page, a page importing a missing file, a PDR citing
+`reference/`, an `iframe` pointing at absent `reference/` material).
 
 ## Reviewing with non-technical stakeholders
 

@@ -10,6 +10,9 @@ This is **input, not a decision** — the decisions it informs live in
 history*: you don't edit it to change the project, you write a decision that
 supersedes it.
 
+The stable texts the project must comply with (a statute, regulations, a client's
+brand guidelines) are not raw input: they go in [`compliance/`](../compliance/README.md).
+
 ## Rules
 
 - **Quarantined from the toolchain.** Nothing here is a workspace package. It is
@@ -36,7 +39,14 @@ supersedes it.
   each update with `git subtree pull` and the same arguments: one commit per update,
   naming the commit it comes from. Never a git submodule; why is in
   [the reference-spaces ADR](../docs/adr/product-and-reference-spaces.md).
+- **A decision does not link it.** Material here gets new versions or goes stale, and
+  a decision that links it ages with it. A PDR cites `docs/` and `compliance/`, never
+  this folder: a fact it needs from here is written in the PDR, in words. Its
+  Storybook review page still embeds the prototype and the legacy "before" from here.
+  An ADR cites this folder only as the proof of a measured fact (the `path:line` of
+  the legacy code it describes). The rule and its enforcement are in
+  [the reference-spaces ADR](../docs/adr/product-and-reference-spaces.md).
 - **Sunset it.** When a reference has been fully digested into decisions and code,
-  it can be archived or removed — say so in the decision that closes it out.
+  it can be archived or removed.
 
 > This folder ships empty on purpose — fill it with your project's material.

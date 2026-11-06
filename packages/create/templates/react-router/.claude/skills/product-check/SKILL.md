@@ -26,22 +26,34 @@ only. This is the product-side sibling of `adr-check` and `story-check`.
      rendering it with `<Markdown>{pdr}</Markdown>` (the markdown must stay the
      single source of truth).
 
-3. **Check reference links.** For each PDR and its page, resolve every
-   `reference/…` path and prototype asset referenced. Flag:
-   - Links to `reference/` material that **no longer exists**.
+3. **Check the sources.** A PDR cites `docs/` and `compliance/`, never `reference/`
+   ([the rule on sources](../../../docs/adr/product-and-reference-spaces.md)). Flag:
+   - **A PDR citing `reference/`** — a relative link or a path in its text, with its
+     `path:line`; the fact it needs is to be written in the PDR, in words. A PDR in
+     the cleanup list of `packages/test-utils/src/meta-pdr-sources.spec.ts` is
+     reported too, as waiting to be cleaned.
+   - Links from a PDR to `docs/` or `compliance/` material that **no longer exists**.
+   - An external law cited **without its official link or the date** of the version
+     the decision rests on.
+
+4. **Check the review pages' material.** For each `Product/` page, resolve every
+   `reference/…` path and prototype asset it embeds (the page, unlike the PDR, may
+   embed from `reference/`). Flag:
+   - Embeds of `reference/` material that **no longer exists**.
    - `<iframe>` still pointing at the dashed placeholder on an `accepted` decision
      (never wired to a real prototype).
 
-4. **Check the records' shape.** Flag a PDR that carries amendment markers
+5. **Check the records' shape.** Flag a PDR that carries amendment markers
    (`superseded by`, struck-through text, an "update" section) instead of stating
    what holds now, a dated or numbered file name, and two files on the same subject.
 
-5. **Report.** For each finding: `path:line`, one-line explanation, and the
+6. **Report.** For each finding: `path:line`, one-line explanation, and the
    recommended action (scaffold a page via `product-decision`, fix an import, wire
-   the prototype, rewrite the PDR in place). If everything aligns, say so.
+   the prototype, write the cited fact into the PDR, rewrite the PDR in place). If everything aligns, say so.
 
 ## Notes
 
 - Report-only. Recommend `product-decision` for anything that needs a file written.
-- The `reference/` tree is quarantined input — check that it is *linked* correctly,
-  never that it lints or builds (it is excluded from the toolchain by design).
+- `reference/` and `compliance/` are quarantined input — check that they are *cited*
+  correctly, never that they lint or build (they are excluded from the toolchain by
+  design).

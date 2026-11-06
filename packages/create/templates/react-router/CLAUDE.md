@@ -62,7 +62,7 @@ the line-by-line pass:
 
 - `adr-check` — code vs `docs/adr/` (and `docs/guidances/`): ADR violations + decisions that need a new/updated ADR.
 - `story-check` — `packages/ui` components vs their Storybook stories/Foundations.
-- `product-check` — `docs/product/` PDRs vs their Storybook `Product/` review pages: missing pages, broken `?raw` imports, stale `reference/` links.
+- `product-check` — `docs/product/` PDRs vs their Storybook `Product/` review pages: missing pages, broken `?raw` imports, a PDR citing `reference/`, stale links.
 - `design-check` — design/UX discipline: tokens vs raw values, light+dark theming, AA contrast, focus/keyboard, motion, tooltips (scope: `packages/ui` and `ui-tokens`).
 
 To *record* a product/design decision (and its review page), use the
@@ -80,7 +80,7 @@ no PR (local working diff), a chat report is fine.
 ## Key Paths
 
 - ADRs: `docs/adr/` (index in `docs/adr/README.md`) · Guidances: `docs/guidances/` (app-level recommendations, not shipped)
-- Product decisions: `docs/product/` (PDR log) · rendered for review in Storybook's `Product/` section · raw input in `reference/` (quarantined) — see docs/adr/product-and-reference-spaces.md
+- Product decisions: `docs/product/` (PDR log) · rendered for review in Storybook's `Product/` section · raw input in `reference/` and stable texts to comply with in `compliance/` (both quarantined; a PDR cites `docs/` and `compliance/`, never `reference/`) — see docs/adr/product-and-reference-spaces.md
 - Contributing: `CONTRIBUTING.md`
 - Architecture test helpers: `packages/test-utils/src/arch.ts`
 - Review skills: `.claude/skills/adr-check/`, `.claude/skills/story-check/`, `.claude/skills/product-check/`, `.claude/skills/design-check/` · Scaffolding skills: `.claude/skills/product-decision/`, `.claude/skills/design-explore/`

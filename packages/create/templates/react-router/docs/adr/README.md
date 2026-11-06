@@ -13,7 +13,7 @@ is kept, and how it relates to the product decisions and the
 | [testing](./testing.md) | Testing strategy, test database, component tests | accepted |
 | [data-and-migrations](./data-and-migrations.md) | Data access and migration safety | accepted |
 | [design-system](./design-system.md) | Design tokens, Storybook showcase, themes | accepted |
-| [product-and-reference-spaces](./product-and-reference-spaces.md) | Product decisions and quarantined reference input | accepted |
+| [product-and-reference-spaces](./product-and-reference-spaces.md) | Product decisions, quarantined reference input, compliance texts, the rule on sources | accepted |
 
 ## Recording a decision
 
