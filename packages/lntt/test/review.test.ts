@@ -320,7 +320,8 @@ describe('the prompt', () => {
   })
 
   // Before production some findings are noise: the reviewer and the verifier read one
-  // list of what is not a finding yet and of what holds anyway.
+  // list of what is not a finding yet and of what holds anyway
+  // (agents/review/before-production.md).
   describe("the project's phase", () => {
     const values = (phase?: 'development' | 'production') => ({
       base: 'mb',
@@ -332,7 +333,7 @@ describe('the prompt', () => {
     })
     const found: Found = { id: 'f1', severity: 'warning', path: 'a.ts', line: 1, what: 'w', action: 'a', foundBy: [] }
     const relaxed =
-      /## Before production[\s\S]*Not a finding yet[\s\S]*Migrations[\s\S]*Redirects[\s\S]*Backward compatibility[\s\S]*rewrite[\s\S]*Findings anyway[\s\S]*Security[\s\S]*Tests[\s\S]*decision records/
+      /## Before production[\s\S]*Not a finding yet[\s\S]*Migrations[\s\S]*Redirects[\s\S]*Backward compatibility[\s\S]*rewrite[\s\S]*Findings anyway[\s\S]*Security[\s\S]*Tests[\s\S]*decision records[\s\S]*asks for one of the items above[\s\S]*still holds: a change against it is a\s+finding/
 
     test('in development every lens and the verifier read what is not a finding yet and what holds anyway', () => {
       for (const lens of ['decisions', 'code', 'tests']) {

@@ -63,8 +63,9 @@ templates writes its own repository there.
 Every template ships `project.phase: "development"` in the same file, with a comment
 saying when to switch it: a scaffolded project has no release yet. The CLI copies the
 value as it is; the project's team sets `production` when its first release reaches
-production. What the key changes is in the configuration's schema and
-`packages/lntt/README.md`.
+production. What the key changes is in the configuration's schema,
+`packages/lntt/README.md` and the list the reviewers read,
+`packages/lntt/agents/review/before-production.md`.
 
 ### After the copy
 
