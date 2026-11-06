@@ -26,9 +26,9 @@ project builds itself is its own code and decisions, not `compliance/`.
   compared when a new version arrives.
 - **Quarantined from the toolchain.** Like `reference/`, nothing here is a workspace
   package and Biome ignores it: CI never touches it.
-- **An external law not in the repository** is cited by its official link and the
-  date of the version a decision rests on. Its text comes in here only when a
-  decision depends on its exact wording.
+- **An external law comes in only when a decision depends on its exact wording**;
+  otherwise a decision cites it from outside the repository
+  ([the rule on sources](../docs/adr/product-and-reference-spaces.md#the-rule-on-sources)).
 
 ## Contents
 

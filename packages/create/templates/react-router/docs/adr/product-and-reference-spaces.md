@@ -51,8 +51,8 @@ Ship four spaces in every scaffolded project:
   guidelines. They change only by a new version, so a decision can rest on one; how
   they are kept is in [`compliance/README.md`](../../compliance/README.md). It is
   excluded from the toolchain like `reference/`: the project receives these texts, it
-  does not write them. A design system the
-  project builds itself is its own code and decisions, not `compliance/`.
+  does not write them. A design system the project builds itself is its own code and
+  decisions, not `compliance/`.
 - **A `Product/` section in the design-system Storybook** — the **review surface**.
   One MDX page per PDR imports the markdown `?raw` and renders it with the
   `Markdown` block (no duplication), embedding the interactive prototype and the

@@ -8,9 +8,9 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 /**
  * A PDR cites `docs/` and `compliance/`, never `reference/`
@@ -31,12 +31,14 @@ const DECISIONS = 'docs/product/decisions'
 const WAITING_FOR_CLEANUP: string[] = []
 
 /**
- * A path into `reference/`: the directory named alone or after `./` and `../`
- * segments, as a link (`../../../reference/x`, `../../reference`) or in prose
- * (`reference/legacy/x.php`). Not a `reference/` segment inside another path
- * (`compliance/reference/x`, a URL), nor a word ending in reference.
+ * A path into `reference/`, in any case: `reference/` opening a path in prose
+ * (`reference/legacy/x.php`), or `reference` right after a `./` or `../` segment, as
+ * a link to a file or to the directory alone (`../../../reference/x`,
+ * `docs/../reference/x`, `../../reference`). Not a `reference/` segment after a
+ * named one (`compliance/reference/x`, a URL), a sibling that only starts with
+ * reference (`../reference-notes`), nor a word ending in reference.
  */
-const REFERENCE_PATH = /(?<![\w./-])(?:(?:\.\.?\/)*reference\/|(?:\.\.?\/)+reference(?![\w-]))/gi
+const REFERENCE_PATH = /(?<![\w./-])reference\/|(?<=\.\.?\/)reference(?![\w-])/gi
 
 /** The lines of `source` that cite a path into `reference/`, each once, in order. */
 function referenceCitationsIn(source: string): number[] {
@@ -63,9 +65,9 @@ interface PdrSourcesReport {
 function checkPdrSources(root: string, waitingForCleanup: string[]): PdrSourcesReport {
   const citing = (path: string) =>
     referenceCitationsIn(readFileSync(resolve(root, path), 'utf8')).map((line) => `${path}:${line}`)
-  const pdrs = readdirSync(resolve(root, DECISIONS), { recursive: true, encoding: 'utf8' })
-    .filter((name) => name.endsWith('.md'))
-    .map((name) => `${DECISIONS}/${name.split('\\').join('/')}`)
+  const pdrs = readdirSync(resolve(root, DECISIONS), { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
+    .map((entry) => relative(root, join(entry.parentPath, entry.name)).split(sep).join('/'))
     .sort()
   const checked = pdrs.filter((path) => !waitingForCleanup.includes(path))
   return {
@@ -78,7 +80,10 @@ function checkPdrSources(root: string, waitingForCleanup: string[]): PdrSourcesR
 }
 
 describe('a PDR cites docs/ and compliance/, never reference/', () => {
-  const report = checkPdrSources(REPO_ROOT, WAITING_FOR_CLEANUP)
+  let report: PdrSourcesReport
+  beforeAll(() => {
+    report = checkPdrSources(REPO_ROOT, WAITING_FOR_CLEANUP)
+  })
 
   it('checks the PDR log, its template included — otherwise the path stopped matching', () => {
     expect(report.checked).toContain(`${DECISIONS}/template.md`)
@@ -103,14 +108,13 @@ describe('a PDR cites docs/ and compliance/, never reference/', () => {
 })
 
 describe('the check reports what it should, and only that', () => {
-  let root = ''
+  let root: string
+  let report: PdrSourcesReport
   const write = (path: string, text: string) => {
     mkdirSync(dirname(join(root, path)), { recursive: true })
     writeFileSync(join(root, path), text)
   }
-  afterEach(() => rmSync(root, { recursive: true, force: true }))
-
-  it('reports a citing PDR at any depth with its line, skips other files and the cleanup list, and names a listed PDR that is clean or gone', () => {
+  beforeAll(() => {
     root = mkdtempSync(join(tmpdir(), 'pdr-sources-'))
     write(`${DECISIONS}/template.md`, '# Subject\n\nCite `docs/` and `compliance/`.\n')
     write(
@@ -119,24 +123,33 @@ describe('the check reports what it should, and only that', () => {
     )
     write(`${DECISIONS}/billing/invoices.md`, '# Invoices\n\nFrom `reference/legacy/inv.php`.\n')
     write(`${DECISIONS}/notes.txt`, 'reference/legacy/x.php\n')
+    mkdirSync(join(root, `${DECISIONS}/assets.md`))
     write(`${DECISIONS}/legacy.md`, '# Legacy\n\n[old](../../../reference/old.php)\n')
     write(`${DECISIONS}/cleaned.md`, '# Cleaned\n\nNothing from there.\n')
-
-    const report = checkPdrSources(root, [
+    report = checkPdrSources(root, [
       `${DECISIONS}/legacy.md`,
       `${DECISIONS}/cleaned.md`,
       `${DECISIONS}/gone.md`,
     ])
+  })
+  afterAll(() => rmSync(root, { recursive: true, force: true }))
 
+  it('checks the markdown files of the log at any depth, not other files, directories or the cleanup list', () => {
     expect(report.checked).toEqual([
       `${DECISIONS}/billing/invoices.md`,
       `${DECISIONS}/onboarding.md`,
       `${DECISIONS}/template.md`,
     ])
+  })
+
+  it('reports each citing PDR with the line of its citation', () => {
     expect(report.citations).toEqual([
       `${DECISIONS}/billing/invoices.md:3`,
       `${DECISIONS}/onboarding.md:3`,
     ])
+  })
+
+  it('names a listed PDR that no longer cites reference/ or is gone, not one that still does', () => {
     expect(report.clean).toEqual([`${DECISIONS}/cleaned.md`, `${DECISIONS}/gone.md`])
   })
 
@@ -147,8 +160,9 @@ describe('the check reports what it should, and only that', () => {
       'and `reference/legacy/x.php`',
       'the [folder](../../reference)',
       'and `./Reference/x`',
+      '[up and back](docs/product/../../reference/x)',
     ].join('\n')
-    expect(referenceCitationsIn(source)).toEqual([2, 3, 4, 5])
+    expect(referenceCitationsIn(source)).toEqual([2, 3, 4, 5, 6])
   })
 
   it('does not take another path, a URL or a word ending in reference for a citation', () => {
@@ -156,6 +170,7 @@ describe('the check reports what it should, and only that', () => {
       '[statute](../../../compliance/statute/x.md)',
       'cross-reference/ and myreference/ and compliance/reference/x',
       'https://example.com/docs/reference/api and the reference material',
+      '[notes](../reference-notes/x) and [other](../referenceX)',
     ].join('\n')
     expect(referenceCitationsIn(source)).toEqual([])
   })
