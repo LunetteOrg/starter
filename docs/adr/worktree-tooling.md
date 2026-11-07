@@ -48,8 +48,10 @@ small adapter that makes the calls it understands.
 - **Each start leaves a marker** in the mailbox,
   `<git common dir>/lntt-messages/started/<branch, URL-encoded>.json`: the branch, its issue
   (none for a coordinator), and who it reports to (`coordinator` with the theme for a
-  theme's child, `orchestrator` otherwise), written before the host starts; a marker that
-  cannot be written is a warning, not a failed start. At `lntt review: limit:` the round
+  child of a theme that has a coordinator, `orchestrator` otherwise, a child of a theme
+  with no coordinator included), written before the host starts and dropped when a coordinator's start fails (an
+  earlier start's marker stays); a marker that cannot be written is a warning, not a
+  failed start. At `lntt review: limit:` the round
   reads it (a branch still on the name Orca gave it reads the marker of its conventional
   name) and sends the open findings there with the mailbox, without waiting for the
   answer, and prints the id to wait on (`lntt ask --wait <id>`). A branch with no marker

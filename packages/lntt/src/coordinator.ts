@@ -166,22 +166,32 @@ export interface ChildValues {
 // The brief of one issue. With a theme, the child belongs to a coordinator: the context
 // the coordinator wrote, how to ask and report, and, on request, the workflow section.
 // Every child routes its waits through the mailbox: to the coordinator, else the
-// orchestrator.
+// orchestrator. A theme can have no coordinator worktree (the orchestrator starts its
+// children itself, for the theme's context and Size): with `coordinator: false` the
+// brief keeps the theme and sends everything to the orchestrator.
 export function childBrief(
   v: ChildValues,
-  options: { theme?: string; context?: string; workflow?: boolean; orca?: string | null },
+  options: { theme?: string; coordinator?: boolean; context?: string; workflow?: boolean; orca?: string | null },
   brief = template('brief.md'),
 ): string {
+  const coordinated = options.coordinator ?? true
+  const role = coordinated ? 'coordinator' : 'orchestrator'
   const card = options.orca
-    ? `Keep your card current at each phase: \`${options.orca} worktree set --worktree current --comment "<state>"\`; the coordinator reads it.`
+    ? `Keep your card current at each phase: \`${options.orca} worktree set --worktree current --comment "<state>"\`; the ${role} reads it.`
     : ''
   return fill(brief, {
     ...v,
     theme: options.context?.trim() ? `## The theme\n\n${options.context.trim()}` : '',
     reporting: options.theme
-      ? fill(template('reporting.md'), { theme: options.theme, issue: v.issue, card }).trimEnd()
+      ? fill(template('reporting.md'), {
+          theme: options.theme,
+          issue: v.issue,
+          card,
+          role,
+          to: coordinated ? `--to coordinator --theme ${options.theme}` : '--to orchestrator',
+        }).trimEnd()
       : '',
-    waiting: waitingSection(v.issue, options.theme),
+    waiting: waitingSection(v.issue, coordinated ? options.theme : undefined),
     workflow: options.workflow ? template('workflow.md').trimEnd() : '',
   })
 }
