@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-10-14
+date: 2026-11-06
 tags: [scaffolding, contract, cli, packages]
 ---
 
@@ -57,6 +57,15 @@ The same file sets `cycle.retrospective.upstream.repository` to the repository t
 publishes the template, where the project reports the friction that comes from Lunette
 itself (`lntt issue`). The CLI copies it as it is: a fork that publishes its own
 templates writes its own repository there.
+
+### The project's phase
+
+Every template ships `project.phase: "development"` in the same file, with a comment
+saying when to switch it: a scaffolded project has no release yet. The CLI copies the
+value as it is; the project's team sets `production` when its first release reaches
+production. What the key changes is in the configuration's schema,
+`packages/lntt/README.md` and the list the reviewers read,
+`packages/lntt/agents/review/before-production.md`.
 
 ### After the copy
 

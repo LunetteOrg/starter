@@ -15,6 +15,7 @@ import {
   type Driver,
   findConfig,
   formatPlan,
+  getConfigValue,
   getValue,
   guide,
   loadConfig,
@@ -94,7 +95,7 @@ function run(command: string | undefined, key: string | undefined, raw: string |
     }
     case 'get':
       if (!key) usage()
-      stdout.write(`${JSON.stringify(getValue(loadConfig(cwd()).data, key))}\n`)
+      stdout.write(`${JSON.stringify(getConfigValue(loadConfig(cwd()).data, key))}\n`)
       break
     case 'set': {
       if (!key || raw === undefined) usage()

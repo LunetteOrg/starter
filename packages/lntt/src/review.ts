@@ -70,6 +70,9 @@ interface RawReview {
   warningRounds?: number
 }
 
+// Where the project stands (project.phase, read with projectPhase).
+export type Phase = 'development' | 'production'
+
 // delivery.review over the defaults, lens by lens. A lens with no agents is off.
 export function reviewConfig(data: Record<string, unknown>): ReviewConfig {
   const raw = ((data.delivery as { review?: RawReview } | undefined)?.review ?? {}) as RawReview
@@ -640,6 +643,15 @@ export interface PromptValues {
   checks?: Record<string, string>
   // The findings earlier rounds of the branch closed.
   closed?: Closed[]
+  // The project's phase (project.phase): in development the reviewers and the verifiers
+  // read what is not a finding before production. Absent: production.
+  phase?: Phase
+}
+
+// The same section in the frame of every lens and in the verifier's prompt, or nothing.
+function phaseSection(values: PromptValues): string {
+  if (values.phase !== 'development') return ''
+  return `${readFileSync(join(AGENTS, 'review', 'before-production.md'), 'utf8').trim()}\n\n`
 }
 
 // What lntt check found for a lens, before the reviewers: they judge, it counts.
@@ -664,6 +676,7 @@ export function renderReviewPrompt(lens: string, values: PromptValues, brief?: s
   return fill(readFileSync(join(AGENTS, 'review', 'common.md'), 'utf8'), {
     lens,
     brief: text.trim(),
+    phase: phaseSection(values),
     scope: values.scope ?? 'The change',
     range: `${values.base}..${values.head}`,
     files: values.files.map((f) => `- ${f}`).join('\n') || '(none)',
@@ -689,6 +702,7 @@ export function renderVerifyPrompt(found: Found, values: PromptValues): string {
     anchor: anchorOf(found),
     cited: citedLine(found),
     closed: closedForVerifier(found, values.closed),
+    phase: phaseSection(values),
     what: found.what,
     action: found.action,
     range: `${values.base}..${values.head}`,

@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-11-04
+date: 2026-11-06
 tags: [cli, packages, agents, ci, commands]
 ---
 
@@ -84,6 +84,11 @@ lntt ci local | candidate | proved
   `delivery.review.maxRounds`), 4 nothing to report on (`lntt review status` with no round
   on the current branch, also when a jq query fails on the missing state), an interrupted command 128 plus the signal (130 for
   Ctrl-C); a defect of `lntt` itself exits 1 with its stack trace.
+- **`lntt get` prints what the file holds, and a missing key exits 1,** so a script never
+  goes on with a wrong value. One key reads its schema default instead: `project.phase`,
+  whose missing value means `production` by definition (a project keeps every check until
+  its team says otherwise). A default that a reader of the key would otherwise repeat is
+  the only reason for another such key.
 - **A reading command gives a summary by default, and jq for a part of its output.** An
   agent reads through a limited window and pays for every character, so the default is
   short and each level is shown folded, as its key and its count (`findings: 14 (3 open)`).

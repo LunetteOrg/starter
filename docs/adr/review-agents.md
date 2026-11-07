@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-11-04
+date: 2026-11-06
 tags: [review, agents, models, cost, lntt]
 ---
 
@@ -55,6 +55,12 @@ same way every time; the `review` skill keeps the judgement.
   `opencode run` with an inline agent that denies every tool and allows the read ones
   back. The tools are what makes it read-only, not
   the brief.
+- **The project's phase is in the prompt.** With `project.phase` set to `development`,
+  the common frame of every lens and the verifier's prompt carry one list,
+  `packages/lntt/agents/review/before-production.md`, of what is not a finding before
+  production and of what holds anyway; a verifier refutes a finding that list excludes,
+  citing it. In `production`, or with no phase, the prompts carry nothing of it and the
+  lens briefs name none of those rules.
 - **Adversarial verification:** every finding at a severity in `verify.severities`
   goes, at once, to every verifier in `verify.with` other than the agents that found it,
   each briefed to refute it (except a finding a mutation run decides, above); when those

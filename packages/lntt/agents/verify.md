@@ -6,7 +6,7 @@ The finding ({{severity}}): `{{anchor}}` — {{what}} — {{action}}
 
 {{cited}}
 {{closed}}
-You can only read, and you fix nothing. Answer with exactly one word on the first line,
+{{phase}}You can only read, and you fix nothing. Answer with exactly one word on the first line,
 then the proof:
 
 - `confirmed`: the finding holds. The proof is a `path:line` you read that shows it, or

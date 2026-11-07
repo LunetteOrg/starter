@@ -10,6 +10,7 @@ import jsonc from 'jsonc-parser'
 import { isMap, parseDocument } from 'yaml'
 import schema from '../schema/config.schema.json' with { type: 'json' }
 import { ConfigError, check, type Located, locate, NoConfigError, parse } from './files.ts'
+import type { Phase } from './review.ts'
 
 export { checkAgentsBlock, managedBlock, syncAgentsBlock } from './agents.ts'
 export {
@@ -86,6 +87,7 @@ export {
   type Lens,
   lensApplies,
   mergeFindings,
+  type Phase,
   parseFindings,
   parseOutcome,
   parseWithdrawal,
@@ -181,6 +183,18 @@ export function getValue(data: unknown, key: string): unknown {
     value = (value as Record<string, unknown>)[part]
   }
   return value
+}
+
+// Where the project stands. A missing key is the schema's default, production: a project
+// keeps every check until its team says otherwise. The only key lntt get reads a default
+// for: every other missing key is an error.
+export function projectPhase(data: Record<string, unknown>): Phase {
+  const project = data.project as { phase?: Phase } | undefined
+  return project?.phase ?? (schema.properties.project.properties.phase.default as Phase)
+}
+
+export function getConfigValue(data: Record<string, unknown>, key: string): unknown {
+  return key === 'project.phase' ? projectPhase(data) : getValue(data, key)
 }
 
 // Sets a dotted key, keeping every comment in the file. The new content is validated
