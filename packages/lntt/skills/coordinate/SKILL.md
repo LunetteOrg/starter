@@ -23,9 +23,9 @@ The orchestrator (the person, or the session above) starts it:
 pnpm exec lntt worktree start --coordinator --theme <slug> --issue <n> --issue <m> [--approve <n>]
 ```
 
-The coordinator's brief (`agents/coordinator.md` of `@lntt/lntt`) lists the issues, the
-children it may start at once (`--approve`), the model of each role and how to follow the
-children. The worktree stays on its placeholder branch: no commit, no push, no pull request.
+The coordinator's brief (`dist/agents/coordinator.md` of `@lntt/lntt`) lists the issues,
+the children it may start at once (`--approve`), the model of each role and how to follow
+the children. The worktree stays on its placeholder branch: no commit, no push, no pull request.
 
 ## 2. Order the theme
 

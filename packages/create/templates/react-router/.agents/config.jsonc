@@ -8,6 +8,14 @@
     "version": "__LNTT_CREATE_VERSION__"
   },
 
+  // Where the project stands. In development lntt review does not ask for what only
+  // protects users and data the project does not have yet. Switch it to "production"
+  // when the first release reaches production, a beta with real users included:
+  // lntt set project.phase '"production"'
+  "project": {
+    "phase": "development"
+  },
+
   // Friction that comes from Lunette itself (lntt, a shared skill, the template) starts
   // with [upstream:LunetteOrg/starter] in the retrospective blocks, and the retrospective
   // skill reports it there with lntt issue, on the operator's approval.

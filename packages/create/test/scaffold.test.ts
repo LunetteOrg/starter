@@ -79,6 +79,9 @@ test('a scaffolded project records the template and the CLI version it came from
     assert.deepEqual(parsed.lunette, { template: 'react-router', version })
     // Where friction that comes from Lunette itself is reported (lntt issue).
     assert.deepEqual(parsed.cycle.retrospective.upstream, { repository: 'LunetteOrg/starter' })
+    // A new project starts before production: the review lenses relax what only protects
+    // users and data it does not have yet (project.phase).
+    assert.equal(parsed.project.phase, 'development')
     const subject = execFileSync('git', ['log', '-1', '--format=%s'], { cwd: app, encoding: 'utf8' }).trim()
     assert.equal(subject, `chore: scaffold my-app from @lntt/create ${version} (template react-router)`)
   } finally {

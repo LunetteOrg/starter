@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { candidateConfig } from '../src/ci/config.ts'
-import { ConfigError, findConfig, getValue, loadConfig, setValue } from '../src/index.ts'
+import { ConfigError, findConfig, getValue, loadConfig, projectPhase, setValue } from '../src/index.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
 
@@ -110,6 +110,40 @@ describe('reading and validating', () => {
   test('getValue fails on a missing key rather than returning undefined', () => {
     write('.agents/config.jsonc', JSONC)
     assert.throws(() => getValue(loadConfig(root).data, 'recording.logs.pdr.path'), /recording\.logs\.pdr/)
+  })
+})
+
+describe("the project's phase", () => {
+  test('development or production, read with lntt get; any other value does not validate', () => {
+    for (const phase of ['development', 'production']) {
+      write('.agents/config.jsonc', `{ "project": { "phase": "${phase}" } }`)
+      const out = execFileSync('node', [BIN, 'get', 'project.phase'], { cwd: root, encoding: 'utf8' })
+      assert.equal(JSON.parse(out), phase)
+      assert.equal(projectPhase(loadConfig(root).data), phase)
+    }
+    write('.agents/config.jsonc', `{ "project": { "phase": "development" } }`)
+    const section = execFileSync('node', [BIN, 'get', 'project'], { cwd: root, encoding: 'utf8' })
+    assert.deepEqual(JSON.parse(section), { phase: 'development' }, 'the section reads as it is written')
+    write('.agents/config.jsonc', `{ "project": { "phase": "beta" } }`)
+    assert.throws(() => loadConfig(root), /\/project\/phase/)
+  })
+
+  test('a missing key, or a missing section, is production: no project loses a check unless its team says so', () => {
+    write('.agents/config.jsonc', JSONC)
+    assert.equal(projectPhase(loadConfig(root).data), 'production')
+    write('.agents/config.jsonc', `{ "project": {} }`)
+    assert.equal(projectPhase(loadConfig(root).data), 'production')
+    const out = execFileSync('node', [BIN, 'get', 'project.phase'], { cwd: root, encoding: 'utf8' })
+    assert.equal(JSON.parse(out), 'production')
+  })
+
+  test('only project.phase reads its default: another missing key, one with a default in the schema too, exits 1', () => {
+    const schema = JSON.parse(readFileSync(resolve(dirname(BIN), '../schema/config.schema.json'), 'utf8'))
+    assert.equal(schema.properties.board.properties.provider.default, 'github')
+    write('.agents/config.jsonc', `{ "board": {} }`)
+    const r = spawnSync('node', [BIN, 'get', 'board.provider'], { cwd: root, encoding: 'utf8' })
+    assert.equal(r.status, 1)
+    assert.match(r.stderr, /no board\.provider/)
   })
 })
 
