@@ -35,7 +35,7 @@
         "phase": {
           "enum": ["development", "production"],
           "default": "production",
-          "description": "Where the project stands. development: no release has reached production yet; lntt review gives its reviewers and verifiers the list of what is not a finding before production (agents/review/before-production.md in the @lntt/lntt package). production: every check holds. Switch to production when the first release reaches production; a beta with real users is production. Missing: production, and lntt get project.phase prints it."
+          "description": "Where the project stands. development: no release has reached production yet; lntt review gives its reviewers and verifiers the list of what is not a finding before production (dist/agents/review/before-production.md in the @lntt/lntt package). production: every check holds. Switch to production when the first release reaches production; a beta with real users is production. Missing: production, and lntt get project.phase prints it."
         }
       }
     },
