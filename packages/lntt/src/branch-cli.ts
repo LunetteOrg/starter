@@ -5,7 +5,17 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
-import { type BranchRules, branchName, branchRules, checkBranch, fromToolName, slugify, typeFor } from './branch.ts'
+import { candidateAt } from './base.ts'
+import {
+  type BranchRules,
+  branchName,
+  branchRules,
+  CANDIDATE_PREFIX,
+  checkBranch,
+  fromToolName,
+  slugify,
+  typeFor,
+} from './branch.ts'
 import { ConfigError } from './files.ts'
 import { loadConfig } from './index.ts'
 import { detectHost } from './viewer.ts'
@@ -26,14 +36,33 @@ function run(command: string, args: string[]): string {
   return execFileSync(command, args, { cwd: cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 }
 
-// A project without a configuration file still gets the default rules.
-export function rules(): BranchRules {
+// A project without a configuration file has the defaults.
+function projectData(): Record<string, unknown> {
   try {
-    return branchRules(loadConfig(cwd()).data)
+    return loadConfig(cwd()).data
   } catch (error) {
-    if (error instanceof ConfigError && /no \.agents\/config/.test(error.message)) return branchRules({})
+    if (error instanceof ConfigError && /no \.agents\/config/.test(error.message)) return {}
     throw error
   }
+}
+
+export function rules(): BranchRules {
+  return branchRules(projectData())
+}
+
+// The branch checked out; on a detached HEAD, the candidate whose origin/ ref points at
+// it (delivery.candidate.prefix, else CANDIDATE_PREFIX as in branchRules), so a
+// candidate's head is checked without a local branch named after it.
+function currentBranch(): string {
+  const current = run('git', ['branch', '--show-current'])
+  if (current !== '') return current
+  const delivery = projectData().delivery as { candidate?: { prefix?: string } } | undefined
+  const prefix = delivery?.candidate?.prefix ?? CANDIDATE_PREFIX
+  const candidate = candidateAt(cwd(), prefix)
+  if (candidate === null) {
+    throw new Error(`HEAD is detached and no origin/${prefix}<n> points at it: switch to a branch, or give --branch`)
+  }
+  return candidate
 }
 
 export interface Issue {
@@ -98,16 +127,14 @@ function check(args: string[]): void {
     options: { branch: { type: 'string' }, 'pre-push': { type: 'boolean', default: false } },
   })
   const ruleset = rules()
-  const branches = values['pre-push']
-    ? pushedBranches(readFileSync(0, 'utf8'))
-    : [values.branch || run('git', ['branch', '--show-current'])]
+  const branches = values['pre-push'] ? pushedBranches(readFileSync(0, 'utf8')) : [values.branch || currentBranch()]
   let failed = false
   for (const branch of branches) {
     const result = checkBranch(branch, ruleset)
     if (result.ok) continue
     const fix = result.expected
       ? `rename it: git branch -m ${result.expected}`
-      : 'rename it to the name lntt branch name --issue <n> prints'
+      : 'rename it to the name pnpm exec lntt branch name --issue <n> prints'
     stderr.write(`lntt branch: ${branch} does not follow type/issue/slug: ${result.reason}; ${fix}\n`)
     failed = true
   }
@@ -156,7 +183,7 @@ function rename(): void {
   if (!target) {
     stderr.write(
       `lntt branch: ${current} does not follow type/issue/slug and holds nothing to rebuild it from; ` +
-        'rename it with git branch -m "$(lntt branch name --issue <n>)"\n',
+        'rename it with git branch -m "$(pnpm exec lntt branch name --issue <n>)"\n',
     )
     return
   }

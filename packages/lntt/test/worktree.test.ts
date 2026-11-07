@@ -57,6 +57,15 @@ describe('the brief', () => {
     assert.match(brief, /\/w/)
     assert.doesNotMatch(brief, /\{\{/)
   })
+
+  test('the shipped template routes every wait to the orchestrator, with the issue', () => {
+    const brief = renderBrief(undefined, { issue: 78, title: 'T', branch: 'feat/78/t', worktree: '/w' })
+    assert.match(brief, /## Every wait goes through the mailbox/)
+    assert.match(brief, /`pnpm exec lntt ask --to orchestrator --issue 78 "<…>"`/)
+    assert.match(brief, /1Password/)
+    assert.match(brief, /`pnpm exec lntt ask --wait <id>`/)
+    assert.match(brief, /re-read your mailbox:\n`pnpm exec lntt inbox --as child --issue 78`/)
+  })
 })
 
 // Records every call; answers from a table keyed by the command and its first arguments.
@@ -102,6 +111,7 @@ describe('Orca', () => {
     })
     const started = startOrca(START, runner)
     assert.deepEqual(calls, [
+      'orca worktree create --help',
       'orca worktree create --name feat-78-start-agent --issue 78 --base-branch main --setup run --json --agent claude --prompt BRIEF',
     ])
     assert.deepEqual(started, {
@@ -134,7 +144,97 @@ describe('Orca', () => {
       'orca worktree create': JSON.stringify({ result: { worktree: { path: '/p' } } }),
     })
     startOrca({ ...START, agent: null }, runner)
-    assert.doesNotMatch(calls[0] as string, /--agent|--prompt/)
+    assert.doesNotMatch(calls[0] as string, /--agent|--prompt|--surface/)
+    assert.equal(calls.length, 1, 'no agent, nothing to ask the help about')
+  })
+})
+
+describe('Orca starts the agent in a terminal', () => {
+  const WITH_SURFACE = 'Usage: orca worktree create --name <name> [--agent <id>] [--surface chat|terminal]'
+  const created = JSON.stringify({ result: { worktree: { path: '/w' } } })
+
+  test('--surface terminal on the create, where Orca lists --surface', () => {
+    const { calls, runner } = recorder({
+      'orca worktree create --help': WITH_SURFACE,
+      'orca worktree create --name': created,
+    })
+    startOrca(START, runner)
+    assert.match(calls.at(-1) as string, /--agent claude --prompt BRIEF --surface terminal$/)
+  })
+
+  test('also with a model and an effort', () => {
+    const help = `${WITH_SURFACE} [--model <id>] [--effort <level>]`
+    const { calls, runner } = recorder({ 'orca worktree create --help': help, 'orca worktree create --name': created })
+    startOrca({ ...START, agent: { kind: 'claude', model: 'sonnet', effort: 'high' } }, runner)
+    assert.match(calls.at(-1) as string, /--model sonnet --effort high --surface terminal$/)
+  })
+
+  test('an Orca whose help lists no --surface gets no flag', () => {
+    const help = 'Usage: orca worktree create --name <name> [--agent <id>] [--model <id>]'
+    const { calls, runner } = recorder({ 'orca worktree create --help': help, 'orca worktree create --name': created })
+    startOrca({ ...START, agent: { kind: 'claude', model: 'sonnet' } }, runner)
+    assert.doesNotMatch(calls.at(-1) as string, /--surface/)
+    const bare = recorder({ 'orca worktree create --help': '', 'orca worktree create --name': created })
+    startOrca(START, bare.runner)
+    assert.doesNotMatch(bare.calls.at(-1) as string, /--surface/)
+  })
+
+  test('only an option named --surface counts, not --surface-x or a word in prose', () => {
+    for (const help of [
+      'Usage: orca worktree create [--surface-x <v>]',
+      'Usage: orca worktree create; the surface is yours',
+    ]) {
+      const { calls, runner } = recorder({
+        'orca worktree create --help': help,
+        'orca worktree create --name': created,
+      })
+      startOrca(START, runner)
+      assert.doesNotMatch(calls.at(-1) as string, /--surface/)
+    }
+  })
+
+  test('a help that cannot be run stops the start, instead of silently starting a chat', () => {
+    const runner: Runner = {
+      run(_command, args) {
+        if (args.includes('--help')) throw new Error('orca: help failed')
+        return created
+      },
+      shell() {},
+      sleep() {},
+    }
+    assert.throws(() => startOrca(START, runner), /help failed/)
+  })
+
+  test('a help that prints nothing starts an untuned agent with no flag', () => {
+    const { calls, runner } = recorder({ 'orca worktree create --help': '', 'orca worktree create --name': created })
+    startOrca(START, runner)
+    assert.match(calls.at(-1) as string, /--agent claude --prompt BRIEF$/)
+  })
+
+  test('opencode with a model opens its own terminal and gets no --surface', () => {
+    const { calls, runner } = recorder({
+      'orca worktree create --help': WITH_SURFACE,
+      'orca worktree create --name': created,
+      'orca terminal create': JSON.stringify({ result: { terminal: { handle: 'term_7' } } }),
+      'orca terminal wait': JSON.stringify({ result: { wait: { satisfied: true } } }),
+    })
+    startOrca({ ...START, agent: { kind: 'opencode', model: 'opencode/x' } }, runner, () => null)
+    assert.ok(calls.some((c) => c.startsWith('orca terminal create')))
+    assert.ok(calls.every((c) => !c.includes('--surface')))
+  })
+
+  test('the worker path takes no --surface: worker-start has no such option (orca 1.4.229 help)', () => {
+    const { calls, runner } = recorder({
+      'orca worktree create --help':
+        'Usage: orca worktree create --name <name> [--agent <id>] [--surface chat|terminal]',
+      'orca orchestration run-current': JSON.stringify({ result: { run: { id: 'run_1' } } }),
+      'orca worktree create --name': created,
+      'orca orchestration worker-start': JSON.stringify({ result: { dispatch: { dispatchId: 'ctx_9' } } }),
+    })
+    // a help with --surface and no --model is no real Orca: it pins that this path never adds the flag
+    startOrca({ ...START, agent: { kind: 'codex', model: 'gpt-6' } }, runner)
+    assert.ok(calls.some((c) => c.startsWith('orca orchestration worker-start')))
+    assert.ok(calls.every((c) => !c.includes('--surface')))
   })
 })
 

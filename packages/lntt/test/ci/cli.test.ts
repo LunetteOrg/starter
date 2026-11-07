@@ -1,10 +1,21 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { afterEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { ciConfig } from '../../src/ci/config.ts'
+import { type Clone, clone } from '../clone.ts'
 import { git, repo, write } from './helpers.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../../bin/lntt.ts')
@@ -152,6 +163,12 @@ jobs:
 `
   const lock = () => join(root, '.git', 'locks', 'ci-local.lock')
   const go = () => writeFileSync(join(root, '.git', 'runner.log.go'), '')
+  // The lock is taken and its step's process group recorded. The run rewrites the record
+  // at the start and at the close of each step, so while a step is held back (a single
+  // step, with HOLD set) it writes nothing more in the lock's folder. A test that removes
+  // the folder before this can overlap the rewrite, which can put the record back.
+  const held = () =>
+    until(() => existsSync(lock()) && typeof JSON.parse(readFileSync(lock(), 'utf8')).group === 'number')
 
   test('two runs at once queue: the second says whom it waits for, then runs', async () => {
     root = repo({ '.github/workflows/ci.yml': SLOW })
@@ -223,7 +240,7 @@ jobs:
       const pidFile = join(root, '.git', 'runner.log.child')
       await until(() => existsSync(pidFile) && readFileSync(pidFile, 'utf8').endsWith('\n'))
       // The running step's group is in the lock's record.
-      await until(() => typeof JSON.parse(readFileSync(lock(), 'utf8')).group === 'number')
+      await held()
       child.kill(signal)
       assert.equal(await closed, code)
       assert.match(stderr, new RegExp(`lntt ci: interrupted \\(${signal}\\)`))
@@ -259,7 +276,7 @@ jobs:
       stderr += chunk
     })
     const closed = new Promise<number | null>((resolve) => child.on('close', resolve))
-    await until(() => existsSync(lock()) && typeof JSON.parse(readFileSync(lock(), 'utf8')).group === 'number')
+    await held()
     child.kill('SIGINT')
     await until(() => /interrupted/.test(stderr))
     child.kill('SIGINT')
@@ -270,7 +287,7 @@ jobs:
   test('a lock that cannot be given back is one line, and the run keeps its exit code', async () => {
     root = repo({ '.github/workflows/ci.yml': SLOW })
     const first = backgroundWith({ HOLD: '1' }, 'local')
-    await until(() => existsSync(lock()))
+    await held()
     rmSync(join(root, '.git', 'locks'), { recursive: true, force: true, ...RETRY })
     go()
     const a = await first.done
@@ -283,7 +300,7 @@ jobs:
   test('an interrupt that cannot give the lock back still exits 128 plus the signal', async () => {
     root = repo({ '.github/workflows/ci.yml': SLOW })
     const first = backgroundWith({ HOLD: '1' }, 'local')
-    await until(() => existsSync(lock()))
+    await held()
     rmSync(join(root, '.git', 'locks'), { recursive: true, force: true, ...RETRY })
     first.child.kill('SIGINT')
     const a = await first.done
@@ -309,7 +326,7 @@ Date.now = () => now() + (existsSync(${JSON.stringify(jump)}) ? 121 * 60_000 : 0
     })
     const closed = new Promise<number | null>((resolve) => child.on('close', resolve))
     // The first step is running: its group is in the lock's record.
-    await until(() => existsSync(lock()) && typeof JSON.parse(readFileSync(lock(), 'utf8')).group === 'number')
+    await held()
     writeFileSync(jump, '')
     go()
     assert.equal(await closed, 1, stdout)
@@ -322,7 +339,7 @@ Date.now = () => now() + (existsSync(${JSON.stringify(jump)}) ? 121 * 60_000 : 0
     const holder = spawn(process.execPath, [BIN, 'ci', 'local'], { cwd: root, env: { ...env(), HOLD: '1' } })
     // 'exit', not 'close': the orphaned step keeps the holder's output pipes open.
     const killed = new Promise((resolve) => holder.on('exit', resolve))
-    await until(() => existsSync(lock()) && typeof JSON.parse(readFileSync(lock(), 'utf8')).group === 'number')
+    await held()
     const { group } = JSON.parse(readFileSync(lock(), 'utf8'))
     holder.kill('SIGKILL')
     await killed
@@ -398,13 +415,24 @@ Date.now = () => now() + (existsSync(${JSON.stringify(jump)}) ? 121 * 60_000 : 0
 })
 
 describe('lntt ci candidate', () => {
-  const CONFIG = { delivery: { candidate: { prefix: 'candidate/' } } }
+  const CONFIG = {
+    delivery: {
+      candidate: { prefix: 'candidate/' },
+      automated: [{ author: 'dependabot[bot]', branch: 'dependabot/', runs: 'after-approval', ci: 'full' }],
+    },
+  }
 
+  // A gh that answers the open-candidate query and the comparison of the base with it
+  // (`cases`, shell case branches, first), and records every call.
   function candidate(event: unknown, ...args: string[]) {
-    write(root, { '.git/event.json': JSON.stringify(event) })
-    // A gh that answers the open-candidate query and records every call.
+    return candidateWith('', event, ...args)
+  }
+
+  // A null event: no GITHUB_EVENT_PATH, as in a terminal.
+  function candidateWith(cases: string, event: unknown, ...args: string[]) {
+    if (event !== null) write(root, { '.git/event.json': JSON.stringify(event) })
     write(root, {
-      '.git/bin/gh': `#!/bin/sh\necho "$*" >> "${root}/.git/gh.log"\ncase "$*" in *"--state open"*) echo '[{"number":40,"headRefName":"candidate/4","body":""}]';; esac\n`,
+      '.git/bin/gh': `#!/bin/sh\necho "$*" >> "${root}/.git/gh.log"\ncase "$*" in ${cases} *"--state open"*) echo '[{"number":40,"headRefName":"candidate/4","body":""}]';; *compare/*) echo '{"behindBy":0,"base":"b"}';; esac\n`,
     })
     execFileSync('chmod', ['+x', join(root, '.git/bin/gh')])
     return spawnSync(process.execPath, [BIN, 'ci', 'candidate', ...args], {
@@ -414,7 +442,12 @@ describe('lntt ci candidate', () => {
         ...process.env,
         PATH: `${join(root, '.git/bin')}:${process.env.PATH}`,
         GITHUB_REPOSITORY: 'o/r',
-        GITHUB_EVENT_PATH: join(root, '.git/event.json'),
+        GITHUB_EVENT_PATH: event === null ? '' : join(root, '.git/event.json'),
+        // The identity the workflow gives git, for the rebase the follow step makes.
+        GIT_AUTHOR_NAME: 'bot',
+        GIT_AUTHOR_EMAIL: 'bot@example.com',
+        GIT_COMMITTER_NAME: 'bot',
+        GIT_COMMITTER_EMAIL: 'bot@example.com',
       },
     })
   }
@@ -447,11 +480,205 @@ describe('lntt ci candidate', () => {
     assert.match(out.stdout, /\[dry-run\] gh pr comment 7/)
   })
 
+  test("a bot's pull request (delivery.automated) opened into main stays there, with no write", () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidate(
+      opened({ head: { ref: 'dependabot/npm_and_yarn/vite-7.1.0' }, user: { login: 'dependabot[bot]' } }),
+      '--dry-run',
+    )
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /it stays, a pull request of dependabot\[bot\] \(delivery\.automated\) stays on main/)
+    assert.doesNotMatch(out.stdout, /\[dry-run\] gh pr (edit|comment) 7/)
+  })
+
   test('a hotfix stays on main and reads nothing', () => {
     root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
     const out = candidate(opened({ head: { ref: 'hotfix/login' } }))
     assert.equal(out.status, 0, out.stderr)
     assert.match(out.stdout, /it stays, a hotfix stays on main/)
+  })
+
+  test('a push event follows the base and does not crash on the missing pull request', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidate({ ref: 'refs/heads/main', before: 'a', after: 'b' })
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /candidate: follow main: main is an ancestor of candidate\/4/)
+  })
+
+  test('--follow --dry-run prints the path and its reason, and the push it would make', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    // origin holds main and candidate/4 (an empty commit on main); main then moves.
+    const remote = join(root, '.git/remote.git')
+    git(root, 'init', '-q', '--bare', '-b', 'main', remote)
+    git(root, 'remote', 'add', 'origin', remote)
+    git(root, 'switch', '-q', '-c', 'candidate/4', 'main')
+    git(root, 'commit', '-q', '--allow-empty', '-m', 'chore: open candidate 4')
+    const head = git(root, 'rev-parse', 'HEAD')
+    git(root, 'switch', '-q', 'main')
+    write(root, { 'fix.txt': 'hotfix\n' })
+    git(root, 'add', 'fix.txt')
+    git(root, 'commit', '-q', '-m', 'fix: hotfix')
+    const base = git(root, 'rev-parse', 'HEAD')
+    git(root, 'push', '-q', 'origin', 'main', 'candidate/4')
+    const out = candidateWith(
+      `*"--state open"*) echo '[{"number":40,"headRefName":"candidate/4","headRefOid":"${head}","body":""}]';; *compare/*) echo '{"behindBy":1,"base":"${base}"}';; *graphql*) echo '[]';;`,
+      null,
+      '--follow',
+      '--dry-run',
+    )
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /candidate: follow main: main moved and no pull request is open into candidate\/4: rebase/)
+    assert.match(
+      out.stdout,
+      new RegExp(`\\[dry-run\\] git push --force-with-lease=refs/heads/candidate/4:${head} origin`),
+    )
+    assert.match(out.stdout, /\[dry-run\] gh pr comment 40/)
+    assert.equal(git(remote, 'rev-parse', 'refs/heads/candidate/4'), head)
+  })
+
+  test('--pr from a terminal handles its pull request and does not follow the base', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidateWith(
+      `*"pr view 7"*) echo '{"number":7,"title":"t","body":"Closes #3","baseRefName":"main","headRefName":"feat/3/x","labels":[],"mergedAt":null}';; *compare/*) echo '{"behindBy":1,"base":"b"}';;`,
+      null,
+      '--pr',
+      '7',
+      '--dry-run',
+    )
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /\[dry-run\] gh pr edit 7 --repo o\/r --base candidate\/4/)
+    assert.match(out.stdout, /candidate: follow main: no git client in this run.*--follow/)
+    assert.doesNotMatch(out.stdout, /git push/)
+    assert.doesNotMatch(readFileSync(join(root, '.git/gh.log'), 'utf8'), /compare\//)
+  })
+
+  // An event of a pull request from this repository: its head and base repositories.
+  const REPO = { full_name: 'o/r' }
+  const own = (fields: { head?: { ref: string; repo?: unknown }; [key: string]: unknown } = {}) => {
+    const event = opened(fields)
+    return {
+      ...event,
+      pull_request: {
+        ...event.pull_request,
+        base: { ...event.pull_request.base, repo: REPO },
+        head: { ...event.pull_request.head, repo: REPO, ...fields.head },
+      },
+    }
+  }
+
+  test('--guard passes a pull request into main that is the candidate, and reads nothing', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidate(own({ head: { ref: 'candidate/4' } }), '--guard')
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /candidate guard: #7 passes: candidate\/4 is the candidate/)
+    assert.equal(existsSync(join(root, '.git/gh.log')), false)
+  })
+
+  test('--guard fails a pull request left on main, naming the remedy as an error annotation', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidate(own({ action: 'synchronize', user: { login: 'octocat' } }), '--guard')
+    assert.equal(out.status, 1, out.stdout)
+    assert.match(out.stdout, /::error title=Not on the candidate::#7 targets main.*pnpm exec lntt ci candidate --pr 7/)
+    assert.equal(existsSync(join(root, '.git/gh.log')), false)
+  })
+
+  test("--guard reads the pull request's author from the event: Dependabot passes", () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidate(
+      own({ head: { ref: 'dependabot/npm_and_yarn/vite-7.1.0' }, user: { login: 'dependabot[bot]' } }),
+      '--guard',
+    )
+    assert.equal(out.status, 0, out.stdout)
+    assert.match(out.stdout, /a pull request of dependabot\[bot\] \(delivery\.automated\) stays on main/)
+  })
+
+  test('--guard --pr reads whether the head is a fork: a fork named like the candidate fails', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidateWith(
+      `*"pr view 8"*isCrossRepository*) echo '{"number":8,"title":"t","body":"","baseRefName":"main","headRefName":"candidate/1","labels":[],"mergedAt":null,"isCrossRepository":true}';;`,
+      null,
+      '--guard',
+      '--pr',
+      '8',
+    )
+    assert.equal(out.status, 1, out.stdout)
+    assert.match(out.stdout, /::error title=Not on the candidate::#8 targets main/)
+  })
+
+  test('--guard --pr reads the pull request with gh, its author included', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidateWith(
+      // The author only when --json asks for it, as gh does.
+      `*"pr view 7"*author*) echo '{"number":7,"title":"t","body":"","baseRefName":"main","headRefName":"dependabot/npm_and_yarn/x","labels":[],"mergedAt":null,"author":{"login":"app/dependabot"},"isCrossRepository":false}';; *"pr view 7"*) echo '{"number":7,"title":"t","body":"","baseRefName":"main","headRefName":"dependabot/npm_and_yarn/x","labels":[],"mergedAt":null}';;`,
+      null,
+      '--guard',
+      '--pr',
+      '7',
+    )
+    assert.equal(out.status, 0, out.stdout)
+    assert.match(out.stdout, /a pull request of app\/dependabot \(delivery\.automated\) stays on main/)
+  })
+
+  test('--guard reads the fork from the event: a fork named like the candidate fails', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidate(own({ head: { ref: 'candidate/1', repo: { full_name: 'someone/r' } } }), '--guard')
+    assert.equal(out.status, 1, out.stdout)
+    assert.match(out.stdout, /::error title=Not on the candidate::#7 targets main/)
+  })
+
+  for (const flags of [
+    ['--follow'],
+    ['--dry-run'],
+    ['--merged'],
+    ['--event', 'opened'],
+    ['--head-ref', 'x'],
+    ['--labels', 'a'],
+  ]) {
+    test(`--guard with ${flags[0]} is a usage error`, () => {
+      root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+      const out = candidate(opened(), '--guard', ...flags)
+      assert.equal(out.status, 2)
+      assert.match(out.stderr, new RegExp(`--guard takes no ${flags[0]}`))
+    })
+  }
+
+  for (const [what, event, flags, message] of [
+    ['without an event or --pr', null, [], /--guard without --pr reads the pull request from GITHUB_EVENT_PATH/],
+    ['on a push event', { ref: 'refs/heads/main' }, [], /--guard runs on a pull_request event/],
+    ['with --pr that is not a number', null, ['--pr', 'x'], /--pr takes a number, not x/],
+    ['with --pr 0', null, ['--pr', '0'], /--pr takes a number, not 0/],
+  ] as const) {
+    test(`--guard ${what} is a usage error`, () => {
+      root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+      const out = candidate(event, '--guard', ...flags)
+      assert.equal(out.status, 2, out.stdout)
+      assert.match(out.stderr, message)
+    })
+  }
+
+  for (const flags of [
+    ['--pr', '7'],
+    ['--event', 'opened'],
+    ['--head-ref', 'feat/3/x'],
+    ['--labels', 'a'],
+    ['--merged'],
+  ]) {
+    test(`--follow with ${flags[0]} is a usage error`, () => {
+      root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+      const out = candidateWith('', null, '--follow', ...flags)
+      assert.equal(out.status, 2)
+      assert.match(out.stderr, new RegExp(`--follow takes no ${flags[0]}`))
+      assert.equal(existsSync(join(root, '.git/gh.log')), false)
+    })
+  }
+
+  test('an event without a pull request that is no push to the base does nothing', () => {
+    root = repo({ '.agents/config.jsonc': JSON.stringify(CONFIG) })
+    const out = candidate({ ref: 'refs/heads/other', before: 'a', after: 'b' })
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /^candidate: event refs\/heads\/other, nothing to do\.$/m)
+    assert.doesNotMatch(out.stdout, /candidate: follow/)
+    assert.equal(existsSync(join(root, '.git/gh.log')), false)
   })
 })
 
@@ -604,5 +831,71 @@ jobs:
     const out = ci('local', '--job', 'ci.yml/ci')
     assert.equal(out.status, 0, out.stdout + out.stderr)
     assert.match(out.stdout, /1 passed, 0 failed, 0 cloud only, 0 skipped, 1 not selected with --job/)
+  })
+})
+
+describe('lntt ci local: the base', () => {
+  const CANDIDATE = JSON.stringify({ delivery: { candidate: { prefix: 'candidate/' } } })
+  let c: Clone
+
+  // In a clone with a stale local main and candidate/13 open on GitHub (a gh on the PATH
+  // that answers the open-candidate query, or fails it).
+  function list(config: string, at: string, gh: 'answers' | 'fails', ...args: string[]) {
+    root = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-ci-base-')))
+    c = clone(root, { '.agents/config.jsonc': config, '.github/workflows/ci.yml': CI })
+    c.git('switch', '-q', ...(at.startsWith('feat/') ? ['-c', at, 'origin/candidate/13'] : ['--detach', at]))
+    if (at.startsWith('feat/')) c.git('commit', '-q', '--allow-empty', '-m', 'mine')
+    const answer =
+      gh === 'answers' ? `echo '[{"number":40,"headRefName":"candidate/13","body":""}]'` : 'echo offline >&2; exit 1'
+    write(root, { 'bin/gh': `#!/bin/sh\ncase "$*" in *"pr list"*) ${answer};; esac\n` })
+    chmodSync(join(root, 'bin/gh'), 0o755)
+    return spawnSync(process.execPath, [BIN, 'ci', 'local', '--list', ...args], {
+      cwd: c.repo,
+      encoding: 'utf8',
+      env: { ...env(), PATH: `${join(root, 'bin')}:${process.env.PATH}`, GITHUB_REPOSITORY: 'o/r' },
+    })
+  }
+
+  test('a branch on the open candidate: a pull request into it, diffed from the fork point', () => {
+    const out = list(CANDIDATE, 'feat/5/x', 'answers')
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /pull request feat\/5\/x → candidate\/13 @ \w+ \(diff against (\w+), 0 files changed\)/)
+    assert.ok(out.stdout.includes(`diff against ${c.candidate}`), out.stdout)
+  })
+
+  test('with no candidate: origin/main, not the stale local main', () => {
+    const out = list('{}', 'feat/5/x', 'answers')
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /pull request feat\/5\/x → main @ \w+ \(diff against origin\/main, 1 files changed\)/)
+  })
+
+  test('a push with no origin/main: an error that says to fetch, not the stale local main', () => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-ci-base-')))
+    c = clone(root, { '.agents/config.jsonc': '{}', '.github/workflows/ci.yml': CI })
+    c.git('update-ref', '-d', 'refs/remotes/origin/main')
+    const out = spawnSync(process.execPath, [BIN, 'ci', 'local', '--list', '--event', 'push'], {
+      cwd: c.repo,
+      encoding: 'utf8',
+      env: env(),
+    })
+    assert.notEqual(out.status, 0, out.stdout)
+    assert.match(out.stderr, /no origin\/main.*git fetch origin/)
+  })
+
+  test('an explicit --base wins over the open candidate', () => {
+    const out = list(CANDIDATE, 'feat/5/x', 'answers', '--base', 'main')
+    assert.match(out.stdout, /pull request feat\/5\/x → main /)
+  })
+
+  test('GitHub unreachable: origin/main, and it says so', () => {
+    const out = list(CANDIDATE, 'feat/5/x', 'fails')
+    assert.match(out.stdout, /pull request feat\/5\/x → main /)
+    assert.match(out.stderr, /the open candidate is unknown/)
+  })
+
+  test("a detached HEAD at a candidate's head: the candidate's pull request into main", () => {
+    const out = list(CANDIDATE, 'origin/candidate/13', 'answers')
+    assert.equal(out.status, 0, out.stderr)
+    assert.match(out.stdout, /pull request candidate\/13 → main /)
   })
 })

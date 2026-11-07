@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-10-17
+date: 2026-11-06
 tags: [review, agents, models, cost, lntt]
 ---
 
@@ -55,6 +55,12 @@ same way every time; the `review` skill keeps the judgement.
   `opencode run` with an inline agent that denies every tool and allows the read ones
   back. The tools are what makes it read-only, not
   the brief.
+- **The project's phase is in the prompt.** With `project.phase` set to `development`,
+  the common frame of every lens and the verifier's prompt carry one list,
+  `packages/lntt/agents/review/before-production.md`, of what is not a finding before
+  production and of what holds anyway; a verifier refutes a finding that list excludes,
+  citing it. In `production`, or with no phase, the prompts carry nothing of it and the
+  lens briefs name none of those rules.
 - **Adversarial verification:** every finding at a severity in `verify.severities`
   goes, at once, to every verifier in `verify.with` other than the agents that found it,
   each briefed to refute it (except a finding a mutation run decides, above); when those
@@ -62,10 +68,33 @@ same way every time; the `review` skill keeps the judgement.
   required verifier. The verdict counts the
   verifiers that answered: all confirm, confirmed; all refute, refuted, kept out of the
   author's list with the proofs; otherwise undecided.
-- **Rounds:** the first reads the branch from the base, later ones the commits after the
+- **Rounds:** the first reads the branch from the base (`--base`, else the one every
+  `lntt` command resolves: [worktree tooling](./worktree-tooling.md#decision)), later ones the commits after the
   last reviewed one, with fresh reviewers; findings still open go back to the verifiers
   on the new head, except notes and the warnings the ledger accepted open (below). The
-  state stays in the worktree's git directory. A
+  state and the ledger are one file each per branch, named by the branch, every character
+  percent-encoded and a capital as `%` and its lower-case hexadecimal code (`feat/1/x` is
+  `feat%2F1%2Fx`, `Fix/A` is `%46ix%2F%41`), so a round on one branch touches nothing of
+  another's, two names differing in case stay apart on a case-insensitive filesystem, and
+  closing a worktree takes nothing with it. They live in the clone's common git
+  directory (`<common dir>/lntt-review/state/` and `ledger/`), which every worktree of
+  the clone reaches; `review.stateDir` in the operator's profile (`lntt operator`), else
+  `delivery.review.stateDir` in the project configuration, names another place, with a
+  folder per repository (`<org>/<repo>`, from the origin URL; a hash of the clone's common git
+  directory with no origin, or when an org or repo is `.` or `..`) inside it. The operator's own place is personal and never in the project
+  configuration; a project value is its default for everyone. The lock and the progress
+  file belong to a running process and stay in each worktree's own git directory. The
+  state is read with `lntt review status` (each level folded and a summary, `--json`, or
+  `--query` for a part), never from those files. `lntt review status --clear` removes the
+  current branch's state, ledger and progress once the branch is merged, or its state at
+  once when it cannot be read, never while a round holds the lock; `--prune` removes
+  the state and ledger of every branch that is gone (no local or remote-tracking branch of
+  that name, or a local one whose upstream is gone, as GitHub deletes the head branch on
+  merge), never a branch checked out in a worktree, and leaves any file whose name is not
+  the key of a branch; `--dry-run` says what it would remove.
+  The command's exit codes and JSON fields are in the package
+  README. A round prints the same summary on stdout, its whole result staying in the
+  state. A
   clean round (exit 0) has no blocker or warning left and no reviewer or verifier that
   failed; notes are reported, never blocking. Past `warningRounds` a round is clean with
   warnings left too (below). A finding is a bullet with its severity,
@@ -83,8 +112,8 @@ same way every time; the `review` skill keeps the judgement.
   goes to `skipped` with the agent's readable findings standing. A failed reply
   keeps its whole text in `failed`. A fresh finding at the anchor of an open one joins it. A round runs
   on a branch (a detached HEAD is refused) whose head does not move until it ends.
-- **The branch keeps a ledger of what it closed**, next to its state in the git
-  directory: every finding the branch is done with, with its outcome. *Fixed*: one
+- **The branch keeps a ledger of what it closed**, next to its state, in the place
+  described above: every finding the branch is done with, with its outcome. *Fixed*: one
   carried from an earlier round and refuted on a later head, with that head. *Refuted*:
   a fresh one refuted, with the proof (the verifiers', `lntt check cite`'s, a killed
   mutant's), or withdrawn by its reviewers, with the author's answer. *Accepted open*: a
@@ -95,7 +124,7 @@ same way every time; the `review` skill keeps the judgement.
   change and those with no anchor, each verifier the entries on its finding's file, and
   both are told that a finding a closed entry covers is reported again only when the
   code it cites changed. A fresh finding at the place of a refuted or accepted entry, on
-  a line that reads the same and at a severity no higher, goes to the round's `closed`
+  a line that reads the same and at a severity no higher, goes to the round's `repeated`
   list with the entry it repeats and that entry's text: shown, never verified, never
   blocking. The match is by place, so the author reads each against the entry's text. A finding on a
   changed line, or at a higher severity, is a new finding.
@@ -106,7 +135,7 @@ same way every time; the `review` skill keeps the judgement.
   left go in the pull request as open items. A confirmed warning enters the ledger as
   accepted open and is no longer carried; an undecided or unverified one stays carried,
   to be verified again, without blocking. A run with no new commit, which is not a round
-  and does not count toward `maxRounds`, blocks as the round whose number it keeps. A
+  and does not count toward `maxRounds`, blocks as the round whose number it keeps; a branch with no state of its own starts at round 1. A
   `warningRounds` not below `maxRounds` leaves no round where only
   blockers block: the schema cannot compare two keys, so `lntt validate` says it as a
   warning (the file stays valid), and so do `lntt review --plan` and every round.
@@ -116,8 +145,14 @@ same way every time; the `review` skill keeps the judgement.
   with what is still open (the findings not withdrawn and the failures of the last
   round), and the person decides: the pull request as it is, more rounds for that
   branch (`lntt review allow <rounds>`, kept in its state, the configuration
-  unchanged), or an issue for what is open. A run with no new commit to read is not a
-  round and is never stopped.
+  unchanged), or an issue for what is open. A branch `lntt worktree start` started gets
+  them sent to whoever it reports to, without waiting
+  ([worktree tooling](./worktree-tooling.md)): stderr says `lntt review: limit: sent <id>`
+  (`already sent <id>` while that branch's earlier message waits for its answer), and the
+  `limit` event carries `asked` (`id`, `to`, `path`). stdout is the last round's summary;
+  stderr and the message carry the branch's review cost so far, the line
+  `lntt review cost` prints. A run with no new
+  commit to read is not a round and is never stopped.
 - **Load:** at most `perProvider` required agents of one provider run at once, and as
   many optional ones in a queue of their own, the others waiting their turn; a provider
   given dozens of sessions at once queues them until they time out. A slow optional
@@ -134,7 +169,8 @@ same way every time; the `review` skill keeps the judgement.
 - **Progress is a contract:** stderr carries a line when each agent starts and ends
   (with its tokens), `failed` or `skipped` for one that did not answer, the agents still
   running every 30 seconds, `round N done` at the end, `error:` for a round that could
-  not start and `limit:` for one past `maxRounds`. The `review` skill wakes on `failed`,
+  not start and `limit:` for one past `maxRounds`; after `round N done` and with `limit:`,
+  `branch total: <line>`, the branch's review cost so far. The `review` skill wakes on `failed`,
   `error:`, `limit:` and `round N done` only. The same goes as JSON events, one per
   line, to `<git dir>/lntt-review.progress`: the round with the pid of `lntt review`
   and the Claude Code session that started it (`CLAUDE_CODE_SESSION_ID`, or none),
@@ -157,8 +193,9 @@ same way every time; the `review` skill keeps the judgement.
   missing. The agents themselves get none of the host's hook variables, so they never
   report as the session that started them.
 - **A conversation inside a round:** `lntt review reply` resumes the sessions of the
-  reviewers who found a finding with the author's answer; it closes when they all
-  withdraw it. A disagreement that remains goes to the person.
+  reviewers who found a finding with the author's answer, which the state keeps on the
+  finding (kept or withdrawn, and carried with it while it stays open); it closes when
+  they all withdraw it. A disagreement that remains goes to the person.
 - **The runner is its own module** (`src/headless.ts`): several agents and providers
   asked the same question at once, headless and read-only, for any practice that needs
   it; the review is its first user.
@@ -185,7 +222,10 @@ same way every time; the `review` skill keeps the judgement.
 - The diff travels in the prompt: a very large change may not fit an agent's context.
 - The adapters follow `claude -p` and `opencode run`, whose flags change; the tests pin
   the calls, a trial round against the real tools confirms them.
-- opencode reports no cost: a round's `cost` covers only the agents that report it.
+- opencode reports no cost: a round's `cost` covers only the agents that report it, and
+  the cost line names, round by round, the agents that reported no tokens or no USD.
+  A state saved before `rounds` existed has no cost for its rounds: the line names them
+  (`not recorded: rounds 1, 2`) and `total.unrecorded` lists them.
 - The diff and the files a reviewer reads go to the provider of each configured agent,
   with that provider's terms on data (free models among them). Configuring an agent is
   the project's choice; `lntt review` names the destinations in `--plan` and in every
@@ -199,6 +239,13 @@ same way every time; the `review` skill keeps the judgement.
   of `lntt check` named after the lens, and its brief drops them.
 
 ## Discarded directions
+
+- **One state per worktree, in the worktree's git directory.** A review on another branch
+  in the same worktree overwrote the state and the ledger of the branch before it, closing
+  the worktree deleted them, and the other worktrees of the clone could not see them.
+  One file per branch in the common git directory has none of the three.
+- **A state file named by the branch as it is written.** On a case-insensitive filesystem
+  `Fix/A` and `fix/a` would share a file; the name encodes capitals too.
 
 - **A repeat of a closed finding matched by its wording.** A reviewer words the same
   finding differently every round, so a match on the text would almost never hold; the

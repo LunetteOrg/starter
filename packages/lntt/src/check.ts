@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, join, relative } from 'node:path'
 import { checkAgentsBlock } from './agents.ts'
+import { checkAutomated } from './automated.ts'
 import { checkDecisions, decisionBoardRefs, decisionFigures } from './check-decisions.ts'
 import { runTests } from './check-tests.ts'
 import { checkClaudeSettings, HOOK_LABELS, INVALID, SETTINGS } from './claude-settings.ts'
@@ -24,7 +25,7 @@ export interface Result {
   message: string
 }
 
-export const AREAS = ['agents-md', 'skills', 'plugin', 'decisions', 'tests', 'body'] as const
+export const AREAS = ['agents-md', 'skills', 'plugin', 'workflows', 'decisions', 'tests', 'body'] as const
 export type Area = (typeof AREAS)[number]
 
 export function isArea(name: string): name is Area {
@@ -86,7 +87,7 @@ function agentsMd(root: string): Result[] {
       line: null,
       message: ok
         ? 'the managed block matches its source'
-        : 'the managed block is missing or edited; run lntt sync (edit agents/block.md of @lntt/lntt, not the block)',
+        : 'the managed block is missing or edited; run pnpm exec lntt sync (edit agents/block.md of @lntt/lntt, not the block)',
     },
   ]
 }
@@ -112,11 +113,11 @@ function skills(root: string): Result[] {
     path: s.path,
     line: null,
     message: {
-      missing: 'not installed; run lntt sync',
+      missing: 'not installed; run pnpm exec lntt sync',
       edited:
-        'differs from the stub lntt sync writes; run lntt sync (an installed skill is never edited: change it in @lntt/lntt)',
-      unknown: 'a stub of a skill @lntt/lntt does not have; run lntt sync',
-      clash: "a skill of the project's own with the name of a shared skill; rename it, then run lntt sync",
+        'differs from the stub lntt sync writes; run pnpm exec lntt sync (an installed skill is never edited: change it in @lntt/lntt)',
+      unknown: 'a stub of a skill @lntt/lntt does not have; run pnpm exec lntt sync',
+      clash: "a skill of the project's own with the name of a shared skill; rename it, then run pnpm exec lntt sync",
     }[s.state as 'missing' | 'edited' | 'unknown' | 'clash'],
   }))
 }
@@ -137,7 +138,7 @@ function plugin(root: string): Result[] {
     return [
       result(
         'PASS',
-        'the Lunette plugin loads from node_modules/@lntt/lntt, and the install, format and typecheck hooks are in place',
+        'the Lunette plugin loads from node_modules/@lntt/lntt, and the install and typecheck hooks are in place',
       ),
     ]
   }
@@ -145,10 +146,10 @@ function plugin(root: string): Result[] {
     result(
       'FAIL',
       {
-        missing: `${e.key} is missing; run lntt sync`,
-        elsewhere: `${e.key} points elsewhere than the marketplace @lntt/lntt ships; run lntt sync`,
-        off: `${e.key} is not enabled; run lntt sync`,
-        edited: `${e.key}: the ${HOOK_LABELS[e.key]} hook differs from the one lntt sync writes; run lntt sync`,
+        missing: `${e.key} is missing; run pnpm exec lntt sync`,
+        elsewhere: `${e.key} points elsewhere than the marketplace @lntt/lntt ships; run pnpm exec lntt sync`,
+        off: `${e.key} is not enabled; run pnpm exec lntt sync`,
+        edited: `${e.key}: the ${HOOK_LABELS[e.key]} hook differs from the one lntt sync writes; run pnpm exec lntt sync`,
         invalid: INVALID,
       }[e.state as 'missing' | 'elsewhere' | 'off' | 'edited' | 'invalid'],
     ),
@@ -176,7 +177,7 @@ function bodyRetrospective(options: CheckOptions): Result[] {
     message,
   })
   if (options.body === undefined) {
-    return [result('NOT RUN', 'no pull request body given: lntt check body [--pr <n> | -]')]
+    return [result('NOT RUN', 'no pull request body given: pnpm exec lntt check body [--pr <n> | -]')]
   }
   const problems = checkBody(options.body.text, retrospectiveRules(options.data))
   if (problems.length === 0) return [result('PASS', `${options.body.from}: every retrospective label is filled`)]
@@ -198,12 +199,12 @@ function bodyTemplate(options: CheckOptions): Result {
   if (!existsSync(file)) return result('NOT RUN', 'no pull request template')
   const text = readFileSync(file, 'utf8').replaceAll('\r\n', '\n')
   if (!text.split('\n').some((l) => l.trim() === RETRO_START)) {
-    return result('FAIL', 'no retrospective block: paste what lntt pr block prints')
+    return result('FAIL', 'no retrospective block: paste what pnpm exec lntt pr block prints')
   }
   if (!text.includes(retrospectiveBlock(retrospectiveRules(options.data)).trimEnd())) {
     return result(
       'FAIL',
-      'the retrospective block differs from the configuration: replace it with what lntt pr block prints',
+      'the retrospective block differs from the configuration: replace it with what pnpm exec lntt pr block prints',
     )
   }
   return result('PASS', 'the retrospective block is the one lntt pr block prints')
@@ -215,6 +216,7 @@ export function runArea(area: Area, check: string | undefined, files: string[], 
   if (area === 'agents-md') return agentsMd(options.root)
   if (area === 'skills') return skills(options.root)
   if (area === 'plugin') return plugin(options.root)
+  if (area === 'workflows') return checkAutomated(options.root, options.data)
   if (area === 'tests') return runTests(check, files, options)
   if (area === 'body') return body(check, options)
   if (check === 'numbers') return decisionFigures(options, files)

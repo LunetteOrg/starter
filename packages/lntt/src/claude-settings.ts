@@ -1,9 +1,9 @@
 // The entries of a project's `.claude/settings.json` that come with lntt
 // (docs/adr/agent-layer.md#where-hooks-live): the Lunette plugin, loaded from the
 // `directory` marketplace this package ships at its root, the hook that installs the
-// dependencies when lntt itself is missing, and the lines of `lntt hook format` and
-// `lntt hook typecheck` (./hook.ts). `lntt sync` writes them and keeps whatever else the
-// file holds; `lntt check plugin` says when they are missing or point elsewhere.
+// dependencies when lntt itself is missing, and the line of `lntt hook typecheck`
+// (./hook.ts). `lntt sync` writes them and keeps whatever else the file holds; `lntt check
+// plugin` says when they are missing or point elsewhere.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -59,13 +59,6 @@ function hookLine(name: string, wake: boolean): string {
   ].join('; ')
 }
 
-export const FORMAT_HOOK = {
-  type: 'command',
-  command: hookLine('format', false),
-  timeout: 120,
-  statusMessage: 'lntt: formatting the file written',
-}
-
 export const TYPECHECK_HOOK = {
   type: 'command',
   command: hookLine('typecheck', true),
@@ -78,10 +71,10 @@ export const TYPECHECK_HOOK = {
 // Each hook lntt writes: its event, the matcher of its entry, and how check names it.
 const HOOKS = [
   { event: 'SessionStart', hook: INSTALL_HOOK, label: 'install' },
-  { event: 'PostToolUse', matcher: 'Write|Edit', hook: FORMAT_HOOK, label: 'format' },
   { event: 'Stop', hook: TYPECHECK_HOOK, label: 'typecheck' },
 ] as const
 type Placed = (typeof HOOKS)[number]
+
 export const HOOK_LABELS: Record<string, string> = Object.fromEntries(HOOKS.map((h) => [`hooks.${h.event}`, h.label]))
 
 export interface SettingsEntry {
@@ -181,7 +174,7 @@ export function checkClaudeSettings(cwd: string): SettingsEntry[] {
   return entries(loaded.settings)
 }
 
-export const INVALID = `${SETTINGS} is not JSON, or not the shape Claude Code reads: fix it, then run lntt sync`
+export const INVALID = `${SETTINGS} is not JSON, or not the shape Claude Code reads: fix it, then run pnpm exec lntt sync`
 
 const FORMAT = { formattingOptions: { insertSpaces: true, tabSize: 2 } }
 

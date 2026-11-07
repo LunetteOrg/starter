@@ -1,5 +1,5 @@
 // The event a local run stands in for, read from the local git state. ci:local never
-// fetches and never asks GitHub: the base is the local ref, and the report names it.
+// fetches: the base is a ref of this clone (src/base.ts finds it), and the report names it.
 //
 // - `pull_request` (the default): the pull request of the current branch into `base`,
 //   ready for review, which is what the cloud runs once a draft leaves draft.
@@ -7,6 +7,7 @@
 //   release).
 
 import { execFileSync } from 'node:child_process'
+import { candidateAt, repositoryDefault } from '../base.ts'
 
 export type EventName = 'pull_request' | 'push'
 
@@ -36,10 +37,7 @@ function git(cwd: string, ...args: string[]): string | null {
 }
 
 // The branch origin/HEAD points at, else `main`.
-export function defaultBranch(cwd: string): string {
-  const head = git(cwd, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD')
-  return head?.replace(/^origin\//, '') || 'main'
-}
+export const defaultBranch = repositoryDefault
 
 export function repositoryOf(url: string | null): string | null {
   const match = /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/.exec(url ?? '')
@@ -52,7 +50,8 @@ function changedSince(cwd: string, ref: string): string[] | null {
   return out === null ? null : out.split('\n').filter((line) => line !== '')
 }
 
-// `origin/<branch>` when it exists locally, else `<branch>`, else null.
+// `origin/<branch>` when it exists locally, else `<branch>`, else null: the ref of a base
+// --base names, which may be a branch only this clone has.
 export function localRef(cwd: string, branch: string): string | null {
   return [`origin/${branch}`, branch].find((ref) => git(cwd, 'rev-parse', '--verify', '-q', ref) !== null) ?? null
 }
@@ -63,10 +62,20 @@ export function changedAgainst(cwd: string, branch: string): string[] | null {
   return ref ? changedSince(cwd, ref) : null
 }
 
-export function localEvent(cwd: string, name: EventName, base: string): Event {
-  const head = git(cwd, 'rev-parse', '--abbrev-ref', 'HEAD') ?? 'HEAD'
+export interface EventOptions {
+  // The ref to diff against, when the base was resolved (src/base.ts); else localRef's.
+  baseRef?: string
+  // delivery.candidate.prefix: a detached HEAD at a candidate's head is that candidate.
+  candidatePrefix?: string
+}
+
+export function localEvent(cwd: string, name: EventName, base: string, options: EventOptions = {}): Event {
+  let head = git(cwd, 'rev-parse', '--abbrev-ref', 'HEAD') ?? 'HEAD'
+  // The workflows read the branch's name (the branch check): a candidate checked out
+  // detached from origin needs no local branch named after it.
+  if (head === 'HEAD' && options.candidatePrefix) head = candidateAt(cwd, options.candidatePrefix) ?? head
   const sha = git(cwd, 'rev-parse', 'HEAD') ?? ''
-  const baseRef = localRef(cwd, base)
+  const baseRef = options.baseRef ?? localRef(cwd, base)
   let changed = baseRef ? changedSince(cwd, baseRef) : null
   // A push of a commit already on the base: the last commit is what it brings.
   if (name === 'push' && changed?.length === 0) changed = changedSince(cwd, 'HEAD^')

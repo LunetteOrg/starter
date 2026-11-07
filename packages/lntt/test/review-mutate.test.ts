@@ -188,6 +188,8 @@ describe('lntt review with mutations', () => {
     git('config', 'user.name', 't')
     git('add', '-A')
     git('commit', '-qm', 'base')
+    // The clone has fetched main: the round reads from origin/main.
+    git('update-ref', 'refs/remotes/origin/main', 'main')
     git('switch', '-qc', 'feat/1/x')
     writeFileSync(
       join(repo, 'test/price.test.ts'),
@@ -199,6 +201,16 @@ describe('lntt review with mutations', () => {
   afterEach(() => {
     rmSync(repo, { recursive: true, force: true })
   })
+
+  // The round's result, as an agent reads it.
+  const reading = () =>
+    JSON.parse(
+      spawnSync(process.execPath, [BIN, 'review', 'status', '--json'], {
+        cwd: repo,
+        encoding: 'utf8',
+        env: { HOME: repo, PATH: [dirname(process.execPath), '/usr/bin', '/bin'].join(':') },
+      }).stdout,
+    ).state as { findings: Checked[]; refuted: Checked[] }
 
   test('a mutation that cannot run leaves the finding to the verifiers, with the reason as an undecided proof', () => {
     const r = spawnSync(process.execPath, [BIN, 'review'], {
@@ -217,8 +229,7 @@ describe('lntt review with mutations', () => {
       },
     })
     assert.equal(r.status, 1, r.stderr)
-    const out = JSON.parse(r.stdout) as { findings: Checked[] }
-    const [finding] = out.findings
+    const [finding] = reading().findings
     assert.equal(finding?.verdict, 'confirmed')
     assert.match(finding?.proofs[0]?.proof ?? '', /^could not run: /)
     assert.equal(finding?.proofs[0]?.outcome, 'undecided')
@@ -243,7 +254,7 @@ describe('lntt review with mutations', () => {
       },
     })
     assert.equal(r.status, 1, r.stderr)
-    const out = JSON.parse(r.stdout) as { findings: Checked[]; refuted: Checked[] }
+    const out = reading()
     assert.deepEqual(
       out.findings.map((f) => [f.what, f.verdict, f.proofs.map((p) => p.by)]),
       [['the boundary is untested', 'confirmed', ['lntt check tests mutate']]],

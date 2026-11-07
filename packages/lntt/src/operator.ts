@@ -34,7 +34,7 @@ function gitOut(cwd: string, ...args: string[]): string | undefined {
 }
 
 // `<org>/<repo>` from the origin URL (git@host:org/repo.git, https://host/org/repo).
-function slug(cwd: string): string | undefined {
+export function slug(cwd: string): string | undefined {
   const url = gitOut(cwd, 'remote', 'get-url', 'origin')
   const match = url?.match(/[:/]([^/:]+)\/([^/]+?)(\.git)?\/?$/)
   return match ? `${match[1]}/${match[2]}` : undefined

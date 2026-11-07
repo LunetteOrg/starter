@@ -39,7 +39,11 @@ reason, and sits at the lowest level where its assertion can.
     exactly one level, and a file that does not open its level's harness fails. The
     pyramid per level, what the diff adds to each, and the jsdom tests that stub a Web
     API are `INFO`: never a threshold.
-  - `focus`: `.only`, a new `.skip` or todo, a test with no assertion.
+  - `focus`: `.only`, a new `.skip` or todo, a test with no assertion. A skip decided
+    while the test runs, `t.skip('<reason>')` with a string or template literal that
+    opens with text saying why (a provider's usage limit left the call with nothing to
+    prove), is allowed: it shows as skipped, with its reason. A bare `t.skip()`, an empty reason, one that is not a
+    literal or a template opening with a placeholder still fails.
   - `rules`: the lines that match a rule; a rule asserted by the suite is cited. A rule
     whose `anchor` names a record that is not there, or a heading the record does not
     have, fails. Headings resolve as GitHub's slugs do, over CommonMark's blocks: a
@@ -51,7 +55,11 @@ reason, and sits at the lowest level where its assertion can.
     alone when a level has no `coverage`. Coverage says which tests to run and which
     lines no test reaches; it is not an acceptance criterion.
   - `mutate <path:line> --text <on the line> --to <mutated>`: applies the mutation,
-    runs the tests that import the file (a level's `repeat` times in a row), and
+    runs the tests that import the file (a level's `repeat` times in a row; for a
+    file that is not code and that no test imports, such as a `SKILL.md` a test reads
+    as text, the test files whose text names the file's path or its last two
+    segments (`review/SKILL.md`), or a directory of two segments or more of it, whole or
+    by its last two (`skills/review`); the output says they were chosen by name), and
     reports killed (the failing test and its message, `PASS`), survived (`FAIL`), or
     `NOT RUN` when the path leaves the project, the text is not once on that line, the
     tests fail without the mutation, they outlast `timeoutSeconds`, or the file is one
@@ -94,9 +102,12 @@ reason, and sits at the lowest level where its assertion can.
 ### Negative / accepted risks
 
 - A project must write `tests.levels` with a `run` command before `mutate` works; the
-  tests of a line are found from imports, so a test that reaches code only through a
-  package name or a spawned process path that is not a string in the test is missed
-  and the mutant may survive for want of a test that does run it.
+  tests of a line are found from imports, and for a file that is not code from the
+  path or directory a test names, so a test that reaches code only through a package
+  name or a spawned process path that is not a string in the test is missed and the
+  mutant may survive for want of a test that does run it. A directory of one segment
+  (`docs`) is no name: it would select almost every test, and a survivor would claim
+  coverage it does not have.
 - A mutation is proposed in a line whose text and mutated text hold no
   backtick: the reviewer reports other lines as notes.
 - An interrupted run (SIGINT, SIGTERM) leaves its scratch worktree registered under the
@@ -104,6 +115,9 @@ reason, and sits at the lowest level where its assertion can.
   the `lntt-mutate-*` folder is removed clears the registration.
 - A mutation run costs the tests of the files that import the changed file. A timeout
   stops the shell that runs the command; a process it started may outlive it.
+- A run-time `t.skip('<reason>')` passes `focus` whatever the condition that reaches it,
+  so a test that skips on a condition always true is seen only as skipped in the report;
+  the reason written beside the call is what a reviewer reads.
 - Each scratch worktree copies the links of `node_modules`; a project whose tests need
   built output that is not committed fails without the mutation and is `NOT RUN`.
 
@@ -142,3 +156,6 @@ reason, and sits at the lowest level where its assertion can.
   instead of a regular expression in a spec, in every project that runs `lntt check`.
 - **Coverage as an acceptance criterion.** A line run is not a line checked; coverage
   only names the tests to run.
+- **A run-time skip reported as a diagnostic (`t.diagnostic` and `return`).** The test
+  would end green while it proved nothing, which is what `focus` exists to stop; the
+  reasoned `t.skip` keeps the skip visible in every reporter.

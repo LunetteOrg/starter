@@ -175,12 +175,22 @@ jobs:
       - id: test
         env:
           UPSTREAM_SMOKE: ${{ matrix.tool }}
+          # A test that proved nothing about the version (a provider's usage limit) writes
+          # its reason here: the version is then not cached as checked.
+          UPSTREAM_INCONCLUSIVE: ${{ runner.temp }}/upstream-inconclusive
           ANTHROPIC_FEDERATION_RULE_ID: ${{ matrix.tool == 'claude' && vars.ANTHROPIC_FEDERATION_RULE_ID || '' }}
           ANTHROPIC_ORGANIZATION_ID: ${{ matrix.tool == 'claude' && vars.ANTHROPIC_ORGANIZATION_ID || '' }}
           ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ matrix.tool == 'claude' && vars.ANTHROPIC_SERVICE_ACCOUNT_ID || '' }}
           ANTHROPIC_WORKSPACE_ID: ${{ matrix.tool == 'claude' && vars.ANTHROPIC_WORKSPACE_ID || '' }}
         # Every upstream test file runs; those of the other tools skip.
         run: pnpm --filter @lntt/lntt test:upstream 2>&1 | tee -a upstream.log
+      - id: inconclusive
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -s "$RUNNER_TEMP/upstream-inconclusive" ]; then
+            echo "inconclusive=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::$TOOL $VERSION is not recorded as checked: $(head -n1 "$RUNNER_TEMP/upstream-inconclusive" | tr -d '%\r')"
+          fi
       # The Projects permission of the candidate app (docs/process/delivery.md), asked
       # only on a red and in a step of its own, as candidate.yml does: a token request
       # for a permission the app lacks fails, and that must not stop the issue. Without
@@ -210,11 +220,11 @@ jobs:
             steps.test.outcome == 'failure' && format('the upstream test (packages/lntt/test/upstream-{0}.test.ts)', matrix.tool) ||
             'a setup step' }}
         run: node scripts/upstream-issue.mts --tool "$TOOL" --version "$VERSION" --step "$STEP" --run "$RUN_URL" --log upstream.log
-      # A red whose issue could not be opened, or a red install, saves no entry: the next
-      # run checks the version again and opens it.
-      - if: ${{ !cancelled() && steps.install.outcome != 'failure' && steps.issue.outcome != 'failure' }}
+      # A red whose issue could not be opened, a red install or a check that proved nothing
+      # (steps.inconclusive) saves no entry: the next run checks the version again.
+      - if: ${{ !cancelled() && steps.install.outcome != 'failure' && steps.issue.outcome != 'failure' && steps.inconclusive.outputs.inconclusive != 'true' }}
         run: mkdir -p .upstream-checked && echo "$TOOL $VERSION ${{ job.status }}" > .upstream-checked/version
-      - if: ${{ !cancelled() && steps.install.outcome != 'failure' && steps.issue.outcome != 'failure' }}
+      - if: ${{ !cancelled() && steps.install.outcome != 'failure' && steps.issue.outcome != 'failure' && steps.inconclusive.outputs.inconclusive != 'true' }}
         uses: actions/cache/save@v6
         with:
           path: .upstream-checked
@@ -222,7 +232,8 @@ jobs:
           # have set (opencode, when Homebrew moved on since the versions job).
           key: upstream-${{ matrix.tool }}-${{ env.VERSION }}
       # The version read, when another was installed: the versions job looks that one up.
-      - if: ${{ !cancelled() && steps.install.outcome != 'failure' && steps.issue.outcome != 'failure' && env.VERSION != matrix.version }}
+      # Guarded like the save above: an inconclusive check proved nothing about it either.
+      - if: ${{ !cancelled() && steps.install.outcome != 'failure' && steps.issue.outcome != 'failure' && steps.inconclusive.outputs.inconclusive != 'true' && env.VERSION != matrix.version }}
         uses: actions/cache/save@v6
         with:
           path: .upstream-checked

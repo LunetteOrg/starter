@@ -70,6 +70,20 @@ function absentFromAll(lists: string[][]): string[] {
   return (lists[0] as string[]).filter((path) => lists.every((list) => list.includes(path)))
 }
 
+// Keys a release set and the current schema removed on purpose: no project but the starter
+// set them. The fixture of that release keeps them (its tag's schema knew them); they are
+// dropped before it is validated against the current schema.
+const REMOVED = [['local', 'hooks', 'format']]
+
+function withoutRemoved(content: string): string {
+  const data = jsonc.parse(content) as Node
+  for (const path of REMOVED) {
+    const parent = path.slice(0, -1).reduce<Node | undefined>((node, key) => node?.[key] as Node | undefined, data)
+    if (parent) delete parent[path[path.length - 1] as string]
+  }
+  return JSON.stringify(data)
+}
+
 function inTree(root: string, content: string): string {
   mkdirSync(join(root, '.agents'), { recursive: true })
   writeFileSync(join(root, '.agents/config.jsonc'), content)
@@ -99,7 +113,7 @@ describe('the configuration of each released version', () => {
     test(`${version} validates against the current schema`, () => {
       setup()
       try {
-        const { data } = loadConfig(inTree(root, read(version)))
+        const { data } = loadConfig(inTree(root, withoutRemoved(read(version))))
         assert.equal((data.lunette as { version: string }).version, version)
       } finally {
         teardown()

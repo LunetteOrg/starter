@@ -5,8 +5,12 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
+import { projectBase } from './base.ts'
 import { branchName, checkBranch } from './branch.ts'
 import { nameFromIssue, readIssue, rules } from './branch-cli.ts'
+import { isHotfix } from './ci/candidate.ts'
+import { candidateConfig } from './ci/config.ts'
+import { localRef } from './ci/event.ts'
 import {
   agentFor,
   approvals,
@@ -19,7 +23,7 @@ import {
 } from './coordinator.ts'
 import { NoConfigError } from './files.ts'
 import { loadConfig } from './index.ts'
-import { send, waitForAnswer } from './messages.ts'
+import { forgetStarted, recordStarted, type Started, send, startedBy, waitForAnswer } from './messages.ts'
 import { messagesRoot, pollInterval, systemMailbox } from './messages-cli.ts'
 import {
   type Agent,
@@ -94,27 +98,31 @@ function mainCheckout(): string {
 // The project's configuration; a project without one has the defaults. A file that does
 // not validate is an error: a child on the default gate and models would pass for the one
 // the project configured.
-export function projectConfig(dir: string = cwd()): Config & { delivery?: { candidate?: { base?: string } } } {
+export function projectConfig(dir: string = cwd()): Config {
   try {
-    return loadConfig(dir).data as Config & { delivery?: { candidate?: { base?: string } } }
+    return loadConfig(dir).data as Config
   } catch (error) {
     if (error instanceof NoConfigError) return {}
     throw error
   }
 }
 
-// delivery.candidate.base, else main.
-function configuredBase(config = projectConfig()): string {
-  return config.delivery?.candidate?.base ?? 'main'
-}
-
-// git and Herdr branch from the remote's copy when there is one: the local base may be behind.
-function gitBase(root: string, base: string): string {
-  try {
-    runner.run('git', ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${base}`], { cwd: root })
-    return `origin/${base}`
-  } catch {
-    return base
+// What every host branches from: --base as given (origin/<base>, else <base>: a sibling's
+// branch may exist only here), else the base every lntt command resolves (src/base.ts),
+// asked once per kind: a hotfix (branch prefix or label) stays on the default branch.
+function startBase(root: string, given: string | undefined): (hotfix: boolean) => string {
+  if (given !== undefined) {
+    const ref = localRef(root, given) ?? given
+    return () => ref
+  }
+  const resolved = new Map<boolean, string>()
+  return (hotfix) => {
+    const known = resolved.get(hotfix)
+    if (known !== undefined) return known
+    const base = projectBase(root, hotfix ? 'hotfix' : 'new')
+    stderr.write(`lntt worktree: ${base.warning ?? `base ${base.reason}`}\n`)
+    resolved.set(hotfix, base.ref)
+    return base.ref
   }
 }
 
@@ -130,6 +138,33 @@ function orcaPath(host: WorktreeHost): string | null {
 }
 
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/
+
+// --prompt: instructions of one's own, after the whole brief.
+export function withPrompt(brief: string, prompt: string | undefined): string {
+  if (!prompt?.trim()) return brief
+  return `${brief.trimEnd()}\n\n## Added at start\n\n${prompt.trim()}\n`
+}
+
+// Who the agent started on a branch reports to, for `lntt review` at its limit: a
+// coordinator to the orchestrator, a child of a theme to its coordinator, a plain issue
+// to the orchestrator, and so is a child of a theme that has no coordinator.
+function marker(job: Start, coordinator: boolean, theme: string | undefined, coordinated: boolean): Started {
+  if (coordinator) return { branch: job.branch, issue: null, to: 'orchestrator', theme: theme as string }
+  if (theme && coordinated) return { branch: job.branch, issue: job.issue, to: 'coordinator', theme }
+  return { branch: job.branch, issue: job.issue, to: 'orchestrator' }
+}
+
+// A marker that cannot be written costs the review limit its message, not the start:
+// it is said.
+function recordMarker(started: Started): void {
+  try {
+    recordStarted(messagesRoot(), started)
+  } catch (error) {
+    stderr.write(
+      `lntt worktree start: could not record who ${started.branch} reports to: ${(error as Error).message}\n`,
+    )
+  }
+}
 
 // A coordinator's child waits for the person's go before anything is created, unless the
 // theme's approved list already has it: the gate is the project's setting
@@ -155,6 +190,14 @@ function passTheGate(config: Config, theme: string, jobs: Start[], size: string 
   const reply = waitForAnswer(box, sent, { intervalMs: pollInterval() })
   if (!isApproval(reply)) throw new Error(`not approved by the orchestrator: ${reply.trim()}`)
   approve(root, theme, issues)
+}
+
+// Whether the theme has a coordinator worktree: the one `lntt worktree start --coordinator`
+// left its marker for. A child started with --theme for the context and the Size alone
+// has none, and reports to the orchestrator.
+function hasCoordinator(theme: string): boolean {
+  const marker = startedBy(messagesRoot(), branchName('chore', null, theme))
+  return marker?.issue === null && marker.theme === theme
 }
 
 function start(args: string[]): void {
@@ -195,9 +238,6 @@ function start(args: string[]): void {
   for (const flag of ['parent', 'context', 'size', 'workflow'] as const) {
     if (!coordinator && !theme && values[flag]) usage(`--${flag} needs the theme the child belongs to: --theme <slug>`)
   }
-  if (values.prompt !== undefined && (values.context || values.workflow)) {
-    usage('--prompt replaces the whole brief, so --context and --workflow have nothing to add to')
-  }
   const approved = (values.approve ?? []).map((raw) => {
     if (!issues.includes(raw)) usage(`--approve ${raw} is not one of the --issue of the theme`)
     return Number(raw)
@@ -218,7 +258,8 @@ function start(args: string[]): void {
   const context = values.context ? readFileSync(values.context, 'utf8') : undefined
   if (values.context && !context?.trim()) usage(`--context ${values.context} is empty`)
   const root = mainCheckout()
-  const base = values.base ?? configuredBase(config)
+  const base = startBase(root, values.base)
+  const candidate = candidateConfig(root)
   const ruleset = rules()
   const orca = orcaPath(host)
   const wherever = (branch: string) =>
@@ -228,6 +269,12 @@ function start(args: string[]): void {
   // Every issue is read and named before anything is created: a batch either starts
   // whole or not at all.
   const jobs: Start[] = []
+  const coordinated = Boolean(theme) && hasCoordinator(theme as string)
+  if (theme && !coordinator && !coordinated) {
+    stderr.write(
+      `lntt worktree start: theme ${theme} has no coordinator worktree: the children report to the orchestrator\n`,
+    )
+  }
   if (coordinator) {
     const themeName = theme as string
     const branch = branchName('chore', null, themeName)
@@ -238,11 +285,10 @@ function start(args: string[]): void {
       issue: null,
       title: `Theme ${themeName}`,
       branch,
-      base: host === 'orca' ? base : gitBase(root, base),
+      base: base(false),
       agent: launched,
       root,
-      brief:
-        values.prompt ??
+      brief: withPrompt(
         coordinatorBrief({
           theme: themeName,
           worktree: wherever(branch),
@@ -252,6 +298,8 @@ function start(args: string[]): void {
           config,
           orca,
         }),
+        values.prompt,
+      ),
     })
   } else {
     for (const raw of issues) {
@@ -266,28 +314,53 @@ function start(args: string[]): void {
         issue,
         title: data.title,
         branch,
-        base: host === 'orca' ? base : gitBase(root, base),
+        base: base(
+          candidate !== null && isHotfix(candidate, { headRef: branch, labels: data.labels.map((l) => l.name) }),
+        ),
         agent: launched,
         root,
         ...(values.parent ? { parent: values.parent } : {}),
-        brief:
-          values.prompt ??
-          (theme
-            ? childBrief(common, { theme, ...(context ? { context } : {}), workflow: values.workflow, orca })
-            : renderBrief(undefined, common)),
+        brief: withPrompt(
+          theme
+            ? childBrief(common, {
+                theme,
+                coordinator: coordinated,
+                ...(context ? { context } : {}),
+                workflow: values.workflow,
+                orca,
+              })
+            : renderBrief(undefined, common),
+          values.prompt,
+        ),
       })
     }
   }
   if (coordinator && approved.length > 0) approve(messagesRoot(), theme as string, approved)
-  if (!coordinator && theme) passTheGate(config, theme, jobs, values.size)
+  // The gate is the coordinator's: with none, the orchestrator is the one starting.
+  if (!coordinator && theme && coordinated) passTheGate(config, theme, jobs, values.size)
 
   for (const job of jobs) {
-    const started =
-      host === 'orca'
-        ? startOrca(job, runner, setupScript)
-        : host === 'herdr'
-          ? startHerdr(job, runner, setupScript)
-          : startGit(job, runner, setupScript)
+    // Before the host starts: a start that fails once the worktree exists still leaves it.
+    // A second start of a coordinator that fails must not take the live one's marker with it.
+    const earlier = coordinator ? startedBy(messagesRoot(), job.branch) : null
+    recordMarker(marker(job, coordinator, theme, coordinated))
+    let started: ReturnType<typeof startOrca>
+    try {
+      started =
+        host === 'orca'
+          ? startOrca(job, runner, setupScript)
+          : host === 'herdr'
+            ? startHerdr(job, runner, setupScript)
+            : startGit(job, runner, setupScript)
+    } catch (error) {
+      // A coordinator whose start failed is none: later children of the theme must not wait on it.
+      // The marker of an earlier start of it stays.
+      if (coordinator) {
+        if (earlier) recordMarker(earlier)
+        else forgetStarted(messagesRoot(), job.branch)
+      }
+      throw error
+    }
     stdout.write(`${JSON.stringify(started)}\n`)
     // Nobody was asked to start an agent: the command and the brief are for the person who will.
     if (job.agent === null) {

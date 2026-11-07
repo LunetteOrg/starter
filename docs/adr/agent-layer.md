@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-10-28
+date: 2026-11-02
 tags: [agents, skills, configuration, operator, templates, hooks, plugin]
 ---
 
@@ -64,9 +64,9 @@ the project root, as their documentation states it in October 2026:
 
 A stub folder holds its `SKILL.md` only, and `lntt sync` removes anything else from it.
 The stub holds the skill's frontmatter, for discovery, a marker line, and one instruction:
-load the guide with `pnpm exec lntt guide <skill>` before acting (a Lunette project
-uses pnpm). The stubs are committed, so a fresh clone or a cloud session knows every
-skill before an install. A bump of `@lntt/lntt` updates every guide with no other step;
+load the guide with `pnpm exec lntt guide <skill>` before acting (the project's `lntt`,
+[below](#agents-call-pnpm-exec-lntt)). The stubs are committed, so a fresh clone or a
+cloud session knows every skill before an install. A bump of `@lntt/lntt` updates every guide with no other step;
 the stubs change only when a skill is added, removed or redescribed. `lntt check
 skills` fails on a stub that is missing or edited, or that names a skill the package
 does not have; when to run `lntt sync` is in [delivery](../process/delivery.md#the-shared-skills).
@@ -75,11 +75,41 @@ nothing while a folder of the project's own has a shared skill's name, and `lntt
 skills` names it.
 The other check areas skip the stubs.
 
+### Agents call `pnpm exec lntt`
+
+The skills, the briefs, the `AGENTS.md` block and the hints the CLI prints write every
+command an agent or a person runs as `pnpm exec lntt …`: the project's version, from its
+lockfile, so the first call works in any shell, with or without mise. A Lunette project
+uses pnpm, and installs `lntt` in the project (`node_modules/.bin/lntt`), not globally: a
+bare `lntt` resolves only where that directory is on `PATH`. Prose that names the tool
+(the decision records' included), the usage lines that give a command's synopsis, the
+prefixes of its output, and the settings hooks, which run `node_modules/.bin/lntt`
+(`packages/lntt/src/claude-settings.ts`), keep the bare name.
+
+The starter's `mise.toml` puts `node_modules/.bin` on `PATH` (`[env] _.path`), for a
+shell where mise is fully activated. Observed in November 2026 with mise 2026.10.19 on
+macOS, where login shells activate mise with `--shims` (`~/.zprofile`) and interactive
+ones with `mise activate zsh` (`~/.zshrc`), by `command -v lntt` in a worktree of this
+repo with `_.path` in `mise.toml`:
+
+- an Orca terminal (`orca terminal create`, shell `-/bin/zsh`, interactive and login):
+  `node_modules/.bin/lntt`;
+- the Bash of a Claude Code session started from `zsh -l -i` in the worktree: found, from
+  the terminal's `PATH`, which it inherits;
+- `zsh -l -c` (login, not interactive: shims only): not found;
+- the Bash of a Claude Code session started before `_.path` was added: not found, since
+  its `PATH` is fixed when the session starts;
+- `mise exec -- sh -c 'command -v lntt'`: found.
+
+`_.path` is a convenience for a fully activated shell, and nothing an agent is told
+relies on it. The template takes it when it adopts `@lntt/lntt` (#60).
+
 ### Operator context is personal and found from any worktree
 
 The operator profile has its own schema (`packages/lntt/schema/operator.schema.json`:
 name, handle, role, language, confidence per topic, accounts, workspace with the
-preferred viewers and browsers in order) and is read,
+preferred viewers and browsers in order, and `review.stateDir`, the place `lntt review`
+keeps its rounds in) and is read,
 in merge order, from:
 
 1. `~/.agents/operator.{jsonc,yml}`, for every project;
@@ -125,7 +155,7 @@ October 2026). The plugin cannot import `lntt`, so it reads `.claude/settings.js
 a reader of its own, which drops comments, trailing commas and a leading byte order mark
 as `lntt` does (`lntt sync` writes the file back without the mark).
 
-Three settings hooks are Lunette's (`packages/lntt/src/claude-settings.ts`), each told
+Two settings hooks are Lunette's (`packages/lntt/src/claude-settings.ts`), each told
 from the project's own by its `statusMessage`: `lntt sync` replaces a hook with that
 message and a different line, so the message of a hook stays the same across versions.
 
@@ -133,11 +163,6 @@ message and a different line, so the message of a hook stays the same across ver
   the dependencies with pnpm, the manager of a Lunette project, or with `npm ci` in a
   project that has only a `package-lock.json`; another lockfile (yarn, bun) gets pnpm
   too. It installs `lntt`, so it is a shell line, not `lntt hook`.
-- **Format**, after `Write` and `Edit`: `lntt hook format` passes the written file to
-  the format commands. The file is formatted while the agent works on it, so the
-  pre-commit, which formats the staged files and stages the fix, does not rewrite it
-  under the agent. A command that fails on the file (a type it does not handle) is
-  skipped.
 - **Typecheck**, at `Stop`, in the background: `lntt hook typecheck` runs the typecheck
   commands and wakes the agent with the output of a failure, so the first real error
   reaches it at once rather than at the next commit. It wakes only on a failure it has
@@ -145,12 +170,15 @@ message and a different line, so the message of a hook stays the same across ver
   worktree's git directory (outside git, in the temporary directory), a run that fails
   the same way stays quiet, and a green run clears it.
 
-The commands are a project's: `local.hooks.format` and `local.hooks.typecheck` of
+Formatting is the pre-commit's alone: it formats the staged files and stages the fix
+(`lefthook.yml`), and no hook formats the file while the agent works on it.
+
+The typecheck command is a project's: `local.hooks.typecheck` of
 `.agents/config`, one command or a list run in order (a project with more than one
 toolchain, such as `tsc` and `mypy`, every one of which must pass); without the key, the
 `package.json` script of the same name; without both, the hook does nothing and says
-nothing. They run from the project root, within one limit for the whole list (a minute
-for the format commands, ten minutes for the typecheck's), below the hook's own timeout
+nothing. They run from the project root, within one limit for the whole list (ten
+minutes), below the hook's own timeout
 in the settings. Each runs in a process group of its own: at the limit the whole group
 gets SIGTERM, and SIGKILL a second later, the processes it started included (`tsc` under
 `pnpm run`), and the commands left are not run; the typecheck reports both as part of its failure. Its output reaches
@@ -162,8 +190,7 @@ output), 2 the usage, which an `lntt` older than `hook` also answers. A defect o
 typecheck hook itself (its own error, a state it cannot read or write) never wakes the
 agent: it exits 0 with a `systemMessage`, which Claude Code gives the agent at its next
 turn. It is said once per session, told by the `session_id` of the hook input (a marker
-in the temporary directory); with no id, or a marker that cannot be kept, every time. A
-defect of the format hook is quiet: the commit's own check is the gate.
+in the temporary directory); with no id, or a marker that cannot be kept, every time.
 
 Every other hook is measured before it is adopted: what it costs in tokens and turns
 against what it catches that the next gate (the pre-commit, `ci:local`, the review) would
@@ -183,10 +210,9 @@ after a fix by hand when `lntt sync` cannot read the file
 first message ends (`.claude/settings.json` not as `lntt sync` writes it); the titles at
 the end of a message (`lntt` not installed, an `lntt` with no `refs`, `gh` missing or
 not logged in); a settings hook in a `systemMessage`, which Claude Code shows the
-person for the install and format hooks and gives the agent at its next turn for the
+person for the install hook and gives the agent at its next turn for the
 typecheck, which runs in the background. A configuration `lntt` cannot read is said once
-until it changes, where each hook speaks: the typecheck wakes the agent with it, as a
-failure; the format hook, which is then off, tells the person in a `systemMessage`.
+until it changes: the typecheck wakes the agent with it, as a failure.
 
 ### What a number means is shown on screen, not asked of the agent
 
@@ -265,12 +291,10 @@ How a title is written is the `github-board` skill's.
   checkout's plugin against it; an output the plugin does not know is ignored.
 - A cloud session adds no `directory` marketplace: it has the skills and the settings
   hooks, not the band or the titles.
-- The format hook adds a file-changed notice to the context after each edit it
-  reformats; the typecheck runs at every `Stop`, in the background, and a failure that
-  changes at each run wakes the agent at each run.
+- The typecheck runs at every `Stop`, in the background, and a failure that changes at
+  each run wakes the agent at each run.
 - A settings line of `lntt hook` that meets an `lntt` with no `hook` says what to run once
   per Claude Code process, which is the session's; with `lntt` missing it says nothing.
-  A configuration `lntt` cannot read turns the format hook off until it is fixed.
 - Claude Code keeps one registered `lunette` marketplace per machine: each Lunette
   project's session start points it at that project's path, and every session loads
   its own project's copy (observed with Claude Code 2.1.312, two projects in one
@@ -304,6 +328,8 @@ How a title is written is the `github-board` skill's.
 - A stub's guide needs the install: in a fresh clone the agent finds the skill, and
   `lntt guide` fails until `pnpm install` has run.
 - Every skill load costs one command, the guide's, before the agent acts.
+- Every `lntt` call an agent makes pays pnpm's start-up before `lntt`'s own, and fails
+  where pnpm is not on `PATH`, which the project's install needs too.
 
 ### When to deviate (revisit triggers)
 
@@ -320,6 +346,8 @@ How a title is written is the `github-board` skill's.
 - A gate moves (the pre-commit stops running the typecheck or the formatter) or a
   Claude Code release changes what a hook costs: the discarded hooks below are measured
   again.
+- mise's shims apply a directory's `[env]`, or the agents' shells activate mise in full:
+  `_.path` is measured again as the way a bare `lntt` resolves.
 
 ## Discarded directions
 
@@ -333,9 +361,16 @@ How a title is written is the `github-board` skill's.
 - **A typecheck at `Stop` that wakes the agent at every red run.** While the typecheck
   stayed red it woke a turn that changed nothing at each `Stop` (65 of one project's 66
   rewakes); the waking on a new failure only keeps the first.
-- **The typecheck and the formatting left to the pre-commit alone.** The first real
-  error reaches the agent a commit later, and the commit rewrites under the agent the
-  files it formats.
+- **The typecheck left to the pre-commit alone.** The first real error reaches the agent
+  a commit later.
+- **A format hook after `Write` and `Edit`.** The file changes under the agent while it
+  works: a scripted replacement (python, sed) written against the text it last read
+  missed its target after the formatter rewrote the file, twice in one pull request
+  (once leaving duplicated code) and once in another. The measure of October 2026
+  (2,040 runs, 281 file-changed notices, about 56k tokens) paid for formatting the
+  agent would meet at the commit anyway, where the pre-commit formats the staged files
+  and stages the fix. The hook is worth it only against the next gate, and the next
+  gate does the same work without touching a file in use.
 - **The hooks' commands fixed by Lunette (`pnpm typecheck`, Biome).** A project with
   another toolchain, or more than one, could not use them.
 - **A reminder to triage after `gh issue create`.** A project with it and one with only
@@ -343,6 +378,12 @@ How a title is written is the `github-board` skill's.
 - **Starting a cloud session (the Node version, the local services).** No cloud session
   of a Lunette project to measure it on; it is measured when there is one.
 
+- **Bare `lntt` in the skills, relying on mise's `_.path`.** Shims do not apply a
+  directory's `[env]`, so a login shell that is not interactive does not get it; nor
+  does a session started before `_.path` is in `mise.toml`, or a project or machine
+  without mise.
+- **A configuration key naming the runner, read with `lntt get`.** The agent cannot run
+  `lntt get` before it knows how to invoke `lntt`.
 - **Project values inside the skills, or in ADRs.** It is why the skills of two
   projects scaffolded from the same template diverged, and why ADRs mixed process with
   architecture.

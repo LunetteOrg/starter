@@ -15,7 +15,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { LIMIT_MS, runLimited, runTypecheck } from '../src/hook.ts'
-import { FORMAT_HOOK, hookCommands, normalise, TYPECHECK_HOOK } from '../src/index.ts'
+import { hookCommands, normalise, TYPECHECK_HOOK } from '../src/index.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const BIN = resolve(HERE, '../bin/lntt.ts')
@@ -46,9 +46,8 @@ function hook(name: string, input = '') {
 
 describe('the commands a hook runs', () => {
   test('the key of .agents/config, one command or a list run in order', () => {
-    config({ hooks: { typecheck: ['tsc --noEmit', 'mypy .'], format: 'biome format --write' } })
+    config({ hooks: { typecheck: ['tsc --noEmit', 'mypy .'] } })
     assert.deepEqual(hookCommands(root, 'typecheck'), ['tsc --noEmit', 'mypy .'])
-    assert.deepEqual(hookCommands(root, 'format'), ['biome format --write'])
   })
 
   test('the key wins over the script of the same name', () => {
@@ -61,7 +60,7 @@ describe('the commands a hook runs', () => {
     scripts({ typecheck: 'tsc', format: 'biome format --write' })
     assert.deepEqual(hookCommands(root, 'typecheck'), ['pnpm run typecheck'])
     writeFileSync(join(root, 'package-lock.json'), '{}')
-    assert.deepEqual(hookCommands(root, 'format'), ['npm run format --'])
+    assert.deepEqual(hookCommands(root, 'typecheck'), ['npm run typecheck --'])
   })
 
   test('pnpm’s lockfile wins over npm’s', () => {
@@ -82,7 +81,7 @@ describe('the commands a hook runs', () => {
     assert.deepEqual(hookCommands(root, 'typecheck'), [])
     rmSync(join(root, 'package.json'))
     rmSync(join(root, '.agents'), { recursive: true })
-    assert.deepEqual(hookCommands(root, 'format'), [])
+    assert.deepEqual(hookCommands(root, 'typecheck'), [])
   })
 
   test('the schema takes a command or a non-empty list, and only these two hooks', () => {
@@ -91,8 +90,19 @@ describe('the commands a hook runs', () => {
       const r = spawnSync(process.execPath, [BIN, 'validate'], { cwd: root, encoding: 'utf8' })
       assert.equal(r.status, 1, JSON.stringify(hooks))
     }
-    config({ hooks: { typecheck: ['tsc', 'mypy .'], format: 'biome format --write' } })
+    config({ hooks: { typecheck: ['tsc', 'mypy .'] } })
     assert.equal(spawnSync(process.execPath, [BIN, 'validate'], { cwd: root, encoding: 'utf8' }).status, 0)
+  })
+
+  test('local.hooks.format is gone: validate fails naming the key, the release and what to do', () => {
+    config({ hooks: { format: 'biome format --write' } })
+    const r = spawnSync(process.execPath, [BIN, 'validate'], { cwd: root, encoding: 'utf8' })
+    assert.equal(r.status, 1)
+    assert.match(r.stderr, /local\.hooks\.format was removed in 0\.6\.4: delete it, formatting is the pre-commit's/)
+    assert.doesNotMatch(r.stderr, /must NOT have additional properties/)
+    // Another unknown hook still gets the generic error.
+    config({ hooks: { lint: 'x' } })
+    assert.match(spawnSync(process.execPath, [BIN, 'validate'], { cwd: root, encoding: 'utf8' }).stderr, /\(lint\)/)
   })
 })
 
@@ -218,24 +228,9 @@ describe('lntt hook typecheck', () => {
       assert.equal(run(a, 'typecheck').status, 1)
       assert.equal(run(a, 'typecheck').status, 0)
       assert.equal(run(b, 'typecheck').status, 1)
-      // The format hook's notice, outside git too.
-      writeFileSync(join(a, '.agents/config.jsonc'), '{ "local": { "hooks": { "lint": "x" } } }')
-      const path = JSON.stringify({ tool_input: { file_path: '/x/y.ts' } })
-      assert.match(run(a, 'format', path).stdout, /systemMessage/)
-      assert.equal(run(a, 'format', path).stdout, '')
     } finally {
       rmSync(outside, { recursive: true, force: true })
     }
-  })
-
-  test('the typecheck and the format keep their reports apart', () => {
-    config({ hooks: { typecheck: 'true' } })
-    writeFileSync(join(root, '.agents/config.jsonc'), '{ "local": { "hooks": { "lint": "x" } } }')
-    const path = JSON.stringify({ tool_input: { file_path: '/x/y.ts' } })
-    assert.equal(hook('typecheck').status, 1)
-    assert.match(hook('format', path).stdout, /systemMessage/)
-    assert.equal(hook('typecheck').status, 0)
-    assert.equal(hook('format', path).stdout, '')
   })
 
   test('an output past a megabyte reaches the agent whole', () => {
@@ -250,7 +245,6 @@ describe('lntt hook typecheck', () => {
   })
 
   test('the commands of a hook stop before the hook’s own timeout', () => {
-    assert.ok(LIMIT_MS.format < FORMAT_HOOK.timeout * 1000)
     assert.ok(LIMIT_MS.typecheck < TYPECHECK_HOOK.timeout * 1000)
   })
 
@@ -298,99 +292,6 @@ describe('lntt hook typecheck', () => {
   })
 })
 
-describe('lntt hook format', () => {
-  const input = (path: string) => JSON.stringify({ tool_input: { file_path: path }, tool_response: { filePath: path } })
-
-  test('passes the written file to each command, quoted', () => {
-    config({ hooks: { format: ['printf "%s\\n" >> one', 'printf "%s\\n" >> two'] } })
-    const r = hook('format', input(join(root, 'a b.ts')))
-    assert.equal(r.status, 0)
-    assert.equal(readFileSync(join(root, 'one'), 'utf8'), `${join(root, 'a b.ts')}\n`)
-    assert.equal(readFileSync(join(root, 'two'), 'utf8'), `${join(root, 'a b.ts')}\n`)
-  })
-
-  test('the path comes from tool_input when tool_response has none', () => {
-    config({ hooks: { format: 'printf "%s" > got' } })
-    hook('format', JSON.stringify({ tool_input: { file_path: '/x/y.ts' } }))
-    assert.equal(readFileSync(join(root, 'got'), 'utf8'), '/x/y.ts')
-  })
-
-  test('a command that fails on the file is skipped: no error, no output, the next one runs', () => {
-    config({ hooks: { format: ['echo nope; exit 1', 'printf "%s" > got'] } })
-    const r = hook('format', input('/x/y.md'))
-    assert.equal(r.status, 0)
-    assert.equal(r.stdout + r.stderr, '')
-    assert.equal(readFileSync(join(root, 'got'), 'utf8'), '/x/y.md')
-  })
-
-  test('the commands run from the project root, with a path holding a quote', () => {
-    config({ hooks: { format: 'printf "%s" > got' } })
-    mkdirSync(join(root, 'sub'))
-    spawnSync(process.execPath, [BIN, 'hook', 'format'], {
-      cwd: join(root, 'sub'),
-      input: input("/x/it's.ts"),
-      encoding: 'utf8',
-    })
-    assert.equal(readFileSync(join(root, 'got'), 'utf8'), "/x/it's.ts")
-  })
-
-  test('a configuration lntt cannot read is said once to the person, until it is fixed', () => {
-    config({ hooks: { format: 'true' } })
-    writeFileSync(join(root, '.agents/config.jsonc'), '{ "local": { "hooks": { "lint": "x" } } }')
-    const first = hook('format', input('/x/y.ts'))
-    assert.equal(first.status, 0)
-    assert.match(
-      JSON.parse(first.stdout).systemMessage,
-      /^lntt hook format is off until this is fixed: lntt: [\s\S]*config\.jsonc/,
-    )
-    assert.equal(hook('format', input('/x/y.ts')).stdout, '')
-    config({ hooks: { format: 'true' } })
-    assert.equal(hook('format', input('/x/y.ts')).stdout, '')
-    writeFileSync(join(root, '.agents/config.jsonc'), '{ "local": { "hooks": { "lint": "x" } } }')
-    assert.match(hook('format', input('/x/y.ts')).stdout, /systemMessage/)
-  })
-
-  test('a defect of the format hook, such as a state it cannot keep, is quiet: exit 0', () => {
-    mkdirSync(join(root, '.agents'), { recursive: true })
-    writeFileSync(join(root, '.agents/config.jsonc'), '{ "local": { "hooks": { "lint": "x" } } }')
-    mkdirSync(join(root, '.git/lntt-format-notice'))
-    const r = hook('format', input('/x/y.ts'))
-    assert.equal(r.status, 0)
-    assert.equal(r.stdout + r.stderr, '')
-  })
-
-  test('a state that cannot be cleared does not keep the file from being formatted', () => {
-    config({ hooks: { format: 'printf "%s" > got' } })
-    mkdirSync(join(root, '.git/lntt-format-notice'))
-    writeFileSync(join(root, '.git/lntt-format-notice/x'), '')
-    hook('format', input('/x/y.ts'))
-    assert.equal(readFileSync(join(root, 'got'), 'utf8'), '/x/y.ts')
-  })
-
-  test('with no path, or input that is not JSON, nothing runs', () => {
-    config({ hooks: { format: 'touch ran' } })
-    for (const text of ['{}', 'not json', '']) {
-      assert.equal(hook('format', text).status, 0)
-      assert.equal(existsSync(join(root, 'ran')), false)
-    }
-  })
-
-  test('the package.json script gets the path as its argument', () => {
-    const bin = join(root, 'fake-bin')
-    mkdirSync(bin)
-    writeFileSync(join(bin, 'pnpm'), `#!/bin/sh\nprintf '%s|' "$@" > "${join(root, 'args')}"\n`)
-    chmodSync(join(bin, 'pnpm'), 0o755)
-    scripts({ format: 'biome format --write' })
-    spawnSync(process.execPath, [BIN, 'hook', 'format'], {
-      cwd: root,
-      input: input('/x/y.ts'),
-      encoding: 'utf8',
-      env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
-    })
-    assert.equal(readFileSync(join(root, 'args'), 'utf8'), 'run|format|/x/y.ts|')
-  })
-})
-
 // The lines lntt sync writes run before anything checks lntt is there, or new enough.
 describe('the hook lines of .claude/settings.json', () => {
   let tmp: string
@@ -416,10 +317,7 @@ describe('the hook lines of .claude/settings.json', () => {
       env: { PATH: '/usr/bin:/bin', CLAUDE_PROJECT_DIR: root, TMPDIR: tmp },
     })
 
-  for (const [name, line] of [
-    ['format', FORMAT_HOOK.command],
-    ['typecheck', TYPECHECK_HOOK.command],
-  ] as const) {
+  for (const [name, line] of [['typecheck', TYPECHECK_HOOK.command]] as const) {
     test(`${name}: runs lntt hook ${name} from the project directory`, () => {
       lntt(0)
       const r = run(line)
@@ -450,19 +348,6 @@ describe('the hook lines of .claude/settings.json', () => {
     assert.equal(run(TYPECHECK_HOOK.command).status, 2)
   })
 
-  test('format: an lntt failure never fails the edit', () => {
-    lntt(1)
-    assert.equal(run(FORMAT_HOOK.command).status, 0)
-  })
-
-  test('an lntt with no hook command says it for each hook, once each', () => {
-    lntt(2)
-    assert.match(JSON.parse(run(FORMAT_HOOK.command).stdout).systemMessage, /pnpm up/)
-    assert.match(JSON.parse(run(TYPECHECK_HOOK.command).stdout).systemMessage, /pnpm up/)
-    assert.equal(run(FORMAT_HOOK.command).stdout, '')
-    assert.equal(run(TYPECHECK_HOOK.command).stdout, '')
-  })
-
   test('the typecheck runs in the background and wakes the agent', () => {
     assert.equal(TYPECHECK_HOOK.asyncRewake, true)
     assert.equal(TYPECHECK_HOOK.rewakeSummary, 'Typecheck failed')
@@ -470,7 +355,7 @@ describe('the hook lines of .claude/settings.json', () => {
 })
 
 describe('lntt hook usage', () => {
-  for (const args of [['hook', 'format', 'extra'], ['hook', 'lint'], ['hook']]) {
+  for (const args of [['hook', 'typecheck', 'extra'], ['hook', 'format'], ['hook', 'lint'], ['hook']]) {
     test(`lntt ${args.join(' ')} is a usage error, exit 2`, () => {
       const r = spawnSync(process.execPath, [BIN, ...args], { cwd: root, encoding: 'utf8', input: '' })
       assert.equal(r.status, 2)

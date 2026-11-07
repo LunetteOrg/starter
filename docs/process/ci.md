@@ -15,11 +15,13 @@ batch for what is expensive ([delivery](./delivery.md) has the flow):
 
 | Event | What runs |
 |---|---|
-| A draft, into any base | nothing in the cloud; `pnpm ci:local` on the machine |
-| A ready pull request into a candidate, or into any branch other than `main` (a stacked pull request) | the minimal CI: frozen install, lint, typecheck, `lntt check` (the AGENTS.md block, the installed skills, the plugin settings, the decision logs), the branch name, `claude plugin validate`, one version for the packages and the plugin (`packages-version.mts check`), the tests but the scaffold level, unless the change touches `packages/create`; the retrospective block of the body, as a warning (not on a Dependabot pull request) |
+| A draft, into any base | no CI in the cloud (only the candidate guard, below); `pnpm ci:local` on the machine |
+| A ready pull request into a candidate, or into any branch other than `main` (a stacked pull request) | the minimal CI: frozen install, lint, typecheck, `lntt check` (the AGENTS.md block, the installed skills, the plugin settings, the decision logs), the branch name, `claude plugin validate`, one version for the packages and the plugin (`packages-version.mts check`), the tests but the scaffold level, unless the change touches `packages/create`; the retrospective block of the body, as a warning (not on a bot's pull request, `delivery.automated`) |
 | The candidate's pull request into `main`, ready; a hotfix | the full CI: the minimal CI plus the scaffold level (`packages/create`) and its smoke; the body's retrospective block only on a hotfix (the candidate's block is its retrospective comment, which `lntt check body --pr <n>` checks before the candidate is marked ready, [delivery](./delivery.md#the-candidate)) |
 | A push to `main` | the full CI, which gates a release, unless its tree is one a full CI has [already proved](#a-tree-already-proved) |
-| A Dependabot pull request | the `ci` check red in seconds, until an owner, member or collaborator approves it; the approval runs the CI the base calls for, and a later push turns it red again ([Dependabot pull requests](#dependabot-pull-requests)) |
+| A push to `main`, beside the CI | the [candidate automation](./delivery.md#the-candidate-automation) (`candidate.yml`), not CI: one short job that brings the open candidate, when there is one, up to date with `main` |
+| A bot's pull request (`delivery.automated`) | with `runs: after-approval`, the `ci` check red in seconds until someone with write access approves its head; the approval re-runs that same check (`ci-approval.yml`) with the CI of its entry (`full`: the one its base calls for, or `minimal`), and a later push turns it red again ([automated pull requests](#automated-pull-requests)) |
+| Any pull request, drafts included, at each event that changes its base, labels or head | the [candidate guard](./delivery.md#a-pull-request-left-on-main) (`candidate-guard.yml`), not CI: one short job, green unless the pull request targets `main` and is neither the candidate, a hotfix nor Dependabot's |
 | A merge into a candidate | nothing |
 | Every day (the `schedule` of `upstream.yml`), or by hand (`workflow_dispatch`) | the [upstream check](#upstream-tools) of each new release of Orca, Herdr, claude and opencode |
 
@@ -36,7 +38,8 @@ a pull request into a candidate it runs only when the change touches `packages/c
 and the full CI runs it always, when the base is the default branch or the event is a
 push. A scaffold failure that a pull request does not see is caught on the candidate,
 and fixed forward there. The candidate automation (`candidate.yml`) is not CI: it runs
-on its own three events, drafts included
+on its own three `pull_request` events, drafts included, and on a push to the default
+branch, to bring the open candidate up to date with it
 ([delivery](./delivery.md#the-candidate-automation)).
 
 ## A tree already proved
@@ -83,8 +86,11 @@ push (a publish, a deploy) always run.
 
 - **Before a push leaves the machine for review**: `pnpm ci:local` green on the head
   about to be pushed. It refuses uncommitted changes, so the run is about that head.
-  Its default base is `main`, so it runs the full CI, a superset of the minimal one;
-  `--base <candidate> --list` shows what the minimal CI runs (the test step's choice,
+  Its default base is the one every `lntt` command resolves
+  ([worktree tooling](../adr/worktree-tooling.md#decision)): for a branch on the open
+  candidate, the candidate, so it runs the minimal CI; for the candidate's own head and
+  a branch off `origin/main`, `main`, so it runs the full CI. `--base <branch>` names
+  another one, and `--list` shows the base and what runs (the test step's choice,
   scaffold level or not, is made when it runs, from the diff against the base).
 - **On the candidate, before it is marked ready** ([delivery](./delivery.md#the-candidate)).
 - **`pnpm ci:local --list`** before changing a workflow: it shows, per job, what the
@@ -165,43 +171,75 @@ fake secret. A full job needs a runner image that has what its steps call (`git`
 executor, the larger `act` images, a job with services, a dynamic CircleCI
 configuration.
 
-## Dependabot pull requests
+## Automated pull requests
 
-Dependabot's pull requests stay on `main` and merge as hotfixes, when a person decides
-([delivery](./delivery.md#the-candidate)): the candidate automation cannot move them.
+The pull requests a bot opens are `delivery.automated` in
+[`.agents/config.jsonc`](../../.agents/config.jsonc): one entry per bot, with its login
+as the pull request event names it (`dependabot[bot]`), the prefix of its branches,
+when its CI runs (`runs`) and which CI (`ci`). A pull request matches an entry by its
+author and its branch, both. The author is compared by the bot's slug, so `app/dependabot`
+(gh's name) and `dependabot[bot]` are the same entry. The workflows also want the
+event's login to end in `[bot]`, so a person whose login is the slug is not the bot;
+`lntt ci candidate` reads authors from gh, which can give the bare slug, and compares
+the slug only. These pull requests stay on `main` and merge as hotfixes, when a person decides
+([delivery](./delivery.md#the-candidate)): the candidate automation leaves them there,
+the candidate guard lets them through, the branch check exempts their branches.
 
-- **The CI runs once an owner, member or collaborator approves.** Dependabot rebases its
-  pull requests often, and each rebase would start a full CI on a head nobody merges.
-  Until an owner, member or collaborator approves, the `ci` job fails in its first
-  step, before checkout and install, with "Approve this Dependabot pull request to run
-  the CI before merging": red, never skipped, since a skipped job counts as passed. The
-  repository is public, so anyone can submit a review: an approval from anyone else
-  fails like the unapproved run.
-- **Every review starts a run.** An approval runs the whole job on the pull request's
-  merge ref; a comment or a request for changes fails in the first step, like the
-  unapproved run. The newest `ci` run of a Dependabot head is therefore either red or
-  the whole job. A new push (a Dependabot rebase) turns it red again, and only a new
-  approval runs it: re-running a red run fails again, since its event is unchanged. A
-  comment or a request for changes after the approval turns it red as well, until the
-  next approval. The earlier approval stays on the pull request, so a red `ci` beside
-  an approval means a head or a review the CI has not run on.
-- **The approval runs the bump's code** (install, lint, tests, the scaffold smoke) on
-  the repository's runner. The run is started by the reviewer, not by Dependabot, so it
-  is not restricted like Dependabot's own runs: `ci.yml` reads no secret, and its
-  `GITHUB_TOKEN` can only read (the contents, and the pull requests and runs that
-  `lntt ci proved` reads on a push), on every run, since no job writes.
+- **The workflows read the entries without lntt.** The first step of the `ci` job runs
+  before checkout and install, where lntt cannot: `lntt sync` writes the entries,
+  minified, into every workflow line that ends with `# lntt sync: delivery.automated`
+  (`ci.yml`, `ci-approval.yml`, `candidate.yml`), and `lntt check workflows` (part of
+  `lntt check`, which the CI and `ci:local` run) fails on a line that differs from the
+  configuration. No workflow names a bot.
+- **`runs: after-approval`: the CI runs once someone with write access approves.** A
+  bot rebases its pull requests often, and each rebase would start a full CI on a head
+  nobody merges. The first step of the `ci` job reads the pull request's reviews: with
+  no approval of the head commit by someone with write access it fails with "Approve
+  this pull request's head commit to run the CI before merging", red, never skipped,
+  since a skipped job counts as passed. Each reviewer's latest approval, request for
+  changes or dismissed review of the head counts, as on GitHub; a comment changes
+  nothing. The repository is public, so anyone can submit a review: an approval counts
+  when the reviewer's permission on the repository is `write` or `admin`, as `GET
+  repos/{repo}/collaborators/{user}/permission` answers it in `permission`, where
+  GitHub reports the maintain role as `write` and triage as `read`. Both workflows'
+  tokens read that endpoint, `ci.yml`'s read-only one included (a run of each token's
+  permissions on a throwaway branch, 2026-11-05, #233). The review's
+  `author_association` does not decide: it says `CONTRIBUTOR` for a member whose
+  membership of the organization is private, GitHub's default, to everyone but that
+  member, and in the review's event as well: the approval of #278 started no re-run
+  under a condition on it (2026-11-05). `runs: always` runs the CI on every push, as
+  for a person's pull request.
+- **A review re-runs the same run.** An approval, a request for changes or a dismissed
+  review of such a pull request starts `ci-approval.yml`; when the reviewer has write
+  access, as above, it re-runs the newest `ci` run of the head (waiting for it when it
+  is still going). The re-run reads the reviews again: after an approval the same `ci`
+  check runs the whole job on the pull request's merge ref, after a request for
+  changes or a dismissal it is red again. A new push (a rebase) starts a run of its
+  own, red until the head is approved. A comment, or a review by anyone without write
+  access, re-runs nothing. The head has one `ci` check at every moment: a review
+  starts no run of `ci.yml`, and the `ci-approval.yml` job is named `rerun`.
+- **`ci: minimal`** runs the minimal CI, the one of a pull request into a candidate,
+  even into `main`, without the `Full CI` marker: such a pull request never proves a
+  tree, and the push of its merge to `main` runs the full CI. `ci: full` runs the CI
+  its base calls for.
+- **A required `ci`.** The ruleset of `main` requires the `ci` check
+  ([delivery](./delivery.md#a-pull-request-left-on-main)), and the one check of a
+  bot's head is the one it reads: green only after the approval's re-run. A second
+  `ci` run beside a red one would not do: on a pull request whose required `ci` is
+  red, a later `ci` run of another event, green or skipped, leaves the merge blocked
+  (on throwaway branches under the same rule, 2026-11-03, #233).
+- **The approval runs the bot's code** (a bump's dependencies: install, lint, tests,
+  the scaffold smoke) on the repository's runner, in a re-run of the bot's own run,
+  which keeps that run's privileges: for Dependabot, a read-only `GITHUB_TOKEN` and no
+  secrets (GitHub's documentation of Dependabot on Actions). `ci.yml` reads no secret
+  and asks only to read (the contents, the pull requests and reviews, and the runs
+  `lntt ci proved` reads on a push). `ci-approval.yml` is the reviewer's run, with
+  `actions: write` to start the re-run, and runs nothing of the pull request.
   Approving is the review of the bump.
-- **A review of any other pull request** starts a run whose job is skipped. It is an
-  entry of its own in the pull request's checks, `CI / ci (pull_request_review)`, beside
-  the `CI / ci (pull_request)` it does not replace.
-- **The merge reads the newest `ci` run** of the head. `ci` is not a required status
-  check in the repository's rulesets: an approved Dependabot pull request carries the
-  red run of its push and the run of its approval, as two entries of the checks, and a
-  required `ci` would need this section decided again.
 - **ci:local does not simulate a review**: it runs the pull request or the push. The
-  approval run is the cloud's.
-- A Dependabot pull request moved onto a candidate keeps the gate, and its approval
-  runs the minimal CI, as for any pull request into a candidate.
+  approval's re-run is the cloud's.
+- A bot's pull request moved onto a candidate keeps the gate, and its approval runs
+  the minimal CI, as for any pull request into a candidate.
 
 ## Upstream tools
 
@@ -219,12 +257,22 @@ or a container to try a change to it.
 | Orca | GitHub Releases of `stablyai/orca` (the `.deb`) | the flags lntt passes, against `orca agent-context --json`; on a headless `orca serve`, `startOrca` with the real `claude` not logged in (path, handle, model, effort, brief) and with opencode's shell launch, and the review's subagents through Orca's hook script |
 | Herdr | GitHub Releases of `herdrdev/herdr` | the flags, against each subcommand's `--help`; on a headless `herdr server`, `startHerdr` through `agent start` and through the shell command Herdr detects |
 | claude | npm `@anthropic-ai/claude-code` | the flags, against `claude --help`; a one-line call on `haiku` whose JSON lntt parses, authenticated by Workload Identity Federation: the repository variables `ANTHROPIC_FEDERATION_RULE_ID`, `ANTHROPIC_ORGANIZATION_ID`, `ANTHROPIC_SERVICE_ACCOUNT_ID` and `ANTHROPIC_WORKSPACE_ID` and the job's GitHub OIDC token, with no stored key; without the variables, that call is skipped with a notice |
-| opencode | Homebrew's `opencode` formula | the flags, against `opencode run --help` and `opencode --help`; a one-line call on a free model whose JSON lntt parses |
+| opencode | Homebrew's `opencode` formula | the flags, against `opencode run --help` and `opencode --help`; a one-line call on a free model whose JSON lntt parses; when the model answers with a usage limit (an error event of type `provider.free-limit`, or status 429), that call is skipped (`t.skip`) with the provider's message |
 
 A version counts as checked once its cache entry `upstream-<tool>-<version>` exists, which
-the job saves green or red, unless the issue of a red could not be opened: that version is
-checked again the next day. GitHub evicts an entry left unused (its cache retention); the version
-is then checked again, and its issue, if any, stops a second one. `workflow_dispatch` takes
+the job saves green or red, unless the issue of a red could not be opened or the check
+was inconclusive (below): that version is checked again the next day. GitHub evicts an entry left unused (its cache retention);
+the version is then checked again, and its issue, if any, stops a second one.
+A check that proved nothing about its version is not recorded either: a test that meets a
+provider's usage limit (today the opencode call on a free model) skips with its message and
+writes it to the file `UPSTREAM_INCONCLUSIVE` names, the job leaves a notice, and no entry
+is saved, so a later run tries the version again. The skip opens no issue; the flags test
+still runs, and a real break in it still opens one (the issue then stops a second, as
+below). Every save of the job carries that guard, the one on the version read as well as the
+one on the version installed (they differ when opencode's Homebrew formula moved on since
+the versions job). A pull request cannot run the check for real (it needs a new tool
+release and a provider at its limit), so `upstream-helpers.test.ts` reads `upstream.yml`
+and fails when a save lacks the guard. `workflow_dispatch` takes
 one tool and `force`, to check a version again; it is run from `main`, whose cache the
 scheduled runs use.
 
@@ -253,7 +301,8 @@ the board and the run leaves a notice saying so: it is put on the board with the
 `github-board` skill; a failure after the issue is added leaves it on the board with
 its status unset, and a notice saying so. When `board.issueTypes` names no Bug, or
 GitHub refuses the type (a validation error), the issue is opened with no type, with a
-notice. A red of `pnpm install` opens no issue,
+notice; when that second create fails too, the run fails with its error, no issue is
+opened and the board is not touched. A red of `pnpm install` opens no issue,
 since the script needs the install, and saves no entry: the version is checked again
 the next day.
 
@@ -329,16 +378,23 @@ its red runs are the signal.
   it fails for reasons outside the change (a git process the scaffold leaves behind),
   and `ci:local` runs the same step: one such red blocks every pull request at once,
   most of which do not touch `packages/create`.
-- **A `run-ci` label that starts the CI on a Dependabot pull request.** A `labeled`
+- **A `run-ci` label that starts the CI on a bot's pull request.** A `labeled`
   trigger cannot filter by the label's name, so every label on every pull request
   starts a run whose job is skipped; that skipped run is a `pull_request` run too, so it
   takes the place of the red `ci (pull_request)` entry and can hide it.
-- **Moving each Dependabot pull request onto the candidate by hand.** One command per
+- **Moving each bot's pull request onto the candidate by hand.** One command per
   pull request, on a bot that opens them in waves and rebases them on its own; the
   command stays available for the one that belongs in a batch.
 - **A merge queue (`merge_group`).** It runs the CI on what would be merged, but it
-  works through required checks, which the repository does not set, and it puts every
-  pull request through the queue, not only Dependabot's.
-- **A concurrency group on `ci.yml`.** Review runs would share it with the pull
-  request's own runs, so a review of any pull request could cancel or queue its real
-  run; the unapproved run of a Dependabot pull request ends in seconds anyway.
+  puts every pull request through the queue, not only the bots'.
+- **A concurrency group on `ci.yml`.** A group per pull request would cancel or queue
+  a run behind the re-run of the one before; the unapproved run of a bot's pull request
+  ends in seconds anyway.
+- **Bot names in the workflows.** A second bot would mean editing every condition that
+  names the first; the configuration holds the list and lntt sync carries it.
+- **Reading `delivery.automated` with lntt in the gate.** lntt parses the JSONC
+  configuration with its dependencies, so the gate would install before deciding: half
+  a minute on every bot push, where the unapproved run takes seconds.
+- **An approval run of its own** (`pull_request_review` in `ci.yml`). The approval's
+  green `ci` stands beside the red one of the push, and a required `ci` stays blocked
+  by the red one (#233).

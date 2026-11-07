@@ -12,7 +12,7 @@ steps (`lntt worktree start`, `lntt ask`, `lntt inbox`, `lntt answer`; the `@lnt
 README lists their flags); this skill is the judgement around them. Never edit it to fit one
 project.
 
-The project's values are in `coordinator` of `.agents/config.*` (`lntt get coordinator`):
+The project's values are in `coordinator` of `.agents/config.*` (`pnpm exec lntt get coordinator`):
 `gate` and `models`.
 
 ## 1. Starting the coordinator
@@ -20,22 +20,24 @@ The project's values are in `coordinator` of `.agents/config.*` (`lntt get coord
 The orchestrator (the person, or the session above) starts it:
 
 ```sh
-lntt worktree start --coordinator --theme <slug> --issue <n> --issue <m> [--approve <n>]
+pnpm exec lntt worktree start --coordinator --theme <slug> --issue <n> --issue <m> [--approve <n>]
 ```
 
-The coordinator's brief (`agents/coordinator.md` of `@lntt/lntt`) lists the issues, the
-children it may start at once (`--approve`), the model of each role and how to follow the
-children. The worktree stays on its placeholder branch: no commit, no push, no pull request.
+The coordinator's brief (`dist/agents/coordinator.md` of `@lntt/lntt`) lists the issues,
+the children it may start at once (`--approve`), the model of each role and how to follow
+the children. The worktree stays on its placeholder branch: no commit, no push, no pull request.
 
 ## 2. Order the theme
 
 Read every issue (`gh issue view <n>`, with its comments) and the decisions it cites
 before anything starts. Then decide:
 
-- **Independent issues** start together, from the base branch.
+- **Independent issues** start together, with no `--base`: from the base `lntt worktree
+  start` resolves (the open candidate, else the default branch, from origin).
 - **A stacked issue** starts from its predecessor's branch (`--base`). When pull requests
   collect on a candidate branch, "the predecessor is merged" means merged into the open
-  candidate, and the dependent child starts from the candidate; the child checks that its
+  candidate, and the dependent child starts from the candidate (no `--base`, or
+  `--base candidate/<N>`: the remote's copy, never a local branch); the child checks that its
   upstream is not the candidate and rebases if the candidate moves before Ready.
 - **Two issues editing one file** are not stacked for that alone: different sections of one
   document merge in turn, and only a pull request that turns `CONFLICTING` is rebased.
@@ -56,7 +58,7 @@ skip a review round.
 ## 4. Starting a child
 
 ```sh
-lntt worktree start --theme <slug> --parent current --issue <n> --context <file> \
+pnpm exec lntt worktree start --theme <slug> --parent current --issue <n> --context <file> \
   --size <XS|S|M|L|XL> [--base <branch>] [--workflow]
 ```
 
@@ -77,15 +79,16 @@ lntt worktree start --theme <slug> --parent current --issue <n> --context <file>
 ## 5. Following the children
 
 ```sh
-lntt inbox --as coordinator --theme <slug> --wait      # what they ask and report (returns at once while any message is unanswered: answer each one)
-lntt answer <id> "<answer>"
-lntt ask --to orchestrator "<questions>"               # waits for the person's answer
+pnpm exec lntt inbox --as coordinator --theme <slug> --wait      # what they ask and report (returns at once while any message is unanswered: answer each one)
+pnpm exec lntt answer <id> "<answer>"
+pnpm exec lntt ask --to orchestrator "<questions>"               # waits for the person's answer
+pnpm exec lntt ask --wait <id>                                   # the answer to a message already sent
 ```
 
 - **A child's report** is one line: the pull request link, its head SHA, its checks, its
   friction. The long description is for when it is asked.
 - **The theme's friction goes on the candidate as it happens,** one sentence each, with
-  `lntt retro add --label <label> "<one sentence>"` (the `retrospective` skill, section 3):
+  `pnpm exec lntt retro add --label <label> "<one sentence>"` (the `retrospective` skill, section 3):
   when a child reports friction that is the theme's and not its own pull request's, when a
   review round or a CI run costs more than expected, when you work around something by
   hand, and at each squash into the candidate. Not at the end, from memory: by then the
@@ -93,6 +96,13 @@ lntt ask --to orchestrator "<questions>"               # waits for the person's 
 - **Check on the pull request itself before saying a check passed or is pending**
   (`gh pr checks`, or the API): a check reported "without outcome" from memory has to be
   re-read before every merge.
+- **A child's open decisions come first.** Before its first commit each child asks the
+  open decisions of its issue (`lntt ask`, each with a recommendation). Collect them,
+  settle what the issues, the records and the code settle, and send the rest to the
+  orchestrator in one batch before the children code. A decision that arrives after a
+  child's review converged goes the same way, asking whether it is applied in that pull
+  request or in a follow-up; applied there, the child needs the person's go for the new
+  rounds (past `delivery.review.maxRounds`, `lntt review allow`).
 - **Questions for the person go to the orchestrator, batched**: every open question in one
   message, each with a recommendation. While waiting, keep following the children.
 - **A freeze** from the orchestrator ("STOP: no new children, no rebases, no Ready, no
@@ -128,20 +138,22 @@ lntt ask --to orchestrator "<questions>"               # waits for the person's 
   when containers exist.
 - The theme outlives its pull requests: the coordinator stays while the theme has open
   issues, and is archived when the last child has merged. Before that, read the
-  candidate's retrospective comment (`lntt check body --pr <candidate>`) and write
+  candidate's retrospective comment (`pnpm exec lntt check body --pr <candidate>`) and write
   `none` where nothing applies; each child's friction about its own issue goes in its own
   pull request.
 - **At the end of the theme**, the items marked `[upstream:<owner/name>]` of its pull requests and of the
   candidate's comment go upstream as the `retrospective` skill says (section 5): drafts,
-  `lntt dump`, each report shown to the operator, sent with `lntt issue --send` only once
+  `pnpm exec lntt dump`, each report shown to the operator, sent with `pnpm exec lntt issue --send` only once
   approved.
 
 ## 7. What a coordinator brief must say
 
 The brief `lntt worktree start --coordinator` renders already says: write no code; the
 issues; the gate and who is approved; the model of each role; `--context`, `--size`,
-`--workflow` and `--base` for a child; the mailbox; `orca` by absolute path; never merge or
-mark ready; return the state of the theme and the friction. Also say:
+`--workflow` and `--base` for a child (`--prompt` adds to the brief, never replaces it); the
+mailbox, through which every wait goes (approvals, the review limit), a child's review
+limit reaching your inbox; `orca` by absolute path; never merge or mark ready; return the
+state of the theme and the friction. Also say:
 
 - A path in a brief is found by `grep`, not rebuilt.
 - An approval names what it covers.
@@ -160,7 +172,7 @@ mark ready; return the state of the theme and the friction. Also say:
   with the interface the child needs and signals it with a message; the go for the first wave
   does not cover the stacked child. The stacked child opens its draft pull request against
   its base branch and retargets it after the base merges.
-- **Questions for the person go through the mailbox** (`lntt ask --to orchestrator`, polled
+- **Questions for the person go through the mailbox** (`pnpm exec lntt ask --to orchestrator`, polled
   every 20 seconds), never to the tab. Every brief says so.
 - **A message that needs no answer still gets an `.answer.md`** (a line such as "noted"),
   or the watcher on the inbox reports it again.
@@ -177,6 +189,8 @@ mark ready; return the state of the theme and the friction. Also say:
 - **A review stops where the coordinator says.** Name the rule in the child's context: a round
   cap, or stop when only notes and findings outside the issue remain, and list those in the
   pull request. A round that is not empty at the cap is reported as such.
+- **A child's review state is read in its worktree** with `pnpm exec lntt review status`
+  (or asked of the child), never from its files: they are one per branch, in a place the project may have moved.
 - **Ask each child for its review cost in one line:** rounds, tokens and USD. Agents report
   cost differently (tokens, USD, nothing).
 - **A skipped optional verifier** (a free model that timed out or was rate limited) is

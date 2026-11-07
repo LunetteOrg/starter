@@ -27,6 +27,18 @@
         }
       }
     },
+    "project": {
+      "type": "object",
+      "description": "Where the project stands.",
+      "additionalProperties": false,
+      "properties": {
+        "phase": {
+          "enum": ["development", "production"],
+          "default": "production",
+          "description": "Where the project stands. development: no release has reached production yet; lntt review gives its reviewers and verifiers the list of what is not a finding before production (dist/agents/review/before-production.md in the @lntt/lntt package). production: every check holds. Switch to production when the first release reaches production; a beta with real users is production. Missing: production, and lntt get project.phase prints it."
+        }
+      }
+    },
     "board": {
       "type": "object",
       "description": "The board the work is planned on, read by the board skills (plan-round, roadmap, and the adapter of the provider: github-board for github): where the board lives, the issue types, the mechanisms the project uses, its fields and their options, the track labels. The keys of one provider sit under its name (github); the others are concepts every provider shares. What the section leaves out the project does not use, and the skills do without it. How they are used is in docs/process/board.md, when the project has one.",
@@ -134,6 +146,16 @@
             "children": {
               "type": "array",
               "description": "The types of the issues that are the work itself: the ones that go in an iteration.",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "standalone": {
+              "type": "array",
+              "description": "The child types an issue may have with no parent: with board.subIssues, lntt board ready asks a parent of every other child type. Each is one of children: lntt validate checks it. Absent: every child needs a parent.",
               "items": {
                 "type": "string",
                 "minLength": 1
@@ -360,7 +382,7 @@
       "properties": {
         "branches": {
           "type": "object",
-          "description": "Branch names: <type>/<issue>/<slug>, or <type>/no-issue/<slug>, computed, checked and fixed by lntt branch. The base, the candidates (candidate.base, candidate.prefix) and Dependabot's branches are exempt; the hotfix prefix counts as one more type.",
+          "description": "Branch names: <type>/<issue>/<slug>, or <type>/no-issue/<slug>, computed, checked and fixed by lntt branch. The base, the candidates (candidate.base, candidate.prefix) and the branches of delivery.automated are exempt; the hotfix prefix counts as one more type.",
           "additionalProperties": false,
           "properties": {
             "types": {
@@ -372,6 +394,35 @@
               },
               "minItems": 1,
               "uniqueItems": true
+            }
+          }
+        },
+        "automated": {
+          "type": "array",
+          "description": "The pull requests a bot opens, and how the CI treats them. They stay on the base: the candidate automation leaves them there, the candidate guard lets them through, the branch check exempts their branches. lntt sync writes the entries into every workflow line ending with `# lntt sync: delivery.automated`; lntt check workflows fails on a line that differs.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["author", "branch", "runs", "ci"],
+            "properties": {
+              "author": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The bot's login as the pull request event names it: dependabot[bot], renovate[bot]. gh's app/<slug> and the bare slug match it too."
+              },
+              "branch": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The prefix of the bot's branches: dependabot/. A pull request matches an entry by its author and its branch, both."
+              },
+              "runs": {
+                "enum": ["after-approval", "always"],
+                "description": "after-approval: the CI fails in its first step, before checkout, until someone with write access to the repository approves the head commit, and a review re-runs it. always: the CI runs on every push, as for a person's pull request."
+              },
+              "ci": {
+                "enum": ["full", "minimal"],
+                "description": "full: the CI its base calls for. minimal: the CI a pull request into a candidate runs, even into the base; a push to the base still runs the full CI."
+              }
             }
           }
         },
@@ -629,6 +680,11 @@
               "exclusiveMinimum": 0,
               "description": "How long a whole round may take; then every agent still running is stopped, the round fails and keeps what it gathered. Default 60."
             },
+            "stateDir": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Where lntt review keeps each branch's state and ledger of closed findings, for everyone on the project; the operator's own review.stateDir (lntt operator) overrides it. A path relative to the main checkout, absolute, or starting with ~; a folder per repository (<org>/<repo>) is made inside it. Default: the clone's common git directory."
+            },
             "maxRounds": {
               "type": "integer",
               "minimum": 1,
@@ -866,21 +922,14 @@
     },
     "local": {
       "type": "object",
-      "description": "How the apps are started and reached locally, read by the run-local skill and lntt local; and the commands of the agent's hooks, read by lntt hook.",
+      "description": "How the apps are started and reached locally, read by the run-local skill and lntt local; and the command of the agent's typecheck hook, read by lntt hook.",
       "additionalProperties": false,
       "properties": {
         "hooks": {
           "type": "object",
           "additionalProperties": false,
-          "description": "The commands the hooks lntt sync writes into .claude/settings.json run, one or a list run in order (a project with more than one toolchain). Absent, the package.json script of the same name; absent both, the hook does nothing.",
+          "description": "The commands the hook lntt sync writes into .claude/settings.json runs, one or a list run in order (a project with more than one toolchain). Absent, the package.json script of the same name; absent both, the hook does nothing.",
           "properties": {
-            "format": {
-              "oneOf": [
-                { "type": "string", "minLength": 1 },
-                { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
-              ],
-              "description": "Formats the file just written, given as the last argument; a command that fails on it is skipped."
-            },
             "typecheck": {
               "oneOf": [
                 { "type": "string", "minLength": 1 },

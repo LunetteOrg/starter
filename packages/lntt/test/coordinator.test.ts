@@ -163,6 +163,21 @@ describe('the coordinator’s brief', () => {
     assert.doesNotMatch(brief, /(^|[^/\w])orca (worktree|terminal)/m)
   })
 
+  test('says every wait goes through the mailbox, its own and its children’s', () => {
+    const brief = coordinatorBrief(VALUES)
+    assert.match(brief, /Every wait goes through the mailbox/)
+    assert.match(brief, /1Password/)
+    assert.match(brief, /review limit/)
+    assert.match(brief, /`pnpm exec lntt inbox --as coordinator --theme release-0-6-1`/)
+    assert.match(brief, /`pnpm exec lntt ask --to orchestrator`, batched, with a recommendation/)
+    assert.match(brief, /re-reads its mailbox/)
+    assert.match(brief, /`pnpm exec lntt ask --to child --issue <n>`/)
+    assert.match(
+      brief,
+      /open decisions your children ask before their first\n {2}commit are collected and sent to the orchestrator in one batch, each with a\n {2}recommendation, before the children code\./,
+    )
+  })
+
   test('on a host with no Orca there is no Orca line', () => {
     const brief = coordinatorBrief({ ...VALUES, orca: null })
     assert.doesNotMatch(brief, /orca/i)
@@ -171,7 +186,7 @@ describe('the coordinator’s brief', () => {
   test('under propose, names the approved children and the proposal flow', () => {
     const brief = coordinatorBrief(VALUES)
     assert.match(brief, /Approved to start now: #89/)
-    assert.match(brief, /`lntt worktree start --theme` asks the orchestrator/)
+    assert.match(brief, /`pnpm exec lntt worktree start --theme` asks the orchestrator/)
     assert.match(brief, /#84/)
   })
 
@@ -218,7 +233,7 @@ describe('the brief without a model or a gate', () => {
 describe('the child’s brief', () => {
   const base = { issue: 84, title: 'Coordinator mode', branch: 'feat/84/coordinator-mode', worktree: '/w' }
 
-  test('without a theme it is the plain brief, byte for byte', () => {
+  test('without a theme it is the plain brief, with its waits sent to the orchestrator, byte for byte', () => {
     const plain = childBrief(base, {})
     assert.equal(
       plain,
@@ -229,27 +244,101 @@ describe('the child’s brief', () => {
         '  else; its Definition of Done is what finishes the work. `AGENTS.md` applies.',
         '- **Work only in this worktree:** `/w`, on branch `feat/84/coordinator-mode`. Run every',
         '  command from it, never from the main checkout or another worktree.',
-        '- **Before publishing:** the review (`lntt review`, with the `review` skill) until a',
-        '  round finds nothing, and `pnpm ci:local` green on the commit you push. At',
-        '  `lntt review: limit:` (`delivery.review.maxRounds`) stop: what is still open goes to',
-        '  the person (or your coordinator, when you have one), who decides.',
+        '- **Before publishing:** the review (`pnpm exec lntt review`, with the `review` skill) until a',
+        "  round finds nothing, and `pnpm ci:local` green on the commit you push. The review's",
+        '  state is read with `pnpm exec lntt review status`, never by opening files in the git',
+        '  directory. At `lntt review: limit:` (`delivery.review.maxRounds`) stop: the round',
+        '  sends what is still open to whoever you report to, who decides (below).',
         '- **Then open a draft pull request** with `Closes #84` and the Definition of Done',
         '  filled in, and **stop**: no merge, no `gh pr ready`. A person takes it from there.',
         '- **Return** a short summary of what changed, the pull request link, and any friction',
         '  met along the way (a missing tool, an unclear rule, a check that failed for reasons',
         '  outside the change).',
         '',
+        '## Every wait goes through the mailbox',
+        '',
+        'Nobody watches your terminal: whatever you wait for, ask with `pnpm exec lntt ask --to orchestrator --issue 84 "<…>"`,',
+        'which waits for the answer and prints it, never only in your tab. Run it in the',
+        'background (or with `--timeout <s>`, then `pnpm exec lntt ask --wait <id>`), so that you re-read',
+        'your mailbox between polls.',
+        '',
+        '- **An answer** the issue, the decision records and the code do not give.',
+        '- **An approval:** a 1Password prompt for a `git push` or a secret, a go-ahead. Say what',
+        '  it unlocks, and retry once it is answered.',
+        '- **The review limit:** at `lntt review: limit:` the round sends the open findings',
+        '  itself and prints the id of its message; wait for the answer with',
+        '  `pnpm exec lntt ask --wait <id>`. An answer that grants rounds is the go: run',
+        '  `pnpm exec lntt review allow <rounds>` yourself, then the next round. Past the last',
+        '  allowed round a fix is made only inside a granted round: what is open stays listed as',
+        '  open, and a commit waits until `lntt review allow` has granted the round that reviews it.',
+        '',
+        '## Open decisions come before the first commit',
+        '',
+        'Before your first commit, list the open decisions of your issue (what its body leaves',
+        'to choose) and ask them in one `pnpm exec lntt ask --to orchestrator --issue 84 "<…>"`, each with a recommendation and the',
+        'criteria that decide it. Start coding once it is answered.',
+        '',
+        'A decision that arrives after your review converged, and would change the change, is',
+        'asked the same way: apply it in this pull request, or in a follow-up. Applied here, the',
+        "new rounds need the person's go: a round does not restart on its own, and past",
+        '`delivery.review.maxRounds` the go is `pnpm exec lntt review allow <rounds>` (above).',
+        '',
+        'While you wait, and before you resume after any pause, re-read your mailbox:',
+        '`pnpm exec lntt inbox --as child --issue 84`. A decision sent there holds over what you',
+        'assumed.',
+        '',
       ].join('\n'),
     )
-    assert.doesNotMatch(plain, /theme|mailbox|workflow|ultracode/i)
+    assert.doesNotMatch(plain, /theme|workflow|ultracode/i)
     assert.doesNotMatch(plain, /\{\{/)
-    assert.ok(plain.endsWith('outside the change).\n'))
+  })
+
+  test('a child of a theme routes every wait to its coordinator, and re-reads its mailbox', () => {
+    const brief = childBrief(base, { theme: 'release-0-6-1' })
+    assert.match(brief, /## Every wait goes through the mailbox/)
+    assert.match(brief, /ask with `pnpm exec lntt ask --to coordinator --theme release-0-6-1 --issue 84 "<…>"`/)
+    assert.doesNotMatch(brief, /--to orchestrator/)
+    assert.match(brief, /1Password/)
+    assert.match(brief, /at `lntt review: limit:` the round sends the open findings/)
+    assert.match(brief, /`pnpm exec lntt ask --wait <id>`/)
+    assert.match(brief, /re-read your mailbox:\n`pnpm exec lntt inbox --as child --issue 84`/)
+    assert.match(brief, /## Open decisions come before the first commit/)
+    assert.match(brief, /ask them in one `pnpm exec lntt ask --to coordinator --theme release-0-6-1 --issue 84 "<…>"`/)
+    assert.match(
+      brief,
+      /new rounds need the person's go: a round does not restart on its own, and past\n`delivery\.review\.maxRounds` the go is `pnpm exec lntt review allow <rounds>`/,
+    )
+    assert.doesNotMatch(brief, /workflow|orca/i)
+  })
+
+  test('a child of a theme with no coordinator reports and waits to the orchestrator, with the theme’s context', () => {
+    const brief = childBrief(base, {
+      theme: 'standalone',
+      coordinator: false,
+      context: 'Touch only the brief.',
+      orca: '/usr/local/bin/orca',
+    })
+    assert.match(brief, /## You are a child of the theme `standalone`/)
+    assert.match(brief, /## The theme\n\nTouch only the brief\./)
+    assert.match(brief, /`pnpm exec lntt ask --to orchestrator --issue 84 "<question>"`/)
+    assert.match(brief, /`pnpm exec lntt ask --to orchestrator --issue 84 "#84 ready: /)
+    assert.match(brief, /lntt inbox --as child --issue 84/)
+    assert.match(brief, /the orchestrator reads it/)
+    assert.doesNotMatch(brief, /--to coordinator|your coordinator|the coordinator/i)
+    assert.doesNotMatch(brief, /\{\{/)
+  })
+
+  test('explicitly coordinated is the default: the coordinator is asked', () => {
+    const brief = childBrief(base, { theme: 't', coordinator: true })
+    assert.equal(brief, childBrief(base, { theme: 't' }))
+    assert.match(brief, /--to coordinator --theme t --issue 84/)
   })
 
   test('with a context and a parent it carries the theme section and how to report', () => {
     const brief = childBrief(base, { theme: 'release-0-6-1', context: 'Your neighbours: #89 and #111.\n' })
     assert.match(brief, /## The theme\n\nYour neighbours: #89 and #111\./)
-    assert.match(brief, /lntt ask --to coordinator --theme release-0-6-1/)
+    assert.match(brief, /`pnpm exec lntt ask --to coordinator --theme release-0-6-1 --issue 84 "<question>"`/)
+    assert.match(brief, /`pnpm exec lntt ask --to coordinator --theme release-0-6-1 --issue 84 "#84 ready: /)
     assert.match(brief, /lntt inbox --as child --issue 84/)
     assert.doesNotMatch(brief, /\{\{/)
   })

@@ -27,11 +27,15 @@
 //                             API cannot do or is risky listed for the UI, with the steps.
 //                             A dry run unless --apply; --check exits 1 when the board differs
 //
-//   lntt hook format | typecheck
-//                             what the hook lines lntt sync writes into .claude/settings.json
-//                             run: format the file of the hook input (stdin) with
-//                             local.hooks.format or the format script; run local.hooks.typecheck
-//                             or the typecheck script, exit 1 on a failure not seen last time
+//   lntt board ready [--apply]
+//                             the issues of this repository at the board's first status,
+//                             Ready-eligible or with what is missing; --apply moves the eligible
+//                             ones to board.fields.status.ready
+//
+//   lntt hook typecheck
+//                             what the hook line lntt sync writes into .claude/settings.json
+//                             runs: local.hooks.typecheck or the typecheck script, exit 1 on a
+//                             failure not seen last time
 //
 //   lntt refs [--cached] [<text>...]
 //                             the issue and pull request references of the text (the arguments,
@@ -110,12 +114,22 @@
 //   lntt review [--base <branch>] [--plan]
 //                             one review round on the current branch: the lenses and agents of
 //                             delivery.review, headless and read-only, then verifiers that try to
-//                             refute each blocker and warning; JSON on stdout, exit 1 with findings,
-//                             exit 3 past delivery.review.maxRounds (the round does not start)
+//                             refute each blocker and warning; a summary on stdout, exit 1 with
+//                             findings, exit 3 past delivery.review.maxRounds (the round does not
+//                             start)
 //   lntt review reply <finding> <answer>
 //                             the author's answer, to the sessions of the reviewers who found it
 //   lntt review allow <rounds>
 //                             more rounds for the current branch, past delivery.review.maxRounds
+//   lntt review status [--json] [--query <jq>] [--clear]
+//                             the worktree's review state: each level folded and a summary, the
+//                             whole with --json, a part with a jq expression on that document;
+//                             exit 0 clean, 1 to act on, 3 at the limit, 4 no round on this branch,
+//                             2 a jq failure.
+//                             --clear removes another or a merged branch's state, ledger, progress
+//   lntt review cost [--json]
+//                             what the current branch's rounds cost, from its review state: the
+//                             line of the pull request's Review cost, or each round and the total
 //
 //   lntt worktree start --issue <n> [--issue <n>]... [--host orca|herdr|git]
 //                       [--kind <agent>] [--model <id>] [--effort <level>] [--no-agent]
@@ -126,7 +140,10 @@
 //                             one JSON line each. The host is the innermost one the
 //                             session runs in (Herdr, Orca), else plain git, where the
 //                             brief is printed for the person to start the agent;
-//                             --prompt replaces the brief (a coordinator's own, a trial)
+//                             --prompt adds instructions of one's own after the brief
+//                             (## Added at start). Each start records who the branch
+//                             reports to (lntt-messages/started/<branch, URL-encoded>.json),
+//                             read by lntt review
 //
 //   lntt worktree start --coordinator --theme <slug> --issue <n>... [--approve <n>]...
 //                             a theme's coordinator: one worktree on no issue, the coordinator's
@@ -139,7 +156,12 @@
 //   lntt ask --to <orchestrator|coordinator|child> [--issue <n>] [--theme <slug>] [--topic <slug>]
 //            [--timeout <s>] <question | ->
 //                             write a message under <git common dir>/lntt-messages/ and wait for
-//                             its answer (polled every 20 s); stdout is the answer
+//                             its answer (polled every 20 s); stdout is the answer. --issue names
+//                             a child's mailbox; to the orchestrator or a coordinator it tags the
+//                             topic issue-<n>-
+//   lntt ask --wait <id> [--timeout <s>]
+//                             wait for the answer to a message already sent (the one lntt review
+//                             sends at its limit); stdout is the answer
 //   lntt inbox [--as <role>] [--issue <n>] [--theme <slug>] [--wait] [--timeout <s>]
 //                             the unanswered messages to a role, one JSON line each
 //   lntt answer <id> <text | ->
@@ -165,12 +187,20 @@
 //
 //   lntt ci candidate [--pr <n>] [--event opened|ready_for_review|closed]
 //                     [--head-ref <ref>] [--labels a,b] [--merged] [--dry-run]
+//   lntt ci candidate --follow [--dry-run]
 //
-//     In Actions it reads the pull_request event (GITHUB_EVENT_PATH). From a terminal,
-//     --pr reads the pull request with gh and does what the workflow would do on its
-//     event; --head-ref, --labels and --merged override what was read, to try a case
-//     without creating it; --dry-run prints every write instead of making it. Without
-//     delivery.candidate in the configuration it does nothing.
+//     In Actions it reads the event (GITHUB_EVENT_PATH): a pull_request event, or a push
+//     to the base. From a terminal, --pr reads the pull request with gh and does what the
+//     workflow would do on its event, without following the base; --head-ref, --labels
+//     and --merged override what was read, to try a case without creating it; --follow
+//     (alone, with no pull request flag) does what a push to the base does: the open
+//     candidate follows the base (rebased when no pull request is open into it, the
+//     base merged into it otherwise), with the path and its reason printed. Without
+//     --dry-run, --follow pushes the candidate right away from this clone (a force push
+//     with a lease on the rebase path): run it with --dry-run first. --dry-run prints
+//     every write and push instead of making it (the fetch, merge and rebase still run
+//     on the local clone). Without delivery.candidate in the configuration it does
+//     nothing.
 //
 //   lntt ci proved --job <name>... [--step <name>] [--workflow <file>] [--sha <sha>]
 //                  [--before <sha>] [--branch <name>]

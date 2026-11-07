@@ -12,7 +12,8 @@ into `main`, has a person's go: an agent never merges on its own.
 `<type>/<issue>/<slug>`, or `<type>/no-issue/<slug>` for work without an issue:
 `feat/77/worktree-branch-names`, `docs/no-issue/version-numbering`. The types are
 `delivery.branches.types`, plus the hotfix prefix; the slug is one to four lower-case
-words joined by `-`. The base, the candidates and Dependabot's branches are exempt.
+words joined by `-`. The base, the candidates and the bots' branches
+(`delivery.automated`) are exempt.
 
 The rules live in `lntt branch`, so the tool that creates a branch does not decide its
 name:
@@ -34,12 +35,13 @@ stops at the draft pull request.
 ## One pull request
 
 1. **Draft.** A pull request opens as a draft. A draft runs no CI in the cloud
-   ([CI](./ci.md)); a pull request opened ready into `main` runs the full CI once on
+   ([CI](./ci.md)), only the [candidate guard](#a-pull-request-left-on-main); a pull request opened ready into `main` runs the full CI once on
    its `opened` event, before the automation moves it onto the candidate.
 2. **Review on the machine.** Before the first round, the author checks each test the
    change adds or alters that guards a line with the `mutation-check` skill
    ([test checks](../adr/test-checks.md#decision)). The review runs on the local branch with `lntt review`
-   (the `review` skill), and fixes are local commits. Reviewers start with no context
+   (the `review` skill), and fixes are local commits, each inside a round the branch may
+   still take: past `delivery.review.maxRounds`, only once the person grants one. Reviewers start with no context
    of the conversation that wrote the change, each lens on the agents and models of
    `delivery.review`; verifiers try to refute every blocker and warning; later rounds
    read only the new commits, with the findings the branch already closed. The branch
@@ -64,10 +66,15 @@ stops at the draft pull request.
 
 **Merge methods are enforced** by repository rulesets: candidate branches
 (`refs/heads/candidate/*`) take squash merges only, `main` takes rebase merges only, and
-both take changes through pull requests only, with no required approval. The
-repository admin role bypasses both: the release bump is a direct commit on `main`,
-and rewriting a candidate (a rebase on `main`) is a force push an
-admin makes.
+both take changes through pull requests only, with no required approval. `main`'s
+ruleset also requires the `ci` and `candidate guard` checks
+([a pull request left on `main`](#a-pull-request-left-on-main)). The
+repository admin role bypasses both: the release bump is a direct commit on `main`. The
+candidate app bypasses the candidates ruleset, and updates the open candidate when
+`main` moves ([the candidate](#the-candidate)): with no pull request open into it, it
+rewrites the candidate (a rebase on `main`, a force push with a lease); with pull
+requests open into it, it merges `main` in, no rewrite. An admin updates a candidate by
+hand only after the app stops on a conflict or a refused push.
 
 ## The pull request body
 
@@ -152,10 +159,14 @@ candidate exists on a day without pull requests.
   on its last pull request (`--pr <n>`). Before the candidate is marked ready every
   label holds a value or the configured `none`.
 - **Into `main`**, once a day or when the batch is worth it: `pnpm ci:local` on the
-  candidate's head and `lntt check body --pr <candidate>` clean (on a candidate it
+  candidate's head (a detached checkout, `git switch --detach origin/candidate/<N>`
+  after `git fetch origin`: no local branch named after the candidate) and `lntt check body --pr <candidate>` clean (on a candidate it
   reads the retrospective comment); with both green, the candidate pull request is marked ready and the
   full CI runs once on the whole batch; with the full CI green and the person's go,
   it merges with a **rebase**, so `main` gets one commit per pull request and one push.
+  A candidate that holds merge commits of `main` lands the same way: the rebase merge
+  drops them, and `main` gets the candidate's own commits, linear, with the same tree
+  (tried on throwaway branches in #247).
   Squashes into the candidate happen before it is marked ready: a push to a ready
   candidate starts the full CI again.
 - **The board follows.** An open issue that a pull request squashed into the candidate
@@ -174,6 +185,16 @@ candidate exists on a day without pull requests.
   the first. A status name that is not an option of the Project (a mistyped
   `delivery.candidate.status`, or the option not added yet) gets the same notice, which
   lists the options the Project has.
+- **The merge unblocks.** On the candidate's merge, after its issues close, the
+  automation reads the open issues blocked by them. Each one at the first status that
+  meets the criteria of [Ready](./board.md#status) moves there, and one comment on the
+  candidate's pull request says what moved, with the blocker and the pull request that
+  closed it, and what is missing for those left at the first status. An issue already at
+  Ready is listed there and one further along is left alone. What one read does not hold is
+  a notice or a missing line, never a move; when the pull requests merged into the candidate
+  cannot be read, the comment credits the candidate's own. It needs `board.blockedBy`, and it writes with the same
+  Projects token; the same refusals are notices. Issues a hotfix unblocks wait for
+  `lntt board ready`.
 - **Issues close on the candidate's merge.** GitHub ignores closing keywords in a pull
   request that targets a branch other than the default, and keywords the automation
   writes into the candidate's body link nothing. On the candidate's merge the
@@ -188,8 +209,27 @@ candidate exists on a day without pull requests.
   the new head. The candidate may be what a preview or pre-production environment runs:
   no merged commit is taken out of it, and the pull requests already merged keep their
   `Closes`.
-- **When `main` moves** (a hotfix), the candidate rebases on `main` and `ci:local` runs
-  again.
+- **When `main` moves** (a hotfix, a Dependabot pull request merged on `main`), the
+  automation brings the open candidate up to date, the way that suits whoever stands on
+  it:
+  - **No pull request open into the candidate:** its commits are rebased on `origin/main`
+    (the empty opening commit kept) and pushed with a lease on the head it read. Nobody's
+    branch descends from the old commits, and the history stays linear.
+  - **Pull requests open into the candidate:** `main` is merged into it, a merge commit
+    and a plain push, no rewrite. Their branches stay valid and follow with a merge or a
+    rebase of the candidate of their own.
+
+  A comment on the candidate says where `main` moved, which path was taken and why, and
+  the old and new head; after a merge each pull request open into it gets one too. The
+  candidate's CI runs on the new head once it is ready for review; a draft candidate
+  gets no cloud CI, so `pnpm ci:local` runs on it again. A conflict, or a push GitHub
+  refuses, leaves the candidate as it is, with a comment naming the files in conflict,
+  or git's error, and a warning in the run: an admin, as only the ruleset's bypass
+  actors push to a candidate directly, checks it out detached (`git switch --detach
+  origin/candidate/<N>` after `git fetch origin`), merges `origin/main` into it (or
+  rebases it on `origin/main`, with no pull request open into it), resolves, runs
+  `pnpm ci:local` and pushes with `git push origin HEAD:candidate/<N>` (with
+  `--force-with-lease` after a rebase).
 - **Stranded pull requests.** A pull request left on a candidate that is no longer open
   (closed without merging, or a merge whose event the workflow dropped) moves onto the
   open candidate at the automation's next run, whatever event starts it.
@@ -199,26 +239,111 @@ label, keeps the pull request on `main`, where it gets the full CI and merges on
 own. A pull request moved by mistake goes back with the label and
 `gh pr edit <n> --base main`.
 
-**Pull requests from forks and from Dependabot** stay on `main`: the runs they start
-get no repository secrets, so no app token. A maintainer moves one onto the candidate with
-`pnpm exec lntt ci candidate --pr <n>`, or merges it on `main` as a hotfix. A
-Dependabot pull request runs the CI once an owner, member or collaborator approves it
-([CI](./ci.md#dependabot-pull-requests)).
+**Pull requests from forks and from bots** stay on `main`. A fork's runs get no
+repository secrets, so no app token; a bot's pull request (`delivery.automated`: its
+author and branch prefix) is left there by the automation. A maintainer moves one onto
+the candidate with `pnpm exec lntt ci candidate --pr <n>`, or merges it on `main` as a
+hotfix. A bot's pull request runs the CI its entry names, after the approval of its
+head for Dependabot's ([CI](./ci.md#automated-pull-requests)), and merges on `main`:
+the guard lets through a pull request from a bot's branch of this repository opened by
+that bot. A fork's pull request is red on the guard until it is moved or labelled.
 
 The automation runs from a terminal too: `pnpm exec lntt ci candidate --pr <n>` does
 what the workflow would do on that pull request's event (move it, rebuild a
-candidate's lists, or close and carry over on a merged candidate), and `--dry-run`
-prints the writes instead of making them. A terminal run moves the board too, with the
+candidate's lists, or close and carry over on a merged candidate) without following
+`main`, and `pnpm exec lntt ci candidate --follow` what it does on a push to `main` (the
+open candidate follows `main`, with the path and its reason printed). `--dry-run` prints the
+writes and the push instead of making them; the fetch, the merge and the rebase still
+run in the local clone and a temporary worktree, so it shows the files in conflict or
+the head it would push. Without `--dry-run`, `--follow` pushes the candidate from the
+operator's clone at once (with a lease, forced, on the rebase path): it runs with
+`--dry-run` first. A terminal run moves the board too, with the
 login of `gh`, which needs the `project` scope (`gh auth refresh -s project`). A terminal run is outside the workflow's
 concurrency group: run one at a time, and not while the workflow is running.
+
+### A pull request left on `main`
+
+GitHub sometimes starts no run at all for an event (in DiscenTech/pelion, on
+2026-10-30, a pull request opened as a draft into `main` and marked ready a minute later
+got no run of any workflow for forty minutes). A pull request whose `opened` and
+`ready_for_review` were dropped stays on `main`, and looks like one meant for it.
+
+- **The signal: the `candidate guard` check** (`.github/workflows/candidate-guard.yml`,
+  `lntt ci candidate --guard`). On a pull request into `main` it is green for the
+  candidate (the `delivery.candidate.prefix` branch), a hotfix (the hotfix prefix or
+  label) and a bot's pull request (`delivery.automated`); any other pull request into
+  `main` gets it red,
+  with the remedy in the error. A branch name counts only from this repository, where
+  pushing a branch takes write access (the event's head and base repositories, or
+  `isCrossRepository` from `gh`; a head whose repository is not given counts as a fork): a fork's `candidate/1` or `hotfix/x` is red, and
+  the hotfix label, which only triage access puts on, counts from a fork too. On a pull
+  request into any other branch it is green at once. A project without
+  `delivery.candidate` gets it green with a notice: there is no candidate to be on. It runs on every event that can change the answer (opened, reopened, a push,
+  edited, labelled, unlabelled, ready), drafts included, so the automation's move
+  (an `edited` event) turns it green, and so does the hotfix label.
+- **The remedy:** `pnpm exec lntt ci candidate --pr <n>` moves it onto the open
+  candidate, as the automation would have; or, for a pull request meant for `main`,
+  the hotfix label. `pnpm exec lntt ci candidate --guard --pr <n>` gives the check's
+  answer from a terminal.
+- **Required, where the plan has rulesets.** `main`'s ruleset (*main: rebase merge
+  only*) requires both `candidate guard` and `ci`, each from GitHub Actions
+  (integration id 15368), so a red CI does not merge either:
+
+  ```json
+  {
+    "type": "required_status_checks",
+    "parameters": {
+      "strict_required_status_checks_policy": false,
+      "do_not_enforce_on_create": false,
+      "required_status_checks": [
+        { "context": "candidate guard", "integration_id": 15368 },
+        { "context": "ci", "integration_id": 15368 }
+      ]
+    }
+  }
+  ```
+
+  It is added to the ruleset's `rules` (Settings → Rules → Rulesets, or
+  `gh api -X PUT repos/<owner>/<repo>/rulesets/<id>` with the whole `rules` list), once
+  `candidate-guard.yml` and `ci-approval.yml` are on `main`: a pull request whose head
+  does not hold them yet reports no guard, and an approved bot's pull request without
+  them keeps a red `ci` beside the approval's ([CI](./ci.md#automated-pull-requests)). With them, a bot's
+  pull request has one `ci` check, which turns green when its head is approved. A required check that never reports blocks the merge, so the guard holds
+  when Actions drops every event of the pull request: on a pull request whose required
+  check never reported, `gh pr merge --rebase` answers "the base branch policy
+  prohibits the merge" and offers `--admin`; on one whose required `ci` is red, a later
+  skipped `ci` run (a review's) leaves it blocked (both on a throwaway branch under the
+  same rules, 2026-11-03, #233).
+- **It catches a mistake, not an author.** The workflow and `lntt` run from the pull
+  request's own head, as every `pull_request` run does: a pull request that edits
+  `candidate-guard.yml` or `candidate.ts` can turn its own check green. The review
+  reads such a change like any other.
+- **The admin bypass stays, for an emergency, and is silent outside `gh`.** The
+  repository admin role bypasses the ruleset: `gh pr merge` merges a blocked pull
+  request only with `--admin`, but an admin's merge through the REST API
+  (`PUT /repos/<owner>/<repo>/pulls/<n>/merge`) goes through with nothing asked, and
+  so does the web page's bypass box. An agent never merges, so neither path is an
+  agent's.
+- **Without rulesets, visible only.** Rulesets on a private repository need GitHub Team
+  or above (GitHub's plans, as read on 2026-11-02): a private repository on Free answers `gh api repos/<owner>/<repo>/rulesets`
+  with 403 ("Upgrade to GitHub Pro or make this repository public"), a public one or a
+  private one on Team lists its rulesets. Where the answer is 403, the workflow runs the
+  same and the check shows red on the pull request, but nothing blocks the merge: whoever
+  merges into `main` looks at the checks first.
 
 ## The candidate automation
 
 `.github/workflows/candidate.yml` runs `lntt ci candidate` (`@lntt/lntt`) on three
-`pull_request` events (`opened`, `ready_for_review`, `closed`), drafts included, never
-on a push. One run at a time across the repository, so two pull requests opened
-together find the same candidate. The script and the configuration are read from the
-default branch.
+`pull_request` events (`opened`, `ready_for_review`, `closed`), drafts included, and on
+a push to `main`. One run at a time across the repository, so two pull requests opened
+together find the same candidate. Every run sweeps the stranded pull requests and
+brings the open candidate up to date with `main` before it handles its event: the
+concurrency group keeps one pending run, and a newer one cancels it, so the next run
+covers a dropped push. A conflict or a refused push is a warning on a green run, with
+the comment on the candidate, in every run. In a `pull_request` run an error while
+following `main` is a warning too, and the event is still handled; in the push run
+following is the whole job, so only an error turns the run red. The script and the configuration are read from the default
+branch.
 
 It writes with the token of a **GitHub App of the organization**, generated in the job
 by `actions/create-github-app-token`. `GITHUB_TOKEN` cannot open a pull request while
@@ -231,12 +356,14 @@ and pull requests stay where they are opened. To turn it on:
 
 1. **Create the app** in the organization (Settings → Developer settings → GitHub
    Apps → New GitHub App):
-   - **Repository permissions:** Contents *read and write* (the candidate branch and
-     its empty commit), Pull requests *read and write* (create the candidate, move a
+   - **Repository permissions:** Contents *read and write* (the candidate branch, its
+     empty commit, its rebase on `main` or the merge of `main` into it), Pull requests *read and write* (create the candidate, move a
      pull request, edit the body, comment), Issues *read and write* (comment on and
      close issues). Metadata *read* comes with them. Nothing else on the repository, and
      the organization permission Projects of the board (below): no approvals, no
-     administration, no workflows.
+     administration, no workflows. GitHub refuses an app's push that changes a file
+     under `.github/workflows/` without the Workflows permission: when `main` brings
+     such a change, the candidate's rebase or merge is pushed by hand.
    - **Homepage URL** (required by the form): this repository's URL.
    - **Webhook:** off. **Events:** none; the workflow brings the events.
    - **Where it can be installed:** only this account.
@@ -253,8 +380,9 @@ and pull requests stay where they are opened. To turn it on:
    notice. The upstream check asks the app for the same permission to put the issue
    of a red on the board ([CI](./ci.md#upstream-tools)).
 4. **Add the app as a bypass actor of the candidates ruleset** (*candidates: squash
-   merge only*): it creates `candidate/<N>` with a commit, which the ruleset's
-   pull-request rule otherwise blocks.
+   merge only*): it creates `candidate/<N>` with a commit and writes the candidate
+   branch directly when `main` moves, which the ruleset's pull-request rule otherwise
+   blocks.
 5. **Repository settings:** rebase merge and squash merge allowed (the rulesets narrow
    each branch to one). *Automatically delete head branches* may stay as it is: the
    automation finds the pull requests left behind either way.
@@ -262,6 +390,12 @@ and pull requests stay where they are opened. To turn it on:
    which the steps above do not create: `gh label create <name> --description "Stays
    on main, not on the candidate"`. Without it the label cannot be put on a pull
    request that must stay on `main`.
+
+7. **Require the checks on `main`** where the plan has rulesets: the
+   `required_status_checks` rule of
+   [a pull request left on `main`](#a-pull-request-left-on-main), added to *main:
+   rebase merge only* when that section says. Neither check needs the app or a
+   secret.
 
 **Rotating the key.** A pull request from this repository runs its own copy of the
 workflow file, with the app's key in reach, so anyone with write access can use the
@@ -413,6 +547,13 @@ because npm configures a trusted publisher only on a package that exists:
 - **`Closes` lines in squash messages as the only way to close issues.** They depend on
   each message being written right and on a merge method that keeps them; the
   automation closes issues whatever the method, and the messages stay as the net.
+- **Always rebasing the candidate when `main` moves.** With pull requests open into
+  it, every branch on the candidate would have to rebase and force-push in cascade.
+- **Always merging `main` into the candidate.** With nobody standing on it, a merge
+  history serves no one, where a rebase keeps it linear.
+- **Following `main` only on the push event.** A newer pending run of the concurrency
+  group cancels the push's run, and the candidate would stay behind until the next
+  push to `main`.
 - **`GITHUB_TOKEN` with *Allow GitHub Actions to create and approve pull requests*.**
   The same setting lets any workflow approve a pull request.
 - **Creating the `In release` option from the automation.** The automation runs on
@@ -422,5 +563,11 @@ because npm configures a trusted publisher only on a package that exists:
 - **One status per candidate** (`In candidate 3`). The options would multiply with the
   candidates and every move would rewrite one; the candidate's number is already in the
   issue's comment.
+- **A comment from the automation on a pull request it did not move.** The run that
+  would write it is the one GitHub dropped; a check that never reports, required,
+  still blocks the merge.
+- **Re-running the candidate automation on more events** (a push, an edit) to catch a
+  dropped `opened`. It narrows the window and moves nothing when every event of the
+  pull request is dropped, which is the case seen in pelion.
 - **A personal access token.** The writes would be one person's, with that person's
   rights on every repository they see, and they stop when the person leaves.

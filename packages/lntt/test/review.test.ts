@@ -17,10 +17,14 @@ import {
   parseOutcome,
   parseWithdrawal,
   type ReviewState,
+  type RoundCost,
   renderReviewPrompt,
+  renderVerifyPrompt,
   reviewConfig,
+  reviewCost,
   reviewedAfter,
   roundClean,
+  roundCosts,
   roundLimit,
   roundRange,
   runRound,
@@ -314,6 +318,43 @@ describe('the prompt', () => {
     assert.doesNotMatch(renderReviewPrompt('code', values), /lntt check|"status"/)
     assert.doesNotMatch(renderReviewPrompt('code', values), /\{\{/)
   })
+
+  // Before production some findings are noise: the reviewer and the verifier read one
+  // list of what is not a finding yet and of what holds anyway
+  // (agents/review/before-production.md).
+  describe("the project's phase", () => {
+    const values = (phase?: 'development' | 'production') => ({
+      base: 'mb',
+      head: 'h',
+      files: ['a.ts'],
+      diff: 'DIFF',
+      records: 'R',
+      ...(phase === undefined ? {} : { phase }),
+    })
+    const found: Found = { id: 'f1', severity: 'warning', path: 'a.ts', line: 1, what: 'w', action: 'a', foundBy: [] }
+    const relaxed =
+      /## Before production[\s\S]*Not a finding yet[\s\S]*Migrations[\s\S]*Redirects[\s\S]*Backward compatibility[\s\S]*rewrite[\s\S]*Findings anyway[\s\S]*Security[\s\S]*Tests[\s\S]*decision records[\s\S]*asks for one of the items above[\s\S]*still holds: a change against it is a\s+finding/
+
+    test('in development every lens and the verifier read what is not a finding yet and what holds anyway', () => {
+      for (const lens of ['decisions', 'code', 'tests']) {
+        const prompt = renderReviewPrompt(lens, values('development'))
+        assert.match(prompt, relaxed, lens)
+        assert.doesNotMatch(prompt, /\{\{/, lens)
+      }
+      assert.match(renderReviewPrompt('code', values('development'), 'A brief of the project.'), relaxed)
+      assert.match(renderVerifyPrompt(found, values('development')), relaxed)
+      // The section ends before what follows it, a blank line apart.
+      assert.match(renderReviewPrompt('code', values('development')), /phase\.\n\n## How to answer/)
+      assert.match(renderVerifyPrompt(found, values('development')), /phase\.\n\nYou can only read/)
+    })
+
+    test('in production, or with no phase, nothing of it is in a prompt', () => {
+      for (const phase of ['production', undefined] as const) {
+        assert.doesNotMatch(renderReviewPrompt('code', values(phase)), /Before production|\{\{/, String(phase))
+        assert.doesNotMatch(renderVerifyPrompt(found, values(phase)), /Before production|\{\{/, String(phase))
+      }
+    })
+  })
 })
 
 describe('a round', () => {
@@ -489,6 +530,47 @@ describe('a round', () => {
       labels.filter((l) => l.startsWith('verify')),
       ['verify f2 · claude opus'],
     )
+  })
+
+  test('the agents that reported no tokens or no USD, once each; a failed agent reported none', async () => {
+    const ask: Ask = async (jobs) =>
+      jobs.map((job) => {
+        if (job.agent.model === 'opus') return { ok: false as const, error: 'boom' }
+        const haiku = job.agent.model === 'haiku'
+        return {
+          ok: true as const,
+          reply: { text: 'no findings', session: 's', cost: haiku ? null : 0.01, tokens: haiku ? 700 : null },
+        }
+      })
+    const result = await runRound(config, { ...input, files: ['a.ts', 'a.test.ts'] }, ask)
+    assert.deepEqual(result.noUsd, ['claude haiku', 'claude opus'], 'haiku answers twice and is named once')
+    assert.deepEqual(result.noTokens, ['claude sonnet', 'claude opus'])
+    assert.equal(result.tokens, 1400)
+    assert.equal(result.cost, 0.01)
+    const silent: Ask = async (jobs) =>
+      jobs.map((job) => ({
+        ok: true as const,
+        reply: { text: 'no findings', session: 's', cost: 0.01, tokens: job.agent.model === 'haiku' ? null : 10 },
+      }))
+    const again = await runRound(config, { ...input, files: ['a.ts', 'a.test.ts'] }, silent)
+    assert.deepEqual(again.noTokens, ['claude haiku'], 'haiku answers twice with no tokens and is named once')
+  })
+
+  test('a verifier that reports no cost is named too; an empty delta names nobody', async () => {
+    const { ask } = asker((prompt, _kind, model) => {
+      if (isLens(prompt, 'code') && model === 'sonnet') return '- [blocker] a.ts:1 — breaks — fix'
+      if (isLens(prompt)) return 'no findings'
+      return 'confirmed\np'
+    })
+    const priced: Ask = async (jobs) =>
+      (await ask(jobs)).map((a, i) =>
+        a.ok && (jobs[i]?.label ?? '').startsWith('verify ') ? { ...a, reply: { ...a.reply, cost: null } } : a,
+      )
+    const result = await runRound(config, input, priced)
+    assert.deepEqual(result.noUsd, ['claude opus'])
+    assert.deepEqual(result.noTokens, [])
+    const empty = await runRound(config, { ...input, files: [] }, priced)
+    assert.deepEqual([empty.noTokens, empty.noUsd], [[], []])
   })
 
   test('a reviewer that fails makes the round not clean, never "no findings"', async () => {
@@ -1464,5 +1546,93 @@ describe('what the branch already closed, and the rounds where a warning blocks'
     assert.equal(quota.skipped.length, 1)
     assert.equal(reviewedAfter(quota, 'h0', 'h1'), 'h1')
     assert.equal(reviewedAfter({ ...quota, failed: [{ lens: 'code', agent: 'a', error: 'e' }] }, 'h0', 'h1'), 'h0')
+  })
+})
+
+describe("the cost of a branch's rounds", () => {
+  const cost = (
+    round: number,
+    tokens: number | null,
+    usd: number | null,
+    more: Partial<RoundCost> = {},
+  ): RoundCost => ({
+    round,
+    head: `h${round}`,
+    tokens,
+    usd,
+    noTokens: [],
+    noUsd: [],
+    ...more,
+  })
+
+  test('the rounds, their tokens and their USD summed, exact in the object', () => {
+    const total = reviewCost([cost(1, 212_340, 0.611), cost(2, 200_000, 0.62)])
+    assert.deepEqual(total, {
+      rounds: 2,
+      tokens: 412_340,
+      usd: 1.231,
+      noTokens: [],
+      noUsd: [],
+      unrecorded: [],
+      line: '2 rounds, 412.3k tokens, 1.23 USD',
+    })
+    assert.equal(reviewCost([cost(1, 1500, 0.01)]).line, '1 round, 1.5k tokens, 0.01 USD')
+    // Rounds of a state saved before the rounds were kept: named, never counted as free.
+    const late = reviewCost([cost(3, 1500, 0.01)])
+    assert.deepEqual(late.unrecorded, [1, 2])
+    assert.equal(late.line, '1 round, 1.5k tokens, 0.01 USD; not recorded: rounds 1, 2')
+    assert.equal(reviewCost([cost(2, 1500, 0.01)]).line, '1 round, 1.5k tokens, 0.01 USD; not recorded: round 1')
+    assert.deepEqual(reviewCost([cost(1, 1500, 0.01), cost(3, 1500, 0.01)]).unrecorded, [2])
+    assert.equal(reviewCost([], 2).line, 'no rounds; not recorded: rounds 1, 2')
+    assert.equal(reviewCost([cost(1, 2_000_000, 3)]).line, '1 round, 2M tokens, 3.00 USD')
+  })
+
+  test('the rounds with agents that reported no USD or no tokens, each with its agents', () => {
+    const total = reviewCost([
+      cost(1, 1000, 0.5),
+      cost(2, 1000, 0.25, { noUsd: ['opencode opencode/x', 'claude opus'] }),
+      cost(3, null, 0.25, { noTokens: ['codex gpt'], noUsd: ['codex gpt'] }),
+    ])
+    assert.deepEqual([total.noTokens, total.noUsd], [[3], [2, 3]])
+    assert.equal(
+      total.line,
+      '3 rounds, 2k tokens, 1.00 USD; no tokens: round 3 (codex gpt); no USD: round 2 (opencode opencode/x, claude opus), round 3 (codex gpt)',
+    )
+  })
+
+  test('no round reporting any tokens or USD: said in place of the figure', () => {
+    const total = reviewCost([cost(1, null, null, { noTokens: ['a'], noUsd: ['a'] })])
+    assert.deepEqual([total.tokens, total.usd], [null, null])
+    assert.equal(total.line, '1 round, no tokens, no USD; no tokens: round 1 (a); no USD: round 1 (a)')
+  })
+
+  test('no rounds', () => {
+    assert.deepEqual(reviewCost([]), {
+      rounds: 0,
+      tokens: null,
+      usd: null,
+      noTokens: [],
+      noUsd: [],
+      unrecorded: [],
+      line: 'no rounds',
+    })
+  })
+
+  test('a round that read files adds its cost to the branch; an empty delta adds none; another branch starts over', () => {
+    const result = (head: string, tokens: number | null, cost: number | null) =>
+      ({ head, tokens, cost, noTokens: ['x'], noUsd: [] }) as unknown as Parameters<typeof roundCosts>[2]
+    const first = roundCosts(null, 'b', result('h1', 1500, 0.01), 1, true)
+    assert.deepEqual(first, [{ round: 1, head: 'h1', tokens: 1500, usd: 0.01, noTokens: ['x'], noUsd: [] }])
+    const state = { branch: 'b', rounds: first } as unknown as ReviewState
+    assert.deepEqual(roundCosts(state, 'b', result('h1', null, null), 1, false), first)
+    assert.deepEqual(
+      roundCosts(state, 'b', result('h2', 3000, 0.02), 2, true).map((r) => r.round),
+      [1, 2],
+    )
+    assert.deepEqual(
+      roundCosts(state, 'c', result('h3', 10, 0.1), 1, true).map((r) => r.head),
+      ['h3'],
+    )
+    assert.deepEqual(roundCosts({ branch: 'b' } as ReviewState, 'b', result('h2', 1, 1), 2, false), [])
   })
 })

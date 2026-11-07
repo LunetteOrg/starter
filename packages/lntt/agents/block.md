@@ -1,10 +1,10 @@
 # Working in a Lunette project
 
 - **Where things are.** Project values: `.agents/config.jsonc` (or `.yml`), read with
-  `lntt get <key>`, never parsed by hand: it has comments. How the team works:
+  `pnpm exec lntt get <key>`, never parsed by hand: it has comments. How the team works:
   `docs/process/`. Decisions: the logs in `recording` (ADRs, PDRs), one file per
   subject, corrected in place, written and checked with the `decisions` skill. Who
-  you are talking to: `lntt operator` (personal, from `.agents/local/` or
+  you are talking to: `pnpm exec lntt operator` (personal, from `.agents/local/` or
   `~/.agents/`; with no profile, a developer).
 - **Shared decisions live in the repo.** A decision that matters to more than one
   person goes in a record, a process description or a comment in the affected file,
@@ -17,6 +17,6 @@
   written as deduced, from what.
 - **An agent never merges on its own.** A merge needs an explicit go from a person.
 - **Before a commit, follow the `commit-message` skill.**
-- **A review is `lntt review`, with the `review` skill:** reviewers with no context
+- **A review is `pnpm exec lntt review`, with the `review` skill:** reviewers with no context
   of the conversation, the decision records among their lenses, on the agents the
   project configures; a round is repeated until it finds nothing.

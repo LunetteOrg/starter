@@ -15,7 +15,15 @@
 // - `closed` and merged, the candidate itself: close the issues of its `Closes` lines
 //   still open, then move the pull requests still open on it (GitHub moves them onto
 //   the base when it deletes the branch) onto the next candidate, created only when
-//   there are some.
+//   there are some. The issues that waited on what closed move to Ready when they meet
+//   the criteria (src/board-ready.ts), and the candidate's pull request says which,
+//   with what is missing for the rest.
+// - every run, and alone on a push to the base (`handlePush`): when the base moved
+//   while a candidate is open, the candidate follows it. Nobody on it (no pull request
+//   open into it): its commits are rebased on the base and pushed with a lease on the
+//   head as read. Pull requests open into it: the base is merged into it, no rewrite,
+//   so their branches stay valid. A conflict or a refused push leaves it as it is and
+//   tells the candidate's pull request what an admin does.
 //
 // The board follows: an open issue a pull request closes moves to `In release` when the
 // pull request is squashed into a candidate, and its status becomes `Done` when the
@@ -31,6 +39,13 @@
 // prefix, base and hotfix markers come from the configuration.
 
 import { spawnSync } from 'node:child_process'
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { type Automated, matchAutomated } from '../automated.ts'
+import type { Graphql } from '../board.ts'
+import { same } from '../board.ts'
+import { holdsLine, moveToReady, NotOnBoard, type ReadyRules, readIssueOnBoard, readWaiting } from '../board-ready.ts'
 import { retroComment } from '../pull-request.ts'
 
 export interface CandidateConfig {
@@ -47,6 +62,10 @@ export interface CandidateConfig {
   // The empty retrospective block (`lntt pr block`): the comment a new candidate opens
   // with, which `lntt retro add` fills as the batch goes.
   retrospective: string
+  // The bots' pull requests (delivery.automated): they stay on the base.
+  automated: Automated[]
+  // The Ready check run on the candidate's merge; none when the project has no board.
+  ready?: ReadyRules
 }
 
 export interface PullRequest {
@@ -57,6 +76,10 @@ export interface PullRequest {
   headRef: string
   labels: string[]
   merged: boolean
+  // The login of who opened it, when the source has it.
+  author?: string
+  // Its head is in another repository (a fork), when the source says so.
+  fromFork?: boolean
 }
 
 export interface OpenPullRequest {
@@ -73,8 +96,18 @@ export interface Gh {
   write: (args: string[], input?: string) => string
 }
 
+// git on the local clone. `run` always executes (it only touches the clone and its
+// worktrees); `push` is the one command that writes to the remote, so a dry run logs
+// it instead.
+export interface Git {
+  run: (args: string[]) => { status: number; stdout: string; stderr: string }
+  push: (args: string[]) => { status: number; stderr: string }
+}
+
 export interface Run {
   gh: Gh
+  // The local clone, for following the base; without it the follow step does nothing.
+  git?: Git
   // The same commands with a token that has the Projects permission; without it the
   // board is not moved.
   board?: Gh
@@ -121,12 +154,48 @@ export function isHotfix(config: CandidateConfig, { headRef, labels = [] }: { he
 // Whether a pull request just opened or marked ready moves onto the candidate.
 export function retargetDecision(
   config: CandidateConfig,
-  { baseRef, headRef, labels = [] }: { baseRef: string; headRef: string; labels?: string[] },
+  {
+    baseRef,
+    headRef,
+    labels = [],
+    author,
+  }: { baseRef: string; headRef: string; labels?: string[]; author?: string | undefined },
 ): { move: boolean; reason: string } {
   if (baseRef !== config.base) return { move: false, reason: `it targets ${baseRef}, not ${config.base}` }
   if (headRef.startsWith(config.prefix)) return { move: false, reason: `${headRef} is a candidate` }
   if (isHotfix(config, { headRef, labels })) return { move: false, reason: `a hotfix stays on ${config.base}` }
+  if (matchAutomated(config.automated, { author, headRef }))
+    return { move: false, reason: `a pull request of ${author} (delivery.automated) stays on ${config.base}` }
   return { move: true, reason: `it targets ${config.base}` }
+}
+
+// The guard on pull requests into the base (`lntt ci candidate --guard`, the
+// `candidate guard` check): a pull request into the base is the candidate, a hotfix or
+// a bot's (delivery.automated), or the automation did not move it (an event GitHub dropped, a fork) and
+// the check fails with the remedy. Required by the base's ruleset, a check that never
+// reports blocks the merge too, so the guard holds when Actions drops every event.
+// A branch name counts only from this repository, where pushing one takes write
+// access: a fork can name its branch `candidate/1`, `hotfix/x` or a bot's. The hotfix label
+// counts from anywhere: only a person with triage access puts it on. A head whose
+// repository the source does not give counts as a fork.
+export function guardDecision(
+  config: CandidateConfig,
+  pr: { number: number; baseRef: string; headRef: string; labels?: string[]; author?: string; fromFork?: boolean },
+): { pass: boolean; reason: string } {
+  if (pr.baseRef !== config.base) return { pass: true, reason: `it targets ${pr.baseRef}, not ${config.base}` }
+  const own = pr.fromFork === false
+  if (own && pr.headRef.startsWith(config.prefix)) return { pass: true, reason: `${pr.headRef} is the candidate` }
+  if (isHotfix(config, { headRef: own ? pr.headRef : '', labels: pr.labels ?? [] }))
+    return { pass: true, reason: `a hotfix stays on ${config.base}` }
+  if (own && matchAutomated(config.automated, pr))
+    return { pass: true, reason: `a pull request of ${pr.author} (delivery.automated) stays on ${config.base}` }
+  return {
+    pass: false,
+    reason:
+      `#${pr.number} targets ${config.base} and is neither the candidate nor a hotfix: the candidate automation did not move it ` +
+      `(an event GitHub dropped, a fork). Move it with \`pnpm exec lntt ci candidate --pr ${pr.number}\`, ` +
+      `or keep it on ${config.base} as a hotfix with the \`${config.hotfix.label}\` label. docs/process/delivery.md.`,
+  }
 }
 
 const CLOSING =
@@ -189,7 +258,7 @@ export function isCandidateMerge(config: CandidateConfig, pr: Pick<PullRequest, 
 
 // The open pull requests a merged candidate leaves behind: those still on it, and
 // those on the base whose last base change came from it (GitHub's own move when it
-// deletes the merged branch). Hotfixes, candidates and Dependabot stay.
+// deletes the merged branch). Hotfixes, candidates and the bots' (delivery.automated) stay.
 export function carryOverDecision(
   config: CandidateConfig,
   { candidateBranch, openPrs }: { candidateBranch: string; openPrs: OpenPullRequest[] },
@@ -198,9 +267,7 @@ export function carryOverDecision(
     .filter((pr) => {
       const leftBehind =
         pr.baseRef === candidateBranch || (pr.baseRef === config.base && pr.lastBaseChange?.from === candidateBranch)
-      return (
-        leftBehind && pr.author !== 'dependabot[bot]' && retargetDecision(config, { ...pr, baseRef: config.base }).move
-      )
+      return leftBehind && retargetDecision(config, { ...pr, baseRef: config.base }).move
     })
     .map((pr) => pr.number)
     .sort((a, b) => a - b)
@@ -223,12 +290,31 @@ export function sweepDecision(
     .filter(
       (pr) =>
         (stranded(pr.baseRef) || (pr.baseRef === config.base && stranded(pr.lastBaseChange?.from))) &&
-        pr.author !== 'dependabot[bot]' &&
         retargetDecision(config, { ...pr, baseRef: config.base }).move,
     )
     .map((pr) => pr.number)
     .sort((a, b) => a - b)
   return { move }
+}
+
+// How the open candidate follows the base when the base moved: rebased when nobody
+// stands on it, the base merged into it when pull requests are open into it, so their
+// branches keep the candidate's commits. `behindBy` is the number of the base's commits
+// the candidate lacks.
+export function followDecision(
+  config: CandidateConfig,
+  { candidate, behindBy, prsInto }: { candidate: string | null; behindBy: number; prsInto: number[] },
+): { path: 'none' | 'rebase' | 'merge'; reason: string } {
+  if (candidate === null) return { path: 'none', reason: 'no candidate open' }
+  if (behindBy === 0) return { path: 'none', reason: `${config.base} is an ancestor of ${candidate}` }
+  if (prsInto.length === 0) {
+    return { path: 'rebase', reason: `${config.base} moved and no pull request is open into ${candidate}: rebase` }
+  }
+  const prs = [...prsInto].sort((a, b) => a - b)
+  return {
+    path: 'merge',
+    reason: `${config.base} moved and ${prs.map((n) => `#${n}`).join(', ')} ${prs.length === 1 ? 'is' : 'are'} open into ${candidate}: merge ${config.base} into it, no rewrite`,
+  }
 }
 
 export function candidateBody(config: CandidateConfig, n: number): string {
@@ -254,7 +340,7 @@ export function candidateBody(config: CandidateConfig, n: number): string {
 // candidate is marked ready. The automation never rewrites it, unlike the body.
 export function retrospectiveComment(config: CandidateConfig): string {
   return [
-    `The retrospective of this ${candidateName(config)}: the friction that belongs to the batch and to no single pull request, appended as it is met with \`lntt retro add --label <label> "<one sentence>"\` (the \`retrospective\` skill). Every label holds a value or none before the ${candidateName(config)} is marked ready (\`lntt check body --pr <n>\`).`,
+    `The retrospective of this ${candidateName(config)}: the friction that belongs to the batch and to no single pull request, appended as it is met with \`pnpm exec lntt retro add --label <label> "<one sentence>"\` (the \`retrospective\` skill). Every label holds a value or none before the ${candidateName(config)} is marked ready (\`pnpm exec lntt check body --pr <n>\`).`,
     '',
     config.retrospective,
   ].join('\n')
@@ -374,6 +460,51 @@ export function makeGh({ dryRun, log, token }: { dryRun: boolean; log: (line: st
   }
 }
 
+// In Actions, git authenticates to github.com with the token through its environment
+// (an extra header, as actions/checkout sets it), never through its arguments, so the
+// token shows in no command line and no log.
+export function gitAuthEnv(env: Record<string, string | undefined>): Record<string, string> {
+  const token = env.GH_TOKEN
+  if (!env.GITHUB_ACTIONS || !token) return {}
+  return {
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
+    GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`,
+  }
+}
+
+// The project's hooks do not run on the automation's own rebase and push.
+const NO_HOOKS = ['-c', 'core.hooksPath=/dev/null']
+
+export function makeGit({
+  dryRun,
+  log,
+  cwd,
+  env,
+}: {
+  dryRun: boolean
+  log: (line: string) => void
+  cwd: string
+  env: Record<string, string | undefined>
+}): Git {
+  const childEnv = { ...env, ...gitAuthEnv(env) }
+  const run = (args: string[]) => {
+    const result = spawnSync('git', args, { cwd, env: childEnv, encoding: 'utf8' })
+    if (result.error) throw result.error
+    return { status: result.status ?? 1, stdout: result.stdout.trim(), stderr: result.stderr }
+  }
+  return {
+    run,
+    push: (args) => {
+      if (dryRun) {
+        log(`[dry-run] git push ${args.join(' ')}`)
+        return { status: 0, stderr: '' }
+      }
+      return run([...NO_HOOKS, 'push', ...args])
+    },
+  }
+}
+
 // The client for the board: the Projects token when the workflow has one, none inside
 // a workflow without it (the board is left as it is, with a notice), the operator's own
 // client in a terminal.
@@ -385,6 +516,8 @@ export function pickBoard<T>(token: string | undefined, inWorkflow: boolean, own
 interface CandidatePr {
   number: number
   headRefName: string
+  // The candidate's head when it was read.
+  headRefOid?: string
   body?: string
   // Created by this run: it has no comment yet.
   created?: boolean
@@ -404,7 +537,7 @@ function openCandidates({ gh, repo, config }: Pick<Run, 'gh' | 'repo' | 'config'
       '--search',
       `head:${config.prefix}`,
       '--json',
-      'number,headRefName,body',
+      'number,headRefName,headRefOid,body',
     ]),
   ) as CandidatePr[]
   return prs
@@ -505,6 +638,9 @@ function createCandidate(run: Run): CandidatePr {
   return { number, headRefName: branch, created: true }
 }
 
+// One line: a workflow command ends at the first newline, and `%` starts an escape.
+const workflowLine = (text: string) => text.replaceAll('%', '%25').replace(/\r?\n/g, ' ')
+
 export interface Comment {
   id: number
   body: string
@@ -533,10 +669,8 @@ function ensureRetrospective(run: Run, candidate: CandidatePr) {
       retrospectiveComment(config),
     )
   } catch (error) {
-    // One line: a workflow command ends at the first newline, and `%` starts an escape.
-    const message = (error as Error).message.replaceAll('%', '%25').replace(/\r?\n/g, ' ')
     log(
-      `::warning title=Retrospective comment::${candidate.headRefName}: not written (${message}); lntt retro add writes it`,
+      `::warning title=Retrospective comment::${candidate.headRefName}: not written (${workflowLine((error as Error).message)}); pnpm exec lntt retro add writes it`,
     )
   }
 }
@@ -988,11 +1122,448 @@ export function sweep(run: Run) {
   return { move }
 }
 
-// The candidate is merged: its issues close, and the pull requests it left behind
-// move. One failing does not stop the other; the run fails after both.
+// --- Following the base ---------------------------------------------------------
+
+export interface FollowResult {
+  path: 'none' | 'rebase' | 'merge'
+  reason: string
+  // Nothing to do; no git in this run; the candidate or the base moved between the API
+  // read and the fetch (the next run sees it); a conflict; a refused push; updated.
+  outcome: 'none' | 'no-git' | 'moved-meanwhile' | 'conflict' | 'refused' | 'updated'
+  // The candidate's new head, pushed (or, in a dry run, the one that would be).
+  head?: string
+  // The files in conflict.
+  files?: string[]
+}
+
+const short = (sha: string) => sha.slice(0, 8)
+
+// The markers that keep a rerun from repeating a comment: a conflict or a refusal once
+// per base and candidate head, an update once per new head.
+export function followMarker(base: string, oldHead: string): string {
+  return `<!-- candidate:follow:${base}:${oldHead} -->`
+}
+
+export function followedMarker(newHead: string): string {
+  return `<!-- candidate:followed:${newHead} -->`
+}
+
+interface FollowFacts {
+  candidate: string
+  base: string
+  oldHead: string
+  path: 'rebase' | 'merge'
+  prsInto: number[]
+}
+
+const followWhy = (facts: FollowFacts) =>
+  facts.path === 'rebase'
+    ? 'no pull request is open into it'
+    : `${facts.prsInto.map((n) => `#${n}`).join(', ')} ${facts.prsInto.length === 1 ? 'is' : 'are'} open into it`
+
+function manualSteps(config: CandidateConfig, { candidate }: FollowFacts): string[] {
+  return [
+    '```sh',
+    'git fetch origin',
+    `git switch ${candidate}`,
+    `git merge origin/${config.base}   # or, with no pull request open into it: git rebase origin/${config.base}`,
+    '# resolve the conflicts, then commit (or git rebase --continue)',
+    'git push                  # after a rebase: git push --force-with-lease',
+    '```',
+  ]
+}
+
+export function followConflictComment(config: CandidateConfig, facts: FollowFacts, files: string[]): string {
+  const step = facts.path === 'rebase' ? `the rebase on it` : `the merge of it`
+  return [
+    followMarker(facts.base, facts.oldHead),
+    `\`${config.base}\` moved to \`${short(facts.base)}\` and \`${facts.candidate}\` cannot follow it by itself: ${step} (${followWhy(facts)}) stops on a conflict in:`,
+    '',
+    ...files.map((file) => `- \`${file}\``),
+    '',
+    `Nothing was pushed: \`${facts.candidate}\` stays at \`${short(facts.oldHead)}\`. An admin brings it up to date, as only the ruleset's bypass actors push to it directly (docs/process/delivery.md):`,
+    '',
+    ...manualSteps(config, facts),
+  ].join('\n')
+}
+
+export function followRefusedComment(config: CandidateConfig, facts: FollowFacts, error: string): string {
+  const done = facts.path === 'rebase' ? 'rebased on it' : `merged with it`
+  return [
+    followMarker(facts.base, facts.oldHead),
+    `\`${config.base}\` moved to \`${short(facts.base)}\`: \`${facts.candidate}\` was ${done} (${followWhy(facts)}), and the push was refused:`,
+    '',
+    `> ${error}`,
+    '',
+    `Nothing was pushed: \`${facts.candidate}\` stays at \`${short(facts.oldHead)}\`. GitHub refuses a push of the app that changes a workflow file (it has no Workflows permission), and the lease refuses one when someone pushed to the candidate meanwhile. An admin brings it up to date, as only the ruleset's bypass actors push to it directly (docs/process/delivery.md):`,
+    '',
+    ...manualSteps(config, facts),
+  ].join('\n')
+}
+
+export function followedComment(config: CandidateConfig, facts: FollowFacts, newHead: string): string {
+  const what =
+    facts.path === 'rebase'
+      ? `\`${facts.candidate}\` was rebased on it, as ${followWhy(facts)}`
+      : `it was merged into \`${facts.candidate}\`, as ${followWhy(facts)}: no commit of the candidate was rewritten`
+  return [
+    followedMarker(newHead),
+    `\`${config.base}\` moved to \`${short(facts.base)}\`: ${what}. Head: \`${short(facts.oldHead)}\` → \`${short(newHead)}\`.`,
+    '',
+    `The candidate's CI runs on the new head once the candidate is ready for review; a draft runs no cloud CI, so \`pnpm ci:local\` runs on it (docs/process/delivery.md).`,
+  ].join('\n')
+}
+
+export function followedPrComment(config: CandidateConfig, facts: FollowFacts, newHead: string): string {
+  return [
+    followedMarker(newHead),
+    `\`${config.base}\` moved to \`${short(facts.base)}\` and was merged into \`${facts.candidate}\`, the base of this pull request (\`${short(facts.oldHead)}\` → \`${short(newHead)}\`). This branch follows with a merge or a rebase of \`${facts.candidate}\` of its own: \`git fetch origin\`, then \`git merge origin/${facts.candidate}\` (or \`git rebase origin/${facts.candidate}\` and \`git push --force-with-lease\`).`,
+  ].join('\n')
+}
+
+// Writes `body` on `number` unless a comment there already carries `marker`.
+function commentOnce(run: Run, number: number, marker: string, body: string) {
+  if (comments(run.gh, run.repo, number).some((c) => (c.body ?? '').includes(marker))) {
+    run.log(`candidate: #${number} already has this comment.`)
+    return
+  }
+  run.gh.write(['pr', 'comment', String(number), '--repo', run.repo, '--body-file', '-'], body)
+}
+
+// The line of git's error that says why: the rejected ref, else the first error.
+function pushError(stderr: string): string {
+  const lines = stderr
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+  return (
+    lines.find((line) => line.startsWith('!')) ??
+    lines.find((line) => /^(error|fatal|remote):/.test(line)) ??
+    lines[0] ??
+    'no message'
+  )
+}
+
+// The candidate's new head, or the files in conflict.
+function rebased(git: Git, oldHead: string, base: string): { head: string } | { files: string[] } {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-follow-')))
+  try {
+    const add = git.run([...NO_HOOKS, 'worktree', 'add', '--detach', dir, oldHead])
+    if (add.status !== 0) throw new Error(`git worktree add failed: ${pushError(add.stderr)}`)
+    // The candidate opens with an empty commit, kept; merges of the base in its
+    // history are dropped, their commits being in the base.
+    const rebase = git.run(['-C', dir, ...NO_HOOKS, 'rebase', '--keep-empty', base])
+    if (rebase.status === 0) return { head: git.run(['-C', dir, 'rev-parse', 'HEAD']).stdout }
+    const files = git
+      .run(['-C', dir, 'diff', '--name-only', '--diff-filter=U'])
+      .stdout.split('\n')
+      .filter((line) => line !== '')
+    git.run(['-C', dir, ...NO_HOOKS, 'rebase', '--abort'])
+    if (files.length === 0) throw new Error(`git rebase failed: ${pushError(rebase.stderr)}`)
+    return { files }
+  } finally {
+    git.run(['worktree', 'remove', '--force', dir])
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+// The merge commit of the base into the candidate (parents: the candidate's head, then
+// the base), or the files in conflict.
+function merged(git: Git, facts: FollowFacts, base: string): { head: string } | { files: string[] } {
+  const tree = git.run(['merge-tree', '--write-tree', '--name-only', '--no-messages', facts.oldHead, facts.base])
+  const lines = tree.stdout.split('\n').filter((line) => line !== '')
+  if (tree.status === 1) return { files: [...new Set(lines.slice(1))] }
+  if (tree.status !== 0) throw new Error(`git merge-tree failed: ${pushError(tree.stderr)}`)
+  const commit = git.run([
+    'commit-tree',
+    lines[0] ?? '',
+    '-p',
+    facts.oldHead,
+    '-p',
+    facts.base,
+    '-m',
+    `Merge ${base} into ${facts.candidate}`,
+    '-m',
+    `${base} at ${facts.base}.`,
+  ])
+  if (commit.status !== 0) throw new Error(`git commit-tree failed: ${pushError(commit.stderr)}`)
+  return { head: commit.stdout }
+}
+
+// The open candidate follows the base when the base moved (followDecision): its commits
+// rebased on the base and pushed with a lease on the head as read, or the base merged
+// into it and pushed plainly. A conflict or a refused push leaves the candidate as it
+// is, comments on its pull request what an admin does, and warns: it does not fail the
+// run. A comment that fails after the push is a warning too. Every comment is written
+// once (followMarker, followedMarker). In a dry run the fetch, the merge and the rebase
+// still run on the local clone and a temporary worktree; only the push and the comments
+// are printed.
+export function follow(run: Run): FollowResult {
+  const { gh, repo, config, log, git } = run
+  if (!git) {
+    log(
+      `candidate: follow ${config.base}: no git client in this run, the candidate is left as it is (from a terminal, pnpm exec lntt ci candidate --follow follows it).`,
+    )
+    return { path: 'none', reason: 'no git client', outcome: 'no-git' }
+  }
+  const candidate = openCandidate(run)
+  let behindBy = 0
+  let base = ''
+  let prsInto: number[] = []
+  if (candidate) {
+    const compare = JSON.parse(
+      gh.read([
+        'api',
+        `repos/${repo}/compare/${config.base}...${candidate.headRefName}`,
+        '--jq',
+        '{behindBy: .behind_by, base: .base_commit.sha}',
+      ]),
+    ) as { behindBy: number; base: string }
+    behindBy = compare.behindBy
+    base = compare.base
+    if (behindBy > 0) {
+      prsInto = openPrs(run)
+        .filter((pr) => pr.baseRef === candidate.headRefName)
+        .map((pr) => pr.number)
+        .sort((a, b) => a - b)
+    }
+  }
+  const decision = followDecision(config, { candidate: candidate?.headRefName ?? null, behindBy, prsInto })
+  log(`candidate: follow ${config.base}: ${decision.reason}`)
+  if (decision.path === 'none' || !candidate) return { ...decision, outcome: 'none' }
+
+  const name = candidate.headRefName
+  const must = (args: string[]) => {
+    const result = git.run(args)
+    if (result.status !== 0) throw new Error(`git ${args[0]} failed: ${pushError(result.stderr)}`)
+    return result.stdout
+  }
+  const shallow = must(['rev-parse', '--is-shallow-repository']) === 'true'
+  must([
+    'fetch',
+    '--no-tags',
+    ...(shallow ? ['--unshallow'] : []),
+    'origin',
+    `+refs/heads/${config.base}:refs/remotes/origin/${config.base}`,
+    `+refs/heads/${name}:refs/remotes/origin/${name}`,
+  ])
+  const fetched = must(['rev-parse', `refs/remotes/origin/${name}`])
+  const oldHead = candidate.headRefOid ?? fetched
+  if (fetched !== oldHead || git.run(['rev-parse', '--verify', '--quiet', `${base}^{commit}`]).status !== 0) {
+    log(
+      `candidate: ${name} moved between the read (${short(oldHead)}) and the fetch (${short(fetched)}): left as it is, the next run follows ${config.base}.`,
+    )
+    return { ...decision, outcome: 'moved-meanwhile' }
+  }
+
+  const facts: FollowFacts = { candidate: name, base, oldHead, path: decision.path, prsInto }
+  const result = decision.path === 'rebase' ? rebased(git, oldHead, base) : merged(git, facts, config.base)
+  if ('files' in result) {
+    log(
+      `::warning title=Candidate not updated::${name}: the ${decision.path} on ${config.base} ${short(base)} stops on a conflict in ${workflowLine(result.files.join(', '))}; nothing pushed, what to do is on #${candidate.number}`,
+    )
+    commentOnce(run, candidate.number, followMarker(base, oldHead), followConflictComment(config, facts, result.files))
+    return { ...decision, outcome: 'conflict', files: result.files }
+  }
+
+  const head = result.head
+  const push = git.push(
+    decision.path === 'rebase'
+      ? [`--force-with-lease=refs/heads/${name}:${oldHead}`, 'origin', `${head}:refs/heads/${name}`]
+      : ['origin', `${head}:refs/heads/${name}`],
+  )
+  if (push.status !== 0) {
+    const error = pushError(push.stderr)
+    log(
+      `::warning title=Candidate not updated::${name}: the push of the ${decision.path} on ${config.base} ${short(base)} was refused (${workflowLine(error)}); what to do is on #${candidate.number}`,
+    )
+    commentOnce(run, candidate.number, followMarker(base, oldHead), followRefusedComment(config, facts, error))
+    return { ...decision, outcome: 'refused', head }
+  }
+  log(
+    `candidate: ${name} ${decision.path === 'rebase' ? 'rebased on' : 'merged with'} ${config.base} ${short(base)}: ${short(oldHead)} → ${short(head)}.`,
+  )
+  // The candidate is updated: a comment that fails is a warning, and does not stop the
+  // comments on the other pull requests.
+  const tell = (number: number, body: string) => {
+    try {
+      commentOnce(run, number, followedMarker(head), body)
+    } catch (error) {
+      log(
+        `::warning title=Candidate updated, comment not written::${name} is at ${short(head)}; the comment on #${number} failed (${workflowLine((error as Error).message)})`,
+      )
+    }
+  }
+  tell(candidate.number, followedComment(config, facts, head))
+  if (decision.path === 'merge') {
+    for (const number of prsInto) tell(number, followedPrComment(config, facts, head))
+  }
+  return { ...decision, outcome: 'updated', head }
+}
+
+// The follow step inside a pull_request run: a failure is a warning, so the event is
+// still handled.
+function followOrWarn(run: Run) {
+  try {
+    follow(run)
+  } catch (error) {
+    run.log(
+      `::warning title=Candidate not updated::following ${run.config.base} failed (${workflowLine((error as Error).message)}); the next run tries again`,
+    )
+  }
+}
+
+// --- The Ready check on the candidate's merge --------------------------------------
+
+// A Graphql over a client of `gh`: a dry run's write answers nothing.
+const overGh =
+  (client: (args: string[]) => string): Graphql =>
+  (query, variables) => {
+    const flags = Object.entries(variables).flatMap(([key, value]) => [
+      typeof value === 'number' ? '-F' : '-f',
+      `${key}=${value}`,
+    ])
+    const out = client(['api', 'graphql', '-f', `query=${query}`, ...flags])
+    return out ? ((JSON.parse(out) as { data?: Record<string, unknown> }).data ?? {}) : {}
+  }
+
+export function readyMarker(candidateBranch: string): string {
+  return `<!-- candidate:ready:${candidateBranch} -->`
+}
+
+export interface ReadyReport {
+  moved: Array<{ number: number; evidence: string }>
+  already: Array<{ number: number; evidence: string }>
+  left: Array<{ number: number; evidence: string; why: string }>
+}
+
+export function readyComment(rules: ReadyRules, candidateBranch: string, report: ReadyReport): string {
+  const { initial, ready } = rules.status
+  const section = (title: string, lines: string[]) => (lines.length > 0 ? ['', title, '', ...lines] : [])
+  return [
+    readyMarker(candidateBranch),
+    `The merge of \`${candidateBranch}\` closed issues that others were waiting on (the Ready check, docs/process/board.md).`,
+    ...section(
+      `Moved to ${ready}:`,
+      report.moved.map(({ number, evidence }) => `- #${number}: ${evidence}.`),
+    ),
+    ...section(
+      `Already at ${ready}:`,
+      report.already.map(({ number, evidence }) => `- #${number}: ${evidence}.`),
+    ),
+    ...section(
+      `Left at ${initial}:`,
+      report.left.map(({ number, evidence, why }) => `- #${number}: ${why} (${evidence}).`),
+    ),
+  ].join('\n')
+}
+
+// Which pull request closed which issue: those merged into the candidate; an issue none
+// of them names is the candidate's own. The list is only evidence: when it cannot be
+// read, every issue is the candidate's own and the moves go on.
+function closers({ gh, repo, log }: Run, pr: PullRequest): (issue: number) => number {
+  let merged: Array<{ number: number; body: string | null }> = []
+  try {
+    merged = JSON.parse(
+      gh.read([
+        'pr',
+        'list',
+        '--repo',
+        repo,
+        '--state',
+        'merged',
+        '--base',
+        pr.headRef,
+        '--limit',
+        '500',
+        '--json',
+        'number,body',
+      ]),
+    ) as typeof merged
+  } catch (error) {
+    log(
+      `::notice title=Ready check evidence::the pull requests merged into ${pr.headRef} could not be read, the comment names #${pr.number}: ${(error as Error).message.split('\n')[0]}`,
+    )
+  }
+  return (issue) =>
+    merged.find((m) => closingReferences(m.body).some((ref) => issueNumber(ref, repo) === issue))?.number ?? pr.number
+}
+
+// The candidate is merged, so its issues are closed: the issues blocked by one of them
+// that meet the criteria move from the first status to Ready, and the candidate's pull
+// request says what moved and what is missing for the rest. An issue already at Ready is
+// listed there, and one further along is someone's already and is left alone. The Projects token's refusals and a
+// Project without the statuses are notices, as for every board move here.
+export function readyAfterMerge(run: Run, pr: PullRequest): ReadyReport | null {
+  const { gh, board, repo, log, config } = run
+  const rules = config.ready
+  if (!rules?.blockedBy) return null
+  const notice = (message: string) => log(`::notice title=Board not moved::${message}`)
+  if (!board) {
+    notice(
+      'no token with the Projects permission: the Ready check of this merge did not run (docs/process/delivery.md)',
+    )
+    return null
+  }
+  const read = overGh(gh.read)
+  const waiting = new Map<number, number[]>()
+  const failed = eachIssue(localIssues(run, candidateClosingReferences(pr.body)), (number) => {
+    const { closed, blocked, more } = readWaiting(read, repo, number)
+    if (!closed) return
+    if (more)
+      log(
+        `::notice title=Ready check partial::#${number} blocks more issues than one read holds: lntt board ready lists the rest.`,
+      )
+    for (const issue of blocked) waiting.set(issue, [...(waiting.get(issue) ?? []), number])
+  })
+  const report: ReadyReport = { moved: [], already: [], left: [] }
+  if (waiting.size > 0) {
+    const closer = closers(run, pr)
+    const evidence = (blockers: number[]) => blockers.map((b) => `#${b} closed by #${closer(b)}`).join(', ')
+    const issues = [...waiting.keys()].sort((a, b) => a - b)
+    failed.push(
+      ...eachIssue(issues, (number) => {
+        const why = evidence(waiting.get(number) ?? [])
+        try {
+          const { verdict, status, target } = readIssueOnBoard(read, overGh(board.read), rules, repo, number)
+          if (!target) {
+            log(`candidate: #${number} is not on the board, the Ready check leaves it.`)
+          } else if (same(status ?? '', rules.status.ready)) {
+            report.already.push({ number, evidence: why })
+          } else if (!same(status ?? '', rules.status.initial)) {
+            log(`candidate: #${number} is at ${status ?? 'no status'}, the Ready check leaves it.`)
+          } else if (verdict.kind === 'eligible') {
+            moveToReady(overGh(board.write), target)
+            report.moved.push({ number, evidence: why })
+          } else if (verdict.kind === 'holds') {
+            report.left.push({ number, evidence: why, why: holdsLine(verdict.open) })
+          } else {
+            report.left.push({ number, evidence: why, why: `missing ${verdict.missing.join(', ')}` })
+          }
+        } catch (error) {
+          const message = (error as Error).message
+          if (!(error instanceof NotOnBoard) && !NOT_PERMITTED.test(message)) throw error
+          notice(`#${number} is not moved to "${rules.status.ready}": ${message.split('\n')[0]}`)
+        }
+      }),
+    )
+  }
+  log(
+    `candidate: Ready check: moved ${list(report.moved.map((i) => i.number))}; left ${list(report.left.map((i) => i.number))}.`,
+  )
+  if (report.moved.length + report.already.length + report.left.length > 0) {
+    commentOnce(run, pr.number, readyMarker(pr.headRef), readyComment(rules, pr.headRef, report))
+  }
+  failIfAny(failed, `issues the Ready check could not read or move`)
+  return report
+}
+
+// The candidate is merged: its issues close, the pull requests it left behind move, and
+// the issues that waited on the closed ones are checked. One failing does not stop the
+// others; the run fails after all of them.
 export function candidateMerged(run: Run, pr: PullRequest) {
   const errors: string[] = []
-  for (const step of [closeCandidateIssues, carryOver]) {
+  for (const step of [closeCandidateIssues, carryOver, readyAfterMerge]) {
     try {
       step(run, pr)
     } catch (error) {
@@ -1003,23 +1574,35 @@ export function candidateMerged(run: Run, pr: PullRequest) {
 }
 
 // What the event asks for: move, record, or close and carry over; first, the sweep of
-// pull requests a dropped event left behind.
+// pull requests a dropped event left behind and the candidate following the base. Both
+// run on every event: the concurrency group drops a pending run when a newer one
+// arrives, and the newer one catches up.
 export function handle(run: Run, action: string, pr: PullRequest) {
   sweep(run)
+  followOrWarn(run)
   if (action === 'opened' || action === 'ready_for_review') retarget(run, pr)
   else if (action === 'closed' && isCandidateMerge(run.config, pr)) candidateMerged(run, pr)
   else if (action === 'closed') record(run, pr)
   else run.log(`candidate: event ${action}, nothing to do.`)
 }
 
+// A push to the base, or `--follow` from a terminal: the sweep, then the candidate
+// following the base. An error escapes on purpose: following is the whole job of
+// this run, so a failure turns it red (inside a pull_request run it is a warning).
+export function handlePush(run: Run) {
+  sweep(run)
+  return follow(run)
+}
+
 interface EventPullRequest {
   number: number
   title: string
   body: string | null
-  base: { ref: string }
-  head: { ref: string }
+  base: { ref: string; repo?: { full_name: string } | null }
+  head: { ref: string; repo?: { full_name: string } | null }
   labels?: Array<{ name: string }>
   merged?: boolean
+  user?: { login: string } | null
 }
 
 export function prFromEvent(event: { pull_request: EventPullRequest }): PullRequest {
@@ -1032,6 +1615,9 @@ export function prFromEvent(event: { pull_request: EventPullRequest }): PullRequ
     headRef: pr.head.ref,
     labels: (pr.labels ?? []).map((label) => label.name),
     merged: Boolean(pr.merged),
+    ...(pr.user?.login ? { author: pr.user.login } : {}),
+    // A head repository GitHub deleted (a fork removed) is null: not this repository.
+    ...(pr.base.repo ? { fromFork: pr.head.repo?.full_name !== pr.base.repo.full_name } : {}),
   }
 }
 
@@ -1044,7 +1630,7 @@ export function prFromGh(gh: Gh, repo: string, number: number): PullRequest {
       '--repo',
       repo,
       '--json',
-      'number,title,body,baseRefName,headRefName,labels,mergedAt',
+      'number,title,body,baseRefName,headRefName,labels,mergedAt,author,isCrossRepository',
     ]),
   ) as {
     number: number
@@ -1054,6 +1640,8 @@ export function prFromGh(gh: Gh, repo: string, number: number): PullRequest {
     headRefName: string
     labels: Array<{ name: string }>
     mergedAt: string | null
+    author?: { login: string } | null
+    isCrossRepository?: boolean
   }
   return {
     number: pr.number,
@@ -1063,5 +1651,7 @@ export function prFromGh(gh: Gh, repo: string, number: number): PullRequest {
     headRef: pr.headRefName,
     labels: pr.labels.map((label) => label.name),
     merged: Boolean(pr.mergedAt),
+    ...(pr.author?.login ? { author: pr.author.login } : {}),
+    ...(pr.isCrossRepository !== undefined ? { fromFork: pr.isCrossRepository } : {}),
   }
 }

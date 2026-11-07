@@ -1,7 +1,7 @@
 ---
 status: accepted
-date: 2026-10-17
-tags: [worktrees, agents, orca, herdr, branches, setup]
+date: 2026-11-04
+tags: [worktrees, agents, orca, herdr, branches, setup, base-branch]
 ---
 
 # Worktree tooling: the rules in `lntt`, the tools as adapters
@@ -38,9 +38,24 @@ small adapter that makes the calls it understands.
   setup has ended, because Orca's setup terminal stays open as a shell.
 - **One brief**, `packages/lntt/agents/brief.md`: the issue is the mandate, work only in
   this worktree, review and `ci:local` green, a draft pull request, then stop, and
-  report the friction met. `--prompt` replaces it with instructions of one's own. A theme's
-  coordinator and its children are [coordinator mode](./coordinator-mode.md): the same
-  entry point, other briefs, a model per role.
+  report the friction met; every wait goes through the mailbox, as
+  [coordinator mode](./coordinator-mode.md#the-mailbox) states it
+  (`packages/lntt/agents/waiting.md`). The brief always comes first: `--prompt` adds
+  instructions of one's own after it, in a closing `## Added at start` section, for a
+  coordinator and a child alike. A theme's coordinator and its children are
+  [coordinator mode](./coordinator-mode.md): the same entry point, other briefs, a model
+  per role.
+- **Each start leaves a marker** in the mailbox,
+  `<git common dir>/lntt-messages/started/<branch, URL-encoded>.json`: the branch, its issue
+  (none for a coordinator), and who it reports to (`coordinator` with the theme for a
+  child of a theme that has a coordinator, `orchestrator` otherwise, a child of a theme
+  with no coordinator included), written before the host starts and dropped when a coordinator's start fails (an
+  earlier start's marker stays); a marker that cannot be written is a warning, not a
+  failed start. At `lntt review: limit:` the round
+  reads it (a branch still on the name Orca gave it reads the marker of its conventional
+  name) and sends the open findings there with the mailbox, without waiting for the
+  answer, and prints the id to wait on (`lntt ask --wait <id>`). A branch with no marker
+  stops at the limit with what is open on stdout and stderr only.
 - **The agent, its model and its effort** (`--kind`, `--model`, `--effort`) reach each
   tool in the form it accepts:
   - Orca: one `worktree create --issue --agent --prompt`, with `--model` and
@@ -48,6 +63,13 @@ small adapter that makes the calls it understands.
     (`wait-for-setup`); Orca refuses a model and effort the agent does not take, before
     creating anything, and `lntt` reports its reason. The agent's handle is
     `launch.outcome.handle` in the reply.
+    The agent starts in a terminal: `lntt` passes `--surface terminal` when
+    `worktree create --help` lists `--surface`; an Orca that does not list it gets no
+    flag. Without the flag Orca follows the operator's personal Chat | CLI setting, and a
+    chat session has no terminal. A coordinator follows its children with `orca terminal`
+    (read, wait, send), so the surface is the project's choice, not the operator's. The
+    supervised worker below launches its agent in a terminal by construction
+    (`worker-start` has no surface option).
   - An Orca whose `worktree create` takes no model (its help lists no `--model`; 1.4.224
     did not, 1.4.229 does): the worktree
     with its issue, the setup, then `orchestration worker-start` on it, in a Run
@@ -56,14 +78,41 @@ small adapter that makes the calls it understands.
     (`OPENCODE_CONFIG_CONTENT`) on a standalone server, started as a shell command in a
     terminal or pane of its own, and prompted once the tool sees it ready.
   - Herdr: `herdr agent start --kind` with the model and effort after `--`.
+- **One base, found one way** (`packages/lntt/src/base.ts`) by `lntt worktree start` on
+  every host, `lntt review` and `lntt ci local`; an explicit `--base` wins in each
+  (`origin/<base>`, else the branch of that name, which a stacked child's sibling may
+  have only locally). Without `--base` the base is the open candidate when there is one,
+  else the default branch (`delivery.candidate.base`, else the branch `origin/HEAD`
+  names, else `main`), and always the remote's copy (#224):
+  - a new worktree starts from `origin/<candidate>` while a candidate is open, else from
+    `origin/<default branch>`; a hotfix (`delivery.candidate.hotfix`: the branch prefix or
+    the issue's label) starts from `origin/<default branch>`, where its pull request stays;
+  - an existing branch that descends from the open candidate (its fork point with the
+    candidate holds commits `origin/<default branch>` lacks) is compared with the
+    candidate from that fork point, a branch just started on it included; the candidate
+    itself (the branch of its name, or a detached HEAD at its head) goes into the
+    default branch; any other branch is compared with `origin/<default branch>`.
+
+  Which candidate is open is asked to GitHub (`gh pr list`, the query of the candidate
+  automation): a merged candidate's branch stays on origin and its commits reach the
+  default branch rebased, so the refs cannot tell an open one. When GitHub cannot
+  answer, the base is `origin/<default branch>` and the command says so. A resolved base
+  whose `origin/` ref is not in the clone is an error that asks for `git fetch origin`;
+  nothing is fetched. An explicit `--base` with neither `origin/<base>` nor a local
+  branch of that name goes to the host as given in `lntt worktree start`, which says
+  what it cannot find, is an error in `lntt review`, and leaves `ci:local` with no diff
+  to choose its tests from.
+  A detached HEAD at a candidate's head is that candidate: `lntt branch check` and
+  `ci:local`'s branch name are the `delivery.candidate.prefix` branch whose `origin/`
+  ref points at HEAD, so a candidate is checked without a local branch named after it.
 - **What cannot start is refused before anything is created**, never dropped or left
   half done: an agent flag the agent cannot take (one started on another model or
   effort than the one asked for is a different agent), and in a batch any issue that
   cannot be read or named, so several `--issue` start whole or not at all.
 - **Worktrees made by `lntt`** (git, Herdr) go under `<main checkout>/.worktrees/`,
   ignored by git with `.claude/worktrees/` of the agent harnesses. Their branch has no
-  upstream until it is first pushed: created from `origin/<base>`, it would otherwise
-  track the base.
+  upstream until it is first pushed: created from the base's `origin/` ref, it would
+  otherwise track the base.
 - **`rename` never fails a setup.** A name it cannot fix, or one the issue cannot give
   (a title with nothing to slug), is reported and the branch stays; the pre-push check
   (on the branches being pushed) and CI stop it if it stays wrong.
@@ -87,7 +136,9 @@ small adapter that makes the calls it understands.
   tests pin the calls, and a trial run against the real tool confirms them.
 - On an Orca whose `worktree create` takes no model, an agent started with a model is a
   supervised worker; opencode with a model is a plain terminal on any Orca. Neither is
-  the agent tab `worktree create --agent` opens.
+  the agent `worktree create --agent --prompt` starts, with the prompt as its first turn.
+- An Orca whose `worktree create` lists no `--surface` starts the agent by the operator's
+  Chat | CLI setting: with Chat, a coordinator cannot reach it with `orca terminal`.
 - Orca runs `orca.yaml`'s setup only when the repository's *Command source* is
   "orca.yaml only" or "Run both"; a script once saved in its local field switches it to
   "Local only" without a warning.
@@ -112,3 +163,17 @@ small adapter that makes the calls it understands.
   agent ready, or not at all.
 - **Ignoring a model or an effort the agent cannot take.** The run would look right and
   be on another model.
+- **The local branch as the base.** A local `main` or candidate branch is as old as the
+  last pull: a worktree started from it, or a review and a `ci:local` diffed against
+  it, read commits that are already merged.
+- **The base from the refs alone, without asking GitHub.** `origin/HEAD` names the
+  default branch, not the open candidate, and the candidate branches left on origin
+  after their merge look the same as the open one.
+- **A base per command** (`delivery.candidate.base` for the worktree and the review,
+  `origin/HEAD` for `ci:local`). A branch started on the candidate would be reviewed and
+  checked against the default branch, with the candidate's commits in its diff.
+- **`--prompt` in place of the brief.** Every use wanted to add context to it; a
+  coordinator started that way had none of its issues and approvals.
+- **The review round waiting for the answer at the limit.** The round holds the review
+  lock, and `lntt review allow`, the answer most often given, needs it free; the wait is
+  the agent's, with `lntt ask --wait <id>`.

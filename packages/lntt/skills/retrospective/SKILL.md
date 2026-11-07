@@ -15,10 +15,10 @@ fit one project.
 ## 0. Read the values
 
 ```sh
-lntt pr block                      # the empty block: heading, markers, one label per line
-lntt get delivery.pullRequest      # the template, the language of the body's prose
-lntt get cycle.retrospective       # where a harvest is published, the targeted review, the upstream
-lntt get delivery.commits          # whether Retro is one of the trailers
+pnpm exec lntt pr block                      # the empty block: heading, markers, one label per line
+pnpm exec lntt get delivery.pullRequest      # the template, the language of the body's prose
+pnpm exec lntt get cycle.retrospective       # where a harvest is published, the targeted review, the upstream
+pnpm exec lntt get delivery.commits          # whether Retro is one of the trailers
 ```
 
 `lntt pr block` prints the block with the schema's defaults for what
@@ -42,13 +42,13 @@ scaffolded from Lunette).
   candidate's retrospective comment the moment it is met (section 3):
 
   ```sh
-  lntt retro add --label <label> "<one sentence>"     # the open candidate; --pr <n> for another
+  pnpm exec lntt retro add --label <label> "<one sentence>"     # the open candidate; --pr <n> for another
   ```
 
 - **Friction that comes from another repository** (what the project cannot fix on its
   own) starts with that repository, `[upstream:<owner/name>]`, in the trailer and in the
   block. Lunette itself (`lntt`, a shared skill, the scaffolder, a template) is
-  `lntt get cycle.retrospective.upstream.repository`:
+  `pnpm exec lntt get cycle.retrospective.upstream.repository`:
   `Retro: [upstream:LunetteOrg/starter] lntt review lost its state on git switch`; a
   library the project uses is its own repository. It is fixed upstream (section 5), never
   worked around in silence.
@@ -62,6 +62,8 @@ The body comes from the template (`delivery.pullRequest.template`, default
 git log "origin/<base>..HEAD" --format=%B | grep -i '^Retro:' | sed 's/^[Rr]etro: *//'
 ```
 
+(`<base>` is the pull request's base: the open candidate when the branch is on it.)
+
 (Not `%(trailers)`: git does not read the last paragraph as trailers when a line of it,
 such as `Refs #91`, has no colon.)
 
@@ -72,16 +74,16 @@ such as `Refs #91`, has no colon.)
   `  - [upstream:<owner/name>] …`. In the middle of a sentence it is no marker.
 - **`none` is an answer** (the configured `none`): write it where nothing applies. A label
   left empty means the block was not filled in, and the harvest counts it apart.
-- **A line about the review's cost**, when the configuration has one: the rounds of
-  `lntt review` on the branch, the sum of their `tokens` and of their `cost` (USD), from
-  each round's JSON; a round whose agents reported no cost says so.
+- **A line about the review's cost**, when the configuration has one: the line
+  `pnpm exec lntt review cost` prints, copied as it is (the branch's rounds, their tokens
+  and USD, and the rounds whose agents reported none).
 - What surfaces after the pull request is open goes into the body's block, or into a
   comment that holds a block of its own: the harvest reads both.
 
 Before the pull request is marked ready:
 
 ```sh
-lntt check body          # the current branch's pull request; --pr <n>, or - for stdin
+pnpm exec lntt check body          # the current branch's pull request; --pr <n>, or - for stdin
 ```
 
 It fails naming a missing block, or a label missing, written twice or left empty, or a
@@ -102,7 +104,7 @@ written from memory, after the context was compacted or the session gone; so it 
 written as it happens, one sentence each:
 
 ```sh
-lntt retro add --label friction "the full CI failed on a runner out of disk; rerun"
+pnpm exec lntt retro add --label friction "the full CI failed on a runner out of disk; rerun"
 ```
 
 `--label` is the configured label, or the start of only one (`to` for `To automate
@@ -125,7 +127,7 @@ last pull request). A candidate opened before the comment existed gets one at th
 **Before the candidate is marked ready**, every label holds a value or `none`:
 
 ```sh
-lntt check body --pr <candidate>    # on a candidate it reads the retrospective comment
+pnpm exec lntt check body --pr <candidate>    # on a candidate it reads the retrospective comment
 ```
 
 It fails on a missing comment, a label missing, written twice or left empty.
@@ -160,7 +162,12 @@ published without the person's go.
    leaves no trace in a body.
 5. **The previous proposals**, each with its state (adopted, partial, superseded, not
    adopted) and its proof: a `path:line`, a command and its output, a pull request or
-   issue number.
+   issue number. The state starts from the outcome written in the previous
+   retrospective's Discussion (step 11): `adopted #N` is checked against that issue and
+   what it built, `dropped` keeps its reason and is not proposed again unless new
+   signals say otherwise (a cluster that recurs after a drop is such a signal), and a proposal still marked `later` is asked again in this
+   harvest's discussion (step 10). A proposal with no outcome was never discussed: say
+   so, and put it in the discussion too.
 6. **One concrete mechanism per cluster**: a skill or a change to one, a hook, a CI
    check, a decision record, an `AGENTS.md` rule, or an `lntt` command. Each cites the
    pull requests (and issues) it comes from.
@@ -178,12 +185,31 @@ published without the person's go.
    - `issue`: an issue with the proposals as a checklist, on the board (the
      `github-board` skill).
 
+   The proposals are numbered in order in the published body. Publishing opens no issue
+   for any proposal: the proposals are decided first.
+10. **Discuss the proposals with the person,** after publishing, one proposal at a time
+    (the proposals still marked `later` in the previous Discussion included). Each ends
+    in exactly one of three outcomes:
+    - **adopted:** it will be built;
+    - **dropped:** it will not, and the reason is said;
+    - **later:** not decided now; it is asked again at the next harvest.
+11. **Write each outcome in the Discussion** as soon as it is decided, as a comment per
+    proposal (or an edit of the body), in one line the next harvest reads:
+    `Proposal <n>: adopted #<issue>`, `Proposal <n>: dropped, <reason>` or
+    `Proposal <n>: later`. `<n>` is the number the proposal has in the published body
+    (step 9 numbers them in order); a proposal carried over as `later` takes a new
+    number and cites the one it had, so step 5 matches them.
+    Where `adopted` has no issue number yet, step 12 comes first.
+12. **Open an issue only for an adopted proposal** (the `github-board` skill), citing the
+    Discussion and the proposal's cluster, and write its number in the outcome (step 11).
+    Nothing is opened before the discussion, and a proposal that is dropped or later
+    gets no issue.
+
 A cluster made of `[upstream:<owner/name>]` items is not built in the project: the
 harvest lists them by repository, and section 5 takes them upstream.
 
-**Every proposal the person adopts becomes an issue** of its own (the `github-board`
-skill), citing the retrospective and its cluster. A proposal left only in a retrospective is
-never built.
+A proposal left only in a retrospective, without an outcome written in its Discussion,
+is never built and is asked again at the next harvest.
 
 ## 5. Report upstream what comes from Lunette
 
@@ -204,7 +230,7 @@ without the operator's approval, report by report.**
 2. **No duplicates.** Search the open issues there for the cluster's subject:
 
    ```sh
-   lntt issue search [--repo <owner/name>] <a few words of the subject>
+   pnpm exec lntt issue search [--repo <owner/name>] <a few words of the subject>
    ```
 
    When one is the same subject, the report is a comment on it (`--comment <n>`), not a
@@ -227,7 +253,7 @@ without the operator's approval, report by report.**
 4. **The dump**, the environment collected by the command, never by hand:
 
    ```sh
-   lntt dump --json --model <the model you run on> [-- <the failing command>] > <dump.json>
+   pnpm exec lntt dump --json --model <the model you run on> [-- <the failing command>] > <dump.json>
    ```
 
    `--` runs the failing command again, when there is one and running it again is
@@ -236,7 +262,7 @@ without the operator's approval, report by report.**
 5. **Show the operator each report whole**, as it would be sent:
 
    ```sh
-   lntt issue <draft.md> --dump <dump.json> [--repo <owner/name>] [--comment <n>]
+   pnpm exec lntt issue <draft.md> --dump <dump.json> [--repo <owner/name>] [--comment <n>]
    ```
 
    The dry run prints everything that leaves the machine. The operator approves each
@@ -251,6 +277,7 @@ without the operator's approval, report by report.**
   trailers, reports and `lntt retro add` are how friction gets there.
 - Keep the markers exactly `<!-- retro:start -->` and `<!-- retro:end -->`, each on a line
   of its own: the check and the harvest read them as text.
-- A harvest creates no skill, hook or issue by itself: it proposes.
+- A harvest creates no skill, hook or issue by itself: it proposes. An issue exists
+  only for a proposal the person adopted in the discussion (section 4, steps 10–12).
 - An upstream report goes through `lntt issue`, never `gh` directly, and only with
   `--send` after the operator approved that report.

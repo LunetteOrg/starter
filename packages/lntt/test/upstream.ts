@@ -195,6 +195,43 @@ export function drawn(screen: string, brief: string): boolean {
   return screen.includes(brief) && !screen.includes('OPENCODE_CONFIG_CONTENT')
 }
 
+// A provider's usage limit in the JSON events a tool printed (one per line): the
+// message of an error event of type `provider.free-limit` or status 429, else null.
+// That is the provider's quota running out on the runner, not a break of lntt. A line
+// that is not a JSON object (`null`, a number, a string) is skipped like a non-JSON one.
+export function usageLimit(output: string): string | null {
+  for (const line of output.split('\n')) {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(line)
+    } catch {
+      continue
+    }
+    if (typeof parsed !== 'object' || parsed === null) continue
+    const event = parsed as { type?: string; error?: { type?: string; status?: number; message?: string } }
+    if (event.type !== 'error') continue
+    if (event.error?.type === 'provider.free-limit' || event.error?.status === 429) {
+      return event.error.message ?? 'usage limit reached'
+    }
+  }
+  return null
+}
+
+// Records that a check proved nothing about its version (UPSTREAM_INCONCLUSIVE names the
+// file the workflow looks for): the workflow does not cache that version as checked.
+export function inconclusive(reason: string): void {
+  const file = process.env.UPSTREAM_INCONCLUSIVE
+  if (file) appendFileSync(file, `${reason}\n`)
+}
+
+// The usage limit a tool's output shows, recorded as inconclusive for the workflow, or
+// null when there is none: the one decision of the test that skips on it.
+export function skipOnUsageLimit(tool: Tool, output: string): string | null {
+  const limit = usageLimit(output)
+  if (limit) inconclusive(`${tool}: ${limit}`)
+  return limit
+}
+
 export const readLog = (log: string): string => {
   try {
     return readFileSync(log, 'utf8')

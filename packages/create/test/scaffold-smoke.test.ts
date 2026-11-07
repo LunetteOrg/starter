@@ -174,6 +174,7 @@ const adopt: Record<string, () => void> = {
       execFileSync(lntt, ['get', 'lunette.template'], { cwd: app, encoding: 'utf8' }).trim(),
       '"react-router"',
     )
+    assert.equal(execFileSync(lntt, ['get', 'project.phase'], { cwd: app, encoding: 'utf8' }).trim(), '"development"')
   },
 }
 

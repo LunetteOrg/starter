@@ -10,7 +10,7 @@ approved, assigned, scheduled set of issues, the same way every time.
 
 This skill owns the **process**, the same on any platform. How an issue is written,
 typed, placed and linked is the **adapter**'s: the skill of the platform `board.provider`
-names, `github` (the default): `github-board`. Load it (`lntt guide <adapter>`) before
+names, `github` (the default): `github-board`. Load it (`pnpm exec lntt guide <adapter>`) before
 phase 6, and follow it for every write. **No adapter for the provider:** stop, and say
 which provider has none; never write to the board by hand. The adapter's sections cited
 below are `github-board`'s.
@@ -21,7 +21,7 @@ window opens now and breaks them into children. For an objective of about one ro
 this skill creates the parents itself, and still dates them when the board has the
 roadmap dates (`board.fields.startDate`, `targetDate`).
 
-The values are the project's (`lntt get board`, `lntt get cycle`); `docs/process/board.md`
+The values are the project's (`pnpm exec lntt get board`, `pnpm exec lntt get cycle`); `docs/process/board.md`
 and `docs/process/cycle.md`, when they exist, say how the team plans. **No `board`
 section:** stop, say what the plan needs from it, and propose the section
 (`github-board`, section 0). **No `board.fields.horizon`:** stop, and propose it
@@ -174,6 +174,12 @@ assignee differs from its blocker's goes in the iteration after the blocker's
 Read the result back from GitHub: each parent's children, the types, the iteration
 membership (no parent in it), the assignees, the fields. Report the tree with links, the
 track split and the suggested starting order.
+
+Then `pnpm exec lntt board ready` lists the issues at the first status that are
+Ready-eligible and what is missing for the others. Bring the list to the person, and
+with their go `--apply` moves the eligible ones: whether each body lets an agent start
+cold is the part the command cannot check. With a provider other than `github`, the
+command does not apply: check the same criteria through the adapter.
 
 ## Intake — a client meeting
 

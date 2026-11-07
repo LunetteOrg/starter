@@ -1,16 +1,16 @@
 # GitHub Project — recipes
 
-The commands behind the `github-board` skill. The names come from `lntt get board`;
+The commands behind the `github-board` skill. The names come from `pnpm exec lntt get board`;
 the ids are resolved here, at runtime, and never written down. `<…>` is a value to fill
 in: a name from the configuration, or an id resolved above it.
 
 ## Discovery
 
 ```sh
-OWNER=$(lntt get board.github.project.owner | jq -r .)
-NUMBER=$(lntt get board.github.project.number)
+OWNER=$(pnpm exec lntt get board.github.project.owner | jq -r .)
+NUMBER=$(pnpm exec lntt get board.github.project.number)
 # organization, unless board.github.project.ownerType says user: GraphQL's root field differs
-ROOT=$( (lntt get board.github.project.ownerType 2>/dev/null || echo '"organization"') | jq -r .)
+ROOT=$( (pnpm exec lntt get board.github.project.ownerType 2>/dev/null || echo '"organization"') | jq -r .)
 REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 
 # the Project's node id, its fields with their ids and options: once per session
@@ -22,7 +22,7 @@ gh api graphql -f query='{ '"$ROOT"'(login:"'"$OWNER"'"){ projectV2(number:'"$NU
       iterations{ id title startDate duration } completedIterations{ id title startDate duration } } } } } } } }'
 ```
 
-Match each configured field by its `name` (`lntt get board.fields`) and keep the ids in
+Match each configured field by its `name` (`pnpm exec lntt get board.fields`) and keep the ids in
 variables. A configured field missing from the Project, or an option missing from a
 field, is a mismatch to report to the person, never one to fix silently. The current
 iteration is the one with `startDate ≤ today < startDate + duration`.
@@ -185,9 +185,9 @@ link is the id.
   field.
 
 ```sh
-lntt board sync            # the plan, read from GitHub; writes nothing
-lntt board sync --apply    # with the person's go: applies it, then reads the board back
-lntt board sync --check    # exit 1 when the board differs from the configuration
+pnpm exec lntt board sync            # the plan, read from GitHub; writes nothing
+pnpm exec lntt board sync --apply    # with the person's go: applies it, then reads the board back
+pnpm exec lntt board sync --check    # exit 1 when the board differs from the configuration
 ```
 
 By hand, the same update keeps every existing option by its id:

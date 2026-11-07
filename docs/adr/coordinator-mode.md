@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-10-17
+date: 2026-11-02
 tags: [agents, coordinator, worktrees, messaging, models]
 ---
 
@@ -26,23 +26,28 @@ two.
 
 - **Orchestrator:** the person, or the session above the coordinators. It approves children
   and answers the coordinators' questions.
-- **Coordinator:** one per theme, in a worktree of its own on a placeholder branch
+- **Coordinator:** at most one per theme, in a worktree of its own on a placeholder branch
   (`chore/no-issue/<theme>`) that is never committed or pushed. It writes no code and runs
   no workflow; its context holds briefs, summaries and the merge order, never diffs. It
-  starts one child per issue, or per separable part of one. When the theme ends it
+  starts one child per issue, or per separable part of one. A theme can have none: the
+  orchestrator then starts the children itself, with `--theme` for the context and the
+  Size, and they report to the orchestrator. When the theme ends it
   leaves the theme's own friction in a comment on the candidate pull request (the
   `retrospective` skill), and drafts a report from each cluster of items marked
   `[upstream:<owner/name>]`: one for Lunette's repository is sent with `lntt issue` only
   once the operator approves it, one for another repository is printed for the operator
   to file by hand ([delivery](../process/delivery.md#the-retrospective)).
-- **Child:** one per issue, in its own worktree and branch, started from `main` or, when it
-  depends on a sibling, from the sibling's branch (`--base`). It follows the single-issue
+- **Child:** one per issue, in its own worktree and branch, started from the base `lntt`
+  resolves ([worktree tooling](./worktree-tooling.md#decision): the open candidate, else
+  the default branch, from origin) or, when it depends on a sibling, from the sibling's
+  branch (`--base`). It follows the single-issue
   brief ([worktree tooling](./worktree-tooling.md)) and stops at a draft pull request.
 
 The coordinator's instructions are the shared `coordinate` skill (`lntt guide coordinate`); the
 flags and files are in the `@lntt/lntt` README. The briefs are templates in
-`packages/lntt/agents/`: `coordinator.md` for the parent, `brief.md` for a child, with
-`reporting.md` and `workflow.md` added to it when the child belongs to a theme.
+`packages/lntt/agents/`: `coordinator.md` for the parent, with `coordinator-waiting.md`;
+`brief.md` for a child, with `waiting.md` for every child and `reporting.md` and
+`workflow.md` added to it when the child belongs to a theme.
 
 ### The entry point
 
@@ -58,7 +63,10 @@ A `<slug>` is lower-case letters and digits in groups joined by single hyphens; 
   git have none and the child reaches its coordinator through the mailbox),
   `--context <file>` is the child's section of the theme, rendered into its brief,
   `--size XS|S|M|L|XL` picks its model, and `--workflow` adds the brief section that asks for
-  a multi-agent workflow.
+  a multi-agent workflow. A theme with no coordinator worktree (no marker of
+  `--coordinator` for it in the mailbox) has no parent either: its children keep the
+  context and the Size, no gate (the orchestrator is the one starting them), and their
+  brief and marker send to the orchestrator.
 - The multi-agent workflow of the harness is switched by `--workflow`, which `lntt` turns
   into the harness's opt-in keyword when it renders the child's brief. The coordinator's
   brief names the flag and never the keyword, so the coordinator is not opted in through the
@@ -73,7 +81,7 @@ would nest git worktrees inside one the host does not track.
 ### The gate
 
 `coordinator.gate` in `.agents/config.jsonc` is `propose` (default) or `free`. Under
-`propose`, `lntt worktree start --theme` sends one message to the orchestrator for the
+`propose`, `lntt worktree start --theme` of a theme that has a coordinator sends one message to the orchestrator for the
 children not yet approved and creates nothing until the answer is `approve`, `approved`,
 `yes` or `ok`, with at most a final `.` or `!`. Approvals are kept per theme in the shared mailbox directory
 (`approved-<theme>.txt`), written by `--approve` at the coordinator's start and by an
@@ -102,10 +110,26 @@ host, with no messaging command of Orca or Herdr:
   share one repository, so a coordinator is addressed by its theme
   (`to-coordinator-<theme>`, `--theme`) and a child by its issue (`to-child-<issue>`,
   `--issue`). Without it, the role's own directory.
+- `--issue` names a child's mailbox. In a message to the orchestrator or a coordinator it
+  says which child the message is about: the topic becomes `issue-<n>-<topic>`, in the
+  role's own directory, so a child asks with its issue whoever it asks. `inbox --issue`
+  narrows only a child's.
 - `ask` writes the question and polls for the answer file every 20 seconds
-  (`LNTT_POLL_SECONDS` changes it); stdout is the answer. `inbox` lists the unanswered
-  messages of a role as JSON lines, and with `--wait` blocks until there is one. `answer`
-  writes the answer file; the first answer stays.
+  (`LNTT_POLL_SECONDS` changes it); stdout is the answer. `ask --wait <id>` waits for the
+  answer to a message already sent, with the same output and exit codes; it takes no
+  question and no address (exit 2). `inbox` lists
+  the unanswered messages of a role as JSON lines, and with `--wait` blocks until there is
+  one. `answer` writes the answer file; the first answer stays.
+- Every wait goes through `lntt ask`, never only in an agent's terminal, which nobody
+  watches: a question, an approval (a 1Password prompt included), the review limit, for
+  which `lntt review` sends the open findings itself to whoever the branch reports to and
+  prints the id to wait on. A plain child asks the orchestrator
+  (`--to orchestrator --issue <n>`), a child of a theme its coordinator
+  (`--to coordinator --theme <theme> --issue <n>`) unless the theme has no coordinator
+  worktree, then the orchestrator like a plain child, a coordinator the orchestrator. A
+  child runs the wait in the background and re-reads its mailbox between polls, so an
+  answer for it goes there; an answer that grants review rounds is the go for
+  `lntt review allow`. Both briefs say so.
 - The directory is shared by every worktree of the repository and belongs to none of them:
   nothing in it is committed.
 - Both directions work: a child asks its coordinator and reports to it; a coordinator asks

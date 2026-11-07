@@ -67,7 +67,16 @@ export function worktreeHost(env: Env): WorktreeHost {
   return 'git'
 }
 
-const BRIEF = join(dirname(fileURLToPath(import.meta.url)), '../agents/brief.md')
+const AGENTS = join(dirname(fileURLToPath(import.meta.url)), '../agents')
+const BRIEF = join(AGENTS, 'brief.md')
+
+// How a child routes every wait through the mailbox: to its coordinator with a theme, to
+// the orchestrator otherwise; its issue tags the topic either way.
+export function waitingSection(issue: number, theme?: string): string {
+  const to = theme ? `--to coordinator --theme ${theme}` : '--to orchestrator'
+  const ask = `pnpm exec lntt ask ${to} --issue ${issue}`
+  return fill(readFileSync(join(AGENTS, 'waiting.md'), 'utf8'), { ask, issue }).trimEnd()
+}
 
 export interface BriefValues {
   issue: number
@@ -78,7 +87,13 @@ export interface BriefValues {
 
 // The brief of a plain issue; a child of a coordinator gets childBrief (coordinator.ts).
 export function renderBrief(template: string | undefined, values: BriefValues): string {
-  return fill(template ?? readFileSync(BRIEF, 'utf8'), { theme: '', reporting: '', workflow: '', ...values })
+  return fill(template ?? readFileSync(BRIEF, 'utf8'), {
+    theme: '',
+    reporting: '',
+    workflow: '',
+    waiting: waitingSection(values.issue),
+    ...values,
+  })
 }
 
 // The setup a worktree gets, read from its own orca.yaml (the revision it checks out,
@@ -133,15 +148,21 @@ export function toolFailure(command: string, args: string[], stdout: string, std
   return tail ? `${what}: ${tail}` : `${what} failed`
 }
 
-// Whether Orca's `worktree create` takes the agent's model and effort (1.4.229 does,
-// 1.4.224 did not). An Orca that cannot say is an error: guessing the older path would
-// fail later, for another reason.
-function orcaTakesModel(runner: Runner): boolean {
-  const help = runner.run('orca', ['worktree', 'create', '--help'])
+// What `orca worktree create` lists in its help. A tuned agent needs it to say whether
+// Orca takes the model and effort (1.4.229 does, 1.4.224 did not); an Orca that cannot
+// say is an error for it: guessing the older path would fail later, for another reason.
+const createHelp = (runner: Runner): string => runner.run('orca', ['worktree', 'create', '--help'])
+
+function orcaTakesModel(help: string): boolean {
   if (!help.trim())
     throw new Error('orca worktree create --help printed nothing: lntt could not tell whether it takes --model')
   return /--model\b/.test(help)
 }
+
+// Whether `worktree create` takes `--surface`. Without it Orca opens the agent as a chat
+// or a terminal by the operator's own setting, and a coordinator reads and writes a
+// child only through `orca terminal`: lntt asks for the terminal where Orca can be asked.
+const orcaTakesSurface = (help: string): boolean => /--surface(?![\w-])/.test(help)
 
 // `orca worktree create`: the name, the issue it is linked to and the coordinator it
 // descends from, when there are any.
@@ -159,13 +180,17 @@ export function startOrca(start: Start, runner: Runner, setupFor: SetupFor = () 
   const shell = start.agent ? shellLaunch(start.agent) : null
   if (shell) return startOrcaShell(start, shell, runner, setupFor)
   const tuned = Boolean(start.agent?.model || start.agent?.effort)
-  if (start.agent && tuned && !orcaTakesModel(runner)) return startOrcaWorker(start, start.agent, runner, setupFor)
+  // An Orca whose help cannot be run fails here, loudly, as its next call would; one whose
+  // help prints nothing starts an untuned agent with no flag.
+  const help = start.agent ? createHelp(runner) : ''
+  if (start.agent && tuned && !orcaTakesModel(help)) return startOrcaWorker(start, start.agent, runner, setupFor)
   const args = createArgs(start)
   args.push('--base-branch', start.base, '--setup', 'run', '--json')
   if (start.agent) {
     args.push('--agent', start.agent.kind, '--prompt', start.brief)
     if (start.agent.model) args.push('--model', start.agent.model)
     if (start.agent.effort) args.push('--effort', start.agent.effort)
+    if (orcaTakesSurface(help)) args.push('--surface', 'terminal')
   }
   const reply = JSON.parse(runner.run('orca', args) || '{}') as {
     result?: {

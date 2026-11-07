@@ -6,6 +6,8 @@ import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
+import { defaultBranch, projectBase, remoteRef } from '../base.ts'
+import { CANDIDATE_PREFIX } from '../branch.ts'
 import {
   acquireLock,
   candidate,
@@ -13,7 +15,7 @@ import {
   ciConfig,
   circleciJobs,
   containerCommand,
-  defaultBranch,
+  type EventOptions,
   exitCode,
   formatList,
   formatReport,
@@ -30,6 +32,8 @@ import {
 const USAGE = [
   'usage: lntt ci local [--event pull_request|push] [--base <branch>] [--job <key>]... [--list] [--strict] [--container] [--no-lock]',
   '       lntt ci candidate [--pr <n>] [--event <action>] [--head-ref <ref>] [--labels a,b] [--merged] [--dry-run]',
+  '       lntt ci candidate --follow [--dry-run]',
+  '       lntt ci candidate --guard [--pr <n>]',
   '       lntt ci proved --job <name>... [--step <name>] [--workflow <file>] [--sha <sha>] [--before <sha>] [--branch <name>]',
 ].join('\n')
 
@@ -62,6 +66,23 @@ function giveBack(lock: Lock | null): void {
   }
 }
 
+// The event's base and its options: --base as given; else, for a pull request, the base
+// every lntt command resolves (src/base.ts), and for a push the default branch; both as
+// the remote's copy.
+function base(root: string, event: 'pull_request' | 'push', given: string | undefined): [string, EventOptions] {
+  const candidate = candidateConfig(root)
+  const options: EventOptions = { candidatePrefix: candidate?.prefix ?? CANDIDATE_PREFIX }
+  if (given !== undefined) return [given, options]
+  if (event === 'push') {
+    const branch = defaultBranch(root, candidate)
+    return [branch, { ...options, baseRef: remoteRef(root, branch) }]
+  }
+  // The report names the base and the ref; only a base that may be wrong is said here.
+  const resolved = projectBase(root, 'head')
+  if (resolved.warning) stderr.write(`lntt ci: ${resolved.warning}\n`)
+  return [resolved.branch, { ...options, baseRef: resolved.ref }]
+}
+
 async function local(args: string[]): Promise<number> {
   const { values } = guard(() =>
     parseArgs({
@@ -82,7 +103,7 @@ async function local(args: string[]): Promise<number> {
   const root = git('rev-parse', '--show-toplevel')
   process.chdir(root)
   const config = ciConfig(root)
-  const localEv = localEvent(root, event, values.base ?? defaultBranch(root))
+  const localEv = localEvent(root, event, ...base(root, event, values.base))
   const jobs = [...(await githubJobs(root, localEv, config)), ...circleciJobs(root, localEv, config)]
   const only = values.job
   for (const key of only ?? []) {
@@ -163,16 +184,30 @@ function candidateRun(args: string[]): number {
         'head-ref': { type: 'string' },
         labels: { type: 'string' },
         merged: { type: 'boolean', default: false },
+        follow: { type: 'boolean', default: false },
+        guard: { type: 'boolean', default: false },
         'dry-run': { type: 'boolean', default: false },
       },
     }),
   )
+  if (values.follow) {
+    const flag = ['pr', 'event', 'head-ref', 'labels'].find((name) => values[name as keyof typeof values] !== undefined)
+    if (flag !== undefined || values.merged)
+      usage(`--follow takes no --${flag ?? 'merged'}: it handles no pull request`)
+  }
+  if (values.guard) {
+    const flag = ['follow', 'event', 'head-ref', 'labels', 'merged', 'dry-run'].find(
+      (name) => values[name as keyof typeof values] === true || typeof values[name as keyof typeof values] === 'string',
+    )
+    if (flag !== undefined) usage(`--guard takes no --${flag}: it only reads the pull request`)
+  }
   const log = (line: string) => stdout.write(`${line}\n`)
   const config = candidateConfig(cwd())
   if (!config) {
     log('::notice::no delivery.candidate in .agents/config: the candidate automation does nothing')
     return 0
   }
+  if (values.guard) return guardRun(config, values.pr, log)
   const gh = candidate.makeGh({ dryRun: values['dry-run'], log })
   // The Projects permission is another token in the workflow (PROJECTS_GH_TOKEN); from
   // a terminal the operator's own gh login is the one in use.
@@ -180,24 +215,67 @@ function candidateRun(args: string[]): number {
     candidate.makeGh({ dryRun: values['dry-run'], log, token }),
   )
   const repo = env.GITHUB_REPOSITORY ?? gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])
+  // The local clone: the candidate follows the base through it (fetch, merge or rebase,
+  // push). In Actions it authenticates with GH_TOKEN through its environment. `--pr`
+  // from a terminal handles its pull request only: it gets no git, so it does not follow.
+  const git =
+    values.pr === undefined ? candidate.makeGit({ dryRun: values['dry-run'], log, cwd: cwd(), env }) : undefined
+  const run: candidate.Run = { gh, ...(board ? { board } : {}), ...(git ? { git } : {}), repo, config, log }
+  if (values.follow) {
+    candidate.handlePush(run)
+    return 0
+  }
   let action: string
   let pr: candidate.PullRequest
   const number = values.pr
   if (number !== undefined) {
-    if (!/^\d+$/.test(number)) usage(`--pr takes a number, not ${number}`)
+    if (!/^[1-9]\d*$/.test(number)) usage(`--pr takes a number, not ${number}`)
     pr = candidate.prFromGh(gh, repo, Number(number))
     action = values.event ?? (pr.merged ? 'closed' : 'opened')
   } else {
-    if (!env.GITHUB_EVENT_PATH) usage('without --pr, GITHUB_EVENT_PATH must name the pull_request event')
+    if (!env.GITHUB_EVENT_PATH) usage('without --pr or --follow, GITHUB_EVENT_PATH must name the event')
     const event = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8'))
+    // A push to the base: the candidate follows it. Any other event has nothing to do.
+    if (!event.pull_request) {
+      if (event.ref !== `refs/heads/${config.base}`) {
+        log(`candidate: event ${event.ref || env.GITHUB_EVENT_NAME || 'without a pull request'}, nothing to do.`)
+        return 0
+      }
+      candidate.handlePush(run)
+      return 0
+    }
     action = event.action
     pr = candidate.prFromEvent(event)
   }
   if (values['head-ref'] !== undefined) pr.headRef = values['head-ref']
   if (values.labels !== undefined) pr.labels = values.labels.split(',').filter((l) => l !== '')
   if (values.merged) pr.merged = true
-  candidate.handle({ gh, ...(board ? { board } : {}), repo, config, log }, action, pr)
+  candidate.handle(run, action, pr)
   return 0
+}
+
+// `--guard`: the `candidate guard` check on the event's pull request, or on --pr's. It
+// writes nothing and asks gh only for --pr; a failure is an error annotation and exit 1.
+function guardRun(config: candidate.CandidateConfig, number: string | undefined, log: (line: string) => void): number {
+  let pr: candidate.PullRequest
+  if (number !== undefined) {
+    if (!/^[1-9]\d*$/.test(number)) usage(`--pr takes a number, not ${number}`)
+    const gh = candidate.makeGh({ dryRun: true, log })
+    const repo = env.GITHUB_REPOSITORY || gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])
+    pr = candidate.prFromGh(gh, repo, Number(number))
+  } else {
+    if (!env.GITHUB_EVENT_PATH) usage('--guard without --pr reads the pull request from GITHUB_EVENT_PATH')
+    const event = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8'))
+    if (!event.pull_request) usage('--guard runs on a pull_request event')
+    pr = candidate.prFromEvent(event)
+  }
+  const decision = candidate.guardDecision(config, pr)
+  if (decision.pass) {
+    log(`candidate guard: #${pr.number} passes: ${decision.reason}.`)
+    return 0
+  }
+  log(`::error title=Not on the candidate::${decision.reason}`)
+  return 1
 }
 
 // The push event's previous tip, when the run has one: an unreadable event has none,

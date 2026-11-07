@@ -2,7 +2,9 @@
 
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
+import { dirname } from 'node:path'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
+import { syncAutomated } from './automated.ts'
 import {
   browserApp,
   browserPlan,
@@ -13,6 +15,7 @@ import {
   type Driver,
   findConfig,
   formatPlan,
+  getConfigValue,
   getValue,
   guide,
   loadConfig,
@@ -34,7 +37,7 @@ const USAGE = [
   '       lntt sync | guide [<skill>] | local app <name> | viewer detect|open <url> | browser [<app>] [--json]',
   '       lntt check [<area> [<check>]] [--base <ref>] [--json] | check cite <path:line>...',
   '       lntt refs [--cached] [<text>...]',
-  '       lntt board sync [--apply | --check]',
+  '       lntt board sync [--apply | --check] | board ready [--apply]',
   '       lntt branch name|check|rename [...]',
   '       lntt worktree start --issue <n> [...]',
   '       lntt ci local|candidate [...]',
@@ -92,7 +95,7 @@ function run(command: string | undefined, key: string | undefined, raw: string |
     }
     case 'get':
       if (!key) usage()
-      stdout.write(`${JSON.stringify(getValue(loadConfig(cwd()).data, key))}\n`)
+      stdout.write(`${JSON.stringify(getConfigValue(loadConfig(cwd()).data, key))}\n`)
       break
     case 'set': {
       if (!key || raw === undefined) usage()
@@ -119,6 +122,7 @@ function run(command: string | undefined, key: string | undefined, raw: string |
       syncSkills(cwd())
       syncAgentsBlock(cwd())
       syncClaudeSettings(cwd())
+      syncAutomated(dirname(dirname(findConfig(cwd()).path)))
       break
     case 'guide': {
       if (key === undefined) {

@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
+import { readyRules } from '../../src/board-ready.ts'
 import {
   announce,
   announceComment,
@@ -15,18 +16,28 @@ import {
   closeCandidateIssues,
   closeDecision,
   closingReferences,
+  follow,
+  followDecision,
   type Gh,
+  type Git,
+  gitAuthEnv,
+  guardDecision,
   handle,
+  handlePush,
   isAnnounced,
   isCandidateMerge,
   isHotfix,
   issueNumber,
   makeGh,
+  makeGit,
   nextCandidateNumber,
   orphanCandidate,
   type PullRequest,
   pickBoard,
+  prFromEvent,
   type Run,
+  readyAfterMerge,
+  readyMarker,
   record,
   recordMerges,
   retarget,
@@ -36,6 +47,7 @@ import {
   sweep,
   sweepDecision,
 } from '../../src/ci/candidate.ts'
+import { git, write } from './helpers.ts'
 
 const config: CandidateConfig = {
   base: 'main',
@@ -43,6 +55,7 @@ const config: CandidateConfig = {
   hotfix: { prefix: 'hotfix/', label: 'hotfix' },
   status: { inRelease: 'In release', done: 'Done' },
   retrospective: '## 🔁 Retro\n<!-- retro:start -->\n- **Friction:**\n<!-- retro:end -->\n',
+  automated: [{ author: 'dependabot[bot]', branch: 'dependabot/', runs: 'after-approval', ci: 'full' }],
 }
 // pelion's shape: release/<N>, same base and hotfix markers.
 const pelion: CandidateConfig = { ...config, prefix: 'release/' }
@@ -88,6 +101,85 @@ describe('isHotfix and retargetDecision', () => {
     assert.equal(retargetDecision(config, { ...pr, headRef: 'hotfix/x' }).move, false)
     assert.equal(retargetDecision(config, { ...pr, labels: ['hotfix'] }).move, false)
     assert.equal(retargetDecision({ ...config, base: 'trunk' }, pr).move, false)
+  })
+
+  test("a bot's pull request (delivery.automated) stays; the same branch from someone else moves", () => {
+    const bump = { ...pr, headRef: 'dependabot/npm/x' }
+    assert.equal(retargetDecision(config, { ...bump, author: 'dependabot[bot]' }).move, false)
+    assert.equal(retargetDecision(config, { ...bump, author: 'octocat' }).move, true)
+  })
+})
+
+describe('guardDecision', () => {
+  const pr = { number: 7, baseRef: 'main', headRef: 'feat/31/x', labels: [], author: 'octocat', fromFork: false }
+
+  test('a pull request into another branch, the candidate, a hotfix, a Dependabot one pass', () => {
+    assert.equal(guardDecision(config, { ...pr, baseRef: 'candidate/3' }).pass, true)
+    assert.equal(guardDecision(config, { ...pr, headRef: 'candidate/3' }).pass, true)
+    assert.equal(guardDecision(pelion, { ...pr, headRef: 'release/3' }).pass, true)
+    assert.equal(guardDecision(config, { ...pr, headRef: 'hotfix/login' }).pass, true)
+    assert.equal(guardDecision(config, { ...pr, labels: ['Hotfix'] }).pass, true)
+    const bump = { ...pr, headRef: 'dependabot/npm_and_yarn/vite-7.1.0' }
+    assert.equal(guardDecision(config, { ...bump, author: 'dependabot[bot]' }).pass, true)
+    // gh names the same bot app/dependabot.
+    assert.equal(guardDecision(config, { ...bump, author: 'app/dependabot' }).pass, true)
+  })
+
+  test('any other pull request into the base fails, with the remedy', () => {
+    const decision = guardDecision(config, pr)
+    assert.equal(decision.pass, false)
+    assert.match(decision.reason, /#7 targets main and is neither the candidate nor a hotfix/)
+    assert.match(decision.reason, /pnpm exec lntt ci candidate --pr 7/)
+    assert.match(decision.reason, /`hotfix` label/)
+    // A Dependabot branch from someone else, a person's branch named like Dependabot's.
+    assert.equal(guardDecision(config, { ...pr, headRef: 'dependabot/npm_and_yarn/x' }).pass, false)
+    assert.equal(guardDecision(config, { ...pr, author: 'dependabot[bot]' }).pass, false)
+    assert.equal(guardDecision(pelion, { ...pr, headRef: 'candidate/3' }).pass, false)
+  })
+
+  test('a branch name counts only from this repository; the hotfix label from anywhere', () => {
+    const fork = { ...pr, fromFork: true }
+    assert.equal(guardDecision(config, { ...fork, headRef: 'candidate/3' }).pass, false)
+    assert.equal(guardDecision(config, { ...fork, headRef: 'hotfix/login' }).pass, false)
+    assert.equal(guardDecision(config, { ...fork, labels: ['hotfix'] }).pass, true)
+    const bump = { ...pr, headRef: 'dependabot/npm_and_yarn/x', author: 'dependabot[bot]' }
+    assert.equal(guardDecision(config, { ...bump, fromFork: true }).pass, false)
+    // An older gh names the bot dependabot.
+    assert.equal(guardDecision(config, { ...bump, author: 'dependabot' }).pass, true)
+  })
+
+  test('a head whose repository is unknown counts as a fork', () => {
+    const unknown = { ...pr, fromFork: undefined }
+    assert.equal(guardDecision(config, { ...unknown, headRef: 'candidate/3' }).pass, false)
+    assert.equal(guardDecision(config, { ...unknown, labels: ['hotfix'] }).pass, true)
+  })
+})
+
+describe('prFromEvent', () => {
+  const event = (fields = {}) => ({
+    pull_request: {
+      number: 7,
+      title: 't',
+      body: null,
+      base: { ref: 'main', repo: { full_name: 'o/r' } },
+      head: { ref: 'feat/3/x', repo: { full_name: 'o/r' } },
+      user: { login: 'octocat' },
+      ...fields,
+    },
+  })
+
+  test('the author and whether the head is a fork', () => {
+    assert.equal(prFromEvent(event()).author, 'octocat')
+    assert.equal(prFromEvent(event()).fromFork, false)
+    assert.equal(prFromEvent(event({ head: { ref: 'x', repo: { full_name: 'someone/r' } } })).fromFork, true)
+    // A deleted fork has no head repository: not this one.
+    assert.equal(prFromEvent(event({ head: { ref: 'x', repo: null } })).fromFork, true)
+  })
+
+  test('a deleted account (user null) leaves the author out, an event without repositories the fork out', () => {
+    assert.equal(prFromEvent(event({ user: null })).author, undefined)
+    const bare = prFromEvent(event({ base: { ref: 'main' }, head: { ref: 'x' } }))
+    assert.equal(bare.fromFork, undefined)
   })
 })
 
@@ -204,6 +296,15 @@ const hasRetro = (number: number) => ({
   [`issues/${number}/comments`]: JSON.stringify({ id: 1, body: retrospectiveComment(config) }),
 })
 const run = (gh: Gh, c: CandidateConfig = config): Run => ({ gh, repo: 'o/r', config: c, log: silent })
+// A git that must not be called: the compare read says there is nothing to do.
+const noGit = (): Git => ({
+  run: (args) => {
+    throw new Error(`unexpected git ${args.join(' ')}`)
+  },
+  push: (args) => {
+    throw new Error(`unexpected git push ${args.join(' ')}`)
+  },
+})
 
 describe('retarget', () => {
   test('moves the pull request onto the open candidate and comments', () => {
@@ -246,7 +347,8 @@ describe('retarget', () => {
     assert.ok(comment, 'no comment on the new candidate')
     assert.equal(comment.input, retrospectiveComment(config))
     assert.ok((comment.input ?? '').endsWith(`\n\n${config.retrospective}`))
-    assert.match(comment.input ?? '', /lntt retro add --label/)
+    assert.match(comment.input ?? '', /`pnpm exec lntt retro add --label <label> "<one sentence>"`/)
+    assert.match(comment.input ?? '', /\(`pnpm exec lntt check body --pr <n>`\)/)
   })
 
   test("pelion's release/<N> works the same", () => {
@@ -401,7 +503,7 @@ describe('carryOverDecision', () => {
     assert.deepEqual(decision.move, [11, 12])
   })
 
-  test('others, hotfixes, candidates and Dependabot stay', () => {
+  test('others, hotfixes, candidates and the bots of delivery.automated stay', () => {
     const fromCandidate = { lastBaseChange: { from: 'candidate/4', to: 'main' } }
     const decision = carryOverDecision(config, {
       candidateBranch: 'candidate/4',
@@ -412,7 +514,7 @@ describe('carryOverDecision', () => {
         open(4, { ...fromCandidate, labels: ['hotfix'] }),
         open(5, { ...fromCandidate, headRef: 'hotfix/y' }),
         open(6, { ...fromCandidate, headRef: 'candidate/5' }),
-        open(7, { ...fromCandidate, author: 'dependabot[bot]' }),
+        open(7, { ...fromCandidate, headRef: 'dependabot/npm/x', author: 'dependabot[bot]' }),
       ],
     })
     assert.deepEqual(decision.move, [])
@@ -615,7 +717,7 @@ describe('sweepDecision', () => {
         open(3, { baseRef: 'candidate/5' }),
         open(4, { lastBaseChange: { from: 'candidate/5', to: 'main' } }),
         open(5, { baseRef: 'candidate/4', labels: ['hotfix'] }),
-        open(6, { baseRef: 'candidate/4', author: 'dependabot[bot]' }),
+        open(6, { baseRef: 'candidate/4', headRef: 'dependabot/npm/x', author: 'dependabot[bot]' }),
         open(7, { baseRef: 'main', headRef: 'candidate/5' }),
         open(8),
       ],
@@ -681,7 +783,7 @@ describe('sweep', () => {
     const warning = lines.find((l) => l.startsWith('::warning'))
     assert.equal(
       warning,
-      '::warning title=Retrospective comment::candidate/4: not written (quota 100%25 used retry later); lntt retro add writes it',
+      '::warning title=Retrospective comment::candidate/4: not written (quota 100%25 used retry later); pnpm exec lntt retro add writes it',
     )
   })
 
@@ -693,15 +795,48 @@ describe('sweep', () => {
 
   test('handle sweeps on every event, then does what the event asks', () => {
     const gh = fakeGh({
+      'compare/main...candidate/5': { behindBy: 0, base: 'b'.repeat(40) },
       'api graphql': [node(12, { baseRefName: 'candidate/3' })],
       '--state open': [{ number: 50, headRefName: 'candidate/5', body: '' }],
       ...hasRetro(50),
     })
-    handle(run(gh), 'opened', pr)
+    const lines: string[] = []
+    handle({ ...run(gh), log: (l) => lines.push(l), git: noGit() }, 'opened', pr)
     assert.deepEqual(
       gh.writes.filter((w) => w.args.includes('--base')).map((w) => w.args),
       ['pr edit 12 --repo o/r --base candidate/5', 'pr edit 70 --repo o/r --base candidate/5'],
     )
+    const followed = lines.indexOf('candidate: follow main: main is an ancestor of candidate/5')
+    assert.ok(followed >= 0, lines.join('\n'))
+    assert.ok(followed < lines.findIndex((l) => l.startsWith('candidate: #70')))
+  })
+
+  test('a failure following the base is a warning: the event is still handled', () => {
+    const gh = fakeGh({
+      'api graphql': [],
+      '--state open': [{ number: 50, headRefName: 'candidate/5', body: '' }],
+      ...hasRetro(50),
+    })
+    const lines: string[] = []
+    handle({ ...run(gh), log: (l) => lines.push(l), git: noGit() }, 'opened', pr)
+    assert.ok(gh.writes.some((w) => w.args === 'pr edit 70 --repo o/r --base candidate/5'))
+    assert.ok(lines.some((l) => l.startsWith('::warning title=Candidate not updated::')))
+  })
+
+  test('a failure following the base escapes a push run, which turns red', () => {
+    const gh = fakeGh({
+      'api graphql': [],
+      '--state open': [{ number: 50, headRefName: 'candidate/5', body: '' }],
+      ...hasRetro(50),
+    })
+    assert.throws(() => handlePush({ ...run(gh), git: noGit() }), /unexpected read: .*compare\/main\.\.\.candidate\/5/)
+  })
+
+  test('without git the follow step says it cannot act and reads nothing', () => {
+    const gh = fakeGh({ 'api graphql': [], '--state open': [] })
+    const lines: string[] = []
+    handlePush({ ...run(gh), log: (l) => lines.push(l) })
+    assert.ok(lines.some((l) => /no git client/.test(l)))
   })
 })
 
@@ -1054,5 +1189,770 @@ describe('pickBoard', () => {
     assert.equal(pickBoard(undefined, true, own, withToken), undefined)
     assert.equal(pickBoard(undefined, false, own, withToken), own)
     assert.equal(pickBoard('', true, own, withToken), undefined)
+  })
+})
+
+describe('followDecision', () => {
+  test('no candidate open: nothing', () => {
+    assert.deepEqual(followDecision(config, { candidate: null, behindBy: 3, prsInto: [] }), {
+      path: 'none',
+      reason: 'no candidate open',
+    })
+  })
+
+  test('the base is an ancestor of the candidate: nothing', () => {
+    assert.deepEqual(followDecision(config, { candidate: 'candidate/4', behindBy: 0, prsInto: [12] }), {
+      path: 'none',
+      reason: 'main is an ancestor of candidate/4',
+    })
+  })
+
+  test('the base moved and nobody stands on the candidate: rebase', () => {
+    assert.deepEqual(followDecision(config, { candidate: 'candidate/4', behindBy: 2, prsInto: [] }), {
+      path: 'rebase',
+      reason: 'main moved and no pull request is open into candidate/4: rebase',
+    })
+  })
+
+  test('the base moved and pull requests are open into the candidate: merge', () => {
+    assert.deepEqual(followDecision(config, { candidate: 'candidate/4', behindBy: 1, prsInto: [15, 12] }), {
+      path: 'merge',
+      reason: 'main moved and #12, #15 are open into candidate/4: merge main into it, no rewrite',
+    })
+    assert.equal(
+      followDecision(config, { candidate: 'candidate/4', behindBy: 1, prsInto: [12] }).reason,
+      'main moved and #12 is open into candidate/4: merge main into it, no rewrite',
+    )
+  })
+
+  test('the base name comes from the configuration', () => {
+    const trunk = { ...config, base: 'trunk' }
+    assert.equal(
+      followDecision(trunk, { candidate: 'candidate/4', behindBy: 1, prsInto: [] }).reason,
+      'trunk moved and no pull request is open into candidate/4: rebase',
+    )
+  })
+})
+
+describe('gitAuthEnv', () => {
+  test('in Actions with a token: an extra header in the environment, never in the arguments', () => {
+    const extra = gitAuthEnv({ GITHUB_ACTIONS: 'true', GH_TOKEN: 'tok' })
+    assert.deepEqual(extra, {
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
+      GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${Buffer.from('x-access-token:tok').toString('base64')}`,
+    })
+  })
+
+  test('from a terminal, or without a token: nothing', () => {
+    assert.deepEqual(gitAuthEnv({ GH_TOKEN: 'tok' }), {})
+    assert.deepEqual(gitAuthEnv({ GITHUB_ACTIONS: 'true' }), {})
+  })
+})
+
+describe('follow', () => {
+  const IDENTITY = {
+    GIT_AUTHOR_NAME: 'bot',
+    GIT_AUTHOR_EMAIL: 'bot@example.com',
+    GIT_COMMITTER_NAME: 'bot',
+    GIT_COMMITTER_EMAIL: 'bot@example.com',
+  }
+
+  // A bare remote with `main` and `candidate/4` (the empty opening commit, then a
+  // feature), `main` moved by a hotfix after the candidate opened, and a clone of it:
+  // the runner's checkout. `conflict` makes the hotfix and the feature edit one file.
+  function setup({ conflict = false } = {}) {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-follow-')))
+    const remote = join(dir, 'remote.git')
+    const seed = join(dir, 'seed')
+    const clone = join(dir, 'clone')
+    git(dir, 'init', '-q', '--bare', '-b', 'main', remote)
+    git(dir, 'init', '-q', '-b', 'main', seed)
+    write(seed, { 'a.txt': 'one\n' })
+    git(seed, 'add', '-A')
+    git(seed, 'commit', '-q', '-m', 'init')
+    git(seed, 'switch', '-q', '-c', 'candidate/4')
+    git(seed, 'commit', '-q', '--allow-empty', '-m', 'chore: open candidate 4')
+    write(seed, conflict ? { 'a.txt': 'feature\n' } : { 'b.txt': 'feature\n' })
+    git(seed, 'add', '-A')
+    git(seed, 'commit', '-q', '-m', 'feat: b')
+    const oldHead = git(seed, 'rev-parse', 'HEAD')
+    git(seed, 'switch', '-q', 'main')
+    write(seed, conflict ? { 'a.txt': 'hotfix\n' } : { 'c.txt': 'hotfix\n' })
+    git(seed, 'add', '-A')
+    git(seed, 'commit', '-q', '-m', 'fix: hotfix')
+    const base = git(seed, 'rev-parse', 'HEAD')
+    git(seed, 'remote', 'add', 'origin', remote)
+    git(seed, 'push', '-q', 'origin', 'main', 'candidate/4')
+    git(dir, 'clone', '-q', '--no-checkout', remote, clone)
+    return { dir, remote, seed, clone, oldHead, base }
+  }
+
+  type Setup = ReturnType<typeof setup>
+
+  function answers(s: Setup, { prsInto = [] as number[], behindBy = 1, comments = {} as Record<number, string> } = {}) {
+    return {
+      '--state open': [{ number: 40, headRefName: 'candidate/4', body: '', headRefOid: s.oldHead }],
+      'compare/main...candidate/4': { behindBy, base: s.base },
+      'api graphql': prsInto.map((n) => node(n, { baseRefName: 'candidate/4' })),
+      'issues/40/comments': comments[40] ?? '',
+      ...Object.fromEntries(prsInto.map((n) => [`issues/${n}/comments`, comments[n] ?? ''])),
+    }
+  }
+
+  // The real git on the clone, its pushes recorded; `before` runs ahead of a push.
+  function recordingGit(s: Setup, { dryRun = false, log = silent as (l: string) => void, before = () => {} } = {}) {
+    const real = makeGit({ dryRun, log, cwd: s.clone, env: { ...process.env, ...IDENTITY } })
+    const pushes: string[][] = []
+    const calls: string[][] = []
+    const seam: Git & { pushes: string[][]; calls: string[][] } = {
+      pushes,
+      calls,
+      run: (args) => {
+        calls.push(args)
+        return real.run(args)
+      },
+      push: (args) => {
+        before()
+        pushes.push(args)
+        return real.push(args)
+      },
+    }
+    return seam
+  }
+
+  const remoteHead = (s: Setup) => git(s.remote, 'rev-parse', 'refs/heads/candidate/4')
+
+  test('nobody on the candidate: its commits are rebased on the base, the empty one kept, with a lease', (t) => {
+    const s = setup()
+    t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+    const gh = fakeGh(answers(s))
+    const g = recordingGit(s)
+    const result = follow({ ...run(gh), git: g })
+    const head = remoteHead(s)
+    assert.equal(result.outcome, 'updated')
+    assert.equal(result.head, head)
+    assert.notEqual(head, s.oldHead)
+    assert.equal(git(s.remote, 'rev-list', '--merges', `${s.base}..${head}`), '')
+    assert.deepEqual(git(s.remote, 'log', '--format=%s', `${s.base}..${head}`).split('\n'), [
+      'feat: b',
+      'chore: open candidate 4',
+    ])
+    assert.equal(git(s.remote, 'rev-parse', `${head}~2`), s.base)
+    assert.deepEqual(g.pushes, [
+      [`--force-with-lease=refs/heads/candidate/4:${s.oldHead}`, 'origin', `${head}:refs/heads/candidate/4`],
+    ])
+    assert.equal(gh.writes.length, 1)
+    assert.equal(gh.writes[0].args, 'pr comment 40 --repo o/r --body-file -')
+    const body = gh.writes[0].input ?? ''
+    assert.ok(body.includes(`<!-- candidate:followed:${head} -->`))
+    assert.match(body, new RegExp(`${s.base.slice(0, 8)}`))
+    assert.match(body, /rebased/)
+    assert.match(body, /no pull request is open into it/)
+    assert.ok(body.includes(s.oldHead.slice(0, 8)) && body.includes(head.slice(0, 8)))
+    assert.match(body, /pnpm ci:local/)
+    assert.equal(git(s.clone, 'worktree', 'list').split('\n').length, 1)
+  })
+
+  test("the clone's hooks do not run on the automation's rebase and push", (t) => {
+    const s = setup()
+    t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+    // Hooks that refuse everything: a project's pre-push or pre-rebase on the machine.
+    for (const hook of ['pre-push', 'pre-rebase', 'post-checkout']) {
+      write(s.clone, { [`.git/hooks/${hook}`]: '#!/bin/sh\nexit 1\n' })
+      chmodSync(join(s.clone, `.git/hooks/${hook}`), 0o755)
+    }
+    const result = follow({ ...run(fakeGh(answers(s))), git: recordingGit(s) })
+    assert.equal(result.outcome, 'updated')
+    assert.equal(remoteHead(s), result.head)
+  })
+
+  test('pull requests on the candidate: the base is merged into it, no force, and each is told', (t) => {
+    const s = setup()
+    t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+    const gh = fakeGh(answers(s, { prsInto: [12] }))
+    const g = recordingGit(s)
+    const result = follow({ ...run(gh), git: g })
+    const head = remoteHead(s)
+    assert.equal(result.outcome, 'updated')
+    assert.equal(git(s.remote, 'rev-list', '--parents', '-n', '1', head), `${head} ${s.oldHead} ${s.base}`)
+    assert.match(git(s.remote, 'log', '-1', '--format=%B', head), /^Merge main into candidate\/4\n\n.*main at /)
+    assert.ok(git(s.remote, 'log', '-1', '--format=%B', head).includes(s.base))
+    assert.deepEqual(g.pushes, [['origin', `${head}:refs/heads/candidate/4`]])
+    assert.deepEqual(
+      gh.writes.map((w) => w.args),
+      ['pr comment 40 --repo o/r --body-file -', 'pr comment 12 --repo o/r --body-file -'],
+    )
+    assert.match(gh.writes[0].input ?? '', /merged/)
+    assert.match(gh.writes[0].input ?? '', /#12 is open into it/)
+    assert.ok((gh.writes[1].input ?? '').includes(`<!-- candidate:followed:${head} -->`))
+    assert.match(gh.writes[1].input ?? '', /merge or (a )?rebase of `candidate\/4`/)
+  })
+
+  for (const [path, prsInto] of [
+    ['rebase', []],
+    ['merge', [12]],
+  ] as const) {
+    test(`a conflict in the ${path} path pushes nothing and names the file on the candidate`, (t) => {
+      const s = setup({ conflict: true })
+      t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+      const gh = fakeGh(answers(s, { prsInto: [...prsInto] }))
+      const lines: string[] = []
+      const g = recordingGit(s)
+      const result = follow({ ...run(gh), log: (l) => lines.push(l), git: g })
+      assert.equal(result.outcome, 'conflict')
+      assert.deepEqual(result.files, ['a.txt'])
+      assert.equal(remoteHead(s), s.oldHead)
+      assert.deepEqual(g.pushes, [])
+      assert.deepEqual(
+        gh.writes.map((w) => w.args),
+        ['pr comment 40 --repo o/r --body-file -'],
+      )
+      const body = gh.writes[0].input ?? ''
+      assert.ok(body.includes(`<!-- candidate:follow:${s.base}:${s.oldHead} -->`))
+      assert.match(body, /`a\.txt`/)
+      assert.match(body, /git switch candidate\/4/)
+      assert.match(body, /git merge origin\/main/)
+      assert.match(body, /An admin brings it up to date/)
+      assert.ok(lines.some((l) => l.startsWith('::warning title=Candidate not updated::candidate/4')))
+      assert.equal(git(s.clone, 'worktree', 'list').split('\n').length, 1)
+    })
+  }
+
+  test('a candidate moved after the read: the lease refuses, nothing is overwritten, the candidate is told', (t) => {
+    const s = setup()
+    t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+    let moved = ''
+    const g = recordingGit(s, {
+      before: () => {
+        git(s.seed, 'switch', '-q', 'candidate/4')
+        git(s.seed, 'commit', '-q', '--allow-empty', '-m', 'feat: pushed meanwhile')
+        git(s.seed, 'push', '-q', 'origin', 'candidate/4')
+        moved = git(s.seed, 'rev-parse', 'HEAD')
+      },
+    })
+    const gh = fakeGh(answers(s))
+    const lines: string[] = []
+    const result = follow({ ...run(gh), log: (l) => lines.push(l), git: g })
+    assert.equal(result.outcome, 'refused')
+    assert.equal(remoteHead(s), moved)
+    assert.equal(gh.writes.length, 1)
+    const body = gh.writes[0].input ?? ''
+    assert.ok(body.includes(`<!-- candidate:follow:${s.base}:${s.oldHead} -->`))
+    assert.match(body, /refused/)
+    assert.match(body, /stale info|rejected/)
+    assert.match(body, /An admin brings it up to date/)
+    assert.ok(lines.some((l) => l.startsWith('::warning title=Candidate not updated::')))
+  })
+
+  test('a comment already written is not written again', (t) => {
+    const s = setup({ conflict: true })
+    t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+    const marker = `<!-- candidate:follow:${s.base}:${s.oldHead} -->`
+    const gh = fakeGh(answers(s, { comments: { 40: JSON.stringify({ id: 1, body: `${marker}\nearlier` }) } }))
+    const result = follow({ ...run(gh), git: recordingGit(s) })
+    assert.equal(result.outcome, 'conflict')
+    assert.deepEqual(gh.writes, [])
+  })
+
+  test('the base already an ancestor: no git call, nothing written', (t) => {
+    const s = setup()
+    t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+    const gh = fakeGh(answers(s, { behindBy: 0 }))
+    const g = recordingGit(s)
+    const result = follow({ ...run(gh), git: g })
+    assert.equal(result.path, 'none')
+    assert.deepEqual(g.calls, [])
+    assert.deepEqual(g.pushes, [])
+    assert.deepEqual(gh.writes, [])
+  })
+
+  test('the base already an ancestor: the pull requests are not read', () => {
+    const gh = fakeGh({
+      '--state open': [{ number: 40, headRefName: 'candidate/4', body: '', headRefOid: 'a'.repeat(40) }],
+      'compare/main...candidate/4': { behindBy: 0, base: 'b'.repeat(40) },
+    })
+    const result = follow({ ...run(gh), git: noGit() })
+    assert.deepEqual([result.path, result.outcome], ['none', 'none'])
+  })
+
+  test('a comment that fails after the push is a warning: the candidate is updated, the others are told', (t) => {
+    const s = setup()
+    t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+    const base = fakeGh(answers(s, { prsInto: [12, 15] }))
+    const gh: typeof base = {
+      ...base,
+      write: (args, input) => {
+        if (args.join(' ') === 'pr comment 12 --repo o/r --body-file -') throw new Error('HTTP 502\nbad gateway')
+        return base.write(args, input)
+      },
+    }
+    const lines: string[] = []
+    const result = follow({ ...run(gh), log: (l) => lines.push(l), git: recordingGit(s) })
+    assert.equal(result.outcome, 'updated')
+    assert.equal(result.head, remoteHead(s))
+    assert.deepEqual(
+      base.writes.map((w) => w.args),
+      ['pr comment 40 --repo o/r --body-file -', 'pr comment 15 --repo o/r --body-file -'],
+    )
+    assert.ok(
+      lines.includes(
+        `::warning title=Candidate updated, comment not written::candidate/4 is at ${result.head?.slice(0, 8)}; the comment on #12 failed (HTTP 502 bad gateway)`,
+      ),
+      lines.join('\n'),
+    )
+  })
+
+  test('no candidate open: nothing read beyond the list', () => {
+    const gh = fakeGh({ '--state open': [] })
+    const result = follow({ ...run(gh), git: noGit() })
+    assert.deepEqual([result.path, result.reason], ['none', 'no candidate open'])
+  })
+
+  test('someone pushed to the candidate between the read and the fetch: nothing pushed, nothing written', (t) => {
+    const s = setup()
+    t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+    git(s.seed, 'switch', '-q', 'candidate/4')
+    git(s.seed, 'commit', '-q', '--allow-empty', '-m', 'feat: later')
+    git(s.seed, 'push', '-q', 'origin', 'candidate/4')
+    const gh = fakeGh(answers(s))
+    const g = recordingGit(s)
+    const result = follow({ ...run(gh), git: g })
+    assert.equal(result.outcome, 'moved-meanwhile')
+    assert.deepEqual(g.pushes, [])
+    assert.deepEqual(gh.writes, [])
+  })
+
+  test('a dry run computes the new head locally and pushes nothing', (t) => {
+    const s = setup()
+    t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+    const lines: string[] = []
+    const log = (l: string) => lines.push(l)
+    const gh = makeDryGh(answers(s), log)
+    const result = follow({ ...run(gh), log, git: recordingGit(s, { dryRun: true, log }) })
+    assert.equal(result.outcome, 'updated')
+    assert.equal(remoteHead(s), s.oldHead)
+    assert.ok(lines.includes('candidate: follow main: main moved and no pull request is open into candidate/4: rebase'))
+    assert.ok(
+      lines.some((l) =>
+        l.startsWith(`[dry-run] git push --force-with-lease=refs/heads/candidate/4:${s.oldHead} origin ${result.head}`),
+      ),
+    )
+    assert.ok(lines.some((l) => l.startsWith('[dry-run] gh pr comment 40')))
+  })
+
+  test('a shallow clone is unshallowed, then the candidate is rebased', (t) => {
+    const s = setup()
+    t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+    // A file:// URL, so the depth is honoured.
+    const shallow = join(s.dir, 'shallow')
+    git(s.dir, 'clone', '-q', '--no-checkout', '--depth', '1', `file://${s.remote}`, shallow)
+    assert.equal(git(shallow, 'rev-parse', '--is-shallow-repository'), 'true')
+    const gh = fakeGh(answers(s))
+    const result = follow({ ...run(gh), git: recordingGit({ ...s, clone: shallow }) })
+    assert.equal(result.outcome, 'updated')
+    const head = remoteHead(s)
+    assert.equal(result.head, head)
+    assert.equal(git(s.remote, 'rev-parse', `${head}~2`), s.base)
+    assert.equal(git(shallow, 'rev-parse', '--is-shallow-repository'), 'false')
+  })
+
+  test('the merge path tells the candidate and every pull request into it, none into the base', (t) => {
+    const s = setup()
+    t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+    const gh = fakeGh({
+      ...answers(s, { prsInto: [15, 12] }),
+      'api graphql': [
+        node(15, { baseRefName: 'candidate/4' }),
+        node(20, { baseRefName: 'main' }),
+        node(12, { baseRefName: 'candidate/4' }),
+      ],
+      'issues/20/comments': '',
+    })
+    const result = follow({ ...run(gh), git: recordingGit(s) })
+    assert.equal(result.path, 'merge')
+    assert.equal(result.outcome, 'updated')
+    assert.match(result.reason, /#12, #15 are open into candidate\/4/)
+    assert.deepEqual(
+      gh.writes.map((w) => w.args),
+      [
+        'pr comment 40 --repo o/r --body-file -',
+        'pr comment 12 --repo o/r --body-file -',
+        'pr comment 15 --repo o/r --body-file -',
+      ],
+    )
+  })
+
+  test('a pull request open on the base only does not stand on the candidate: rebase', (t) => {
+    const s = setup()
+    t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+    const gh = fakeGh({ ...answers(s), 'api graphql': [node(20, { baseRefName: 'main' })] })
+    const g = recordingGit(s)
+    const result = follow({ ...run(gh), git: g })
+    assert.equal(result.path, 'rebase')
+    assert.equal(result.outcome, 'updated')
+    assert.ok(g.pushes[0]?.[0]?.startsWith('--force-with-lease='))
+    assert.deepEqual(
+      gh.writes.map((w) => w.args),
+      ['pr comment 40 --repo o/r --body-file -'],
+    )
+  })
+
+  test('a base the fetch did not bring: nothing pushed, nothing written', (t) => {
+    const s = setup()
+    t.after(() => rmSync(s.dir, { recursive: true, force: true }))
+    const gh = fakeGh({ ...answers(s), 'compare/main...candidate/4': { behindBy: 1, base: 'f'.repeat(40) } })
+    const g = recordingGit(s)
+    const result = follow({ ...run(gh), git: g })
+    assert.equal(result.outcome, 'moved-meanwhile')
+    assert.deepEqual(g.pushes, [])
+    assert.deepEqual(gh.writes, [])
+  })
+
+  test('a rebase that fails with no file in conflict throws, naming git rebase', () => {
+    const oldHead = 'a'.repeat(40)
+    const base = 'b'.repeat(40)
+    const gh = fakeGh({
+      '--state open': [{ number: 40, headRefName: 'candidate/4', body: '', headRefOid: oldHead }],
+      'compare/main...candidate/4': { behindBy: 1, base },
+      'api graphql': [],
+    })
+    const ok = (stdout = '') => ({ status: 0, stdout, stderr: '' })
+    const fake: Git = {
+      run: (args) => {
+        const line = args.join(' ')
+        if (line.includes('--is-shallow-repository')) return ok('false')
+        if (line.includes('rev-parse refs/remotes/origin/candidate/4')) return ok(oldHead)
+        if (/ rebase --keep-empty /.test(` ${line} `)) {
+          return { status: 1, stdout: '', stderr: 'fatal: no identity\n' }
+        }
+        return ok()
+      },
+      push: (args) => {
+        throw new Error(`unexpected git push ${args.join(' ')}`)
+      },
+    }
+    assert.throws(() => follow({ ...run(gh), git: fake }), /git rebase failed: fatal: no identity/)
+    assert.deepEqual(gh.writes, [])
+  })
+})
+
+// The fake's reads, and the writes of a real dry run: logged, never made.
+function makeDryGh(answers: Record<string, unknown>, log: (line: string) => void): Gh {
+  const fake = fakeGh(answers)
+  const dry = makeGh({ dryRun: true, log })
+  return { read: fake.read, write: dry.write }
+}
+
+describe("the Ready check on the candidate's merge", () => {
+  const rules = readyRules({
+    board: {
+      github: { project: { owner: 'o', number: 1 } },
+      issueTypes: { parents: ['Feature'], children: ['Task'] },
+      subIssues: true,
+      blockedBy: true,
+      fields: {
+        status: { name: 'Stato', type: 'singleSelect', options: ['Nuova', 'Pronta'], ready: 'Pronta' },
+        priority: { name: 'Priority', type: 'singleSelect', options: ['P0'] },
+        size: { name: 'Size', type: 'singleSelect', options: ['S'] },
+      },
+    },
+  })
+  assert.ok(rules)
+  const withReady: CandidateConfig = { ...config, ready: rules }
+  const set = { __typename: 'ProjectV2ItemFieldSingleSelectValue' }
+
+  interface FakeIssue {
+    state?: string
+    blocking?: number[]
+    moreBlocking?: boolean
+    blockedBy?: Array<{ number: number; state: string }>
+    type?: string | null
+    parent?: number | null
+    size?: boolean
+    status?: string
+    project?: number
+    open?: number
+  }
+
+  // The issues by number; the repository's client answers the issue's reads, the board's
+  // the item's. `refused` makes the board's read fail as a token without the permission.
+  function fakeBoard(
+    issues: Record<number, FakeIssue>,
+    { merged = [] as unknown[], refused = false, comments = [] as string[], noPrList = false } = {},
+  ) {
+    const writes: string[] = []
+    const inputs: string[] = []
+    const numberOf = (args: string[]) => Number(args.find((a) => a.startsWith('number='))?.slice('number='.length))
+    const of = (args: string[]) => {
+      const issue = issues[numberOf(args)]
+      if (!issue) throw new Error(`no issue in ${args.join(' ')}`)
+      return issue
+    }
+    const repoNode = (number: number, state = 'OPEN') => ({ number, state, repository: { nameWithOwner: 'o/r' } })
+    const gh: Gh = {
+      read: (args) => {
+        const line = args.join(' ')
+        if (line.includes('pr list')) {
+          if (noPrList) throw new Error('gh: HTTP 502\nsecond line')
+          return JSON.stringify(merged)
+        }
+        if (line.includes('/comments')) return comments.map((body) => JSON.stringify({ id: 1, body })).join('\n')
+        const issue = of(args)
+        if (line.includes('blocking(first')) {
+          return JSON.stringify({
+            data: {
+              repository: {
+                issue: {
+                  state: issue.state ?? 'CLOSED',
+                  blocking: {
+                    pageInfo: { hasNextPage: issue.moreBlocking === true },
+                    nodes: (issue.blocking ?? []).map((n) => repoNode(n, issues[n]?.state ?? 'OPEN')),
+                  },
+                },
+              },
+            },
+          })
+        }
+        return JSON.stringify({
+          data: {
+            repository: {
+              issue: {
+                number: numberOf(args),
+                title: 't',
+                state: issue.state ?? 'OPEN',
+                repository: { nameWithOwner: 'o/r' },
+                issueType: issue.type === null ? null : { name: issue.type ?? 'Task' },
+                parent: issue.parent === null ? null : { number: issue.parent ?? 1 },
+                subIssuesSummary: { total: issue.open ?? 0, completed: 0 },
+                blockedBy: {
+                  pageInfo: { hasNextPage: false },
+                  nodes: (issue.blockedBy ?? []).map((b) => repoNode(b.number, b.state)),
+                },
+              },
+            },
+          },
+        })
+      },
+      write: (args, input) => {
+        writes.push(args.join(' '))
+        if (input) inputs.push(input)
+        return ''
+      },
+    }
+    const board: Gh = {
+      read: (args) => {
+        if (refused) throw new Error('gh: Resource not accessible by integration')
+        const issue = of(args)
+        const node = {
+          id: `I_${numberOf(args)}`,
+          isArchived: false,
+          status: { name: issue.status ?? 'Nuova' },
+          f0: set,
+          f1: issue.size === false ? null : set,
+          project: {
+            id: 'PVT',
+            number: issue.project ?? 1,
+            owner: { login: 'o' },
+            field: {
+              id: 'F',
+              options: [
+                { id: 'a', name: 'Nuova' },
+                { id: 'b', name: 'Pronta' },
+              ],
+            },
+          },
+        }
+        return JSON.stringify({ data: { repository: { issue: { projectItems: { nodes: [node] } } } } })
+      },
+      write: (args) => {
+        writes.push(`board ${args.filter((a) => /^(item|option)=/.test(a)).join(' ')}`)
+        return ''
+      },
+    }
+    return { gh, board, writes, inputs }
+  }
+
+  const merge = {
+    ...pr,
+    number: 40,
+    baseRef: 'main',
+    headRef: 'candidate/4',
+    merged: true,
+    body: recordMerges(candidateBody(config, 4), [{ number: 70, title: 't', closes: ['#69'] }]),
+  }
+  const merged = [{ number: 70, body: 'Closes #69' }]
+  const lines: string[] = []
+  const go = ({ gh, board }: { gh: Gh; board: Gh }, c = withReady, r = merge) =>
+    readyAfterMerge({ gh, board, repo: 'o/r', config: c, log: (l) => lines.push(l) }, r)
+
+  test('an issue the merge unblocked moves, with the evidence on the candidate', () => {
+    const fake = fakeBoard(
+      { 69: { blocking: [486] }, 486: { blockedBy: [{ number: 69, state: 'CLOSED' }] } },
+      { merged },
+    )
+    const report = go(fake)
+    assert.deepEqual(report?.moved, [{ number: 486, evidence: '#69 closed by #70' }])
+    assert.deepEqual(fake.writes, ['board item=I_486 option=b', 'pr comment 40 --repo o/r --body-file -'])
+    assert.match(fake.inputs[0], /<!-- candidate:ready:candidate\/4 -->/)
+    assert.match(fake.inputs[0], /Moved to Pronta:\n\n- #486: #69 closed by #70\./)
+  })
+
+  test('the merged pull requests are only evidence: when they cannot be read the move goes on', () => {
+    const fake = fakeBoard({ 69: { blocking: [486] }, 486: {} }, { noPrList: true })
+    lines.length = 0
+    const report = go(fake)
+    assert.deepEqual(report?.moved, [{ number: 486, evidence: '#69 closed by #40' }])
+    assert.ok(
+      lines.some((l) => /^::notice title=Ready check evidence::.*candidate\/4.*#40: gh: HTTP 502$/.test(l)),
+      lines.join('\n'),
+    )
+  })
+
+  test('an issue blocking more than one read holds is a notice, and alone writes no comment', () => {
+    const fake = fakeBoard({ 69: { blocking: [], moreBlocking: true } }, { merged })
+    lines.length = 0
+    const report = go(fake)
+    assert.deepEqual(report, { moved: [], already: [], left: [] })
+    assert.ok(
+      lines.some((l) => l.startsWith('::notice title=Ready check partial::#69 blocks more issues')),
+      lines.join('\n'),
+    )
+    assert.deepEqual(fake.writes, [])
+  })
+
+  test('one still blocked stays, and the comment says by what', () => {
+    const fake = fakeBoard(
+      {
+        69: { blocking: [486] },
+        486: {
+          blockedBy: [
+            { number: 69, state: 'CLOSED' },
+            { number: 5, state: 'OPEN' },
+          ],
+        },
+      },
+      { merged },
+    )
+    const report = go(fake)
+    assert.deepEqual(report?.moved, [])
+    assert.deepEqual(fake.writes, ['pr comment 40 --repo o/r --body-file -'])
+    assert.match(fake.inputs[0], /Left at Nuova:\n\n- #486: missing open blocker #5 \(#69 closed by #70\)\./)
+  })
+
+  test('one missing a field stays, and the comment names the field', () => {
+    const fake = fakeBoard({ 69: { blocking: [486] }, 486: { size: false } }, { merged })
+    go(fake)
+    assert.deepEqual(fake.writes, ['pr comment 40 --repo o/r --body-file -'])
+    assert.match(fake.inputs[0], /- #486: missing Size \(#69 closed by #70\)\./)
+  })
+
+  test('one holding open sub-issues stays, and is said so', () => {
+    const fake = fakeBoard({ 69: { blocking: [33] }, 33: { type: 'Feature', open: 2 } }, { merged })
+    go(fake)
+    assert.deepEqual(fake.writes, ['pr comment 40 --repo o/r --body-file -'])
+    assert.match(fake.inputs[0], /- #33: holds 2 open sub-issues/)
+  })
+
+  test('nothing waited: no comment', () => {
+    const fake = fakeBoard({ 69: {} }, { merged })
+    assert.deepEqual(go(fake), { moved: [], already: [], left: [] })
+    assert.deepEqual(fake.writes, [])
+  })
+
+  test('a blocker still open unblocks nothing', () => {
+    const fake = fakeBoard({ 69: { state: 'OPEN', blocking: [486] }, 486: {} }, { merged })
+    go(fake)
+    assert.deepEqual(fake.writes, [])
+  })
+
+  test('an issue past the first status is left alone; one at Ready is reported, not moved', () => {
+    const fake = fakeBoard(
+      { 69: { blocking: [1, 2] }, 1: { status: 'In progress' }, 2: { status: 'Pronta' } },
+      { merged },
+    )
+    const report = go(fake)
+    assert.deepEqual(report?.moved, [])
+    assert.deepEqual(report?.already, [{ number: 2, evidence: '#69 closed by #70' }])
+    assert.deepEqual(fake.writes, ['pr comment 40 --repo o/r --body-file -'])
+    assert.doesNotMatch(fake.inputs[0], /#1:/)
+  })
+
+  test('an issue on another Project only is left alone', () => {
+    const fake = fakeBoard({ 69: { blocking: [486] }, 486: { project: 9 } }, { merged })
+    assert.deepEqual(go(fake), { moved: [], already: [], left: [] })
+    assert.deepEqual(fake.writes, [])
+  })
+
+  test("a blocker no merged pull request names is the candidate's own", () => {
+    const fake = fakeBoard({ 69: { blocking: [486] }, 486: {} }, { merged: [] })
+    assert.deepEqual(go(fake)?.moved, [{ number: 486, evidence: '#69 closed by #40' }])
+  })
+
+  test('a refused token and a missing status are notices, and the run stays green', () => {
+    lines.length = 0
+    const refused = fakeBoard({ 69: { blocking: [486] }, 486: {} }, { merged, refused: true })
+    assert.deepEqual(go(refused), { moved: [], already: [], left: [] })
+    assert.match(lines.join('\n'), /::notice title=Board not moved::#486 is not moved to "Pronta"/)
+    lines.length = 0
+    assert.ok(rules)
+    const other = { ...withReady, ready: { ...rules, status: { ...rules.status, ready: 'Mancante' } } }
+    go(fakeBoard({ 69: { blocking: [486] }, 486: {} }, { merged }), other)
+    assert.match(lines.join('\n'), /"Mancante" is not an option of Stato \(Nuova, Pronta\)/)
+  })
+
+  test('no Projects token: a notice and nothing else', () => {
+    lines.length = 0
+    const { gh, writes } = fakeBoard({ 69: { blocking: [486] }, 486: {} }, { merged })
+    assert.equal(readyAfterMerge({ gh, repo: 'o/r', config: withReady, log: (l) => lines.push(l) }, merge), null)
+    assert.match(lines.join('\n'), /no token with the Projects permission/)
+    assert.deepEqual(writes, [])
+  })
+
+  test('a project with no board or no blocked-by relation has no check', () => {
+    const fake = fakeBoard({})
+    assert.equal(go(fake, config), null)
+    assert.ok(rules)
+    assert.equal(go(fake, { ...config, ready: { ...rules, blockedBy: false } }), null)
+    assert.deepEqual(fake.writes, [])
+  })
+
+  test('a rerun does not write the comment twice', () => {
+    const fake = fakeBoard(
+      { 69: { blocking: [486] }, 486: { status: 'Pronta' } },
+      {
+        merged,
+        comments: [`${readyMarker('candidate/4')}\nbefore`],
+      },
+    )
+    go(fake)
+    assert.deepEqual(fake.writes, [])
+  })
+
+  test('an issue that cannot be read does not stop the others, and fails the run after the comment', () => {
+    const fake = fakeBoard({ 69: { blocking: [1, 2] }, 2: {} }, { merged })
+    assert.throws(() => go(fake), /#1: /)
+    assert.deepEqual(fake.writes, ['board item=I_2 option=b', 'pr comment 40 --repo o/r --body-file -'])
+  })
+
+  test("the candidate's merge closes its issues before it checks who waited on them", () => {
+    const order: string[] = []
+    const fake = fakeBoard({ 69: { blocking: [486] }, 486: {} }, { merged })
+    const gh: Gh = {
+      read: (args) => {
+        const line = args.join(' ')
+        if (line.includes('issues/69') && line.includes('--jq')) return JSON.stringify({ state: 'open', isPr: false })
+        if (line.includes('blocking(first')) order.push('check')
+        if (line.includes('api graphql') && line.includes('pullRequests')) return JSON.stringify([])
+        if (line.includes('--state open') || line.includes('search')) return '[]'
+        return fake.gh.read(args)
+      },
+      write: (args, input) => {
+        if (args[0] === 'issue') order.push('close')
+        return fake.gh.write(args, input)
+      },
+    }
+    candidateMerged({ gh, board: fake.board, repo: 'o/r', config: withReady, log: silent }, merge)
+    assert.deepEqual(order, ['close', 'check'])
   })
 })

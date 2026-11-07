@@ -103,6 +103,25 @@ describe('finding the operator profile', () => {
   })
 })
 
+describe('review.stateDir', () => {
+  test('is a path in the profile, and a project profile wins over the global one', () => {
+    write(join(home, '.agents/operator.jsonc'), '{ "review": { "stateDir": "~/a" } }')
+    write(join(main, '.agents/local/operator.jsonc'), '{ "review": { "stateDir": "~/b" } }')
+    assert.deepEqual(loadOperator(worktree, { home }).profile.review, { stateDir: '~/b' })
+  })
+
+  test('refuses a value that is not a path, and a key the section does not have', () => {
+    for (const bad of [
+      '{ "review": { "stateDir": 3 } }',
+      '{ "review": { "stateDir": "" } }',
+      '{ "review": { "dir": "x" } }',
+    ]) {
+      write(join(main, '.agents/local/operator.jsonc'), bad)
+      assert.throws(() => loadOperator(worktree, { home }), ConfigError, bad)
+    }
+  })
+})
+
 describe('the command line', () => {
   test('operator prints the merged profile, operator get one key', () => {
     write(join(home, '.agents/operator.yml'), 'language: it\n')

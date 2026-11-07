@@ -10,7 +10,7 @@ machine with the candidate automation ([`lntt ci`](#ci-lntt-ci)).
 Reads, validates and edits a Lunette project's configuration: the values skills and
 scripts need, in `.agents/config.jsonc` **or** `.agents/config.yml` at the repository
 root (one of the two; both is an error). Sections are named after process areas
-(`recording`, `board`, `ci`, `delivery`, `cycle`, `spaces`, `team`, `local`) and the
+(`project`, `recording`, `board`, `ci`, `delivery`, `cycle`, `spaces`, `team`, `local`) and the
 tools that read them; [`schema/config.schema.json`](./schema/config.schema.json) says
 what each one holds.
 
@@ -26,6 +26,15 @@ lntt set recording.language '"it"'   # a JSON value, comments kept
 ```
 
 Exit codes: 0 ok, 1 configuration error, 2 usage error.
+
+`project.phase` says where the project stands: `development` until a release reaches
+production, then `production`. A missing key is `production`, the schema's default, so an
+existing project keeps every check until its team says otherwise; `lntt get project.phase`
+prints that default rather than exiting 1. In `development` the reviewers and the
+verifiers of `lntt review` read
+[what is not a finding before production, and what holds anyway](./agents/review/before-production.md).
+Switch it with `lntt set project.phase '"production"'` when the first release reaches
+production; a beta with real users is production. The templates start in `development`.
 
 ## The operator profile
 
@@ -92,14 +101,25 @@ of the file (an edited entry is reformatted): the `directory` marketplace this p
 `SessionStart` hook that installs the dependencies when `node_modules/.bin/lntt` is
 missing: with pnpm, or `npm ci` in a project with only a `package-lock.json`, within ten
 minutes. The hook never fails a session: when the install cannot run it says, once,
-what to run. Beside it go two lines of `lntt hook`: `lntt hook format` after `Write` and
-`Edit`, which passes the written file to the format commands, and `lntt hook typecheck`
+what to run. Beside it goes one line of `lntt hook`: `lntt hook typecheck`
 at `Stop`, in the background, which wakes the agent with a failure only when it differs
-from the last one. Their commands are `local.hooks.format` and `local.hooks.typecheck`
-(one command or a list), else the `package.json` script of that name, else none:
+from the last one. Its command is `local.hooks.typecheck`
+(one command or a list), else the `package.json` script of that name, else none.
+Formatting is the pre-commit's: `lntt sync` writes no format hook:
 
 ```jsonc
 "local": { "hooks": { "typecheck": ["tsc --noEmit", "uv run mypy ."] } }
+```
+
+And into the workflows: every line of `.github/workflows/*.yml` that ends with
+`# lntt sync: delivery.automated` gets the entries of `delivery.automated` (the pull
+requests a bot opens: author, branch prefix, `runs`, `ci`), minified, single-quoted,
+keeping the line's key and indent. A step that decides before any checkout, where lntt
+cannot run, reads them from there:
+
+```yaml
+env:
+  AUTOMATED: '[{"author":"dependabot[bot]","branch":"dependabot/","runs":"after-approval","ci":"full"}]' # lntt sync: delivery.automated
 ```
 
 So the skills, the plugin and the `lntt` they call are one version, the project's
@@ -107,7 +127,8 @@ lockfile: a bump of `@lntt/lntt` updates the guides and the plugin with no other
 `lntt check agents-md` fails when the block differs from its source; `lntt check
 skills` when a stub is missing or edited, or names a skill the package no longer has;
 `lntt check plugin` when an entry of `.claude/settings.json` is missing, disabled or
-points elsewhere. Either way, `lntt sync` runs on the branch of the bump and its diff
+points elsewhere; `lntt check workflows` when a marked workflow line differs from
+`delivery.automated`. Either way, `lntt sync` runs on the branch of the bump and its diff
 goes in the same pull request ([agent layer](../../docs/adr/agent-layer.md)).
 
 ## Checks (`lntt check`)
@@ -120,6 +141,7 @@ lntt check                                              # every area: what CI ru
 lntt check agents-md                                    # the managed block of AGENTS.md
 lntt check skills                                       # the stubs of the shared skills
 lntt check plugin                                       # the plugin and the hooks in .claude/settings.json
+lntt check workflows                                    # the workflow lines that hold delivery.automated
 lntt check decisions                                    # the decision logs of recording
 lntt check decisions --base main                        # … and what the diff from main touches
 lntt check decisions board-refs docs/product/pricing.md # the board references of those files
@@ -188,7 +210,12 @@ project's check.
 - **mutate** `path:line --text=<on that line> --to=<mutated>`: applied in a scratch git
   worktree (the head and the uncommitted files, dependencies shared; the working tree is
   never written), runs the tests that import the file with the `run` command of their
-  level, `repeat` times in a row. `PASS` is killed (the failing test and its message),
+  level, `repeat` times in a row. For a file that is not code (`.md`, `.json`, `.yml`…)
+  that no test imports (a file some test imports gets only its importers), such as a
+  `SKILL.md` a test reads as text, it runs the test files whose text names the file's
+  path or its last two segments (`review/SKILL.md`), or a directory of two segments or
+  more, whole or by its last two (`skills/review`); a directory of one segment (`docs`)
+  is no name. The output says the tests were chosen by name. `PASS` is killed (the failing test and its message),
   `FAIL` survived, `NOT RUN` when the text is not once on the line or the tests fail
   without the mutation. Write `--text=...` with the `=` when the text starts with `-`.
 
@@ -202,13 +229,14 @@ lntt branch name --issue 77          # feat/77/branch-names-follow-type: type, i
 lntt branch name --issue 77 --slug worktree-names   # --type and --slug override
 lntt branch name --type docs --slug version-numbering   # docs/no-issue/version-numbering
 lntt branch check                    # exit 1 off the convention, with the expected name
+                                     # (a detached HEAD at a candidate's head is that candidate)
 lntt branch check --pre-push         # the branches a push creates or updates (git's hook input)
 lntt branch rename                   # fix the name a tool gave the current branch; never fails
 ```
 
 The convention is `<type>/<issue>/<slug>` or `<type>/no-issue/<slug>`; the types are
-`delivery.branches.types` plus the hotfix prefix, and the base, the candidates and
-Dependabot's branches are exempt. `name` reads the issue with `gh` (its native type,
+`delivery.branches.types` plus the hotfix prefix, and the base, the candidates and the
+branches of `delivery.automated` are exempt. `name` reads the issue with `gh` (its native type,
 else the labels `bug` and `documentation`, else `feat`). `rename` reads the convention
 back from a flattened name (Orca's `<user>/<type>-<issue>-<slug>`, the agent harness's
 `worktree-<type>+<issue>+<slug>`) or, inside Orca, builds it from the issue linked to the
@@ -305,7 +333,7 @@ lntt worktree start --issue 78                 # a worktree, its setup, an agent
 lntt worktree start --issue 78 --issue 85      # one each
 lntt worktree start --issue 78 --no-agent      # the worktree only; the brief is printed
 lntt worktree start --issue 78 --host git      # force the host
-lntt worktree start --issue 78 --prompt '…'    # a prompt of your own instead of the brief
+lntt worktree start --issue 78 --prompt '…'    # instructions of your own, after the brief
 lntt worktree start --issue 78 --kind codex --model gpt-6 --effort high
 ```
 
@@ -316,8 +344,31 @@ refused; opencode gets its model through its inline configuration,
 `OPENCODE_CONFIG_CONTENT`, on a standalone server) handed the brief in
 [`agents/brief.md`](./agents/brief.md): the issue is the mandate, work only in this
 worktree, review and `pnpm ci:local` green, a **draft** pull request, then stop (no
-merge, no `gh pr ready`) and return a summary and the friction met. One JSON line per
-issue: host, branch, path, and the agent's handle.
+merge, no `gh pr ready`) and return a summary and the friction met, with every wait sent
+through the mailbox ([`agents/waiting.md`](./agents/waiting.md)). `--prompt` adds
+instructions of one's own after the brief, in a closing `## Added at start` section. One
+JSON line per issue: host, branch, path, and the agent's handle.
+
+The worktree starts from the base (`--base` names another one), on every host:
+`origin/<candidate>` while a candidate is open, else `origin/<default branch>`
+([the base of a branch](#the-base-of-a-branch)).
+
+### The base of a branch
+
+`lntt worktree start`, `lntt review` and `lntt ci local` find a branch's base one way
+(`packages/lntt/src/base.ts`, decided in the project's worktree tooling record):
+
+- **The open candidate**, asked to GitHub with `gh pr list` when `delivery.candidate` is
+  set: a new worktree starts from `origin/<candidate>`; a branch that descends from it
+  is compared with it from its fork point; the candidate's own head goes into the
+  default branch.
+- **Else the default branch** (`delivery.candidate.base`, else the branch `origin/HEAD`
+  names, else `main`), as `origin/<branch>`.
+- **Never a local branch**, which may be behind: a base missing from the clone is an
+  error that asks for `git fetch origin`. When GitHub cannot answer, the base is
+  `origin/<default branch>` and the command says so on stderr.
+- **`--base <branch>` wins** in each command: `origin/<branch>`, else the local branch
+  of that name (a sibling's branch in a stack).
 
 The host is the innermost one the session runs in, detected from the environment:
 
@@ -364,32 +415,102 @@ lntt worktree start --theme release-0-6-1 --parent current --issue 89 \
 The agents talk through the mailbox, which needs no Orca or Herdr:
 
 ```sh
-lntt ask --to coordinator --theme release-0-6-1 "Which pull request first?"   # waits; stdout is the answer
+lntt ask --to coordinator --theme release-0-6-1 --issue 89 "Which pull request first?"   # waits; stdout is the answer
+lntt ask --to orchestrator --issue 89 "May I push?"           # topic issue-89-may-i-push, in to-orchestrator/
+lntt ask --wait 20261017-101500-issue-89-review-limit          # the answer to a message already sent
 lntt inbox --as coordinator --theme release-0-6-1 [--wait]    # unanswered messages, one JSON line each
-lntt answer 20261017-101500-which-pull-request "The CLI one."
+lntt answer 20261017-101500-issue-89-which-pull-request "The CLI one."
 ```
 
 A message is `<git common dir>/lntt-messages/to-<role>/<YYYYMMDD-HHMMSS>-<topic>.md`, its answer the
 same name ending in `.answer.md`; polled every 20 seconds (`LNTT_POLL_SECONDS`). A child is
-addressed by `--issue`, a coordinator by `--theme`. `--timeout <s>` ends a wait with exit 1 and
-leaves the message in place; `-` reads the text from stdin; `LNTT_ROLE`, `LNTT_THEME` and
-`LNTT_ISSUE` default `inbox`'s role and address.
+addressed by `--issue`, a coordinator by `--theme`; sent to the orchestrator or a coordinator,
+`--issue` says which child the message is about and prefixes its topic with `issue-<n>-`.
+`--timeout <s>` ends a wait with exit 1 and leaves the message in place; `--wait <id>` waits
+again for its answer, with the same output and exit codes; `-` reads the text from stdin;
+`LNTT_ROLE`, `LNTT_THEME` and `LNTT_ISSUE` default `inbox`'s role and address.
+
+Every wait of a child goes through the mailbox, and its brief says so: a question, an approval
+(a 1Password prompt included), the review limit. `lntt worktree start` records who each branch
+reports to in `<git common dir>/lntt-messages/started/<branch, URL-encoded>.json`; at
+`lntt review: limit:` the round sends the open findings there itself, without waiting, and
+prints the id to wait on with `lntt ask --wait <id>` (the same id while that message waits for
+its answer).
 
 ## Reviewing a change
 
 ```sh
-lntt review                       # one round on the current branch; JSON on stdout
-lntt review --base <branch>       # against another base (a stacked pull request)
+lntt review                       # one round on the current branch; a summary on stdout
+lntt review --base <branch>       # against another base than the resolved one (a stacked pull request)
 lntt review --plan                # the range, the lenses and their agents; runs nothing
 lntt review reply f2 "line 120 excludes it"   # answer the reviewers who found f2
 lntt review allow 2               # two rounds more for this branch, past maxRounds
+lntt review status                # the worktree's state: each level folded, the outcome, what to act on
+lntt review status --json         # the whole state, one shape whatever the case
+lntt review status --query '.state.rounds[1:3][] | {round,usd}'   # a part of it, in jq
+lntt review status --clear        # remove this merged branch's state, ledger, progress (or an unreadable state)
+lntt review status --prune        # remove the state and ledger of branches that are gone; --dry-run says which
+lntt review cost                  # the branch's rounds, tokens and USD: the pull request's Review cost line
+lntt review cost --json           # each round's cost and the total
 ```
+
+`lntt review status` is how the state is read: never from the files, which are one per
+branch in the place described under [Where the state is kept](#where-the-state-is-kept).
+Its exit code is 0 when this branch's last round is clean, 1 with something to act on (a
+blocking finding open, a failed or partial lens), 3 at the limit, 4 with no round on this
+branch (none yet, or a detached HEAD). `--json` gives `branch`, `running` (the pid
+of a round holding the lock) and `state`: its `branch`, `current` (always true), `updated`, `merged`
+(null when it cannot be told: no base to compare with, an open candidate GitHub
+could not name, no commit of the branch; with `delivery.candidate` set, status asks
+GitHub for the open candidate, as every lntt command that resolves the base does), the round, `limit`
+(maxRounds and the rounds allowed), `reviewed`, `clean`, `atLimit`, `scope`, `lenses`, `open`, `replied`
+(with the `reply` the author gave), `closed` (the ledger), `failed`, `partial`, `skipped`,
+`tokens`, `cost`, `findings` (the last round's, every verdict), `refuted`, `repeated` (the
+fresh findings that repeat a ledger entry, with `closedWhat` and `closedBy`) and `rounds`
+(each round's cost). A state that cannot be read is an error, exit 1, with nothing on
+stdout even with `--json`. `--clear` also removes it; it never runs while a round holds
+the lock, never removes the lock, and refuses on the current branch until it is merged
+into the base.
+
+Without a flag, on this branch's state, status folds each level before the outcome line,
+each label the key under `.state`:
+
+```
+findings: 14 (3 open)
+refuted: 2
+repeated: 1
+closed: 5
+failed: 1
+partial: 0
+skipped: 0
+rounds: 4
+lntt review: feat/1/x: round 4 of 5, reviewed abc1234, not clean; 3 open (1 blocking), ...
+  f1 blocker confirmed a.ts:1 — what
+  code · claude sonnet failed: the error
+  tests · claude sonnet: 2 lines not read
+  f3 warning repeats f1 a.ts:1 — what
+```
+
+`--query <jq>` runs a jq expression on the `--json` document (`{ branch, running, state }`,
+`state` null with no round): `.state.findings[] | select(.id=="f12")`,
+`.state.rounds[1:3][] | {round,usd}`. Strings come raw and the rest compact, one per line;
+with `--json` too, JSON values one per line. It exits as status does. A jq failure exits 2
+with jq's message on stderr and nothing on stdout, what it printed before failing included;
+with no state, a failure while running (`.state.open[]`) exits 4 with the no-round line and
+jq's message on stderr. A query runs in jq's sandbox: `env` is not the process's. A signal
+ends a query that does not end.
 
 A round, on a clean working tree:
 
-1. **What to read:** the branch from where it left the base the first time, then only
+1. **What to read:** the branch from where it left the base
+   ([the base of a branch](#the-base-of-a-branch)) the first time, then only
    the commits after the last reviewed one (after a rebase, the whole branch again).
-   The state is `lntt-review.json` in the worktree's git directory.
+   The state is the branch's file in [the place](#where-the-state-is-kept). Its `rounds` keep
+   each round that read files: `round`, `head`, `tokens`, `usd` (null when no agent
+   reported them), `noTokens` and `noUsd` (the agents that reported none, a failed one
+   included). After `round N done`, stderr says `lntt review: branch total: <line>`; the
+   line names the rounds a state saved before `rounds` existed has no entry for
+   (`not recorded: rounds 1, 2`).
 2. **Checks**: a lens named after an area of `lntt check` (`decisions`, `tests`) gets
    `lntt check <area> --base <first commit read> --json` in its prompt, and its brief
    keeps only what needs judgement.
@@ -401,6 +522,8 @@ A round, on a clean working tree:
    standalone server with an inline agent that denies every tool and allows read, grep,
    glob and list back. `--plan` and every round name where the diff goes: the provider
    of each configured agent.
+   With `project.phase` set to `development`, every lens prompt carries
+   [what is not a finding before production](#the-configuration).
 4. **Citations**: `lntt check cite` reads the line of every finding (the working tree,
    clean at the head). A finding on a line past the end of its file is refuted there,
    with no verifier; the others take the line's text to their verifiers. A file that is
@@ -411,7 +534,8 @@ A round, on a clean working tree:
    being the proof, with no verifier asked.
 5. **Verifiers**, all at once: each blocker and warning (`delivery.review.verify`) goes
    to every verifier but the agents that found it, briefed to refute it
-   ([`agents/verify.md`](./agents/verify.md)). All confirm: confirmed. All refute:
+   ([`agents/verify.md`](./agents/verify.md)), with the same list in `development`.
+   All confirm: confirmed. All refute:
    refuted. Otherwise undecided. Findings still open from the last round go back to
    them on the new head.
 
@@ -421,16 +545,18 @@ for a band beside the agent. Under Claude Code in Orca each agent shows as a sub
 of the session; agents never inherit the host's hook variables. On macOS `caffeinate`
 keeps the machine awake for the round.
 
-stdout is the round: `findings` to act on, `refuted` with their proofs, `failed`
-reviewers and verifiers, `cost` in USD when the agents report it (claude does). Exit 0
+stdout is the round's summary: the outcome line and the lines per thing to act on that
+`lntt review status` prints, without the folded levels. The whole result stays in the state:
+`findings` to act on, `refuted` with their proofs, `failed` reviewers and verifiers, `cost`
+in USD when the agents report it (claude does), read with `lntt review status`. Exit 0
 when no blocker or warning is left and nothing failed, 1 otherwise; notes are reported
 and do not block, nor are they carried to the next round. From the round after
 `delivery.review.warningRounds` a warning does not block either: the round's `blocking`
 names only `blocker`, and the warnings left go in the pull request as open items. The
 branch keeps a ledger of the findings it closed (fixed, refuted, accepted open) in
-`<git dir>/lntt-review-ledger.json`: each round's reviewers read the entries on the files of
+its own file next to the state: each round's reviewers read the entries on the files of
 the change and those with no anchor, each verifier those on its finding's file; a
-fresh finding that repeats one on a line that did not change goes to `closed`, not
+fresh finding that repeats one on a line that did not change goes to `repeated`, not
 verified and not blocking. A reply that is neither
 finding lines nor `no findings` counts as a failed reviewer; after a failure the next
 round reads the same range again. A reviewer is stopped after
@@ -450,10 +576,47 @@ A finding whose reviewer cannot be resumed is refused: the person decides on it.
 
 A branch takes at most `delivery.review.maxRounds` rounds, one with a failure among
 them. The round past the limit does not start: `lntt review: limit: …` on stderr with the findings still open, the
-same findings as JSON on stdout, a `limit` event in the progress file, exit 3. `allow`
+last round's summary on stdout, a `limit` event in the progress file, exit 3. On a branch
+`lntt worktree start` started, the open findings also go to its coordinator or the
+orchestrator as a message the round does not wait for (`asked` in the event,
+`lntt review: limit: sent <id>` on stderr). `allow`
 gives the current branch more rounds, kept in its state; the configuration and the
 other branches stay as they are. A run with no new commit is not a round and is never
 stopped.
+
+### Where the state is kept
+
+The state of a branch and its ledger of closed findings are one file each per branch,
+named by the branch with its characters percent-encoded, a capital as `%` and its lower-case
+hexadecimal code (`feat/1/x` is `feat%2F1%2Fx`, `Fix/A` is `%46ix%2F%41`):
+`<place>/state/<branch>.json` and `<place>/ledger/<branch>.json`. A round on one branch
+touches nothing of another's, every worktree of the clone finds a branch's state, and
+closing a worktree takes nothing with it. The place is, in order:
+
+1. `review.stateDir` in the operator's profile (`lntt operator`): an absolute path or one
+   starting with `~`. Personal: it never goes in the project configuration.
+2. `delivery.review.stateDir` in the project configuration: the project's default; a
+   relative path starts at the main checkout.
+3. The clone's common git directory: `<git common dir>/lntt-review/`.
+
+A configured place may be shared by clones, so a folder per repository is made inside it:
+`<org>/<repo>` from the origin URL, or `local/<hash of the git directory>` with no origin or
+when an org or repo is `.` or `..`.
+The lock and the progress file the band reads belong to a running process and stay in each
+worktree's own git directory.
+
+`lntt review status --prune` removes the state and ledger of the branches that are gone:
+no local branch and no remote-tracking one of that name, or a local branch whose upstream is
+gone (GitHub deletes the head branch on merge and the local one stays). A branch checked
+out in any worktree stays. `--prune --dry-run` lists them and removes nothing.
+`--clear` is for the current branch: it removes its state, ledger and progress once the
+branch is merged, or its state alone when that cannot be read.
+
+A state kept before the place existed, in `lntt-review.json` and `lntt-review-ledger.json`
+of a worktree's git directory, is read once, on the first run in that worktree: moved to the
+file of the branch it names with a line on stderr (the newer wins when the place already has
+one for that branch), one that cannot be read is set aside as `*.unreadable`. After that the
+old paths are not read.
 
 ## Running the apps locally
 
@@ -574,6 +737,26 @@ configuration error, a read or a write `gh` refuses (with the changes applied be
 it), a change that does not show on the read-back, or with `--check` a board that
 differs (a change or an entry by hand); 2 a usage error.
 
+## The Ready check (`lntt board ready`)
+
+```sh
+lntt board ready           # the issues at the first status: Ready-eligible, or what is missing
+lntt board ready --apply   # moves the eligible ones, then reads the board back
+```
+
+It reads the open issues of this repository at the first status
+(`board.fields.status.initial`) of `board.github.project`, every page, and checks what a
+machine can: the type (`board.issueTypes`), the fields `priority` and `size` of
+`board.fields`, on the item or, with `kind: issue`, on the issue; a parent for a child
+type outside `board.issueTypes.standalone`, with `board.subIssues`; no open blocker, with
+`board.blockedBy`. What the configuration leaves out is no criterion. An issue with open
+sub-issues is listed apart and never moved. `--apply` moves the eligible ones to
+`board.fields.status.ready`, 1.2 s apart. The same check runs on a candidate's merge for
+the issues it unblocked (`lntt ci candidate`). Exit codes: 0 the list, or every move
+applied and read back; 1 a configuration with no board, a read or a write `gh` refuses, a
+ready status the Project does not have, a move that does not show on the read-back; 2 a
+usage error.
+
 ## CI (`lntt ci`)
 
 Runs a project's CI on the local machine, and moves pull requests through the
@@ -587,7 +770,7 @@ secrets policy are the project's CI process description (`docs/process/ci.md`).
 ```sh
 lntt ci local                      # the jobs a ready pull request into the base triggers
 lntt ci local --list               # per job: what the cloud runs, what runs locally
-lntt ci local --base candidate/3   # the pull request into another base
+lntt ci local --base feat/12/x     # the pull request into another base
 lntt ci local --event push         # a push to the base
 lntt ci local --job ci.yml/ci      # one job (repeatable)
 lntt ci local --strict             # fail on anything the cloud runs and the run did not
@@ -596,8 +779,11 @@ lntt ci local --no-lock            # without waiting for the ci:local lock
 ```
 
 ```sh
-lntt ci candidate                     # in the candidate workflow: reads the pull_request event
-lntt ci candidate --pr 12 --dry-run   # from a terminal: what the workflow would do for #12
+lntt ci candidate                     # in the candidate workflow: reads the pull_request or push event
+lntt ci candidate --pr 12 --dry-run   # from a terminal: what the workflow would do for #12, without following
+lntt ci candidate --follow --dry-run  # how the open candidate would follow the base, and why
+lntt ci candidate --guard             # in the guard workflow: is this pull request into the base where it belongs?
+lntt ci candidate --guard --pr 12     # the same check on #12, from a terminal
 ```
 
 ```sh
@@ -606,7 +792,22 @@ lntt ci proved --job ci --step 'Full CI'   # in a push run: is this tree already
 
 A project runs the first as `pnpm ci:local`; the second is the candidate automation
 (`delivery.candidate`), run by the project's candidate workflow, whose flow is the
-delivery process description (`docs/process/delivery.md`). The candidate logic is
+delivery process description (`docs/process/delivery.md`). On a push to the base, with
+`--follow`, and at the start of every workflow run, the open candidate follows the base
+when the base moved (a terminal run with `--pr` does not follow; `--follow` takes no
+`--pr`, `--event`, `--head-ref`, `--labels` or `--merged`): rebased on it and pushed
+with a lease when no pull request is open into it, the base merged into it otherwise, a
+comment on its pull request either way, or one naming the conflict. Without
+`--dry-run`, `--follow` pushes the candidate right away from the operator's clone (a
+force push with a lease on the rebase path): run it with `--dry-run` first.
+`--guard` only reads: a pull request into the base passes when it is the candidate, a
+hotfix (the branch prefix or the label of `delivery.candidate.hotfix`) or a bot's
+(`delivery.automated`: its author and branch prefix), a branch name counting only from
+the same repository, and any pull request into another branch passes; any other one fails (exit 1) with an
+error annotation naming the remedy, `lntt ci candidate --pr <n>`. It takes no other
+flag but `--pr`.
+`--dry-run` prints the push and the comments; the fetch, merge and rebase still run on
+the local clone. The candidate logic is
 adapted from DiscenTech/pelion's `scripts/ci/release-candidate.mjs`. Exit codes: 0 green, 1 a red job or a
 configuration error, 2 a usage error.
 
@@ -622,10 +823,14 @@ uses it is the project's CI process description.
 ### What it runs
 
 - **The event.** By default a pull request from the current branch into the base,
-  ready for review: the run the cloud starts once a draft leaves draft. The base
-  defaults to the branch `origin/HEAD` points at. `--base` names another one; `--event
-  push` stands in for a push to the base. Nothing is fetched and GitHub is never asked:
-  the base is the local ref (`origin/<base>`, else `<base>`), and the report names it.
+  ready for review: the run the cloud starts once a draft leaves draft. The base is
+  the resolved one ([the base of a branch](#the-base-of-a-branch)): the open candidate
+  for a branch on it, else the default branch. `--base` names another one
+  (`origin/<base>`, else `<base>`); `--event push` stands in for a push to the default
+  branch, or to `--base`. Nothing is fetched, and the report names the base and the
+  ref it diffs against. On a detached HEAD at a candidate's head (`git switch --detach
+  origin/candidate/<N>`), the head branch is that candidate, so the branch check passes
+  without a local branch named after it.
 - **Which jobs.** A workflow runs when its `on:` takes the event, with its branch,
   types and path filters applied to the local diff. A job's `if:` is evaluated against
   the event: event name, draft, base and head refs, the repository and its default

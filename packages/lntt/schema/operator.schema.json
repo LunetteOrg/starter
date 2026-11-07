@@ -28,6 +28,18 @@
       "description": "Language to talk in, as a BCP 47 tag (it, en). Records are written in the project's recording.language regardless.",
       "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]+)*$"
     },
+    "review": {
+      "type": "object",
+      "description": "How lntt review works for this operator.",
+      "additionalProperties": false,
+      "properties": {
+        "stateDir": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Where lntt review keeps each branch's state and ledger of closed findings: an absolute path or one starting with ~, e.g. ~/.lntt/review. Overrides delivery.review.stateDir. A folder per repository (<org>/<repo>) is made inside it. Default: the clone's common git directory."
+        }
+      }
+    },
     "confidence": {
       "type": "object",
       "description": "How much the agent explains, per topic (git, ci, testing, databases, …). Level 1 = new to it, 5 = expert.",

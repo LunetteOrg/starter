@@ -4,12 +4,13 @@
 //
 //   <git common dir>/lntt-messages/to-<role>/<YYYYMMDD-HHMMSS>-<topic>.md          the question
 //   <git common dir>/lntt-messages/to-<role>/<YYYYMMDD-HHMMSS>-<topic>.answer.md   the answer
+//   <git common dir>/lntt-messages/started/<branch, URL-encoded>.json               who a branch reports to
 //
 // The git common directory is shared by every worktree of the repository and is not
 // part of any of them: nothing here is ever committed.
 
 import { randomUUID } from 'node:crypto'
-import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { slugify } from './branch.ts'
 
@@ -46,7 +47,9 @@ function asRole(role: string): Role {
 
 // Who exactly: a child by its issue (to-child-<issue>), a coordinator by its theme
 // (to-coordinator-<theme>), since several of each run in one repository. Without it, the
-// role's own directory.
+// role's own directory. In a message sent to the orchestrator or a coordinator, the issue
+// says which child it is about: send() puts it in the topic (issue-<n>-<topic>), and the
+// directory stays the role's.
 export interface Address {
   issue?: number
   theme?: string
@@ -94,18 +97,25 @@ export function send(box: Mailbox, to: string, question: string, options: { topi
       .replace(/-+$/, '') ||
       'message')
   if (!SLUG.test(topic)) throw new Error(`the topic ${topic || '(none)'} is not a slug: a-z, 0-9, -`)
-  const directory = messageDirectory(box.dir, to, options)
+  const { issue, theme } = options
+  const child = asRole(to) === 'child'
+  const tag = `issue-${issue}-`
+  const tagged = issue === undefined || child || topic.startsWith(tag) ? topic : `${tag}${topic}`
+  const directory = messageDirectory(box.dir, to, {
+    ...(issue !== undefined && child ? { issue } : {}),
+    ...(theme === undefined ? {} : { theme }),
+  })
   mkdirSync(directory, { recursive: true })
   const when = stamp(box.now())
   for (let attempt = 1; ; attempt += 1) {
-    const id = `${when}-${topic}${attempt === 1 ? '' : `-${attempt}`}`
+    const id = `${when}-${tagged}${attempt === 1 ? '' : `-${attempt}`}`
     const path = join(directory, `${id}.md`)
-    if (publish(path, `${text}\n`)) return { id, topic, to: asRole(to), path, question: text }
+    if (publish(path, `${text}\n`)) return { id, topic: tagged, to: asRole(to), path, question: text }
   }
 }
 
 // Every message of every directory with this id, answered or not.
-function locate(root: string, raw: string): string[] {
+export function locate(root: string, raw: string): string[] {
   const id = raw.replace(/\.md$/, '')
   if (!existsSync(root) || !MESSAGE.test(`${id}.md`)) return []
   return readdirSync(root, { withFileTypes: true })
@@ -171,4 +181,50 @@ export function pending(root: string, role: string, address: Address = {}): Mess
     })
     .filter((message) => !existsSync(answerPath(message)))
     .sort((a, b) => a.id.localeCompare(b.id))
+}
+
+// Who a branch started by `lntt worktree start` reports to: its coordinator (by theme) or
+// the orchestrator (with its issue). `lntt review` reads it at the limit to send what is
+// open there. A coordinator's own branch reports to the orchestrator, on no issue.
+export interface Started {
+  branch: string
+  issue: number | null
+  to: 'coordinator' | 'orchestrator'
+  theme?: string
+}
+
+// URL-encoded, so two branches never share a file (feat/84-x and feat-84/x included).
+const startedFile = (root: string, branch: string) => join(root, 'started', `${encodeURIComponent(branch)}.json`)
+
+// Whole or not at all, replacing the marker of an earlier start of the branch.
+export function recordStarted(root: string, marker: Started): void {
+  const file = startedFile(root, marker.branch)
+  mkdirSync(dirname(file), { recursive: true })
+  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    writeFileSync(temporary, `${JSON.stringify(marker)}\n`)
+    renameSync(temporary, file)
+  } finally {
+    rmSync(temporary, { force: true })
+  }
+}
+
+// Drops the marker of a start that failed, so nothing reads it as a coordinator.
+export function forgetStarted(root: string, branch: string): void {
+  rmSync(startedFile(root, branch), { force: true })
+}
+
+// Null for a branch with no marker, or with one that is not its own or cannot be read.
+export function startedBy(root: string, branch: string): Started | null {
+  const file = startedFile(root, branch)
+  if (!existsSync(file)) return null
+  try {
+    const marker = JSON.parse(readFileSync(file, 'utf8')) as Started
+    if (marker.branch !== branch || !['coordinator', 'orchestrator'].includes(marker.to)) return null
+    if (marker.to === 'coordinator' && (typeof marker.theme !== 'string' || !SLUG.test(marker.theme))) return null
+    if (marker.issue !== null && !Number.isInteger(marker.issue)) return null
+    return marker
+  } catch {
+    return null
+  }
 }
