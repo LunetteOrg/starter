@@ -466,7 +466,8 @@ GitHub for the open candidate, as every lntt command that resolves the base does
 (maxRounds and the rounds allowed), `reviewed`, `clean`, `atLimit`, `scope`, `lenses`, `open`, `replied`
 (with the `reply` the author gave), `closed` (the ledger), `failed`, `partial`, `skipped`,
 `tokens`, `cost`, `findings` (the last round's, every verdict), `refuted`, `repeated` (the
-fresh findings that repeat a ledger entry, with `closedWhat` and `closedBy`) and `rounds`
+fresh findings that repeat a ledger entry, with `closedWhat` and `closedBy`), `preexisting`
+(the ledger's pre-existing findings, every round's) and `rounds`
 (each round's cost). A state that cannot be read is an error, exit 1, with nothing on
 stdout even with `--json`. `--clear` also removes it; it never runs while a round holds
 the lock, never removes the lock, and refuses on the current branch until it is merged
@@ -557,7 +558,9 @@ branch keeps a ledger of the findings it closed (fixed, refuted, accepted open) 
 its own file next to the state: each round's reviewers read the entries on the files of
 the change and those with no anchor, each verifier those on its finding's file; a
 fresh finding that repeats one on a line that did not change goes to `repeated`, not
-verified and not blocking. A reply that is neither
+verified and not blocking. A finding a reviewer marks `[pre-existing]`, on a line the
+branch did not write, is not verified and does not block: it enters the ledger at once,
+is not reported again, and is listed apart for the pull request body. A reply that is neither
 finding lines nor `no findings` counts as a failed reviewer; after a failure the next
 round reads the same range again. A reviewer is stopped after
 `delivery.review.timeoutMinutes` and counts as failed; at most

@@ -112,6 +112,7 @@ export {
   runRound,
   type Severity,
   TEST_PATHS,
+  touchedLines,
   unreadableFindings,
   verdict,
   verifiersFor,

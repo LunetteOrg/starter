@@ -87,6 +87,9 @@ and is written in `delivery.pullRequest.language`:
   reason.
 - **Review**: the rounds of `lntt review`, what each found and how it ended, and the
   findings left open.
+- **Pre-existing findings**: what `lntt review` lists as pre-existing, on lines the
+  change did not touch, each with its id, `path:line` and sentence. They do not block;
+  at the squash the person decides, one by one, whether each becomes an issue.
 - **Checks**: `pnpm ci:local` on the commit pushed, with its outcome, and for each test
   the change adds or alters that guards a line the mutation that makes it fail (the `mutation-check` skill,
   [test checks](../adr/test-checks.md)).

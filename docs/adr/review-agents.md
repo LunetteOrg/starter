@@ -128,6 +128,25 @@ same way every time; the `review` skill keeps the judgement.
   list with the entry it repeats and that entry's text: shown, never verified, never
   blocking. The match is by place, so the author reads each against the entry's text. A finding on a
   changed line, or at a higher severity, is a new finding.
+- **A finding on a line the change did not touch, which the change does not contradict,
+  is pre-existing.** Any lens may report one, with `[pre-existing]` after its severity.
+  The reviewer judges the contradiction; lntt proves the line untouched, against the
+  lines the branch wrote from its merge base (`git diff -U0`, the new side of each hunk,
+  whatever range the round reads), and drops the mark from a finding on a line the branch
+  wrote, with no line, or marked by only some of the reviewers that found it: that one is
+  reported as any other. A pre-existing finding goes to the round's `preexisting` list
+  and enters the ledger as *pre-existing* in the round that finds it. It is not verified:
+  it never blocks, so a verdict would decide nothing, and the person reads each one at
+  the squash anyway. It does not count toward a clean round, nor toward `maxRounds` or
+  `warningRounds`, and a later round does not report it again: a fresh finding marked
+  pre-existing at its place, on a line that reads the same and at a severity no higher,
+  is a repeat. One at that place without the mark says the change now contradicts it:
+  it is verified as a new finding, and the verifier is not given the pre-existing entry
+  as a reason to refute it. `lntt review` and `lntt review status` list the branch's
+  pre-existing findings, every round's, after what blocks (`--json`: `preexisting`).
+  The author copies them into the pull request body, in a section of their own; at the
+  squash the person decides, one by one, whether each becomes an issue. None is opened
+  automatically.
 - **A warning blocks only in the first `warningRounds` rounds:** later rounds find
   the edge cases of the fixes before them, and a round that must find nothing has no
   end on a change with many. From the next round only a blocker keeps a round from
