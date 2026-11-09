@@ -5,7 +5,7 @@ import { cwd, env, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { makeGh } from './ci/candidate.ts'
 import { candidateConfig } from './ci/config.ts'
-import { exit } from './exit.ts'
+import { Exit, exit } from './exit.ts'
 import { loadConfig } from './index.ts'
 import { retrospectiveRules } from './pull-request.ts'
 import { retroAdd } from './retro.ts'
@@ -49,7 +49,7 @@ export function main(args: string[]): void {
     )
   } catch (error) {
     // A refusal, a configuration error or a failed gh: one line, no stack.
-    if (!(error instanceof Error)) throw error
+    if (error instanceof Exit || !(error instanceof Error)) throw error
     stderr.write(`lntt retro: ${error.message}\n`)
     exit(1)
   }

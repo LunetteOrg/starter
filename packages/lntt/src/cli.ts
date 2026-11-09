@@ -46,7 +46,8 @@ const USAGE = [
   '       lntt ci local|candidate [...]',
 ].join('\n')
 
-function usage(): never {
+function usage(message?: string): never {
+  if (message) stderr.write(`lntt: ${message}\n`)
   stderr.write(`${USAGE}\n`)
   exit(2)
 }
@@ -58,7 +59,7 @@ export async function main(args: string[]): Promise<void> {
     if (command === 'browser') await browser(args.slice(1))
     else run(command, key, raw)
   } catch (e) {
-    if (e instanceof TypeError && 'code' in e && String(e.code).startsWith('ERR_PARSE_ARGS')) usage()
+    if (e instanceof TypeError && 'code' in e && String(e.code).startsWith('ERR_PARSE_ARGS')) usage(e.message)
     if (!(e instanceof ConfigError)) throw e
     stderr.write(`lntt: ${e.message}\n`)
     exit(1)

@@ -37,8 +37,10 @@ export async function leave(code: number): Promise<never> {
 }
 
 export async function finish(main: () => unknown): Promise<never> {
-  // A reader that left (`| head`) is its own business: the exit code still says the outcome.
+  // A reader that left (`| head`, `2>&1 | head`) is its own business: the exit code still says
+  // the outcome.
   stdout.on('error', () => {})
+  stderr.on('error', () => {})
   let code: number
   try {
     await main()

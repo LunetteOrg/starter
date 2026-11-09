@@ -10,6 +10,7 @@ import { cli, type Project, project } from './cli-project.ts'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SRC = resolve(HERE, '../src')
 const EXIT = join(SRC, 'exit.ts')
+const BIN = resolve(HERE, '../bin/lntt.ts')
 
 // More than any pipe's buffer (64 KB on Linux and macOS), so that a process that ends before
 // the reader took the rest leaves the document cut.
@@ -25,17 +26,43 @@ function modules(dir = SRC): string[] {
 }
 
 describe('the one exit path of lntt', () => {
-  test('no module of src ends the process but src/exit.ts', () => {
-    const ends =
-      /\bprocess\.(?:exit|reallyExit|abort)\(|import\s*(?:type\s*)?\{[^}]*\bexit\b[^}]*\}\s*from\s*'node:process'/
-    const found = modules()
-      .filter((m) => m !== 'exit.ts')
-      .flatMap((m) =>
-        readFileSync(join(SRC, m), 'utf8')
-          .split('\n')
-          .flatMap((line, i) => (ends.test(line) ? [`${m}:${i + 1}: ${line.trim()}`] : [])),
-      )
+  // The whole text of each file, so that an import over several lines is read whole.
+  const ENDS = [
+    /\bprocess\s*\.\s*(?:exit|reallyExit|abort)\s*\(/g,
+    /import\s+(?:\w+\s*,\s*)?\{[^}]*\bexit\b[^}]*\}\s*from\s*['"](?:node:)?process['"]/g,
+  ]
+  const ends = (path: string): string[] => {
+    const text = readFileSync(path, 'utf8')
+    return ENDS.flatMap((re) =>
+      [...text.matchAll(re)].map((m) => `${text.slice(0, m.index).split('\n').length}: ${m[0].replace(/\s+/g, ' ')}`),
+    )
+  }
+
+  test('no module of src or bin ends the process but src/exit.ts', () => {
+    const files = [...modules().map((m) => join(SRC, m)), BIN].filter((f) => f !== EXIT)
+    const found = files.flatMap((f) => ends(f).map((at) => `${relative(dirname(SRC), f)}:${at}`))
     assert.deepEqual(found, [], 'every exit goes through src/exit.ts, which lets stdout drain first')
+  })
+
+  test('the scan sees each form an exit takes', () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-exit-scan-')))
+    try {
+      const forms = [
+        "import { cwd, exit } from 'node:process'",
+        "import process, { exit, stderr } from 'node:process'",
+        "import {\n  cwd,\n  exit,\n} from 'node:process'",
+        'process.exit(1)',
+        'process\n  .exit(1)',
+      ]
+      for (const [i, form] of forms.entries()) {
+        writeFileSync(join(dir, `${i}.ts`), `${form}\n`)
+        assert.equal(ends(join(dir, `${i}.ts`)).length, 1, form)
+      }
+      writeFileSync(join(dir, 'none.ts'), "import { exitCode, stderr } from 'node:process'\nprocess.exitCode = 1\n")
+      assert.deepEqual(ends(join(dir, 'none.ts')), [])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   describe('a process that writes more than a pipe takes', () => {
@@ -88,6 +115,19 @@ setTimeout(() => process.kill(process.pid, 'SIGUSR2'), 10)`)
       assert.deepEqual([r.status, r.stdout.length], [130, LONG])
     })
 
+    test('a reader of stderr that left does not turn the exit into a crash', () => {
+      const path = join(dir, 'script.ts')
+      writeFileSync(
+        path,
+        `import { exit, finish } from ${JSON.stringify(EXIT)}\nawait finish(() => { process.stderr.write('e'.repeat(${LONG})); exit(3) })\n`,
+      )
+      // pipefail: the exit code of lntt, not of head.
+      const shell = `set -o pipefail; '${process.execPath}' '${path}' 2>&1 >/dev/null | head -c 1 >/dev/null; echo "code $?"`
+      const r = spawnSync('bash', ['-c', shell], { encoding: 'utf8' })
+      // 3, the command's: a crash on the closed pipe would exit 1.
+      assert.equal(r.stdout, 'code 3\n', r.stderr)
+    })
+
     test('a reader that left does not turn the exit into a crash', () => {
       const path = join(dir, 'script.ts')
       writeFileSync(
@@ -104,6 +144,38 @@ setTimeout(() => process.kill(process.pid, 'SIGUSR2'), 10)`)
       assert.equal(r.stderr, 'code 1\n')
     })
   })
+})
+
+// A usage error of each command whose catch-all wraps its arguments' check: the exit goes
+// through that catch, which lets it pass, so the usage is printed alone, exit 2.
+describe('a usage error passes the catch-all of its command', () => {
+  let p: Project
+  beforeEach(() => {
+    p = project()
+  })
+  afterEach(() => p.remove())
+
+  for (const args of [
+    ['board', 'sync', '--bogus'],
+    ['board', 'ready', '--bogus'],
+    ['branch', 'name', '--issue', 'x'],
+    ['refs', '--bogus'],
+    ['ask', '--bogus'],
+    ['worktree', 'start'],
+    ['ci', 'proved'],
+    ['dump', 'stray'],
+    ['check', 'nope'],
+    ['browser', '--bogus'],
+    ['review', 'allow', 'x'],
+    ['retro', 'add'],
+  ]) {
+    test(args.join(' '), () => {
+      const r = cli(p, args)
+      assert.equal(r.status, 2, r.stderr)
+      assert.match(r.stderr, /usage: /)
+      assert.doesNotMatch(r.stderr, /lntt exits|Exit/)
+    })
+  }
 })
 
 // Each command that takes --json, run through a pipe on a document longer than a pipe's

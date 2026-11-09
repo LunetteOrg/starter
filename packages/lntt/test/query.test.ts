@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { BRANCH, cli, type Project, project } from './cli-project.ts'
 
@@ -60,6 +62,13 @@ describe('--query on every command that takes --json', () => {
   test('lntt check runs the query on each result, and keeps its exit code', () => {
     const r = run(['check', 'cite', 'long.txt:2', 'long.txt:9', '--query=.status'])
     assert.deepEqual([r.code, r.out], [1, 'PASS\nFAIL\n'])
+  })
+
+  test('lntt dump on a configuration that does not validate: the result, then the error, exit 1', () => {
+    writeFileSync(join(p.root, '.agents/config.jsonc'), '{"bogus": true}\n')
+    const r = run(['dump', '--query=.sections[0].title'])
+    assert.deepEqual([r.code, r.out], [1, 'lntt\n'])
+    assert.match(r.err, /^lntt dump: .*does not match the schema/)
   })
 
   test('lntt issue, which takes no --json, takes no --query', () => {

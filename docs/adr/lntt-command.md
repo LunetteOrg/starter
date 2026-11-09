@@ -82,7 +82,7 @@ lntt ci local | candidate | proved
   0 ok, 1 a configuration error, a red result or a check that cannot run (one line on
   stderr), 2 a usage error or a failing jq expression, 3 a stop that a person decides on (`lntt review` past
   `delivery.review.maxRounds`), 4 nothing to report on (`lntt review status` with no round
-  on the current branch, also when a jq query fails on the missing state), an interrupted command 128 plus the signal (130 for
+  on the current branch, also when a jq query fails while running on the missing state), an interrupted command 128 plus the signal (130 for
   Ctrl-C); a defect of `lntt` itself exits 1 with its stack trace. Every command ends
   through one exit path that lets stdout and stderr drain before the process exits: a
   pipe on macOS takes writes asynchronously, and an exit right after a long write cuts
