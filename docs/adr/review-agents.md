@@ -87,7 +87,7 @@ same way every time; the `review` skill keeps the judgement.
   state is read with `lntt review status` (each level folded and a summary, `--json`, or
   `--query` for a part), never from those files. `lntt review status --clear` removes the
   current branch's state, ledger and progress once the branch is merged, or its state at
-  once when it cannot be read, never while a round holds the lock; `--prune` removes
+  once when it cannot be read, never while any holder of the worktree's lock runs; `--prune` removes
   the state and ledger of every branch that is gone (no local or remote-tracking branch of
   that name, or a local one whose upstream is gone, as GitHub deletes the head branch on
   merge), never a branch checked out in a worktree, and leaves any file whose name is not
@@ -164,9 +164,21 @@ same way every time; the `review` skill keeps the judgement.
   reply) at `roundTimeoutMinutes` (the round fails and keeps what it gathered), an
   interrupt keeps the waiting agents from starting, and an agent that
   ignores SIGTERM gets SIGKILL five seconds later, or when `lntt review` exits. On macOS
-  `caffeinate` keeps the machine awake while the round runs. One round or reply runs at
-  a time in a worktree, under a lock that names its pid.
-- **Progress is a contract:** stderr carries a line when each agent starts and ends
+  `caffeinate` keeps the machine awake while the round runs.
+- **One lock per worktree:** a round, a reply, `lntt review allow` and
+  `lntt check tests mutate` share one lock in the worktree's git directory, which holds
+  the pid and the command of its holder. Any of them refuses to start while another holds
+  it, and names the holder and its pid. The holder touches the lock (`HEARTBEAT_MS`); the
+  lock is the holder's while its pid answers (`EPERM`, a process of another user, is an
+  answer), or while it was touched within `FRESH_MS`, so a holder in another pid namespace
+  is not taken for dead; a lock untouched for 12 hours is dead whatever its pid answers,
+  as pids are reused. A lock whose holder is gone is removed under a guard file, so of two
+  runs that find it dead the second leaves the lock the first created. `lntt review status`
+  and `--clear` name the same holder, and its pid is the `running` of `status --json`,
+  whichever command holds the lock. A lock an older lntt wrote holds a pid and no command:
+  it is named "a round" (another lntt command in a refusal).
+- **Progress is a contract:** stderr starts with the line `lntt review: reviewing <commit> <subject> (<branch>)`, the commit the round
+  reads, then carries a line when each agent starts and ends
   (with its tokens), `failed` or `skipped` for one that did not answer, the agents still
   running every 30 seconds, `round N done` at the end, `error:` for a round that could
   not start and `limit:` for one past `maxRounds`; after `round N done` and with `limit:`,
@@ -240,6 +252,13 @@ same way every time; the `review` skill keeps the judgement.
 
 ## Discarded directions
 
+- **A lock taken over by removing the file and creating it again.** Two runs that both
+  found a dead lock could each remove the other's new one and both run (two reviews of
+  one worktree ran at once in #287); the removal is serialised by a guard file.
+- **A lock live only by its pid.** A holder in another pid namespace, or of another
+  user, is not seen as running by `kill(pid, 0)`; the heartbeat and EPERM decide too.
+- **A lock dead as soon as its heartbeat stops.** A round blocks the event loop for
+  minutes in its mutation runs, so a quiet lock proves nothing while the pid answers.
 - **One state per worktree, in the worktree's git directory.** A review on another branch
   in the same worktree overwrote the state and the ledger of the branch before it, closing
   the worktree deleted them, and the other worktrees of the clone could not see them.

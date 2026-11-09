@@ -83,6 +83,12 @@ let repo: string
 let bin: string
 let log: string
 
+// A lock nobody has touched for a while: its holder, if it is gone, is no longer given the doubt.
+function ageLock(path: string): void {
+  const old = new Date(Date.now() - 120_000)
+  utimesSync(path, old, old)
+}
+
 function git(...args: string[]): string {
   return execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim()
 }
@@ -714,11 +720,12 @@ describe('lntt review, end to end with a fake agent', () => {
 
   test('one round at a time in a worktree: a second is refused while the first runs', () => {
     const lock = join(repo, '.git/lntt-review.lock')
-    writeFileSync(lock, String(process.pid))
+    writeFileSync(lock, `${process.pid} lntt review`)
     const r = lntt(['--base', 'main'])
     assert.equal(r.code, 1)
-    assert.match(r.err, /a round is already running in this worktree \(pid \d+\)/)
-    writeFileSync(lock, '999999')
+    assert.match(r.err, /lntt review is already running in this worktree \(pid \d+\)/)
+    writeFileSync(lock, '999999 lntt review')
+    ageLock(lock)
     assert.equal(lntt(['--base', 'main']).code, 0, 'a lock left by a process that is gone is taken over')
     assert.equal(existsSync(lock), false, 'the lock goes with the round')
   })
@@ -1487,33 +1494,64 @@ describe('the lock of a worktree, held by a live process', () => {
   test('a reply takes it: refused while a round holds it, and the lock goes with the reply', () => {
     const r = lntt(['--base', 'main'], { FAKE_REVIEW: '- [warning] a.ts:1 — w — a' })
     assert.equal(reading().findings[0].id, 'f1', r.err)
-    writeFileSync(lock(), String(process.pid))
+    writeFileSync(lock(), `${process.pid} lntt review`)
     const refused = lntt(['reply', 'f1', 'no'])
     assert.equal(refused.code, 1)
-    assert.match(refused.err, /a round is already running in this worktree \(pid \d+\)/)
-    assert.equal(readFileSync(lock(), 'utf8'), String(process.pid), 'the holder keeps its lock')
+    assert.match(refused.err, /lntt review is already running in this worktree \(pid \d+\)/)
+    assert.equal(readFileSync(lock(), 'utf8'), `${process.pid} lntt review`, 'the holder keeps its lock')
     rmSync(lock())
     lntt(['reply', 'f1', 'no'])
     assert.equal(existsSync(lock()), false, 'the lock goes with the reply')
   })
 
+  test('a round is refused while lntt check tests mutate holds it, naming the command and its pid', () => {
+    const mutation = spawn('sleep', ['30'], { stdio: 'ignore' })
+    try {
+      writeFileSync(lock(), `${mutation.pid} lntt check tests mutate`)
+      const r = lntt(['--base', 'main'])
+      assert.equal(r.code, 1)
+      assert.match(
+        r.err,
+        new RegExp(
+          `^lntt review: error: lntt check tests mutate is already running in this worktree \\(pid ${mutation.pid}\\)$`,
+          'm',
+        ),
+      )
+      assert.equal(
+        readFileSync(lock(), 'utf8'),
+        `${mutation.pid} lntt check tests mutate`,
+        'the mutation keeps its lock',
+      )
+    } finally {
+      mutation.kill('SIGKILL')
+    }
+  })
+
+  test('a round names the commit it reviews on its first line', () => {
+    const r = lntt(['--base', 'main'])
+    assert.equal(r.code, 0, r.err)
+    const head = git('rev-parse', '--short', 'HEAD')
+    const subject = git('log', '-1', '--format=%s')
+    assert.equal(r.err.split('\n')[0], `lntt review: reviewing ${head} ${subject} (${git('branch', '--show-current')})`)
+  })
+
   test('--plan does not take it: it prints the plan, and the holder keeps its lock and progress', () => {
     lntt(['--base', 'main'])
     const before = readFileSync(progress(), 'utf8')
-    writeFileSync(lock(), String(process.pid))
+    writeFileSync(lock(), `${process.pid} lntt review`)
     const r = lntt(['--plan', '--base', 'main'])
     assert.equal(r.code, 0, r.err)
     assert.match(r.err, /round \d+, /)
-    assert.equal(readFileSync(lock(), 'utf8'), String(process.pid))
+    assert.equal(readFileSync(lock(), 'utf8'), `${process.pid} lntt review`)
     assert.equal(readFileSync(progress(), 'utf8'), before)
   })
 
   test("a round it refuses leaves the running round's progress file alone", () => {
     writeFileSync(progress(), '{"type":"round","pid":1}\n')
-    writeFileSync(lock(), String(process.pid))
+    writeFileSync(lock(), `${process.pid} lntt review`)
     const r = lntt(['--base', 'main'])
     assert.equal(r.code, 1)
-    assert.match(r.err, /^lntt review: error: a round is already running/m)
+    assert.match(r.err, /^lntt review: error: lntt review is already running/m)
     assert.equal(readFileSync(progress(), 'utf8'), '{"type":"round","pid":1}\n')
   })
 })
@@ -1953,6 +1991,26 @@ describe('lntt review status', () => {
     }
   })
 
+  test('a lock held by lntt check tests mutate: status and --clear name it, as the refusals do', () => {
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    git('switch', '-qc', 'feat/2/y')
+    const sleeper = spawn('sleep', ['30'], { stdio: 'ignore' })
+    try {
+      writeFileSync(gitDir('lntt-review.lock'), `${sleeper.pid} lntt check tests mutate`)
+      assert.match(
+        lntt(['status']).out,
+        new RegExp(`; lntt check tests mutate is running \\(pid ${sleeper.pid}\\)\\n$`),
+      )
+      assert.equal(json().out.running, sleeper.pid)
+      assert.match(
+        lntt(['status', '--clear']).err,
+        new RegExp(`lntt check tests mutate is running in this worktree \\(pid ${sleeper.pid}\\): nothing cleared`),
+      )
+    } finally {
+      sleeper.kill()
+    }
+  })
+
   test('--clear: refused on the current unmerged branch, whose state stays; the lock is never removed', () => {
     assert.equal(lntt(['--base', 'main'], blocker).code, 1)
     assert.equal(lntt(['reply', 'f1', 'fair'], { FAKE_REPLY: 'withdrawn\\nfair' }).code, 0)
@@ -1966,6 +2024,8 @@ describe('lntt review status', () => {
 
     const dead = spawnSync('true').pid as number
     writeFileSync(gitDir('lntt-review.lock'), String(dead))
+    assert.equal(json().out.running, dead, 'a lock touched a moment ago is a round running, its pid seen or not')
+    ageLock(gitDir('lntt-review.lock'))
     assert.equal(json().out.running, null, 'a lock whose process is gone is no round running')
     assert.equal(lntt(['status', '--clear']).code, 1, 'still not merged')
     assert.equal(existsSync(stateFile()), true)

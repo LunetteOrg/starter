@@ -26,6 +26,7 @@ import { ConfigError, loadConfig } from './index.ts'
 import { retroComment } from './pull-request.ts'
 import { runQuery } from './query.ts'
 import { isCandidate } from './retro.ts'
+import { acquireLock, LockedError } from './worktree-lock.ts'
 
 const USAGE = `usage: lntt check [agents-md | skills | plugin | workflows [automated] | decisions [structure | board-refs [<file>...] | numbers [<file>...]] | tests [levels | focus | rules | touched] | body [template | --pr <n> | -]] [--base <ref>] [--json] [--query <jq>]
        lntt check tests mutate <path:line> --text <on the line> --to <mutated> [--json]
@@ -130,6 +131,21 @@ function run(args: string[]): Result[] {
   const loaded = loadConfig(cwd())
   const root = dirname(dirname(loaded.path))
   if (area === 'cite') return citeAll(root, positionals.slice(1))
+  // A mutation rewrites files of the tree a round of lntt review reads, and its runs weigh on
+  // the machine: it takes the worktree's lock, the one a round holds (src/worktree-lock.ts).
+  if (check === 'mutate') {
+    let gitDir: string
+    try {
+      gitDir = execFileSync('git', ['rev-parse', '--absolute-git-dir'], {
+        cwd: root,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }).trim()
+    } catch {
+      throw new CannotRunError(`${root} has no git directory: a mutation needs one`)
+    }
+    acquireLock(gitDir, 'lntt check tests mutate')
+  }
   const options = {
     root,
     data: loaded.data,
@@ -152,6 +168,7 @@ function queryOf(args: string[]): string | undefined {
 export function errorLine(error: unknown): string | null {
   if (error instanceof CannotRunError) return `lntt: error: ${error.message}`
   if (error instanceof ConfigError) return `lntt: ${error.message}`
+  if (error instanceof LockedError) return `lntt: error: ${error.message}`
   return null
 }
 
