@@ -2,7 +2,7 @@
 // command line (usage: bin/lntt.ts).
 
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname } from 'node:path'
 import { cwd, env, exit, stderr, stdin, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
@@ -11,6 +11,7 @@ import { rules } from './branch-cli.ts'
 import {
   type Address,
   answer,
+  answerPath,
   checkedOutBranches,
   liveChildren,
   locate,
@@ -174,13 +175,9 @@ function writers(role: string, theme: string | undefined): Target | null {
 // still on the name Orca gave it (until `lntt branch rename`) has the marker of that one.
 function liveBranches(root: string): () => Set<string> {
   return () => {
-    let ruleset: ReturnType<typeof rules> | null = null
-    try {
-      ruleset = rules()
-    } catch {
-      // no project configuration: the names as git lists them
-    }
-    return checkedOutBranches(dirname(root), (branch) => (ruleset === null ? null : fromToolName(branch, ruleset)))
+    // An invalid configuration is an error here as everywhere; a missing one gives the defaults.
+    const ruleset = rules()
+    return checkedOutBranches(dirname(root), (branch) => fromToolName(branch, ruleset))
   }
 }
 
@@ -220,11 +217,18 @@ function inbox(args: string[]): void {
     for (const message of list) stdout.write(`${line(message)}\n`)
   }
   const began = Date.now()
-  const late = () => timeoutMs !== undefined && Date.now() - began >= timeoutMs
+  // The sleep never runs past the deadline: a --timeout shorter than the interval ends on time.
+  const nap = () => {
+    const left = timeoutMs === undefined ? interval : timeoutMs - (Date.now() - began)
+    if (left <= 0) return false
+    box.sleep(Math.min(interval, left))
+    return true
+  }
   if (!values.follow) {
     let said = false
     for (;;) {
-      const writing = alive()
+      // Listing reads and changes nothing else: only a wait looks at who is alive.
+      const writing = values.wait ? alive() : true
       const found = pending(box.dir, role, address)
       if (found.length > 0 || !values.wait) {
         print(found)
@@ -233,14 +237,14 @@ function inbox(args: string[]): void {
       if (!writing) throw new NoWriters(`no child reports to the ${role}`)
       if (!said) stderr.write(`lntt inbox: waiting for a message to the ${role}, polling every ${interval / 1000} s\n`)
       said = true
-      if (late()) throw new Error(`no message to the ${role} in ${(timeoutMs as number) / 1000} s`)
-      box.sleep(interval)
+      if (!nap()) throw new Error(`no message to the ${role} in ${(timeoutMs as number) / 1000} s`)
     }
   }
   // What is in the directory when the follow starts is not new, answered or not; the
   // unanswered ones are printed as `inbox` prints them.
-  const seen = new Set(messages(box.dir, role, address).map((message) => message.id))
-  print(pending(box.dir, role, address))
+  const first = messages(box.dir, role, address)
+  const seen = new Set(first.map((message) => message.id))
+  print(first.filter((message) => !existsSync(answerPath(message))))
   stderr.write(`lntt inbox: following the ${role}'s mailbox, polling every ${interval / 1000} s\n`)
   for (;;) {
     const writing = alive()
@@ -248,8 +252,7 @@ function inbox(args: string[]): void {
     for (const message of fresh) seen.add(message.id)
     print(fresh)
     if (!writing) throw new NoWriters(`no child reports to the ${role}`)
-    if (late()) throw new Error(`followed the ${role}'s mailbox for ${(timeoutMs as number) / 1000} s`)
-    box.sleep(interval)
+    if (!nap()) throw new Error(`followed the ${role}'s mailbox for ${(timeoutMs as number) / 1000} s`)
   }
 }
 

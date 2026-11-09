@@ -464,6 +464,35 @@ describe('lntt inbox follows the children that report to it', () => {
     assert.deepEqual(markers(), ['feat%2Fnew.json'])
   })
 
+  test('--follow with a start in progress, a marker with no worktree yet, keeps following', async () => {
+    mkdirSync(join(box(), 'started'), { recursive: true })
+    writeFileSync(
+      join(box(), 'started', 'feat%2Fnew.json'),
+      `${JSON.stringify({ branch: 'feat/new', issue: 8, to: 'orchestrator' })}\n`,
+    )
+    const following = run(['--as', 'orchestrator', '--follow'])
+    await following.started()
+    ask('Hello')
+    await following.until(() => following.seen.out.includes('Hello'))
+    following.kill()
+    await following.done
+  })
+
+  test('listing without --wait does not look at the worktrees', () => {
+    marker('feat/gone')
+    const r = lntt(['inbox', '--as', 'orchestrator'])
+    assert.equal(r.status, 0, r.stderr)
+    assert.deepEqual(markers(), ['feat%2Fgone.json'])
+  })
+
+  test('--timeout shorter than the interval ends on time', () => {
+    marker('other')
+    const began = Date.now()
+    const r = lntt(['inbox', '--as', 'orchestrator', '--wait', '--interval', '20', '--timeout', '0.3'])
+    assert.equal(r.status, 1, r.stderr)
+    assert.ok(Date.now() - began < 10_000)
+  })
+
   test('a message already there is returned with no live writer', () => {
     ask('Ready?')
     const r = lntt(['inbox', '--as', 'orchestrator', '--wait', '--interval', '5'])

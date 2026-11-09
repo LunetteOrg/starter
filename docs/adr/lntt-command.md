@@ -171,7 +171,9 @@ rests on these criteria:
    `delivery.review` (`reviewConfig` in `packages/lntt/src/review.ts`), `coordinator`
    (`gateOf` in `packages/lntt/src/coordinator.ts`) and `local` (`localApp` in
    `packages/lntt/src/local.ts`); `lntt worktree start` reads `delivery.candidate`
-   and `delivery.branches` through the gate's branch code; `lntt worktree start`,
+   and `delivery.branches` through the gate's branch code; `lntt inbox --wait` and `--follow`
+   read `delivery.branches` for the conventional name of a branch (`liveBranches` in
+   `packages/lntt/src/messages-cli.ts`); `lntt worktree start`,
    `lntt review` and `lntt ci local` read `delivery.candidate` to find a branch's base
    (`projectBase` in `packages/lntt/src/base.ts`); `lntt retro add` reads
    `delivery.candidate` and `delivery.pullRequest.retrospective` (`candidateConfig` in

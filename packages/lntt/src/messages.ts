@@ -308,7 +308,8 @@ export function liveChildren(
     const marker = startedBy(root, branch)
     if (marker === null) continue
     if (!checked.has(branch)) {
-      const modified = statSync(join(directory, name), { throwIfNoEntry: false })?.mtimeMs ?? 0
+      const modified = statSync(join(directory, name), { throwIfNoEntry: false })?.mtimeMs
+      if (modified === undefined) continue
       if (now - modified >= START_GRACE_MS) {
         forgetStarted(root, branch)
         continue
