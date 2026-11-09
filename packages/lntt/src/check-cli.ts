@@ -130,10 +130,17 @@ function run(args: string[]): Result[] {
   // A mutation rewrites files of the tree a round of lntt review reads, and its runs weigh on
   // the machine: it takes the worktree's lock, the one a round holds (src/worktree-lock.ts).
   if (check === 'mutate') {
-    acquireLock(
-      execFileSync('git', ['rev-parse', '--absolute-git-dir'], { cwd: root, encoding: 'utf8' }).trim(),
-      'lntt check tests mutate',
-    )
+    let gitDir: string
+    try {
+      gitDir = execFileSync('git', ['rev-parse', '--absolute-git-dir'], {
+        cwd: root,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }).trim()
+    } catch {
+      throw new CannotRunError(`${root} is not in a git repository: a mutation needs one`)
+    }
+    acquireLock(gitDir, 'lntt check tests mutate')
   }
   const options = {
     root,

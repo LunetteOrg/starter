@@ -561,9 +561,10 @@ function lockHolder(): Holder | null {
   return heldBy(git('rev-parse', '--absolute-git-dir'))
 }
 
-// What a refusal or a status line calls the holder: a round for lntt review, else its command.
+// What a refusal or a status line calls the holder: its command, as the lock names it (a lock
+// an older lntt wrote names none: a round).
 function holderName(holder: Holder): string {
-  return holder.command === null || holder.command.startsWith('lntt review') ? 'a round' : holder.command
+  return holder.command ?? 'a round'
 }
 
 // Where the branch left its base: --base as given (origin/<base>, else <base>), else the

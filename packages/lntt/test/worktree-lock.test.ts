@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
-import { acquireLock, FRESH_MS, LockedError, lockPath, releaseLock } from '../src/worktree-lock.ts'
+import { acquireLock, FRESH_MS, heldBy, LockedError, lockPath, releaseLock } from '../src/worktree-lock.ts'
 
 let gitDir: string
 const sleepers: ChildProcess[] = []
@@ -87,8 +87,11 @@ describe('the lock of a worktree, shared by lntt review and lntt check tests mut
     assert.equal(readFileSync(lockPath(gitDir), 'utf8'), `${process.pid} lntt review`)
   })
 
-  test('a pid this process cannot signal (EPERM) is a live holder, not a dead one', () => {
+  test('a pid this process cannot signal (EPERM) is a live holder, not a dead one', {
+    skip: process.getuid?.() === 0,
+  }, () => {
     // pid 1 belongs to root: signalling it fails with EPERM, ESRCH only for a pid that is gone.
+    // Run as root, the signal succeeds and the test would not reach EPERM: skipped there.
     held('1 lntt review', OLD)
     assert.throws(() => acquireLock(gitDir, 'lntt check tests mutate'), /lntt review is already running .*\(pid 1\)/)
   })
@@ -108,6 +111,34 @@ describe('the lock of a worktree, shared by lntt review and lntt check tests mut
     utimesSync(lockPath(gitDir), old, old)
     await new Promise((resolve) => setTimeout(resolve, 150))
     assert.ok(Date.now() - statSync(lockPath(gitDir)).mtimeMs < FRESH_MS, 'the heartbeat refreshed it')
+  })
+
+  test('a live pid in a lock untouched for 12 hours is a pid reused, not a holder', () => {
+    held(`${live()} lntt review`, 13 * 60 * 60 * 1000)
+    acquireLock(gitDir, 'lntt check tests mutate')
+    assert.equal(readFileSync(lockPath(gitDir), 'utf8'), `${process.pid} lntt check tests mutate`)
+  })
+
+  test('a lock naming this very process is not held by another', () => {
+    held(`${process.pid} lntt review`)
+    assert.equal(heldBy(gitDir), null)
+    acquireLock(gitDir, 'lntt check tests mutate')
+    assert.equal(readFileSync(lockPath(gitDir), 'utf8'), `${process.pid} lntt check tests mutate`)
+  })
+
+  test('releaseLock leaves a lock that names another process', () => {
+    const content = `${live()} lntt review`
+    held(content)
+    releaseLock(gitDir)
+    assert.equal(readFileSync(lockPath(gitDir), 'utf8'), content)
+  })
+
+  test('the heartbeat does not touch a lock that names another process', async () => {
+    acquireLock(gitDir, 'lntt review', { heartbeatMs: 20 })
+    held(`${live()} lntt review`, OLD)
+    const before = statSync(lockPath(gitDir)).mtimeMs
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(statSync(lockPath(gitDir)).mtimeMs, before)
   })
 
   // #287: two reviews of one worktree ran at once. Taking over a dead lock was unlink then

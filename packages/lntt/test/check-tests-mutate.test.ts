@@ -334,6 +334,17 @@ describe('lntt check tests mutate and the lock of the worktree', () => {
     assert.equal(existsSync(lock()), false, 'the lock goes with the command')
   })
 
+  test('outside a git repository it cannot run, and says so', () => {
+    rmSync(join(repo, '.git'), { recursive: true, force: true })
+    const r = spawnSync(process.execPath, [BIN, ...args], {
+      cwd: repo,
+      encoding: 'utf8',
+      env: { ...process.env, GIT_CEILING_DIRECTORIES: dirname(repo) },
+    })
+    assert.equal(r.status, 1)
+    assert.match(r.stderr, /^lntt: error: .* is not in a git repository: a mutation needs one$/m)
+  })
+
   test('a lock left by a process that is gone does not block it', () => {
     writeFileSync(lock(), '999999 lntt review')
     const old = new Date(Date.now() - 120_000)

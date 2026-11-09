@@ -1991,6 +1991,26 @@ describe('lntt review status', () => {
     }
   })
 
+  test('a lock held by lntt check tests mutate: status and --clear name it, as the refusals do', () => {
+    assert.equal(lntt(['--base', 'main']).code, 0)
+    git('switch', '-qc', 'feat/2/y')
+    const sleeper = spawn('sleep', ['30'], { stdio: 'ignore' })
+    try {
+      writeFileSync(gitDir('lntt-review.lock'), `${sleeper.pid} lntt check tests mutate`)
+      assert.match(
+        lntt(['status']).out,
+        new RegExp(`; lntt check tests mutate is running \\(pid ${sleeper.pid}\\)\\n$`),
+      )
+      assert.equal(json().out.running, sleeper.pid)
+      assert.match(
+        lntt(['status', '--clear']).err,
+        new RegExp(`lntt check tests mutate is running in this worktree \\(pid ${sleeper.pid}\\): nothing cleared`),
+      )
+    } finally {
+      sleeper.kill()
+    }
+  })
+
   test('--clear: refused on the current unmerged branch, whose state stays; the lock is never removed', () => {
     assert.equal(lntt(['--base', 'main'], blocker).code, 1)
     assert.equal(lntt(['reply', 'f1', 'fair'], { FAKE_REPLY: 'withdrawn\\nfair' }).code, 0)

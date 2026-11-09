@@ -14,6 +14,11 @@ export const HEARTBEAT_MS = 5_000
 export const FRESH_MS = 15_000
 // A takeover guard older than this was left by a run that died inside the takeover.
 const GUARD_MS = 10_000
+// A pid answers for a holder that is gone once the system reuses it for another process, so
+// a lock untouched this long is dead whatever its pid does. A holder blocked in a long
+// synchronous step (the mutations of a round) does not touch the lock, which is why the
+// limit is far past any round or mutation run.
+const MAX_HOLD_MS = 12 * 60 * 60 * 1000
 
 export function lockPath(gitDir: string): string {
   return join(gitDir, 'lntt-review.lock')
@@ -32,7 +37,8 @@ function visible(pid: number): boolean {
 }
 
 // Who holds the lock, or null when nobody does: no file, a file naming no pid, this very
-// process, or a pid that is gone in a lock nobody has touched lately. A file just created
+// process, a pid that is gone in a lock nobody has touched lately, or a lock untouched for
+// MAX_HOLD_MS. A file just created
 // by an older lntt is empty for an instant, so a fresh empty one counts as held.
 function holder(lock: string): Holder | null {
   let text: string
@@ -48,7 +54,7 @@ function holder(lock: string): Holder | null {
   const pid = Number(first)
   if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return null
   const found = { pid, command: rest.join(' ') || null }
-  return visible(pid) || age < FRESH_MS ? found : null
+  return (visible(pid) && age < MAX_HOLD_MS) || age < FRESH_MS ? found : null
 }
 
 // The holder of the worktree's lock, null when nobody holds it.
@@ -69,6 +75,9 @@ function takeOver(lock: string): void {
     fd = openSync(guard, 'wx')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    // Removing an old guard is not atomic: two runs that both find it old can remove each
+    // other's new one. It takes a crash inside a takeover of a few milliseconds, then two
+    // runs starting in the same 10 seconds; the worst case is the race a guard removes.
     try {
       if (Date.now() - statSync(guard).mtimeMs > GUARD_MS) rmSync(guard, { force: true })
     } catch {}
@@ -111,6 +120,8 @@ export function acquireLock(
   options: { heartbeatMs?: number; judgedDead?: () => void } = {},
 ): void {
   const lock = lockPath(gitDir)
+  // The file linked to the lock. A run killed between writing and removing it leaves a few
+  // bytes in the git directory, overwritten when its pid comes back; nothing reads it.
   const own = `${lock}.${process.pid}`
   writeFileSync(own, `${process.pid} ${command}`)
   try {
