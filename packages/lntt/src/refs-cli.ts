@@ -3,8 +3,9 @@
 
 import { execFile } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { exit, stderr, stdin, stdout } from 'node:process'
+import { stderr, stdin, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
+import { Exit, exit } from './exit.ts'
 import { type RefsRun, resolveRefs } from './refs.ts'
 
 const USAGE = 'usage: lntt refs [--cached] [<text>...]   (no text: read from stdin)'
@@ -39,6 +40,7 @@ export async function main(args: string[]): Promise<void> {
     const refs = await resolveRefs(text, { run, now: Date.now, cached: values.cached ?? false })
     stdout.write(`${JSON.stringify(refs)}\n`)
   } catch (error) {
+    if (error instanceof Exit) throw error
     stderr.write(`lntt refs: ${(error as Error).message}\n`)
     exit(1)
   }

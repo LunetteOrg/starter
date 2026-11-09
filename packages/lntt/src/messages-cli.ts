@@ -4,8 +4,9 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { basename, dirname } from 'node:path'
-import { cwd, env, exit, stderr, stdin, stdout } from 'node:process'
+import { cwd, env, stderr, stdin, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
+import { Exit, exit } from './exit.ts'
 import { answer, locate, type Mailbox, type Message, POLL_MS, pending, ROLES, send, waitForAnswer } from './messages.ts'
 
 const USAGE = [
@@ -188,6 +189,7 @@ export function main(command: 'ask' | 'inbox' | 'answer', args: string[]): void 
       stdout.write(`${answer(systemMailbox().dir, id, text(reply))}\n`)
     }
   } catch (error) {
+    if (error instanceof Exit) throw error
     if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
       usage(error.message)
     }

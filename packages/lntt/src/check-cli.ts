@@ -4,7 +4,7 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { cwd, exit, stderr, stdout } from 'node:process'
+import { cwd, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import {
   ANCHOR_LINE,
@@ -21,13 +21,16 @@ import {
 } from './check.ts'
 import { comments } from './ci/candidate.ts'
 import { candidateConfig } from './ci/config.ts'
+import { Exit, exit } from './exit.ts'
 import { ConfigError, loadConfig } from './index.ts'
 import { retroComment } from './pull-request.ts'
+import { runQuery } from './query.ts'
 import { isCandidate } from './retro.ts'
 
-const USAGE = `usage: lntt check [agents-md | skills | plugin | workflows [automated] | decisions [structure | board-refs [<file>...] | numbers [<file>...]] | tests [levels | focus | rules | touched] | body [template | --pr <n> | -]] [--base <ref>] [--json]
+const USAGE = `usage: lntt check [agents-md | skills | plugin | workflows [automated] | decisions [structure | board-refs [<file>...] | numbers [<file>...]] | tests [levels | focus | rules | touched] | body [template | --pr <n> | -]] [--base <ref>] [--json] [--query <jq>]
        lntt check tests mutate <path:line> --text <on the line> --to <mutated> [--json]
-       lntt check cite <path:line>... [--json]`
+       lntt check cite <path:line>... [--json]
+       --query <jq>: a jq expression on each line --json prints, its result instead`
 
 function usage(message?: string): never {
   if (message) stderr.write(`lntt check: ${message}\n`)
@@ -87,6 +90,7 @@ function run(args: string[]): Result[] {
       base: { type: 'string' },
       json: { type: 'boolean', default: false },
       pr: { type: 'string' },
+      query: { type: 'string' },
       text: { type: 'string' },
       to: { type: 'string' },
     },
@@ -137,6 +141,12 @@ function run(args: string[]): Result[] {
   return runArea(area as Area, check, rest, options)
 }
 
+// The value of --query, which run() has parsed already: `--query <jq>` or `--query=<jq>`.
+function queryOf(args: string[]): string | undefined {
+  const { values } = parseArgs({ args, options: { query: { type: 'string' } }, strict: false, allowPositionals: true })
+  return typeof values.query === 'string' ? values.query : undefined
+}
+
 // The line an error is reported with: a configuration error, or a check that could not
 // run at all. null for anything else, a defect of lntt, which keeps its stack.
 export function errorLine(error: unknown): string | null {
@@ -146,11 +156,12 @@ export function errorLine(error: unknown): string | null {
 }
 
 // `checks` is the run itself; a test gives another.
-export function main(args: string[], checks: (args: string[]) => Result[] = run): void {
+export async function main(args: string[], checks: (args: string[]) => Result[] = run): Promise<void> {
   let results: Result[]
   try {
     results = checks(args)
   } catch (error) {
+    if (error instanceof Exit) throw error
     if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
       usage(error.message)
     }
@@ -159,6 +170,12 @@ export function main(args: string[], checks: (args: string[]) => Result[] = run)
     stderr.write(`${line}\n`)
     exit(1)
   }
+  const code = failed(results) ? 1 : 0
+  const expression = queryOf(args)
+  if (expression !== undefined) {
+    const json = args.includes('--json')
+    exit(await runQuery({ input: formatJson(results), expression, json, code, command: 'lntt check' }))
+  }
   stdout.write(args.includes('--json') ? formatJson(results) : formatText(results))
-  exit(failed(results) ? 1 : 0)
+  exit(code)
 }

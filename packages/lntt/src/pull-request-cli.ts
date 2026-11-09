@@ -1,7 +1,8 @@
 // `lntt pr`: the pieces of a pull request body the configuration gives. Checking a body
 // is `lntt check body` (usage: bin/lntt.ts).
 
-import { cwd, exit, stderr, stdout } from 'node:process'
+import { cwd, stderr, stdout } from 'node:process'
+import { exit } from './exit.ts'
 import { loadConfig } from './index.ts'
 import { retrospectiveBlock, retrospectiveRules } from './pull-request.ts'
 

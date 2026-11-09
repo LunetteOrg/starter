@@ -3,7 +3,7 @@
 
 import { execFileSync, spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { cwd, env, exit, stderr, stdout } from 'node:process'
+import { cwd, env, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { projectBase } from './base.ts'
 import { branchName, checkBranch } from './branch.ts'
@@ -21,6 +21,7 @@ import {
   gateOf,
   isApproval,
 } from './coordinator.ts'
+import { Exit, exit } from './exit.ts'
 import { NoConfigError } from './files.ts'
 import { loadConfig } from './index.ts'
 import { forgetStarted, recordStarted, type Started, send, startedBy, waitForAnswer } from './messages.ts'
@@ -376,6 +377,7 @@ export function main([command, ...args]: string[]): void {
     if (command === 'start') start(args)
     else usage()
   } catch (error) {
+    if (error instanceof Exit) throw error
     if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
       usage(error.message)
     }
