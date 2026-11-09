@@ -8,6 +8,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -28,7 +29,7 @@ function clean(): Record<string, string> {
 }
 
 function lntt(args: string[], cwd = repo) {
-  return spawnSync(process.execPath, [BIN, ...args], { cwd, encoding: 'utf8', env: clean() })
+  return spawnSync(process.execPath, [BIN, ...args], { cwd, encoding: 'utf8', env: clean(), timeout: 30_000 })
 }
 
 beforeEach(() => {
@@ -45,6 +46,16 @@ afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
 const box = () => join(repo, '.git', 'lntt-messages')
 
+// The branch `other` is checked out in `worktree`: a child that reports to this role is alive,
+// so an `inbox --wait` on it keeps waiting. Written long ago, as a started child's is.
+function liveChild(to: string, theme?: string) {
+  mkdirSync(join(box(), 'started'), { recursive: true })
+  const file = join(box(), 'started', 'other.json')
+  writeFileSync(file, `${JSON.stringify({ branch: 'other', issue: 7, to, ...(theme ? { theme } : {}) })}\n`)
+  const hourAgo = new Date(Date.now() - 3_600_000)
+  utimesSync(file, hourAgo, hourAgo)
+}
+
 describe('lntt ask / inbox / answer', () => {
   test('a question from one worktree is in the inbox of another, and the answer reaches ask', async () => {
     const asking = spawn(
@@ -59,6 +70,7 @@ describe('lntt ask / inbox / answer', () => {
     const done = new Promise<number | null>((ok) => asking.on('close', ok))
 
     // The coordinator waits in the main checkout; the question comes from a linked worktree.
+    liveChild('coordinator', 'alpha')
     const listed = lntt(['inbox', '--as', 'coordinator', '--wait', '--interval', '0.05', '--timeout', '20'])
     assert.equal(listed.status, 0, listed.stderr)
     const [first, ...others] = listed.stdout.trim().split('\n')
@@ -179,6 +191,7 @@ describe('lntt ask / inbox / answer', () => {
       out += d
     })
     const done = new Promise<number | null>((ok) => asking.on('close', ok))
+    liveChild('coordinator', 'alpha')
     const listed = lntt([
       'inbox',
       '--as',
@@ -374,8 +387,142 @@ describe('lntt ask / inbox / answer', () => {
   })
 
   test('inbox --wait with --timeout ends with exit 1 when nothing comes', () => {
+    mkdirSync(join(box(), 'started'), { recursive: true })
+    writeFileSync(
+      join(box(), 'started', 'other.json'),
+      `${JSON.stringify({ branch: 'other', issue: 7, to: 'coordinator', theme: 'alpha' })}\n`,
+    )
     const r = lntt(['inbox', '--as', 'coordinator', '--wait', '--interval', '0.05', '--timeout', '0.1'])
     assert.equal(r.status, 1)
     assert.match(r.stderr, /no message to the coordinator/)
+  })
+})
+
+// The children that can write to a mailbox are the markers of `started/` whose branch is
+// still checked out in a worktree that exists: `other` is, in `worktree`, from beforeEach.
+describe('lntt inbox follows the children that report to it', () => {
+  const marker = (branch: string, to = 'orchestrator', extra: object = {}) => {
+    mkdirSync(join(box(), 'started'), { recursive: true })
+    const file = join(box(), 'started', `${encodeURIComponent(branch)}.json`)
+    writeFileSync(file, `${JSON.stringify({ branch, issue: 7, to, ...extra })}\n`)
+    // Written long ago: a marker younger than a minute is a start in progress, never cleared.
+    const hourAgo = new Date(Date.now() - 3_600_000)
+    utimesSync(file, hourAgo, hourAgo)
+  }
+  const markers = () => (existsSync(join(box(), 'started')) ? readdirSync(join(box(), 'started')) : [])
+  const removeWorktree = () => execFileSync('git', ['worktree', 'remove', '--force', worktree], { cwd: repo })
+
+  // The command in the background, with its output and the moment it ends.
+  function run(args: string[]) {
+    const child = spawn(process.execPath, [BIN, 'inbox', '--interval', '0.05', ...args], { cwd: repo, env: clean() })
+    const seen = { out: '', err: '' }
+    child.stdout.on('data', (d) => {
+      seen.out += d
+    })
+    child.stderr.on('data', (d) => {
+      seen.err += d
+    })
+    const done = new Promise<number | null>((ok) => child.on('close', ok))
+    const started = async () => {
+      for (let i = 0; i < 400 && !/waiting|following/.test(seen.err); i += 1)
+        await new Promise((r) => setTimeout(r, 25))
+    }
+    return { seen, done, started, kill: () => child.kill() }
+  }
+
+  test('--wait with no live writer exits 3 at once, and clears the markers of removed worktrees', () => {
+    marker('feat/gone')
+    marker('other')
+    removeWorktree()
+    const r = lntt(['inbox', '--as', 'orchestrator', '--wait', '--interval', '5'])
+    assert.equal(r.status, 3, r.stderr)
+    assert.match(r.stderr, /no child reports to the orchestrator/)
+    assert.deepEqual(markers(), [])
+  })
+
+  test('a worktree whose folder was deleted, still listed by git, is not a live writer', () => {
+    marker('other')
+    rmSync(worktree, { recursive: true, force: true })
+    const r = lntt(['inbox', '--as', 'orchestrator', '--wait', '--interval', '5'])
+    assert.equal(r.status, 3, r.stderr)
+    assert.deepEqual(markers(), [])
+  })
+
+  test('--wait with no marker at all exits 3 too', () => {
+    assert.equal(lntt(['inbox', '--as', 'orchestrator', '--wait', '--interval', '5']).status, 3)
+  })
+
+  test('a message already there is returned with no live writer', () => {
+    lntt(['ask', '--to', 'orchestrator', '--timeout', '0.1', '--interval', '0.05', 'Ready?'])
+    const r = lntt(['inbox', '--as', 'orchestrator', '--wait', '--interval', '5'])
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(JSON.parse(r.stdout).question, 'Ready?')
+  })
+
+  test('--wait with a live writer and no --timeout waits, then ends when its worktree goes', async () => {
+    marker('other')
+    const waiting = run(['--as', 'orchestrator', '--wait'])
+    await waiting.started()
+    await new Promise((r) => setTimeout(r, 300))
+    const early = await Promise.race([waiting.done, new Promise((r) => setTimeout(() => r('waiting'), 100))])
+    assert.equal(early, 'waiting')
+    removeWorktree()
+    assert.equal(await waiting.done, 3, waiting.seen.err)
+    assert.match(waiting.seen.err, /no child reports to the orchestrator/)
+    assert.deepEqual(markers(), [])
+  })
+
+  test('--wait with a live writer returns the first message', async () => {
+    marker('other')
+    const waiting = run(['--as', 'orchestrator', '--wait'])
+    await waiting.started()
+    lntt(['ask', '--to', 'orchestrator', '--timeout', '0.1', '--interval', '0.05', 'Done'])
+    assert.equal(await waiting.done, 0, waiting.seen.err)
+    assert.equal(JSON.parse(waiting.seen.out).question, 'Done')
+  })
+
+  test('only the markers that report to the mailbox are its writers', () => {
+    marker('other', 'coordinator', { theme: 'alpha' })
+    assert.equal(lntt(['inbox', '--as', 'orchestrator', '--wait', '--interval', '5']).status, 3)
+    assert.equal(lntt(['inbox', '--as', 'coordinator', '--theme', 'beta', '--wait', '--interval', '5']).status, 3)
+    assert.equal(markers().length, 1, 'a live marker of another mailbox is not cleared')
+  })
+
+  test('--follow prints one line per message, answered or not by then, and exits 3 with the last writer', async () => {
+    marker('other')
+    const following = run(['--as', 'orchestrator', '--follow'])
+    await following.started()
+    const first = JSON.parse(lntt(['inbox', '--as', 'orchestrator']).stdout || 'null')
+    assert.equal(first, null)
+    const sent = (text: string) =>
+      lntt(['ask', '--to', 'orchestrator', '--timeout', '0.1', '--interval', '0.05', '--topic', text, text])
+    sent('one')
+    const id = JSON.parse(lntt(['inbox', '--as', 'orchestrator']).stdout).id
+    lntt(['answer', id, 'seen'])
+    sent('two')
+    await new Promise((r) => setTimeout(r, 400))
+    removeWorktree()
+    assert.equal(await following.done, 3, following.seen.err)
+    const lines = following.seen.out
+      .trim()
+      .split('\n')
+      .map((l) => JSON.parse(l))
+    assert.deepEqual(
+      lines.map((l) => l.topic),
+      ['one', 'two'],
+    )
+    assert.equal(lines[0].to, 'orchestrator')
+    assert.match(following.seen.err, /no child reports to the orchestrator/)
+  })
+
+  test('--follow prints the unanswered messages at start, then ends with no writer', () => {
+    lntt(['ask', '--to', 'orchestrator', '--timeout', '0.1', '--interval', '0.05', 'Early'])
+    const r = lntt(['inbox', '--as', 'orchestrator', '--follow', '--interval', '0.05'])
+    assert.equal(r.status, 3)
+    assert.equal(JSON.parse(r.stdout).question, 'Early')
+  })
+
+  test('--follow and --wait are exclusive', () => {
+    assert.equal(lntt(['inbox', '--as', 'orchestrator', '--follow', '--wait']).status, 2)
   })
 })

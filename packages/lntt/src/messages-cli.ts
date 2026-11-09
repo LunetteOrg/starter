@@ -6,12 +6,26 @@ import { readFileSync } from 'node:fs'
 import { basename, dirname } from 'node:path'
 import { cwd, env, exit, stderr, stdin, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
-import { answer, locate, type Mailbox, type Message, POLL_MS, pending, ROLES, send, waitForAnswer } from './messages.ts'
+import {
+  type Address,
+  answer,
+  liveChildren,
+  locate,
+  type Mailbox,
+  type Message,
+  messages,
+  POLL_MS,
+  pending,
+  ROLES,
+  send,
+  type Target,
+  waitForAnswer,
+} from './messages.ts'
 
 const USAGE = [
   'usage: lntt ask --to <orchestrator|coordinator|child> [--issue <n>] [--theme <slug>] [--topic <slug>] [--timeout <s>] [--interval <s>] <question | ->',
   '       lntt ask --wait <id> [--timeout <s>] [--interval <s>]',
-  '       lntt inbox [--as <orchestrator|coordinator|child>] [--issue <n>] [--theme <slug>] [--wait] [--timeout <s>] [--interval <s>]',
+  '       lntt inbox [--as <orchestrator|coordinator|child>] [--issue <n>] [--theme <slug>] [--wait | --follow] [--timeout <s>] [--interval <s>]',
   '       lntt answer <id> <text | ->',
 ].join('\n')
 
@@ -139,8 +153,24 @@ function ask(args: string[]): void {
   stdout.write(waitForAnswer(box, sent, { intervalMs: interval, ...(timeoutMs === undefined ? {} : { timeoutMs }) }))
 }
 
+// Exit code of an inbox that has no child left to wait for: not 1 (an error or a timeout),
+// not 2 (usage).
+export const NO_WRITER_EXIT = 3
+
+class NoWriters extends Error {}
+
+// The children that can write to this inbox: the markers addressed to it. A child's inbox
+// is written by whoever started it, and nothing says who is alive, so it has no target.
+function writers(role: string, theme: string | undefined): Target | null {
+  if (role === 'orchestrator') return { to: 'orchestrator' }
+  if (role === 'coordinator') return { to: 'coordinator', ...(theme === undefined ? {} : { theme }) }
+  return null
+}
+
 // The unanswered messages to a role, one JSON line each. With --wait, nothing is printed
-// until there is at least one.
+// until there is at least one, and the wait ends (exit 3) when no child reports to the
+// role any more. With --follow, those lines first, then one for each message that arrives,
+// until no child reports to the role.
 function inbox(args: string[]): void {
   const { values } = parseArgs({
     args,
@@ -149,29 +179,64 @@ function inbox(args: string[]): void {
       issue: { type: 'string' },
       theme: { type: 'string' },
       wait: { type: 'boolean', default: false },
+      follow: { type: 'boolean', default: false },
       timeout: { type: 'string' },
       interval: { type: 'string' },
     },
   })
   const role = values.as ?? env.LNTT_ROLE
   if (!role) usage('give --as, or set LNTT_ROLE')
+  if (values.wait && values.follow) usage('--wait and --follow are exclusive')
   // The environment's address applies to the role it fits: a session that exports both
   // can read as a child and as a coordinator.
   const issue = issueNumber(values.issue ?? (role === 'child' ? env.LNTT_ISSUE : undefined))
   const theme = values.theme ?? (role === 'coordinator' ? env.LNTT_THEME : undefined)
-  const address = { ...(issue === undefined ? {} : { issue }), ...(theme === undefined ? {} : { theme }) }
+  const address: Address = { ...(issue === undefined ? {} : { issue }), ...(theme === undefined ? {} : { theme }) }
   const box = systemMailbox()
   const interval = seconds(values.interval, '--interval') ?? pollInterval()
   const timeoutMs = seconds(values.timeout, '--timeout')
+  const target = writers(role, theme)
+  const ended = () => {
+    if (target !== null && liveChildren(box.dir, target).length === 0) {
+      throw new NoWriters(`no child reports to the ${role}`)
+    }
+  }
+  const print = (list: Message[]) => {
+    for (const message of list) stdout.write(`${line(message)}\n`)
+  }
+  if (!values.follow) {
+    let waited = 0
+    let said = false
+    for (;;) {
+      const found = pending(box.dir, role, address)
+      if (found.length > 0 || !values.wait) {
+        print(found)
+        return
+      }
+      ended()
+      if (!said) stderr.write(`lntt inbox: waiting for a message to the ${role}, polling every ${interval / 1000} s\n`)
+      said = true
+      if (timeoutMs !== undefined && waited >= timeoutMs) {
+        throw new Error(`no message to the ${role} in ${timeoutMs / 1000} s`)
+      }
+      box.sleep(interval)
+      waited += interval
+    }
+  }
+  // What is in the directory when the follow starts is not new, answered or not; the
+  // unanswered ones are printed as `inbox` prints them.
+  const seen = new Set(messages(box.dir, role, address).map((message) => message.id))
+  print(pending(box.dir, role, address))
+  stderr.write(`lntt inbox: following the ${role}'s mailbox, polling every ${interval / 1000} s\n`)
   let waited = 0
   for (;;) {
-    const messages = pending(box.dir, role, address)
-    if (messages.length > 0 || !values.wait) {
-      for (const message of messages) stdout.write(`${line(message)}\n`)
-      return
-    }
+    // Drain before looking at the writers: a message left by the last one is not lost.
+    const fresh = messages(box.dir, role, address).filter((message) => !seen.has(message.id))
+    for (const message of fresh) seen.add(message.id)
+    print(fresh)
+    ended()
     if (timeoutMs !== undefined && waited >= timeoutMs) {
-      throw new Error(`no message to the ${role} in ${timeoutMs / 1000} s`)
+      throw new Error(`followed the ${role}'s mailbox for ${timeoutMs / 1000} s`)
     }
     box.sleep(interval)
     waited += interval
@@ -188,6 +253,10 @@ export function main(command: 'ask' | 'inbox' | 'answer', args: string[]): void 
       stdout.write(`${answer(systemMailbox().dir, id, text(reply))}\n`)
     }
   } catch (error) {
+    if (error instanceof NoWriters) {
+      stderr.write(`lntt ${command}: ${error.message}\n`)
+      exit(NO_WRITER_EXIT)
+    }
     if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
       usage(error.message)
     }
