@@ -87,6 +87,8 @@ lntt ci local | candidate | proved
   through one exit path that lets stdout and stderr drain before the process exits: a
   pipe on macOS takes writes asynchronously, and an exit right after a long write cuts
   the document with no sign of it. A test fails on any other exit in the package's code.
+  A reader that leaves early (`| head`, `2>&1 | head`) does not change the exit code: it
+  stays the command's.
 - **`lntt get` prints what the file holds, and a missing key exits 1,** so a script never
   goes on with a wrong value. One key reads its schema default instead: `project.phase`,
   whose missing value means `production` by definition (a project keeps every check until

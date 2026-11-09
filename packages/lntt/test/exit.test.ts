@@ -176,6 +176,11 @@ describe('a usage error passes the catch-all of its command', () => {
       assert.doesNotMatch(r.stderr, /lntt exits|Exit/)
     })
   }
+
+  test('lntt browser names what parseArgs refused, then the usage', () => {
+    const r = cli(p, ['browser', '--bogus'])
+    assert.match(r.stderr, /^lntt: Unknown option '--bogus'[^\n]*\nusage: lntt /)
+  })
 })
 
 // Each command that takes --json, run through a pipe on a document longer than a pipe's
