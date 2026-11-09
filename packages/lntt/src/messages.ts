@@ -9,8 +9,19 @@
 // The git common directory is shared by every worktree of the repository and is not
 // part of any of them: nothing here is ever committed.
 
+import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  linkSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { slugify } from './branch.ts'
 
@@ -163,6 +174,11 @@ export function waitForAnswer(
 // The messages of a role with no answer yet, oldest first. Files that are not messages
 // (notes, answers, temporary files) are not listed.
 export function pending(root: string, role: string, address: Address = {}): Message[] {
+  return messages(root, role, address).filter((message) => !existsSync(answerPath(message)))
+}
+
+// Every message of a role, answered or not, oldest first.
+export function messages(root: string, role: string, address: Address = {}): Message[] {
   const directory = messageDirectory(root, role, address)
   if (!existsSync(directory)) return []
   return readdirSync(directory)
@@ -179,7 +195,6 @@ export function pending(root: string, role: string, address: Address = {}): Mess
         question: readFileSync(path, 'utf8').trim(),
       }
     })
-    .filter((message) => !existsSync(answerPath(message)))
     .sort((a, b) => a.id.localeCompare(b.id))
 }
 
@@ -227,4 +242,82 @@ export function startedBy(root: string, branch: string): Started | null {
   } catch {
     return null
   }
+}
+
+// The mailbox a marker writes to: the orchestrator's, or a coordinator's (of one theme, or
+// of any with no theme).
+export interface Target {
+  to: 'coordinator' | 'orchestrator'
+  theme?: string
+}
+
+// The branches checked out in a worktree that exists on disk: a worktree whose folder was
+// deleted is still listed by git until it is pruned, and it is not a live one.
+// `alias` adds the other name a branch answers to: a worktree still on the name Orca gave it
+// has the marker of its conventional name.
+export function checkedOutBranches(gitDir: string, alias: (branch: string) => string | null = () => null): Set<string> {
+  let listing: string
+  try {
+    listing = execFileSync('git', ['--git-dir', gitDir, 'worktree', 'list', '--porcelain'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  } catch {
+    throw new Error(`cannot list the worktrees of ${gitDir}: the mailbox must be in a git common directory`)
+  }
+  const branches = new Set<string>()
+  for (const block of listing.split(/\n\s*\n/)) {
+    const path = /^worktree (.+)$/m.exec(block)?.[1]
+    const branch = /^branch refs\/heads\/(.+)$/m.exec(block)?.[1]
+    if (path === undefined || branch === undefined || !existsSync(path)) continue
+    branches.add(branch)
+    const other = alias(branch)
+    if (other !== null) branches.add(other)
+  }
+  return branches
+}
+
+// A marker is written just before its worktree is created: one younger than this is a start
+// in progress, live and never cleared, whatever git lists.
+export const START_GRACE_MS = 60_000
+
+// The live children that report to a mailbox: the markers of `started/` addressed to it
+// whose branch is checked out in a worktree that exists, or that is younger than
+// START_GRACE_MS. The marker of a worktree that is gone is cleared here, so `started/` lists
+// only live children (a read that deletes). `now` is the clock, in milliseconds.
+// `lntt inbox --wait` and `--follow` end when this is empty.
+export function liveChildren(
+  root: string,
+  target: Target,
+  worktrees: Set<string> | (() => Set<string>) = () => checkedOutBranches(dirname(root)),
+  now: number = Date.now(),
+): Started[] {
+  const directory = join(root, 'started')
+  if (!existsSync(directory)) return []
+  const names = readdirSync(directory).filter((name) => name.endsWith('.json'))
+  if (names.length === 0) return []
+  const checked = typeof worktrees === 'function' ? worktrees() : worktrees
+  const live: Started[] = []
+  for (const name of names) {
+    let branch: string
+    try {
+      branch = decodeURIComponent(name.slice(0, -'.json'.length))
+    } catch {
+      continue
+    }
+    const marker = startedBy(root, branch)
+    if (marker === null) continue
+    if (!checked.has(branch)) {
+      const modified = statSync(join(directory, name), { throwIfNoEntry: false })?.mtimeMs
+      if (modified === undefined) continue
+      if (now - modified >= START_GRACE_MS) {
+        forgetStarted(root, branch)
+        continue
+      }
+    }
+    if (marker.to !== target.to) continue
+    if (target.theme !== undefined && marker.theme !== target.theme) continue
+    live.push(marker)
+  }
+  return live
 }

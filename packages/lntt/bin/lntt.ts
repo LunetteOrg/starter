@@ -162,8 +162,10 @@
 //   lntt ask --wait <id> [--timeout <s>]
 //                             wait for the answer to a message already sent (the one lntt review
 //                             sends at its limit); stdout is the answer
-//   lntt inbox [--as <role>] [--issue <n>] [--theme <slug>] [--wait] [--timeout <s>]
-//                             the unanswered messages to a role, one JSON line each
+//   lntt inbox [--as <role>] [--issue <n>] [--theme <slug>] [--wait | --follow] [--timeout <s>]
+//                             the unanswered messages to a role, one JSON line each; --wait returns
+//                             at the first, --follow keeps printing new ones; both exit 3 when no
+//                             child that reports to the role is alive
 //   lntt answer <id> <text | ->
 //                             reply to a message: the same name ending in .answer.md
 //

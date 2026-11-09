@@ -419,6 +419,7 @@ lntt ask --to coordinator --theme release-0-6-1 --issue 89 "Which pull request f
 lntt ask --to orchestrator --issue 89 "May I push?"           # topic issue-89-may-i-push, in to-orchestrator/
 lntt ask --wait 20261017-101500-issue-89-review-limit          # the answer to a message already sent
 lntt inbox --as coordinator --theme release-0-6-1 [--wait]    # unanswered messages, one JSON line each
+lntt inbox --as orchestrator --follow                         # stays running: one JSON line per new message
 lntt answer 20261017-101500-issue-89-which-pull-request "The CLI one."
 ```
 
@@ -429,6 +430,14 @@ addressed by `--issue`, a coordinator by `--theme`; sent to the orchestrator or 
 `--timeout <s>` ends a wait with exit 1 and leaves the message in place; `--wait <id>` waits
 again for its answer, with the same output and exit codes; `-` reads the text from stdin;
 `LNTT_ROLE`, `LNTT_THEME` and `LNTT_ISSUE` default `inbox`'s role and address.
+
+For the orchestrator and a coordinator, `inbox --wait` and `--follow` end with exit 3 and "no child
+reports to the <role>" when no child that reports to it is alive (the markers of `started/` whose
+branch is checked out in a worktree that exists, or younger than a minute: a start in progress), at
+start or when the last one goes; a message already there is returned first. They need no `--timeout`. `--follow` prints the unanswered messages,
+then one line per message that arrives, and is meant for a harness that streams a background
+command's lines (Claude Code's Monitor); `--wait` returns at the first message. The check deletes the
+marker of a worktree that is gone.
 
 Every wait of a child goes through the mailbox, and its brief says so: a question, an approval
 (a 1Password prompt included), the review limit. `lntt worktree start` records who each branch

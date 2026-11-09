@@ -1,14 +1,25 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import {
   answer,
+  liveChildren,
   type Mailbox,
   messageDirectory,
   pending,
   recordStarted,
+  START_GRACE_MS,
   send,
   startedBy,
   waitForAnswer,
@@ -336,5 +347,73 @@ describe('the start marker', () => {
     assert.equal(write({ issue: '84', to: 'orchestrator' }), null, 'an issue as a string')
     assert.equal(write({ issue: 1.5, to: 'orchestrator' }), null, 'an issue that is not whole')
     assert.equal(write({ to: 'orchestrator' }), null, 'no issue at all')
+  })
+})
+
+describe('liveChildren', () => {
+  const age = (branch: string, ms: number) => {
+    const file = join(dir, 'started', `${encodeURIComponent(branch)}.json`)
+    utimesSync(file, new Date(Date.now() - ms), new Date(Date.now() - ms))
+  }
+
+  test('a marker younger than a minute is a start in progress: live and never cleared', () => {
+    recordStarted(dir, { branch: 'feat/1/a', issue: 1, to: 'orchestrator' })
+    const orchestrator = () => liveChildren(dir, { to: 'orchestrator' }, new Set()).map((m) => m.branch)
+    assert.deepEqual(orchestrator(), ['feat/1/a'])
+    age('feat/1/a', 30_000)
+    assert.deepEqual(orchestrator(), ['feat/1/a'], 'a start of 30 s ago is in progress')
+    assert.notEqual(startedBy(dir, 'feat/1/a'), null)
+    age('feat/1/a', 120_000)
+    assert.deepEqual(orchestrator(), [])
+    assert.equal(startedBy(dir, 'feat/1/a'), null)
+  })
+
+  test('the grace ends at exactly START_GRACE_MS, by the clock given', () => {
+    recordStarted(dir, { branch: 'feat/1/a', issue: 1, to: 'orchestrator' })
+    const at = new Date('2026-11-09T10:00:00').getTime()
+    utimesSync(join(dir, 'started', 'feat%2F1%2Fa.json'), new Date(at), new Date(at))
+    const alive = (now: number) => liveChildren(dir, { to: 'orchestrator' }, new Set(), now).length
+    assert.equal(alive(at + START_GRACE_MS - 1), 1)
+    assert.notEqual(startedBy(dir, 'feat/1/a'), null)
+    assert.equal(alive(at + START_GRACE_MS), 0)
+    assert.equal(startedBy(dir, 'feat/1/a'), null)
+  })
+
+  test('a file of started/ whose name is not a branch is skipped', () => {
+    mkdirSync(join(dir, 'started'), { recursive: true })
+    writeFileSync(join(dir, 'started', '%E0%A4%A.json'), '{}\n')
+    writeFileSync(join(dir, 'started', 'notes.txt'), 'x')
+    assert.deepEqual(liveChildren(dir, { to: 'orchestrator' }, new Set()), [])
+    assert.ok(existsSync(join(dir, 'started', '%E0%A4%A.json')))
+  })
+
+  test('lists the markers that report to the target and are checked out, and clears the others', () => {
+    recordStarted(dir, { branch: 'feat/1/a', issue: 1, to: 'orchestrator' })
+    recordStarted(dir, { branch: 'feat/2/b', issue: 2, to: 'orchestrator' })
+    recordStarted(dir, { branch: 'feat/3/c', issue: 3, to: 'coordinator', theme: 'alpha' })
+    recordStarted(dir, { branch: 'chore/alpha', issue: null, to: 'orchestrator', theme: 'alpha' })
+    age('feat/2/b', 120_000)
+    const here = new Set(['feat/1/a', 'feat/3/c', 'chore/alpha'])
+    assert.deepEqual(
+      liveChildren(dir, { to: 'orchestrator' }, here)
+        .map((m) => m.branch)
+        .sort(),
+      ['chore/alpha', 'feat/1/a'],
+    )
+    assert.equal(startedBy(dir, 'feat/2/b'), null)
+    assert.deepEqual(
+      liveChildren(dir, { to: 'coordinator', theme: 'alpha' }, here).map((m) => m.branch),
+      ['feat/3/c'],
+    )
+    assert.deepEqual(liveChildren(dir, { to: 'coordinator', theme: 'beta' }, here), [])
+    assert.deepEqual(
+      liveChildren(dir, { to: 'coordinator' }, here).map((m) => m.branch),
+      ['feat/3/c'],
+    )
+    assert.notEqual(startedBy(dir, 'feat/3/c'), null)
+  })
+
+  test('a root with no started directory has no children', () => {
+    assert.deepEqual(liveChildren(dir, { to: 'orchestrator' }, new Set()), [])
   })
 })
