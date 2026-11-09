@@ -7,7 +7,16 @@ import { describe, test } from 'node:test'
 import { headlessInvocation, parseReply } from '../src/headless.ts'
 import { agentEnv } from '../src/review-cli.ts'
 import { agentArgs } from '../src/worktree.ts'
-import { collect, federationMissing, flagsOf, helpFlags, missingFlags, tool, upstream } from './upstream.ts'
+import {
+  collect,
+  federationMissing,
+  flagsOf,
+  helpFlags,
+  missingFlags,
+  skipOnUsageLimit,
+  tool,
+  upstream,
+} from './upstream.ts'
 
 // lntt against the real claude: the flags of the headless reviewer and of the
 // interactive agent (Herdr's `--` arguments) against `claude --help`, which needs no
@@ -38,7 +47,7 @@ describe('claude', () => {
   test('a one-line call answers with the JSON lntt reads: text, session, tokens, cost', {
     skip: replySkip,
     timeout: 120_000,
-  }, () => {
+  }, (t) => {
     const inv = headlessInvocation({ kind: 'claude', model: 'haiku' }, 'Reply with the single word ok.')
     // An empty directory: no project instructions to read into the call.
     const dir = mkdtempSync(join(tmpdir(), 'lntt-upstream-claude-'))
@@ -51,6 +60,13 @@ describe('claude', () => {
         // spawnSync blocks the test's own timeout.
         timeout: 110_000,
       })
+      // The organization's credit ran out, or a limit was reached: nothing of lntt was
+      // exercised. Whatever the exit code (claude exits 1): the error reply is the signal.
+      const limit = skipOnUsageLimit('claude', r.stdout)
+      if (limit) {
+        t.skip(`claude's usage limit is reached: ${limit}`)
+        return
+      }
       assert.equal(r.status, 0, `claude exited ${r.status ?? r.signal}: ${r.stderr || r.stdout}`)
       const reply = parseReply('claude', r.stdout)
       assert.match(reply.text, /\S/)

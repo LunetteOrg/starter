@@ -149,6 +149,53 @@ describe('upstream helpers', () => {
     assert.equal(usageLimit('null\n{"type":"error","error":{"status":429,"message":"after a null"}}'), 'after a null')
   })
 
+  test('an exhausted claude credit, or a 429, is a usage limit; any other api_error, a reply or a bare 400 is not', () => {
+    const captured = readFileSync(new URL('./fixtures/upstream/claude-credit-balance.jsonl', import.meta.url), 'utf8')
+    assert.equal(usageLimit(captured), 'Credit balance is too low')
+    const result = (fields: object) => JSON.stringify({ type: 'result', is_error: true, ...fields })
+    assert.equal(usageLimit(result({ api_error_status: 429, result: 'Rate limited' })), 'Rate limited')
+    assert.equal(usageLimit(result({ api_error_status: 429 })), 'usage limit reached')
+    // The credit message is the signal, not its status: the status of a bare 400 is any bad request.
+    assert.equal(
+      usageLimit(result({ api_error_status: 400, result: 'Credit balance is too low' })),
+      'Credit balance is too low',
+    )
+    assert.equal(usageLimit(result({ api_error_status: 400, result: 'prompt is too long' })), null)
+    assert.equal(usageLimit(result({ api_error_status: 401, result: 'Invalid API key' })), null)
+    assert.equal(usageLimit(result({ api_error_status: 500, result: 'overloaded' })), null)
+    // Only the final reply (`type: result`) says so: another event of claude's stream with the same fields does not.
+    assert.equal(
+      usageLimit(
+        JSON.stringify({
+          type: 'assistant',
+          is_error: true,
+          api_error_status: 429,
+          result: 'Credit balance is too low',
+        }),
+      ),
+      null,
+    )
+    // A reply that is not an error carries no limit, whatever its text or status.
+    assert.equal(
+      usageLimit(
+        JSON.stringify({ type: 'result', is_error: false, api_error_status: 429, result: 'Credit balance is too low' }),
+      ),
+      null,
+    )
+    assert.equal(usageLimit(JSON.stringify({ type: 'result', result: 'Credit balance is too low' })), null)
+    // The skip records it as inconclusive for claude like for opencode.
+    const saved = process.env.UPSTREAM_INCONCLUSIVE
+    const file = join(mkdtempSync(join(tmpdir(), 'lntt-inconclusive-')), 'marker')
+    try {
+      process.env.UPSTREAM_INCONCLUSIVE = file
+      assert.equal(skipOnUsageLimit('claude', captured), 'Credit balance is too low')
+      assert.equal(readFileSync(file, 'utf8'), 'claude: Credit balance is too low\n')
+    } finally {
+      if (saved === undefined) delete process.env.UPSTREAM_INCONCLUSIVE
+      else process.env.UPSTREAM_INCONCLUSIVE = saved
+    }
+  })
+
   test('every cache save of upstream.yml is skipped when the check was inconclusive', () => {
     // A real run cannot be forced from a pull request (it needs a new tool release and a
     // provider at its usage limit), so the workflow's own text is what is checked.
