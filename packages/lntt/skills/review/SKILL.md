@@ -45,7 +45,8 @@ reviewed one; findings still open go back to the verifiers on the new head.
 
 The branch keeps each round's cost: its tokens and USD, and the agents that reported
 none. After `round N done`, `lntt review: branch total:` sums the rounds so far;
-`pnpm exec lntt review cost` prints the same line (`--json`: each round and the total),
+`pnpm exec lntt review cost` prints the same line (`--json`: each round and the total;
+`--query`: a part of it),
 from the state alone.
 
 The branch keeps a ledger of the findings it closed (fixed, refuted, accepted open),

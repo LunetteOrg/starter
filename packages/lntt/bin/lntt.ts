@@ -15,7 +15,7 @@
 //   lntt local app <name>     an app of local.apps, resolved for this worktree (port, url, commands)
 //   lntt viewer detect        where the session runs and which viewer shows pages, with why
 //   lntt viewer open <url>    open it there; exit 3 with the agent call when only the agent can
-//   lntt browser [<app>] [--json]
+//   lntt browser [<app>] [--json] [--query <jq>]
 //                             how an agent drives a browser on the app of local.apps in this
 //                             worktree: the driver, why, and each operation as a shell
 //                             command or a tool call; <app> may be omitted when there is one
@@ -43,7 +43,7 @@
 //                             object (repository, mentions with their positions, refs);
 //                             --cached asks gh for no issue
 //
-//   lntt check [<area> [<check>]] [--base <ref>] [--json]
+//   lntt check [<area> [<check>]] [--base <ref>] [--json] [--query <jq>]
 //                             what is checked without judgement, one area per review lens;
 //                             alone, every area. Each check says PASS, FAIL or NOT RUN with
 //                             its reason (INFO: printed, neither); exit 1 on a FAIL.
@@ -92,7 +92,7 @@
 //                             comment of the open candidate, or of pull request <n>; creates
 //                             the comment when there is none; exit 1 with no open candidate
 //
-//   lntt dump [--json] [--harness <name>] [--model <id>] [-- <failing command>...]
+//   lntt dump [--json] [--query <jq>] [--harness <name>] [--model <id>] [-- <failing command>...]
 //                             what a report on Lunette needs, redacted (home, remotes, emails,
 //                             tokens, secrets): lntt and how it is installed, Node, the
 //                             package manager, the OS, the harness, the model, the project's
@@ -127,7 +127,7 @@
 //                             exit 0 clean, 1 to act on, 3 at the limit, 4 no round on this branch,
 //                             2 a jq failure.
 //                             --clear removes another or a merged branch's state, ledger, progress
-//   lntt review cost [--json]
+//   lntt review cost [--json] [--query <jq>]
 //                             what the current branch's rounds cost, from its review state: the
 //                             line of the pull request's Review cost, or each round and the total
 //
@@ -215,23 +215,33 @@
 //     the event's before, GITHUB_REF_NAME, GITHUB_WORKFLOW_REF). It only reads. Exit 0
 //     proved, 1 not proved (an API error included), 2 a usage error.
 //
+// --query <jq>, beside every --json: a jq expression on the document --json prints (on each
+// line of lntt check's), its result instead: strings raw unless --json too, any other value
+// compact, one per line. The command's exit code stays; a jq failure exits 2 with jq's
+// message and nothing on stdout.
+//
 // Exit codes: 0 ok (the CI green), 1 a configuration error (the CI red), 2 a usage error.
 
 import { argv } from 'node:process'
+import { finish } from '../src/exit.ts'
 
+// Every command ends through finish: stdout and stderr drain before the process exits, so a
+// long document through a pipe arrives whole (src/exit.ts).
 const args = argv.slice(2)
-if (args[0] === 'ci') await (await import('../src/ci/cli.ts')).main(args.slice(1))
-else if (args[0] === 'branch') (await import('../src/branch-cli.ts')).main(args.slice(1))
-else if (args[0] === 'pr') (await import('../src/pull-request-cli.ts')).main(args.slice(1))
-else if (args[0] === 'retro') (await import('../src/retro-cli.ts')).main(args.slice(1))
-else if (args[0] === 'hook') await (await import('../src/hook-cli.ts')).main(args.slice(1))
-else if (args[0] === 'refs') await (await import('../src/refs-cli.ts')).main(args.slice(1))
-else if (args[0] === 'board') (await import('../src/board-cli.ts')).main(args.slice(1))
-else if (args[0] === 'check') (await import('../src/check-cli.ts')).main(args.slice(1))
-else if (args[0] === 'review') await (await import('../src/review-cli.ts')).main(args.slice(1))
-else if (args[0] === 'worktree') (await import('../src/worktree-cli.ts')).main(args.slice(1))
-else if (args[0] === 'dump' || args[0] === 'issue') {
-  ;(await import('../src/issue-cli.ts')).main(args[0], args.slice(1))
-} else if (args[0] === 'ask' || args[0] === 'inbox' || args[0] === 'answer') {
-  ;(await import('../src/messages-cli.ts')).main(args[0], args.slice(1))
-} else (await import('../src/cli.ts')).main(args)
+await finish(async () => {
+  if (args[0] === 'ci') await (await import('../src/ci/cli.ts')).main(args.slice(1))
+  else if (args[0] === 'branch') (await import('../src/branch-cli.ts')).main(args.slice(1))
+  else if (args[0] === 'pr') (await import('../src/pull-request-cli.ts')).main(args.slice(1))
+  else if (args[0] === 'retro') (await import('../src/retro-cli.ts')).main(args.slice(1))
+  else if (args[0] === 'hook') await (await import('../src/hook-cli.ts')).main(args.slice(1))
+  else if (args[0] === 'refs') await (await import('../src/refs-cli.ts')).main(args.slice(1))
+  else if (args[0] === 'board') (await import('../src/board-cli.ts')).main(args.slice(1))
+  else if (args[0] === 'check') await (await import('../src/check-cli.ts')).main(args.slice(1))
+  else if (args[0] === 'review') await (await import('../src/review-cli.ts')).main(args.slice(1))
+  else if (args[0] === 'worktree') (await import('../src/worktree-cli.ts')).main(args.slice(1))
+  else if (args[0] === 'dump' || args[0] === 'issue') {
+    await (await import('../src/issue-cli.ts')).main(args[0], args.slice(1))
+  } else if (args[0] === 'ask' || args[0] === 'inbox' || args[0] === 'answer') {
+    ;(await import('../src/messages-cli.ts')).main(args[0], args.slice(1))
+  } else await (await import('../src/cli.ts')).main(args)
+})

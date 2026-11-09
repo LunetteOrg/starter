@@ -2,25 +2,15 @@
 // (usage: bin/lntt.ts).
 
 import { execFileSync, spawn } from 'node:child_process'
-import {
-  appendFileSync,
-  closeSync,
-  existsSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  statSync,
-  unlinkSync,
-  writeFileSync,
-  writeSync,
-} from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { cwd, env, exit, stderr, stdout } from 'node:process'
+import { cwd, env, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { projectBase } from './base.ts'
 import { type BranchRules, branchRules, fromToolName } from './branch.ts'
 import { cite, formatJson, isArea, projectFiles, runArea } from './check.ts'
 import { localRef } from './ci/event.ts'
+import { Exit, exit, leave } from './exit.ts'
 import { NoConfigError } from './files.ts'
 import {
   type HeadlessAgent as Agent,
@@ -38,6 +28,7 @@ import { messagesRoot, systemMailbox } from './messages-cli.ts'
 import { describeOutcome, mutateAll } from './mutate.ts'
 import { loadOperator, slug } from './operator.ts'
 import { orcaSubagents, type Subagents } from './orca-subagents.ts'
+import { runQuery } from './query.ts'
 import {
   agentLabel,
   type Checked,
@@ -74,6 +65,7 @@ import {
   statePathIn,
 } from './review-store.ts'
 import { commandExists } from './viewer.ts'
+import { acquireLock as acquireWorktreeLock, type Holder, heldBy, LockedError } from './worktree-lock.ts'
 
 export { formatTokens }
 
@@ -81,7 +73,7 @@ const USAGE = `usage: lntt review [--base <branch>] [--plan]
        lntt review reply <finding> <answer>
        lntt review allow <rounds>
        lntt review status [--json] [--query <jq>] [--clear | --prune [--dry-run]]
-       lntt review cost [--json]`
+       lntt review cost [--json] [--query <jq>]`
 
 function usage(message?: string): never {
   if (message) stderr.write(`lntt review: ${message}\n`)
@@ -489,7 +481,7 @@ function stopAgentsOnInterrupt() {
       const wait = setInterval(() => {
         if (groups.size > 0 && Date.now() < until) return
         clearInterval(wait)
-        exit(130)
+        void leave(130)
       }, 100)
     })
   }
@@ -560,59 +552,21 @@ function deadline(minutes: number): AbortSignal {
   return AbortSignal.any([timeout.signal, interrupted.signal])
 }
 
-// One round (or reply) at a time per worktree: a second would overwrite the state and the
-// progress of the first. A lock whose process is gone is taken over.
-class LockedError extends Error {}
-
-// The pid a lock names, or null when it names none: a file just created by another run
-// is empty for an instant, so a fresh empty one counts as held.
-function lockHolder(lock: string): number | 'held' | null {
-  try {
-    const text = readFileSync(lock, 'utf8').trim()
-    if (text === '') return Date.now() - statSync(lock).mtimeMs < 2000 ? 'held' : null
-    const pid = Number(text)
-    if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return null
-    process.kill(pid, 0)
-    return pid
-  } catch {
-    return null
-  }
+// One round (or reply, or mutation run) at a time per worktree: a second would overwrite the
+// state and the progress of the first, or change the tree it reads (src/worktree-lock.ts).
+function acquireLock(command = 'lntt review'): void {
+  acquireWorktreeLock(git('rev-parse', '--absolute-git-dir'), command)
 }
 
-// The lock of the worktree's rounds, next to its state.
-function lockPath(): string {
-  return join(git('rev-parse', '--absolute-git-dir'), 'lntt-review.lock')
+// The lock's holder, null when nobody holds it.
+function lockHolder(): Holder | null {
+  return heldBy(git('rev-parse', '--absolute-git-dir'))
 }
 
-// Created atomically (`wx`): of two runs started together, one gets it. A lock whose
-// process is gone, or that names none, is removed and tried once more.
-function acquireLock(): void {
-  const lock = lockPath()
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const fd = openSync(lock, 'wx')
-      writeSync(fd, String(process.pid))
-      closeSync(fd)
-      process.on('exit', () => {
-        try {
-          if (readFileSync(lock, 'utf8').trim() === String(process.pid)) unlinkSync(lock)
-        } catch {}
-      })
-      return
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-      const holder = lockHolder(lock)
-      if (holder !== null) {
-        throw new LockedError(
-          `a round is already running in this worktree (pid ${holder === 'held' ? 'starting' : holder})`,
-        )
-      }
-      try {
-        unlinkSync(lock)
-      } catch {}
-    }
-  }
-  throw new LockedError('a round is already running in this worktree (pid unknown)')
+// What a refusal or a status line calls the holder: its command, as the lock names it (a lock
+// an older lntt wrote names none: a round).
+function holderName(holder: Holder): string {
+  return holder.command ?? 'a round'
 }
 
 // Where the branch left its base: --base as given (origin/<base>, else <base>), else the
@@ -655,7 +609,7 @@ async function round(args: string[]): Promise<number> {
     options: { base: { type: 'string' }, plan: { type: 'boolean', default: false } },
   })
   if (!values.plan) {
-    acquireLock()
+    acquireLock('lntt review')
     startProgress()
   }
   const data = loaded()
@@ -667,6 +621,8 @@ async function round(args: string[]): Promise<number> {
   const branch = git('rev-parse', '--abbrev-ref', 'HEAD')
   if (branch === 'HEAD') throw new Error('HEAD is detached; the review keeps its rounds per branch: switch to one')
   const head = git('rev-parse', '--short', 'HEAD')
+  // The first line of a round: which commit it reads, whatever the base or the plan say next.
+  stderr.write(`lntt review: reviewing ${head} ${git('log', '-1', '--format=%s', 'HEAD')} (${branch})\n`)
   const root = git('rev-parse', '--show-toplevel')
   const state = readState(branch)
   const range = roundRange(state, branch, head, git('rev-parse', '--short', mergeBase(root, values.base)), (a, b) => {
@@ -817,7 +773,7 @@ async function reply(args: string[]): Promise<number> {
   const state = readState(headBranch())
   const finding = state?.result.findings.find((f) => f.id === id)
   if (!state || !finding) throw new Error(`no open finding ${id} in the last round`)
-  acquireLock()
+  acquireLock('lntt review reply')
   const config: ReviewConfig = reviewConfig(loaded())
   const known = new Map<string, Agent>()
   for (const lens of Object.values(config.reviewers)) for (const a of lens.with) known.set(agentLabel(a), a)
@@ -868,17 +824,28 @@ async function reply(args: string[]): Promise<number> {
 
 // What the branch's rounds cost, from its state alone: the line the pull request's Review
 // cost takes, or with --json each round and the total.
-function cost(args: string[]): number {
-  const { values } = parseArgs({ args, options: { json: { type: 'boolean', default: false } } })
+async function cost(args: string[]): Promise<number> {
+  const { values } = parseArgs({
+    args,
+    options: { json: { type: 'boolean', default: false }, query: { type: 'string' } },
+  })
   const branch = git('rev-parse', '--abbrev-ref', 'HEAD')
   const state = branch === 'HEAD' ? null : readState(branch)
   const rounds = state?.rounds ?? []
   const total = reviewCost(rounds, legacyRounds(state))
-  stdout.write(
-    values.json
-      ? `${JSON.stringify({ branch, rounds, total: { rounds: total.rounds, tokens: total.tokens, usd: total.usd, unrecorded: total.unrecorded, line: total.line } }, null, 2)}\n`
-      : `${total.line}\n`,
-  )
+  const document = {
+    branch,
+    rounds,
+    total: {
+      rounds: total.rounds,
+      tokens: total.tokens,
+      usd: total.usd,
+      unrecorded: total.unrecorded,
+      line: total.line,
+    },
+  }
+  if (values.query !== undefined) return runQuery(query(document, values.query, values.json, 0))
+  stdout.write(values.json ? `${JSON.stringify(document, null, 2)}\n` : `${total.line}\n`)
   return 0
 }
 
@@ -889,7 +856,7 @@ function allow(args: string[]): number {
   const rounds = Number(count)
   if (rest.length > 0 || !count || !/^\d+$/.test(count) || rounds < 1)
     usage('give the rounds to allow, a whole number from 1')
-  acquireLock()
+  acquireLock('lntt review allow')
   const branch = headBranch()
   const state = readState(branch)
   if (!state) throw new Error(`no round on ${branch} yet: nothing to allow more rounds to`)
@@ -1005,10 +972,10 @@ function listed(words: string[]): string {
 // The ledger of a branch that is not merged stays when only an unreadable state goes. The
 // states of branches that no longer exist go with --prune.
 function clear(root: string, current: string | null): number {
-  const holder = lockHolder(lockPath())
+  const holder = lockHolder()
   if (holder !== null)
     throw new Error(
-      `a round is running in this worktree (pid ${holder === 'held' ? 'starting' : holder}): nothing cleared`,
+      `${holderName(holder)} is running in this worktree (pid ${holder.pid ?? 'starting'}): nothing cleared`,
     )
   let own: ReturnType<typeof statusState> = null
   let unreadable = false
@@ -1152,40 +1119,6 @@ function noRoundLine(here: string, running: string): string {
   return `lntt review: no round on ${here} yet${running ? `; ${running}` : ''}`
 }
 
-// A jq expression on the document --json prints, run by jq-wasm, loaded here so that no other
-// call pays for it. Strings raw unless --json. `--` ends jq's flags: an expression that starts
-// with a dash stays an expression. A success exits as status does; any failure of jq exits 2
-// with nothing on stdout, what it printed before failing included, and so does the wasm giving
-// up (out of memory, too deep a recursion). With no state at all, a failure while running exits
-// 4, there being no round to read, with jq's message: the expression may be at fault too.
-async function runQuery(
-  document: { state: unknown },
-  expression: string,
-  json: boolean,
-  code: number,
-  noRound: string,
-): Promise<number> {
-  const { raw } = await import('jq-wasm')
-  let jq: Awaited<ReturnType<typeof raw>>
-  try {
-    jq = await raw(JSON.stringify(document), expression, [...(json ? [] : ['-r']), '-c', '--'])
-  } catch (error) {
-    stderr.write(`lntt review: jq gave up: ${(error as Error).message}\n`)
-    return 2
-  }
-  if (jq.exitCode === 5 && document.state === null) {
-    stderr.write(`${noRound}\n${jq.stderr}\n`)
-    return 4
-  }
-  if (jq.exitCode !== 0) {
-    stderr.write(`${jq.stderr || `jq exited ${jq.exitCode}`}\n`)
-    return 2
-  }
-  if (jq.stderr) stderr.write(`${jq.stderr}\n`)
-  if (jq.stdout) stdout.write(`${jq.stdout}\n`)
-  return code
-}
-
 // What `lntt review status` reads: the worktree's own state, through lntt review and
 // never from its files, which live in each worktree's git directory. Each level folded, one
 // line of outcome and one per thing to act on; the whole of it with --json, a part with
@@ -1219,15 +1152,20 @@ async function status(args: string[]): Promise<number> {
   if (values.prune) return prune(values['dry-run'])
   // A lock created an instant ago names no pid yet: not a round running, for the summary as
   // for the JSON; --clear still waits for it.
-  const holder = lockHolder(lockPath())
-  const running = typeof holder === 'number' ? holder : null
-  const runningText = running === null ? '' : `a round is running (pid ${running})`
+  const holder = lockHolder()
+  const running = holder?.pid ?? null
+  const runningText = holder === null || running === null ? '' : `${holderName(holder)} is running (pid ${running})`
   const own = statusState(current)
   const here = current ?? 'detached HEAD'
   if (!own) {
     const line = noRoundLine(here, runningText)
     const none = { branch: current, running, state: null }
-    if (values.query !== undefined) return runQuery(none, values.query, values.json, 4, line)
+    if (values.query !== undefined) {
+      // With no state at all, a failure while running exits 4, there being no round to read,
+      // with jq's message: the expression may be at fault too.
+      const noRound = (exitCode: number) => (exitCode === 5 ? { code: 4, line } : null)
+      return runQuery({ ...query(none, values.query, values.json, 4), onFailure: noRound })
+    }
     stdout.write(values.json ? `${JSON.stringify(none, null, 2)}\n` : `${line}\n`)
     return 4
   }
@@ -1274,7 +1212,7 @@ async function status(args: string[]): Promise<number> {
         rounds: state.rounds ?? [],
       },
     }
-    if (values.query !== undefined) return runQuery(out, values.query, values.json, code, '')
+    if (values.query !== undefined) return runQuery(query(out, values.query, values.json, code))
     stdout.write(`${JSON.stringify(out, null, 2)}\n`)
     return code
   }
@@ -1282,23 +1220,23 @@ async function status(args: string[]): Promise<number> {
   return code
 }
 
-// process.exit drops what a pipe has not taken yet, so a long document would arrive cut, with
-// no sign of it: stdout is flushed first.
-async function leave(code: number): Promise<never> {
-  await new Promise<void>((resolve) => stdout.write('', () => resolve()))
-  exit(code)
-}
+const query = (document: unknown, expression: string, json: boolean, code: number) => ({
+  input: JSON.stringify(document),
+  expression,
+  json,
+  code,
+  command: 'lntt review',
+})
 
 export async function main([command, ...args]: string[]): Promise<void> {
-  // A reader that left (`| head`) is its own business: the exit code still says the outcome.
-  stdout.on('error', () => {})
   try {
-    if (command === 'allow') await leave(allow(args))
-    if (command === 'status') await leave(await status(args))
-    if (command === 'cost') await leave(cost(args))
+    if (command === 'allow') exit(allow(args))
+    if (command === 'status') exit(await status(args))
+    if (command === 'cost') exit(await cost(args))
     stopAgentsOnInterrupt()
-    await leave(command === 'reply' ? await reply(args) : await round(command === undefined ? [] : [command, ...args]))
+    exit(command === 'reply' ? await reply(args) : await round(command === undefined ? [] : [command, ...args]))
   } catch (error) {
+    if (error instanceof Exit) throw error
     if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
       usage(error.message)
     }

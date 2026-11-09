@@ -4,10 +4,11 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname } from 'node:path'
-import { cwd, env, exit, stderr, stdin, stdout } from 'node:process'
+import { cwd, env, stderr, stdin, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { fromToolName } from './branch.ts'
 import { rules } from './branch-cli.ts'
+import { Exit, exit } from './exit.ts'
 import {
   type Address,
   answer,
@@ -266,6 +267,7 @@ export function main(command: 'ask' | 'inbox' | 'answer', args: string[]): void 
       stdout.write(`${answer(systemMailbox().dir, id, text(reply))}\n`)
     }
   } catch (error) {
+    if (error instanceof Exit) throw error
     if (error instanceof NoWriters) {
       stderr.write(`lntt ${command}: ${error.message}\n`)
       exit(NO_WRITER_EXIT)

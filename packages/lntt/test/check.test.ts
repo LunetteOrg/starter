@@ -693,15 +693,14 @@ describe('lntt check', () => {
     }
   })
 
-  test('a configuration error and a check that cannot run are one line; a defect keeps its stack', () => {
+  test('a configuration error and a check that cannot run are one line; a defect keeps its stack', async () => {
     assert.equal(errorLine(new ConfigError('bad config')), 'lntt: bad config')
     assert.equal(errorLine(new CannotRunError('no git')), 'lntt: error: no git')
     assert.equal(errorLine(new TypeError('a bug')), null)
-    assert.throws(
-      () =>
-        main([], () => {
-          throw new TypeError('a bug')
-        }),
+    await assert.rejects(
+      main([], () => {
+        throw new TypeError('a bug')
+      }),
       /a bug/,
     )
   })

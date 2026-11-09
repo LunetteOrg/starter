@@ -10,7 +10,8 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import process, { cwd, exit, stderr, stdout } from 'node:process'
+import process, { cwd, stderr, stdout } from 'node:process'
+import { exit } from './exit.ts'
 import { runTypecheck } from './hook.ts'
 
 const USAGE = 'usage: lntt hook typecheck   (the hook input on stdin)'
@@ -65,7 +66,6 @@ export async function main(args: string[]): Promise<void> {
     return
   }
   if (failure === null) return
-  // exitCode, not exit(): a long output to a pipe is written whole before Node exits.
   stderr.write(failure.endsWith('\n') ? failure : `${failure}\n`)
   process.exitCode = 1
 }

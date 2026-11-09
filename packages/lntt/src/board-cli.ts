@@ -7,7 +7,7 @@
 // eligible ones and reads the board back.
 
 import { spawnSync } from 'node:child_process'
-import { cwd, env, exit, stderr, stdout } from 'node:process'
+import { cwd, env, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import {
   applyStep,
@@ -28,6 +28,7 @@ import {
   readFirstStatus,
   readyRules,
 } from './board-ready.ts'
+import { Exit, exit } from './exit.ts'
 import { ConfigError, getValue, loadConfig } from './index.ts'
 
 const USAGE = 'usage: lntt board sync [--apply | --check]\n       lntt board ready [--apply]'
@@ -86,6 +87,7 @@ function ready(args: string[]): void {
     apply = values.apply === true
     if (positionals.length > 0) usage()
   } catch (error) {
+    if (error instanceof Exit) throw error
     usage((error as Error).message)
   }
   const failReady = (message: string): never => fail(message, 'ready')
@@ -165,6 +167,7 @@ export function main(args: string[]): void {
     if (values.apply && values.check) usage('--apply and --check do not go together')
     mode = values.apply ? 'apply' : values.check ? 'check' : 'dry run'
   } catch (error) {
+    if (error instanceof Exit) throw error
     usage((error as Error).message)
   }
 

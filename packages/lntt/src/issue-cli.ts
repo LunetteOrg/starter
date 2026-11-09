@@ -4,10 +4,11 @@
 
 import { readFileSync } from 'node:fs'
 import { basename, dirname } from 'node:path'
-import { cwd, env, exit, stderr, stdin, stdout } from 'node:process'
+import { cwd, env, stderr, stdin, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { makeGh } from './ci/candidate.ts'
 import { collectDump, type Dump, redact, redactionFor, renderDump, runFailing, withAgent } from './dump.ts'
+import { Exit, exit } from './exit.ts'
 import { findConfig, loadConfig, NoConfigError } from './index.ts'
 import {
   bodyTooLong,
@@ -22,9 +23,10 @@ import {
   searchIssues,
   upstreamRepository,
 } from './issue.ts'
+import { runQuery } from './query.ts'
 
 const USAGE = [
-  'usage: lntt dump [--json] [--harness <name>] [--model <id>] [-- <failing command>...]',
+  'usage: lntt dump [--json] [--query <jq>] [--harness <name>] [--model <id>] [-- <failing command>...]',
   '       lntt issue <draft.md | -> [--repo <owner/name>] [--dump <dump.json>] [--harness <name>] [--model <id>]',
   '                  [--project <name>] [--comment <n>] [--send]',
   '       lntt issue search [--repo <owner/name>] <words>...',
@@ -36,7 +38,7 @@ function usage(message?: string): never {
   exit(2)
 }
 
-export function main(command: 'dump' | 'issue', args: string[]): void {
+export async function main(command: 'dump' | 'issue', args: string[]): Promise<void> {
   let parsed: ReturnType<typeof parse>
   try {
     parsed = parse(args)
@@ -44,9 +46,10 @@ export function main(command: 'dump' | 'issue', args: string[]): void {
     usage((error as Error).message)
   }
   try {
-    if (command === 'dump') dump(parsed)
+    if (command === 'dump') await dump(parsed)
     else issue(parsed)
   } catch (error) {
+    if (error instanceof Exit) throw error
     // A refusal, a configuration error or a failed gh: one line, no stack.
     if (!(error instanceof Error)) throw error
     stderr.write(`lntt ${command}: ${error.message}\n`)
@@ -74,7 +77,7 @@ function projectConfig(): Record<string, unknown> {
   }
 }
 
-function dump({ values, positionals }: Parsed): void {
+async function dump({ values, positionals }: Parsed): Promise<void> {
   const root = projectRoot()
   const failing = values.failing
   if (failing === undefined && positionals.length > 0) usage('the failing command goes after --')
@@ -88,7 +91,12 @@ function dump({ values, positionals }: Parsed): void {
     ...(values.model === undefined ? {} : { model: values.model }),
     ...(failing === undefined ? {} : { command: runFailing(failing, cwd()) }),
   })
-  stdout.write(values.json ? `${JSON.stringify(result)}\n` : renderDump(result))
+  if (values.query !== undefined) {
+    const input = JSON.stringify(result)
+    const code = result.configError === undefined ? 0 : 1
+    const ran = await runQuery({ input, expression: values.query, json: values.json, code, command: 'lntt dump' })
+    if (ran !== code) exit(ran)
+  } else stdout.write(values.json ? `${JSON.stringify(result)}\n` : renderDump(result))
   // Printed whole, then red: a configuration that does not validate is an error.
   if (result.configError !== undefined) throw new Error(result.configError)
 }
@@ -96,6 +104,7 @@ function dump({ values, positionals }: Parsed): void {
 function issue({ values, positionals }: Parsed): void {
   if (values.failing !== undefined) usage('lntt issue takes no command after --: lntt dump does')
   if (values.json) usage('--json is an option of lntt dump')
+  if (values.query !== undefined) usage('--query is an option of lntt dump')
   const [first, ...rest] = positionals
   if (first === 'search') {
     if (rest.length === 0) usage('search needs the words to look for')
@@ -206,6 +215,7 @@ function parse(args: string[]) {
     allowPositionals: true,
     options: {
       json: { type: 'boolean', default: false },
+      query: { type: 'string' },
       repo: { type: 'string' },
       harness: { type: 'string' },
       model: { type: 'string' },

@@ -63,7 +63,11 @@ reason, and sits at the lowest level where its assertion can.
     reports killed (the failing test and its message, `PASS`), survived (`FAIL`), or
     `NOT RUN` when the path leaves the project, the text is not once on that line, the
     tests fail without the mutation, they outlast `timeoutSeconds`, or the file is one
-    git ignores (the scratch does not have it).
+    git ignores (the scratch does not have it). It takes the worktree's lock, the one a
+    round of `lntt review` holds (see `review-agents.md`), and refuses to run while any
+    other holder (a round, a reply, `allow`, another mutation) has it, so a mutation
+    the author starts during a round is refused until the round ends; outside a git
+    directory it cannot run (`lntt: error:`, exit 1, not a `NOT RUN`).
 - **The mutation lives in a scratch git worktree** of the head, with the uncommitted
   files laid over it and the dependencies shared, and is removed when the run ends: the
   working tree is never written. A failure counts as killed only when the same tests
