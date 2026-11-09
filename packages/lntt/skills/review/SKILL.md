@@ -29,7 +29,8 @@ In Claude Code the `lunette` plugin shows the round in a band above the prompt, 
 
 stdout is a summary: one line of outcome, then a line per thing to act on, the open
 findings blocking first, each with its id, severity, verdict, `path:line` and sentence,
-then the failed reviewers, the lenses read in part and the repeated findings. Exit 0: a
+then the failed reviewers, the lenses read in part, the repeated findings and the branch's
+pre-existing findings (`pre-existing` lines, below). Exit 0: a
 clean round. Exit 1: findings or a failure. Exit 3: the limit (section 3).
 
 The whole result stays in the state, and the details are read with
@@ -55,6 +56,15 @@ which every round's reviewers and verifiers read. The summary's `repeats` lines,
 that did not change, matched by place: read each against the entry's text (`closedWhat`,
 entry `closedBy`); when it names another problem, treat it as a finding of this round,
 otherwise there is nothing to do.
+
+A finding marked `[pre-existing]` sits on a line the branch did not write, which the
+change does not contradict: it is not verified, never blocks and is reported once. The
+summary's `pre-existing` lines, and `.state.preexisting`, list every one the branch met.
+Do not fix them in this branch: copy each into the pull request body, under
+**Pre-existing findings** (id, `path:line`, sentence). At the squash the person decides,
+one by one, whether each becomes an issue; none is opened automatically. A reviewer that
+marked a line the branch wrote, or one the change contradicts, gets it reported as any
+other finding.
 
 `.state.blocking` says which severities keep the round from being clean: blockers and warnings
 in the first `delivery.review.warningRounds` rounds, blockers alone after them.
@@ -83,7 +93,8 @@ running (`.state.open[]`) exits 4.
 `--json`: `branch`, `running` (the pid of a round in progress), `state` (`round`,
 `limit`, `reviewed`, `clean`, `atLimit`, `blocking`, `scope`, `lenses`, `open` (`findings` not withdrawn),
 `replied`, `closed` (the ledger), `failed`, `partial`, `skipped`, `tokens`, `cost`,
-`findings` (the last round's, every verdict), `refuted`, `repeated`, `rounds` (each
+`findings` (the last round's, every verdict), `refuted`, `repeated`, `preexisting` (the
+ledger's pre-existing entries), `rounds` (each
 round's cost)). Exit 0: this branch's last round
 is clean. 1: something to act on. 3: at the limit. 4: no round on this branch.
 `pnpm exec lntt review status --clear` removes the current branch's state once it is merged

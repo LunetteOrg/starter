@@ -24,3 +24,6 @@ is what needs judgement.
    deciding anything: a warning. Ask of each: would it measure the same in a year? A
    figure about the technology (what an encoding costs) holds. The same figure anchored
    to two different quantities is a warning too.
+
+In 5 and 6, a line of a touched record that the change did not touch, and does not
+contradict, is a pre-existing finding: `[pre-existing]` after its severity (below).

@@ -52,6 +52,7 @@ import {
   roundLimit,
   roundRange,
   runRound,
+  touchedLines,
 } from './review.ts'
 import {
   branchesIn,
@@ -583,6 +584,11 @@ function mergeBase(root: string, given: string | undefined): string {
   return git('merge-base', 'HEAD', ref)
 }
 
+function untouchedIn(diff: string): (path: string, line: number) => boolean {
+  const touched = touchedLines(diff)
+  return (path, line) => touched !== null && !touched.get(path)?.has(line)
+}
+
 // The mutations the reviewers proposed, run on a scratch copy of the head: the tree the
 // reviewers read is not touched. A run that cannot happen (a project without tests.levels,
 // no scratch worktree) leaves the finding to the verifiers.
@@ -625,7 +631,8 @@ async function round(args: string[]): Promise<number> {
   stderr.write(`lntt review: reviewing ${head} ${git('log', '-1', '--format=%s', 'HEAD')} (${branch})\n`)
   const root = git('rev-parse', '--show-toplevel')
   const state = readState(branch)
-  const range = roundRange(state, branch, head, git('rev-parse', '--short', mergeBase(root, values.base)), (a, b) => {
+  const base = git('rev-parse', '--short', mergeBase(root, values.base))
+  const range = roundRange(state, branch, head, base, (a, b) => {
     try {
       git('merge-base', '--is-ancestor', a, b)
       return true
@@ -696,6 +703,22 @@ async function round(args: string[]): Promise<number> {
       readBrief: (path) => readFileSync(join(root, path), 'utf8'),
       checks,
       closed: ledger,
+      // The lines the whole branch wrote, from the merge base whatever range the round reads;
+      // the prefixes and the root named, which a user's diff.noprefix or diff.relative would change.
+      untouched: untouchedIn(
+        git(
+          '-c',
+          'core.quotePath=false',
+          'diff',
+          '-U0',
+          '--no-color',
+          '--no-ext-diff',
+          '--no-relative',
+          '--src-prefix=a/',
+          '--dst-prefix=b/',
+          `${base}..${head}`,
+        ),
+      ),
       cite: (path, line) => cite(root, path, line),
       mutate: async (mutations) => runMutations(root, data, mutations),
     },
@@ -916,6 +939,7 @@ function withDefaults(state: ReviewState): ReviewState {
       partial: result.partial ?? [],
       skipped: result.skipped ?? [],
       closed: result.closed ?? [],
+      preexisting: result.preexisting ?? [],
     } as ReviewState['result'],
   }
 }
@@ -1042,6 +1066,7 @@ function stateView(state: ReviewState, maxRounds: number) {
   const limit = maxRounds + allowed
   const clean = roundClean(result)
   const ledger = ledgerFile(state.branch)
+  const closed = ledger?.branch === state.branch && Array.isArray(ledger.closed) ? ledger.closed : []
   return {
     allowed,
     limit,
@@ -1049,7 +1074,13 @@ function stateView(state: ReviewState, maxRounds: number) {
     atLimit: state.round >= limit && !clean,
     open: result.findings.filter((f) => f.verdict !== 'withdrawn'),
     replied: result.findings.filter((f) => f.reply !== undefined || f.verdict === 'withdrawn'),
-    closed: ledger?.branch === state.branch && Array.isArray(ledger.closed) ? ledger.closed : [],
+    closed,
+    // The branch's pre-existing findings, every round's, and the last round's that a failure
+    // kept out of the ledger: listed apart, for the person.
+    preexisting: [
+      ...closed.filter((c) => c.outcome === 'pre-existing'),
+      ...(result.preexisting ?? []).filter((f) => !closed.some((c) => c.id === f.id)),
+    ],
     // The last round's own tokens and USD; the branch's total is lntt review cost.
     tokens: result.tokens ?? null,
     cost: result.cost ?? null,
@@ -1067,7 +1098,7 @@ function oneLine(text: string): string {
 // `also` is one more clause of the outcome: a round running, a round refused.
 function summary(state: ReviewState, view: ReturnType<typeof stateView>, also: string): string[] {
   const { result } = state
-  const { open, replied, closed, tokens, cost } = view
+  const { open, replied, closed, preexisting, tokens, cost } = view
   const outcome = [
     `round ${state.round} of ${view.limit}`,
     `reviewed ${state.reviewed ?? 'nothing'}`,
@@ -1080,6 +1111,7 @@ function summary(state: ReviewState, view: ReturnType<typeof stateView>, also: s
     `${open.length} open${open.length > 0 ? ` (${blocked} blocking)` : ''}`,
     `${replied.length} replied`,
     `${closed.length} closed`,
+    ...(preexisting.length > 0 ? [`${preexisting.length} pre-existing`] : []),
     ...(result.failed.length > 0 ? [`${result.failed.length} failed`] : []),
     ...(result.partial.length > 0 ? [`${result.partial.length} partial`] : []),
     ...(result.skipped.length > 0 ? [`${result.skipped.length} skipped`] : []),
@@ -1096,6 +1128,7 @@ function summary(state: ReviewState, view: ReturnType<typeof stateView>, also: s
     ...result.failed.map((f) => `  ${f.lens} · ${f.agent} failed: ${oneLine(f.error)}`),
     ...result.partial.map((p) => `  ${p.lens} · ${p.agent}: ${p.lines.length} lines not read`),
     ...result.closed.map((f) => `  ${f.id} ${f.severity} repeats ${f.closedBy} ${anchor(f)} — ${f.what}`),
+    ...preexisting.map((c) => `  pre-existing ${c.id} ${c.severity} ${anchor(c)} — ${c.what}`),
   ]
 }
 
@@ -1199,6 +1232,8 @@ async function status(args: string[]): Promise<number> {
         open: view.open,
         replied: view.replied,
         closed: view.closed,
+        // The ledger's pre-existing entries: for the pull request body, apart from what blocks.
+        preexisting: view.preexisting,
         failed: result.failed,
         partial: result.partial,
         skipped: result.skipped,

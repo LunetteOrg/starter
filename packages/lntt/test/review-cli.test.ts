@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import type { Checked, Closed } from '../src/review.ts'
 import { branchKey } from '../src/review-store.ts'
 import { type Clone, clone } from './clone.ts'
 
@@ -249,6 +250,62 @@ describe('lntt review, end to end with a fake agent', () => {
     const reply = lntt(['reply', 'f1', 'no'], { FAKE_REPLY: 'kept\\nstill wrong' })
     assert.equal(reply.code, 1)
     assert.equal(state().result.findings[0].verdict, 'confirmed')
+  })
+
+  test('a pre-existing finding on a line the branch did not write: clean, listed apart, kept in the ledger', () => {
+    git('switch', '-q', 'main')
+    writeFileSync(join(repo, 'c.md'), 'one\nOrca 1.2\nthree\n')
+    git('add', 'c.md')
+    git('commit', '-qm', 'a record on main')
+    git('switch', '-q', 'feat/1/x')
+    git('merge', '-q', '--no-edit', 'main')
+    // A user's diff.noprefix changes nothing: lntt names the prefixes it reads.
+    git('config', 'diff.noprefix', 'true')
+    const r = lntt(['--base', 'main'], {
+      FAKE_REVIEW: '- [warning] [pre-existing] c.md:2 — Orca 1.2 is stale — update',
+    })
+    assert.equal(r.code, 0, r.err)
+    assert.match(r.out, /, clean; 0 open, 0 replied, 1 closed, 1 pre-existing,/)
+    assert.match(r.out, /^ {2}pre-existing f1 warning c\.md:2 — Orca 1\.2 is stale$/m)
+    assert.doesNotMatch(readFileSync(log, 'utf8'), /^VERIFY/m)
+    const result = reading()
+    assert.deepEqual(
+      result.preexisting.map((c: Closed) => [c.id, c.outcome, c.cited]),
+      [['f1', 'pre-existing', 'Orca 1.2']],
+    )
+
+    // The same mark on a line the branch changed is dropped: verified, and it blocks.
+    // A diff with a header lntt cannot read (git quotes a control character in octal): no
+    // line is known untouched, so the mark on c.md:3 is dropped too.
+    writeFileSync(join(repo, 'a.ts'), 'export const a = 3\n')
+    writeFileSync(join(repo, 'odd\u0001name.md'), 'x\n')
+    git('add', '-A')
+    git('commit', '-qm', 'touch a.ts again')
+    const again = lntt(['--base', 'main'], {
+      FAKE_REVIEW: '- [warning] [pre-existing] a.ts:1 — w — a\\n- [warning] [pre-existing] c.md:3 — t — a',
+      FAKE_VERIFY: 'confirmed\\np',
+    })
+    assert.equal(again.code, 1, again.err)
+    assert.deepEqual(
+      reading().open.map((f: Checked) => [f.path, f.verdict, f.preexisting]),
+      [
+        ['a.ts', 'confirmed', undefined],
+        ['c.md', 'confirmed', undefined],
+      ],
+    )
+    assert.match(again.out, /^ {2}pre-existing f1 warning c\.md:2 — Orca 1\.2 is stale$/m, 'still listed')
+    const status = lntt(['status'])
+    assert.match(status.out, /^ {2}pre-existing f1 warning c\.md:2 — Orca 1\.2 is stale$/m)
+    assert.deepEqual(
+      reading().preexisting.map((c: Closed) => c.id),
+      ['f1'],
+    )
+
+    // A round with a failure writes no ledger: what it found pre-existing is listed all the same.
+    const failed = state()
+    failed.result.preexisting = [{ ...result.preexisting[0], id: 'f9' }]
+    put(stateFile(), JSON.stringify(failed))
+    assert.match(lntt(['status']).out, /^ {2}pre-existing f9 warning c\.md:2 — Orca 1\.2 is stale$/m)
   })
 
   test('a reviewer that fails: exit 1, listed in failed, and the range is read again next time', () => {

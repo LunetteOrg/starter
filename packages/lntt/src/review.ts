@@ -134,13 +134,17 @@ export interface Finding {
   // The tests reviewer's proof request: break this text on the line and see whether a
   // test fails (lntt check tests mutate).
   mutation?: { text: string; to: string }
+  // Marked `[pre-existing]` after the severity: a line the change did not touch, which the
+  // change does not contradict. lntt keeps the mark only on a line the branch left untouched.
+  preexisting?: true
 }
 
 // `- [severity] path:line — what — action`, an em dash or a spaced hyphen between the
 // fields; `(no anchor)` in place of the anchor. Backticks and bold around the severity
 // or the anchor, which models add, are dropped first, and so is a parenthesis after the
-// anchor (a section, a key). Other lines are the reviewer talking.
-const SEVERITY = /^\s*[-*]\s*\[(blocker|warning|note)\]\s+(.+)$/
+// anchor (a section, a key). `[pre-existing]` may follow the severity. Other lines are
+// the reviewer talking.
+const SEVERITY = /^\s*[-*]\s*\[(blocker|warning|note)\](?:\s*\[([Pp]re-existing)\])?\s+(.+)$/
 const SEPARATOR = /\s+(?:—|–|-)\s+/
 const NO_ANCHOR = /^\(no anchor\)(?:\s+\([^)]*\))?\s+(?:—|–|-)\s+(.+)$/
 // The note the brief asks for when a check could not run, which has no anchor to name.
@@ -152,6 +156,7 @@ const pathLike = (token: string): boolean => /\/|\.\w|:\d/.test(token)
 
 interface Line {
   severity: Severity
+  preexisting: boolean
   // The first place, or null; the others it names follow it.
   anchor: string | null
   also: string[]
@@ -163,11 +168,12 @@ function readLine(raw: string): Line | null {
   const m = SEVERITY.exec(unwrap(raw))
   if (!m) return null
   const severity = m[1] as Severity
-  const rest = m[2] as string
+  const preexisting = m[2] !== undefined
+  const rest = m[3] as string
   const none = NO_ANCHOR.exec(rest)
-  if (none) return { severity, anchor: null, also: [], whole: none[1] as string }
+  if (none) return { severity, preexisting, anchor: null, also: [], whole: none[1] as string }
   const sep = SEPARATOR.exec(rest)
-  if (!sep) return NOT_CHECKED.test(rest) ? { severity, anchor: null, also: [], whole: rest } : null
+  if (!sep) return NOT_CHECKED.test(rest) ? { severity, preexisting, anchor: null, also: [], whole: rest } : null
   const head = rest.slice(0, sep.index)
   const tokens = head
     .replace(/\([^)]*\)/g, ' ')
@@ -177,8 +183,9 @@ function readLine(raw: string): Line | null {
     .filter((t) => t !== '' && !JOINERS.has(t.toLowerCase()))
   const whole = rest.slice(sep.index + sep[0].length)
   // A head that is not a place at all is a finding with no anchor, whole.
-  if (tokens.length === 0 || !pathLike(tokens[0] as string)) return { severity, anchor: null, also: [], whole: rest }
-  return { severity, anchor: tokens[0] as string, also: tokens.slice(1), whole }
+  if (tokens.length === 0 || !pathLike(tokens[0] as string))
+    return { severity, preexisting, anchor: null, also: [], whole: rest }
+  return { severity, preexisting, anchor: tokens[0] as string, also: tokens.slice(1), whole }
 }
 
 // A mutation closes a finding line: ``mutate: `text` => `mutated` `` (an arrow works as
@@ -246,6 +253,7 @@ export function parseFindings(text: string): Finding[] {
       what: what.trim(),
       action: action.trim(),
       ...(mutation ? { mutation: { text: mutation[1] as string, to: mutation[2] as string } } : {}),
+      ...(line.preexisting ? { preexisting: true as const } : {}),
     })
   }
   return findings
@@ -272,8 +280,9 @@ export interface Reviewed {
 }
 
 // One finding per anchor, at the highest severity any reviewer gave it, with every
-// reviewer that found it; findings without an anchor stay apart. Ordered by severity,
-// then place; numbered in that order, after `after` (the last id of earlier rounds).
+// reviewer that found it; findings without an anchor stay apart. Pre-existing only when
+// every reviewer that found it marked it so. Ordered by severity, then place; numbered in
+// that order, after `after` (the last id of earlier rounds).
 export function mergeFindings(reviewed: Reviewed[], after = 0): Found[] {
   const byAnchor = new Map<string, Omit<Found, 'id'>>()
   let loose = 0
@@ -291,6 +300,7 @@ export function mergeFindings(reviewed: Reviewed[], after = 0): Found[] {
         continue
       }
       seen.foundBy.push(by)
+      if (!f.preexisting) delete seen.preexisting
       if (SEVERITIES.indexOf(f.severity) < SEVERITIES.indexOf(seen.severity)) {
         Object.assign(seen, { severity: f.severity, what: f.what, action: f.action })
       }
@@ -496,8 +506,10 @@ export function reviewedAfter(result: RoundResult, previous: string | null, head
 
 // A finding the branch is done with, in the ledger lntt review keeps next to its state:
 // fixed (a finding carried from an earlier round that the verifiers refuted on a later
-// head), refuted (with the proof), or accepted open (with the reason: a note, or a warning
-// past delivery.review.warningRounds). Every round's reviewers and verifiers read it.
+// head), refuted (with the proof), accepted open (with the reason: a note, or a warning
+// past delivery.review.warningRounds), or pre-existing (on a line the change did not
+// touch: listed for the person). Every round's reviewers read it, its verifiers all but
+// the pre-existing entries.
 export interface Closed {
   id: string
   round: number
@@ -507,8 +519,8 @@ export interface Closed {
   what: string
   // What its line read when it was closed: while it reads the same, the finding is closed.
   cited: string | null
-  outcome: 'fixed' | 'refuted' | 'accepted'
-  // fixed: the head the verifiers read; refuted: the proof; accepted: the reason.
+  outcome: 'fixed' | 'refuted' | 'accepted' | 'pre-existing'
+  // fixed: the head the verifiers read; refuted: the proof; accepted, pre-existing: the reason.
   commit?: string
   proof?: string
   reason?: string
@@ -545,8 +557,9 @@ function proofText(f: Checked): string {
 // What a round closes, after the ledger it read: its refuted findings (fixed when carried
 // from an earlier round), its notes, and past delivery.review.warningRounds its confirmed
 // warnings, which go in the pull request as open items; an undecided or unverified one
-// stays carried, to be verified again. Withdrawn findings are closed by the reply. The
-// caller closes only a round with no failure: what a failed round found is read again.
+// stays carried, to be verified again. Its pre-existing findings are closed as they are
+// found. Withdrawn findings are closed by the reply. The caller closes only a round with
+// no failure: what a failed round found is read again.
 export function closeRound(ledger: Closed[], result: RoundResult, open: Checked[], warningRounds: number): Closed[] {
   const known = new Set(ledger.map((c) => c.id))
   const carried = new Set(open.map((f) => f.id))
@@ -568,18 +581,27 @@ export function closeRound(ledger: Closed[], result: RoundResult, open: Checked[
       closed.push(closedEntry(f, result.round, 'accepted', { reason }))
     }
   }
+  for (const f of result.preexisting ?? []) {
+    if (known.has(f.id)) continue
+    closed.push(closedEntry(f, result.round, 'pre-existing', { reason: PREEXISTING }))
+  }
   return [...ledger, ...closed]
 }
+
+const PREEXISTING = 'on a line the change did not touch: listed for the person'
 
 // The closed finding a fresh one repeats: the same place, a line that reads as it did
 // when it was closed, a severity no higher. By place, not by wording: a reviewer words
 // the same finding differently every round. A fixed one is never repeated: its line
-// changed, or the fix went away and the finding is new again.
+// changed, or the fix went away and the finding is new again. A pre-existing one is
+// repeated only by a finding marked pre-existing too: one without the mark says the change
+// now contradicts it, and is verified.
 export function repeats(f: Found, ledger: Closed[]): Closed | undefined {
   if (f.path === null || f.line === null || typeof f.cited !== 'string') return undefined
   return ledger.find(
     (c) =>
       c.outcome !== 'fixed' &&
+      (c.outcome !== 'pre-existing' || f.preexisting === true) &&
       c.path === f.path &&
       c.line === f.line &&
       c.cited === f.cited &&
@@ -593,7 +615,9 @@ function closedLine(c: Closed): string {
       ? `fixed on ${c.commit}`
       : c.outcome === 'refuted'
         ? `refuted: ${c.proof}`
-        : `accepted open: ${c.reason}`
+        : c.outcome === 'pre-existing'
+          ? `pre-existing: ${c.reason}; reported again only if the change now contradicts it`
+          : `accepted open: ${c.reason}`
   return `- ${c.id} (${c.severity}) \`${anchorOf(c)}\` — ${c.what} — ${why}`
 }
 
@@ -613,9 +637,10 @@ function closedSection(ledger: Closed[] | undefined, files: string[]): string {
   ].join('\n')
 }
 
-// The verifier reads what was closed on the finding's file only.
+// The verifier reads what was closed on the finding's file only, the pre-existing entries
+// left out: a finding they reach is one the reviewer says the change now contradicts.
 function closedForVerifier(found: Found, ledger: Closed[] | undefined): string {
-  const mine = (ledger ?? []).filter((c) => c.path !== null && c.path === found.path)
+  const mine = (ledger ?? []).filter((c) => c.path !== null && c.path === found.path && c.outcome !== 'pre-existing')
   if (mine.length === 0) return ''
   return [
     'Findings this branch already closed on that file. One that the finding repeats on code',
@@ -774,6 +799,10 @@ export interface RoundResult {
   // shown with the entry's text, never verified, never blocking. The match is by place,
   // not by wording: the author reads each against `closedWhat`.
   closed: (Found & { closedBy: string; closedWhat: string })[]
+  // Fresh findings marked pre-existing, on a line the branch did not write: never
+  // verified, never blocking, closed in the ledger as they are found and listed for the
+  // person, who decides at the squash whether each becomes an issue.
+  preexisting: Found[]
   // The severities that keep the round from being clean: a warning blocks up to
   // delivery.review.warningRounds, a blocker always.
   blocking: Severity[]
@@ -799,10 +828,60 @@ export function roundClean(result: RoundResult): boolean {
 
 export type Ask = (questions: Question[]) => Promise<Answer[]>
 
+function unmarked<F extends Finding>(f: F): F {
+  const { preexisting: _, ...plain } = f
+  return plain as F
+}
+
+// The lines each file has on the new side of a diff with no context (`git diff -U0`,
+// prefixes `a/` and `b/`): the lines the branch wrote. A file the diff deletes has none; a
+// path git quotes is unquoted, and the tab git ends a path with a space with is dropped.
+// Only the header of a file, between `diff --git` and its first hunk, names it: an added
+// line that reads `++ x` is no header. A header that cannot be read makes the whole diff
+// unreadable: null, and no line is known untouched.
+export function touchedLines(diff: string): Map<string, Set<number>> | null {
+  const touched = new Map<string, Set<number>>()
+  let lines: Set<number> | null = null
+  let header = false
+  for (const row of diff.split('\n')) {
+    if (row.startsWith('diff --git ')) {
+      header = true
+      lines = null
+    } else if (header && row.startsWith('+++ ')) {
+      const name = row.slice(4).replace(/\t$/, '')
+      if (name === '/dev/null') continue
+      const path = name.startsWith('"') ? unquote(name) : name
+      if (!path?.startsWith('b/')) return null
+      lines = new Set()
+      touched.set(path.slice(2), lines)
+    } else if (row.startsWith('@@ ')) {
+      header = false
+      const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(row)
+      if (!hunk || !lines) continue
+      const start = Number(hunk[1])
+      const count = hunk[2] === undefined ? 1 : Number(hunk[2])
+      for (let n = start; n < start + count; n++) lines.add(n)
+    }
+  }
+  return touched
+}
+
+// A C-style quoted path as git writes it: `"b/q\"t.md"`.
+function unquote(quoted: string): string | undefined {
+  try {
+    return JSON.parse(quoted) as string
+  } catch {
+    return undefined
+  }
+}
+
 export interface RoundInput extends PromptValues {
   range: Range
   // The text of a project lens's brief, by its path in the repository.
   readBrief?: (path: string) => string
+  // Whether the branch left a line as the base had it (touchedLines on the diff from the
+  // merge base): only there does a finding keep its pre-existing mark. Absent: nowhere.
+  untouched?: (path: string, line: number) => boolean
   // What a finding's line reads in the working tree, clean at the head (lntt check cite),
   // or what does not exist: the file, or the line.
   cite?: (path: string, line: number | null) => { text: string | null } | { missing: string; what: 'file' | 'line' }
@@ -858,6 +937,7 @@ export async function runRound(
     partial: [],
     skipped: [],
     closed: [],
+    preexisting: [],
     // An empty delta is no round more: it blocks as the round it keeps the number of.
     blocking: round > config.warningRounds ? ['blocker'] : ['blocker', 'warning'],
     cost: null,
@@ -927,21 +1007,28 @@ export async function runRound(
     .filter((f) => f.verdict !== 'withdrawn' && f.severity !== 'note' && !closedIds.has(f.id))
     .map((f) => ({ ...f }))
   const last = Math.max(0, ...[...open, ...ledger].map((f) => Number(f.id.slice(1)) || 0))
-  // A fresh finding at the anchor of one still open is the same finding: it joins it.
-  const fresh = mergeFindings(reviewed, last).filter((f) => {
-    const same = f.path !== null && carried.find((c) => c.path === f.path && c.line === f.line)
-    // The same agent finding it again replaces its own entry: its new session is the one
-    // a reply resumes.
-    if (same) same.foundBy = [...same.foundBy.filter((b) => !f.foundBy.some((n) => n.agent === b.agent)), ...f.foundBy]
-    return !same
-  })
+  // A fresh finding at the anchor of one still open is the same finding: it joins it. A
+  // pre-existing mark on a line the branch wrote, or on a finding with no line, is dropped:
+  // the finding is reported as any other.
+  const fresh = mergeFindings(reviewed, last)
+    .map((f) =>
+      !f.preexisting || (f.path !== null && f.line !== null && input.untouched?.(f.path, f.line)) ? f : unmarked(f),
+    )
+    .filter((f) => {
+      const same = f.path !== null && carried.find((c) => c.path === f.path && c.line === f.line)
+      // The same agent finding it again replaces its own entry: its new session is the one
+      // a reply resumes.
+      if (same)
+        same.foundBy = [...same.foundBy.filter((b) => !f.foundBy.some((n) => n.agent === b.agent)), ...f.foundBy]
+      return !same
+    })
   // A finding on a line past the end of its file is refuted before any verifier is
   // asked; the others carry the line's text to them. A file that is not there may be one
   // the change deletes: its verifiers decide.
   const found: Found[] = []
   for (const f of [...carried, ...fresh]) {
     const cited = f.path === null || !input.cite ? null : input.cite(f.path, f.line)
-    if (cited && 'missing' in cited && cited.what === 'file') found.push(f)
+    if (cited && 'missing' in cited && cited.what === 'file') found.push(unmarked(f))
     else if (cited && 'missing' in cited) {
       const proof = `${anchorOf(f)}: ${cited.missing}`
       result.refuted.push({ ...f, verdict: 'refuted', proofs: [{ by: 'lntt check cite', outcome: 'refuted', proof }] })
@@ -950,6 +1037,7 @@ export async function runRound(
       // A fresh finding that repeats a closed one on an unchanged line asks no verifier.
       const repeated = carried.some((c) => c.id === f.id) ? undefined : repeats(read, ledger)
       if (repeated) result.closed.push({ ...read, closedBy: repeated.id, closedWhat: repeated.what })
+      else if (read.preexisting) result.preexisting.push(read)
       else found.push(read)
     }
   }

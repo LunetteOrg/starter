@@ -30,6 +30,7 @@ import {
   runRound,
   type Severity,
   TEST_PATHS,
+  touchedLines,
   unreadableFindings,
   verdict,
   verifiersFor,
@@ -1546,6 +1547,247 @@ describe('what the branch already closed, and the rounds where a warning blocks'
     assert.equal(quota.skipped.length, 1)
     assert.equal(reviewedAfter(quota, 'h0', 'h1'), 'h1')
     assert.equal(reviewedAfter({ ...quota, failed: [{ lens: 'code', agent: 'a', error: 'e' }] }, 'h0', 'h1'), 'h0')
+  })
+})
+
+// A finding on a line the branch did not write, which the change does not contradict: the
+// reviewer marks it, lntt keeps the mark only on a line the branch left untouched.
+describe('a pre-existing finding', () => {
+  const config = reviewConfig({
+    delivery: {
+      review: {
+        reviewers: {
+          decisions: { with: [] },
+          tests: { with: [] },
+          code: { with: [{ kind: 'claude', model: 'haiku' }] },
+        },
+        verify: { with: [{ kind: 'claude', model: 'sonnet' }] },
+      },
+    },
+  })
+  const input = (n: number, lines: Record<number, string>, written: number[] = []) => ({
+    base: 'mb',
+    head: `h${n}`,
+    files: ['a.ts'],
+    diff: 'D',
+    records: '',
+    range: roundRange(
+      n === 1 ? null : ({ branch: 'b', round: n - 1, reviewed: 'h0' } as ReviewState),
+      'b',
+      'h',
+      'mb',
+      () => true,
+    ),
+    cite: (_path: string, line: number | null) => ({ text: lines[line ?? 0] ?? null }),
+    untouched: (path: string, line: number) => path !== 'a.ts' || !written.includes(line),
+  })
+  function asker(review: string, verify = 'confirmed\ny') {
+    const prompts: string[] = []
+    const ask: Ask = async (qs) =>
+      qs.map((q) => {
+        prompts.push(q.prompt)
+        const text = q.prompt.startsWith('You are reviewing') ? review : verify
+        return { ok: true as const, reply: { text, session: 's', cost: null, tokens: null } }
+      })
+    return { ask, prompts }
+  }
+
+  test('the reviewer marks it after the severity; a line without the mark is read as before', () => {
+    const [marked, plain] = parseFindings(
+      '- [warning] [pre-existing] docs/adr/x.md:51 — Orca 1.2 is stale — update it\n- [warning] a.ts:3 — w — a',
+    )
+    assert.deepEqual(marked, {
+      severity: 'warning',
+      path: 'docs/adr/x.md',
+      line: 51,
+      what: 'Orca 1.2 is stale',
+      action: 'update it',
+      preexisting: true,
+    })
+    assert.equal(plain?.preexisting, undefined)
+    assert.equal(parseFindings('- **[blocker]** [Pre-existing] `a.ts:2` — b — a')[0]?.preexisting, true)
+    assert.deepEqual(parseFindings('- [pre-existing] a.ts:1 — w — a'), [], 'the mark is no severity')
+  })
+
+  test('on an untouched line it goes to no verifier, never blocks, and the round is clean', async () => {
+    const { ask, prompts } = asker('- [blocker] [pre-existing] a.ts:9 — old — a')
+    const result = await runRound(config, input(1, { 9: 'old line' }, [1]), ask)
+    assert.equal(prompts.length, 1, 'no verifier is asked')
+    assert.deepEqual(result.findings, [])
+    assert.deepEqual(
+      result.preexisting.map((f) => [f.id, f.severity, f.path, f.line, f.cited]),
+      [['f1', 'blocker', 'a.ts', 9, 'old line']],
+    )
+    assert.equal(roundClean(result), true)
+    assert.match(prompts[0] as string, /\[pre-existing\]/, 'the reviewers are told how to mark one')
+  })
+
+  test('on a line the branch wrote, or with no line, the mark is dropped: reported as today, and it blocks', async () => {
+    const touched = await runRound(
+      config,
+      input(1, { 1: 'new line' }, [1]),
+      asker('- [warning] [pre-existing] a.ts:1 — w — a').ask,
+    )
+    assert.deepEqual(touched.preexisting, [])
+    assert.deepEqual(
+      touched.findings.map((f) => [f.id, f.verdict, f.preexisting]),
+      [['f1', 'confirmed', undefined]],
+    )
+    assert.equal(roundClean(touched), false)
+
+    const loose = await runRound(config, input(1, {}), asker('- [warning] [pre-existing] a.ts — w — a').ask)
+    assert.deepEqual(loose.preexisting, [])
+    assert.equal(loose.findings.length, 1)
+    assert.equal(roundClean(loose), false)
+
+    const blind = await runRound(
+      config,
+      { ...input(1, { 9: 'x' }), untouched: undefined },
+      asker('- [warning] [pre-existing] a.ts:9 — w — a').ask,
+    )
+    assert.deepEqual(blind.preexisting, [], 'with nothing to tell untouched lines, none is')
+
+    // A file that is not there may be one the change deletes: its verifiers decide.
+    const deleted = await runRound(
+      config,
+      { ...input(1, {}), cite: () => ({ missing: 'no such file', what: 'file' as const }) },
+      asker('- [warning] [pre-existing] gone.ts:2 — w — a').ask,
+    )
+    assert.deepEqual(deleted.preexisting, [])
+    assert.deepEqual(
+      deleted.findings.map((f) => [f.path, f.verdict, f.preexisting]),
+      [['gone.ts', 'confirmed', undefined]],
+    )
+  })
+
+  test('an unmarked finding on an untouched line, which the change contradicts, is reported as today and blocks', async () => {
+    const result = await runRound(
+      config,
+      input(1, { 51: 'Orca 1.2' }, [1]),
+      asker('- [warning] a.ts:51 — the change makes this wrong — fix it').ask,
+    )
+    assert.deepEqual(result.preexisting, [])
+    assert.deepEqual(
+      result.findings.map((f) => [f.id, f.verdict]),
+      [['f1', 'confirmed']],
+    )
+    assert.equal(roundClean(result), false)
+  })
+
+  test('two reviewers at one anchor: pre-existing only when both mark it', () => {
+    const agent = { kind: 'claude', model: 'haiku' } as const
+    const merged = mergeFindings([
+      { lens: 'code', agent, session: null, findings: parseFindings('- [warning] [pre-existing] a.ts:9 — w — a') },
+      { lens: 'decisions', agent, session: null, findings: parseFindings('- [warning] a.ts:9 — w — a') },
+    ])
+    assert.equal(merged[0]?.preexisting, undefined)
+    const both = mergeFindings([
+      { lens: 'code', agent, session: null, findings: parseFindings('- [note] [pre-existing] a.ts:9 — w — a') },
+      { lens: 'decisions', agent, session: null, findings: parseFindings('- [warning] [pre-existing] a.ts:9 — w — a') },
+    ])
+    assert.deepEqual([both[0]?.preexisting, both[0]?.severity], [true, 'warning'])
+  })
+
+  test('the ledger keeps it: the next round does not report it again; an unmarked finding there is verified', async () => {
+    const lines = { 9: 'old line' }
+    const first = await runRound(config, input(1, lines, [1]), asker('- [warning] [pre-existing] a.ts:9 — old — a').ask)
+    const ledger = closeRound([], first, [], config.warningRounds)
+    assert.deepEqual(
+      ledger.map((c) => [c.id, c.outcome, c.cited, c.reason]),
+      [['f1', 'pre-existing', 'old line', 'on a line the change did not touch: listed for the person']],
+    )
+    assert.deepEqual(closeRound(ledger, first, [], 2), ledger, 'closed once')
+
+    const again = asker('- [warning] [pre-existing] a.ts:9 — stale — a')
+    const second = await runRound(config, { ...input(2, lines, [1]), closed: ledger }, again.ask, first.findings)
+    assert.equal(again.prompts.length, 1)
+    assert.match(again.prompts[0] as string, /- f1 \(warning\) `a\.ts:9` — old — pre-existing:/)
+    assert.deepEqual(second.preexisting, [], 'not reported again')
+    assert.deepEqual(
+      second.closed.map((f) => [f.id, f.closedBy]),
+      [['f2', 'f1']],
+    )
+    assert.deepEqual(closeRound(ledger, second, [], 2), ledger)
+    assert.equal(roundClean(second), true)
+
+    const contradicted = asker('- [warning] a.ts:9 — now contradicted — fix')
+    const third = await runRound(config, { ...input(2, lines, [1]), closed: ledger }, contradicted.ask)
+    assert.deepEqual(third.closed, [])
+    assert.deepEqual(
+      third.findings.map((f) => [f.id, f.verdict]),
+      [['f2', 'confirmed']],
+    )
+    const verify = contradicted.prompts.find((p) => p.startsWith('You are checking')) as string
+    assert.doesNotMatch(verify, /f1 \(warning\)/, 'the verifier is not told to refute it as a repeat')
+    assert.equal(roundClean(third), false)
+  })
+
+  test('an empty delta reports none', async () => {
+    const empty = await runRound(config, { ...input(2, {}), files: [] }, asker('').ask, [])
+    assert.deepEqual(empty.preexisting, [])
+  })
+})
+
+describe('the lines a branch wrote', () => {
+  test('the new side of each hunk of a diff with no context, by file; a deletion writes none', () => {
+    const touched = touchedLines(
+      [
+        'diff --git a/a.ts b/a.ts',
+        '--- a/a.ts',
+        '+++ b/a.ts',
+        '@@ -1 +1 @@',
+        '-x',
+        '+y',
+        '@@ -5,0 +6,2 @@',
+        '+p',
+        '+++ an added line that reads like a header',
+        '@@ -20,3 +21,0 @@',
+        '-gone',
+        // A header with no `+++` (a rename, a binary file) names no file: a hunk after it is no a.ts line.
+        'diff --git a/old.bin b/moved.bin',
+        'similarity index 100%',
+        '@@ -1 +40 @@',
+        'diff --git a/new.md b/new.md',
+        'new file mode 100644',
+        '--- /dev/null',
+        '+++ b/new.md',
+        '@@ -0,0 +1,3 @@',
+        '+1',
+        '+2',
+        '+3',
+        'diff --git a/gone.ts b/gone.ts',
+        '--- a/gone.ts',
+        '+++ /dev/null',
+        '@@ -1 +0,0 @@',
+        '-z',
+        // As git writes them: a path with a space ends with a tab, one with a quote is quoted.
+        'diff --git a/sp ace.md b/sp ace.md',
+        '--- a/sp ace.md\t',
+        '+++ b/sp ace.md\t',
+        '@@ -2 +2 @@',
+        '-a',
+        '+b',
+        'diff --git "a/q\\"t.md" "b/q\\"t.md"',
+        '--- "a/q\\"t.md"',
+        '+++ "b/q\\"t.md"',
+        '@@ -1 +1 @@',
+        '-x',
+        '+y',
+      ].join('\n'),
+    ) as Map<string, Set<number>>
+    const untouched = (path: string, line: number) => !touched.get(path)?.has(line)
+    assert.deepEqual([...(touched.get('a.ts') ?? [])], [1, 6, 7])
+    assert.deepEqual([...(touched.get('new.md') ?? [])], [1, 2, 3])
+    assert.deepEqual([...(touched.get('sp ace.md') ?? [])], [2])
+    assert.deepEqual([...(touched.get('q"t.md') ?? [])], [1])
+    assert.deepEqual([...touched.keys()], ['a.ts', 'new.md', 'sp ace.md', 'q"t.md'])
+    assert.equal(untouched('a.ts', 2), true)
+    assert.equal(untouched('other.ts', 1), true)
+  })
+
+  test('a header it cannot read, or with another prefix, makes the diff unreadable: no line is untouched', () => {
+    assert.equal(touchedLines('diff --git "a/x" "b/x"\n--- "a/x\n+++ "b/\\q"\n@@ -1 +1 @@'), null)
+    assert.equal(touchedLines('diff --git x x\n--- x\n+++ x\n@@ -1 +1 @@'), null)
   })
 })
 
