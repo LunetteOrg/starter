@@ -164,8 +164,15 @@ same way every time; the `review` skill keeps the judgement.
   reply) at `roundTimeoutMinutes` (the round fails and keeps what it gathered), an
   interrupt keeps the waiting agents from starting, and an agent that
   ignores SIGTERM gets SIGKILL five seconds later, or when `lntt review` exits. On macOS
-  `caffeinate` keeps the machine awake while the round runs. One round or reply runs at
-  a time in a worktree, under a lock that names its pid.
+  `caffeinate` keeps the machine awake while the round runs. One round, reply or
+  `lntt check tests mutate` runs at a time in a worktree, under one lock that names its
+  pid and its command: either command refuses to start while the other holds it and says
+  which. A holder touches the lock every 5 seconds; the lock is the holder's while its
+  pid answers (a pid of another user, EPERM, answers) or the lock was touched in the last
+  15 seconds, so a holder in another pid namespace is not taken for dead. A lock whose
+  holder is gone is removed under a guard file, so of two runs that find it dead the
+  second leaves the lock the first created. A round's first line names the commit it
+  reviews.
 - **Progress is a contract:** stderr carries a line when each agent starts and ends
   (with its tokens), `failed` or `skipped` for one that did not answer, the agents still
   running every 30 seconds, `round N done` at the end, `error:` for a round that could
@@ -240,6 +247,11 @@ same way every time; the `review` skill keeps the judgement.
 
 ## Discarded directions
 
+- **A lock taken over by removing the file and creating it again.** Two runs that both
+  found a dead lock could each remove the other's new one and both run (two reviews of
+  one worktree ran at once in #287); the removal is serialised by a guard file.
+- **A lock live only by its pid.** A holder in another pid namespace, or of another
+  user, is not seen as running by `kill(pid, 0)`; the heartbeat and EPERM decide too.
 - **One state per worktree, in the worktree's git directory.** A review on another branch
   in the same worktree overwrote the state and the ledger of the branch before it, closing
   the worktree deleted them, and the other worktrees of the clone could not see them.

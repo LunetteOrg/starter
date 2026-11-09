@@ -2,18 +2,7 @@
 // (usage: bin/lntt.ts).
 
 import { execFileSync, spawn } from 'node:child_process'
-import {
-  appendFileSync,
-  closeSync,
-  existsSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  statSync,
-  unlinkSync,
-  writeFileSync,
-  writeSync,
-} from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { cwd, env, exit, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
@@ -74,6 +63,7 @@ import {
   statePathIn,
 } from './review-store.ts'
 import { commandExists } from './viewer.ts'
+import { acquireLock as acquireWorktreeLock, type Holder, heldBy, LockedError } from './worktree-lock.ts'
 
 export { formatTokens }
 
@@ -560,59 +550,20 @@ function deadline(minutes: number): AbortSignal {
   return AbortSignal.any([timeout.signal, interrupted.signal])
 }
 
-// One round (or reply) at a time per worktree: a second would overwrite the state and the
-// progress of the first. A lock whose process is gone is taken over.
-class LockedError extends Error {}
-
-// The pid a lock names, or null when it names none: a file just created by another run
-// is empty for an instant, so a fresh empty one counts as held.
-function lockHolder(lock: string): number | 'held' | null {
-  try {
-    const text = readFileSync(lock, 'utf8').trim()
-    if (text === '') return Date.now() - statSync(lock).mtimeMs < 2000 ? 'held' : null
-    const pid = Number(text)
-    if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return null
-    process.kill(pid, 0)
-    return pid
-  } catch {
-    return null
-  }
+// One round (or reply, or mutation run) at a time per worktree: a second would overwrite the
+// state and the progress of the first, or change the tree it reads (src/worktree-lock.ts).
+function acquireLock(command = 'lntt review'): void {
+  acquireWorktreeLock(git('rev-parse', '--absolute-git-dir'), command)
 }
 
-// The lock of the worktree's rounds, next to its state.
-function lockPath(): string {
-  return join(git('rev-parse', '--absolute-git-dir'), 'lntt-review.lock')
+// The lock's holder, null when nobody holds it.
+function lockHolder(): Holder | null {
+  return heldBy(git('rev-parse', '--absolute-git-dir'))
 }
 
-// Created atomically (`wx`): of two runs started together, one gets it. A lock whose
-// process is gone, or that names none, is removed and tried once more.
-function acquireLock(): void {
-  const lock = lockPath()
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const fd = openSync(lock, 'wx')
-      writeSync(fd, String(process.pid))
-      closeSync(fd)
-      process.on('exit', () => {
-        try {
-          if (readFileSync(lock, 'utf8').trim() === String(process.pid)) unlinkSync(lock)
-        } catch {}
-      })
-      return
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-      const holder = lockHolder(lock)
-      if (holder !== null) {
-        throw new LockedError(
-          `a round is already running in this worktree (pid ${holder === 'held' ? 'starting' : holder})`,
-        )
-      }
-      try {
-        unlinkSync(lock)
-      } catch {}
-    }
-  }
-  throw new LockedError('a round is already running in this worktree (pid unknown)')
+// What a refusal or a status line calls the holder: a round for lntt review, else its command.
+function holderName(holder: Holder): string {
+  return holder.command === null || holder.command.startsWith('lntt review') ? 'a round' : holder.command
 }
 
 // Where the branch left its base: --base as given (origin/<base>, else <base>), else the
@@ -655,7 +606,7 @@ async function round(args: string[]): Promise<number> {
     options: { base: { type: 'string' }, plan: { type: 'boolean', default: false } },
   })
   if (!values.plan) {
-    acquireLock()
+    acquireLock('lntt review')
     startProgress()
   }
   const data = loaded()
@@ -667,6 +618,8 @@ async function round(args: string[]): Promise<number> {
   const branch = git('rev-parse', '--abbrev-ref', 'HEAD')
   if (branch === 'HEAD') throw new Error('HEAD is detached; the review keeps its rounds per branch: switch to one')
   const head = git('rev-parse', '--short', 'HEAD')
+  // The first line of a round: which commit it reads, whatever the base or the plan say next.
+  stderr.write(`lntt review: reviewing ${head} ${git('log', '-1', '--format=%s', 'HEAD')} (${branch})\n`)
   const root = git('rev-parse', '--show-toplevel')
   const state = readState(branch)
   const range = roundRange(state, branch, head, git('rev-parse', '--short', mergeBase(root, values.base)), (a, b) => {
@@ -817,7 +770,7 @@ async function reply(args: string[]): Promise<number> {
   const state = readState(headBranch())
   const finding = state?.result.findings.find((f) => f.id === id)
   if (!state || !finding) throw new Error(`no open finding ${id} in the last round`)
-  acquireLock()
+  acquireLock('lntt review reply')
   const config: ReviewConfig = reviewConfig(loaded())
   const known = new Map<string, Agent>()
   for (const lens of Object.values(config.reviewers)) for (const a of lens.with) known.set(agentLabel(a), a)
@@ -889,7 +842,7 @@ function allow(args: string[]): number {
   const rounds = Number(count)
   if (rest.length > 0 || !count || !/^\d+$/.test(count) || rounds < 1)
     usage('give the rounds to allow, a whole number from 1')
-  acquireLock()
+  acquireLock('lntt review allow')
   const branch = headBranch()
   const state = readState(branch)
   if (!state) throw new Error(`no round on ${branch} yet: nothing to allow more rounds to`)
@@ -1005,10 +958,10 @@ function listed(words: string[]): string {
 // The ledger of a branch that is not merged stays when only an unreadable state goes. The
 // states of branches that no longer exist go with --prune.
 function clear(root: string, current: string | null): number {
-  const holder = lockHolder(lockPath())
+  const holder = lockHolder()
   if (holder !== null)
     throw new Error(
-      `a round is running in this worktree (pid ${holder === 'held' ? 'starting' : holder}): nothing cleared`,
+      `${holderName(holder)} is running in this worktree (pid ${holder.pid ?? 'starting'}): nothing cleared`,
     )
   let own: ReturnType<typeof statusState> = null
   let unreadable = false
@@ -1219,9 +1172,9 @@ async function status(args: string[]): Promise<number> {
   if (values.prune) return prune(values['dry-run'])
   // A lock created an instant ago names no pid yet: not a round running, for the summary as
   // for the JSON; --clear still waits for it.
-  const holder = lockHolder(lockPath())
-  const running = typeof holder === 'number' ? holder : null
-  const runningText = running === null ? '' : `a round is running (pid ${running})`
+  const holder = lockHolder()
+  const running = holder?.pid ?? null
+  const runningText = holder === null || running === null ? '' : `${holderName(holder)} is running (pid ${running})`
   const own = statusState(current)
   const here = current ?? 'detached HEAD'
   if (!own) {

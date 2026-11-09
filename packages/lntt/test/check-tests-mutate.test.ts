@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import { execFileSync, spawnSync } from 'node:child_process'
-import { cpSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { cpSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -299,6 +299,46 @@ describe('lntt check tests mutate', () => {
     assert.equal(run('src/price.ts:7', '--text=x').status, 2)
     assert.equal(run('--text=x', '--to=y').status, 2)
     assert.equal(spawnSync(process.execPath, [BIN, 'check', 'tests', 'focus', '--text=x'], { cwd: repo }).status, 2)
+  })
+})
+
+// One lock per worktree, shared with lntt review (src/worktree-lock.ts): the review's side
+// of each order is in review-cli.test.ts.
+describe('lntt check tests mutate and the lock of the worktree', () => {
+  const lock = () => join(repo, '.git/lntt-review.lock')
+  const args = ['check', 'tests', 'mutate', 'src/price.ts:7', "--text='big' : 'small'", "--to='small' : 'big'"]
+  const holder = () => {
+    const child = spawn('sleep', ['60'], { stdio: 'ignore' })
+    return child
+  }
+
+  test('is refused while a round of lntt review holds the lock, naming the round and its pid', () => {
+    const round = holder()
+    try {
+      writeFileSync(lock(), `${round.pid} lntt review`)
+      const r = spawnSync(process.execPath, [BIN, ...args], { cwd: repo, encoding: 'utf8' })
+      assert.equal(r.status, 1)
+      assert.match(
+        r.stderr,
+        new RegExp(`^lntt: error: lntt review is already running in this worktree \\(pid ${round.pid}\\)$`, 'm'),
+      )
+      assert.equal(r.stdout, '', 'nothing was mutated or run')
+      assert.equal(readFileSync(lock(), 'utf8'), `${round.pid} lntt review`, 'the round keeps its lock')
+    } finally {
+      round.kill('SIGKILL')
+    }
+  })
+
+  test('gives the lock back when it ends', () => {
+    assert.equal(mutate('src/price.ts:7', "'big' : 'small'", "'small' : 'big'").status, 0)
+    assert.equal(existsSync(lock()), false, 'the lock goes with the command')
+  })
+
+  test('a lock left by a process that is gone does not block it', () => {
+    writeFileSync(lock(), '999999 lntt review')
+    const old = new Date(Date.now() - 120_000)
+    utimesSync(lock(), old, old)
+    assert.equal(mutate('src/price.ts:7', "'big' : 'small'", "'small' : 'big'").status, 0)
   })
 })
 
