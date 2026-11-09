@@ -1743,6 +1743,10 @@ describe('the lines a branch wrote', () => {
         '+++ an added line that reads like a header',
         '@@ -20,3 +21,0 @@',
         '-gone',
+        // A header with no `+++` (a rename, a binary file) names no file: a hunk after it is no a.ts line.
+        'diff --git a/old.bin b/moved.bin',
+        'similarity index 100%',
+        '@@ -1 +40 @@',
         'diff --git a/new.md b/new.md',
         'new file mode 100644',
         '--- /dev/null',

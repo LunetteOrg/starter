@@ -133,7 +133,8 @@ same way every time; the `review` skill keeps the judgement.
   is pre-existing.** Any lens may report one, with `[pre-existing]` after its severity.
   The reviewer judges the contradiction; lntt proves the line untouched, against the
   lines the branch wrote from its merge base (`git diff -U0`, the new side of each hunk,
-  whatever range the round reads), and drops the mark from a finding on a line the branch
+  whatever range the round reads; a diff with a file header it cannot read leaves no
+  line untouched), and drops the mark from a finding on a line the branch
   wrote, with no line, or marked by only some of the reviewers that found it: that one is
   reported as any other. A pre-existing finding goes to the round's `preexisting` list
   and enters the ledger as *pre-existing* in the round that finds it. It goes to no
