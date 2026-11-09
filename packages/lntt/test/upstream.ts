@@ -195,10 +195,13 @@ export function drawn(screen: string, brief: string): boolean {
   return screen.includes(brief) && !screen.includes('OPENCODE_CONFIG_CONTENT')
 }
 
-// A provider's usage limit in the JSON events a tool printed (one per line): the
-// message of an error event of type `provider.free-limit` or status 429, else null.
-// That is the provider's quota running out on the runner, not a break of lntt. A line
-// that is not a JSON object (`null`, a number, a string) is skipped like a non-JSON one.
+// A provider's usage limit in the JSON a tool printed (one value per line): the message
+// of opencode's error event of type `provider.free-limit` or status 429, or of claude's
+// error reply (`type: result`, `is_error: true`) with status 429 or the credit balance
+// exhausted (claude answers that one with a plain 400, so the message is the signal,
+// never the status), else null. That is the provider's quota running out on the runner,
+// not a break of lntt. A line that is not a JSON object (`null`, a number, a string) is
+// skipped like a non-JSON one.
 export function usageLimit(output: string): string | null {
   for (const line of output.split('\n')) {
     let parsed: unknown
@@ -208,10 +211,22 @@ export function usageLimit(output: string): string | null {
       continue
     }
     if (typeof parsed !== 'object' || parsed === null) continue
-    const event = parsed as { type?: string; error?: { type?: string; status?: number; message?: string } }
-    if (event.type !== 'error') continue
-    if (event.error?.type === 'provider.free-limit' || event.error?.status === 429) {
-      return event.error.message ?? 'usage limit reached'
+    const event = parsed as {
+      type?: string
+      error?: { type?: string; status?: number; message?: string }
+      is_error?: boolean
+      api_error_status?: number
+      result?: unknown
+    }
+    if (event.type === 'error') {
+      if (event.error?.type === 'provider.free-limit' || event.error?.status === 429) {
+        return event.error.message ?? 'usage limit reached'
+      }
+    } else if (event.type === 'result' && event.is_error === true) {
+      const message = typeof event.result === 'string' ? event.result : ''
+      if (event.api_error_status === 429 || /credit balance is too low/i.test(message)) {
+        return message || 'usage limit reached'
+      }
     }
   }
   return null
