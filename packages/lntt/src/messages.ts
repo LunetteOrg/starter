@@ -253,7 +253,9 @@ export interface Target {
 
 // The branches checked out in a worktree that exists on disk: a worktree whose folder was
 // deleted is still listed by git until it is pruned, and it is not a live one.
-export function checkedOutBranches(gitDir: string): Set<string> {
+// `alias` adds the other name a branch answers to: a worktree still on the name Orca gave it
+// has the marker of its conventional name.
+export function checkedOutBranches(gitDir: string, alias: (branch: string) => string | null = () => null): Set<string> {
   let listing: string
   try {
     listing = execFileSync('git', ['--git-dir', gitDir, 'worktree', 'list', '--porcelain'], {
@@ -267,23 +269,28 @@ export function checkedOutBranches(gitDir: string): Set<string> {
   for (const block of listing.split(/\n\s*\n/)) {
     const path = /^worktree (.+)$/m.exec(block)?.[1]
     const branch = /^branch refs\/heads\/(.+)$/m.exec(block)?.[1]
-    if (path !== undefined && branch !== undefined && existsSync(path)) branches.add(branch)
+    if (path === undefined || branch === undefined || !existsSync(path)) continue
+    branches.add(branch)
+    const other = alias(branch)
+    if (other !== null) branches.add(other)
   }
   return branches
 }
 
-// A marker is written just before its worktree is created: one younger than this is not
-// cleared, whatever git lists.
+// A marker is written just before its worktree is created: one younger than this is a start
+// in progress, live and never cleared, whatever git lists.
 export const START_GRACE_MS = 60_000
 
 // The live children that report to a mailbox: the markers of `started/` addressed to it
-// whose branch is checked out in a worktree that exists. The marker of a worktree that is
-// gone is cleared here, so `started/` lists only live children (a read that deletes).
+// whose branch is checked out in a worktree that exists, or that is younger than
+// START_GRACE_MS. The marker of a worktree that is gone is cleared here, so `started/` lists
+// only live children (a read that deletes). `now` is the clock, in milliseconds.
 // `lntt inbox --wait` and `--follow` end when this is empty.
 export function liveChildren(
   root: string,
   target: Target,
   worktrees: Set<string> | (() => Set<string>) = () => checkedOutBranches(dirname(root)),
+  now: number = Date.now(),
 ): Started[] {
   const directory = join(root, 'started')
   if (!existsSync(directory)) return []
@@ -302,9 +309,10 @@ export function liveChildren(
     if (marker === null) continue
     if (!checked.has(branch)) {
       const modified = statSync(join(directory, name), { throwIfNoEntry: false })?.mtimeMs ?? 0
-      const age = Date.now() - modified
-      if (age >= START_GRACE_MS) forgetStarted(root, branch)
-      continue
+      if (now - modified >= START_GRACE_MS) {
+        forgetStarted(root, branch)
+        continue
+      }
     }
     if (marker.to !== target.to) continue
     if (target.theme !== undefined && marker.theme !== target.theme) continue

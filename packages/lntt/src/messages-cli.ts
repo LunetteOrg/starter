@@ -6,9 +6,12 @@ import { readFileSync } from 'node:fs'
 import { basename, dirname } from 'node:path'
 import { cwd, env, exit, stderr, stdin, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
+import { fromToolName } from './branch.ts'
+import { rules } from './branch-cli.ts'
 import {
   type Address,
   answer,
+  checkedOutBranches,
   liveChildren,
   locate,
   type Mailbox,
@@ -167,6 +170,20 @@ function writers(role: string, theme: string | undefined): Target | null {
   return null
 }
 
+// The branches in a worktree that exists, each also under its conventional name: a branch
+// still on the name Orca gave it (until `lntt branch rename`) has the marker of that one.
+function liveBranches(root: string): () => Set<string> {
+  return () => {
+    let ruleset: ReturnType<typeof rules> | null = null
+    try {
+      ruleset = rules()
+    } catch {
+      // no project configuration: the names as git lists them
+    }
+    return checkedOutBranches(dirname(root), (branch) => (ruleset === null ? null : fromToolName(branch, ruleset)))
+  }
+}
+
 // The unanswered messages to a role, one JSON line each. With --wait, nothing is printed
 // until there is at least one, and the wait ends (exit 3) when no child reports to the
 // role any more. With --follow, those lines first, then one for each message that arrives,
@@ -196,31 +213,28 @@ function inbox(args: string[]): void {
   const interval = seconds(values.interval, '--interval') ?? pollInterval()
   const timeoutMs = seconds(values.timeout, '--timeout')
   const target = writers(role, theme)
-  const ended = () => {
-    if (target !== null && liveChildren(box.dir, target).length === 0) {
-      throw new NoWriters(`no child reports to the ${role}`)
-    }
-  }
+  // Whether a child that reports to this role is alive, read before the messages: one that
+  // wrote and went away in between is read on the next look, never lost.
+  const alive = () => target === null || liveChildren(box.dir, target, liveBranches(box.dir)).length > 0
   const print = (list: Message[]) => {
     for (const message of list) stdout.write(`${line(message)}\n`)
   }
+  const began = Date.now()
+  const late = () => timeoutMs !== undefined && Date.now() - began >= timeoutMs
   if (!values.follow) {
-    let waited = 0
     let said = false
     for (;;) {
+      const writing = alive()
       const found = pending(box.dir, role, address)
       if (found.length > 0 || !values.wait) {
         print(found)
         return
       }
-      ended()
+      if (!writing) throw new NoWriters(`no child reports to the ${role}`)
       if (!said) stderr.write(`lntt inbox: waiting for a message to the ${role}, polling every ${interval / 1000} s\n`)
       said = true
-      if (timeoutMs !== undefined && waited >= timeoutMs) {
-        throw new Error(`no message to the ${role} in ${timeoutMs / 1000} s`)
-      }
+      if (late()) throw new Error(`no message to the ${role} in ${(timeoutMs as number) / 1000} s`)
       box.sleep(interval)
-      waited += interval
     }
   }
   // What is in the directory when the follow starts is not new, answered or not; the
@@ -228,18 +242,14 @@ function inbox(args: string[]): void {
   const seen = new Set(messages(box.dir, role, address).map((message) => message.id))
   print(pending(box.dir, role, address))
   stderr.write(`lntt inbox: following the ${role}'s mailbox, polling every ${interval / 1000} s\n`)
-  let waited = 0
   for (;;) {
-    // Drain before looking at the writers: a message left by the last one is not lost.
+    const writing = alive()
     const fresh = messages(box.dir, role, address).filter((message) => !seen.has(message.id))
     for (const message of fresh) seen.add(message.id)
     print(fresh)
-    ended()
-    if (timeoutMs !== undefined && waited >= timeoutMs) {
-      throw new Error(`followed the ${role}'s mailbox for ${timeoutMs / 1000} s`)
-    }
+    if (!writing) throw new NoWriters(`no child reports to the ${role}`)
+    if (late()) throw new Error(`followed the ${role}'s mailbox for ${(timeoutMs as number) / 1000} s`)
     box.sleep(interval)
-    waited += interval
   }
 }
 

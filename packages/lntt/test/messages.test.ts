@@ -19,6 +19,7 @@ import {
   messageDirectory,
   pending,
   recordStarted,
+  START_GRACE_MS,
   send,
   startedBy,
   waitForAnswer,
@@ -355,16 +356,35 @@ describe('liveChildren', () => {
     utimesSync(file, new Date(Date.now() - ms), new Date(Date.now() - ms))
   }
 
-  test('a marker younger than a minute is a start in progress: not live, not cleared', () => {
+  test('a marker younger than a minute is a start in progress: live and never cleared', () => {
     recordStarted(dir, { branch: 'feat/1/a', issue: 1, to: 'orchestrator' })
-    assert.deepEqual(liveChildren(dir, { to: 'orchestrator' }, new Set()), [])
-    assert.notEqual(startedBy(dir, 'feat/1/a'), null)
+    const orchestrator = () => liveChildren(dir, { to: 'orchestrator' }, new Set()).map((m) => m.branch)
+    assert.deepEqual(orchestrator(), ['feat/1/a'])
     age('feat/1/a', 30_000)
-    assert.deepEqual(liveChildren(dir, { to: 'orchestrator' }, new Set()), [])
-    assert.notEqual(startedBy(dir, 'feat/1/a'), null, 'a start of 30 s ago is in progress')
+    assert.deepEqual(orchestrator(), ['feat/1/a'], 'a start of 30 s ago is in progress')
+    assert.notEqual(startedBy(dir, 'feat/1/a'), null)
     age('feat/1/a', 120_000)
-    assert.deepEqual(liveChildren(dir, { to: 'orchestrator' }, new Set()), [])
+    assert.deepEqual(orchestrator(), [])
     assert.equal(startedBy(dir, 'feat/1/a'), null)
+  })
+
+  test('the grace ends at exactly START_GRACE_MS, by the clock given', () => {
+    recordStarted(dir, { branch: 'feat/1/a', issue: 1, to: 'orchestrator' })
+    const at = new Date('2026-11-09T10:00:00').getTime()
+    utimesSync(join(dir, 'started', 'feat%2F1%2Fa.json'), new Date(at), new Date(at))
+    const alive = (now: number) => liveChildren(dir, { to: 'orchestrator' }, new Set(), now).length
+    assert.equal(alive(at + START_GRACE_MS - 1), 1)
+    assert.notEqual(startedBy(dir, 'feat/1/a'), null)
+    assert.equal(alive(at + START_GRACE_MS), 0)
+    assert.equal(startedBy(dir, 'feat/1/a'), null)
+  })
+
+  test('a file of started/ whose name is not a branch is skipped', () => {
+    mkdirSync(join(dir, 'started'), { recursive: true })
+    writeFileSync(join(dir, 'started', '%E0%A4%A.json'), '{}\n')
+    writeFileSync(join(dir, 'started', 'notes.txt'), 'x')
+    assert.deepEqual(liveChildren(dir, { to: 'orchestrator' }, new Set()), [])
+    assert.ok(existsSync(join(dir, 'started', '%E0%A4%A.json')))
   })
 
   test('lists the markers that report to the target and are checked out, and clears the others', () => {

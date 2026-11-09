@@ -433,8 +433,8 @@ again for its answer, with the same output and exit codes; `-` reads the text fr
 
 For the orchestrator and a coordinator, `inbox --wait` and `--follow` end with exit 3 and "no child
 reports to the <role>" when no child that reports to it is alive (the markers of `started/` whose
-branch is checked out in a worktree that exists), at start or when the last one goes; a message
-already there is returned first. They need no `--timeout`. `--follow` prints the unanswered messages,
+branch is checked out in a worktree that exists, or younger than a minute: a start in progress), at
+start or when the last one goes; a message already there is returned first. They need no `--timeout`. `--follow` prints the unanswered messages,
 then one line per message that arrives, and is meant for a harness that streams a background
 command's lines (Claude Code's Monitor); `--wait` returns at the first message. The check deletes the
 marker of a worktree that is gone.
