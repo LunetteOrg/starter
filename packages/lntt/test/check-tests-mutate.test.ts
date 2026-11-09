@@ -342,7 +342,8 @@ describe('lntt check tests mutate and the lock of the worktree', () => {
       env: { ...process.env, GIT_CEILING_DIRECTORIES: dirname(repo) },
     })
     assert.equal(r.status, 1)
-    assert.match(r.stderr, /^lntt: error: .* is not in a git repository: a mutation needs one$/m)
+    assert.match(r.stderr, /^lntt: error: .* has no git directory: a mutation needs one$/m)
+    assert.equal(existsSync(lock()), false, 'no lock is left behind')
   })
 
   test('a lock left by a process that is gone does not block it', () => {

@@ -138,7 +138,7 @@ function run(args: string[]): Result[] {
         stdio: ['ignore', 'pipe', 'pipe'],
       }).trim()
     } catch {
-      throw new CannotRunError(`${root} is not in a git repository: a mutation needs one`)
+      throw new CannotRunError(`${root} has no git directory: a mutation needs one`)
     }
     acquireLock(gitDir, 'lntt check tests mutate')
   }

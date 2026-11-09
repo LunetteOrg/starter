@@ -119,6 +119,12 @@ describe('the lock of a worktree, shared by lntt review and lntt check tests mut
     assert.equal(readFileSync(lockPath(gitDir), 'utf8'), `${process.pid} lntt check tests mutate`)
   })
 
+  test('a live pid in a lock untouched for a few hours is still a holder: a round may be that long quiet', () => {
+    const pid = live()
+    held(`${pid} lntt review`, 11 * 60 * 60 * 1000)
+    assert.throws(() => acquireLock(gitDir, 'lntt check tests mutate'), new RegExp(`\\(pid ${pid}\\)`))
+  })
+
   test('a lock naming this very process is not held by another', () => {
     held(`${process.pid} lntt review`)
     assert.equal(heldBy(gitDir), null)

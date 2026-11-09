@@ -175,8 +175,9 @@ same way every time; the `review` skill keeps the judgement.
   as pids are reused. A lock whose holder is gone is removed under a guard file, so of two
   runs that find it dead the second leaves the lock the first created. `lntt review status`
   and `--clear` name the same holder, and its pid is the `running` of `status --json`,
-  whichever command holds the lock.
-- **Progress is a contract:** stderr starts with the line `reviewing <commit> <subject> (<branch>)`, the commit the round
+  whichever command holds the lock. A lock an older lntt wrote holds a pid and no command:
+  it is named "a round" (another lntt command in a refusal).
+- **Progress is a contract:** stderr starts with the line `lntt review: reviewing <commit> <subject> (<branch>)`, the commit the round
   reads, then carries a line when each agent starts and ends
   (with its tokens), `failed` or `skipped` for one that did not answer, the agents still
   running every 30 seconds, `round N done` at the end, `error:` for a round that could
