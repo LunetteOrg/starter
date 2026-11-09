@@ -81,7 +81,8 @@ lntt ci local | candidate | proved
   or a report for a person (`lntt check` without `--json`); progress and child-process output go to stderr. Exit codes:
   0 ok, 1 a configuration error, a red result or a check that cannot run (one line on
   stderr), 2 a usage error or a failing jq expression, 3 a stop that a person decides on (`lntt review` past
-  `delivery.review.maxRounds`), 4 nothing to report on (`lntt review status` with no round
+  `delivery.review.maxRounds`) or nobody left to wait for (`lntt inbox --wait` and `--follow`
+  with no child that reports to the role), 4 nothing to report on (`lntt review status` with no round
   on the current branch, also when a jq query fails on the missing state), an interrupted command 128 plus the signal (130 for
   Ctrl-C); a defect of `lntt` itself exits 1 with its stack trace.
 - **`lntt get` prints what the file holds, and a missing key exits 1,** so a script never
@@ -172,7 +173,7 @@ rests on these criteria:
    (`gateOf` in `packages/lntt/src/coordinator.ts`) and `local` (`localApp` in
    `packages/lntt/src/local.ts`); `lntt worktree start` reads `delivery.candidate`
    and `delivery.branches` through the gate's branch code; `lntt inbox --wait` and `--follow`
-   read `delivery.branches` for the conventional name of a branch (`liveBranches` in
+   read the branch rules (`branchRules`, from `delivery`) for the conventional name of a branch (`liveBranches` in
    `packages/lntt/src/messages-cli.ts`); `lntt worktree start`,
    `lntt review` and `lntt ci local` read `delivery.candidate` to find a branch's base
    (`projectBase` in `packages/lntt/src/base.ts`); `lntt retro add` reads

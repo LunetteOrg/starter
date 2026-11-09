@@ -628,11 +628,19 @@ describe('lntt inbox follows the children that report to it', () => {
     assert.equal(JSON.parse(following.seen.out).question, 'Last words')
   })
 
-  test('--follow prints the unanswered messages at start, then ends with no writer', () => {
+  test('--follow prints the unanswered messages at start, not the answered ones, then ends with no writer', () => {
+    ask('Answered', 'answered')
+    lntt(['answer', JSON.parse(lntt(['inbox', '--as', 'orchestrator']).stdout).id, 'done'])
     ask('Early')
     const r = lntt(['inbox', '--as', 'orchestrator', '--follow', '--interval', '0.05'])
     assert.equal(r.status, 3)
-    assert.equal(JSON.parse(r.stdout).question, 'Early')
+    assert.deepEqual(
+      r.stdout
+        .trim()
+        .split('\n')
+        .map((l) => JSON.parse(l).question),
+      ['Early'],
+    )
   })
 
   test('--follow --timeout with a live writer ends with exit 1', () => {

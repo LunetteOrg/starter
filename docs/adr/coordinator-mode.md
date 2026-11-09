@@ -121,14 +121,14 @@ host, with no messaging command of Orca or Herdr:
   the unanswered messages of a role as JSON lines, and with `--wait` blocks until there is
   one. `--follow` keeps running: it prints the unanswered messages, then one JSON line for
   each message that arrives, answered by then or not; it is for an agent whose harness
-  streams a background command's lines. Both follow the children that can write to the mailbox: the markers of
-  `started/` addressed to it whose branch is checked out in a worktree that exists (a branch
-  still on the name Orca gave it counts under its conventional name), or that are younger
-  than a minute, a start in progress. With none, `--wait` and `--follow` exit 3 (`no child
+  streams a background command's lines. Both follow the children that can write to the
+  mailbox: the markers of `started/` addressed to it whose branch is checked out in a
+  worktree that exists (a branch still on the name Orca gave it counts under its
+  conventional name), or that are younger than a minute, a start in progress. With none, `--wait` and `--follow` exit 3 (`no child
   reports to the orchestrator`), at start and when the last one goes; a message already
   there, or one that arrives in the last poll, is printed first. `--wait` needs no
   `--timeout`; with one, it ends with exit 1 at the deadline. A marker that is neither live nor
-  young is deleted by that check. A child's inbox has no such writers: its wait ends on
+  young is deleted by `--wait` and `--follow`; a plain listing leaves it. A child's inbox has no such writers: its wait ends on
   `--timeout` alone. `answer` writes the answer file; the first answer stays.
 - Every wait goes through `lntt ask`, never only in an agent's terminal, which nobody
   watches: a question, an approval (a 1Password prompt included), the review limit, for
