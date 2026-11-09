@@ -1606,6 +1606,7 @@ describe('a pre-existing finding', () => {
     })
     assert.equal(plain?.preexisting, undefined)
     assert.equal(parseFindings('- **[blocker]** [Pre-existing] `a.ts:2` — b — a')[0]?.preexisting, true)
+    assert.deepEqual(parseFindings('- [pre-existing] a.ts:1 — w — a'), [], 'the mark is no severity')
   })
 
   test('on an untouched line it goes to no verifier, never blocks, and the round is clean', async () => {
@@ -1645,6 +1646,18 @@ describe('a pre-existing finding', () => {
       asker('- [warning] [pre-existing] a.ts:9 — w — a').ask,
     )
     assert.deepEqual(blind.preexisting, [], 'with nothing to tell untouched lines, none is')
+
+    // A file that is not there may be one the change deletes: its verifiers decide.
+    const deleted = await runRound(
+      config,
+      { ...input(1, {}), cite: () => ({ missing: 'no such file', what: 'file' as const }) },
+      asker('- [warning] [pre-existing] gone.ts:2 — w — a').ask,
+    )
+    assert.deepEqual(deleted.preexisting, [])
+    assert.deepEqual(
+      deleted.findings.map((f) => [f.path, f.verdict, f.preexisting]),
+      [['gone.ts', 'confirmed', undefined]],
+    )
   })
 
   test('an unmarked finding on an untouched line, which the change contradicts, is reported as today and blocks', async () => {
@@ -1727,7 +1740,7 @@ describe('the lines a branch wrote', () => {
         '+y',
         '@@ -5,0 +6,2 @@',
         '+p',
-        '+q',
+        '+++ an added line that reads like a header',
         '@@ -20,3 +21,0 @@',
         '-gone',
         'diff --git a/new.md b/new.md',
@@ -1743,21 +1756,34 @@ describe('the lines a branch wrote', () => {
         '+++ /dev/null',
         '@@ -1 +0,0 @@',
         '-z',
-        'diff --git "a/sp ace.md" "b/sp ace.md"',
-        '--- "a/sp ace.md"',
-        '+++ "b/sp ace.md"',
+        // As git writes them: a path with a space ends with a tab, one with a quote is quoted.
+        'diff --git a/sp ace.md b/sp ace.md',
+        '--- a/sp ace.md\t',
+        '+++ b/sp ace.md\t',
         '@@ -2 +2 @@',
         '-a',
         '+b',
+        'diff --git "a/q\\"t.md" "b/q\\"t.md"',
+        '--- "a/q\\"t.md"',
+        '+++ "b/q\\"t.md"',
+        '@@ -1 +1 @@',
+        '-x',
+        '+y',
       ].join('\n'),
-    )
+    ) as Map<string, Set<number>>
     const untouched = (path: string, line: number) => !touched.get(path)?.has(line)
     assert.deepEqual([...(touched.get('a.ts') ?? [])], [1, 6, 7])
     assert.deepEqual([...(touched.get('new.md') ?? [])], [1, 2, 3])
     assert.deepEqual([...(touched.get('sp ace.md') ?? [])], [2])
-    assert.equal(touched.has('gone.ts'), false)
+    assert.deepEqual([...(touched.get('q"t.md') ?? [])], [1])
+    assert.deepEqual([...touched.keys()], ['a.ts', 'new.md', 'sp ace.md', 'q"t.md'])
     assert.equal(untouched('a.ts', 2), true)
     assert.equal(untouched('other.ts', 1), true)
+  })
+
+  test('a header it cannot read, or with another prefix, makes the diff unreadable: no line is untouched', () => {
+    assert.equal(touchedLines('diff --git "a/x" "b/x"\n--- "a/x\n+++ "b/\\q"\n@@ -1 +1 @@'), null)
+    assert.equal(touchedLines('diff --git x x\n--- x\n+++ x\n@@ -1 +1 @@'), null)
   })
 })
 

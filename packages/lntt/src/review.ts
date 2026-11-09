@@ -144,7 +144,7 @@ export interface Finding {
 // or the anchor, which models add, are dropped first, and so is a parenthesis after the
 // anchor (a section, a key). `[pre-existing]` may follow the severity. Other lines are
 // the reviewer talking.
-const SEVERITY = /^\s*[-*]\s*\[(blocker|warning|note)\](?:\s*\[(pre-existing)\])?\s+(.+)$/i
+const SEVERITY = /^\s*[-*]\s*\[(blocker|warning|note)\](?:\s*\[([Pp]re-existing)\])?\s+(.+)$/
 const SEPARATOR = /\s+(?:—|–|-)\s+/
 const NO_ANCHOR = /^\(no anchor\)(?:\s+\([^)]*\))?\s+(?:—|–|-)\s+(.+)$/
 // The note the brief asks for when a check could not run, which has no anchor to name.
@@ -167,7 +167,7 @@ interface Line {
 function readLine(raw: string): Line | null {
   const m = SEVERITY.exec(unwrap(raw))
   if (!m) return null
-  const severity = (m[1] as string).toLowerCase() as Severity
+  const severity = m[1] as Severity
   const preexisting = m[2] !== undefined
   const rest = m[3] as string
   const none = NO_ANCHOR.exec(rest)
@@ -833,29 +833,40 @@ function unmarked<F extends Finding>(f: F): F {
   return plain as F
 }
 
-// The lines each file has on the new side of a diff with no context (`git diff -U0`): the
-// lines the branch wrote. A file the diff deletes has none; a path git quotes is unquoted.
-export function touchedLines(diff: string): Map<string, Set<number>> {
+// The lines each file has on the new side of a diff with no context (`git diff -U0`,
+// prefixes `a/` and `b/`): the lines the branch wrote. A file the diff deletes has none; a
+// path git quotes is unquoted, and the tab git ends a path with a space with is dropped.
+// Only the header of a file, between `diff --git` and its first hunk, names it: an added
+// line that reads `++ x` is no header. A header that cannot be read makes the whole diff
+// unreadable: null, and no line is known untouched.
+export function touchedLines(diff: string): Map<string, Set<number>> | null {
   const touched = new Map<string, Set<number>>()
   let lines: Set<number> | null = null
+  let header = false
   for (const row of diff.split('\n')) {
-    if (row.startsWith('+++ ')) {
-      const name = row.slice(4)
+    if (row.startsWith('diff --git ')) {
+      header = true
+      lines = null
+    } else if (header && row.startsWith('+++ ')) {
+      const name = row.slice(4).replace(/\t$/, '')
+      if (name === '/dev/null') continue
       const path = name.startsWith('"') ? unquote(name) : name
-      lines = path?.startsWith('b/') ? new Set() : null
-      if (lines && path) touched.set(path.slice(2), lines)
-      continue
+      if (!path?.startsWith('b/')) return null
+      lines = new Set()
+      touched.set(path.slice(2), lines)
+    } else if (row.startsWith('@@ ')) {
+      header = false
+      const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(row)
+      if (!hunk || !lines) continue
+      const start = Number(hunk[1])
+      const count = hunk[2] === undefined ? 1 : Number(hunk[2])
+      for (let n = start; n < start + count; n++) lines.add(n)
     }
-    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(row)
-    if (!hunk || !lines) continue
-    const start = Number(hunk[1])
-    const count = hunk[2] === undefined ? 1 : Number(hunk[2])
-    for (let n = start; n < start + count; n++) lines.add(n)
   }
   return touched
 }
 
-// A C-style quoted path as git writes it: `"b/sp ace\"s.md"`.
+// A C-style quoted path as git writes it: `"b/q\"t.md"`.
 function unquote(quoted: string): string | undefined {
   try {
     return JSON.parse(quoted) as string

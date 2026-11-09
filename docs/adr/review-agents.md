@@ -96,7 +96,7 @@ same way every time; the `review` skill keeps the judgement.
   README. A round prints the same summary on stdout, its whole result staying in the
   state. A
   clean round (exit 0) has no blocker or warning left and no reviewer or verifier that
-  failed; notes are reported, never blocking. Past `warningRounds` a round is clean with
+  failed; notes and pre-existing findings are reported, never blocking. Past `warningRounds` a round is clean with
   warnings left too (below). A finding is a bullet with its severity,
   an anchor (a line as `:12`, a range, a column or a list, each naming its first line,
   and an optional parenthesis after it) and its text (the action after a last separator,
@@ -121,7 +121,8 @@ same way every time; the `review` skill keeps the judgement.
   what its line read when it was closed. Only a round with no failure and no `partial`
   lens adds to it, since the next round reads its range again; a ledger that cannot be
   read is said and started again. The reviewers get the entries on the files of the
-  change and those with no anchor, each verifier the entries on its finding's file, and
+  change and those with no anchor, each verifier the entries on its finding's file but
+  the pre-existing ones (below), and
   both are told that a finding a closed entry covers is reported again only when the
   code it cites changed. A fresh finding at the place of a refuted or accepted entry, on
   a line that reads the same and at a severity no higher, goes to the round's `repeated`
@@ -135,9 +136,8 @@ same way every time; the `review` skill keeps the judgement.
   whatever range the round reads), and drops the mark from a finding on a line the branch
   wrote, with no line, or marked by only some of the reviewers that found it: that one is
   reported as any other. A pre-existing finding goes to the round's `preexisting` list
-  and enters the ledger as *pre-existing* in the round that finds it. It is not verified:
-  it never blocks, so a verdict would decide nothing, and the person reads each one at
-  the squash anyway. It does not count toward a clean round, nor toward `maxRounds` or
+  and enters the ledger as *pre-existing* in the round that finds it. It goes to no
+  verifier: it never blocks, and the person reads each one at the squash. It does not count toward a clean round, nor toward `maxRounds` or
   `warningRounds`, and a later round does not report it again: a fresh finding marked
   pre-existing at its place, on a line that reads the same and at a severity no higher,
   is a repeat. One at that place without the mark says the change now contradicts it:
@@ -145,8 +145,7 @@ same way every time; the `review` skill keeps the judgement.
   as a reason to refute it. `lntt review` and `lntt review status` list the branch's
   pre-existing findings, every round's, after what blocks (`--json`: `preexisting`).
   The author copies them into the pull request body, in a section of their own; at the
-  squash the person decides, one by one, whether each becomes an issue. None is opened
-  automatically.
+  squash the person decides, one by one, whether each becomes an issue.
 - **A warning blocks only in the first `warningRounds` rounds:** later rounds find
   the edge cases of the fixes before them, and a round that must find nothing has no
   end on a change with many. From the next round only a blocker keeps a round from
@@ -269,6 +268,13 @@ same way every time; the `review` skill keeps the judgement.
 - **A repeat of a closed finding matched by its wording.** A reviewer words the same
   finding differently every round, so a match on the text would almost never hold; the
   place and the line's text decide, and the author reads the entry's text beside it.
+- **A pre-existing finding told by the diff alone.** lntt can prove a line untouched, not
+  that the change leaves it right: a record line the change makes wrong sits on an
+  untouched line too, and must block. The reviewer marks, lntt checks the line.
+- **A pre-existing finding verified.** It never blocks, so a verdict would decide nothing
+  the person does not decide at the squash.
+- **An issue opened for each pre-existing finding.** Many are not worth one; the person
+  chooses which, at the squash.
 
 - **The harness's own subagents** (Claude Code's Agent tool, opencode's agents). Claude
   Code takes only a few model aliases there and opencode fixes the model in the agent's

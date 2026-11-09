@@ -632,7 +632,7 @@ function mergeBase(root: string, given: string | undefined): string {
 
 function untouchedIn(diff: string): (path: string, line: number) => boolean {
   const touched = touchedLines(diff)
-  return (path, line) => !touched.get(path)?.has(line)
+  return (path, line) => touched !== null && !touched.get(path)?.has(line)
 }
 
 // The mutations the reviewers proposed, run on a scratch copy of the head: the tree the
@@ -747,9 +747,21 @@ async function round(args: string[]): Promise<number> {
       readBrief: (path) => readFileSync(join(root, path), 'utf8'),
       checks,
       closed: ledger,
-      // The lines the whole branch wrote, from the merge base whatever range the round reads.
+      // The lines the whole branch wrote, from the merge base whatever range the round reads;
+      // the prefixes and the root named, which a user's diff.noprefix or diff.relative would change.
       untouched: untouchedIn(
-        git('-c', 'core.quotePath=false', 'diff', '-U0', '--no-color', '--no-ext-diff', `${base}..${head}`),
+        git(
+          '-c',
+          'core.quotePath=false',
+          'diff',
+          '-U0',
+          '--no-color',
+          '--no-ext-diff',
+          '--no-relative',
+          '--src-prefix=a/',
+          '--dst-prefix=b/',
+          `${base}..${head}`,
+        ),
       ),
       cite: (path, line) => cite(root, path, line),
       mutate: async (mutations) => runMutations(root, data, mutations),
@@ -1096,8 +1108,12 @@ function stateView(state: ReviewState, maxRounds: number) {
     open: result.findings.filter((f) => f.verdict !== 'withdrawn'),
     replied: result.findings.filter((f) => f.reply !== undefined || f.verdict === 'withdrawn'),
     closed,
-    // The branch's pre-existing findings, every round's: listed apart, for the person.
-    preexisting: closed.filter((c) => c.outcome === 'pre-existing'),
+    // The branch's pre-existing findings, every round's, and the last round's that a failure
+    // kept out of the ledger: listed apart, for the person.
+    preexisting: [
+      ...closed.filter((c) => c.outcome === 'pre-existing'),
+      ...(result.preexisting ?? []).filter((f) => !closed.some((c) => c.id === f.id)),
+    ],
     // The last round's own tokens and USD; the branch's total is lntt review cost.
     tokens: result.tokens ?? null,
     cost: result.cost ?? null,
