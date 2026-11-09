@@ -1121,6 +1121,25 @@ describe('what the fourth real round taught', () => {
     )
   })
 
+  test('an anchor between backticks is read whole, spaces included, and the places after it still are', () => {
+    const lines = [
+      '- [warning] `a dir/b c.md:3` — what — act',
+      '- [warning] `a dir/b c.md:3` e `x y.md:5` — what — act',
+      '- [warning] [pre-existing] `docs/my notes.md:12` (the intro) — what — act',
+      '- [warning] `a - b.md:7` — what — act',
+    ]
+    for (const line of lines) assert.equal(unreadableFindings(line), 0, line)
+    assert.deepEqual(
+      parseFindings(lines.join('\n')).map((f) => [f.path, f.line, f.what, f.action]),
+      [
+        ['a dir/b c.md', 3, 'what', 'act'],
+        ['a dir/b c.md', 3, 'what (also x y.md:5)', 'act'],
+        ['docs/my notes.md', 12, 'what', 'act'],
+        ['a - b.md', 7, 'what', 'act'],
+      ],
+    )
+  })
+
   test('a line with no path-like token before the separator is a finding with no anchor', () => {
     const line = '- [note] not checked: needs `pnpm ci:local --list`. Verify the step — it was not run.'
     assert.equal(unreadableFindings(line), 0)

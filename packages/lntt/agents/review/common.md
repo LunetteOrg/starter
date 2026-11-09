@@ -9,7 +9,8 @@ You are reviewing a change, with no context but this message. Lens: {{lens}}.
 - **One line per finding**, and nothing else in the reply:
   `- [blocker|warning|note] path:line — what is wrong — what to do`.
   Write `(no anchor)` in place of `path:line` when the finding has no place in a file
-  (a record that is missing).
+  (a record that is missing). A path that holds a space goes between backticks, as one
+  place: `` `docs/my notes.md:12` ``.
 - **blocker**: wrong behaviour, or a contradiction with an accepted decision.
   **warning**: a gap that will bite (an unhandled case, a claim the code does not
   hold). **note**: worth fixing, not wrong.

@@ -152,6 +152,7 @@ const NOT_CHECKED = /^not checked:/i
 // A finding may name several places (`a.md:24-32 e :34-37`, `a.md:1 and b.md:2`): the
 // words between them are not places.
 const JOINERS = new Set(['e', 'and', 'et', 'y', '&', '+', 'also'])
+const MASK = '\u0000'
 const pathLike = (token: string): boolean => /\/|\.\w|:\d/.test(token)
 
 interface Line {
@@ -172,14 +173,17 @@ function readLine(raw: string): Line | null {
   const rest = m[3] as string
   const none = NO_ANCHOR.exec(rest)
   if (none) return { severity, preexisting, anchor: null, also: [], whole: none[1] as string }
-  const sep = SEPARATOR.exec(rest)
+  // A place between backticks is one token, spaces included (a path with a space): its
+  // whitespace is masked, with the same length, while the head is cut and split, then restored.
+  const masked = rest.replace(/`[^`]*`/g, (span) => span.replace(/\s/g, MASK))
+  const sep = SEPARATOR.exec(masked)
   if (!sep) return NOT_CHECKED.test(rest) ? { severity, preexisting, anchor: null, also: [], whole: rest } : null
-  const head = rest.slice(0, sep.index)
+  const head = masked.slice(0, sep.index)
   const tokens = head
     .replace(/\([^)]*\)/g, ' ')
     .replace(/[`*]/g, '')
     .split(/\s+/)
-    .map((t) => t.replace(/,+$/, ''))
+    .map((t) => t.replace(/,+$/, '').replaceAll(MASK, ' '))
     .filter((t) => t !== '' && !JOINERS.has(t.toLowerCase()))
   const whole = rest.slice(sep.index + sep[0].length)
   // A head that is not a place at all is a finding with no anchor, whole.
