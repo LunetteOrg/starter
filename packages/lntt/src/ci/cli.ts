@@ -4,10 +4,11 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
-import { cwd, env, exit, stderr, stdout } from 'node:process'
+import { cwd, env, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { defaultBranch, projectBase, remoteRef } from '../base.ts'
 import { CANDIDATE_PREFIX } from '../branch.ts'
+import { Exit, exit, leave } from '../exit.ts'
 import {
   acquireLock,
   candidate,
@@ -146,7 +147,7 @@ async function local(args: string[]): Promise<number> {
       interrupt.abort()
       interrupted = stopRunning().then(() => {
         giveBack(lock)
-        exit(code)
+        return leave(code)
       })
     })
   }
@@ -336,6 +337,7 @@ export async function main([command, ...args]: string[]): Promise<never> {
     if (command === 'proved') exit(provedRun(args))
     usage()
   } catch (error) {
+    if (error instanceof Exit) throw error
     stderr.write(`lntt ci: ${(error as Error).message}\n`)
     exit(1)
   }

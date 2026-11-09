@@ -3,7 +3,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { cwd, env, exit, stderr, stdout } from 'node:process'
+import { cwd, env, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { candidateAt } from './base.ts'
 import {
@@ -16,6 +16,7 @@ import {
   slugify,
   typeFor,
 } from './branch.ts'
+import { Exit, exit } from './exit.ts'
 import { ConfigError } from './files.ts'
 import { loadConfig } from './index.ts'
 import { detectHost } from './viewer.ts'
@@ -205,6 +206,7 @@ export function main([command, ...args]: string[]): void {
     else if (command === 'rename') rename()
     else usage()
   } catch (error) {
+    if (error instanceof Exit) throw error
     if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
       usage(error.message)
     }

@@ -1,10 +1,11 @@
 // `lntt retro add`: one item under one label of the candidate's retrospective comment,
 // written when the friction is met (usage: bin/lntt.ts).
 
-import { cwd, env, exit, stderr, stdout } from 'node:process'
+import { cwd, env, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { makeGh } from './ci/candidate.ts'
 import { candidateConfig } from './ci/config.ts'
+import { exit } from './exit.ts'
 import { loadConfig } from './index.ts'
 import { retrospectiveRules } from './pull-request.ts'
 import { retroAdd } from './retro.ts'

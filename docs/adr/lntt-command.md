@@ -83,7 +83,10 @@ lntt ci local | candidate | proved
   stderr), 2 a usage error or a failing jq expression, 3 a stop that a person decides on (`lntt review` past
   `delivery.review.maxRounds`), 4 nothing to report on (`lntt review status` with no round
   on the current branch, also when a jq query fails on the missing state), an interrupted command 128 plus the signal (130 for
-  Ctrl-C); a defect of `lntt` itself exits 1 with its stack trace.
+  Ctrl-C); a defect of `lntt` itself exits 1 with its stack trace. Every command ends
+  through one exit path that lets stdout and stderr drain before the process exits: a
+  pipe on macOS takes writes asynchronously, and an exit right after a long write cuts
+  the document with no sign of it. A test fails on any other exit in the package's code.
 - **`lntt get` prints what the file holds, and a missing key exits 1,** so a script never
   goes on with a wrong value. One key reads its schema default instead: `project.phase`,
   whose missing value means `production` by definition (a project keeps every check until
@@ -92,8 +95,9 @@ lntt ci local | candidate | proved
 - **A reading command gives a summary by default, and jq for a part of its output.** An
   agent reads through a limited window and pays for every character, so the default is
   short and each level is shown folded, as its key and its count (`findings: 14 (3 open)`).
-  `--query <jq>` runs a jq expression on the command's `--json` document, starting with
-  `lntt review status`, in the language `gh --jq` also takes: `jq-wasm` (jq 1.8.2 compiled
+  `--query <jq>`, beside every `--json`, runs a jq expression on the command's `--json`
+  document (on each of its lines for `lntt check`) and prints its result instead, keeping
+  the command's exit code, in the language `gh --jq` also takes: `jq-wasm` (jq 1.8.2 compiled
   to WebAssembly) runs it, loaded only when `--query` is given, so no other call pays for
   it. Measured on 2026-11-04, it adds about 22 ms to that call (load 3.8 ms, first query
   17.9 ms, node 24, median of 21 fresh processes, against node's own 31 ms start) and

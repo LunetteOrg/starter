@@ -3,8 +3,10 @@
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { dirname } from 'node:path'
-import { cwd, env, exit, stderr, stdout } from 'node:process'
+import { cwd, env, stderr, stdout } from 'node:process'
+import { parseArgs } from 'node:util'
 import { syncAutomated } from './automated.ts'
+import { exit } from './exit.ts'
 import {
   browserApp,
   browserPlan,
@@ -29,13 +31,14 @@ import {
   syncSkills,
   type Viewer,
 } from './index.ts'
+import { runQuery } from './query.ts'
 import { checkMissing, checkReferences } from './references.ts'
 import { reviewConfig, reviewWarnings } from './review.ts'
 
 const USAGE = [
   'usage: lntt path | validate | get <key> | set <key> <json> | operator [get <key> | sources]',
-  '       lntt sync | guide [<skill>] | local app <name> | viewer detect|open <url> | browser [<app>] [--json]',
-  '       lntt check [<area> [<check>]] [--base <ref>] [--json] | check cite <path:line>...',
+  '       lntt sync | guide [<skill>] | local app <name> | viewer detect|open <url> | browser [<app>] [--json] [--query <jq>]',
+  '       lntt check [<area> [<check>]] [--base <ref>] [--json] [--query <jq>] | check cite <path:line>...',
   '       lntt refs [--cached] [<text>...]',
   '       lntt board sync [--apply | --check] | board ready [--apply]',
   '       lntt branch name|check|rename [...]',
@@ -49,12 +52,13 @@ function usage(): never {
 }
 
 // `lntt <command> [...]`, every command but `ci` (./ci/cli.ts).
-export function main(args: string[]): void {
+export async function main(args: string[]): Promise<void> {
   const [command, key, raw] = args
-  if (command === 'browser' && args.length > 3) usage()
   try {
-    run(command, key, raw)
+    if (command === 'browser') await browser(args.slice(1))
+    else run(command, key, raw)
   } catch (e) {
+    if (e instanceof TypeError && 'code' in e && String(e.code).startsWith('ERR_PARSE_ARGS')) usage()
     if (!(e instanceof ConfigError)) throw e
     stderr.write(`lntt: ${e.message}\n`)
     exit(1)
@@ -161,24 +165,32 @@ function run(command: string | undefined, key: string | undefined, raw: string |
       } else usage()
       break
     }
-    case 'browser': {
-      const args = [key, raw].filter((a) => a !== undefined)
-      const named = args.filter((a) => a !== '--json')
-      if (named.length > 1 || named.some((a) => a.startsWith('-'))) usage()
-      const preferences = ((loadOperator(cwd()).profile.workspace as { browsers?: Driver[] } | undefined)?.browsers ??
-        []) as Driver[]
-      const app = localApp(cwd(), browserApp(cwd(), named[0]))
-      const worktree = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
-      const plan = browserPlan({
-        app,
-        choice: chooseDriver({ env, preferences, has: commandExists }),
-        worktree,
-        tmp: tmpdir(),
-      })
-      stdout.write(args.includes('--json') ? `${JSON.stringify(plan)}\n` : formatPlan(plan))
-      break
-    }
     default:
       usage()
   }
+}
+
+// `lntt browser [<app>] [--json] [--query <jq>]`: how an agent drives a browser on the app.
+async function browser(args: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { json: { type: 'boolean', default: false }, query: { type: 'string' } },
+  })
+  if (positionals.length > 1) usage()
+  const preferences = ((loadOperator(cwd()).profile.workspace as { browsers?: Driver[] } | undefined)?.browsers ??
+    []) as Driver[]
+  const app = localApp(cwd(), browserApp(cwd(), positionals[0]))
+  const worktree = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
+  const plan = browserPlan({
+    app,
+    choice: chooseDriver({ env, preferences, has: commandExists }),
+    worktree,
+    tmp: tmpdir(),
+  })
+  if (values.query !== undefined) {
+    const input = JSON.stringify(plan)
+    exit(await runQuery({ input, expression: values.query, json: values.json, code: 0, command: 'lntt browser' }))
+  }
+  stdout.write(values.json ? `${JSON.stringify(plan)}\n` : formatPlan(plan))
 }
