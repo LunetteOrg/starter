@@ -25,7 +25,11 @@ describe('the tests a mutation of a file of this repository runs', () => {
     for (const unrelated of ['branch', 'board', 'worktree', 'retro', 'exit', 'stdin']) {
       assert.ok(!tests.includes(`packages/lntt/test/${unrelated}.test.ts`), `${unrelated}.test.ts does not reach it`)
     }
-    assert.ok(tests.length <= 8, `the whole level is not run: ${tests.length} files (${tests.join(', ')})`)
+    const level = files.filter((f) => /^packages\/lntt\/test\/[^/]+\.test\.ts$/.test(f)).length
+    assert.ok(
+      tests.length * 4 < level,
+      `most of the level is not run: ${tests.length} of ${level} files (${tests.join(', ')})`,
+    )
   })
 
   test('a source file keeps every test whose imports reach it, a spawned entry point included', () => {

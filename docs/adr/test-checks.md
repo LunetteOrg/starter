@@ -164,11 +164,11 @@ reason, and sits at the lowest level where its assertion can.
   by whoever knows what the line guards.
 - **Mutating the working tree and restoring it.** An interrupt or a crash leaves the
   author's files mutated; the scratch worktree cannot.
-- **A process that removes the scratch when `lntt` is interrupted.** A run waits on its
-  tests synchronously, so a signal handler cannot run during it; a second process
-  watching for `lntt` to end adds a platform dependency (`kill -0`, a fractional
-  `sleep`), a race with the tests still writing, and its own tests, for a leftover
-  folder in the temp directory.
+- **A second process that removes the scratch once `lntt` has ended.** `lntt` handles
+  SIGINT and SIGTERM itself; only SIGKILL or a power cut leaves a scratch behind, and a
+  watcher for that adds a platform dependency (`kill -0`, a fractional `sleep`), a race
+  with the tests still writing, and its own tests, for a leftover folder in the temp
+  directory that the next mutation run prunes.
 - **A `test-levels` guard in `@lntt/test-utils`**, an architecture test that every
   `.test` file opens an integration harness, as pelion's does. The `levels` check
   decides the same from `tests.levels`, with the harness per level in configuration

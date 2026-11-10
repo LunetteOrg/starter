@@ -509,6 +509,60 @@ describe('lntt check tests mutate: one timeout per test file', () => {
   })
 })
 
+describe('lntt check tests mutate: what it refuses and what it cannot start', () => {
+  const level = (extra: Record<string, unknown>) =>
+    writeFileSync(
+      join(repo, '.agents/config.jsonc'),
+      JSON.stringify({
+        tests: { levels: [{ name: 'unit', files: ['test/*.test.ts'], run: 'node --test {files}', ...extra }] },
+      }),
+    )
+
+  test('a level whose command has no {files} is NOT RUN: it would run the whole suite for every file', () => {
+    level({ run: 'node --test' })
+    const { status, result } = mutate('src/price.ts:7', 'total > 100', 'total >= 100')
+    assert.equal(status, 0)
+    assert.equal(result.status, 'NOT RUN')
+    assert.match(result.message, /tests\.levels unit: run has no \{files\}/)
+  })
+
+  test('a command that cannot start is no pass: NOT RUN, never survived', () => {
+    level({ cwd: 'nowhere' })
+    const { result } = mutate('src/price.ts:7', 'total > 100', 'total >= 100')
+    assert.equal(result.status, 'NOT RUN', result.message)
+    assert.match(result.message, /level unit fails without the mutation/)
+  })
+
+  test('a folder of code that a test names does not choose that test: only a file that is not code has folders', () => {
+    mkdirSync(join(repo, 'lib/util'), { recursive: true })
+    writeFileSync(join(repo, 'lib/util/helper.ts'), 'export const helper = 1\n')
+    writeFileSync(
+      join(repo, 'test/mentions.test.ts'),
+      "// mentions lib/util\nimport { test } from 'node:test'\ntest('x', () => {})\n",
+    )
+    const { status, result } = mutate('lib/util/helper.ts:1', '= 1', '= 2')
+    assert.equal(status, 1)
+    assert.match(result.message, /survived: no test runs this line/)
+  })
+
+  test('a file that fails and a file that hangs in one level: the failure is the result', () => {
+    level({ timeoutSeconds: 2 })
+    writeFileSync(join(repo, 'src/mode.ts'), "export const MODE = 'fast'\n")
+    writeFileSync(
+      join(repo, 'test/mode-hang.test.ts'),
+      "import { test } from 'node:test'\nimport { MODE } from '../src/mode.ts'\ntest('slow mode waits', async () => {\n  if (MODE === 'slow') await new Promise(() => setInterval(() => {}, 1000))\n})\n",
+    )
+    writeFileSync(
+      join(repo, 'test/mode-fail.test.ts'),
+      "import assert from 'node:assert/strict'\nimport { test } from 'node:test'\nimport { MODE } from '../src/mode.ts'\ntest('the mode is fast', () => {\n  assert.equal(MODE, 'fast')\n})\n",
+    )
+    const { status, result } = mutate('src/mode.ts:1', "'fast'", "'slow'")
+    assert.equal(status, 0)
+    assert.match(result.message, /killed by the mode is fast/)
+    assert.doesNotMatch(result.message, /did not finish/)
+  })
+})
+
 // An interrupt gives everything back: the scratch worktree, the lock, the tests it started.
 describe('lntt check tests mutate: a signal', () => {
   const alive = (pid: number) => {

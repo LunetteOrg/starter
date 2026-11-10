@@ -307,7 +307,7 @@ async function runFiles(
 }
 
 // "path: why" for a test file that did not pass, as the output of its run says.
-const hung = (file: string, level: Level) => `${file} did not finish in ${level.timeoutSeconds}s`
+const hangOf = (level: Level) => `did not finish in ${level.timeoutSeconds}s`
 
 // Applies the mutation, runs the tests of each level that can run the line, restores.
 export async function mutate(context: MutateContext, mutation: Mutation, signal?: AbortSignal): Promise<Outcome> {
@@ -321,6 +321,14 @@ export async function mutate(context: MutateContext, mutation: Mutation, signal?
   const chosen = Object.keys(via).length > 0 ? { via } : {}
   const noRun = groups.find((g) => g.level.run === null)
   if (noRun) return { outcome: 'not run', reason: `tests.levels ${noRun.level.name} has no run command` }
+  // A command without {files} would run the whole suite once for every test file.
+  const whole = groups.find((g) => !(g.level.run as string).includes('{files}'))
+  if (whole) {
+    return {
+      outcome: 'not run',
+      reason: `tests.levels ${whole.level.name}: run has no {files}, and mutate runs one test file at a time`,
+    }
+  }
   const ran = groups.flatMap((g) => g.files)
   if (groups.length === 0) return { outcome: 'survived', ran }
 
@@ -345,7 +353,7 @@ export async function mutate(context: MutateContext, mutation: Mutation, signal?
       if (baseline.timedOut) {
         return {
           outcome: 'not run',
-          reason: `${hung(suspect.file, group.level)}, with or without the mutation`,
+          reason: `${suspect.file} ${hangOf(group.level)}, with or without the mutation`,
         }
       }
       if (baseline.code !== 0) {
@@ -357,7 +365,7 @@ export async function mutate(context: MutateContext, mutation: Mutation, signal?
       }
       const found = failed
         ? failureOf(failed.run.output)
-        : { test: suspect.file, message: `${hung(suspect.file, group.level).slice(suspect.file.length + 1)} (a hang)` }
+        : { test: suspect.file, message: `${hangOf(group.level)} (a hang)` }
       return { outcome: 'killed', ...found, ran, ...chosen }
     }
     return { outcome: 'survived', ran, ...chosen }
