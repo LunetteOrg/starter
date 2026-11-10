@@ -8,7 +8,8 @@ import { stdin } from 'node:process'
 export async function readStdin(): Promise<string> {
   // Node gives a directory on stdin an empty stream, which ends with no error: say what a
   // read of it says.
-  if (fstatSync(stdin.fd).isDirectory()) throw new Error('EISDIR: illegal operation on a directory, read')
+  if (fstatSync(stdin.fd).isDirectory())
+    throw Object.assign(new Error('EISDIR: illegal operation on a directory, read'), { code: 'EISDIR' })
   stdin.setEncoding('utf8')
   let text = ''
   for await (const chunk of stdin) text += chunk

@@ -4,7 +4,7 @@
 
 import { readFileSync } from 'node:fs'
 import { basename, dirname } from 'node:path'
-import { cwd, env, stderr, stdin, stdout } from 'node:process'
+import { cwd, env, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { makeGh } from './ci/candidate.ts'
 import { collectDump, type Dump, redact, redactionFor, renderDump, runFailing, withAgent } from './dump.ts'
@@ -24,6 +24,7 @@ import {
   upstreamRepository,
 } from './issue.ts'
 import { runQuery } from './query.ts'
+import { readStdin } from './stdin.ts'
 
 const USAGE = [
   'usage: lntt dump [--json] [--query <jq>] [--harness <name>] [--model <id>] [-- <failing command>...]',
@@ -47,7 +48,7 @@ export async function main(command: 'dump' | 'issue', args: string[]): Promise<v
   }
   try {
     if (command === 'dump') await dump(parsed)
-    else issue(parsed)
+    else await issue(parsed)
   } catch (error) {
     if (error instanceof Exit) throw error
     // A refusal, a configuration error or a failed gh: one line, no stack.
@@ -101,7 +102,7 @@ async function dump({ values, positionals }: Parsed): Promise<void> {
   if (result.configError !== undefined) throw new Error(result.configError)
 }
 
-function issue({ values, positionals }: Parsed): void {
+async function issue({ values, positionals }: Parsed): Promise<void> {
   if (values.failing !== undefined) usage('lntt issue takes no command after --: lntt dump does')
   if (values.json) usage('--json is an option of lntt dump')
   if (values.query !== undefined) usage('--query is an option of lntt dump')
@@ -131,7 +132,7 @@ function issue({ values, positionals }: Parsed): void {
     return
   }
 
-  const draft = parseDraft(readFileSync(first === '-' ? stdin.fd : (first as string), 'utf8'))
+  const draft = parseDraft(first === '-' ? await readStdin() : readFileSync(first as string, 'utf8'))
   if (values.send && !toUpstream) {
     throw new Error(
       `${repo} is not cycle.retrospective.upstream.repository (${upstream}): only that one is sent; the operator files this report by hand`,
