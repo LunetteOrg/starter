@@ -175,8 +175,8 @@ function readLine(raw: string): Line | null {
   if (none) return { severity, preexisting, anchor: null, also: [], whole: none[1] as string }
   // A place between backticks is one token, spaces included (a path with a space): its
   // whitespace is masked, with the same length, while the head is cut and split, then restored.
-  // A span opens at a word start and closes at a word end; any other backtick is stray text.
-  const masked = rest.replace(/(?<!\S)`[^`]*`(?![^\s,;)])/g, (span) => span.replace(/\s/g, MASK))
+  // A span opens at a word start and closes at a word end (bold stars aside); any other backtick is stray text.
+  const masked = rest.replace(/(?<![^\s*])`[^`]*`(?![^\s,;)*])/g, (span) => span.replace(/\s/g, MASK))
   const sep = SEPARATOR.exec(masked)
   if (!sep) return NOT_CHECKED.test(rest) ? { severity, preexisting, anchor: null, also: [], whole: rest } : null
   const head = masked.slice(0, sep.index)

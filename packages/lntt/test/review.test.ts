@@ -1128,6 +1128,7 @@ describe('what the fourth real round taught', () => {
       '- [warning] [pre-existing] `docs/my notes.md:12` (the intro) — what — act',
       '- [warning] `a - b.md:7` — what — act',
       '- [warning] `a b.md:1`, `c d.md:2` — what — act',
+      '- [warning] **`e f.md:4`** — what — act',
     ]
     for (const line of lines) assert.equal(unreadableFindings(line), 0, line)
     assert.deepEqual(
@@ -1138,8 +1139,10 @@ describe('what the fourth real round taught', () => {
         ['docs/my notes.md', 12, 'what', 'act'],
         ['a - b.md', 7, 'what', 'act'],
         ['a b.md', 1, 'what (also c d.md:2)', 'act'],
+        ['e f.md', 4, 'what', 'act'],
       ],
     )
+    assert.equal(JSON.stringify(parseFindings(lines.join('\n'))).includes('\\u0000'), false)
   })
 
   test('a backtick that does not open a span at a word start masks nothing', () => {
