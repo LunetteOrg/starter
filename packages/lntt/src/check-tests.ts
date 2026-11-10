@@ -547,7 +547,7 @@ export function mutateTests(options: CheckOptions, args: string[]): Promise<Resu
     throw new CannotRunError('mutate needs one path:line, --text <what is on the line> and --to <what it becomes>')
   }
   return mutateAllUntilInterrupted({ root: options.root, data: options.data, files: projectFiles(options.root) }, [
-    { path: m[1] as string, line: Number(m[2]), text: mutation.text, to: mutation.to },
+    { path: m[1] as string, line: Number(m[2]), text: mutation.text, to: mutation.to, tests: mutation.tests },
   ]).then((done) => done.results)
 }
 

@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import { CannotRunError, type Result } from './check.ts'
 import { exit } from './exit.ts'
-import { type Candidate, commandFor, ImportGraph, type Level, NOT_CODE, testsConfig, testsFor } from './test-files.ts'
+import { commandFor, type Level, levelsOf, testsConfig } from './test-files.ts'
 
 export interface Mutation {
   path: string
@@ -27,12 +27,13 @@ export interface Mutation {
   // What is on the line, and what it becomes.
   text: string
   to: string
+  // The test files the author names: the ones that run.
+  tests: string[]
 }
 
-// `via` says how a test that no import reaches was chosen (see Candidate in test-files.ts).
 export type Outcome =
-  | { outcome: 'killed'; test: string; message: string; ran: string[]; via?: Record<string, string> }
-  | { outcome: 'survived'; ran: string[]; via?: Record<string, string> }
+  | { outcome: 'killed'; test: string; message: string; ran: string[] }
+  | { outcome: 'survived'; ran: string[] }
   | { outcome: 'not run'; reason: string }
 
 function git(root: string, ...args: string[]): string {
@@ -84,6 +85,10 @@ function readdirNames(dir: string): string[] {
 
 export function createScratch(root: string): Scratch {
   const top = realpathSync(git(root, 'rev-parse', '--show-toplevel').trim())
+  // A run killed outright leaves its registration behind: clear those first.
+  try {
+    execFileSync('git', ['-C', top, 'worktree', 'prune'], { stdio: 'ignore' })
+  } catch {}
   const prefix = relative(top, realpathSync(root))
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-mutate-')))
   const worktree = join(dir, 'tree')
@@ -300,28 +305,41 @@ async function runFiles(
 // "path: why" for a test file that did not pass, as the output of its run says.
 const hangOf = (level: Level) => `did not finish in ${level.timeoutSeconds}s`
 
-// Applies the mutation, runs the tests of each level that can run the line, restores.
+// The test files the author names, grouped by level in the order of `tests.levels`; why not
+// when one cannot run.
+function groupTests(
+  context: MutateContext,
+  tests: string[],
+): { groups: { level: Level; files: string[] }[] } | { reason: string } {
+  const config = testsConfig(context.data)
+  if (config.levels.length === 0) return { reason: 'tests.levels is not configured' }
+  const found = new Map<Level, string[]>()
+  for (const test of new Set(tests)) {
+    if (isAbsolute(test) || test.split('/').includes('..') || !existsSync(join(context.scratch.root, test))) {
+      return { reason: `--test ${test}: no such file in the project` }
+    }
+    const level = levelsOf(config, test)[0]
+    if (!level) return { reason: `--test ${test}: no level of tests.levels has this file` }
+    if (level.run === null) return { reason: `tests.levels ${level.name} has no run command` }
+    // A command without {files} would run the whole suite once for every test file.
+    if (!level.run.includes('{files}')) {
+      return { reason: `tests.levels ${level.name}: run has no {files}, and mutate runs one test file at a time` }
+    }
+    found.set(level, [...(found.get(level) ?? []), test])
+  }
+  return {
+    groups: config.levels.flatMap((level) => (found.has(level) ? [{ level, files: found.get(level) ?? [] }] : [])),
+  }
+}
+
+// Applies the mutation, runs the test files the author names, restores.
 export async function mutate(context: MutateContext, mutation: Mutation, signal?: AbortSignal): Promise<Outcome> {
   const bad = problem(mutation, context.scratch.root)
   if (bad) return { outcome: 'not run', reason: bad }
-  const config = testsConfig(context.data)
-  if (config.levels.length === 0) return { outcome: 'not run', reason: 'tests.levels is not configured' }
-  const graph = new ImportGraph(context.root, new Set(context.files))
-  const groups: Candidate[] = testsFor(context.root, config, context.files, mutation.path, graph)
-  const via = Object.assign({}, ...groups.map((g) => g.via ?? {})) as Record<string, string>
-  const chosen = Object.keys(via).length > 0 ? { via } : {}
-  const noRun = groups.find((g) => g.level.run === null)
-  if (noRun) return { outcome: 'not run', reason: `tests.levels ${noRun.level.name} has no run command` }
-  // A command without {files} would run the whole suite once for every test file.
-  const whole = groups.find((g) => !(g.level.run as string).includes('{files}'))
-  if (whole) {
-    return {
-      outcome: 'not run',
-      reason: `tests.levels ${whole.level.name}: run has no {files}, and mutate runs one test file at a time`,
-    }
-  }
+  const grouped = groupTests(context, mutation.tests)
+  if ('reason' in grouped) return { outcome: 'not run', reason: grouped.reason }
+  const { groups } = grouped
   const ran = groups.flatMap((g) => g.files)
-  if (groups.length === 0) return { outcome: 'survived', ran }
 
   const target = join(context.scratch.root, mutation.path)
   const original = readFileSync(target, 'utf8')
@@ -357,43 +375,26 @@ export async function mutate(context: MutateContext, mutation: Mutation, signal?
       const found = failed
         ? failureOf(failed.run.output)
         : { test: suspect.file, message: `${hangOf(group.level)} (a hang)` }
-      return { outcome: 'killed', ...found, ran, ...chosen }
+      return { outcome: 'killed', ...found, ran }
     }
-    return { outcome: 'survived', ran, ...chosen }
+    return { outcome: 'survived', ran }
   } finally {
     writeFileSync(target, original)
   }
 }
 
-// The tests that ran, said by how they were chosen: the ones that import the file plain, the
-// ones that name it, and the ones that import a module that reads it, each with its module.
-function chosenBy(ran: string[], via: Record<string, string> = {}, imported: boolean): string {
-  const parts: string[] =
-    imported && ran.some((t) => via[t] === undefined) ? [ran.filter((t) => via[t] === undefined).join(', ')] : []
-  const by = (key: string) => ran.filter((t) => via[t] === key)
-  if (by('name').length > 0) parts.push(`chosen by name: ${by('name').join(', ')}`)
-  for (const module of new Set(Object.values(via).filter((v) => v !== 'name'))) {
-    parts.push(`through ${module}: ${by(module).join(', ')}`)
-  }
-  return parts.join('; ')
-}
-
 export function describeOutcome(mutation: Mutation, outcome: Outcome): Pick<Result, 'status' | 'message'> {
   const what = `${JSON.stringify(mutation.text)} → ${JSON.stringify(mutation.to)}`
   if (outcome.outcome === 'killed') {
-    const chosen = chosenBy(outcome.ran, outcome.via, false)
     return {
       status: 'PASS',
-      message: `${what} killed by ${outcome.test}: ${outcome.message}${chosen ? ` (${chosen})` : ''}`,
+      message: `${what} killed by ${outcome.test}: ${outcome.message}`,
     }
   }
   if (outcome.outcome === 'survived') {
     return {
       status: 'FAIL',
-      message:
-        outcome.ran.length === 0
-          ? `${what} survived: no test runs this line${NOT_CODE.test(mutation.path) ? ' (no test imports the file or names its path or a directory)' : ''}`
-          : `${what} survived: ${outcome.ran.length} test file${outcome.ran.length === 1 ? '' : 's'} still pass (${chosenBy(outcome.ran, outcome.via, true)})`,
+      message: `${what} survived: ${outcome.ran.length} test file${outcome.ran.length === 1 ? '' : 's'} still pass (${outcome.ran.join(', ')})`,
     }
   }
   return { status: 'NOT RUN', message: `${what}: ${outcome.reason}` }

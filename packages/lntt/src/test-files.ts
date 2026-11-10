@@ -163,9 +163,6 @@ export class ImportGraph {
 export interface Candidate {
   level: Level
   files: string[]
-  // How a test was chosen when no import reaches the file: 'name' for a test that names it,
-  // else the module the test imports and that reads it. Absent for a test that imports it.
-  via?: Record<string, string>
 }
 
 // The tests that can run `file`, grouped by level: the test files whose imports reach
@@ -196,95 +193,4 @@ export function commandFor(template: string, level: Level, files: string[], out?
   return template
     .replaceAll('{files}', relative.map(shellQuote).join(' '))
     .replaceAll('{out}', out === undefined ? '' : shellQuote(out))
-}
-
-// What a test names when it reads a file as text rather than imports it: the file's path
-// or its last two segments (`review/SKILL.md`), and, for a file that is not code, a directory
-// of two segments or more with its last two (`skills/review`), which is how a test writes a
-// path under a base folder it already holds. A directory of one segment (`docs`) names too
-// much to count, and a folder of code is never read as text.
-function namesOf(file: string): string[] {
-  const dir = posix.dirname(file)
-  const tail = (p: string) => p.split('/').slice(-2).join('/')
-  const folders = NOT_CODE.test(file) && dir.includes('/') ? [dir, tail(dir)] : []
-  return [...new Set([file, tail(file), ...folders])]
-}
-
-const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
-// Whether a module's source reads `file` without writing its path whole: the path as one
-// string is a name (namesOf); so is the file's own name as a string (`'before-production.md'`),
-// and so is a folder of two segments built from pieces (`join(AGENTS, 'review', ...)` after
-// `'../agents'`): its last segment as a string beside a string that ends with the one before.
-function reads(text: string, file: string, names: string[]): boolean {
-  if (names.some((n) => text.includes(n))) return true
-  const quote = '[\'"`]'
-  if (new RegExp(`${quote}${escapeRegExp(posix.basename(file))}${quote}`).test(text)) return true
-  const dir = posix.dirname(file).split('/')
-  if (dir.length < 2 || !NOT_CODE.test(file)) return false
-  const [parent, last] = dir.slice(-2) as [string, string]
-  return (
-    new RegExp(`${quote}${escapeRegExp(last)}${quote}`).test(text) &&
-    new RegExp(`${quote}(?:[^'"\`]*/)?${escapeRegExp(parent)}${quote}`).test(text)
-  )
-}
-
-function textOf(root: string, file: string): string {
-  try {
-    return readFileSync(join(root, file), 'utf8')
-  } catch {
-    return ''
-  }
-}
-
-// The tests that name a file (a SKILL.md read with readFileSync) or its directory, grouped
-// by level, and the ones that import a module that reads it (`src/review.ts` reads
-// `agents/review/*.md`): for a file no import reaches. No configuration.
-export function candidatesByName(root: string, config: TestsConfig, projectFiles: string[], file: string): Candidate[] {
-  const names = namesOf(file)
-  const present = testFiles(config, projectFiles).filter((t) => existsSync(join(root, t)))
-  const tests = new Map<string, string>()
-  for (const t of present) if (names.some((n) => textOf(root, t).includes(n))) tests.set(t, 'name')
-  // Direct importers only: a test that spawns the CLI reaches every module through it.
-  const known = new Set(projectFiles)
-  const readers = projectFiles.filter(
-    (f) => f !== file && !NOT_CODE.test(f) && !isTestFile(config, f) && reads(textOf(root, f), file, names),
-  )
-  for (const reader of readers) {
-    for (const t of present) {
-      if (!tests.has(t) && importsOf(root, t, known).includes(reader)) tests.set(t, reader)
-    }
-  }
-  const out: Candidate[] = []
-  for (const level of config.levels) {
-    const files = [...tests.keys()].filter((t) => levelsOf(config, t)[0] === level)
-    if (files.length > 0)
-      out.push({ level, files, via: Object.fromEntries(files.map((t) => [t, tests.get(t) as string])) })
-  }
-  return out
-}
-
-// The test files that reach `file`, by level: the ones whose imports reach it, the ones that
-// name it, and the ones that import a module that reads it.
-export function testsFor(
-  root: string,
-  config: TestsConfig,
-  projectFiles: string[],
-  file: string,
-  graph = new ImportGraph(root, new Set(projectFiles)),
-): Candidate[] {
-  const imported = candidates(root, config, projectFiles, file, graph)
-  const seen = new Set(imported.flatMap((c) => c.files))
-  const out = imported.map((c) => ({ ...c }))
-  for (const c of candidatesByName(root, config, projectFiles, file)) {
-    const files = c.files.filter((t) => !seen.has(t))
-    if (files.length === 0) continue
-    const via = Object.fromEntries(files.map((t) => [t, (c.via as Record<string, string>)[t] as string]))
-    const same = out.find((o) => o.level === c.level)
-    if (same) {
-      same.files = [...same.files, ...files]
-      same.via = { ...same.via, ...via }
-    } else out.push({ level: c.level, files, via })
-  }
-  return config.levels.flatMap((l) => out.filter((o) => o.level === l))
 }

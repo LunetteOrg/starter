@@ -39,10 +39,25 @@ function project(): void {
 }
 
 // One mutation through the CLI: the result it prints and its exit status.
-function mutate(anchor: string, text: string, to: string): { status: number | null; result: Result } {
+function mutate(
+  anchor: string,
+  text: string,
+  to: string,
+  tests: string[] = ['test/price.test.ts'],
+): { status: number | null; result: Result } {
   const r = spawnSync(
     process.execPath,
-    [BIN, 'check', 'tests', 'mutate', anchor, `--text=${text}`, `--to=${to}`, '--json'],
+    [
+      BIN,
+      'check',
+      'tests',
+      'mutate',
+      anchor,
+      `--text=${text}`,
+      `--to=${to}`,
+      ...tests.map((t) => `--test=${t}`),
+      '--json',
+    ],
     { cwd: repo, encoding: 'utf8', env: { ...process.env, GIT_CEILING_DIRECTORIES: dirname(repo) } },
   )
   return { status: r.status, result: JSON.parse(r.stdout.split('\n')[0] as string) as Result }
@@ -74,56 +89,36 @@ describe('lntt check tests mutate', () => {
     assert.match(result.message, /survived: 1 test file still pass \(test\/price\.test\.ts\)/)
   })
 
-  test('a line of a non-code file that a test reads is killed, the output naming how the test was chosen', () => {
-    const { status, result } = mutate('skills/review/SKILL.md:6', 'Never merge', 'Always merge')
+  test('a line of a non-code file is killed by the test file the author names', () => {
+    const { status, result } = mutate('skills/review/SKILL.md:6', 'Never merge', 'Always merge', ['test/skill.test.ts'])
     assert.equal(status, 0)
     assert.equal(result.status, 'PASS')
     assert.match(result.message, /killed by the review skill forbids merging/)
-    assert.match(result.message, /chosen by name: test\/skill\.test\.ts/)
+    assert.equal(result.message.includes('test/price.test.ts'), false, 'only the named file ran')
   })
 
-  test('a test that names only the directory of a non-code file runs it', () => {
-    const { status, result } = mutate('plugin/skills/guide/tone.md:1', 'Greet politely', 'Ignore people')
-    assert.equal(status, 0)
-    assert.match(result.message, /killed by every file of the guide skill greets politely/)
-    assert.match(result.message, /chosen by name: test\/guide\.test\.ts\)/)
-  })
-
-  test('a file at the root has no directory to name: tests that never name it do not run', () => {
-    const { status, result } = mutate('NOTES.md:1', 'root file', 'folder')
+  test('a named test that still passes survives, listing the files that ran', () => {
+    const { status, result } = mutate('docs/pinned.md:2', 'does not check', 'checks', ['test/pinned.test.ts'])
     assert.equal(status, 1)
-    assert.match(result.message, /survived: no test runs this line/)
+    assert.match(result.message, /survived: 1 test file still pass \(test\/pinned\.test\.ts\)/)
   })
 
-  test('a by-name test that still passes survives, and the output says it was chosen by name', () => {
-    const { status, result } = mutate('docs/pinned.md:2', 'does not check', 'checks')
-    assert.equal(status, 1)
-    assert.match(result.message, /survived: 1 test file still pass \(chosen by name: test\/pinned\.test\.ts\)/)
-  })
-
-  test('a non-code file some test imports gets its importers and the tests that name it', () => {
-    const { result } = mutate('src/limits.json:1', '"max": 3', '"max": 4')
-    assert.equal(result.status, 'PASS')
-    assert.match(result.message, /killed by the limit is read as text/)
-    assert.match(result.message, /chosen by name: test\/limits-by-name\.test\.ts\)/)
-  })
-
-  test('a directory of one segment names too much: docs/note.md is not run by a test that says docs', () => {
-    const { result } = mutate('docs/note.md:1', 'Nothing', 'Something')
-    assert.match(
-      result.message,
-      /survived: no test runs this line \(no test imports the file or names its path or a directory\)/,
-    )
-  })
-
-  test('a listed test file that is gone from the working tree is skipped, not run', () => {
+  test('a test file that is gone, outside the project, or in no level is NOT RUN, naming it', () => {
     rmSync(join(repo, 'test/skill.test.ts'))
-    const { status, result } = mutate('skills/review/SKILL.md:6', 'Never merge', 'Always merge')
-    assert.equal(status, 1)
-    assert.match(result.message, /survived: no test runs this line/)
+    const gone = mutate('src/price.ts:7', 'total > 100', 'x', ['test/skill.test.ts']).result
+    assert.equal(gone.status, 'NOT RUN')
+    assert.match(gone.message, /--test test\/skill\.test\.ts: no such file in the project/)
+    for (const test of ['../outside.test.ts', '/etc/hosts']) {
+      const outside = mutate('src/price.ts:7', 'total > 100', 'x', [test]).result
+      assert.equal(outside.status, 'NOT RUN', test)
+      assert.match(outside.message, /no such file in the project/)
+    }
+    const unleveled = mutate('src/price.ts:7', 'total > 100', 'x', ['src/orphan.ts']).result
+    assert.equal(unleveled.status, 'NOT RUN')
+    assert.match(unleveled.message, /--test src\/orphan\.ts: no level of tests\.levels has this file/)
   })
 
-  test('by-name tests keep the level they sit at: each level runs its own', () => {
+  test('test files of two levels each run with the command of their level', () => {
     writeFileSync(
       join(repo, '.agents/config.jsonc'),
       JSON.stringify({
@@ -137,21 +132,18 @@ describe('lntt check tests mutate', () => {
     )
     writeFileSync(join(repo, 'test/other.test.ts'), '// names skills/review/SKILL.md\n')
     git('add', '-A')
-    const { result } = mutate('skills/review/SKILL.md:6', 'Never merge', 'Always merge')
+    const { result } = mutate('skills/review/SKILL.md:6', 'Never merge', 'Always merge', [
+      'test/other.test.ts',
+      'test/skill.test.ts',
+    ])
     assert.equal(result.status, 'NOT RUN')
     assert.match(result.message, /level b fails without the mutation/)
   })
 
-  test('a non-code file no test names survives: no test runs this line', () => {
-    const { status, result } = mutate('docs/note.md:1', 'Nothing', 'Something')
-    assert.equal(status, 1)
-    assert.match(result.message, /survived: no test runs this line/)
-  })
-
-  test('a line no test imports survives: no test runs it', () => {
+  test('a file that no test file imports survives when the named test passes: the author chose it', () => {
     const { status, result } = mutate('src/orphan.ts:1', 'true', 'false')
     assert.equal(status, 1)
-    assert.match(result.message, /survived: no test runs this line$/)
+    assert.match(result.message, /survived: 1 test file still pass \(test\/price\.test\.ts\)$/)
   })
 
   test('uncommitted tests count: a new test file kills what the committed ones let live', () => {
@@ -167,7 +159,7 @@ describe('lntt check tests mutate', () => {
         '',
       ].join('\n'),
     )
-    const { status, result } = mutate('src/price.ts:7', 'total > 100', 'total >= 100')
+    const { status, result } = mutate('src/price.ts:7', 'total > 100', 'total >= 100', ['test/boundary.test.ts'])
     assert.equal(status, 0)
     assert.match(result.message, /killed by one hundred is small/)
   })
@@ -220,7 +212,7 @@ describe('lntt check tests mutate', () => {
       join(repo, 'test/fresh.test.ts'),
       "import assert from 'node:assert/strict'\nimport { test } from 'node:test'\nimport { b } from '../src/fresh.ts'\ntest('b is two', () => {\n  assert.equal(b, 2)\n})\n",
     )
-    const fresh = mutate('src/fresh.ts:2', '= 2', '= 3').result
+    const fresh = mutate('src/fresh.ts:2', '= 2', '= 3', ['test/fresh.test.ts']).result
     assert.equal(fresh.status, 'PASS', fresh.message)
     const price = `${readFileSync(join(repo, 'src/price.ts'), 'utf8')}\nexport const late = 'x'\n`
     writeFileSync(join(repo, 'src/price.ts'), price)
@@ -229,7 +221,7 @@ describe('lntt check tests mutate', () => {
       "import assert from 'node:assert/strict'\nimport { test } from 'node:test'\nimport { late } from '../src/price.ts'\ntest('late is x', () => {\n  assert.equal(late, 'x')\n})\n",
     )
     const line = price.trimEnd().split('\n').length
-    const late = mutate(`src/price.ts:${line}`, "'x'", "'y'").result
+    const late = mutate(`src/price.ts:${line}`, "'x'", "'y'", ['test/late.test.ts']).result
     assert.equal(late.status, 'PASS', late.message)
   })
 
@@ -280,9 +272,9 @@ describe('lntt check tests mutate', () => {
       })
     git('add', '-A')
     writeFileSync(join(repo, '.agents/config.jsonc'), level(1))
-    assert.match(mutate('src/price.ts:11', 'n + 1', 'n - 1').result.message, /survived/)
+    assert.match(mutate('src/price.ts:11', 'n + 1', 'n - 1', ['test/flaky.test.ts']).result.message, /survived/)
     writeFileSync(join(repo, '.agents/config.jsonc'), level(2))
-    const killed = mutate('src/price.ts:11', 'n + 1', 'n - 1').result
+    const killed = mutate('src/price.ts:11', 'n + 1', 'n - 1', ['test/flaky.test.ts']).result
     assert.equal(killed.status, 'PASS', killed.message)
     assert.match(killed.message, /killed by fails on its second run only/)
   })
@@ -302,13 +294,20 @@ describe('lntt check tests mutate', () => {
     assert.match(mutate('src/price.ts:7', 'total > 100', 'x').result.message, /tests\.levels is not configured/)
   })
 
-  test('usage errors: a mutation needs path:line, --text and --to', () => {
+  test('usage errors: a mutation needs path:line, --text, --to and at least one --test', () => {
     const run = (...args: string[]) =>
       spawnSync(process.execPath, [BIN, 'check', 'tests', 'mutate', ...args], { cwd: repo, encoding: 'utf8' })
-    assert.equal(run('src/price.ts').status, 2)
-    assert.equal(run('src/price.ts:7', '--text=x').status, 2)
-    assert.equal(run('--text=x', '--to=y').status, 2)
-    assert.equal(spawnSync(process.execPath, [BIN, 'check', 'tests', 'focus', '--text=x'], { cwd: repo }).status, 2)
+    const test = '--test=test/price.test.ts'
+    assert.equal(run('src/price.ts', '--text=x', '--to=y', test).status, 2)
+    assert.equal(run('src/price.ts:7', '--text=x', test).status, 2)
+    assert.equal(run('--text=x', '--to=y', test).status, 2)
+    const noTest = run('src/price.ts:7', '--text=total > 100', '--to=total >= 100')
+    assert.equal(noTest.status, 2)
+    assert.match(noTest.stderr, /mutate needs --test <test file>/)
+    assert.equal(run('src/price.ts:7', '--text=x', '--to=y', '--test=').status, 2)
+    for (const flag of ['--text=x', '--test=test/price.test.ts']) {
+      assert.equal(spawnSync(process.execPath, [BIN, 'check', 'tests', 'focus', flag], { cwd: repo }).status, 2, flag)
+    }
   })
 })
 
@@ -316,7 +315,15 @@ describe('lntt check tests mutate', () => {
 // of each order is in review-cli.test.ts.
 describe('lntt check tests mutate and the lock of the worktree', () => {
   const lock = () => join(repo, '.git/lntt-review.lock')
-  const args = ['check', 'tests', 'mutate', 'src/price.ts:7', "--text='big' : 'small'", "--to='small' : 'big'"]
+  const args = [
+    'check',
+    'tests',
+    'mutate',
+    'src/price.ts:7',
+    "--text='big' : 'small'",
+    "--to='small' : 'big'",
+    '--test=test/price.test.ts',
+  ]
   const holder = () => {
     const child = spawn('sleep', ['60'], { stdio: 'ignore' })
     return child
@@ -364,90 +371,39 @@ describe('lntt check tests mutate and the lock of the worktree', () => {
   })
 })
 
-// Which test files a mutation runs: the ones that import the file, the ones that name it, and
-// the ones that import a module that reads it.
-describe('lntt check tests mutate: which tests run', () => {
-  // `agents/guide/brief.md` is read by src/brief.ts, which builds the path from pieces, as
-  // packages/lntt/src/review.ts does for `agents/review`; test/brief.test.ts imports the module.
-  function readerProject(): void {
-    mkdirSync(join(repo, 'agents/guide'), { recursive: true })
-    writeFileSync(join(repo, 'agents/guide/brief.md'), 'Greet politely\nSign off kindly\n')
+// The author names the test files: only those run, one at a time, the first failure ends the rest.
+describe('lntt check tests mutate: the test files the author names', () => {
+  const marker = () => join(repo, '..', `${repo.split('/').pop()}.order`)
+  afterEach(() => rmSync(marker(), { force: true }))
+  const mark = (name: string, body: string) =>
     writeFileSync(
-      join(repo, 'src/brief.ts'),
-      [
-        "import { readFileSync } from 'node:fs'",
-        "import { dirname, join } from 'node:path'",
-        "import { fileURLToPath } from 'node:url'",
-        "const AGENTS = join(dirname(fileURLToPath(import.meta.url)), '../agents')",
-        'export function brief(): string {',
-        "  return readFileSync(join(AGENTS, 'guide', 'brief.md'), 'utf8')",
-        '}',
-        '',
-      ].join('\n'),
+      join(repo, `test/${name}.test.ts`),
+      `import assert from 'node:assert/strict'\nimport { appendFileSync } from 'node:fs'\nimport { test } from 'node:test'\nimport { label } from '../src/price.ts'\ntest('${name}', () => {\n  appendFileSync(${JSON.stringify(marker())}, '${name} ')\n  ${body}\n})\n`,
     )
-    writeFileSync(
-      join(repo, 'test/brief.test.ts'),
-      [
-        "import assert from 'node:assert/strict'",
-        "import { test } from 'node:test'",
-        "import { brief } from '../src/brief.ts'",
-        "test('the brief greets politely', () => {",
-        "  assert.match(brief().split('\\n')[0] as string, /Greet politely/)",
-        '})',
-        '',
-      ].join('\n'),
-    )
-    git('add', '-A')
-    git('commit', '-qm', 'a reader')
-  }
 
-  test('a file a module reads is run by the tests that import the module, and by no other', () => {
-    readerProject()
-    const killed = mutate('agents/guide/brief.md:1', 'Greet politely', 'Ignore people').result
-    assert.equal(killed.status, 'PASS', killed.message)
-    assert.match(killed.message, /killed by the brief greets politely/)
-    // the second line is not asserted: the survivor lists every file that ran
-    const { status, result } = mutate('agents/guide/brief.md:2', 'Sign off kindly', 'Sign off rudely')
-    assert.equal(status, 1)
-    assert.match(
-      result.message,
-      /survived: 1 test file still pass \(through src\/brief\.ts: test\/brief\.test\.ts\)$/,
-      'price, guide, skill and the other tests do not reach the file',
-    )
+  test('the named files run in the order given, one at a time, and no other file runs', () => {
+    mark('first', "assert.equal(label(50), 'small')")
+    mark('second', "assert.equal(label(50), 'small')")
+    const { result } = mutate('src/price.ts:7', 'total > 100', 'total >= 100', [
+      'test/second.test.ts',
+      'test/first.test.ts',
+    ])
+    assert.equal(result.status, 'FAIL', result.message)
+    assert.match(result.message, /survived: 2 test files still pass \(test\/second\.test\.ts, test\/first\.test\.ts\)/)
+    assert.equal(readFileSync(marker(), 'utf8'), 'second first ', 'in order, price.test.ts and the others not run')
   })
 
-  test('a module that reads the file by its name alone is a reader too', () => {
-    readerProject()
-    writeFileSync(
-      join(repo, 'src/brief.ts'),
-      readFileSync(join(repo, 'src/brief.ts'), 'utf8')
-        .replace("'../agents'", "'..'")
-        .replace("'guide', 'brief.md'", "'agents', 'guide', 'brief.md'"),
-    )
-    git('commit', '-qam', 'name only the file')
-    const { result } = mutate('agents/guide/brief.md:2', 'Sign off kindly', 'Sign off rudely')
-    assert.match(result.message, /through src\/brief\.ts: test\/brief\.test\.ts\)$/)
-  })
-
-  test('a test that names the file and a test that imports its reader both run, beside the importers', () => {
-    readerProject()
-    writeFileSync(
-      join(repo, 'test/names.test.ts'),
-      "// reads agents/guide/brief.md\nimport { test } from 'node:test'\ntest('names', () => {})\n",
-    )
-    git('add', '-A')
-    const { result } = mutate('agents/guide/brief.md:2', 'Sign off kindly', 'Sign off rudely')
-    assert.match(
-      result.message,
-      /survived: 2 test files still pass \(chosen by name: test\/names\.test\.ts; through src\/brief\.ts: test\/brief\.test\.ts\)$/,
-    )
-  })
-
-  test('a module that does not name the file is no reader: the tests that import it do not run', () => {
-    readerProject()
-    // price.ts neither names brief.md nor its folder, and test/price.test.ts imports it
-    const { result } = mutate('agents/guide/brief.md:2', 'Sign off kindly', 'Sign off rudely')
-    assert.doesNotMatch(result.message, /price/)
+  test('the first file that fails ends the run: the files after it do not run', () => {
+    mark('fails', "assert.equal(label(500), 'big')")
+    mark('after', "assert.equal(label(500), 'big')")
+    const { status, result } = mutate('src/price.ts:7', "'big' : 'small'", "'small' : 'big'", [
+      'test/fails.test.ts',
+      'test/after.test.ts',
+    ])
+    assert.equal(status, 0)
+    assert.match(result.message, /killed by fails/)
+    // `fails` ran twice: with the mutation, then again without it, to see that it passes
+    assert.equal(readFileSync(marker(), 'utf8'), 'fails fails ', 'the file after the failure never ran')
   })
 })
 
@@ -489,7 +445,10 @@ describe('lntt check tests mutate: one timeout per test file', () => {
 
   test('a mutation that makes one test file hang is caught by the hang, naming the file and its timeout', () => {
     hangProject(2)
-    const { status, result } = mutate('src/spin.ts:2', 'n += 1', 'n -= 1')
+    const { status, result } = mutate('src/spin.ts:2', 'n += 1', 'n -= 1', [
+      'test/spin.test.ts',
+      'test/spin-name.test.ts',
+    ])
     assert.equal(status, 0)
     assert.equal(result.status, 'PASS', result.message)
     assert.match(result.message, /killed by test\/spin\.test\.ts: did not finish in 2s/)
@@ -503,7 +462,7 @@ describe('lntt check tests mutate: one timeout per test file', () => {
       readFileSync(join(repo, 'src/spin.ts'), 'utf8').replace('n += 1', 'n -= 1'),
     )
     git('commit', '-qam', 'break it')
-    const { result } = mutate('src/spin.ts:3', 'return n', 'return n + 0')
+    const { result } = mutate('src/spin.ts:3', 'return n', 'return n + 0', ['test/spin.test.ts'])
     assert.equal(result.status, 'NOT RUN', result.message)
     assert.match(result.message, /test\/spin\.test\.ts did not finish in 2s, with or without the mutation/)
   })
@@ -533,18 +492,6 @@ describe('lntt check tests mutate: what it refuses and what it cannot start', ()
     assert.match(result.message, /level unit fails without the mutation/)
   })
 
-  test('a folder of code that a test names does not choose that test: only a file that is not code has folders', () => {
-    mkdirSync(join(repo, 'lib/util'), { recursive: true })
-    writeFileSync(join(repo, 'lib/util/helper.ts'), 'export const helper = 1\n')
-    writeFileSync(
-      join(repo, 'test/mentions.test.ts'),
-      "// mentions lib/util\nimport { test } from 'node:test'\ntest('x', () => {})\n",
-    )
-    const { status, result } = mutate('lib/util/helper.ts:1', '= 1', '= 2')
-    assert.equal(status, 1)
-    assert.match(result.message, /survived: no test runs this line/)
-  })
-
   test('a file that fails and a file that hangs in one level: the failure is the result', () => {
     level({ timeoutSeconds: 2 })
     writeFileSync(join(repo, 'src/mode.ts'), "export const MODE = 'fast'\n")
@@ -556,7 +503,10 @@ describe('lntt check tests mutate: what it refuses and what it cannot start', ()
       join(repo, 'test/mode-fail.test.ts'),
       "import assert from 'node:assert/strict'\nimport { test } from 'node:test'\nimport { MODE } from '../src/mode.ts'\ntest('the mode is fast', () => {\n  assert.equal(MODE, 'fast')\n})\n",
     )
-    const { status, result } = mutate('src/mode.ts:1', "'fast'", "'slow'")
+    const { status, result } = mutate('src/mode.ts:1', "'fast'", "'slow'", [
+      'test/mode-hang.test.ts',
+      'test/mode-fail.test.ts',
+    ])
     assert.equal(status, 0)
     assert.match(result.message, /killed by the mode is fast/)
     assert.doesNotMatch(result.message, /did not finish/)
@@ -597,7 +547,16 @@ describe('lntt check tests mutate: a signal', () => {
       )
       const child = spawn(
         process.execPath,
-        [BIN, 'check', 'tests', 'mutate', 'src/price.ts:7', '--text=total > 100', '--to=total >= 100'],
+        [
+          BIN,
+          'check',
+          'tests',
+          'mutate',
+          'src/price.ts:7',
+          '--text=total > 100',
+          '--to=total >= 100',
+          '--test=test/price.test.ts',
+        ],
         { cwd: repo, stdio: 'ignore', env: { ...process.env, GIT_CEILING_DIRECTORIES: dirname(repo) } },
       )
       const closed = new Promise<number | null>((resolve) => child.on('close', resolve))
