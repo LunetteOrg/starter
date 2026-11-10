@@ -178,14 +178,19 @@ function placeHook(text: string, list: HookEntry[] | undefined, placed: Placed):
 
 // The typecheck hook an earlier lntt wrote, told by its status message, removed from the last
 // one up: an entry left with no hook goes with it, and the event when no entry is left. The
-// project's own Stop hooks, and a Stop that is not a list, stay as they are.
+// project's own Stop hooks stay as they are, and so does whatever of a Stop is not the shape
+// Claude Code reads (a Stop that is not a list, an entry that is not an object): the project's
+// to fix, not a reason for sync to fail. A hook the project wrote with that very status
+// message goes too: the message is how lntt tells its own.
 function removeStopTypecheck(text: string, list: unknown): string {
   if (!Array.isArray(list)) return text
-  const mine = (h: Hook) => h.statusMessage === REMOVED_STATUS
+  const mine = (h: unknown) => isObject(h) && h.statusMessage === REMOVED_STATUS
   let next = text
   let length = list.length
   for (let i = list.length - 1; i >= 0; i -= 1) {
-    const hooks = (list[i] as HookEntry).hooks ?? []
+    const entry = list[i]
+    if (!isObject(entry) || !Array.isArray(entry.hooks)) continue
+    const hooks: unknown[] = entry.hooks
     if (!hooks.some(mine)) continue
     if (hooks.every(mine)) {
       next = edit(next, ['hooks', 'Stop', i], undefined)
@@ -193,7 +198,7 @@ function removeStopTypecheck(text: string, list: unknown): string {
       continue
     }
     for (let j = hooks.length - 1; j >= 0; j -= 1) {
-      if (mine(hooks[j] as Hook)) next = edit(next, ['hooks', 'Stop', i, 'hooks', j], undefined)
+      if (mine(hooks[j])) next = edit(next, ['hooks', 'Stop', i, 'hooks', j], undefined)
     }
   }
   return length === 0 && list.length > 0 ? edit(next, ['hooks', 'Stop'], undefined) : next

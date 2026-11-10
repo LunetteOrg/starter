@@ -33,8 +33,7 @@ places a skill reads:
   of another list) and for what every reader would fail on if the schema required it
   (a key the skills need, so a section written in steps still loads).
   Sections are named after fixed process areas (`recording`, `board`, `ci`,
-  `delivery`, `cycle`, `spaces`, `team`, `local`, which holds the commands of the
-  agent's hooks beside the local apps); a section is added when a skill needs it. A short reason for a value is a comment next to it. A section that a
+  `delivery`, `cycle`, `spaces`, `team`, `local`, which holds the local apps); a section is added when a skill needs it. A short reason for a value is a comment next to it. A section that a
   platform serves names it (`board.provider`), keeps that platform's own keys under its
   name (`board.github`) and the concepts every platform shares beside it; a skill of
   that platform, its adapter, does the reads and writes (`github-board` for `github`),
@@ -170,9 +169,8 @@ left with no entry goes too). `local.hooks` is not in the configuration schema:
 `lntt validate` fails on it with a message that names the key, the release that removed
 it (0.6.5) and what to do, as the
 [removal rule](./lntt-command.md#gates-and-agent-tools-one-package-two-groups-one-compatibility-rule)
-says. The Stop line a sync of 0.6.4 wrote runs `lntt hook typecheck` until the project
-syncs again; in 0.6.5 that command only answers with what to do (a `systemMessage`,
-exit 0), and the release after drops it.
+says; the same rule covers the Stop line a sync of 0.6.4 wrote, which runs `lntt hook
+typecheck` until the project syncs again.
 
 Every other hook is measured before it is adopted: what it costs in tokens and turns
 against what it catches that the next gate (the pre-commit, `ci:local`, the review) would

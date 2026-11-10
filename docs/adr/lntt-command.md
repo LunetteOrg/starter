@@ -145,7 +145,9 @@ lntt ci local | candidate | proved
   it stops every command, exit 1, after the dump is printed with the error in it.
 - **No aliases for old names.** A renamed command answers only to its new name, so its
   callers (workflows, skills, the README) change with it, in the same release: the
-  shared skills ship in `@lntt/lntt` with the command they call.
+  shared skills ship in `@lntt/lntt` with the command they call. A removed command that
+  the settings lines of an earlier sync still call is the one exception
+  ([the compatibility rule](#gates-and-agent-tools-one-package-two-groups-one-compatibility-rule)).
 
 ### Gates and agent tools: one package, two groups, one compatibility rule
 

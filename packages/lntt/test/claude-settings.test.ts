@@ -244,6 +244,29 @@ describe('the Claude Code settings lntt sync writes', () => {
     assert.deepEqual(read().hooks.Stop, [{ hooks: [own] }, { hooks: [own] }])
   })
 
+  test('two entries that are both its own leave no Stop at all', () => {
+    write({ hooks: { Stop: [{ hooks: [OLD_TYPECHECK] }, { hooks: [OLD_TYPECHECK] }] } })
+    syncClaudeSettings(root)
+    assert.equal(read().hooks.Stop, undefined)
+  })
+
+  test('a Stop with entries that are not the shape Claude Code reads is kept, its own hook still removed', () => {
+    const own = { type: 'command', command: 'echo ours' }
+    for (const bad of [null, 'x', { hooks: 'x' }, { hooks: [null] }, { hooks: [own, null] }]) {
+      write({ hooks: { Stop: [bad, { hooks: [OLD_TYPECHECK] }] } })
+      syncClaudeSettings(root)
+      assert.deepEqual(read().hooks.Stop, [bad], JSON.stringify(bad))
+      assert.deepEqual(off(), [])
+    }
+  })
+
+  test('the hook of 0.6.4 left in place before the next sync is no problem for the check', () => {
+    syncClaudeSettings(root)
+    const s = read()
+    write({ ...s, hooks: { ...s.hooks, Stop: [{ hooks: [OLD_TYPECHECK] }] } })
+    assert.deepEqual(off(), [])
+  })
+
   test('a second sync after the removal changes nothing', () => {
     write({ hooks: { Stop: [{ hooks: [OLD_TYPECHECK] }] } })
     syncClaudeSettings(root)

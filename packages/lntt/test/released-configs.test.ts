@@ -119,6 +119,16 @@ describe('the configuration of each released version', () => {
     })
   }
 
+  test('another key of local keeps the generic error', () => {
+    setup()
+    try {
+      inTree(root, JSON.stringify({ local: { frobnicate: 1 } }))
+      assert.throws(() => loadConfig(root), /\/local must NOT have additional properties \(frobnicate\)/)
+    } finally {
+      teardown()
+    }
+  })
+
   test('releaseOf drops a pre-release and build metadata', () => {
     assert.equal(releaseOf('1.2.3'), '1.2.3')
     assert.equal(releaseOf('1.2.3-rc.1'), '1.2.3')

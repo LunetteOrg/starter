@@ -152,6 +152,6 @@ for (const template of readdirSync(TEMPLATES)) {
     const preCommit =
       /^pre-commit:\n([\s\S]*?)(?=^\S)/m.exec(readFileSync(join(dir, 'lefthook.yml'), 'utf8'))?.[1] ?? ''
     assert.match(preCommit, /^ {4}typecheck:\n {6}run: .*typecheck/m, 'a typecheck in the pre-commit')
-    assert.match(preCommit, /lint:fix/, 'a formatter in the pre-commit')
+    assert.match(preCommit, /^ {6}run: .*lint:fix/m, 'a formatter in the pre-commit')
   })
 }
