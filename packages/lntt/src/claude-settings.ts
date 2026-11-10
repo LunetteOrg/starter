@@ -1,9 +1,9 @@
 // The entries of a project's `.claude/settings.json` that come with lntt
 // (docs/adr/agent-layer.md#where-hooks-live): the Lunette plugin, loaded from the
 // `directory` marketplace this package ships at its root, the hook that installs the
-// dependencies when lntt itself is missing, and the line of `lntt hook typecheck`
-// (./hook.ts). `lntt sync` writes them and keeps whatever else the file holds; `lntt check
-// plugin` says when they are missing or point elsewhere.
+// dependencies when lntt itself is missing. `lntt sync` writes them, removes the Stop
+// typecheck hook an earlier version wrote, and keeps whatever else the file holds; `lntt
+// check plugin` says when they are missing or point elsewhere.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -36,43 +36,12 @@ export const INSTALL_HOOK = {
   statusMessage: 'lntt: checking the dependencies are installed',
 }
 
-// The first @lntt/lntt with `lntt hook`.
-export const HOOK_SINCE = '0.6.3'
-
-// A thin line: the logic is in `lntt hook <name>`. With lntt missing it says nothing: the
-// install hook says that at the session start. An lntt with no `hook` command answers with
-// its usage, exit 2: the line says once per session (per Claude Code process) what to run.
-// `lntt hook` exits 1 for a failure to report, which the line turns into the exit 2 that
-// wakes the agent where `wake` asks it.
-function hookLine(name: string, wake: boolean): string {
-  return [
-    'cd "$CLAUDE_PROJECT_DIR" || exit 0',
-    '[ -x node_modules/.bin/lntt ] || exit 0',
-    `node_modules/.bin/lntt hook ${name}`,
-    's=$?',
-    `[ $s -eq 1 ] && exit ${wake ? 2 : 0}`,
-    '[ $s -eq 2 ] || exit 0',
-    `t="\${TMPDIR:-/tmp}/lntt-hook-${name}-$PPID"`,
-    '[ -f "$t" ] && exit 0',
-    ': > "$t"',
-    `printf '{"systemMessage":"this lntt has no lntt hook, which came with @lntt/lntt ${HOOK_SINCE}: run pnpm up @lntt/lntt"}\\n'`,
-  ].join('; ')
-}
-
-export const TYPECHECK_HOOK = {
-  type: 'command',
-  command: hookLine('typecheck', true),
-  asyncRewake: true,
-  rewakeSummary: 'Typecheck failed',
-  timeout: 900,
-  statusMessage: 'lntt: typecheck',
-}
+// The status message of the Stop hook `lntt sync` wrote up to 0.6.4 (`lntt hook typecheck`):
+// the typecheck is the pre-commit's alone, and sync removes the hook it wrote.
+const REMOVED_STATUS = 'lntt: typecheck'
 
 // Each hook lntt writes: its event, the matcher of its entry, and how check names it.
-const HOOKS = [
-  { event: 'SessionStart', hook: INSTALL_HOOK, label: 'install' },
-  { event: 'Stop', hook: TYPECHECK_HOOK, label: 'typecheck' },
-] as const
+const HOOKS = [{ event: 'SessionStart', hook: INSTALL_HOOK, label: 'install' }] as const
 type Placed = (typeof HOOKS)[number]
 
 export const HOOK_LABELS: Record<string, string> = Object.fromEntries(HOOKS.map((h) => [`hooks.${h.event}`, h.label]))
@@ -207,6 +176,29 @@ function placeHook(text: string, list: HookEntry[] | undefined, placed: Placed):
   return edit(next, ['hooks', placed.event, length], entry, true)
 }
 
+// The typecheck hook an earlier lntt wrote, told by its status message, removed from the last
+// one up: an entry left with no hook goes with it, and the event when no entry is left. The
+// project's own Stop hooks, and a Stop that is not a list, stay as they are.
+function removeStopTypecheck(text: string, list: unknown): string {
+  if (!Array.isArray(list)) return text
+  const mine = (h: Hook) => h.statusMessage === REMOVED_STATUS
+  let next = text
+  let length = list.length
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const hooks = (list[i] as HookEntry).hooks ?? []
+    if (!hooks.some(mine)) continue
+    if (hooks.every(mine)) {
+      next = edit(next, ['hooks', 'Stop', i], undefined)
+      length -= 1
+      continue
+    }
+    for (let j = hooks.length - 1; j >= 0; j -= 1) {
+      if (mine(hooks[j] as Hook)) next = edit(next, ['hooks', 'Stop', i, 'hooks', j], undefined)
+    }
+  }
+  return length === 0 && list.length > 0 ? edit(next, ['hooks', 'Stop'], undefined) : next
+}
+
 // Writes the entries, each only when it is off, with edits that keep the rest of the file
 // as it is: the project's own hooks of each event stay beside lntt's.
 export function syncClaudeSettings(cwd: string): void {
@@ -220,6 +212,7 @@ export function syncClaudeSettings(cwd: string): void {
   HOOKS.forEach((placed, i) => {
     if (hooks[i]?.state !== 'ok') text = placeHook(text, loaded.settings.hooks?.[placed.event], placed)
   })
+  text = removeStopTypecheck(text, loaded.settings.hooks?.Stop)
   if (text === loaded.text && existsSync(file)) return
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, text.endsWith('\n') ? text : `${text}\n`)

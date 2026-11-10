@@ -73,7 +73,7 @@ function absentFromAll(lists: string[][]): string[] {
 // Keys a release set and the current schema removed on purpose: no project but the starter
 // set them. The fixture of that release keeps them (its tag's schema knew them); they are
 // dropped before it is validated against the current schema.
-const REMOVED = [['local', 'hooks', 'format']]
+const REMOVED = [['local', 'hooks']]
 
 function withoutRemoved(content: string): string {
   const data = jsonc.parse(content) as Node
@@ -101,6 +101,23 @@ describe('the configuration of each released version', () => {
   test('the version in package.json has its fixture', () => {
     assert.ok(versions.includes(current), `add packages/lntt/test/fixtures/released/${current}.jsonc`)
   })
+
+  // A removal with no replacement takes one release: the error names the key, the release
+  // and what to do (docs/adr/lntt-command.md).
+  for (const hooks of [{ typecheck: 'tsc' }, { format: 'biome format' }]) {
+    test(`local.hooks.${Object.keys(hooks)[0]} fails validation with what to do`, () => {
+      setup()
+      try {
+        inTree(root, JSON.stringify({ local: { hooks } }))
+        assert.throws(
+          () => loadConfig(root),
+          /\/local local\.hooks was removed in 0\.6\.5 \(local\.hooks\.typecheck, and local\.hooks\.format before it\): delete it, the typecheck and the formatting are the pre-commit's/,
+        )
+      } finally {
+        teardown()
+      }
+    })
+  }
 
   test('releaseOf drops a pre-release and build metadata', () => {
     assert.equal(releaseOf('1.2.3'), '1.2.3')

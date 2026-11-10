@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { INSTALL_HOOK, MARKETPLACE, PLUGIN, TYPECHECK_HOOK } from '../../src/claude-settings.ts'
+import { INSTALL_HOOK, MARKETPLACE, PLUGIN } from '../../src/claude-settings.ts'
 import { notice, settingsProblems } from './notices.mjs'
 
 // The terminal's dim sequence, stripped: what the person reads.
@@ -12,7 +12,6 @@ const SYNCED = {
   enabledPlugins: { [PLUGIN]: true },
   hooks: {
     SessionStart: [{ hooks: [INSTALL_HOOK] }],
-    Stop: [{ hooks: [TYPECHECK_HOOK] }],
   },
 }
 
@@ -64,13 +63,11 @@ describe('the settings the plugin checks at session start', () => {
     assert.deepEqual(settingsProblems(JSON.stringify(elsewhere)), [
       'extraKnownMarketplaces.lunette',
       'hooks.SessionStart',
-      'hooks.Stop',
     ])
     assert.deepEqual(settingsProblems('{}'), [
       'extraKnownMarketplaces.lunette',
       'enabledPlugins.lunette@lunette',
       'hooks.SessionStart',
-      'hooks.Stop',
     ])
   })
 
@@ -90,7 +87,6 @@ describe('the settings the plugin checks at session start', () => {
       { hooks: { SessionStart: [null] } },
       { hooks: { SessionStart: [{ hooks: 'x' }] } },
       { hooks: { SessionStart: [{ hooks: [null] }] } },
-      { hooks: { Stop: {} } },
       { enabledPlugins: 'x' },
       { extraKnownMarketplaces: 'x' },
       { hooks: 'x' },
@@ -109,7 +105,6 @@ describe('the settings the plugin checks at session start', () => {
       'extraKnownMarketplaces.lunette',
       'enabledPlugins.lunette@lunette',
       'hooks.SessionStart',
-      'hooks.Stop',
     ])
   })
 
@@ -118,7 +113,6 @@ describe('the settings the plugin checks at session start', () => {
       'extraKnownMarketplaces.lunette',
       'enabledPlugins.lunette@lunette',
       'hooks.SessionStart',
-      'hooks.Stop',
     ])
   })
 

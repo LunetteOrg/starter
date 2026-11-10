@@ -42,7 +42,6 @@ export {
   SETTINGS,
   type SettingsEntry,
   syncClaudeSettings,
-  TYPECHECK_HOOK,
 } from './claude-settings.ts'
 export { commitlintConfig } from './commitlint.ts'
 export { ConfigError, type Format, type Located, NoConfigError } from './files.ts'
@@ -60,7 +59,6 @@ export {
   type Spawn,
   timerMs,
 } from './headless.ts'
-export { type HookName, hookCommands, normalise, runTypecheck } from './hook.ts'
 export { type LocalApp, localApp } from './local.ts'
 export { loadOperator, type Operator } from './operator.ts'
 export {

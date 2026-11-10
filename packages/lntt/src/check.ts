@@ -138,12 +138,7 @@ function plugin(root: string): Result[] {
     message,
   })
   if (off.length === 0) {
-    return [
-      result(
-        'PASS',
-        'the Lunette plugin loads from node_modules/@lntt/lntt, and the install and typecheck hooks are in place',
-      ),
-    ]
+    return [result('PASS', 'the Lunette plugin loads from node_modules/@lntt/lntt, and the install hook is in place')]
   }
   return off.map((e) =>
     result(
