@@ -1142,7 +1142,9 @@ describe('what the fourth real round taught', () => {
         ['e f.md', 4, 'what', 'act'],
       ],
     )
-    assert.equal(JSON.stringify(parseFindings(lines.join('\n'))).includes('\\u0000'), false)
+    for (const f of parseFindings(lines.join('\n'))) {
+      for (const field of [f.path, f.what, f.action]) assert.equal(field?.includes('\u0000'), false, field ?? '')
+    }
   })
 
   test('a backtick that does not open a span at a word start masks nothing', () => {
@@ -1151,6 +1153,8 @@ describe('what the fourth real round taught', () => {
       '- [warning] a.md:3 — the `x y — act',
       '- [warning] a.md:3 — the `` and `x y` — act',
       '- [warning] `a.ts:3` — use `a - b` — act',
+      // a star glued to a word counts as a bold star: the span may be masked, and the finding reads the same
+      '- [warning] a.md:3 — 2*`x y` — act',
     ]
     assert.deepEqual(
       parseFindings(lines.join('\n')).map((f) => [f.path, f.line, f.what, f.action]),
@@ -1159,6 +1163,7 @@ describe('what the fourth real round taught', () => {
         ['a.md', 3, 'the `x y', 'act'],
         ['a.md', 3, 'the `` and `x y`', 'act'],
         ['a.ts', 3, 'use `a - b`', 'act'],
+        ['a.md', 3, '2*`x y`', 'act'],
       ],
     )
   })
