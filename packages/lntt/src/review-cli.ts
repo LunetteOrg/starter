@@ -474,7 +474,11 @@ const interrupted = new AbortController()
 // Only for the commands that run agents: a handler cannot run while a jq query holds the event
 // loop, so status keeps the default, and a signal ends a query that does not end.
 function stopAgentsOnInterrupt() {
-  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  // 128 plus the signal's number, as every command of lntt exits when interrupted.
+  for (const [signal, code] of [
+    ['SIGINT', 130],
+    ['SIGTERM', 143],
+  ] as const) {
     process.on(signal, () => {
       interrupted.abort(`interrupted by ${signal}`)
       stopGroups()
@@ -482,7 +486,7 @@ function stopAgentsOnInterrupt() {
       const wait = setInterval(() => {
         if (groups.size > 0 && Date.now() < until) return
         clearInterval(wait)
-        void leave(130)
+        void leave(code)
       }, 100)
     })
   }
@@ -1271,11 +1275,10 @@ export async function main([command, ...args]: string[]): Promise<void> {
     stopAgentsOnInterrupt()
     exit(command === 'reply' ? await reply(args) : await round(command === undefined ? [] : [command, ...args]))
   } catch (error) {
-    // The abort of an interrupt is what ended the round: the handler of the signal owns the
-    // exit (130, after the agents had their five seconds), so a round that fails or ends
-    // meanwhile does not exit first with 1.
-    if (interrupted.signal.aborted) await new Promise<never>(() => {})
-    if (error instanceof Exit) throw error
+    if (error instanceof Exit) {
+      await handlerLeaves()
+      throw error
+    }
     if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
       usage(error.message)
     }
@@ -1296,6 +1299,14 @@ export async function main([command, ...args]: string[]): Promise<void> {
     )
       startProgress()
     emit({ type: 'error', message: (error as Error).message })
+    await handlerLeaves()
     exit(1)
   }
+}
+
+// The abort of an interrupt is what ended the round: the handler of the signal owns the exit
+// (130 or 143, after the agents had their five seconds), so a round that fails or ends
+// meanwhile reports itself and then waits for it, instead of exiting first with 1.
+async function handlerLeaves(): Promise<void> {
+  if (interrupted.signal.aborted) await new Promise<never>(() => {})
 }
