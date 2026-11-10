@@ -55,8 +55,9 @@ and a mutation run by hand is the proof when reading leaves a doubt.
   - `touched` (needs `--base`): the lines the diff changes and the tests that run them,
     from the `coverage` of the test files that import the changed file, or from imports
     alone when a level has no `coverage`. A review round asks for no coverage
-    (`coverage: false` in the options it passes) and gets the tests from imports alone,
-    with `coverage not run` in the message; `lntt check tests touched` run by hand keeps
+    (`coverage: false` in the options it passes) and gets the tests from imports alone:
+    the message says `coverage not run` for a level that has `coverage`, and `no coverage
+    for their level` for one that has none; `lntt check tests touched` run by hand keeps
     coverage where a level has it. Coverage says which tests to run and which lines no
     test reaches; it is not an acceptance criterion. Coverage of the project belongs to
     a periodic check of the whole project (#311), not to a review round or a pull
