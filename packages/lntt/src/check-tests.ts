@@ -2,7 +2,7 @@
 // `levels` (each test file at exactly one level, opening what its level needs, and the
 // pyramid), `focus` (.only, .skip, a new todo, a test with no assertion), `rules` (the
 // patterns the project forbids), `touched` (the lines the diff changes and the tests
-// that run them) and `mutate` (does a mutation a reviewer proposes make a test fail).
+// that run them) and `mutate` (does a mutation make a test fail: a tool run by hand).
 
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
@@ -481,10 +481,12 @@ function touched(options: CheckOptions, s: Scope): Result[] {
   )
   if (changed.length === 0) return [result('touched', 'PASS', null, null, 'the diff changes no source line')]
   const graph = new ImportGraph(options.root, new Set(s.files))
-  const useCoverage = s.config.levels.some((l) => l.coverage !== null)
+  const useCoverage = options.coverage !== false && s.config.levels.some((l) => l.coverage !== null)
   const scratch = useCoverage ? createScratch(options.root) : null
   const out = scratch ? mkdtempSync(join(tmpdir(), 'lntt-cov-')) : ''
   const cache = new Map<string, Map<string, Set<number>> | null>()
+  // Coverage a level has and the caller did not ask for, as against a level without any.
+  const skipped = (groups: Candidate[]) => !useCoverage && groups.some((g) => g.level.coverage !== null)
   try {
     return changed.map(([file, lines]) => {
       if (!existsSync(join(options.root, file))) return result('touched', 'INFO', file, null, 'deleted')
@@ -514,7 +516,7 @@ function touched(options: CheckOptions, s: Scope): Result[] {
           'INFO',
           file,
           null,
-          `lines ${ranges([...lines])}: tests that import it, from imports (no coverage for their level): ${all.join(', ')}`,
+          `lines ${ranges([...lines])}: tests that import it, from imports (${skipped(groups) ? 'coverage not run' : 'no coverage for their level'}): ${all.join(', ')}`,
         )
       }
       const byTests = new Map<string, number[]>()

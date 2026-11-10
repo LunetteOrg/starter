@@ -1,14 +1,16 @@
 ---
 name: mutation-check
-description: Check that a test falls for the right reason before it is accepted — break the line it guards with lntt check tests mutate, see which test fails and why, and report the mutation in the pull request body. Reads `tests.levels` from `.agents/config.*`. Use after writing or changing a test that guards a line, before the first review round of a change that adds tests, and when asked whether a test would catch the code being wrong.
+description: Check by hand that a test fails for the right reason — break the line it guards with lntt check tests mutate and see which test fails and why. A tool, never required. Reads `tests.levels` from `.agents/config.*`. Use when the author doubts a test, when a note of the `tests` review lens proposes a mutation, and when asked whether a test would catch the code being wrong.
 ---
 
 # Mutation check
 
-A test is accepted when it fails for the right reason, not when it passes: it comes with
-`lntt`, as the `tests` lens of `lntt review` does. This skill is the procedure the author
-follows before the first review round; the lens proposes mutations of its own
-afterwards. Never edit it to fit one project.
+A test fails for the right reason, not only passes. Whether it does is read first, by
+the author and by the `tests` lens of `lntt review`, which runs no test; a mutation is
+the proof when reading leaves a doubt. This skill is a tool the author runs by hand,
+never required: on a test the author doubts, or on a note of the `tests` lens that ends
+with ``mutate: `text` => `mutated` ``. Every mutation runs the tests of the files that
+import the changed one: pick the few that matter. Never edit it to fit one project.
 
 ## 1. Anchor and read
 
@@ -20,7 +22,7 @@ afterwards. Never edit it to fit one project.
 
 ## 2. Pick the lines
 
-For each test the change adds or alters, name the line it guards: the line whose
+For each test in doubt, name the line it guards: the line whose
 behaviour would be wrong if the test were missing. Wiring before units: the line that
 decides which value goes to which caller, which id reaches which client, whether a call
 happens at all, comes before the functions it connects. A test that guards no line you
@@ -64,11 +66,10 @@ restored by hand, and the working tree is never written.
 
 ## 5. Report
 
-In the pull request body, where the project's template lists the checks: one line per
-test that guards a line, with the mutation and its outcome.
+A mutation run may be cited where it settles something: in the answer to the review
+note that proposed it, or in the pull request body, one line each. Nothing in the
+process or in `lntt check body` asks for one.
 
 ```
 - path/to/file.ts:42 `if (consent)` => `if (!consent)`: killed by "sends no event without consent"
 ```
-
-A line reported as not checked keeps its reason.

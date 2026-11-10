@@ -206,8 +206,10 @@ project's check.
   its `anchor`; a rule with `assertedBy` is cited, not checked.
 - **touched** (`--base`): per changed source file, the tests that run its changed lines
   (from the `coverage` command of their level, an lcov file at `{out}/lcov.info`) and
-  the lines no test runs; without `coverage`, the tests that import the file.
-- **mutate** `path:line --text=<on that line> --to=<mutated>`: applied in a scratch git
+  the lines no test runs; without `coverage`, the tests that import the file. A round of
+  `lntt review` runs no coverage: it gets the tests that import the file.
+- **mutate** `path:line --text=<on that line> --to=<mutated>`, a tool run by hand (the
+  `mutation-check` skill), never by a review round: applied in a scratch git
   worktree (the head and the uncommitted files, dependencies shared; the working tree is
   never written), runs the tests that import the file with the `run` command of their
   level, `repeat` times in a row. For a file that is not code (`.md`, `.json`, `.yml`…)
@@ -538,10 +540,9 @@ A round, on a clean working tree:
    clean at the head). A finding on a line past the end of its file is refuted there,
    with no verifier; the others take the line's text to their verifiers. A file that is
    not there goes to the verifiers: the change may delete it.
-   **Mutations**: a `tests` finding that ends with ``mutate: `text` => `mutated` `` is
-   run between the reviewers and the verifiers (`lntt check tests mutate`, one scratch
-   copy for the round): survived confirms the finding and killed refutes it, the run
-   being the proof, with no verifier asked.
+   **No test runs** in a round: a `tests` note that ends with
+   ``mutate: `text` => `mutated` `` is a mutation for the author to run by hand
+   (`lntt check tests mutate`); a finding with one is verified like any other.
 5. **Verifiers**, all at once: each blocker and warning (`delivery.review.verify`) goes
    to every verifier but the agents that found it, briefed to refute it
    ([`agents/verify.md`](./agents/verify.md)), with the same list in `development`.

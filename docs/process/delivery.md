@@ -37,9 +37,7 @@ stops at the draft pull request.
 1. **Draft.** A pull request opens as a draft. A draft runs no CI in the cloud
    ([CI](./ci.md)), only the [candidate guard](#a-pull-request-left-on-main); a pull request opened ready into `main` runs the full CI once on
    its `opened` event, before the automation moves it onto the candidate.
-2. **Review on the machine.** Before the first round, the author checks each test the
-   change adds or alters that guards a line with the `mutation-check` skill
-   ([test checks](../adr/test-checks.md#decision)). The review runs on the local branch with `lntt review`
+2. **Review on the machine.** The review runs on the local branch with `lntt review`
    (the `review` skill), and fixes are local commits, each inside a round the branch may
    still take: past `delivery.review.maxRounds`, only once the person grants one. Reviewers start with no context
    of the conversation that wrote the change, each lens on the agents and models of
@@ -51,7 +49,9 @@ stops at the draft pull request.
    branch takes at most `delivery.review.maxRounds` rounds; at the limit the person
    decides on what is still open: the pull request as it is, more rounds for that
    branch, or an issue
-   ([review agents](../adr/review-agents.md)).
+   ([review agents](../adr/review-agents.md)). The tests run once per pull request, in
+   `pnpm ci:local` (below) and in the CI, never in a round
+   ([test checks](../adr/test-checks.md#decision)).
 3. **`pnpm ci:local` green** on the head about to be published, then one push, then
    `lntt check body` clean on the body, then `gh pr ready`. A red `ci:local` goes back
    into the review.
@@ -90,9 +90,7 @@ and is written in `delivery.pullRequest.language`:
 - **Pre-existing findings**: what `lntt review` lists as pre-existing, on lines the
   change did not touch, each with its id, `path:line` and sentence. They do not block;
   at the squash the person decides, one by one, whether each becomes an issue.
-- **Checks**: `pnpm ci:local` on the commit pushed, with its outcome, and for each test
-  the change adds or alters that guards a line the mutation that makes it fail (the `mutation-check` skill,
-  [test checks](../adr/test-checks.md)).
+- **Checks**: `pnpm ci:local` on the commit pushed, with its outcome.
 - **The retrospective block**: the labels of `delivery.pullRequest.retrospective`
   between `<!-- retro:start -->` and `<!-- retro:end -->`, each with a value or the
   configured `none`. The `retrospective` skill fills it from the branch's `Retro:`
