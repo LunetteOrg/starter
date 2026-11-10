@@ -160,12 +160,15 @@ message and a different line, so the message of a hook stays the same across ver
   the dependencies with pnpm, the manager of a Lunette project, or with `npm ci` in a
   project that has only a `package-lock.json`; another lockfile (yarn, bun) gets pnpm
   too. It installs `lntt`, so it is a shell line that needs no `lntt`.
+
 The typecheck and the formatting are the pre-commit's alone: it formats the staged files
 and stages the fix, and runs the typecheck (`lefthook.yml`, in this repo and in every
 template), and no hook runs either while the agent works. `lntt sync` writes no `Stop`
 hook and removes the typecheck hook a version up to 0.6.4 wrote, told by its status
 message `lntt: typecheck`, with the project's other hooks left as they are (an event
-left with no entry goes too). `local.hooks` is not in the configuration schema:
+left with no entry goes too; a `Stop` that was already empty stays, and one whose shape
+Claude Code does not read makes the file invalid, which `lntt sync` refuses like any other
+key it reads). `local.hooks` is not in the configuration schema:
 `lntt validate` fails on it with a message that names the key, the release that removed
 it (0.6.5) and what to do, as the
 [removal rule](./lntt-command.md#gates-and-agent-tools-one-package-two-groups-one-compatibility-rule)

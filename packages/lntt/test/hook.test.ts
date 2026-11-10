@@ -43,6 +43,7 @@ describe('lntt hook typecheck, removed in 0.6.5', () => {
 // (the `command` of hooks.Stop[0].hooks[0], decoded, of this repository's .claude/settings.json
 // at c629a10, the commit before the removal: git show c629a10:.claude/settings.json).
 const LINE_0_6_4 =
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: a shell expansion, kept as the line had it
   'cd "$CLAUDE_PROJECT_DIR" || exit 0; [ -x node_modules/.bin/lntt ] || exit 0; node_modules/.bin/lntt hook typecheck; s=$?; [ $s -eq 1 ] && exit 2; [ $s -eq 2 ] || exit 0; t="${TMPDIR:-/tmp}/lntt-hook-typecheck-$PPID"; [ -f "$t" ] && exit 0; : > "$t"; printf \'{"systemMessage":"this lntt has no lntt hook, which came with @lntt/lntt 0.6.3: run pnpm up @lntt/lntt"}\\n\''
 
 describe('the Stop line of 0.6.4 against this lntt', () => {
