@@ -99,7 +99,9 @@ same way every time; the `review` skill keeps the judgement.
   failed; notes and pre-existing findings are reported, never blocking. Past `warningRounds` a round is clean with
   warnings left too (below). A finding is a bullet with its severity,
   an anchor (a line as `:12`, a range, a column or a list, each naming its first line,
-  and an optional parenthesis after it) and its text (the action after a last separator,
+  and an optional parenthesis after it; a path with a space goes between backticks,
+  bold stars around them allowed, and is read whole, any other anchor ends at its first
+  space) and its text (the action after a last separator,
   when there is one), wrapped over as many lines as the reviewer likes. A finding may
   name several places (`a.md:24-32 e :34-37`): the first is the anchor, checked and
   cited; the others stay in the text, unchecked. A line with no path-like token before

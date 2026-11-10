@@ -1121,6 +1121,53 @@ describe('what the fourth real round taught', () => {
     )
   })
 
+  test('an anchor between backticks is read whole, spaces included, and the places after it still are', () => {
+    const lines = [
+      '- [warning] `a dir/b c.md:3` — what — act',
+      '- [warning] `a dir/b c.md:3` e `x y.md:5` — what — act',
+      '- [warning] [pre-existing] `docs/my notes.md:12` (the intro) — what — act',
+      '- [warning] `a - b.md:7` — what — act',
+      '- [warning] `a b.md:1`, `c d.md:2` — what — act',
+      '- [warning] **`e f.md:4`** — what — act',
+    ]
+    for (const line of lines) assert.equal(unreadableFindings(line), 0, line)
+    assert.deepEqual(
+      parseFindings(lines.join('\n')).map((f) => [f.path, f.line, f.what, f.action]),
+      [
+        ['a dir/b c.md', 3, 'what', 'act'],
+        ['a dir/b c.md', 3, 'what (also x y.md:5)', 'act'],
+        ['docs/my notes.md', 12, 'what', 'act'],
+        ['a - b.md', 7, 'what', 'act'],
+        ['a b.md', 1, 'what (also c d.md:2)', 'act'],
+        ['e f.md', 4, 'what', 'act'],
+      ],
+    )
+    for (const f of parseFindings(lines.join('\n'))) {
+      for (const field of [f.path, f.what, f.action]) assert.equal(field?.includes('\u0000'), false, field ?? '')
+    }
+  })
+
+  test('a backtick that does not open a span at a word start masks nothing', () => {
+    const lines = [
+      '- [warning] a.md:3` — what `x` — act',
+      '- [warning] a.md:3 — the `x y — act',
+      '- [warning] a.md:3 — the `` and `x y` — act',
+      '- [warning] `a.ts:3` — use `a - b` — act',
+      // a star glued to a word counts as a bold star: the span may be masked, and the finding reads the same
+      '- [warning] a.md:3 — 2*`x y` — act',
+    ]
+    assert.deepEqual(
+      parseFindings(lines.join('\n')).map((f) => [f.path, f.line, f.what, f.action]),
+      [
+        ['a.md', 3, 'what `x`', 'act'],
+        ['a.md', 3, 'the `x y', 'act'],
+        ['a.md', 3, 'the `` and `x y`', 'act'],
+        ['a.ts', 3, 'use `a - b`', 'act'],
+        ['a.md', 3, '2*`x y`', 'act'],
+      ],
+    )
+  })
+
   test('a line with no path-like token before the separator is a finding with no anchor', () => {
     const line = '- [note] not checked: needs `pnpm ci:local --list`. Verify the step — it was not run.'
     assert.equal(unreadableFindings(line), 0)
