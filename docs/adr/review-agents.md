@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-11-06
+date: 2026-11-10
 tags: [review, agents, models, cost, lntt]
 ---
 
@@ -35,15 +35,17 @@ same way every time; the `review` skill keeps the judgement.
   a recording rule; a contradiction with an accepted record stays a blocker. So the
   decisions lens runs on a cheap model, and a broken reference or a residue is found
   the same way every round. The `tests` lens gets `levels`, `focus`, `rules` and
-  `touched` the same way, and keeps the level of each test, the stubs, the expected
-  values and the choice of mutations
+  `touched` the same way, `touched` from the diff and the imports, and keeps the level
+  of each test, the stubs, the expected values and the choice of mutations
   ([test checks](./test-checks.md)).
-- **A mutation a reviewer proposes is run, not argued.** The `tests` reviewer ends a
-  finding line with ``mutate: `text` => `mutated` ``; between the reviewers and the
-  verifiers `lntt review` runs each (`lntt check tests mutate`) on a scratch copy of
-  the head. A surviving mutant confirms the finding and a killed one refutes it, with
-  the run as the proof and no verifier asked; a run that could not happen leaves the
-  finding to the verifiers.
+- **A round runs no test.** It reads: the static checks of `lntt check`, the reviewers,
+  the citations, the verifiers; no coverage run, no mutation run, no scratch copy of
+  the head. A test the `tests` reviewer suspects would still pass with the line wrong is
+  a note that ends with ``mutate: `text` => `mutated` ``, for the author to run by hand
+  (`lntt check tests mutate`); a finding with a mutation is verified by reading at its
+  severity, like any other. When the tests run is the delivery process's
+  ([delivery](../process/delivery.md)); coverage belongs to a periodic check of the whole
+  project (#311), not to a round or a pull request.
 - **Every finding is cited before it is verified:** `lntt check cite` reads its line in
   the working tree, which a round keeps clean at the head. A finding on a line past the
   end of its file is refuted there, by `lntt check cite`, and costs no verifier; the
@@ -63,7 +65,7 @@ same way every time; the `review` skill keeps the judgement.
   lens briefs name none of those rules.
 - **Adversarial verification:** every finding at a severity in `verify.severities`
   goes, at once, to every verifier in `verify.with` other than the agents that found it,
-  each briefed to refute it (except a finding a mutation run decides, above); when those
+  each briefed to refute it; when those
   left are all optional, the required finders verify too, so a finding always has a
   required verifier. The verdict counts the
   verifiers that answered: all confirm, confirmed; all refute, refuted, kept out of the
@@ -117,8 +119,7 @@ same way every time; the `review` skill keeps the judgement.
 - **The branch keeps a ledger of what it closed**, next to its state, in the place
   described above: every finding the branch is done with, with its outcome. *Fixed*: one
   carried from an earlier round and refuted on a later head, with that head. *Refuted*:
-  a fresh one refuted, with the proof (the verifiers', `lntt check cite`'s, a killed
-  mutant's), or withdrawn by its reviewers, with the author's answer. *Accepted open*: a
+  a fresh one refuted, with the proof (the verifiers', `lntt check cite`'s), or withdrawn by its reviewers, with the author's answer. *Accepted open*: a
   note, or a confirmed warning past `warningRounds`, with the reason. Each entry keeps
   what its line read when it was closed. Only a round with no failure and no `partial`
   lens adds to it, since the next round reads its range again; a ledger that cannot be
@@ -248,10 +249,6 @@ same way every time; the `review` skill keeps the judgement.
   costs one call per agent and lens, plus one per verifier and finding.
 - A failed round counts toward `maxRounds`: a reviewer that keeps failing can bring a
   branch to the limit with nothing found, and the person decides there.
-- A round executes the project's own test commands (`tests.levels[].run` for the
-  mutations a reviewer proposes, `coverage` for `touched`) on a scratch copy of the head,
-  with the environment of `lntt` less `NODE_TEST*` variables: a project's tests run on
-  the machine of the person who runs the round.
 - The diff travels in the prompt: a very large change may not fit an agent's context.
 - The adapters follow `claude -p` and `opencode run`, whose flags change; the tests pin
   the calls, a trial round against the real tools confirms them.
@@ -278,8 +275,9 @@ same way every time; the `review` skill keeps the judgement.
   one worktree ran at once in #287); the removal is serialised by a guard file.
 - **A lock live only by its pid.** A holder in another pid namespace, or of another
   user, is not seen as running by `kill(pid, 0)`; the heartbeat and EPERM decide too.
-- **A lock dead as soon as its heartbeat stops.** A round blocks the event loop for
-  minutes in its mutation runs, so a quiet lock proves nothing while the pid answers.
+- **A lock dead as soon as its heartbeat stops.** `lntt check tests mutate` blocks the
+  event loop for minutes in its runs, so a quiet lock proves nothing while the pid
+  answers.
 - **One state per worktree, in the worktree's git directory.** A review on another branch
   in the same worktree overwrote the state and the ledger of the branch before it, closing
   the worktree deleted them, and the other worktrees of the clone could not see them.

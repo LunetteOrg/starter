@@ -15,7 +15,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { availableParallelism, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import { CannotRunError, type Result } from './check.ts'
 import { exit } from './exit.ts'
@@ -280,29 +280,20 @@ async function runFile(level: Level, file: string, scratch: string, signal?: Abo
   return last
 }
 
-// Every file of a level at once, up to the cores less one; a file that fails ends the others.
+// Every file of a level, one at a time; a file that fails ends the rest, a file that hangs does not.
 async function runFiles(
   level: Level,
   files: string[],
   scratch: string,
   signal?: AbortSignal,
 ): Promise<{ file: string; run: FileRun }[]> {
-  const ended = new AbortController()
-  const stop = () => ended.abort()
-  signal?.addEventListener('abort', stop, { once: true })
-  const results: { file: string; run: FileRun }[] = new Array(files.length)
-  let next = 0
-  const worker = async () => {
-    for (let i = next++; i < files.length; i = next++) {
-      const file = files[i] as string
-      const run = await runFile(level, file, scratch, ended.signal)
-      results[i] = { file, run }
-      if (run.code !== 0 && !run.timedOut && !run.cancelled) ended.abort()
-    }
+  const results: { file: string; run: FileRun }[] = []
+  for (const file of files) {
+    if (signal?.aborted) break
+    const run = await runFile(level, file, scratch, signal)
+    results.push({ file, run })
+    if (run.code !== 0 && !run.timedOut && !run.cancelled) break
   }
-  const width = Math.max(1, Math.min(files.length, availableParallelism() - 1))
-  await Promise.all(Array.from({ length: width }, worker))
-  signal?.removeEventListener('abort', stop)
   return results
 }
 

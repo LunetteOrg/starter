@@ -42,6 +42,9 @@ export interface CheckOptions {
   data: Record<string, unknown>
   // Limits a check to what the diff from this ref touches, where that makes sense.
   base?: string
+  // `tests touched`: false places the lines from the imports alone and runs no test, as
+  // lntt review does; by default a level with `coverage` runs it.
+  coverage?: boolean
   // `tests mutate`: what is on the line, and what it becomes.
   mutation?: { text: string; to: string }
   // `body`: the pull request body read, and where from; the area does not run without it.

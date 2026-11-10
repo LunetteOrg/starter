@@ -8,7 +8,7 @@ import { cwd, env, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { projectBase } from './base.ts'
 import { type BranchRules, branchRules, fromToolName } from './branch.ts'
-import { cite, formatJson, isArea, projectFiles, runArea } from './check.ts'
+import { cite, formatJson, isArea, runArea } from './check.ts'
 import { localRef } from './ci/event.ts'
 import { Exit, exit, leave } from './exit.ts'
 import { NoConfigError } from './files.ts'
@@ -25,7 +25,6 @@ import {
 import { findConfig, loadConfig, projectPhase } from './index.ts'
 import { type Message, pending, type Started, send, startedBy } from './messages.ts'
 import { messagesRoot, systemMailbox } from './messages-cli.ts'
-import { describeOutcome, mutateAll } from './mutate.ts'
 import { loadOperator, slug } from './operator.ts'
 import { orcaSubagents, type Subagents } from './orca-subagents.ts'
 import { runQuery } from './query.ts'
@@ -38,7 +37,6 @@ import {
   formatTokens,
   type Ledger,
   lensApplies,
-  type MutationAnswer,
   parseWithdrawal,
   type ReviewConfig,
   type ReviewState,
@@ -593,26 +591,6 @@ function untouchedIn(diff: string): (path: string, line: number) => boolean {
   return (path, line) => touched !== null && !touched.get(path)?.has(line)
 }
 
-// The mutations the reviewers proposed, run on a scratch copy of the head: the tree the
-// reviewers read is not touched. A run that cannot happen (a project without tests.levels,
-// no scratch worktree) leaves the finding to the verifiers.
-async function runMutations(
-  root: string,
-  data: Record<string, unknown>,
-  mutations: { path: string; line: number; text: string; to: string }[],
-): Promise<MutationAnswer[]> {
-  try {
-    const { outcomes } = await mutateAll({ root, data, files: projectFiles(root) }, mutations, interrupted.signal)
-    return outcomes.map((outcome, i) => {
-      const { message } = describeOutcome(mutations[i] as (typeof mutations)[number], outcome)
-      const decided = outcome.outcome === 'killed' ? 'killed' : outcome.outcome === 'survived' ? 'survived' : null
-      return { decided, proof: message }
-    })
-  } catch (error) {
-    return mutations.map(() => ({ decided: null, proof: `could not run: ${(error as Error).message}` }))
-  }
-}
-
 async function round(args: string[]): Promise<number> {
   const { values } = parseArgs({
     args,
@@ -690,7 +668,11 @@ async function round(args: string[]): Promise<number> {
   const checks = Object.fromEntries(
     files.length === 0
       ? []
-      : areas.map((area) => [area, formatJson(runArea(area, undefined, [], { root, data, base: range.from }))]),
+      : // A round runs no test: touched places the lines from the imports, never by coverage.
+        areas.map((area) => [
+          area,
+          formatJson(runArea(area, undefined, [], { root, data, base: range.from, coverage: false })),
+        ]),
   )
   const report = reporter(orcaSubagents(env, root))
   const began = Date.now()
@@ -724,7 +706,6 @@ async function round(args: string[]): Promise<number> {
         ),
       ),
       cite: (path, line) => cite(root, path, line),
-      mutate: async (mutations) => runMutations(root, data, mutations),
     },
     (questions) => {
       report.phase(questions.map((q) => q.label ?? ''))

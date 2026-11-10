@@ -1344,7 +1344,7 @@
         "coverage": {
           "type": "string",
           "minLength": 1,
-          "description": "Like run, plus coverage: it must write an lcov file at {out}/lcov.info. Read by lntt check tests touched; without it the tests of a line are found from imports."
+          "description": "Like run, plus coverage: it must write an lcov file at {out}/lcov.info. Read by lntt check tests touched run by hand (a round of lntt review runs no coverage); without it the tests of a line are found from imports."
         },
         "cwd": {
           "type": "string",

@@ -201,8 +201,8 @@ rests on these criteria:
    `lntt get` and `lntt set` (gates) and `lntt board ready` (an agent tool);
    `commit-message` (`lntt get`, commitlint) and `roadmap` (`lntt get`, `lntt set`) stay on
    the gate side. In the code, `lntt review` imports the check
-   areas and the mutations and runs them in-process (`packages/lntt/src/review-cli.ts`
-   imports `runArea` and `mutateAll`), and `lntt worktree start` names branches with
+   areas and runs them in-process (`packages/lntt/src/review-cli.ts`
+   imports `runArea`), and `lntt worktree start` names branches with
    the gate's code (`packages/lntt/src/worktree-cli.ts` imports `branchName` and
    `checkBranch`).
 5. **The cost of a split.** A second package needs its placeholder published by hand

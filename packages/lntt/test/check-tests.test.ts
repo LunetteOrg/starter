@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import type { Result } from '../src/check.ts'
-import { recordMissing } from '../src/check-tests.ts'
+import { recordMissing, runTests } from '../src/check-tests.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const BIN = resolve(HERE, '../bin/lntt.ts')
@@ -338,6 +338,27 @@ describe('lntt check tests touched', () => {
     const r = results(['check', 'tests', 'touched', '--base', 'HEAD~1'])
     const price = r.results.find((x) => x.path === 'src/price.ts')
     assert.match(price?.message ?? '', /from imports \(no coverage for their level\): test\/price\.test\.ts/)
+  })
+
+  test('asked for no coverage, as a review round asks, the tests come from imports and the message says which is the case', () => {
+    mutateProject()
+    writeFileSync(
+      join(repo, 'src/price.ts'),
+      `// changed\n${execFileSync('cat', [join(repo, 'src/price.ts')], { encoding: 'utf8' })}`,
+    )
+    git('commit', '-qam', 'change')
+    const touched = (data: Record<string, unknown>) =>
+      runTests('touched', { root: repo, data, base: 'HEAD~1', coverage: false }).find((x) => x.path === 'src/price.ts')
+        ?.message ?? ''
+    const levels = (coverage?: string) => ({
+      tests: {
+        levels: [
+          { name: 'unit', files: ['test/*.test.ts'], run: 'node --test {files}', ...(coverage ? { coverage } : {}) },
+        ],
+      },
+    })
+    assert.match(touched(levels(COVERAGE)), /from imports \(coverage not run\): test\/price\.test\.ts/)
+    assert.match(touched(levels()), /from imports \(no coverage for their level\): test\/price\.test\.ts/)
   })
 
   test('a changed file no test imports is reported as such', () => {
