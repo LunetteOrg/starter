@@ -1271,6 +1271,10 @@ export async function main([command, ...args]: string[]): Promise<void> {
     stopAgentsOnInterrupt()
     exit(command === 'reply' ? await reply(args) : await round(command === undefined ? [] : [command, ...args]))
   } catch (error) {
+    // The abort of an interrupt is what ended the round: the handler of the signal owns the
+    // exit (130, after the agents had their five seconds), so a round that fails or ends
+    // meanwhile does not exit first with 1.
+    if (interrupted.signal.aborted) await new Promise<never>(() => {})
     if (error instanceof Exit) throw error
     if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
       usage(error.message)
