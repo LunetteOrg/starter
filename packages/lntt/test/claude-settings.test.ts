@@ -244,6 +244,12 @@ describe('the Claude Code settings lntt sync writes', () => {
     assert.deepEqual(read().hooks.Stop, [{ hooks: [own] }, { hooks: [own] }])
   })
 
+  test('an entry with no hooks stays, beside the one removed', () => {
+    write({ hooks: { Stop: [{ matcher: 'x' }, { hooks: [OLD_TYPECHECK] }] } })
+    syncClaudeSettings(root)
+    assert.deepEqual(read().hooks.Stop, [{ matcher: 'x' }])
+  })
+
   test('two entries that are both its own leave no Stop at all', () => {
     write({ hooks: { Stop: [{ hooks: [OLD_TYPECHECK] }, { hooks: [OLD_TYPECHECK] }] } })
     syncClaudeSettings(root)

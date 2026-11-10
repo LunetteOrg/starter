@@ -181,7 +181,7 @@ function placeHook(text: string, list: HookEntry[] | undefined, placed: Placed):
 // one up: an entry left with no hook goes with it, and the event when no entry is left. The
 // project's own Stop hooks stay as they are, an empty Stop of the project's too. A hook the
 // project wrote with that very status message goes: the message is how lntt tells its own.
-// The shape is the one `wellShaped` checked.
+// The list comes from `load`, which checked its shape (`wellShaped`).
 function removeStopTypecheck(text: string, list: HookEntry[] | undefined): string {
   if (list === undefined) return text
   const mine = (h: Hook) => h.statusMessage === REMOVED_STATUS

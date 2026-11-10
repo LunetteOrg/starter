@@ -40,8 +40,8 @@ describe('lntt hook typecheck, removed in 0.6.5', () => {
 })
 
 // The Stop line of a sync of 0.6.4, as .claude/settings.json held it, run against this lntt
-// (copied from this repository's .claude/settings.json at c629a10, the commit before its removal:
-// git show c629a10:.claude/settings.json).
+// (the `command` of hooks.Stop[0].hooks[0], decoded, of this repository's .claude/settings.json
+// at c629a10, the commit before the removal: git show c629a10:.claude/settings.json).
 const LINE_0_6_4 =
   'cd "$CLAUDE_PROJECT_DIR" || exit 0; [ -x node_modules/.bin/lntt ] || exit 0; node_modules/.bin/lntt hook typecheck; s=$?; [ $s -eq 1 ] && exit 2; [ $s -eq 2 ] || exit 0; t="${TMPDIR:-/tmp}/lntt-hook-typecheck-$PPID"; [ -f "$t" ] && exit 0; : > "$t"; printf \'{"systemMessage":"this lntt has no lntt hook, which came with @lntt/lntt 0.6.3: run pnpm up @lntt/lntt"}\\n\''
 
