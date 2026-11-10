@@ -76,7 +76,8 @@ and a mutation run by hand is the proof when reading leaves a doubt.
     the author starts during a round is refused until the round ends; outside a git
     directory it cannot run (`lntt: error:`, exit 1, not a `NOT RUN`).
     - **The author names the tests.** The author who has just written the test knows which
-      file guards the line; `mutate` runs those files and no other, in the order given.
+      file guards the line; `mutate` runs those files and no other: the levels in the order of `tests.levels`, the
+      files of a level in the order given.
       A call with no `--test` is a usage error (exit 2).
     - **The files run one at a time,** and the first one that fails stops the rest: the
       mutation is killed.

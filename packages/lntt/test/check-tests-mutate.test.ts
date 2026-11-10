@@ -108,7 +108,7 @@ describe('lntt check tests mutate', () => {
     const gone = mutate('src/price.ts:7', 'total > 100', 'x', ['test/skill.test.ts']).result
     assert.equal(gone.status, 'NOT RUN')
     assert.match(gone.message, /--test test\/skill\.test\.ts: no such file in the project/)
-    for (const test of ['../outside.test.ts', '/etc/hosts']) {
+    for (const test of ['../outside.test.ts', '/etc/hosts', 'test/../src/price.ts']) {
       const outside = mutate('src/price.ts:7', 'total > 100', 'x', [test]).result
       assert.equal(outside.status, 'NOT RUN', test)
       assert.match(outside.message, /no such file in the project/)
@@ -305,6 +305,7 @@ describe('lntt check tests mutate', () => {
     assert.equal(noTest.status, 2)
     assert.match(noTest.stderr, /mutate needs --test <test file>/)
     assert.equal(run('src/price.ts:7', '--text=x', '--to=y', '--test=').status, 2)
+    assert.equal(run('src/price.ts:7', '--text=x', '--to=y', '--test=-x').status, 2)
     for (const flag of ['--text=x', '--test=test/price.test.ts']) {
       assert.equal(spawnSync(process.execPath, [BIN, 'check', 'tests', 'focus', flag], { cwd: repo }).status, 2, flag)
     }
@@ -391,6 +392,38 @@ describe('lntt check tests mutate: the test files the author names', () => {
     assert.equal(result.status, 'FAIL', result.message)
     assert.match(result.message, /survived: 2 test files still pass \(test\/second\.test\.ts, test\/first\.test\.ts\)/)
     assert.equal(readFileSync(marker(), 'utf8'), 'second first ', 'in order, price.test.ts and the others not run')
+  })
+
+  test('a file named twice runs once', () => {
+    mark('once', "assert.equal(label(50), 'small')")
+    const { result } = mutate('src/price.ts:7', 'total > 100', 'total >= 100', [
+      'test/once.test.ts',
+      'test/once.test.ts',
+    ])
+    assert.match(result.message, /survived: 1 test file still pass \(test\/once\.test\.ts\)/)
+    assert.equal(readFileSync(marker(), 'utf8'), 'once ')
+  })
+
+  test('two levels run in the order of tests.levels, whatever the order of --test', () => {
+    writeFileSync(
+      join(repo, '.agents/config.jsonc'),
+      JSON.stringify({
+        tests: {
+          levels: [
+            { name: 'a', files: ['test/first.test.ts'], run: 'node --test {files}' },
+            { name: 'b', files: ['test/second.test.ts'], run: 'node --test {files}' },
+          ],
+        },
+      }),
+    )
+    mark('first', "assert.equal(label(50), 'small')")
+    mark('second', "assert.equal(label(50), 'small')")
+    const { result } = mutate('src/price.ts:7', 'total > 100', 'total >= 100', [
+      'test/second.test.ts',
+      'test/first.test.ts',
+    ])
+    assert.match(result.message, /\(test\/first\.test\.ts, test\/second\.test\.ts\)/)
+    assert.equal(readFileSync(marker(), 'utf8'), 'first second ')
   })
 
   test('the first file that fails ends the run: the files after it do not run', () => {
