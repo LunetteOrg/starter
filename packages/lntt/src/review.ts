@@ -131,8 +131,8 @@ export interface Finding {
   line: number | null
   what: string
   action: string
-  // The tests reviewer's proof request: break this text on the line and see whether a
-  // test fails (lntt check tests mutate).
+  // The tests reviewer's suggestion to the author: break this text on the line and see
+  // whether a test fails, by hand (lntt check tests mutate). The round never runs it.
   mutation?: { text: string; to: string }
   // Marked `[pre-existing]` after the severity: a line the change did not touch, which the
   // change does not contradict. lntt keeps the mark only on a line the branch left untouched.
@@ -890,18 +890,7 @@ export interface RoundInput extends PromptValues {
   // What a finding's line reads in the working tree, clean at the head (lntt check cite),
   // or what does not exist: the file, or the line.
   cite?: (path: string, line: number | null) => { text: string | null } | { missing: string; what: 'file' | 'line' }
-  // Runs the mutations the reviewers proposed (lntt check tests mutate), one answer each,
-  // in order. A killed or survived mutant is the proof itself; `null` is a run that
-  // could not happen (the reason is the proof), and the verifiers decide.
-  mutate?: (mutations: { path: string; line: number; text: string; to: string }[]) => Promise<MutationAnswer[]>
 }
-
-export interface MutationAnswer {
-  decided: 'killed' | 'survived' | null
-  proof: string
-}
-
-export const MUTATE_PROOF = 'lntt check tests mutate'
 
 function addTokens(total: number | null, answer: Answer): number | null {
   return answer.ok && answer.reply.tokens !== null ? (total ?? 0) + answer.reply.tokens : total
@@ -1047,24 +1036,9 @@ export async function runRound(
     }
   }
   const kept = found.filter((f) => carried.some((c) => c.id === f.id)).length
-  // A mutation that was run decides its finding: survived confirms it, killed refutes
-  // it, and the verifiers are not asked.
-  const mutated = new Map<number, MutationAnswer>()
-  const asked = found.flatMap((f, i) => (f.mutation && f.path !== null && f.line !== null ? [i] : []))
-  if (input.mutate && asked.length > 0) {
-    const answers = await input.mutate(
-      asked.map((i) => {
-        const f = found[i] as Found
-        return { path: f.path as string, line: f.line as number, ...(f.mutation as { text: string; to: string }) }
-      }),
-    )
-    for (const [n, a] of answers.entries()) mutated.set(asked[n] as number, a)
-  }
-  const decided = (i: number): boolean => mutated.get(i)?.decided != null
+  // A finding that proposes a mutation is read like any other: the round runs no test.
   const verified = (i: number): boolean =>
-    !decided(i) &&
-    config.verify !== null &&
-    (i < kept || config.verify.severities.includes((found[i] as Found).severity))
+    config.verify !== null && (i < kept || config.verify.severities.includes((found[i] as Found).severity))
 
   const checks: { finding: number; agent: Agent }[] = []
   found.forEach((f, i) => {
@@ -1081,13 +1055,7 @@ export async function runRound(
         })),
       )
     : Promise.resolve([]))
-  const proofs: Proof[][] = found.map((_, i) => {
-    const m = mutated.get(i)
-    if (!m) return []
-    if (m.decided)
-      return [{ by: MUTATE_PROOF, outcome: m.decided === 'survived' ? 'confirmed' : 'refuted', proof: m.proof }]
-    return [{ by: MUTATE_PROOF, outcome: 'undecided', proof: m.proof, failed: true }]
-  })
+  const proofs: Proof[][] = found.map(() => [])
   verdicts.forEach((answer, i) => {
     const check = checks[i] as (typeof checks)[number]
     account(result, answer, check.agent)
@@ -1108,11 +1076,9 @@ export async function runRound(
     const checked: Checked = {
       ...f,
       // Only the verifiers that answered decide; none answering leaves it undecided.
-      verdict: decided(i)
-        ? verdict(mine.map((p) => p.outcome))
-        : verified(i)
-          ? verdict(mine.filter((p) => !p.failed).map((p) => p.outcome))
-          : (before?.verdict ?? 'unverified'),
+      verdict: verified(i)
+        ? verdict(mine.filter((p) => !p.failed).map((p) => p.outcome))
+        : (before?.verdict ?? 'unverified'),
       proofs: mine,
     }
     if (checked.verdict === 'refuted') result.refuted.push(checked)

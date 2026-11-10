@@ -468,9 +468,12 @@ describe('the mutation-check skill', () => {
     assert.match(section(3), /Write `--text=\.\.\.` with the `=` when the text starts with `-`/)
   })
 
-  test('runs before the first review round, on the tests the change adds or alters', () => {
-    assert.match(guide(), /the procedure the author follows before the first review round/)
-    assert.match(section(2), /For each test the change adds or alters/)
+  test('is a tool run by hand, when a test is in doubt or a review note proposes a mutation, never required', () => {
+    assert.match(guide(), /a tool the author runs by hand, never required/)
+    assert.match(guide(), /a test the author doubts/)
+    assert.match(guide(), /a note of the `tests` lens/)
+    assert.doesNotMatch(guide(), /before the first review round/)
+    assert.match(section(2), /For each test in doubt/)
   })
 
   test('proposes the kinds of mutation the tests lens proposes', () => {
@@ -481,10 +484,11 @@ describe('the mutation-check skill', () => {
     }
   })
 
-  test('states the rule, and reports each mutation in the pull request body', () => {
-    assert.ok(guide().includes('A test is accepted when it fails for the right reason, not when it passes'))
-    assert.match(section(5), /^5\. Report In the pull request body/)
-    assert.match(section(5), /one line per test that guards a line, with the mutation and its outcome/)
+  test('states the rule, and asks for no mutation in the pull request body', () => {
+    assert.ok(guide().includes('A test fails for the right reason, not only passes'))
+    assert.match(section(5), /^5\. Report /)
+    assert.match(section(5), /Nothing in the process or in `lntt check body` asks for one/)
+    assert.doesNotMatch(section(5), /one line per test that guards a line/)
   })
 })
 

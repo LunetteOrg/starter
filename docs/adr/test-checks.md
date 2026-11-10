@@ -4,7 +4,7 @@ date: 2026-10-17
 tags: [lntt, tests, review, mutation]
 ---
 
-# `lntt check tests`: the test levels, and the mutations the author and the reviewer run
+# `lntt check tests`: the test levels, and the mutations run by hand
 
 ## Context
 
@@ -17,14 +17,16 @@ the whole suite weighs every line alike and costs a full run per mutant; the use
 mutations are few, and whoever reads the change knows which line a test guards. A suite
 can be fully green and hide an inverted flag, an id dropped from a call to a vendor or a
 guard removed, defects that breaking the guarded line on purpose finds and reading does
-not; the author, who knows which line each test of the change guards, can run that break before
-any reviewer reads the change.
+not. A run costs the tests of the files that import the changed one, minutes per
+mutation where the tests spawn processes, and work runs in parallel: several worktrees on
+one machine, each with its own review rounds, each round with its own runs.
 
 ## Decision
 
 `tests` is an area of [`lntt check`](./lntt-command.md), the one the `tests` lens reads
 ([review agents](./review-agents.md)). A test is accepted when it fails for the right
-reason, and sits at the lowest level where its assertion can.
+reason, and sits at the lowest level where its assertion can; that is judged by reading,
+and a mutation run by hand is the proof when reading leaves a doubt.
 
 - **The levels are configuration.** `tests.levels` lists them lowest first: `name`,
   `files` (globs) and `exclude`, `environment` (reported), `harness` (identifiers a
@@ -52,9 +54,14 @@ reason, and sits at the lowest level where its assertion can.
     its opening, so fenced lines are no heading.
   - `touched` (needs `--base`): the lines the diff changes and the tests that run them,
     from the `coverage` of the test files that import the changed file, or from imports
-    alone when a level has no `coverage`. Coverage says which tests to run and which
-    lines no test reaches; it is not an acceptance criterion.
-  - `mutate <path:line> --text <on the line> --to <mutated>`: applies the mutation,
+    alone when a level has no `coverage`. A review round asks for no coverage
+    (`coverage: false` in the options it passes) and gets the tests from imports alone,
+    with `coverage not run` in the message; `lntt check tests touched` run by hand keeps
+    coverage where a level has it. Coverage says which tests to run and which lines no
+    test reaches; it is not an acceptance criterion. Coverage of the project is measured
+    by a periodic check of the whole project (#311), not by a review round or a pull
+    request.
+  - `mutate <path:line> --text <on the line> --to <mutated>`, a tool run by hand: applies the mutation,
     runs the tests that import the file (a level's `repeat` times in a row; for a
     file that is not code and that no test imports, such as a `SKILL.md` a test reads
     as text, the test files whose text names the file's path or its last two
@@ -72,20 +79,21 @@ reason, and sits at the lowest level where its assertion can.
   files laid over it and the dependencies shared, and is removed when the run ends: the
   working tree is never written. A failure counts as killed only when the same tests
   pass without the mutation.
-- **A review round runs the mutations the tests reviewer proposes.** The reviewer ends a
-  finding line with ``mutate: `text` => `mutated` ``; between the reviewers and the
-  verifiers `lntt review` runs them all on one scratch. A surviving mutant confirms its
-  finding and a killed one refutes it, with the run as the proof and no verifier asked;
-  a run that could not happen is an undecided proof and the verifiers decide. The
-  brief asks for the mutations of the list that matter (a polarity flipped, an argument
+- **A review round runs no test.** It reads the static checks of `lntt check`, and the
+  `tests` lens judges by reading. A test the reviewer suspects would still pass with
+  the line wrong is a note that ends with ``mutate: `text` => `mutated` ``, the mutation
+  for the author to run by hand; no finding is confirmed or refuted by a run. The brief
+  asks for the mutations of the list that matter (a polarity flipped, an argument
   dropped, a guard or early return removed, the optimistic constant returned, the call
   removed), wiring before units.
-- **The author runs the mutation before the review.** A test the change adds or alters
-  that guards a line is accepted when a mutation of that line, run with `mutate`, is
-  killed by that test with a message that names the defect; a mutant that survives
-  means the test does not exist, whatever the coverage says. The procedure is the shared skill `mutation-check`; where
-  the outcome is reported is the project's delivery process (here,
-  [delivery](../process/delivery.md#the-pull-request-body)).
+- **The tests run once per pull request:** `pnpm ci:local` before the push, and the CI
+  ([delivery](../process/delivery.md)).
+- **A mutation is run by hand, never required.** The author runs `mutate` on a test they
+  doubt, or on the mutation a note of the `tests` lens proposes; a killed mutant counts
+  when the test that fails is the one that guards the line and its message names the
+  defect, and a surviving one means the test does not exist, whatever the coverage
+  says. The procedure is the shared skill `mutation-check`. Nothing in the process, the
+  pull request body or `lntt check body` asks for a mutation.
 - **The rule holds in every Lunette project.** It is decided here and reaches a project
   with `lntt`: `mutate`, the `tests` lens and the `mutation-check` skill. A project
   chooses its levels and the commands that run them, not whether the rule applies.
@@ -99,7 +107,11 @@ reason, and sits at the lowest level where its assertion can.
 
 - A level mismatch, a `.only` or a forbidden pattern is found the same way every round,
   by a cheap check.
-- "This test would still pass if the line broke" is a run with a named outcome.
+- "This test would still pass if the line broke" is a run with a named outcome, when
+  the author runs it.
+- A review round starts no test process: rounds in parallel worktrees do not load the
+  machine with test runs, and a project whose tests spawn processes can be reviewed on
+  the machine that runs them.
 - The levels of a project (pelion's, wai's) fit one table, which also tells a new
   contributor where a test goes.
 
@@ -112,8 +124,11 @@ reason, and sits at the lowest level where its assertion can.
   mutant may survive for want of a test that does run it. A directory of one segment
   (`docs`) is no name: it would select almost every test, and a survivor would claim
   coverage it does not have.
+- A test that would survive a mutation is found by reading, or when the author runs
+  the mutation a note proposes; nothing forces the run, and a note left unrun is a
+  doubt the pull request carries.
 - A mutation is proposed in a line whose text and mutated text hold no
-  backtick: the reviewer reports other lines as notes.
+  backtick: the reviewer names the others in words.
 - An interrupted run (SIGINT, SIGTERM) leaves its scratch worktree registered under the
   system's temp folder; the working tree is untouched, and `git worktree prune` once
   the `lntt-mutate-*` folder is removed clears the registration.
@@ -127,10 +142,9 @@ reason, and sits at the lowest level where its assertion can.
 
 ### When to deviate (revisit triggers)
 
-- Runs take longer than a round can afford: select tests by coverage instead of by
-  imports.
-- Reviewers' proposals that survive are rarely real gaps: tighten the brief before the
-  check.
+- Mutations that notes propose and that survive when run are frequent, and notes go
+  unrun: run them where the load does not fall on the author's machine, in the CI.
+- Reviewers' proposals that survive are rarely real gaps: tighten the brief.
 
 ## Discarded directions
 
@@ -141,8 +155,16 @@ reason, and sits at the lowest level where its assertion can.
 - **The rule in a template's testing record.** It would reach only the projects
   scaffolded from that template, and none that adopts `lntt` later; the rule governs the
   checks `lntt` runs, so it is filed with them.
-- **A check that the pull request body names a mutation for every test of the change.** Which line
-  a test guards is a judgement; a count of mutations per test file would pass on a
+- **A review round that runs the mutations the tests reviewer proposes.** One mutation
+  runs every test file that imports the changed one, minutes each where the tests spawn
+  processes; rounds in parallel worktrees, each running its own, saturated the machine
+  that runs them.
+- **Coverage for `touched` in a review round.** It runs every test file of a level with
+  `coverage` on a scratch copy of the head, every round, to place lines that the imports
+  already tie to their tests.
+- **A mutation required for every test that guards a line,** reported in the pull
+  request body. It runs tests a reading already accepts, on every change; which line a
+  test guards is a judgement, and a count of mutations per test file would pass on a
   mutation of the wrong line and fail on a helper that guards nothing.
 - **Automated mutation testing (Stryker and similar).** Every mutant reruns the whole
   suite, the score weighs every line alike, and the useful mutations are few and chosen
