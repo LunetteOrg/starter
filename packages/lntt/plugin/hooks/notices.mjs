@@ -87,7 +87,8 @@ const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
 function wellShaped(s) {
   if (!isObject(s)) return false
   if (['extraKnownMarketplaces', 'enabledPlugins', 'hooks'].some((k) => s[k] !== undefined && !isObject(s[k]))) return false
-  return Object.keys(HOOK_STATUS).every((event) => {
+  // Stop is read too: lntt sync removes a hook of its own from it.
+  return [...Object.keys(HOOK_STATUS), 'Stop'].every((event) => {
     const list = s.hooks?.[event]
     if (list === undefined) return true
     return (

@@ -250,14 +250,25 @@ describe('the Claude Code settings lntt sync writes', () => {
     assert.equal(read().hooks.Stop, undefined)
   })
 
-  test('a Stop with entries that are not the shape Claude Code reads is kept, its own hook still removed', () => {
-    const own = { type: 'command', command: 'echo ours' }
-    for (const bad of [null, 'x', { hooks: 'x' }, { hooks: [null] }, { hooks: [own, null] }]) {
+  test('a Stop with entries that are not the shape Claude Code reads is the whole file invalid, and sync refuses it', () => {
+    for (const bad of [null, 'x', { hooks: 'x' }, { hooks: [null] }]) {
       write({ hooks: { Stop: [bad, { hooks: [OLD_TYPECHECK] }] } })
-      syncClaudeSettings(root)
-      assert.deepEqual(read().hooks.Stop, [bad], JSON.stringify(bad))
-      assert.deepEqual(off(), [])
+      assert.deepEqual(
+        off().map((c) => `${c.state} ${c.key}`),
+        ['invalid .claude/settings.json'],
+        JSON.stringify(bad),
+      )
+      assert.throws(() => syncClaudeSettings(root), /not JSON, or not the shape Claude Code reads/)
     }
+  })
+
+  test('only lntt: typecheck is removed: another lntt message, and an empty Stop of the project’s, stay', () => {
+    write({ hooks: { Stop: [{ hooks: [{ ...INSTALL_HOOK, statusMessage: 'lntt: other' }, OLD_TYPECHECK] }] } })
+    syncClaudeSettings(root)
+    assert.deepEqual(read().hooks.Stop, [{ hooks: [{ ...INSTALL_HOOK, statusMessage: 'lntt: other' }] }])
+    write({ hooks: { Stop: [] } })
+    syncClaudeSettings(root)
+    assert.deepEqual(read().hooks.Stop, [])
   })
 
   test('the hook of 0.6.4 left in place before the next sync is no problem for the check', () => {
@@ -281,10 +292,12 @@ describe('the Claude Code settings lntt sync writes', () => {
     assert.deepEqual(read().hooks.PostToolUse, [])
   })
 
-  test('a Stop that is not a list is the project’s own, not read', () => {
+  test('a Stop that is not a list is not the shape Claude Code reads', () => {
     write({ hooks: { Stop: {} } })
-    syncClaudeSettings(root)
-    assert.deepEqual(read().hooks.Stop, {})
+    assert.deepEqual(
+      off().map((c) => `${c.state} ${c.key}`),
+      ['invalid .claude/settings.json'],
+    )
   })
 
   for (const [state, value, says] of [

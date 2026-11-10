@@ -92,6 +92,7 @@ describe('the settings the plugin checks at session start', () => {
       { hooks: { SessionStart: [null] } },
       { hooks: { SessionStart: [{ hooks: 'x' }] } },
       { hooks: { SessionStart: [{ hooks: [null] }] } },
+      { hooks: { Stop: {} } },
       { enabledPlugins: 'x' },
       { extraKnownMarketplaces: 'x' },
       { hooks: 'x' },
