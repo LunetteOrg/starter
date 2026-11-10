@@ -9,8 +9,9 @@ A test fails for the right reason, not only passes. Whether it does is read firs
 the author and by the `tests` lens of `lntt review`, which runs no test; a mutation is
 the proof when reading leaves a doubt. This skill is a tool the author runs by hand,
 never required: on a test the author doubts, or on a note of the `tests` lens that ends
-with ``mutate: `text` => `mutated` ``. Every mutation runs the tests of the files that
-import the changed one: pick the few that matter. Never edit it to fit one project.
+with ``mutate: `text` => `mutated` ``. Every mutation runs, one file at a time, the tests that
+import the changed file, name it, or import a module that reads it: pick the few that
+matter. Never edit it to fit one project.
 
 ## 1. Anchor and read
 
@@ -61,7 +62,8 @@ restored by hand, and the working tree is never written.
   A test that asserts the current output instead of the contract (an expected value
   copied from a run) is rewritten from the contract.
 - **`NOT RUN`:** the reason is on the line (the text not once on that line, the tests
-  failing without the mutation, a timeout, a path outside the project or git-ignored).
+  failing or hanging without the mutation, a level whose `run` has no `{files}`, a path
+  outside the project or git-ignored).
   Fix the call or the suite, or report the line as not checked, with the reason.
 
 ## 5. Report

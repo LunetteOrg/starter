@@ -211,15 +211,18 @@ project's check.
 - **mutate** `path:line --text=<on that line> --to=<mutated>`, a tool run by hand (the
   `mutation-check` skill), never by a review round: applied in a scratch git
   worktree (the head and the uncommitted files, dependencies shared; the working tree is
-  never written), runs the tests that import the file with the `run` command of their
-  level, `repeat` times in a row. For a file that is not code (`.md`, `.json`, `.yml`…)
-  that no test imports (a file some test imports gets only its importers), such as a
-  `SKILL.md` a test reads as text, it runs the test files whose text names the file's
-  path or its last two segments (`review/SKILL.md`), or a directory of two segments or
-  more, whole or by its last two (`skills/review`); a directory of one segment (`docs`)
-  is no name. The output says the tests were chosen by name. `PASS` is killed (the failing test and its message),
-  `FAIL` survived, `NOT RUN` when the text is not once on the line or the tests fail
-  without the mutation. Write `--text=...` with the `=` when the text starts with `-`.
+  never written), runs the test files that reach the file, one at a time, each with the `run` command of
+  its level (`repeat` times in a row) and its own `timeoutSeconds`: the tests that import
+  it, directly or through the modules they import; the tests whose text names the file's
+  path or its last two segments (`review/SKILL.md`), or, for a file that is not code
+  (`.md`, `.json`, `.yml`…), a directory of two segments or more, whole or by its last
+  two (`skills/review`); and the tests that import a module that reads the file (its name
+  as a string). A directory of one segment (`docs`) is no name. The output says which
+  tests were chosen by name and through which module. The first test that fails ends the
+  run; one that outlasts `timeoutSeconds` is run again without the mutation, and counts as
+  killed only if that run passes. `PASS` is killed (the failing test and its message),
+  `FAIL` survived, `NOT RUN` when the text is not once on the line, the tests fail or hang
+  without the mutation, or a level's `run` has no `{files}`. Write `--text=...` with the `=` when the text starts with `-`.
 
 `cite` reads the working tree: the text of each line, or `FAIL` when the file or the
 line does not exist.

@@ -247,9 +247,9 @@ So:
     ([delivery](../process/delivery.md#releasing)).
   - A default changes only when the field's meaning changes with it, and the change is
     written here. `tests.levels[].timeoutSeconds` is the time of one test file (default
-    120) since `lntt check tests mutate` runs each file in a command of its own; before
-    it was the time of one run of the level (default 600). A project that wrote the field
-    keeps its value, now per file; the release notes name the change
+    120), as `lntt check tests mutate` runs each file in a command of its own. A project
+    that wrote the field keeps its value, which bounds one file; the release notes name
+    the change
     ([test checks](./test-checks.md)).
   - An older `lntt` rejects a field it does not know, as `additionalProperties: false`
     does: an unknown field is a typo until proven otherwise. A project writes a new

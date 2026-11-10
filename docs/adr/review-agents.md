@@ -275,9 +275,9 @@ same way every time; the `review` skill keeps the judgement.
   one worktree ran at once in #287); the removal is serialised by a guard file.
 - **A lock live only by its pid.** A holder in another pid namespace, or of another
   user, is not seen as running by `kill(pid, 0)`; the heartbeat and EPERM decide too.
-- **A lock dead as soon as its heartbeat stops.** `lntt check tests mutate` blocks the
-  event loop for minutes in its runs, so a quiet lock proves nothing while the pid
-  answers.
+- **A lock dead as soon as its heartbeat stops.** A holder in a long synchronous step
+  stops its heartbeat while its pid answers, so a quiet lock proves nothing while the
+  pid answers.
 - **One state per worktree, in the worktree's git directory.** A review on another branch
   in the same worktree overwrote the state and the ledger of the branch before it, closing
   the worktree deleted them, and the other worktrees of the clone could not see them.

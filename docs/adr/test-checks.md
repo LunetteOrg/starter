@@ -93,7 +93,9 @@ and a mutation run by hand is the proof when reading leaves a doubt.
 - **The mutation lives in a scratch git worktree** of the head, with the uncommitted
   files laid over it and the dependencies shared, and is removed when the run ends, on
   SIGINT and on SIGTERM too (exit 130 and 143, the test files' process groups stopped, the
-  lock given back): the working tree is never written. A failure counts as killed only when the same tests
+  lock given back; a process that exits any other way stops the groups still alive
+  on `exit`): the working tree is never written. `mutate` is the one async check, so a
+  signal is handled while a test file runs. A failure counts as killed only when the same tests
   pass without the mutation.
 - **A review round runs no test.** It reads the static checks of `lntt check`, and the
   `tests` lens judges by reading. A test the reviewer suspects would still pass with
