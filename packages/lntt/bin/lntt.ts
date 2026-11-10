@@ -230,7 +230,7 @@ import { finish } from '../src/exit.ts'
 const args = argv.slice(2)
 await finish(async () => {
   if (args[0] === 'ci') await (await import('../src/ci/cli.ts')).main(args.slice(1))
-  else if (args[0] === 'branch') (await import('../src/branch-cli.ts')).main(args.slice(1))
+  else if (args[0] === 'branch') await (await import('../src/branch-cli.ts')).main(args.slice(1))
   else if (args[0] === 'pr') (await import('../src/pull-request-cli.ts')).main(args.slice(1))
   else if (args[0] === 'retro') (await import('../src/retro-cli.ts')).main(args.slice(1))
   else if (args[0] === 'hook') await (await import('../src/hook-cli.ts')).main(args.slice(1))
@@ -242,6 +242,6 @@ await finish(async () => {
   else if (args[0] === 'dump' || args[0] === 'issue') {
     await (await import('../src/issue-cli.ts')).main(args[0], args.slice(1))
   } else if (args[0] === 'ask' || args[0] === 'inbox' || args[0] === 'answer') {
-    ;(await import('../src/messages-cli.ts')).main(args[0], args.slice(1))
+    await (await import('../src/messages-cli.ts')).main(args[0], args.slice(1))
   } else await (await import('../src/cli.ts')).main(args)
 })

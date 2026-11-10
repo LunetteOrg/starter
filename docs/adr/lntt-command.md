@@ -87,7 +87,9 @@ lntt ci local | candidate | proved
   Ctrl-C); a defect of `lntt` itself exits 1 with its stack trace. Every command ends
   through one exit path that lets stdout and stderr drain before the process exits: a
   pipe on macOS takes writes asynchronously, and an exit right after a long write cuts
-  the document with no sign of it. A test fails on any other exit in the package's code.
+  the document with no sign of it. A test fails on any other exit in the package's code. A command reads stdin to its end
+  with `readStdin` (`src/stdin.ts`), never with a synchronous read of the descriptor, which
+  throws EAGAIN on a pipe whose writer has not written yet; a test fails on one.
   A reader that leaves early (`| head`, `2>&1 | head`) does not change the exit code: it
   stays the command's.
 - **`lntt get` prints what the file holds, and a missing key exits 1,** so a script never

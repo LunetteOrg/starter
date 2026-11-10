@@ -7,22 +7,23 @@
 // turn without waking it, once per session.
 
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import process, { cwd, stderr, stdout } from 'node:process'
 import { exit } from './exit.ts'
 import { runTypecheck } from './hook.ts'
+import { readStdin } from './stdin.ts'
 
 const USAGE = 'usage: lntt hook typecheck   (the hook input on stdin)'
 
 const notice = (text: string) => stdout.write(`${JSON.stringify({ systemMessage: text })}\n`)
 
 // The hook input on stdin; nothing from a terminal, so a run by hand does not wait.
-function readInput(): string {
+async function readInput(): Promise<string> {
   if (process.stdin.isTTY) return ''
   try {
-    return readFileSync(0, 'utf8')
+    return await readStdin()
   } catch {
     return ''
   }
@@ -55,7 +56,7 @@ export async function main(args: string[]): Promise<void> {
     stderr.write(`${USAGE}\n`)
     exit(2)
   }
-  const input = readInput()
+  const input = await readInput()
   let failure: string | null
   try {
     failure = await runTypecheck(cwd())
