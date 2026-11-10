@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-10-17
+date: 2026-11-10
 tags: [lntt, tests, review, mutation]
 ---
 
@@ -58,8 +58,8 @@ and a mutation run by hand is the proof when reading leaves a doubt.
     (`coverage: false` in the options it passes) and gets the tests from imports alone,
     with `coverage not run` in the message; `lntt check tests touched` run by hand keeps
     coverage where a level has it. Coverage says which tests to run and which lines no
-    test reaches; it is not an acceptance criterion. Coverage of the project is measured
-    by a periodic check of the whole project (#311), not by a review round or a pull
+    test reaches; it is not an acceptance criterion. Coverage of the project belongs to
+    a periodic check of the whole project (#311), not to a review round or a pull
     request.
   - `mutate <path:line> --text <on the line> --to <mutated>`, a tool run by hand: applies the mutation,
     runs the tests that import the file (a level's `repeat` times in a row; for a
@@ -86,8 +86,6 @@ and a mutation run by hand is the proof when reading leaves a doubt.
   asks for the mutations of the list that matter (a polarity flipped, an argument
   dropped, a guard or early return removed, the optimistic constant returned, the call
   removed), wiring before units.
-- **The tests run once per pull request:** `pnpm ci:local` before the push, and the CI
-  ([delivery](../process/delivery.md)).
 - **A mutation is run by hand, never required.** The author runs `mutate` on a test they
   doubt, or on the mutation a note of the `tests` lens proposes; a killed mutant counts
   when the test that fails is the one that guards the line and its message names the

@@ -69,7 +69,7 @@ describe('a finding with a mutation in a round', () => {
             code: { with: [] },
             tests: { with: [{ kind: 'claude', model: 'sonnet' }] },
           },
-          verify: { with: [{ kind: 'claude', model: 'opus' }] },
+          verify: { with: [{ kind: 'claude', model: 'opus' }], severities: ['blocker', 'warning'] },
         },
       },
     })

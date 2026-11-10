@@ -49,11 +49,9 @@ stops at the draft pull request.
    branch takes at most `delivery.review.maxRounds` rounds; at the limit the person
    decides on what is still open: the pull request as it is, more rounds for that
    branch, or an issue
-   ([review agents](../adr/review-agents.md)). A round runs no test: the tests run once
-   per pull request, in `pnpm ci:local` (below) and in the CI; coverage is measured by a
-   periodic check of the whole project (#311), not by a round or a pull request. A
-   mutation a `tests` note proposes is the author's to run by hand, if it settles a
-   doubt (the `mutation-check` skill, [test checks](../adr/test-checks.md#decision)).
+   ([review agents](../adr/review-agents.md)). The tests run once per pull request, in
+   `pnpm ci:local` (below) and in the CI, never in a round
+   ([test checks](../adr/test-checks.md#decision)).
 3. **`pnpm ci:local` green** on the head about to be published, then one push, then
    `lntt check body` clean on the body, then `gh pr ready`. A red `ci:local` goes back
    into the review.

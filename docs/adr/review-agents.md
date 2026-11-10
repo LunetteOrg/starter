@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-11-06
+date: 2026-11-10
 tags: [review, agents, models, cost, lntt]
 ---
 
@@ -43,9 +43,9 @@ same way every time; the `review` skill keeps the judgement.
   the head. A test the `tests` reviewer suspects would still pass with the line wrong is
   a note that ends with ``mutate: `text` => `mutated` ``, for the author to run by hand
   (`lntt check tests mutate`); a finding with a mutation is verified by reading at its
-  severity, like any other. The tests run once per pull request, in `pnpm ci:local`
-  before the push and in the CI; coverage is measured by a periodic check of the whole
-  project (#311), not by a round or a pull request.
+  severity, like any other. When the tests run is the delivery process's
+  ([delivery](../process/delivery.md)); coverage belongs to a periodic check of the whole
+  project (#311), not to a round or a pull request.
 - **Every finding is cited before it is verified:** `lntt check cite` reads its line in
   the working tree, which a round keeps clean at the head. A finding on a line past the
   end of its file is refuted there, by `lntt check cite`, and costs no verifier; the
@@ -119,8 +119,7 @@ same way every time; the `review` skill keeps the judgement.
 - **The branch keeps a ledger of what it closed**, next to its state, in the place
   described above: every finding the branch is done with, with its outcome. *Fixed*: one
   carried from an earlier round and refuted on a later head, with that head. *Refuted*:
-  a fresh one refuted, with the proof (the verifiers', `lntt check cite`'s, a killed
-  mutant's), or withdrawn by its reviewers, with the author's answer. *Accepted open*: a
+  a fresh one refuted, with the proof (the verifiers', `lntt check cite`'s), or withdrawn by its reviewers, with the author's answer. *Accepted open*: a
   note, or a confirmed warning past `warningRounds`, with the reason. Each entry keeps
   what its line read when it was closed. Only a round with no failure and no `partial`
   lens adds to it, since the next round reads its range again; a ledger that cannot be

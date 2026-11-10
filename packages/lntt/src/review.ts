@@ -293,7 +293,7 @@ export function mergeFindings(reviewed: Reviewed[], after = 0): Found[] {
   let loose = 0
   for (const r of reviewed) {
     for (const f of r.findings) {
-      // Two mutations of one line are two findings: each has its own run.
+      // Two mutations of one line are two findings: each is a different test to write.
       const key =
         f.path === null
           ? `loose ${loose++}`

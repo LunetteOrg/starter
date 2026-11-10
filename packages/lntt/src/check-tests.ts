@@ -485,6 +485,8 @@ function touched(options: CheckOptions, s: Scope): Result[] {
   const scratch = useCoverage ? createScratch(options.root) : null
   const out = scratch ? mkdtempSync(join(tmpdir(), 'lntt-cov-')) : ''
   const cache = new Map<string, Map<string, Set<number>> | null>()
+  // Coverage a level has and the caller did not ask for, as against a level without any.
+  const skipped = (groups: Candidate[]) => !useCoverage && groups.some((g) => g.level.coverage !== null)
   try {
     return changed.map(([file, lines]) => {
       if (!existsSync(join(options.root, file))) return result('touched', 'INFO', file, null, 'deleted')
@@ -514,7 +516,7 @@ function touched(options: CheckOptions, s: Scope): Result[] {
           'INFO',
           file,
           null,
-          `lines ${ranges([...lines])}: tests that import it, from imports (${options.coverage === false ? 'coverage not run' : 'no coverage for their level'}): ${all.join(', ')}`,
+          `lines ${ranges([...lines])}: tests that import it, from imports (${skipped(groups) ? 'coverage not run' : 'no coverage for their level'}): ${all.join(', ')}`,
         )
       }
       const byTests = new Map<string, number[]>()
