@@ -101,15 +101,9 @@ of the file (an edited entry is reformatted): the `directory` marketplace this p
 `SessionStart` hook that installs the dependencies when `node_modules/.bin/lntt` is
 missing: with pnpm, or `npm ci` in a project with only a `package-lock.json`, within ten
 minutes. The hook never fails a session: when the install cannot run it says, once,
-what to run. Beside it goes one line of `lntt hook`: `lntt hook typecheck`
-at `Stop`, in the background, which wakes the agent with a failure only when it differs
-from the last one. Its command is `local.hooks.typecheck`
-(one command or a list), else the `package.json` script of that name, else none.
-Formatting is the pre-commit's: `lntt sync` writes no format hook:
-
-```jsonc
-"local": { "hooks": { "typecheck": ["tsc --noEmit", "uv run mypy ."] } }
-```
+what to run. It writes no `Stop` hook and removes the typecheck hook a version up to
+0.6.4 wrote: the typecheck and the formatting are the pre-commit's. `local.hooks` is gone
+from the configuration; `lntt validate` names it when a file still sets it.
 
 And into the workflows: every line of `.github/workflows/*.yml` that ends with
 `# lntt sync: delivery.automated` gets the entries of `delivery.automated` (the pull

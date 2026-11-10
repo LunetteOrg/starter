@@ -138,3 +138,20 @@ test('the react-router template keeps naming @lntt/create after scaffolding', ()
     rmSync(dirname(app), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 })
+
+// Typecheck and formatting are the pre-commit's alone, in every template (docs/adr/agent-layer.md):
+// no Stop or PostToolUse hook in its .claude/settings.json, and each gate in its lefthook.yml.
+const TEMPLATES = resolve(dirname(fileURLToPath(import.meta.url)), '../templates')
+
+for (const template of readdirSync(TEMPLATES)) {
+  test(`the ${template} template checks types and formats at the pre-commit only`, () => {
+    const dir = join(TEMPLATES, template)
+    const settings = JSON.parse(readFileSync(join(dir, '.claude/settings.json'), 'utf8'))
+    assert.equal(settings.hooks?.Stop, undefined, 'no Stop hook')
+    assert.equal(settings.hooks?.PostToolUse, undefined, 'no PostToolUse hook')
+    const preCommit =
+      /^pre-commit:\n([\s\S]*?)(?=^\S)/m.exec(readFileSync(join(dir, 'lefthook.yml'), 'utf8'))?.[1] ?? ''
+    assert.match(preCommit, /^ {4}typecheck:\n {6}run: .*typecheck/m, 'a typecheck in the pre-commit')
+    assert.match(preCommit, /^ {6}run: .*lint:fix/m, 'a formatter in the pre-commit')
+  })
+}
