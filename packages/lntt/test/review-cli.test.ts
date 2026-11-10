@@ -729,6 +729,114 @@ describe('lntt review, end to end with a fake agent', () => {
     assert.match(readFileSync(pids, 'utf8'), /TERM/)
   })
 
+  // An interrupted round ends through leave(128 + the signal): the running agent got SIGTERM,
+  // the process exits with that code (not by the signal, not 0), and the worktree's lock goes
+  // with it.
+  for (const [signal, code] of [
+    ['SIGINT', 130],
+    ['SIGTERM', 143],
+  ] as const) {
+    test(`${signal} stops the round: exit ${code}, the agent gets SIGTERM, the lock is released`, {
+      timeout: 30000,
+    }, async () => {
+      writeFileSync(
+        join(repo, '.agents/config.jsonc'),
+        JSON.stringify({
+          delivery: {
+            review: {
+              reviewers: {
+                decisions: { with: [] },
+                tests: { with: [] },
+                code: { with: [{ kind: 'claude', model: 'sonnet' }] },
+              },
+              verify: false,
+            },
+          },
+        }),
+      )
+      git('commit', '-qam', 'one reviewer')
+      const pids = join(repo, '.pids')
+      writeFileSync(pids, '')
+      const lock = join(repo, '.git/lntt-review.lock')
+      const child = spawn(process.execPath, [BIN, 'review', '--base', 'main'], {
+        cwd: repo,
+        env: {
+          HOME: repo,
+          PATH: [bin, dirname(process.execPath), '/usr/bin', '/bin'].join(':'),
+          FAKE_LOG: log,
+          FAKE_LOG_TERM_sonnet: '1',
+          FAKE_PIDS: pids,
+        },
+        stdio: 'ignore',
+      })
+      const ended = new Promise<[number | null, NodeJS.Signals | null]>((r) =>
+        child.on('exit', (status, by) => r([status, by])),
+      )
+      try {
+        const until = Date.now() + 10_000
+        while (!readFileSync(pids, 'utf8').includes('started') && Date.now() < until)
+          await new Promise((r) => setTimeout(r, 50))
+        assert.match(readFileSync(pids, 'utf8'), /started/, 'the agent started')
+        assert.ok(existsSync(lock), 'the round holds the lock while its agent runs')
+        child.kill(signal)
+        assert.deepEqual(await ended, [code, null], `exit ${code}, not by the signal and not 0`)
+        assert.match(readFileSync(pids, 'utf8'), /TERM/, 'the running agent got SIGTERM')
+        assert.equal(existsSync(lock), false, 'the lock is released')
+      } finally {
+        child.kill('SIGKILL')
+      }
+    })
+  }
+
+  test('Ctrl-C does not wait for an agent that ignores SIGTERM past five seconds: exit 130, the agent killed', {
+    timeout: 30000,
+  }, async () => {
+    writeFileSync(
+      join(repo, '.agents/config.jsonc'),
+      JSON.stringify({
+        delivery: {
+          review: {
+            reviewers: {
+              decisions: { with: [] },
+              tests: { with: [] },
+              code: { with: [{ kind: 'claude', model: 'sonnet' }] },
+            },
+            verify: false,
+          },
+        },
+      }),
+    )
+    git('commit', '-qam', 'one reviewer')
+    const pids = join(repo, '.pids')
+    writeFileSync(pids, '')
+    const child = spawn(process.execPath, [BIN, 'review', '--base', 'main'], {
+      cwd: repo,
+      env: {
+        HOME: repo,
+        PATH: [bin, dirname(process.execPath), '/usr/bin', '/bin'].join(':'),
+        FAKE_LOG: log,
+        FAKE_IGNORE_TERM_sonnet: '1',
+        FAKE_PIDS: pids,
+      },
+      stdio: 'ignore',
+    })
+    const ended = new Promise<number | null>((r) => child.on('exit', (status) => r(status)))
+    try {
+      const until = Date.now() + 10_000
+      while (readFileSync(pids, 'utf8').trim() === '' && Date.now() < until) await new Promise((r) => setTimeout(r, 50))
+      const pid = Number(readFileSync(pids, 'utf8').trim())
+      assert.ok(pid > 0, 'the agent started')
+      const sent = Date.now()
+      child.kill('SIGINT')
+      assert.equal(await ended, 130)
+      assert.ok(Date.now() - sent >= 4_500, 'the agent had its five seconds before the exit')
+      await new Promise((r) => setTimeout(r, 300))
+      assert.throws(() => process.kill(pid, 0), 'the agent that ignored SIGTERM is gone')
+    } finally {
+      child.kill('SIGKILL')
+    }
+  })
+
   test('Ctrl-C keeps the agents still waiting for a slot from starting', { timeout: 30000 }, async () => {
     writeFileSync(
       join(repo, '.agents/config.jsonc'),
