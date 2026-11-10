@@ -18,6 +18,7 @@ import {
   type Result,
   runArea,
 } from './check.ts'
+import { mutateTests } from './check-tests.ts'
 import { comments } from './ci/candidate.ts'
 import { candidateConfig } from './ci/config.ts'
 import { Exit, exit } from './exit.ts'
@@ -153,6 +154,7 @@ async function run(args: string[]): Promise<Result[]> {
     ...(values.text === undefined ? {} : { mutation: { text: values.text, to: values.to as string } }),
     ...(area === 'body' && check !== 'template' ? { body: await readBody(check, values.pr) } : {}),
   }
+  if (check === 'mutate') return mutateTests(options, rest)
   if (area === undefined) return AREAS.flatMap((a) => runArea(a, undefined, [], options))
   return runArea(area as Area, check, rest, options)
 }

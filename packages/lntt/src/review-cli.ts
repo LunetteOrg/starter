@@ -596,13 +596,13 @@ function untouchedIn(diff: string): (path: string, line: number) => boolean {
 // The mutations the reviewers proposed, run on a scratch copy of the head: the tree the
 // reviewers read is not touched. A run that cannot happen (a project without tests.levels,
 // no scratch worktree) leaves the finding to the verifiers.
-function runMutations(
+async function runMutations(
   root: string,
   data: Record<string, unknown>,
   mutations: { path: string; line: number; text: string; to: string }[],
-): MutationAnswer[] {
+): Promise<MutationAnswer[]> {
   try {
-    const { outcomes } = mutateAll({ root, data, files: projectFiles(root) }, mutations)
+    const { outcomes } = await mutateAll({ root, data, files: projectFiles(root) }, mutations, interrupted.signal)
     return outcomes.map((outcome, i) => {
       const { message } = describeOutcome(mutations[i] as (typeof mutations)[number], outcome)
       const decided = outcome.outcome === 'killed' ? 'killed' : outcome.outcome === 'survived' ? 'survived' : null

@@ -54,23 +54,37 @@ reason, and sits at the lowest level where its assertion can.
     from the `coverage` of the test files that import the changed file, or from imports
     alone when a level has no `coverage`. Coverage says which tests to run and which
     lines no test reaches; it is not an acceptance criterion.
-  - `mutate <path:line> --text <on the line> --to <mutated>`: applies the mutation,
-    runs the tests that import the file (a level's `repeat` times in a row; for a
-    file that is not code and that no test imports, such as a `SKILL.md` a test reads
-    as text, the test files whose text names the file's path or its last two
-    segments (`review/SKILL.md`), or a directory of two segments or more of it, whole or
-    by its last two (`skills/review`); the output says they were chosen by name), and
-    reports killed (the failing test and its message, `PASS`), survived (`FAIL`), or
-    `NOT RUN` when the path leaves the project, the text is not once on that line, the
-    tests fail without the mutation, they outlast `timeoutSeconds`, or the file is one
-    git ignores (the scratch does not have it). It takes the worktree's lock, the one a
+  - `mutate <path:line> --text <on the line> --to <mutated>`: applies the mutation and
+    runs the test files that reach the file, each in a command of its own (a level's
+    `repeat` times in a row), and reports killed (the failing test and its message,
+    `PASS`), survived (`FAIL`), or `NOT RUN` when the path leaves the project, the text is
+    not once on that line, a test file fails or hangs without the mutation, or the file is
+    one git ignores (the scratch does not have it). It takes the worktree's lock, the one a
     round of `lntt review` holds (see `review-agents.md`), and refuses to run while any
     other holder (a round, a reply, `allow`, another mutation) has it, so a mutation
     the author starts during a round is refused until the round ends; outside a git
     directory it cannot run (`lntt: error:`, exit 1, not a `NOT RUN`).
+    - **A test file reaches the file** when it imports it, directly or through the modules
+      it imports (a test that spawns `bin/lntt.ts` reaches what the entry point imports);
+      when its text names the file's path or its last two segments, or, for a file that is
+      not code, a directory of two segments or more of it, whole or by its last two
+      (`skills/review`); or when it imports, directly, a module that reads the file: one
+      whose source holds the file's name as a string (`'before-production.md'`), the path
+      as one of the names above, or the last two segments of the folder as separate
+      strings (`join(AGENTS, 'review', …)` after `'../agents'`). A mutation of
+      `agents/review/before-production.md` runs the tests that name `agents/review` and the
+      ones that import `src/review.ts`, not the whole level. The output says which tests
+      were chosen by name and through which module.
+    - **A level's test files run at once,** up to the machine's cores less one, and the
+      first one that fails stops the others: the mutation is killed.
+    - **`timeoutSeconds` is the time of one test file** (default 120). A file that outlasts
+      it under the mutation is run again without it: if that run passes, the mutation is
+      killed by the hang and the output names the file and its timeout; if it hangs too,
+      the result is `NOT RUN`, naming the file. The other files of the level run either way.
 - **The mutation lives in a scratch git worktree** of the head, with the uncommitted
-  files laid over it and the dependencies shared, and is removed when the run ends: the
-  working tree is never written. A failure counts as killed only when the same tests
+  files laid over it and the dependencies shared, and is removed when the run ends, on
+  SIGINT and on SIGTERM too (exit 130 and 143, the test files' process groups stopped, the
+  lock given back): the working tree is never written. A failure counts as killed only when the same tests
   pass without the mutation.
 - **A review round runs the mutations the tests reviewer proposes.** The reviewer ends a
   finding line with ``mutate: `text` => `mutated` ``; between the reviewers and the
@@ -114,11 +128,12 @@ reason, and sits at the lowest level where its assertion can.
   coverage it does not have.
 - A mutation is proposed in a line whose text and mutated text hold no
   backtick: the reviewer reports other lines as notes.
-- An interrupted run (SIGINT, SIGTERM) leaves its scratch worktree registered under the
-  system's temp folder; the working tree is untouched, and `git worktree prune` once
-  the `lntt-mutate-*` folder is removed clears the registration.
-- A mutation run costs the tests of the files that import the changed file. A timeout
-  stops the shell that runs the command; a process it started may outlive it.
+- A run killed by SIGKILL, or a machine that stops, leaves its scratch worktree registered
+  under the system's temp folder; the working tree is untouched, and the next mutation
+  run prunes a registration whose folder is gone.
+- A mutation run costs the tests of the files that reach the changed file; a source file
+  that every test reaches through the spawned entry point runs them all, until one fails.
+  A timeout stops the process group of the test file.
 - A run-time `t.skip('<reason>')` passes `focus` whatever the condition that reaches it,
   so a test that skips on a condition always true is seen only as skipped in the report;
   the reason written beside the call is what a reviewer reads.

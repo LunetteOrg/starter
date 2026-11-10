@@ -3,7 +3,7 @@
 // (survived). The mutation lives in a scratch git worktree; the working tree is never
 // written, whatever happens.
 
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import {
   cpSync,
   existsSync,
@@ -15,19 +15,11 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { availableParallelism, tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import { CannotRunError, type Result } from './check.ts'
-import {
-  type Candidate,
-  candidates,
-  candidatesByName,
-  commandFor,
-  ImportGraph,
-  type Level,
-  NOT_CODE,
-  testsConfig,
-} from './test-files.ts'
+import { exit } from './exit.ts'
+import { type Candidate, commandFor, ImportGraph, type Level, NOT_CODE, testsConfig, testsFor } from './test-files.ts'
 
 export interface Mutation {
   path: string
@@ -37,9 +29,10 @@ export interface Mutation {
   to: string
 }
 
+// `via` says how a test that no import reaches was chosen (see Candidate in test-files.ts).
 export type Outcome =
-  | { outcome: 'killed'; test: string; message: string; ran: string[]; byName?: boolean }
-  | { outcome: 'survived'; ran: string[]; byName?: boolean }
+  | { outcome: 'killed'; test: string; message: string; ran: string[]; via?: Record<string, string> }
+  | { outcome: 'survived'; ran: string[]; via?: Record<string, string> }
   | { outcome: 'not run'; reason: string }
 
 function git(root: string, ...args: string[]): string {
@@ -163,6 +156,64 @@ export function runCommand(command: string, cwd: string, timeoutSeconds: number)
   return { code: timedOut ? null : r.status, output: `${r.stdout ?? ''}${r.stderr ?? ''}`, timedOut }
 }
 
+// The shells of the test files that run, each in a process group of its own: a timeout or an
+// interrupt stops the file and whatever it started, and nothing outlives lntt.
+const groups = new Set<number>()
+process.on('exit', () => {
+  for (const pid of groups) {
+    try {
+      process.kill(-pid, 'SIGKILL')
+    } catch {}
+  }
+})
+
+export interface FileRun extends Run {
+  // Stopped before it ended, because another file already failed or lntt was interrupted.
+  cancelled: boolean
+}
+
+// One command, stopped with its whole group past `timeoutSeconds` or when `signal` aborts.
+export function runGroup(command: string, cwd: string, timeoutSeconds: number, signal?: AbortSignal): Promise<FileRun> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve({ code: null, output: '', timedOut: false, cancelled: true })
+    const child = spawn('sh', ['-c', command], {
+      cwd,
+      env: testEnv(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
+    })
+    const pid = child.pid
+    if (pid) groups.add(pid)
+    const stop = () => {
+      if (!pid) return
+      try {
+        process.kill(-pid, 'SIGKILL')
+      } catch {}
+    }
+    let output = ''
+    for (const stream of [child.stdout, child.stderr]) stream.on('data', (chunk) => (output += chunk))
+    let timedOut = false
+    let cancelled = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      stop()
+    }, timeoutSeconds * 1000)
+    const onAbort = () => {
+      cancelled = true
+      stop()
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+    const done = (code: number | null) => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      if (pid) groups.delete(pid)
+      resolve({ code: timedOut || cancelled ? null : code, output, timedOut, cancelled })
+    }
+    child.on('error', () => done(127))
+    child.on('close', (code) => done(code))
+  })
+}
+
 const FAILED_TEST = /^\s*(?:✖|✘|×|FAIL\b|not ok \d+ -?)\s*(.+?)(?:\s+\(?\d[\d.]*m?s\)?)?\s*$/
 const MESSAGE =
   /^\s*(?:AssertionError|Error|TypeError|ReferenceError|SyntaxError|expected|Expected|error:|message:|\+ actual)\b.*$/i
@@ -214,33 +265,60 @@ function problem(mutation: Mutation, root: string): string | null {
   return null
 }
 
-function runLevel(level: Level, files: string[], scratch: string, coverageOut?: string): Run {
+// The command of one test file, run a level's `repeat` times in a row, stopping at the first
+// run that does not pass.
+async function runFile(level: Level, file: string, scratch: string, signal?: AbortSignal): Promise<FileRun> {
   const cwd = join(scratch, level.cwd)
-  const template = coverageOut === undefined ? level.run : level.coverage
-  if (template === null) return { code: null, output: `level ${level.name} has no run command`, timedOut: false }
-  const command = commandFor(template, level, files, coverageOut)
-  let last: Run = { code: 0, output: '', timedOut: false }
-  const times = coverageOut === undefined ? level.repeat : 1
-  for (let i = 0; i < times; i++) {
-    last = runCommand(command, cwd, level.timeoutSeconds)
+  if (level.run === null)
+    return { code: null, output: `level ${level.name} has no run command`, timedOut: false, cancelled: false }
+  const command = commandFor(level.run, level, [file])
+  let last: FileRun = { code: 0, output: '', timedOut: false, cancelled: false }
+  for (let i = 0; i < level.repeat; i++) {
+    last = await runGroup(command, cwd, level.timeoutSeconds, signal)
     if (last.code !== 0) return last
   }
   return last
 }
 
+// Every file of a level at once, up to the cores less one; a file that fails ends the others.
+async function runFiles(
+  level: Level,
+  files: string[],
+  scratch: string,
+  signal?: AbortSignal,
+): Promise<{ file: string; run: FileRun }[]> {
+  const ended = new AbortController()
+  const stop = () => ended.abort()
+  signal?.addEventListener('abort', stop, { once: true })
+  const results: { file: string; run: FileRun }[] = new Array(files.length)
+  let next = 0
+  const worker = async () => {
+    for (let i = next++; i < files.length; i = next++) {
+      const file = files[i] as string
+      const run = await runFile(level, file, scratch, ended.signal)
+      results[i] = { file, run }
+      if (run.code !== 0 && !run.timedOut && !run.cancelled) ended.abort()
+    }
+  }
+  const width = Math.max(1, Math.min(files.length, availableParallelism() - 1))
+  await Promise.all(Array.from({ length: width }, worker))
+  signal?.removeEventListener('abort', stop)
+  return results
+}
+
+// "path: why" for a test file that did not pass, as the output of its run says.
+const hung = (file: string, level: Level) => `${file} did not finish in ${level.timeoutSeconds}s`
+
 // Applies the mutation, runs the tests of each level that can run the line, restores.
-export function mutate(context: MutateContext, mutation: Mutation): Outcome {
+export async function mutate(context: MutateContext, mutation: Mutation, signal?: AbortSignal): Promise<Outcome> {
   const bad = problem(mutation, context.scratch.root)
   if (bad) return { outcome: 'not run', reason: bad }
   const config = testsConfig(context.data)
   if (config.levels.length === 0) return { outcome: 'not run', reason: 'tests.levels is not configured' }
   const graph = new ImportGraph(context.root, new Set(context.files))
-  let groups: Candidate[] = candidates(context.root, config, context.files, mutation.path, graph)
-  // A non-code file no test imports: the tests that name its path or directory.
-  const named = groups.length === 0 ? candidatesByName(context.root, config, context.files, mutation.path) : []
-  const byName = named.length > 0
-  if (byName) groups = named
-  const chosen = byName ? { byName } : {}
+  const groups: Candidate[] = testsFor(context.root, config, context.files, mutation.path, graph)
+  const via = Object.assign({}, ...groups.map((g) => g.via ?? {})) as Record<string, string>
+  const chosen = Object.keys(via).length > 0 ? { via } : {}
   const noRun = groups.find((g) => g.level.run === null)
   if (noRun) return { outcome: 'not run', reason: `tests.levels ${noRun.level.name} has no run command` }
   const ran = groups.flatMap((g) => g.files)
@@ -254,25 +332,33 @@ export function mutate(context: MutateContext, mutation: Mutation): Outcome {
   try {
     writeFileSync(target, lines.join('\n'))
     for (const group of groups) {
-      const run = runLevel(group.level, group.files, context.scratch.root)
-      if (run.code === 0) continue
-      if (run.timedOut) {
+      const results = await runFiles(group.level, group.files, context.scratch.root, signal)
+      if (signal?.aborted) return { outcome: 'not run', reason: 'interrupted' }
+      const failed = results.find((r) => r.run.code !== 0 && !r.run.timedOut && !r.run.cancelled)
+      const hangs = results.filter((r) => r.run.timedOut)
+      const suspect = failed ?? hangs[0]
+      if (!suspect) continue
+      // A failure or a hang counts only when the same file passes without the mutation.
+      writeFileSync(target, original)
+      const baseline = await runFile(group.level, suspect.file, context.scratch.root, signal)
+      if (signal?.aborted) return { outcome: 'not run', reason: 'interrupted' }
+      if (baseline.timedOut) {
         return {
           outcome: 'not run',
-          reason: `level ${group.level.name} did not finish in ${group.level.timeoutSeconds}s`,
+          reason: `${hung(suspect.file, group.level)}, with or without the mutation`,
         }
       }
-      // A failure counts only when the same tests pass without the mutation.
-      writeFileSync(target, original)
-      const baseline = runLevel(group.level, group.files, context.scratch.root)
       if (baseline.code !== 0) {
         const why = failureOf(baseline.output)
         return {
           outcome: 'not run',
-          reason: `level ${group.level.name} fails without the mutation (${why.test}: ${why.message})`,
+          reason: `level ${group.level.name} fails without the mutation (${suspect.file}: ${why.test}: ${why.message})`,
         }
       }
-      return { outcome: 'killed', ...failureOf(run.output), ran, ...chosen }
+      const found = failed
+        ? failureOf(failed.run.output)
+        : { test: suspect.file, message: `${hung(suspect.file, group.level).slice(suspect.file.length + 1)} (a hang)` }
+      return { outcome: 'killed', ...found, ran, ...chosen }
     }
     return { outcome: 'survived', ran, ...chosen }
   } finally {
@@ -280,11 +366,27 @@ export function mutate(context: MutateContext, mutation: Mutation): Outcome {
   }
 }
 
+// The tests that ran, said by how they were chosen: the ones that import the file plain, the
+// ones that name it, and the ones that import a module that reads it, each with its module.
+function chosenBy(ran: string[], via: Record<string, string> = {}, imported: boolean): string {
+  const parts: string[] =
+    imported && ran.some((t) => via[t] === undefined) ? [ran.filter((t) => via[t] === undefined).join(', ')] : []
+  const by = (key: string) => ran.filter((t) => via[t] === key)
+  if (by('name').length > 0) parts.push(`chosen by name: ${by('name').join(', ')}`)
+  for (const module of new Set(Object.values(via).filter((v) => v !== 'name'))) {
+    parts.push(`through ${module}: ${by(module).join(', ')}`)
+  }
+  return parts.join('; ')
+}
+
 export function describeOutcome(mutation: Mutation, outcome: Outcome): Pick<Result, 'status' | 'message'> {
   const what = `${JSON.stringify(mutation.text)} → ${JSON.stringify(mutation.to)}`
   if (outcome.outcome === 'killed') {
-    const via = outcome.byName ? ` (tests chosen by name: ${outcome.ran.join(', ')})` : ''
-    return { status: 'PASS', message: `${what} killed by ${outcome.test}: ${outcome.message}${via}` }
+    const chosen = chosenBy(outcome.ran, outcome.via, false)
+    return {
+      status: 'PASS',
+      message: `${what} killed by ${outcome.test}: ${outcome.message}${chosen ? ` (${chosen})` : ''}`,
+    }
   }
   if (outcome.outcome === 'survived') {
     return {
@@ -292,20 +394,33 @@ export function describeOutcome(mutation: Mutation, outcome: Outcome): Pick<Resu
       message:
         outcome.ran.length === 0
           ? `${what} survived: no test runs this line${NOT_CODE.test(mutation.path) ? ' (no test imports the file or names its path or a directory)' : ''}`
-          : `${what} survived: ${outcome.ran.length} test file${outcome.ran.length === 1 ? '' : 's'} still pass (${outcome.byName ? 'chosen by name: ' : ''}${outcome.ran.join(', ')})`,
+          : `${what} survived: ${outcome.ran.length} test file${outcome.ran.length === 1 ? '' : 's'} still pass (${chosenBy(outcome.ran, outcome.via, true)})`,
     }
   }
   return { status: 'NOT RUN', message: `${what}: ${outcome.reason}` }
 }
 
-// The mutations of a `lntt check tests mutate` call as results, one scratch for all.
-export function mutateAll(
+// The signals that stop a mutation run, with the code lntt exits with (128 plus the number).
+const SIGNALS = [
+  ['SIGINT', 130],
+  ['SIGTERM', 143],
+] as const
+
+// The mutations of a `lntt check tests mutate` call as results, one scratch for all. Past
+// `signal` (an interrupt) the run stops, the scratch is removed and what was not run says so.
+export async function mutateAll(
   base: Omit<MutateContext, 'scratch'>,
   mutations: Mutation[],
-): { results: Result[]; outcomes: Outcome[] } {
+  signal?: AbortSignal,
+): Promise<{ results: Result[]; outcomes: Outcome[] }> {
   const scratch = createScratch(base.root)
   try {
-    const outcomes = mutations.map((m) => mutate({ ...base, scratch }, m))
+    const outcomes: Outcome[] = []
+    for (const m of mutations) {
+      outcomes.push(
+        signal?.aborted ? { outcome: 'not run', reason: 'interrupted' } : await mutate({ ...base, scratch }, m, signal),
+      )
+    }
     return {
       outcomes,
       results: mutations.map((m, i) => ({
@@ -318,5 +433,30 @@ export function mutateAll(
     }
   } finally {
     scratch.dispose()
+  }
+}
+
+// `mutateAll` for the command line: SIGINT and SIGTERM stop the test files, remove the scratch
+// worktree and exit 128 plus the signal's number, as every interrupted lntt command does.
+export async function mutateAllUntilInterrupted(
+  base: Omit<MutateContext, 'scratch'>,
+  mutations: Mutation[],
+): Promise<{ results: Result[]; outcomes: Outcome[] }> {
+  const interrupt = new AbortController()
+  let code = 0
+  const handlers = SIGNALS.map(([name, exitCode]) => {
+    const handler = () => {
+      code = exitCode
+      interrupt.abort()
+    }
+    process.on(name, handler)
+    return [name, handler] as const
+  })
+  try {
+    const done = await mutateAll(base, mutations, interrupt.signal)
+    if (code !== 0) exit(code)
+    return done
+  } finally {
+    for (const [name, handler] of handlers) process.off(name, handler)
   }
 }

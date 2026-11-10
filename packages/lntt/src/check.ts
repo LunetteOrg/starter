@@ -217,7 +217,7 @@ export function runArea(area: Area, check: string | undefined, files: string[], 
   if (area === 'skills') return skills(options.root)
   if (area === 'plugin') return plugin(options.root)
   if (area === 'workflows') return checkAutomated(options.root, options.data)
-  if (area === 'tests') return runTests(check, files, options)
+  if (area === 'tests') return runTests(check, options)
   if (area === 'body') return body(check, options)
   if (check === 'numbers') return decisionFigures(options, files)
   if (check === 'board-refs') return decisionBoardRefs(options, files)

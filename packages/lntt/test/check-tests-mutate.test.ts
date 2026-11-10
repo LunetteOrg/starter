@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -91,11 +101,11 @@ describe('lntt check tests mutate', () => {
     assert.match(result.message, /survived: 1 test file still pass \(chosen by name: test\/pinned\.test\.ts\)/)
   })
 
-  test('a non-code file some test imports gets its importers only, not the tests that name it', () => {
+  test('a non-code file some test imports gets its importers and the tests that name it', () => {
     const { result } = mutate('src/limits.json:1', '"max": 3', '"max": 4')
     assert.equal(result.status, 'PASS')
-    assert.doesNotMatch(result.message, /chosen by name/)
     assert.match(result.message, /killed by the limit is read as text/)
+    assert.match(result.message, /chosen by name: test\/limits-by-name\.test\.ts\)/)
   })
 
   test('a directory of one segment names too much: docs/note.md is not run by a test that says docs', () => {
@@ -277,14 +287,14 @@ describe('lntt check tests mutate', () => {
     assert.match(killed.message, /killed by fails on its second run only/)
   })
 
-  test('tests that outlast timeoutSeconds are NOT RUN, never killed or survived', () => {
+  test('a test file that outlasts timeoutSeconds with and without the mutation is NOT RUN, naming the file', () => {
     const levels = [
       { name: 'unit', files: ['test/*.test.ts'], run: 'sleep 3 && node --test {files}', timeoutSeconds: 1 },
     ]
     writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify({ tests: { levels } }))
     const { result } = mutate('src/price.ts:7', 'total > 100', 'total >= 100')
     assert.equal(result.status, 'NOT RUN')
-    assert.match(result.message, /level unit did not finish in 1s/)
+    assert.match(result.message, /test\/price\.test\.ts did not finish in 1s, with or without the mutation/)
   })
 
   test('a project with no tests.levels cannot run a mutation', () => {
@@ -351,6 +361,216 @@ describe('lntt check tests mutate and the lock of the worktree', () => {
     const old = new Date(Date.now() - 120_000)
     utimesSync(lock(), old, old)
     assert.equal(mutate('src/price.ts:7', "'big' : 'small'", "'small' : 'big'").status, 0)
+  })
+})
+
+// Which test files a mutation runs: the ones that import the file, the ones that name it, and
+// the ones that import a module that reads it.
+describe('lntt check tests mutate: which tests run', () => {
+  // `agents/guide/brief.md` is read by src/brief.ts, which builds the path from pieces, as
+  // packages/lntt/src/review.ts does for `agents/review`; test/brief.test.ts imports the module.
+  function readerProject(): void {
+    mkdirSync(join(repo, 'agents/guide'), { recursive: true })
+    writeFileSync(join(repo, 'agents/guide/brief.md'), 'Greet politely\nSign off kindly\n')
+    writeFileSync(
+      join(repo, 'src/brief.ts'),
+      [
+        "import { readFileSync } from 'node:fs'",
+        "import { dirname, join } from 'node:path'",
+        "import { fileURLToPath } from 'node:url'",
+        "const AGENTS = join(dirname(fileURLToPath(import.meta.url)), '../agents')",
+        'export function brief(): string {',
+        "  return readFileSync(join(AGENTS, 'guide', 'brief.md'), 'utf8')",
+        '}',
+        '',
+      ].join('\n'),
+    )
+    writeFileSync(
+      join(repo, 'test/brief.test.ts'),
+      [
+        "import assert from 'node:assert/strict'",
+        "import { test } from 'node:test'",
+        "import { brief } from '../src/brief.ts'",
+        "test('the brief greets politely', () => {",
+        "  assert.match(brief().split('\\n')[0] as string, /Greet politely/)",
+        '})',
+        '',
+      ].join('\n'),
+    )
+    git('add', '-A')
+    git('commit', '-qm', 'a reader')
+  }
+
+  test('a file a module reads is run by the tests that import the module, and by no other', () => {
+    readerProject()
+    const killed = mutate('agents/guide/brief.md:1', 'Greet politely', 'Ignore people').result
+    assert.equal(killed.status, 'PASS', killed.message)
+    assert.match(killed.message, /killed by the brief greets politely/)
+    // the second line is not asserted: the survivor lists every file that ran
+    const { status, result } = mutate('agents/guide/brief.md:2', 'Sign off kindly', 'Sign off rudely')
+    assert.equal(status, 1)
+    assert.match(
+      result.message,
+      /survived: 1 test file still pass \(through src\/brief\.ts: test\/brief\.test\.ts\)$/,
+      'price, guide, skill and the other tests do not reach the file',
+    )
+  })
+
+  test('a module that reads the file by its name alone is a reader too', () => {
+    readerProject()
+    writeFileSync(
+      join(repo, 'src/brief.ts'),
+      readFileSync(join(repo, 'src/brief.ts'), 'utf8')
+        .replace("'../agents'", "'..'")
+        .replace("'guide', 'brief.md'", "'agents', 'guide', 'brief.md'"),
+    )
+    git('commit', '-qam', 'name only the file')
+    const { result } = mutate('agents/guide/brief.md:2', 'Sign off kindly', 'Sign off rudely')
+    assert.match(result.message, /through src\/brief\.ts: test\/brief\.test\.ts\)$/)
+  })
+
+  test('a test that names the file and a test that imports its reader both run, beside the importers', () => {
+    readerProject()
+    writeFileSync(
+      join(repo, 'test/names.test.ts'),
+      "// reads agents/guide/brief.md\nimport { test } from 'node:test'\ntest('names', () => {})\n",
+    )
+    git('add', '-A')
+    const { result } = mutate('agents/guide/brief.md:2', 'Sign off kindly', 'Sign off rudely')
+    assert.match(
+      result.message,
+      /survived: 2 test files still pass \(chosen by name: test\/names\.test\.ts; through src\/brief\.ts: test\/brief\.test\.ts\)$/,
+    )
+  })
+
+  test('a module that does not name the file is no reader: the tests that import it do not run', () => {
+    readerProject()
+    // price.ts neither names brief.md nor its folder, and test/price.test.ts imports it
+    const { result } = mutate('agents/guide/brief.md:2', 'Sign off kindly', 'Sign off rudely')
+    assert.doesNotMatch(result.message, /price/)
+  })
+})
+
+// A hang is a result of the file that hangs: the other files of the level still run.
+describe('lntt check tests mutate: one timeout per test file', () => {
+  const marker = () => join(repo, '..', `${repo.split('/').pop()}.marker`)
+
+  function hangProject(timeoutSeconds: number): void {
+    writeFileSync(
+      join(repo, '.agents/config.jsonc'),
+      JSON.stringify({
+        tests: { levels: [{ name: 'unit', files: ['test/*.test.ts'], run: 'node --test {files}', timeoutSeconds }] },
+      }),
+    )
+    writeFileSync(
+      join(repo, 'src/spin.ts'),
+      [
+        'export function spin(n: number): number {',
+        '  while (n < 3) n += 1',
+        '  return n',
+        '}',
+        "export const NAME = 'spin'",
+        '',
+      ].join('\n'),
+    )
+    writeFileSync(
+      join(repo, 'test/spin.test.ts'),
+      "import assert from 'node:assert/strict'\nimport { test } from 'node:test'\nimport { spin } from '../src/spin.ts'\ntest('spin counts to three', () => {\n  assert.equal(spin(0), 3)\n})\n",
+    )
+    writeFileSync(
+      join(repo, 'test/spin-name.test.ts'),
+      `import assert from 'node:assert/strict'\nimport { appendFileSync } from 'node:fs'\nimport { test } from 'node:test'\nimport { NAME } from '../src/spin.ts'\ntest('spin has a name', () => {\n  appendFileSync(${JSON.stringify(marker())}, 'ran')\n  assert.equal(NAME, 'spin')\n})\n`,
+    )
+    git('add', '-A')
+    git('commit', '-qm', 'a loop')
+  }
+
+  afterEach(() => rmSync(marker(), { force: true }))
+
+  test('a mutation that makes one test file hang is caught by the hang, naming the file and its timeout', () => {
+    hangProject(2)
+    const { status, result } = mutate('src/spin.ts:2', 'n += 1', 'n -= 1')
+    assert.equal(status, 0)
+    assert.equal(result.status, 'PASS', result.message)
+    assert.match(result.message, /killed by test\/spin\.test\.ts: did not finish in 2s/)
+    assert.equal(readFileSync(marker(), 'utf8'), 'ran', 'the other file ran to its end')
+  })
+
+  test('a file that hangs without the mutation too is NOT RUN, naming the file', () => {
+    hangProject(2)
+    writeFileSync(
+      join(repo, 'src/spin.ts'),
+      readFileSync(join(repo, 'src/spin.ts'), 'utf8').replace('n += 1', 'n -= 1'),
+    )
+    git('commit', '-qam', 'break it')
+    const { result } = mutate('src/spin.ts:3', 'return n', 'return n + 0')
+    assert.equal(result.status, 'NOT RUN', result.message)
+    assert.match(result.message, /test\/spin\.test\.ts did not finish in 2s, with or without the mutation/)
+  })
+})
+
+// An interrupt gives everything back: the scratch worktree, the lock, the tests it started.
+describe('lntt check tests mutate: a signal', () => {
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+  const until = async (what: string, ok: () => boolean) => {
+    for (let i = 0; i < 400 && !ok(); i++) await new Promise((r) => setTimeout(r, 50))
+    assert.ok(ok(), what)
+  }
+
+  for (const [signal, code] of [
+    ['SIGTERM', 143],
+    ['SIGINT', 130],
+  ] as const) {
+    test(`${signal} stops the run: exit ${code}, no scratch worktree, no lock, no test left running`, async () => {
+      const pidfile = join(tmpdir(), `lntt-pid-${process.pid}-${signal}`)
+      rmSync(pidfile, { force: true })
+      writeFileSync(
+        join(repo, '.agents/config.jsonc'),
+        JSON.stringify({
+          tests: {
+            levels: [
+              { name: 'unit', files: ['test/*.test.ts'], run: `echo $$ > '${pidfile}'; exec sleep 60 # {files}` },
+            ],
+          },
+        }),
+      )
+      const child = spawn(
+        process.execPath,
+        [BIN, 'check', 'tests', 'mutate', 'src/price.ts:7', '--text=total > 100', '--to=total >= 100'],
+        { cwd: repo, stdio: 'ignore', env: { ...process.env, GIT_CEILING_DIRECTORIES: dirname(repo) } },
+      )
+      const closed = new Promise<number | null>((resolve) => child.on('close', resolve))
+      await until('the tests started', () => existsSync(pidfile) && readFileSync(pidfile, 'utf8').trim() !== '')
+      const tests = Number(readFileSync(pidfile, 'utf8').trim())
+      const scratch = git('worktree', 'list', '--porcelain')
+        .split('\n')
+        .find((l) => l.startsWith('worktree ') && l.endsWith('/tree'))
+        ?.slice('worktree '.length)
+      assert.ok(scratch, 'the scratch worktree is registered while the tests run')
+      child.kill(signal)
+      assert.equal(await closed, code)
+      assert.equal(git('worktree', 'list').split('\n').length, 1, 'no scratch worktree is left registered')
+      assert.equal(existsSync(dirname(scratch as string)), false, 'the scratch folder is gone')
+      assert.equal(existsSync(join(repo, '.git/lntt-review.lock')), false, 'the lock is given back')
+      await until('the tests are stopped', () => !alive(tests))
+      rmSync(pidfile, { force: true })
+    })
+  }
+
+  test('a scratch worktree an earlier run left registered is gone after the next run', () => {
+    const stale = join(realpathSync(tmpdir()), `lntt-mutate-stale-${process.pid}`)
+    git('worktree', 'add', '--detach', '-q', join(stale, 'tree'), 'HEAD')
+    rmSync(stale, { recursive: true, force: true })
+    assert.equal(git('worktree', 'list').split('\n').length, 2, 'registered, its folder gone')
+    assert.equal(mutate('src/price.ts:7', "'big' : 'small'", "'small' : 'big'").status, 0)
+    assert.equal(git('worktree', 'list').split('\n').length, 1)
   })
 })
 

@@ -9,7 +9,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs
 import { tmpdir } from 'node:os'
 import { join, matchesGlob } from 'node:path'
 import { ANCHOR_LINE, CannotRunError, type CheckOptions, projectFiles, type Result } from './check.ts'
-import { createScratch, mutateAll, runCommand } from './mutate.ts'
+import { createScratch, mutateAllUntilInterrupted, runCommand } from './mutate.ts'
 import {
   type Candidate,
   candidates,
@@ -536,26 +536,26 @@ function touched(options: CheckOptions, s: Scope): Result[] {
 
 // ---- mutate ----------------------------------------------------------------------
 
-function mutateCheck(options: CheckOptions, s: Scope, args: string[]): Result[] {
+// `lntt check tests mutate`: the one check that runs asynchronously, so a signal can reach it.
+export function mutateTests(options: CheckOptions, args: string[]): Promise<Result[]> {
   const [anchor, ...extra] = args
   const m = anchor === undefined ? null : ANCHOR_LINE.exec(anchor)
   const { mutation } = options
   if (!m || extra.length > 0 || !mutation) {
     throw new CannotRunError('mutate needs one path:line, --text <what is on the line> and --to <what it becomes>')
   }
-  return mutateAll({ root: options.root, data: options.data, files: s.files }, [
+  return mutateAllUntilInterrupted({ root: options.root, data: options.data, files: projectFiles(options.root) }, [
     { path: m[1] as string, line: Number(m[2]), text: mutation.text, to: mutation.to },
-  ]).results
+  ]).then((done) => done.results)
 }
 
-export function runTests(check: string | undefined, args: string[], options: CheckOptions): Result[] {
+export function runTests(check: string | undefined, options: CheckOptions): Result[] {
   // A project that has not described its tests is not asked to: `lntt check` alone passes
   // over it (an explicit check still runs).
   if (check === undefined && options.data.tests === undefined) {
     return [result('levels', 'NOT RUN', null, null, 'the configuration has no tests section')]
   }
   const s = scope(options)
-  if (check === 'mutate') return mutateCheck(options, s, args)
   const all: Record<string, () => Result[]> = {
     levels: () => levels(options, s),
     focus: () => focus(options, s),
