@@ -52,6 +52,8 @@
         ],
         "exclude": ["**/fixtures/**"],
         "environment": "node:test, the CLI against fixture repositories in a temp dir",
+        // One test file: test/review-cli.test.ts alone takes about 135 s.
+        "timeoutSeconds": 300,
         "run": "node --test {files}",
         "coverage": "node --test --experimental-test-coverage --test-reporter=lcov --test-reporter-destination={out}/lcov.info {files}"
       },

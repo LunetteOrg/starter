@@ -62,24 +62,37 @@ and a mutation run by hand is the proof when reading leaves a doubt.
     test reaches; it is not an acceptance criterion. Coverage of the project belongs to
     a periodic check of the whole project (#311), not to a review round or a pull
     request.
-  - `mutate <path:line> --text <on the line> --to <mutated>`, a tool run by hand: applies the mutation,
-    runs the tests that import the file (a level's `repeat` times in a row; for a
-    file that is not code and that no test imports, such as a `SKILL.md` a test reads
-    as text, the test files whose text names the file's path or its last two
-    segments (`review/SKILL.md`), or a directory of two segments or more of it, whole or
-    by its last two (`skills/review`); the output says they were chosen by name), and
-    reports killed (the failing test and its message, `PASS`), survived (`FAIL`), or
-    `NOT RUN` when the path leaves the project, the text is not once on that line, the
-    tests fail without the mutation, they outlast `timeoutSeconds`, or the file is one
-    git ignores (the scratch does not have it). It takes the worktree's lock, the one a
+  - `mutate <path:line> --text <on the line> --to <mutated> --test <test file>...`, a tool
+    run by hand: applies the mutation and runs the test files the author names with
+    `--test` (once or more, required), each in a command of its own with its level's `run`
+    (a level's `repeat` times in a row). It reports killed (the failing test and its
+    message, `PASS`), survived (`FAIL`, listing the files that passed), or `NOT RUN` when
+    the path leaves the project, the text is not once on that line, a `--test` is not a file
+    of the project or sits in no level, a test file fails or hangs without the mutation, a
+    level's `run` has no `{files}` (it runs one test file at a time), or the file is one git
+    ignores (the scratch does not have it). It takes the worktree's lock, the one a
     round of `lntt review` holds (see `review-agents.md`), and refuses to run while any
     other holder (a round, a reply, `allow`, another mutation) has it, so a mutation
     the author starts during a round is refused until the round ends; outside a git
     directory it cannot run (`lntt: error:`, exit 1, not a `NOT RUN`).
+    - **The author names the tests.** The author who has just written the test knows which
+      file guards the line; `mutate` runs those files and no other: the levels in the order of `tests.levels`, the
+      files of a level in the order given.
+      A call with no `--test` is a usage error (exit 2).
+    - **The files run one at a time,** and the first one that fails stops the rest: the
+      mutation is killed.
+    - **`timeoutSeconds` is the time of one test file** (default 120). A file that outlasts
+      it under the mutation is run again without it: if that run passes, the mutation is
+      killed by the hang and the output names the file and its timeout; if it hangs too,
+      the result is `NOT RUN`, naming the file. The other files run either way.
 - **The mutation lives in a scratch git worktree** of the head, with the uncommitted
-  files laid over it and the dependencies shared, and is removed when the run ends: the
-  working tree is never written. A failure counts as killed only when the same tests
-  pass without the mutation.
+  files laid over it and the dependencies shared, and is removed when the run ends, on
+  SIGINT and on SIGTERM too (exit 130 and 143, the test files' process groups stopped, the
+  lock given back; a process that exits any other way stops the groups still alive
+  on `exit`): the working tree is never written. `mutate` waits on its child processes
+  without blocking the event loop, so a signal is handled while a test file runs. A run
+  starts by pruning the registrations of scratch worktrees whose folder is gone. A failure
+  counts as killed only when the same test file passes without the mutation.
 - **A review round runs no test.** It reads the static checks of `lntt check`, and the
   `tests` lens judges by reading. A test the reviewer suspects would still pass with
   the line wrong is a note that ends with ``mutate: `text` => `mutated` ``, the mutation
@@ -116,23 +129,20 @@ and a mutation run by hand is the proof when reading leaves a doubt.
 
 ### Negative / accepted risks
 
-- A project must write `tests.levels` with a `run` command before `mutate` works; the
-  tests of a line are found from imports, and for a file that is not code from the
-  path or directory a test names, so a test that reaches code only through a package
-  name or a spawned process path that is not a string in the test is missed and the
-  mutant may survive for want of a test that does run it. A directory of one segment
-  (`docs`) is no name: it would select almost every test, and a survivor would claim
-  coverage it does not have.
+- A project must write `tests.levels` with a `run` command that takes `{files}` before
+  `mutate` works, and the author must know which test file guards the line: a wrong
+  `--test` is a mutant that survives for want of the test that would run it, and the
+  survivor lists the files that ran, so the author sees which ones they chose.
 - A test that would survive a mutation is found by reading, or when the author runs
   the mutation a note proposes; nothing forces the run, and a note left unrun is a
   doubt the pull request carries.
 - A mutation is proposed in a line whose text and mutated text hold no
   backtick: the reviewer names the others in words.
-- An interrupted run (SIGINT, SIGTERM) leaves its scratch worktree registered under the
-  system's temp folder; the working tree is untouched, and `git worktree prune` once
-  the `lntt-mutate-*` folder is removed clears the registration.
-- A mutation run costs the tests of the files that import the changed file. A timeout
-  stops the shell that runs the command; a process it started may outlive it.
+- A run killed by SIGKILL, or a machine that stops, leaves its scratch worktree registered
+  under the system's temp folder; the working tree is untouched, and the next mutation
+  run prunes a registration whose folder is gone.
+- A mutation run costs the test files the author names, one at a time, until one fails. A
+  timeout stops the process group of the test file.
 - A run-time `t.skip('<reason>')` passes `focus` whatever the condition that reaches it,
   so a test that skips on a condition always true is seen only as skipped in the report;
   the reason written beside the call is what a reviewer reads.
@@ -168,13 +178,17 @@ and a mutation run by hand is the proof when reading leaves a doubt.
 - **Automated mutation testing (Stryker and similar).** Every mutant reruns the whole
   suite, the score weighs every line alike, and the useful mutations are few and chosen
   by whoever knows what the line guards.
+- **Choosing the test files from the code.** Following imports, the tests that name the
+  file and the modules that read it reaches most of a level through a spawned entry point,
+  misses the test that reaches code another way, and needs its own tests and rules for each
+  kind of file. The author who has just written the test names it.
 - **Mutating the working tree and restoring it.** An interrupt or a crash leaves the
   author's files mutated; the scratch worktree cannot.
-- **A process that removes the scratch when `lntt` is interrupted.** A run waits on its
-  tests synchronously, so a signal handler cannot run during it; a second process
-  watching for `lntt` to end adds a platform dependency (`kill -0`, a fractional
-  `sleep`), a race with the tests still writing, and its own tests, for a leftover
-  folder in the temp directory.
+- **A second process that removes the scratch once `lntt` has ended.** `lntt` handles
+  SIGINT and SIGTERM itself; only SIGKILL or a power cut leaves a scratch behind, and a
+  watcher for that adds a platform dependency (`kill -0`, a fractional `sleep`), a race
+  with the tests still writing, and its own tests, for a leftover folder in the temp
+  directory that the next mutation run prunes.
 - **A `test-levels` guard in `@lntt/test-utils`**, an architecture test that every
   `.test` file opens an integration harness, as pelion's does. The `levels` check
   decides the same from `tests.levels`, with the harness per level in configuration

@@ -18,6 +18,7 @@ import {
   type Result,
   runArea,
 } from './check.ts'
+import { mutateTests } from './check-tests.ts'
 import { comments } from './ci/candidate.ts'
 import { candidateConfig } from './ci/config.ts'
 import { Exit, exit } from './exit.ts'
@@ -29,7 +30,7 @@ import { readStdin } from './stdin.ts'
 import { acquireLock, LockedError } from './worktree-lock.ts'
 
 const USAGE = `usage: lntt check [agents-md | skills | plugin | workflows [automated] | decisions [structure | board-refs [<file>...] | numbers [<file>...]] | tests [levels | focus | rules | touched] | body [template | --pr <n> | -]] [--base <ref>] [--json] [--query <jq>]
-       lntt check tests mutate <path:line> --text <on the line> --to <mutated> [--json]
+       lntt check tests mutate <path:line> --text <on the line> --to <mutated> --test <test file>... [--json]
        lntt check cite <path:line>... [--json]
        --query <jq>: a jq expression on each line --json prints, its result instead`
 
@@ -94,6 +95,7 @@ async function run(args: string[]): Promise<Result[]> {
       query: { type: 'string' },
       text: { type: 'string' },
       to: { type: 'string' },
+      test: { type: 'string', multiple: true },
     },
   })
   // Every argument is checked before the configuration is read: a usage error is one
@@ -119,7 +121,12 @@ async function run(args: string[]): Promise<Result[]> {
       if (values.text === undefined || values.text === '' || values.to === undefined) {
         usage('mutate needs --text <what is on the line> and --to <what it becomes>')
       }
-    } else if (values.text !== undefined || values.to !== undefined) usage('--text and --to are for tests mutate')
+      if (values.test === undefined || values.test.some((t) => t === '' || t.startsWith('-'))) {
+        usage('mutate needs --test <test file>, once for each test file to run')
+      }
+    } else if (values.text !== undefined || values.to !== undefined || values.test !== undefined) {
+      usage('--text, --to and --test are for tests mutate')
+    }
   }
   if (values.pr !== undefined) {
     if (area !== 'body') usage('--pr is for body')
@@ -150,9 +157,12 @@ async function run(args: string[]): Promise<Result[]> {
     root,
     data: loaded.data,
     ...(base === undefined ? {} : { base }),
-    ...(values.text === undefined ? {} : { mutation: { text: values.text, to: values.to as string } }),
+    ...(values.text === undefined
+      ? {}
+      : { mutation: { text: values.text, to: values.to as string, tests: values.test ?? [] } }),
     ...(area === 'body' && check !== 'template' ? { body: await readBody(check, values.pr) } : {}),
   }
+  if (check === 'mutate') return mutateTests(options, rest)
   if (area === undefined) return AREAS.flatMap((a) => runArea(a, undefined, [], options))
   return runArea(area as Area, check, rest, options)
 }

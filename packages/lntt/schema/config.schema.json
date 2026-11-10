@@ -1359,7 +1359,7 @@
         "timeoutSeconds": {
           "type": "integer",
           "minimum": 1,
-          "description": "How long one run of the command may take. Default 600."
+          "description": "How long the command may take for one test file, in a mutation run and in a coverage run; a file that outlasts it in a mutation run is reported as a hang. Default 120."
         }
       }
     },

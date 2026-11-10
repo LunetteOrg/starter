@@ -148,7 +148,7 @@ lntt check decisions board-refs docs/product/pricing.md # the board references o
 lntt check decisions numbers docs/adr/review-agents.md  # every line carrying a figure
 lntt check tests                                        # levels, focus, rules (touched needs --base)
 lntt check tests touched --base main                    # the changed lines and the tests that run them
-lntt check tests mutate src/a.ts:12 --text='a > b' --to='a < b'   # does a test fail?
+lntt check tests mutate src/a.ts:12 --text='a > b' --to='a < b' --test test/a.test.ts   # does it fail?
 lntt check cite docs/adr/review-agents.md:12 a.ts:40    # what is on those lines
 lntt check --json                                       # one JSON line per result
 ```
@@ -208,18 +208,18 @@ project's check.
   (from the `coverage` command of their level, an lcov file at `{out}/lcov.info`) and
   the lines no test runs; without `coverage`, the tests that import the file. A round of
   `lntt review` runs no coverage: it gets the tests that import the file.
-- **mutate** `path:line --text=<on that line> --to=<mutated>`, a tool run by hand (the
-  `mutation-check` skill), never by a review round: applied in a scratch git
+- **mutate** `path:line --text=<on that line> --to=<mutated> --test=<test file>`, a tool run
+  by hand (the `mutation-check` skill), never by a review round: applied in a scratch git
   worktree (the head and the uncommitted files, dependencies shared; the working tree is
-  never written), runs the tests that import the file with the `run` command of their
-  level, `repeat` times in a row. For a file that is not code (`.md`, `.json`, `.yml`…)
-  that no test imports (a file some test imports gets only its importers), such as a
-  `SKILL.md` a test reads as text, it runs the test files whose text names the file's
-  path or its last two segments (`review/SKILL.md`), or a directory of two segments or
-  more, whole or by its last two (`skills/review`); a directory of one segment (`docs`)
-  is no name. The output says the tests were chosen by name. `PASS` is killed (the failing test and its message),
-  `FAIL` survived, `NOT RUN` when the text is not once on the line or the tests fail
-  without the mutation. Write `--text=...` with the `=` when the text starts with `-`.
+  never written), runs the test files you name with `--test` (once or more, required), one
+  at a time, each with the `run` command of its level (`repeat` times in a row) and its own
+  `timeoutSeconds`. The first test that fails ends the run; one that outlasts
+  `timeoutSeconds` is run again without the mutation, and counts as killed only if that run
+  passes. `PASS` is killed (the failing test and its message), `FAIL` survived (with the
+  files that passed), `NOT RUN` when the text is not once on the line, a `--test` is not a
+  file of the project or sits in no level, the tests fail or hang without the mutation, or
+  a level's `run` has no `{files}`. Write `--text=...` with the `=` when the text starts
+  with `-`.
 
 `cite` reads the working tree: the text of each line, or `FAIL` when the file or the
 line does not exist.

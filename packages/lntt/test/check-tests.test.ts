@@ -348,9 +348,8 @@ describe('lntt check tests touched', () => {
     )
     git('commit', '-qam', 'change')
     const touched = (data: Record<string, unknown>) =>
-      runTests('touched', [], { root: repo, data, base: 'HEAD~1', coverage: false }).find(
-        (x) => x.path === 'src/price.ts',
-      )?.message ?? ''
+      runTests('touched', { root: repo, data, base: 'HEAD~1', coverage: false }).find((x) => x.path === 'src/price.ts')
+        ?.message ?? ''
     const levels = (coverage?: string) => ({
       tests: {
         levels: [

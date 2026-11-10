@@ -52,7 +52,7 @@ export function testsConfig(data: Record<string, unknown>): TestsConfig {
       coverage: (l.coverage as string | undefined) ?? null,
       cwd: (l.cwd as string | undefined) ?? '.',
       repeat: (l.repeat as number | undefined) ?? 1,
-      timeoutSeconds: (l.timeoutSeconds as number | undefined) ?? 600,
+      timeoutSeconds: (l.timeoutSeconds as number | undefined) ?? 120,
     })),
     rules: (tests.rules ?? []).map((r) => ({
       name: r.name as string,
@@ -193,33 +193,4 @@ export function commandFor(template: string, level: Level, files: string[], out?
   return template
     .replaceAll('{files}', relative.map(shellQuote).join(' '))
     .replaceAll('{out}', out === undefined ? '' : shellQuote(out))
-}
-
-// What a test names when it reads a file as text rather than imports it: the file's path
-// or its last two segments (`review/SKILL.md`), and a directory of two segments or more
-// with its last two (`skills/review`), which is how a test writes a path under a base
-// folder it already holds. A directory of one segment (`docs`) names too much to count.
-function namesOf(file: string): string[] {
-  const dir = posix.dirname(file)
-  const tail = (p: string) => p.split('/').slice(-2).join('/')
-  return [...new Set([file, tail(file), ...(dir.includes('/') ? [dir, tail(dir)] : [])])]
-}
-
-// The tests that name a non-code file (a SKILL.md read with readFileSync) or its
-// directory, grouped by level: for a file no import reaches. No configuration.
-export function candidatesByName(root: string, config: TestsConfig, projectFiles: string[], file: string): Candidate[] {
-  if (!NOT_CODE.test(file)) return []
-  const names = namesOf(file)
-  const tests = testFiles(config, projectFiles)
-    .filter((t) => existsSync(join(root, t)))
-    .filter((t) => {
-      const text = readFileSync(join(root, t), 'utf8')
-      return names.some((n) => text.includes(n))
-    })
-  const out: Candidate[] = []
-  for (const level of config.levels) {
-    const files = tests.filter((t) => levelsOf(config, t)[0] === level)
-    if (files.length > 0) out.push({ level, files })
-  }
-  return out
 }

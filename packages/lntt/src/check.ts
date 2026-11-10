@@ -45,8 +45,8 @@ export interface CheckOptions {
   // `tests touched`: false places the lines from the imports alone and runs no test, as
   // lntt review does; by default a level with `coverage` runs it.
   coverage?: boolean
-  // `tests mutate`: what is on the line, and what it becomes.
-  mutation?: { text: string; to: string }
+  // `tests mutate`: what is on the line, what it becomes, and the test files the author runs.
+  mutation?: { text: string; to: string; tests: string[] }
   // `body`: the pull request body read, and where from; the area does not run without it.
   body?: { text: string; from: string }
 }
@@ -220,7 +220,7 @@ export function runArea(area: Area, check: string | undefined, files: string[], 
   if (area === 'skills') return skills(options.root)
   if (area === 'plugin') return plugin(options.root)
   if (area === 'workflows') return checkAutomated(options.root, options.data)
-  if (area === 'tests') return runTests(check, files, options)
+  if (area === 'tests') return runTests(check, options)
   if (area === 'body') return body(check, options)
   if (check === 'numbers') return decisionFigures(options, files)
   if (check === 'board-refs') return decisionBoardRefs(options, files)
