@@ -2,11 +2,11 @@
 // usage: bin/lntt.ts).
 
 import { execFile } from 'node:child_process'
-import { readFileSync } from 'node:fs'
 import { stderr, stdin, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { Exit, exit } from './exit.ts'
 import { type RefsRun, resolveRefs } from './refs.ts'
+import { readStdin } from './stdin.ts'
 
 const USAGE = 'usage: lntt refs [--cached] [<text>...]   (no text: read from stdin)'
 
@@ -36,7 +36,7 @@ export async function main(args: string[]): Promise<void> {
   }
   try {
     if (!positionals.length && stdin.isTTY) usage('give the text, or pipe it on stdin')
-    const text = positionals.length ? positionals.join('\n') : readFileSync(stdin.fd, 'utf8')
+    const text = positionals.length ? positionals.join('\n') : await readStdin()
     const refs = await resolveRefs(text, { run, now: Date.now, cached: values.cached ?? false })
     stdout.write(`${JSON.stringify(refs)}\n`)
   } catch (error) {

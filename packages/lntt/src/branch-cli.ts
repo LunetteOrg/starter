@@ -2,7 +2,6 @@
 // the rename that fixes the name a tool gave it (usage: bin/lntt.ts).
 
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
 import { cwd, env, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { candidateAt } from './base.ts'
@@ -19,6 +18,7 @@ import {
 import { Exit, exit } from './exit.ts'
 import { ConfigError } from './files.ts'
 import { loadConfig } from './index.ts'
+import { readStdin } from './stdin.ts'
 import { detectHost } from './viewer.ts'
 
 const USAGE = [
@@ -122,13 +122,13 @@ function name(args: string[]): void {
   stdout.write(`${result}\n`)
 }
 
-function check(args: string[]): void {
+async function check(args: string[]): Promise<void> {
   const { values } = parseArgs({
     args,
     options: { branch: { type: 'string' }, 'pre-push': { type: 'boolean', default: false } },
   })
   const ruleset = rules()
-  const branches = values['pre-push'] ? pushedBranches(readFileSync(0, 'utf8')) : [values.branch || currentBranch()]
+  const branches = values['pre-push'] ? pushedBranches(await readStdin()) : [values.branch || currentBranch()]
   let failed = false
   for (const branch of branches) {
     const result = checkBranch(branch, ruleset)
@@ -199,10 +199,10 @@ function rename(): void {
   stdout.write(`${current} → ${target}\n`)
 }
 
-export function main([command, ...args]: string[]): void {
+export async function main([command, ...args]: string[]): Promise<void> {
   try {
     if (command === 'name') name(args)
-    else if (command === 'check') check(args)
+    else if (command === 'check') await check(args)
     else if (command === 'rename') rename()
     else usage()
   } catch (error) {

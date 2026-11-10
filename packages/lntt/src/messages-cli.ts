@@ -4,7 +4,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname } from 'node:path'
-import { cwd, env, stderr, stdin, stdout } from 'node:process'
+import { cwd, env, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { fromToolName } from './branch.ts'
 import { rules } from './branch-cli.ts'
@@ -26,6 +26,7 @@ import {
   type Target,
   waitForAnswer,
 } from './messages.ts'
+import { readStdin } from './stdin.ts'
 
 const USAGE = [
   'usage: lntt ask --to <orchestrator|coordinator|child> [--issue <n>] [--theme <slug>] [--topic <slug>] [--timeout <s>] [--interval <s>] <question | ->',
@@ -85,9 +86,9 @@ function issueNumber(value: string | undefined): number | undefined {
   return Number(value)
 }
 
-function text(argument: string | undefined): string {
+async function text(argument: string | undefined): Promise<string> {
   if (argument === undefined) usage('give the text, or - to read it from stdin')
-  return argument === '-' ? readFileSync(stdin.fd, 'utf8') : argument
+  return argument === '-' ? await readStdin() : argument
 }
 
 function line(message: Message): string {
@@ -118,7 +119,7 @@ function sentMessage(root: string, raw: string): Message {
 // Writes the question, then polls for its answer; stdout is the answer. The wait is the
 // point of the command: a caller that must not block runs it in the background. With
 // --wait <id>, only the wait, for a message already sent.
-function ask(args: string[]): void {
+async function ask(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
@@ -145,7 +146,7 @@ function ask(args: string[]): void {
   } else {
     if (!values.to) usage('give --to')
     if (positionals.length !== 1) usage('give the question as one argument')
-    sent = send(box, values.to, text(positionals[0]), {
+    sent = send(box, values.to, await text(positionals[0]), {
       ...(values.topic ? { topic: values.topic } : {}),
       ...(values.issue ? { issue: issueNumber(values.issue) as number } : {}),
       ...(values.theme ? { theme: values.theme } : {}),
@@ -257,14 +258,14 @@ function inbox(args: string[]): void {
   }
 }
 
-export function main(command: 'ask' | 'inbox' | 'answer', args: string[]): void {
+export async function main(command: 'ask' | 'inbox' | 'answer', args: string[]): Promise<void> {
   try {
-    if (command === 'ask') ask(args)
+    if (command === 'ask') await ask(args)
     else if (command === 'inbox') inbox(args)
     else {
       const [id, reply, ...rest] = args
       if (!id || rest.length > 0) usage()
-      stdout.write(`${answer(systemMailbox().dir, id, text(reply))}\n`)
+      stdout.write(`${answer(systemMailbox().dir, id, await text(reply))}\n`)
     }
   } catch (error) {
     if (error instanceof Exit) throw error

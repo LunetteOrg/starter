@@ -2,7 +2,6 @@
 // what is on lines (usage: bin/lntt.ts).
 
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { cwd, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
@@ -26,6 +25,7 @@ import { ConfigError, loadConfig } from './index.ts'
 import { retroComment } from './pull-request.ts'
 import { runQuery } from './query.ts'
 import { isCandidate } from './retro.ts'
+import { readStdin } from './stdin.ts'
 import { acquireLock, LockedError } from './worktree-lock.ts'
 
 const USAGE = `usage: lntt check [agents-md | skills | plugin | workflows [automated] | decisions [structure | board-refs [<file>...] | numbers [<file>...]] | tests [levels | focus | rules | touched] | body [template | --pr <n> | -]] [--base <ref>] [--json] [--query <jq>]
@@ -51,8 +51,8 @@ const CHECKS: Record<string, string[]> = {
 // The text the body area's retrospective check reads: stdin for `-`, else the pull request
 // named, else the current branch's, read with gh. A candidate's block is not in its body,
 // which the automation rebuilds at every squash, but in its retrospective comment.
-function readBody(check: string | undefined, pr: string | undefined): { text: string; from: string } {
-  if (check === '-') return { text: readFileSync(0, 'utf8'), from: 'stdin' }
+async function readBody(check: string | undefined, pr: string | undefined): Promise<{ text: string; from: string }> {
+  if (check === '-') return { text: await readStdin(), from: 'stdin' }
   const view = ['pr', 'view', ...(pr === undefined ? [] : [pr]), '--json', 'number,body,headRefName']
   const read = (args: string[]) => {
     try {
@@ -83,7 +83,7 @@ function readBody(check: string | undefined, pr: string | undefined): { text: st
   }
 }
 
-function run(args: string[]): Result[] {
+async function run(args: string[]): Promise<Result[]> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
@@ -151,7 +151,7 @@ function run(args: string[]): Result[] {
     data: loaded.data,
     ...(base === undefined ? {} : { base }),
     ...(values.text === undefined ? {} : { mutation: { text: values.text, to: values.to as string } }),
-    ...(area === 'body' && check !== 'template' ? { body: readBody(check, values.pr) } : {}),
+    ...(area === 'body' && check !== 'template' ? { body: await readBody(check, values.pr) } : {}),
   }
   if (area === undefined) return AREAS.flatMap((a) => runArea(a, undefined, [], options))
   return runArea(area as Area, check, rest, options)
@@ -173,10 +173,13 @@ export function errorLine(error: unknown): string | null {
 }
 
 // `checks` is the run itself; a test gives another.
-export async function main(args: string[], checks: (args: string[]) => Result[] = run): Promise<void> {
+export async function main(
+  args: string[],
+  checks: (args: string[]) => Result[] | Promise<Result[]> = run,
+): Promise<void> {
   let results: Result[]
   try {
-    results = checks(args)
+    results = await checks(args)
   } catch (error) {
     if (error instanceof Exit) throw error
     if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
