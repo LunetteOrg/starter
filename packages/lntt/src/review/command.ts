@@ -5,13 +5,18 @@
 // A command runs in one scope, the command's: the worktree's lock is a resource of that scope,
 // and the agents run in a scope inside it (withAgents). However the command ends (an answer, a
 // failure, an interrupt), the agents are released first, then the lock.
+//
+// The commands still call the sync code of src/review-cli.ts (git, the state files, the
+// configuration), which is not on Effect yet: each call runs in Effect.try, and what it throws is
+// a ReviewFailed. Their services come with #326.
 
 import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { env, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
-import * as Cause from 'effect/Cause'
+import * as Clock from 'effect/Clock'
+import * as Data from 'effect/Data'
 import * as Effect from 'effect/Effect'
 import type { FileSystem } from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -76,8 +81,21 @@ import { AgentsLive, withAgents } from './agents.ts'
 // scope whichever step takes it.
 type Tools = {
   spawner: (timeoutMinutes: number) => Spawn
-  lock: (command: string) => Effect.Effect<void, LockedError | PlatformError, FileSystem | Pids>
+  lock: (command: string) => Effect.Effect<void, ReviewFailed | LockedError | PlatformError, FileSystem | Pids>
 }
+
+// What the sync code of src/review-cli.ts threw: an expected failure, reported by its message.
+export class ReviewFailed extends Data.TaggedError('ReviewFailed')<{ cause: unknown }> {
+  get message() {
+    return this.cause instanceof Error ? this.cause.message : String(this.cause)
+  }
+}
+
+// A command refused by one of its own checks: a dirty tree, a detached HEAD, an agent that cannot
+// start, a finding that is not open, a branch with no round.
+export class ReviewRefused extends Data.TaggedError('ReviewRefused')<{ message: string }> {}
+
+const legacy = <A>(run: () => A) => Effect.try({ try: run, catch: (cause) => new ReviewFailed({ cause }) })
 
 // The reporter of a round or a reply, stopped however the command ends.
 const reporting = (orca: Subagents | null = null) =>
@@ -101,7 +119,7 @@ const asking = <A>(minutes: number, ask: (signal: AbortSignal) => Promise<A>) =>
       interrupt.addEventListener('abort', () => stop.abort('interrupted'), { once: true })
       return ask(stop.signal).finally(() => clearTimeout(timer))
     },
-    catch: (error) => error,
+    catch: (cause) => new ReviewFailed({ cause }),
   })
 
 // macOS sleeps on its own schedule, and a sleeping machine stops the round's agents: keep
@@ -114,40 +132,49 @@ function keepAwake(): void {
 }
 
 export const round = Effect.fnUntraced(function* (args: string[], { spawner, lock }: Tools) {
-  const { values } = parseArgs({
-    args,
-    options: { base: { type: 'string' }, plan: { type: 'boolean', default: false } },
-  })
+  const { values } = yield* legacy(() =>
+    parseArgs({ args, options: { base: { type: 'string' }, plan: { type: 'boolean', default: false } } }),
+  )
   if (!values.plan) {
     yield* lock('lntt review')
     startProgress()
   }
-  const data = loaded()
-  const config = reviewConfig(data)
-  const dirty = git('status', '--porcelain')
+  const data = yield* legacy(loaded)
+  const config = yield* legacy(() => reviewConfig(data))
+  const dirty = yield* legacy(() => git('status', '--porcelain'))
   if (dirty !== '') {
-    throw new Error(`the working tree has uncommitted changes; the review reads commits:\n${dirty}`)
+    return yield* new ReviewRefused({
+      message: `the working tree has uncommitted changes; the review reads commits:\n${dirty}`,
+    })
   }
-  const branch = git('rev-parse', '--abbrev-ref', 'HEAD')
-  if (branch === 'HEAD') throw new Error('HEAD is detached; the review keeps its rounds per branch: switch to one')
-  const head = git('rev-parse', '--short', 'HEAD')
-  // The first line of a round: which commit it reads, whatever the base or the plan say next.
-  stderr.write(`lntt review: reviewing ${head} ${git('log', '-1', '--format=%s', 'HEAD')} (${branch})\n`)
-  const root = git('rev-parse', '--show-toplevel')
-  const state = readState(branch)
-  const base = git('rev-parse', '--short', mergeBase(root, values.base))
-  const range = roundRange(state, branch, head, base, (a, b) => {
-    try {
-      git('merge-base', '--is-ancestor', a, b)
-      return true
-    } catch {
-      return false
-    }
+  const branch = yield* legacy(() => git('rev-parse', '--abbrev-ref', 'HEAD'))
+  if (branch === 'HEAD') {
+    return yield* new ReviewRefused({
+      message: 'HEAD is detached; the review keeps its rounds per branch: switch to one',
+    })
+  }
+  const { head, root, state, base, range, files } = yield* legacy(() => {
+    const head = git('rev-parse', '--short', 'HEAD')
+    // The first line of a round: which commit it reads, whatever the base or the plan say next.
+    stderr.write(`lntt review: reviewing ${head} ${git('log', '-1', '--format=%s', 'HEAD')} (${branch})\n`)
+    const root = git('rev-parse', '--show-toplevel')
+    const state = readState(branch)
+    const base = git('rev-parse', '--short', mergeBase(root, values.base))
+    const range = roundRange(state, branch, head, base, (a, b) => {
+      try {
+        git('merge-base', '--is-ancestor', a, b)
+        return true
+      } catch {
+        return false
+      }
+    })
+    const files = git('diff', '--name-only', `${range.from}..${head}`).split('\n').filter(Boolean)
+    return { head, root, state, base, range, files }
   })
-  const files = git('diff', '--name-only', `${range.from}..${head}`).split('\n').filter(Boolean)
   // A run with nothing new to read keeps the round's number: it is not a round more.
   const pastLimit = files.length > 0 && range.round > roundLimit(state, branch, config.maxRounds)
-  if (pastLimit && !values.plan) return stopAtLimit(state, branch, range.round, config, branchRules(data))
+  if (pastLimit && !values.plan)
+    return yield* legacy(() => stopAtLimit(state, branch, range.round, config, branchRules(data)))
   const lenses = Object.entries(config.reviewers).filter(([, lens]) => lensApplies(lens, files))
   const plan = [
     `round ${range.round}, ${range.reason}: ${range.from}..${head}, ${files.length} files`,
@@ -171,10 +198,10 @@ export const round = Effect.fnUntraced(function* (args: string[], { spawner, loc
     for (const problem of problems) stderr.write(`lntt review: cannot start ${problem}\n`)
     return 0
   }
-  if (problems.length > 0) throw new Error(`cannot start ${problems.join('; ')}`)
+  if (problems.length > 0) return yield* new ReviewRefused({ message: `cannot start ${problems.join('; ')}` })
 
   const open = state?.branch === branch ? state.result.findings : []
-  const ledger = readLedger(branch)
+  const ledger = yield* legacy(() => readLedger(branch))
   keepAwake()
   emit({
     type: 'round',
@@ -186,17 +213,19 @@ export const round = Effect.fnUntraced(function* (args: string[], { spawner, loc
     files: files.length,
     optionalGraceMs: config.optionalGraceMinutes * 60_000,
   })
-  const checks = Object.fromEntries(
-    files.length === 0
-      ? []
-      : // A round runs no test: touched places the lines from the imports, never by coverage.
-        areas.map((area) => [
-          area,
-          formatJson(runArea(area, undefined, [], { root, data, base: range.from, coverage: false })),
-        ]),
+  const checks = yield* legacy(() =>
+    Object.fromEntries(
+      files.length === 0
+        ? []
+        : // A round runs no test: touched places the lines from the imports, never by coverage.
+          areas.map((area) => [
+            area,
+            formatJson(runArea(area, undefined, [], { root, data, base: range.from, coverage: false })),
+          ]),
+    ),
   )
   const report = yield* reporting(orcaSubagents(env, root))
-  const began = Date.now()
+  const began = yield* Clock.currentTimeMillis
   const result = yield* asking(config.roundTimeoutMinutes, (signal) =>
     runRound(
       config,
@@ -242,7 +271,7 @@ export const round = Effect.fnUntraced(function* (args: string[], { spawner, loc
   )
   // The reviewers read the working tree: a commit or an edit during the round means they
   // did not all read the head the diff names.
-  const moved = git('rev-parse', '--short', 'HEAD') !== head || git('status', '--porcelain') !== ''
+  const moved = yield* legacy(() => git('rev-parse', '--short', 'HEAD') !== head || git('status', '--porcelain') !== '')
   if (moved)
     result.failed.push({ lens: 'round', agent: 'lntt', error: `the branch moved from ${head} during the round` })
   // An empty delta keeps this branch's last round number, 1 with no state of its own: nothing new
@@ -257,13 +286,16 @@ export const round = Effect.fnUntraced(function* (args: string[], { spawner, loc
     ...(state?.branch === branch && state.allowed ? { allowed: state.allowed } : {}),
     rounds: roundCosts(state, branch, result, range.round, files.length > 0),
   }
-  writeState(saved)
-  // Only a round that read its range whole closes anything: the next one reads it again.
-  if (files.length > 0 && result.failed.length === 0 && result.partial.length === 0)
-    writeLedger(branch, closeRound(ledger, result, open, config.warningRounds))
+  yield* legacy(() => {
+    writeState(saved)
+    // Only a round that read its range whole closes anything: the next one reads it again.
+    if (files.length > 0 && result.failed.length === 0 && result.partial.length === 0)
+      writeLedger(branch, closeRound(ledger, result, open, config.warningRounds))
+  })
+  const ended = yield* Clock.currentTimeMillis
   const tokens = result.tokens === null ? '' : `, ${formatTokens(result.tokens)}`
   stderr.write(
-    `lntt review: round ${saved.round} done in ${duration(Date.now() - began)}: ${result.findings.length} findings, ${result.refuted.length} refuted, ${result.failed.length} failed, ${result.partial.length} partial, ${result.skipped.length} skipped, ${result.closed.length} closed${tokens}\n` +
+    `lntt review: round ${saved.round} done in ${duration(ended - began)}: ${result.findings.length} findings, ${result.refuted.length} refuted, ${result.failed.length} failed, ${result.partial.length} partial, ${result.skipped.length} skipped, ${result.closed.length} closed${tokens}\n` +
       `lntt review: branch total: ${reviewCost(saved.rounds ?? []).line}\n`,
   )
   // Past delivery.review.warningRounds a warning does not block: it goes in the pull
@@ -293,21 +325,23 @@ export const round = Effect.fnUntraced(function* (args: string[], { spawner, loc
 export const reply = Effect.fnUntraced(function* (args: string[], { spawner, lock }: Tools) {
   const [id, ...words] = args
   if (!id || words.length === 0) usage('give the finding and the answer')
-  const state = readState(headBranch())
+  const state = yield* legacy(() => readState(headBranch()))
   const finding = state?.result.findings.find((f) => f.id === id)
-  if (!state || !finding) throw new Error(`no open finding ${id} in the last round`)
+  if (!state || !finding) return yield* new ReviewRefused({ message: `no open finding ${id} in the last round` })
   yield* lock('lntt review reply')
-  const config: ReviewConfig = reviewConfig(loaded())
+  const config: ReviewConfig = yield* legacy(() => reviewConfig(loaded()))
   const known = new Map<string, Agent>()
   for (const lens of Object.values(config.reviewers)) for (const a of lens.with) known.set(agentLabel(a), a)
   // Withdrawn only by every reviewer that found it: one that cannot be resumed (no
   // session, or no longer in the configuration) is refused, not skipped.
   const lost = finding.foundBy.filter((b) => !b.session || !known.has(b.agent))
   if (lost.length > 0) {
-    throw new Error(`${id}: cannot resume ${lost.map((b) => b.agent).join(', ')}; the person decides on this finding`)
+    return yield* new ReviewRefused({
+      message: `${id}: cannot resume ${lost.map((b) => b.agent).join(', ')}; the person decides on this finding`,
+    })
   }
   const finders = finding.foundBy
-  if (finders.length === 0) throw new Error(`${id}: no reviewer to answer`)
+  if (finders.length === 0) return yield* new ReviewRefused({ message: `${id}: no reviewer to answer` })
   const report = yield* reporting()
   const answers = yield* asking(config.roundTimeoutMinutes, (signal) =>
     askAll(
@@ -333,15 +367,17 @@ export const reply = Effect.fnUntraced(function* (args: string[], { spawner, loc
   const withdrawn = replies.every((r) => r.withdrawn)
   // Kept or withdrawn, the answer stays with the finding: lntt review status lists it.
   ;(finding as Checked).reply = { answer: words.join(' '), withdrawn }
-  if (withdrawn) {
-    ;(finding as Checked).verdict = 'withdrawn'
-    const proof = `withdrawn by its reviewers after the answer: ${words.join(' ')}`
-    writeLedger(state.branch, [
-      ...readLedger(state.branch).filter((c) => c.id !== id),
-      closedEntry(finding, state.round, 'refuted', { proof }),
-    ])
-  }
-  writeState(state)
+  yield* legacy(() => {
+    if (withdrawn) {
+      ;(finding as Checked).verdict = 'withdrawn'
+      const proof = `withdrawn by its reviewers after the answer: ${words.join(' ')}`
+      writeLedger(state.branch, [
+        ...readLedger(state.branch).filter((c) => c.id !== id),
+        closedEntry(finding, state.round, 'refuted', { proof }),
+      ])
+    }
+    writeState(state)
+  })
   stdout.write(`${JSON.stringify({ id, withdrawn, replies }, null, 2)}\n`)
   return withdrawn ? 0 : 1
 })
@@ -354,12 +390,12 @@ export const allow = Effect.fnUntraced(function* (args: string[], { lock }: Pick
   if (rest.length > 0 || !count || !/^\d+$/.test(count) || rounds < 1)
     usage('give the rounds to allow, a whole number from 1')
   yield* lock('lntt review allow')
-  const branch = headBranch()
-  const state = readState(branch)
-  if (!state) throw new Error(`no round on ${branch} yet: nothing to allow more rounds to`)
-  const { maxRounds } = reviewConfig(loaded())
+  const branch = yield* legacy(headBranch)
+  const state = yield* legacy(() => readState(branch))
+  if (!state) return yield* new ReviewRefused({ message: `no round on ${branch} yet: nothing to allow more rounds to` })
+  const { maxRounds } = yield* legacy(() => reviewConfig(loaded()))
   state.allowed = (state.allowed ?? 0) + rounds
-  writeState(state)
+  yield* legacy(() => writeState(state))
   // The band stops showing the limit: the next round may run.
   startProgress()
   emit({ type: 'allow', allowed: state.allowed })
@@ -370,30 +406,38 @@ export const allow = Effect.fnUntraced(function* (args: string[], { lock }: Pick
 })
 
 // Runs a round, a reply or `allow` as the process's main program (src/run-command.ts): its exit
-// code, the error report of src/review-cli.ts for a failure, 130 for an interrupt once the
-// agents and the lock are released.
+// code; for an expected failure the error report of src/review-cli.ts, made while the lock is
+// still held, since it writes the progress file; 130 for an interrupt once the agents and the
+// lock are released. A defect reaches the runner, which prints it with its stack.
 export function runReview(command: string | undefined, args: string[]): Promise<never> {
   const program = Effect.gen(function* () {
     const scope = yield* Scope.Scope
     // One round (or reply, or mutation run) at a time per worktree: a second would overwrite the
     // state and the progress of the first, or change the tree it reads (src/worktree/lock.ts).
-    const lock = (name: string) => lockWorktree(git('rev-parse', '--absolute-git-dir'), name).pipe(Scope.provide(scope))
-    if (command === 'allow') return yield* allow(args, { lock })
-    return yield* withAgents(({ spawner }) =>
-      command === 'reply'
-        ? reply(args, { spawner, lock })
-        : round(command === undefined ? [] : [command, ...args], { spawner, lock }),
+    const lock = (name: string) =>
+      legacy(() => git('rev-parse', '--absolute-git-dir')).pipe(
+        Effect.flatMap((gitDir) => lockWorktree(gitDir, name)),
+        Scope.provide(scope),
+      )
+    const run =
+      command === 'allow'
+        ? allow(args, { lock })
+        : withAgents(({ spawner }) =>
+            command === 'reply'
+              ? reply(args, { spawner, lock })
+              : round(command === undefined ? [] : [command, ...args], { spawner, lock }),
+          )
+    const report = (error: unknown) => Effect.promise(() => failed(command, args, error))
+    return yield* run.pipe(
+      Effect.catchTags({
+        ReviewFailed: (error) => report(error.cause),
+        ReviewRefused: report,
+        LockedError: report,
+        PlatformError: report,
+      }),
     )
   })
   return runCommand(
-    Effect.scoped(program).pipe(
-      Effect.catchCause((cause) =>
-        Cause.hasInterruptsOnly(cause)
-          ? Effect.failCause(cause)
-          : Effect.promise(() => failed(command, args, Cause.squash(cause))),
-      ),
-      Effect.map(exit),
-      Effect.provide(Layer.mergeAll(AgentsLive, WorktreeLockLive)),
-    ),
+    Effect.scoped(program).pipe(Effect.map(exit), Effect.provide(Layer.mergeAll(AgentsLive, WorktreeLockLive))),
   )
 }

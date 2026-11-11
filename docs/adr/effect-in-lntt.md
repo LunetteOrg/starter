@@ -99,8 +99,9 @@ never on `node:` modules, and its test provides in-memory layers.
   a reply, `allow`: `lockWorktree` in `packages/lntt/src/worktree/lock.ts`), its heartbeat
   a fiber of the same scope. The agents run in a scope inside it, so they are released
   before the lock. `lntt check tests mutate`, still on Promises, takes the lock through
-  the module's Promise entry (`packages/lntt/src/worktree-lock.ts`), which releases it on
-  the process's exit until that command moves.
+  the module's Promise entry (`packages/lntt/src/worktree-lock.ts`), which loads Effect to
+  run the same acquisition and releases the lock on the process's exit until that command
+  moves.
 - **An agent's process group is a resource.** Its release, when the agent did not exit
   on its own: SIGTERM to the group, up to five seconds for it to go, then SIGKILL to the
   group (the spawner's `killSignal` and `forceKillAfter`). A timeout is an interrupt of
@@ -117,7 +118,13 @@ with the caller's `AbortSignal` (`withAgents` in `packages/lntt/src/review/agent
 Each run is a fiber of the command's scope: an abort interrupts it and the promise
 settles once its finalizers have run, and an interrupt of the command interrupts every
 run still going and ends once they are all released. The command's own Promise code runs
-under `Effect.tryPromise`, whose signal an interrupt aborts. The library API of
+under `Effect.tryPromise`, whose signal an interrupt aborts, and the sync code of a module
+not yet moved (`git`, the state files and the configuration of
+`packages/lntt/src/review-cli.ts`, which the round on Effect calls) runs under
+`Effect.try`. What either throws is a tagged error of the calling module (`ReviewFailed` in
+`packages/lntt/src/review/command.ts`), reported by its message like any expected failure;
+a defect of the Effect code reaches the edge with its stack. That code becomes services as
+its module moves. The library API of
 `@lntt/lntt` (`packages/lntt/src/index.ts`) stays on `Promise`, so a script that imports
 it needs no Effect.
 

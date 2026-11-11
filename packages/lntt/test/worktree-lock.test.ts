@@ -19,6 +19,8 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
+import * as Effect from 'effect/Effect'
+import { lockWorktree, WorktreeLockLive } from '../src/worktree/lock.ts'
 import { acquireLock, FRESH_MS, heldBy, isLocked, lockPath, releaseLock } from '../src/worktree-lock.ts'
 
 let gitDir: string
@@ -109,5 +111,22 @@ describe('the lock of a worktree on Node, as lntt check tests mutate takes it', 
     const before = statSync(lockPath(gitDir)).mtimeMs
     await new Promise((resolve) => setTimeout(resolve, 150))
     assert.equal(statSync(lockPath(gitDir)).mtimeMs, before)
+  })
+
+  test("lockWorktree's heartbeat sets the lock's real mtime to now, and the scope removes it", async () => {
+    const lock = lockPath(gitDir)
+    const ages = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* lockWorktree(gitDir, 'lntt review', { heartbeat: '20 millis' })
+          const old = new Date(Date.now() - OLD)
+          utimesSync(lock, old, old)
+          yield* Effect.sleep('150 millis')
+          return Date.now() - statSync(lock).mtimeMs
+        }),
+      ).pipe(Effect.provide(WorktreeLockLive)),
+    )
+    assert.ok(ages >= 0 && ages < FRESH_MS, `touched to now, not ${ages} ms from now`)
+    assert.equal(existsSync(lock), false)
   })
 })

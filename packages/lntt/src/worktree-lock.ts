@@ -4,10 +4,11 @@
 // directory and holds `<pid> <command>`.
 //
 // The lock is taken by one Effect (src/worktree/lock.ts). `lntt review` holds it as a resource
-// of its scope (lockWorktree), released however the command ends. This module imports no
-// Effect, because `lntt check` and `lntt review status` load it: it holds the rules of who
-// holds the lock, the lock's holder read synchronously, and the Promise entry of
-// `lntt check tests mutate`, whose lock goes with the process's exit until it moves to Effect.
+// of its scope (lockWorktree), released however the command ends. This module loads no Effect
+// when it is imported, because `lntt check` and `lntt review status` import it: it holds the
+// rules of who holds the lock, the lock's holder read synchronously, and the Promise entry of
+// `lntt check tests mutate`, which loads Effect only when it runs, and whose lock goes with the
+// process's exit until that command moves to Effect.
 
 import { readFileSync, rmSync, statSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
@@ -24,7 +25,7 @@ export const GUARD_MS = 10_000
 // limit is far past any round or mutation run.
 export const MAX_HOLD_MS = 12 * 60 * 60 * 1000
 // A file just created by an older lntt is empty for an instant: held this long.
-const EMPTY_MS = 2_000
+export const EMPTY_MS = 2_000
 
 export function lockPath(gitDir: string): string {
   return join(gitDir, 'lntt-review.lock')

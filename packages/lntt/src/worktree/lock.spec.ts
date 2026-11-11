@@ -26,7 +26,8 @@ const failure = (method: string, path: string, tag: 'AlreadyExists' | 'NotFound'
   PlatformError.systemError({ _tag: tag, module: 'FileSystem', method, pathOrDescriptor: path })
 
 // A file system in memory: each file its text and when it was last touched, by the test's clock.
-function inMemory() {
+// `linkFails`: every link finds the lock already there, as when other runs keep taking it.
+function inMemory(options: { linkFails?: boolean } = {}) {
   const files = new Map<string, { text: string; mtime: number }>()
   const fileSystem = FileSystem.makeNoop({
     readFileString: (path) => {
@@ -47,14 +48,15 @@ function inMemory() {
       Effect.suspend(() => {
         const file = files.get(path)
         if (!file) return Effect.fail(failure('utimes', path, 'NotFound'))
-        file.mtime = Number(mtime)
+        // As Node's fs.utimes: a Date, or a number of seconds.
+        file.mtime = mtime instanceof Date ? mtime.getTime() : Number(mtime) * 1000
         return Effect.void
       }),
     link: (from, to) =>
       Effect.suspend(() => {
         const file = files.get(from)
         if (!file) return Effect.fail(failure('link', from, 'NotFound'))
-        if (files.has(to)) return Effect.fail(failure('link', to, 'AlreadyExists'))
+        if (files.has(to) || options.linkFails) return Effect.fail(failure('link', to, 'AlreadyExists'))
         files.set(to, { ...file })
         return Effect.void
       }),
@@ -210,7 +212,8 @@ describe('lockWorktree', () => {
           yield* lockWorktree(GIT_DIR, 'lntt review')
           yield* TestClock.adjust(Duration.millis(HEARTBEAT_MS * 4 + 1))
           const now = yield* Clock.currentTimeMillis
-          assert.ok(now - (fs.files.get(LOCK)?.mtime ?? 0) < HEARTBEAT_MS, 'the heartbeat refreshed it')
+          const age = now - (fs.files.get(LOCK)?.mtime ?? 0)
+          assert.ok(age >= 0 && age < HEARTBEAT_MS, `the heartbeat refreshed it to now, not ${age} ms from now`)
           yield* fs.held(`${LIVE} lntt review`, OLD)
           const before = fs.files.get(LOCK)?.mtime
           yield* TestClock.adjust(Duration.millis(HEARTBEAT_MS * 2))
@@ -218,6 +221,30 @@ describe('lockWorktree', () => {
         }),
       )
       assert.strictEqual(fs.text(), `${LIVE} lntt review`, 'the release leaves a lock that names another process')
+    }).pipe(Effect.provide(fs.layer))
+  })
+
+  it.effect('a lock its holder touched, then left when it died, is taken over once it is no longer fresh', () => {
+    const fs = inMemory()
+    return Effect.gen(function* () {
+      const taken = yield* Deferred.make<void>()
+      const holder = yield* Effect.forkChild(
+        lockWorktree(GIT_DIR, 'lntt review', { heartbeat: Duration.millis(1000) }).pipe(
+          Effect.andThen(Deferred.succeed(taken, undefined)),
+          Effect.andThen(Effect.never),
+          Effect.scoped,
+        ),
+      )
+      yield* Deferred.await(taken)
+      yield* TestClock.adjust(Duration.millis(3500))
+      assert.strictEqual(fs.files.get(LOCK)?.mtime, 3000, 'touched every second, the option given')
+      // The holder dies with its lock in place: the lock now names a pid that is gone.
+      const lock = fs.files.get(LOCK)
+      yield* Fiber.interrupt(holder)
+      fs.files.set(LOCK, { text: `${GONE} lntt review`, mtime: lock?.mtime ?? 0 })
+      assert.match(yield* outcome(Effect.scoped(lockWorktree(GIT_DIR, 'lntt review'))), /\(pid 999999\)/)
+      yield* TestClock.adjust(Duration.millis(FRESH_MS))
+      assert.strictEqual(yield* outcome(Effect.scoped(lockWorktree(GIT_DIR, 'lntt review'))), 'taken')
     }).pipe(Effect.provide(fs.layer))
   })
 
@@ -233,6 +260,16 @@ describe('lockWorktree', () => {
       )
       assert.strictEqual(refused, `lntt review is already running in this worktree (pid ${LIVE})`)
       assert.strictEqual(fs.text(), `${LIVE} lntt review`, 'the live lock is still there')
+    }).pipe(Effect.provide(fs.layer))
+  })
+
+  it.effect('gives up after 50 attempts with no holder to name, the file it linked removed', () => {
+    const fs = inMemory({ linkFails: true })
+    return Effect.gen(function* () {
+      yield* fs.held(`${GONE} lntt review`, OLD)
+      const refused = yield* outcome(Effect.scoped(lockWorktree(GIT_DIR, 'lntt review')))
+      assert.strictEqual(refused, 'another lntt command is already running in this worktree (pid unknown)')
+      assert.deepStrictEqual([...fs.files.keys()], [])
     }).pipe(Effect.provide(fs.layer))
   })
 

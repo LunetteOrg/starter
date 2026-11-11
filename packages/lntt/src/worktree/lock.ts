@@ -130,16 +130,18 @@ const release = Effect.fnUntraced(function* (lock: string) {
   if (yield* mine(lock)) yield* fs.remove(lock, { force: true })
 })
 
-// The holder touches its lock every `heartbeat`, while it still names this process.
+// The holder touches its lock, while it still names this process.
 const touch = Effect.fnUntraced(function* (lock: string) {
   const fs = yield* FileSystem.FileSystem
   if (!(yield* mine(lock))) return
   const now = yield* Clock.currentTimeMillis
-  yield* fs.utimes(lock, now, now)
+  // A Date: Node's fs.utimes reads a number as seconds.
+  yield* fs.utimes(lock, new Date(now), new Date(now))
 })
 
 // The worktree's lock as a resource of the current scope: released when the scope closes, the
-// heartbeat stopped first. A lock another command holds fails with LockedError.
+// heartbeat, every HEARTBEAT_MS or `options.heartbeat`, stopped first. A lock another command
+// holds fails with LockedError.
 export const lockWorktree = (
   gitDir: string,
   command: string,
