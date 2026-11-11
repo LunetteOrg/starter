@@ -67,8 +67,8 @@ never on `node:` modules, and its test provides in-memory layers.
 - **An expected failure is a tagged error in the signature** (`Data.TaggedError`): an
   agent that exits non-zero, a lock held by another command, a configuration that does
   not validate. The caller handles it by tag (`Effect.catchTag`) or lets it through.
-- **A defect is not in the signature:** a bug of `lntt` dies, and the edge prints its
-  stack and exits 1, as today.
+- **A defect is not in the signature:** a bug of `lntt` dies. The edge prints it with its
+  stack and exits 1, as it does an expected failure that no caller handled.
 - **Exit codes are given at one place, the edge of the command** (the codes are in
   [the `lntt` command](./lntt-command.md#decision); an interrupt below). A module never
   picks an exit code.
@@ -78,9 +78,12 @@ never on `node:` modules, and its test provides in-memory layers.
 - **A command is one Effect, run by `NodeRuntime.runMain`** with `lntt`'s teardown
   (`runCommand` in `packages/lntt/src/run-command.ts`). On SIGINT or SIGTERM, `runMain`
   interrupts the command: the interrupt runs every finalizer of the command's scope (the
-  agents are released), and the command exits 130, whichever the signal. The teardown
-  gives Effect's codes (0, 130, and 1 for any other failure or defect, which it prints as
-  Node prints an uncaught error) and the code of an `exit(code)` the command threw, and leaves through `leave`
+  agents are released), and the command exits 130, whichever the signal. The commands
+  not yet on Effect (`lntt check tests mutate`, `lntt ci local`) exit 128 plus the
+  signal, 143 for SIGTERM, until they move.
+- **The teardown gives the exit code:** 0 on success, the code of an `exit(code)` the
+  command threw, 130 for an interrupt, 1 for any other failure or a defect, which it
+  prints with `util.inspect` (the error and its stack). It leaves through `leave`
   (`packages/lntt/src/exit.ts`), which lets stdout and stderr drain first: `runMain`
   alone exits at once on any code but 0, and a pipe on macOS takes writes
   asynchronously, so a document written before an exit 3 or 4 would arrive cut.
@@ -88,8 +91,7 @@ never on `node:` modules, and its test provides in-memory layers.
 - **`exit.ts` imports no Effect,** because every command loads it: `effect/Runtime` and
   `NodeRuntime` take about 24 ms each to load (measured on 2026-11-11, `effect` 4.1.4,
   node 24.22.1, median of 11 fresh processes), against 150 ms for a whole `lntt get`.
-  Only a command on Effect loads `run-command.ts`. The commands not yet on Effect (`lntt check tests mutate`, `lntt ci local`) exit
-  128 plus the signal, 143 for SIGTERM, until they move.
+  Only a command on Effect loads `run-command.ts`.
 - **A resource is acquired with its release** (`Effect.acquireRelease`), in the scope of
   the command or of the step that uses it. Nothing on Effect is released from
   `process.on('exit')` or from a signal handler. The worktree's lock is taken by Promise
@@ -100,8 +102,8 @@ never on `node:` modules, and its test provides in-memory layers.
   group (the spawner's `killSignal` and `forceKillAfter`). A timeout is an interrupt of
   the agent's fiber, so it releases the same way.
 - **A reading command keeps the default handling of signals** (a jq query that holds
-  the event loop is ended by the signal itself, [the `lntt` command](./lntt-command.md#decision)):
-  only a command that holds resources runs under the runner's handlers.
+  the event loop is ended by the signal itself,
+  [the `lntt` command](./lntt-command.md#decision)): only a command that holds resources runs under the runner's handlers.
 
 ### The bridge, while modules move
 
@@ -111,14 +113,16 @@ with the caller's `AbortSignal` (`withAgents` in `packages/lntt/src/review/agent
 Each run is a fiber of the command's scope: an abort interrupts it and the promise
 settles once its finalizers have run, and an interrupt of the command interrupts every
 run still going and ends once they are all released. The command's own Promise code runs
-under `Effect.tryPromise`, whose signal an interrupt aborts. The library API of `@lntt/lntt` (`packages/lntt/src/index.ts`)
-stays on `Promise`, so a script that imports it needs no Effect.
+under `Effect.tryPromise`, whose signal an interrupt aborts. The library API of
+`@lntt/lntt` (`packages/lntt/src/index.ts`) stays on `Promise`, so a script that imports
+it needs no Effect.
 
 ### Tests beside each module
 
 - **A module's unit test sits beside it, named `*.spec.ts`** (`src/review/agents.ts`,
-  `src/review/agents.spec.ts`, which provides an in-memory `ChildProcessSpawner`), as in `@lntt/test-utils`, where `*.spec.ts` is a unit
-  test and `*.test.ts` an integration test. It runs on vitest with `@effect/vitest`
+  `src/review/agents.spec.ts`, which provides an in-memory `ChildProcessSpawner`), as in
+  `@lntt/test-utils`, where `*.spec.ts` is a unit test and `*.test.ts` an integration
+  test. It runs on vitest with `@effect/vitest`
   (`it.effect`, `it.layer`), with the in-memory layers of the services it uses.
 - **One `unit` level for the whole repo** (`tests.levels` in `.agents/config.jsonc`), run
   by vitest from the root, whose `vitest.config.ts` only lists the

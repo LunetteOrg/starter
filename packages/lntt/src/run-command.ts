@@ -15,8 +15,8 @@ import * as Exit from 'effect/Exit'
 import * as Runtime from 'effect/Runtime'
 import { Exit as LnttExit, leave } from './exit.ts'
 
-// The code of an ending: 0, the code an exit(code) threw, 130 for an interrupt, 1 for a defect
-// (Effect's teardown gives 0, 130 and 1); a defect prints its stack.
+// The code of an ending: 0, the code an exit(code) threw, 130 for an interrupt, 1 for any other
+// failure or a defect (Effect's teardown gives 0, 130 and 1), printed with its stack.
 export const teardownWith =
   (
     leaveWith: (code: number) => Promise<unknown>,
