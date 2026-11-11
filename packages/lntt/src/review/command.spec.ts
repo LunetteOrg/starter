@@ -289,19 +289,26 @@ const BLOCKER = { REVIEW: '- [blocker] a.ts:1 — wrong — fix', VERIFY: 'confi
 const WARNING = { REVIEW: '- [warning] a.ts:1 — w — a', VERIFY: 'confirmed\np' }
 
 describe('lntt review, a round', () => {
-  it.effect('a clean round: exit 0, its summary on stdout, the head saved as reviewed', () => {
-    const w = world()
-    return Effect.gen(function* () {
-      const r = yield* w.round()
-      assert.strictEqual(r.code, 0, r.err)
-      assert.match(r.out, /^lntt review: feat\/1\/x: round 1 of 4, reviewed c2, clean; 0 open, 0 replied, 0 closed/)
-      assert.match(r.err, /^lntt review: reviewing c2 change \(feat\/1\/x\)$/m)
-      assert.match(r.err, /the diff goes to: anthropic \(claude\)/)
-      assert.strictEqual(w.state().reviewed, 'c2')
-      assert.deepStrictEqual(w.agent.calls, ['REVIEW sonnet'])
-      assert.strictEqual(w.locked(), false, 'the lock goes with the round')
-    })
-  })
+  it.effect(
+    'a clean round: exit 0, the commit it reviews on its first line, its summary on stdout, the head saved as reviewed',
+    () => {
+      const w = world()
+      return Effect.gen(function* () {
+        const r = yield* w.round()
+        assert.strictEqual(r.code, 0, r.err)
+        assert.match(r.out, /^lntt review: feat\/1\/x: round 1 of 4, reviewed c2, clean; 0 open, 0 replied, 0 closed/)
+        assert.strictEqual(
+          r.err.split('\n')[0],
+          'lntt review: reviewing c2 change (feat/1/x)',
+          'the commit it reviews, first',
+        )
+        assert.match(r.err, /the diff goes to: anthropic \(claude\)/)
+        assert.strictEqual(w.state().reviewed, 'c2')
+        assert.deepStrictEqual(w.agent.calls, ['REVIEW sonnet'])
+        assert.strictEqual(w.locked(), false, 'the lock goes with the round')
+      })
+    },
+  )
 
   it.effect(
     'refused: a configuration that does not validate, a dirty tree, a detached HEAD; each an error line and event',
