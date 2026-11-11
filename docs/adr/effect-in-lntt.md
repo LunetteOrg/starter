@@ -1,5 +1,5 @@
 ---
-status: proposed # proposed | accepted
+status: accepted # proposed | accepted
 date: 2026-11-11
 tags: [lntt, effect, errors, processes, signals, tests]
 ---
@@ -28,9 +28,9 @@ one in a test.
 
 ## Decision
 
-`@lntt/lntt` is written on Effect, module by module. A module moved to Effect follows
-the rules below; a module not yet moved keeps working as it is, and the two meet at a
-bridge (below).
+`@lntt/lntt` is written on Effect, module by module, until every module has moved; a
+module that moved stays on Effect. A module moved to Effect follows the rules below; a
+module not yet moved keeps working as it is, and the two meet at a bridge (below).
 
 ### The dependency
 
@@ -94,9 +94,14 @@ never on `node:` modules, and its test provides in-memory layers.
   Only a command on Effect loads `run-command.ts`.
 - **A resource is acquired with its release** (`Effect.acquireRelease`), in the scope of
   the command or of the step that uses it. Nothing on Effect is released from
-  `process.on('exit')` or from a signal handler. The worktree's lock is taken by Promise
-  code inside a round (`packages/lntt/src/worktree-lock.ts`), and goes with the process's
-  exit until that code moves.
+  `process.on('exit')` or from a signal handler.
+- **The worktree's lock is a resource of the command's scope** in `lntt review` (a round,
+  a reply, `allow`: `lockWorktree` in `packages/lntt/src/worktree/lock.ts`), its heartbeat
+  a fiber of the same scope. The agents run in a scope inside it, so they are released
+  before the lock. `lntt check tests mutate`, still on Promises, takes the lock through
+  the module's Promise entry (`packages/lntt/src/worktree-lock.ts`), which loads Effect to
+  run the same acquisition and releases the lock on the process's exit until that command
+  moves.
 - **An agent's process group is a resource.** Its release, when the agent did not exit
   on its own: SIGTERM to the group, up to five seconds for it to go, then SIGKILL to the
   group (the spawner's `killSignal` and `forceKillAfter`). A timeout is an interrupt of
@@ -113,7 +118,14 @@ with the caller's `AbortSignal` (`withAgents` in `packages/lntt/src/review/agent
 Each run is a fiber of the command's scope: an abort interrupts it and the promise
 settles once its finalizers have run, and an interrupt of the command interrupts every
 run still going and ends once they are all released. The command's own Promise code runs
-under `Effect.tryPromise`, whose signal an interrupt aborts. The library API of
+under `Effect.tryPromise`, whose signal an interrupt aborts, and the sync code of a module
+not yet moved (`git`, the state files and the configuration of
+`packages/lntt/src/review-cli.ts`, which the round on Effect calls) runs under
+`Effect.try`. What either throws is a tagged error of the calling module (`ReviewFailed` in
+`packages/lntt/src/review/command.ts`), reported by its message like any expected failure;
+a defect of the Effect code reaches the edge with its stack. That code becomes services as
+its module moves, and the unit test of the module on Effect that calls it comes with them,
+on their in-memory layers; until then the `cli` level covers it. The library API of
 `@lntt/lntt` (`packages/lntt/src/index.ts`) stays on `Promise`, so a script that imports
 it needs no Effect.
 
@@ -175,8 +187,6 @@ resolves its own version beside `lntt`'s.
 
 ### When to deviate (revisit triggers)
 
-- A module that moved shows no gain in lines, test time or clarity against the code
-  it replaced: the next modules stay on Promises and this record is rewritten.
 - A version of `effect` whose start cost, measured as above, passes 50 ms for the
   modules a command uses.
 - Effect's source vendored in the repo with `git subtree`, as the Effect team recommends
@@ -205,5 +215,9 @@ resolves its own version beside `lntt`'s.
   releases resources at the end of a block, but gives no interruption that reaches a
   running child process, no errors in the signature and no service injection: the
   tests would still go through the CLI.
-- **The whole package at once.** A rewrite with no module to measure first: the
-  prototype on the agents of `lntt review` is the measure.
+- **Keeping the modules not yet moved on Promises.** Two styles would live side by side for
+  good, and the bridge between them would stay: the resources, errors and services this
+  record gives a module on Effect would stop at every call into one that is not.
+- **The whole package at once.** One change that rewrites every command can be reviewed
+  only as a whole, and keeps the package out of a release until it is all done: a
+  module moves with its tests beside it, in a change of its own.

@@ -73,10 +73,10 @@ export const AgentsLive = NodeChildProcessSpawner.layer.pipe(
   Layer.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)),
 )
 
-// The bridge for the code still on Promises (askAll and the round): a Spawn whose agents run
-// as fibers of the command's scope. An abort of the Spawn's signal interrupts its agent and
-// rejects with the abort's reason once the agent is released; an interrupt of the command
-// interrupts every agent still running and ends once they are all released.
+// The bridge for the code still on Promises (askAll and runRound, which a round calls): a Spawn
+// whose agents run as fibers of the command's scope. An abort of the Spawn's signal interrupts
+// its agent and rejects with the abort's reason once the agent is released; an interrupt of the
+// command interrupts every agent still running and ends once they are all released.
 export const withAgents = <A, E, R>(
   use: (tools: { spawner: (timeoutMinutes: number) => Spawn }) => Effect.Effect<A, E, R>,
 ) =>

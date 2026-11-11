@@ -23,7 +23,7 @@ decisions) is in [`docs/process/`](../process/README.md).
 | [vitest-preset](./vitest-preset.md) | `@lntt/test-utils/vitest`: `sharedTest()`, `appTest()` with a `fast` project under `isolate: false`; the jsdom setup listed in `setupFiles`, its stubs and teardown, and what still leaks | accepted |
 | [worktree-tooling](./worktree-tooling.md) | Branch names, setup, brief and agent launch decided in `lntt`; Orca, Herdr and git as adapters | accepted |
 | [coordinator-mode](./coordinator-mode.md) | A theme's coordinator worktree delegates each issue to a child and writes no code; the gate, the model per role and the mailbox (`lntt ask`) | accepted |
-| [effect-in-lntt](./effect-in-lntt.md) | `@lntt/lntt` on Effect: `effect` and `@effect/platform-node-shared`, services with live and in-memory layers, typed errors, a command run by `runMain` that drains and exits 130 when interrupted, unit tests beside each module on `@effect/vitest` | proposed |
+| [effect-in-lntt](./effect-in-lntt.md) | `@lntt/lntt` on Effect: `effect` and `@effect/platform-node-shared`, services with live and in-memory layers, typed errors, a command run by `runMain` that drains and exits 130 when interrupted, unit tests beside each module on `@effect/vitest` | accepted |
 
 A new subject gets its own file: copy [`template.md`](./template.md) to
 `<subject>.md` and add a row above. A changed decision is rewritten in its file.

@@ -203,8 +203,9 @@ same way every time; the `review` skill keeps the judgement.
 - **Progress is a contract:** stderr starts with the line `lntt review: reviewing <commit> <subject> (<branch>)`, the commit the round
   reads, then carries a line when each agent starts and ends
   (with its tokens), `failed` or `skipped` for one that did not answer, the agents still
-  running every 30 seconds, `round N done` at the end, `error:` for a round that could
-  not start and `limit:` for one past `maxRounds`; after `round N done` and with `limit:`,
+  running every 30 seconds, `round N done` at the end, `error:` for a round, a reply or
+  `allow` that could not start or failed (a defect of `lntt` too, before its stack) and
+  `limit:` for one past `maxRounds`; after `round N done` and with `limit:`,
   `branch total: <line>`, the branch's review cost so far. The `review` skill wakes on `failed`,
   `error:`, `limit:` and `round N done` only. The same goes as JSON events, one per
   line, to `<git dir>/lntt-review.progress`: the round with the pid of `lntt review`
