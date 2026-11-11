@@ -1,5 +1,5 @@
 ---
-status: proposed # proposed | accepted
+status: accepted # proposed | accepted
 date: 2026-11-11
 tags: [lntt, effect, errors, processes, signals, tests]
 ---
@@ -175,8 +175,6 @@ resolves its own version beside `lntt`'s.
 
 ### When to deviate (revisit triggers)
 
-- A module that moved shows no gain in lines, test time or clarity against the code
-  it replaced: the next modules stay on Promises and this record is rewritten.
 - A version of `effect` whose start cost, measured as above, passes 50 ms for the
   modules a command uses.
 - Effect's source vendored in the repo with `git subtree`, as the Effect team recommends
@@ -205,5 +203,6 @@ resolves its own version beside `lntt`'s.
   releases resources at the end of a block, but gives no interruption that reaches a
   running child process, no errors in the signature and no service injection: the
   tests would still go through the CLI.
-- **The whole package at once.** A rewrite with no module to measure first: the
-  prototype on the agents of `lntt review` is the measure.
+- **The whole package at once.** One change that rewrites every command can be reviewed
+  only as a whole, and keeps the package out of a release until it is all done: a
+  module moves with its tests beside it, in a change of its own.
