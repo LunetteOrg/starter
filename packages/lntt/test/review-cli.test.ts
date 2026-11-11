@@ -729,12 +729,12 @@ describe('lntt review, end to end with a fake agent', () => {
     assert.match(readFileSync(pids, 'utf8'), /TERM/)
   })
 
-  // An interrupted round ends through leave(128 + the signal): the running agent got SIGTERM,
-  // the process exits with that code (not by the signal, not 0), and the worktree's lock goes
-  // with it.
+  // An interrupted round releases its agents (SIGTERM to each group) and exits 130 through
+  // leave, whichever the signal (docs/adr/effect-in-lntt.md): not by the signal, not 0, and the
+  // worktree's lock goes with it.
   for (const [signal, code] of [
     ['SIGINT', 130],
-    ['SIGTERM', 143],
+    ['SIGTERM', 130],
   ] as const) {
     test(`${signal} stops the round: exit ${code}, the agent gets SIGTERM, the lock is released`, {
       timeout: 30000,

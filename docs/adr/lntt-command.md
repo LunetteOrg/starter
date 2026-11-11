@@ -82,8 +82,9 @@ lntt ci local | candidate | proved
   stderr), 2 a usage error or a failing jq expression, 3 a stop that a person decides on (`lntt review` past
   `delivery.review.maxRounds`) or nobody left to wait for (`lntt inbox --wait` and `--follow`
   with no child that reports to the role), 4 nothing to report on (`lntt review status` with no round
-  on the current branch, also when a jq query fails while running on the missing state), an interrupted command 128 plus the signal (130 for
-  Ctrl-C); a defect of `lntt` itself exits 1 with its stack trace. Every command ends
+  on the current branch, also when a jq query fails while running on the missing state), an interrupted command 130 (a command on Effect, for
+  SIGINT and SIGTERM alike: [Effect in `lntt`](./effect-in-lntt.md#how-a-command-runs-is-interrupted-and-exits);
+  one not yet on Effect, 128 plus the signal); a defect of `lntt` itself exits 1 with its stack trace. Every command ends
   through one exit path that lets stdout and stderr drain before the process exits: a
   pipe on macOS takes writes asynchronously, and an exit right after a long write cuts
   the document with no sign of it. A test fails on any other exit in the package's code. A command reads stdin to its end

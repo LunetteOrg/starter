@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import { headlessInvocation, parseReply } from '../src/headless.ts'
-import { agentEnv } from '../src/review-cli.ts'
+import { agentEnv } from '../src/review/agent-env.ts'
 import { shellLaunch } from '../src/worktree.ts'
 import { collect, flagsOf, helpFlags, missingFlags, skipOnUsageLimit, tool, upstream } from './upstream.ts'
 

@@ -13,5 +13,6 @@
     "outDir": "dist"
   },
   "include": ["src/**/*.ts", "bin/**/*.ts"],
-  "exclude": []
+  // The unit tests sit beside their modules and stay out of the published package.
+  "exclude": ["src/**/*.spec.ts"]
 }

@@ -185,7 +185,8 @@ same way every time; the `review` skill keeps the judgement.
 - **Nothing runs forever:** each agent stops at `timeoutMinutes`, the whole round (or a
   reply) at `roundTimeoutMinutes` (the round fails and keeps what it gathered), an
   interrupt keeps the waiting agents from starting, and an agent that
-  ignores SIGTERM gets SIGKILL five seconds later, or when `lntt review` exits. On macOS
+  ignores SIGTERM gets SIGKILL five seconds later: `lntt review` exits once its agents are
+  released ([Effect in `lntt`](./effect-in-lntt.md#how-a-command-runs-is-interrupted-and-exits)). On macOS
   `caffeinate` keeps the machine awake while the round runs.
 - **One lock per worktree:** a round, a reply, `lntt review allow` and
   `lntt check tests mutate` share one lock in the worktree's git directory, which holds

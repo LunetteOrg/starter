@@ -37,10 +37,11 @@
     "assertions": ["run"],
     "levels": [
       {
+        // Every package's unit tests, beside their modules: the root vitest.config.ts lists the
+        // packages' own configurations (docs/adr/effect-in-lntt.md#tests-beside-each-module).
         "name": "unit",
-        "files": ["packages/test-utils/src/**/*.spec.ts"],
-        "environment": "vitest, node",
-        "cwd": "packages/test-utils",
+        "files": ["packages/*/src/**/*.spec.ts"],
+        "environment": "vitest, node; in-memory layers for lntt's services",
         "run": "pnpm exec vitest run {files}"
       },
       {
