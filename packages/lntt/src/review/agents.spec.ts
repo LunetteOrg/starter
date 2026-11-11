@@ -145,7 +145,9 @@ describe('runAgent', () => {
     const spawner = inMemorySpawner({ hang: true })
     return Effect.gen(function* () {
       const fiber = yield* Effect.forkChild(Effect.flip(runAgent(invocation, { timeoutMinutes: 3, env: {} })))
-      yield* TestClock.adjust(Duration.minutes(3))
+      yield* TestClock.adjust(Duration.subtract(Duration.minutes(3), Duration.seconds(1)))
+      assert.strictEqual(spawner.seen[0]?.released, false, 'still running a second before its minutes are over')
+      yield* TestClock.adjust(Duration.seconds(1))
       const error = yield* Fiber.join(fiber)
       assert.instanceOf(error, AgentTimedOut)
       assert.strictEqual(error.message, 'timed out after 3 minutes')
@@ -171,6 +173,24 @@ describe('withAgents', () => {
         }),
       )
       assert.strictEqual(outcome, 'stopped: the other agents answered 60s before | released: true')
+    }).pipe(Effect.provide(spawner.layer))
+  })
+
+  it.effect("a spawn rejects with the agent's own failure, and gives the agent lntt's environment", () => {
+    const spawner = inMemorySpawner({ code: 2, stderr: 'quota exceeded' })
+    return Effect.gen(function* () {
+      process.env.LNTT_SPEC_INHERITED = 'yes'
+      const message = yield* withAgents(({ spawner: spawnFor }) =>
+        Effect.promise(() =>
+          spawnFor(10)(invocation).then(
+            () => 'resolved',
+            (error: Error) => error.message,
+          ),
+        ),
+      ).pipe(Effect.ensuring(Effect.sync(() => delete process.env.LNTT_SPEC_INHERITED)))
+      assert.strictEqual(message, 'claude exited 2: quota exceeded')
+      assert.strictEqual(spawner.seen[0]?.env?.LNTT_SPEC_INHERITED, 'yes')
+      assert.strictEqual(spawner.seen[0]?.env?.LNTT_REVIEW, '1')
     }).pipe(Effect.provide(spawner.layer))
   })
 

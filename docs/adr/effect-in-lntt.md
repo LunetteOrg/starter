@@ -42,10 +42,12 @@ bridge (below).
   agents (`AGENTS.md`, `ai-docs/`). `@effect/platform-node-shared` unpacks to 0.8 MB and
   brings `ws` and `@types/ws`. Disk is what they cost: a command loads only the modules
   it imports.
+- **What every command loads, or what a caller needs without Effect, stays in a module
+  that imports none** (`exit.ts`, `src/review/agent-env.ts`); a command on Effect loads
+  its Effect modules when it runs.
 - **Modules are imported by path** (`effect/Effect`, `effect/Layer`), never from the
-  `effect` index. Measured on 2026-11-10 with `effect` 4.1.3, node 24.22.1, median of 21
-  fresh processes:
-  the eight modules a command uses load in 21 ms, the index in 73 ms.
+  `effect` index. Measured on 2026-11-11 with `effect` 4.1.4, node 24.22.1, median of 21
+  fresh processes: the eight modules a command uses load in 23 ms, the index in 84 ms.
 - **The Node services are Effect's where `@effect/platform-node-shared` has them**
   (`NodeChildProcessSpawner`, `NodeFileSystem`, `NodeRuntime`), and `lntt`'s own only
   where it has none (git). Code of `lntt`'s own is what Effect does not do.
@@ -67,9 +69,9 @@ never on `node:` modules, and its test provides in-memory layers.
   not validate. The caller handles it by tag (`Effect.catchTag`) or lets it through.
 - **A defect is not in the signature:** a bug of `lntt` dies, and the edge prints its
   stack and exits 1, as today.
-- **Exit codes are given at one place, the edge of the command,** from the error's tag
-  ([the `lntt` command](./lntt-command.md#decision): 0, 1, 2, 3, 4, and 128 plus the
-  signal). A module never picks an exit code.
+- **Exit codes are given at one place, the edge of the command** (the codes are in
+  [the `lntt` command](./lntt-command.md#decision); an interrupt below). A module never
+  picks an exit code.
 
 ### How a command runs, is interrupted and exits
 
@@ -118,8 +120,8 @@ stays on `Promise`, so a script that imports it needs no Effect.
   `src/review/agents.spec.ts`, which provides an in-memory `ChildProcessSpawner`), as in `@lntt/test-utils`, where `*.spec.ts` is a unit
   test and `*.test.ts` an integration test. It runs on vitest with `@effect/vitest`
   (`it.effect`, `it.layer`), with the in-memory layers of the services it uses.
-- **One `unit` level for the whole repo** in `tests.levels`: the `*.spec.ts` files under
-  `packages/*/src/`, run by vitest from the root, whose `vitest.config.ts` only lists the
+- **One `unit` level for the whole repo** (`tests.levels` in `.agents/config.jsonc`), run
+  by vitest from the root, whose `vitest.config.ts` only lists the
   packages' own configurations as `projects`. Each package keeps its vitest settings in
   its own `vitest.config.ts`. The `cli` level keeps the end-to-end tests in
   `packages/lntt/test/`, one per main path of a command.
@@ -180,8 +182,9 @@ resolves its own version beside `lntt`'s.
 
 ## Discarded directions
 
-- **Effect 3.** Stable and widely used, but 4 is the current major, with a smaller
-  core and the APIs Effect will keep; starting on 3 means a migration of the migration.
+- **Effect 3.** The major before 4: the process and platform APIs this record uses
+  (`effect/process`, the spawner's `killSignal` and `forceKillAfter`) are 4's, and
+  starting on 3 means a migration of the migration.
 - **`@effect/platform-node`.** The same Node services as `@effect/platform-node-shared`,
   plus an HTTP client and server, sockets and Redis, which bring `undici` and `redis`
   (a required peer) into every project for nothing `lntt` uses.
@@ -190,7 +193,8 @@ resolves its own version beside `lntt`'s.
   drain needs only the teardown.
 - **`node:test` for the unit tests.** It runs Effects through `Effect.runPromise` with
   the layers provided by hand in every test, where `@effect/vitest` provides them and
-  `TestClock`; and the repo's unit tests already run on vitest.
+  `TestClock`; and `@lntt/test-utils`'s unit tests run on vitest, so one runner serves
+  the repo's unit level.
 - **A `unit` level per package.** One level per command means one `run` per level;
   vitest's `projects` let one command run every package's configuration.
 - **Keeping Promises and adding `using` / `AsyncDisposableStack` for resources.** It

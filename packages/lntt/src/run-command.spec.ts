@@ -37,6 +37,12 @@ describe('teardownWith', () => {
     }),
   )
 
+  it('leaves with 1 for any other failure, and prints it', async () => {
+    const { code, reported } = await end(Exit.fail(new Error('the state cannot be read')))
+    assert.strictEqual(code, 1)
+    assert.match(reported, /Error: the state cannot be read/)
+  })
+
   it('leaves with 1 for a defect of lntt, and prints its stack as Node prints an uncaught error', async () => {
     const { code, reported } = await end(Exit.die(new TypeError('a bug')))
     assert.strictEqual(code, 1)
