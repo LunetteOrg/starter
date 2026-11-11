@@ -75,8 +75,8 @@ Run the **existing stories as browser tests** via `@storybook/addon-vitest`
   boundaries, controlled/uncontrolled state). Reach for it when a real case
   proves the story insufficient — not before.
 - **Version lockstep, non-negotiable**: `@vitest/browser` and
-  `@vitest/browser-playwright` declare an *exact* peer on `vitest` (e.g.
-  `5.1.0`, not a range). Bump all three together, or the install breaks.
+  `@vitest/browser-playwright` declare an *exact* peer on `vitest` (their own
+  version, not a range). Bump all three together, or the install breaks.
 
 ### Consequences
 
