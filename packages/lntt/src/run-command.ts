@@ -4,7 +4,7 @@
 // NodeRuntime.runMain runs the command and interrupts it on SIGINT or SIGTERM: every finalizer
 // of its scope runs (the agents are released), then the teardown leaves through exit.ts's
 // leave, so stdout and stderr drain first. runMain on its own exits at once on any code but 0,
-// and prints failures in Effect's log format: lntt reports its defects itself, as finish() does.
+// and prints failures in Effect's log format: lntt reports its failures itself, as finish() does.
 
 import { stderr } from 'node:process'
 import { inspect } from 'node:util'
