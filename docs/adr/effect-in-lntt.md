@@ -79,8 +79,8 @@ never on `node:` modules, and its test provides in-memory layers.
   (`runCommand` in `packages/lntt/src/run-command.ts`). On SIGINT or SIGTERM, `runMain`
   interrupts the command: the interrupt runs every finalizer of the command's scope (the
   agents are released), and the command exits 130, whichever the signal. The teardown
-  gives Effect's codes (0, 130, 1 for a defect, whose stack it prints) and the code of an
-  `exit(code)` the command threw, and leaves through `leave`
+  gives Effect's codes (0, 130, and 1 for any other failure or defect, which it prints as
+  Node prints an uncaught error) and the code of an `exit(code)` the command threw, and leaves through `leave`
   (`packages/lntt/src/exit.ts`), which lets stdout and stderr drain first: `runMain`
   alone exits at once on any code but 0, and a pipe on macOS takes writes
   asynchronously, so a document written before an exit 3 or 4 would arrive cut.
