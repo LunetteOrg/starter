@@ -155,6 +155,20 @@ describe('the installed package', () => {
     assert.deepEqual([r.status, r.stdout], [4, 'feat/1/x\nnull\n'], r.stderr)
   })
 
+  // A round runs on Effect (src/run-command.ts): reaching the round's own error, on a repository
+  // with no commit, means effect and @effect/platform-node-shared loaded from the installed
+  // dependencies; a missing one fails before, with Node's ERR_MODULE_NOT_FOUND.
+  test('lntt review runs its round on Effect from the installed dependencies', () => {
+    const manifest = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8'))
+    assert.ok(manifest.dependencies.effect && manifest.dependencies['@effect/platform-node-shared'], 'dependencies')
+    const repo = mktmp('lntt-installed-effect-')
+    execFileSync('git', ['init', '-q', '-b', 'feat/1/x'], { cwd: repo })
+    const r = spawnSync('node', [bin, 'review', '--plan'], { cwd: repo, encoding: 'utf8' })
+    assert.equal(r.status, 1, r.stderr)
+    assert.match(r.stderr, /^lntt review: error: Command failed: git rev-parse/)
+    assert.doesNotMatch(r.stderr, /ERR_MODULE_NOT_FOUND|Cannot find (package|module)/)
+  })
+
   test('a project imports the package, its ci entry and its schemas by name', () => {
     const script = [
       "import { commitlintConfig } from '@lntt/lntt'",

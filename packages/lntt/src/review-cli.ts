@@ -10,13 +10,12 @@ import { projectBase } from './base.ts'
 import { type BranchRules, branchRules, fromToolName } from './branch.ts'
 import { cite, formatJson, isArea, runArea } from './check.ts'
 import { localRef } from './ci/event.ts'
-import { Exit, exit, leave } from './exit.ts'
+import { Exit, exit } from './exit.ts'
 import { NoConfigError } from './files.ts'
 import {
   type HeadlessAgent as Agent,
   askAll,
   headlessInvocation,
-  type Invocation,
   type Progress,
   providerOf,
   type Spawn,
@@ -414,130 +413,9 @@ export function reporter(orca: Subagents | null = null): {
   }
 }
 
-// Each agent runs in a process group of its own, so a timeout stops it and whatever it
-// started; an interrupt of lntt review stops every group still running.
-const groups = new Set<number>()
-
-// The groups SIGTERM was sent to, until their SIGKILL: a closed leader says nothing of its
-// group, where a child that ignored SIGTERM may still run.
-const terminated = new Set<number>()
-
-// SIGTERM to the group, then SIGKILL to the group five seconds later, whatever the leader
-// did meanwhile: a process group id is not reused while a member lives, so the SIGKILL can
-// only reach what ignored SIGTERM (an empty group fails with ESRCH). Only a group still
-// running is signalled at first: a closed agent's pid may already belong to another process.
-function terminate(pid: number): void {
-  if (!groups.has(pid)) return
-  try {
-    process.kill(-pid, 'SIGTERM')
-  } catch {}
-  terminated.add(pid)
-  setTimeout(() => {
-    try {
-      process.kill(-pid, 'SIGKILL')
-    } catch {}
-    groups.delete(pid)
-    terminated.delete(pid)
-  }, 5000).unref()
-}
-
-function stopGroups(): void {
-  for (const pid of groups) terminate(pid)
-}
-
-// Whatever ignored SIGTERM and is still running when lntt review exits goes with it.
-process.on('exit', () => {
-  for (const pid of [...groups, ...terminated]) {
-    try {
-      process.kill(-pid, 'SIGKILL')
-    } catch {}
-  }
-})
-
-// The host's hook variables stay with the session that owns them: an agent of the round
-// would otherwise report to Orca (or Herdr) as that session.
-const HOST_HOOKS = /^(ORCA_AGENT_HOOK_|ORCA_PANE_KEY$|ORCA_TAB_ID$|ORCA_AGENT_LAUNCH_TOKEN$|HERDR_)/
-
-export function agentEnv(
-  base: Record<string, string | undefined>,
-  extra: Record<string, string>,
-): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const [name, value] of Object.entries(base)) if (value !== undefined && !HOST_HOOKS.test(name)) out[name] = value
-  return { ...out, ...extra }
-}
-// An interrupt keeps the agents still waiting from starting, gives the running ones
-// SIGTERM and up to five seconds to go before exiting; the exit handler kills what is left.
+// An interrupt of the command aborts this: the agents still waiting do not start, and a round
+// that fails or ends meanwhile leaves the exit to the runner (src/run-command.ts).
 const interrupted = new AbortController()
-// Only for the commands that run agents: a handler cannot run while a jq query holds the event
-// loop, so status keeps the default, and a signal ends a query that does not end.
-function stopAgentsOnInterrupt() {
-  // 128 plus the signal's number, as every command of lntt exits when interrupted.
-  for (const [signal, code] of [
-    ['SIGINT', 130],
-    ['SIGTERM', 143],
-  ] as const) {
-    process.on(signal, () => {
-      interrupted.abort(`interrupted by ${signal}`)
-      stopGroups()
-      const until = Date.now() + 5000
-      const wait = setInterval(() => {
-        if (groups.size > 0 && Date.now() < until) return
-        clearInterval(wait)
-        void leave(code)
-      }, 100)
-    })
-  }
-}
-
-function spawner(timeoutMinutes: number): Spawn {
-  return (inv: Invocation, signal?: AbortSignal) =>
-    new Promise((resolve, reject) => {
-      const child = spawn(inv.command, inv.args, {
-        env: agentEnv(env, inv.env),
-        stdio: ['pipe', 'pipe', 'pipe'],
-        detached: true,
-      })
-      if (child.pid) groups.add(child.pid)
-      const onAbort = () => {
-        if (child.pid) terminate(child.pid)
-        reject(new Error(String(signal?.reason)))
-      }
-      signal?.addEventListener('abort', onAbort, { once: true })
-      let out = ''
-      let err = ''
-      child.stdout.on('data', (chunk) => {
-        out += chunk
-      })
-      child.stderr.on('data', (chunk) => {
-        err += chunk
-      })
-      const timer = setTimeout(
-        () => {
-          if (child.pid) terminate(child.pid)
-          reject(new Error(`timed out after ${timeoutMinutes} minutes`))
-        },
-        timerMs(timeoutMinutes * 60_000),
-      )
-      child.on('error', (error) => {
-        clearTimeout(timer)
-        reject(error)
-      })
-      child.on('close', (code) => {
-        clearTimeout(timer)
-        signal?.removeEventListener('abort', onAbort)
-        if (child.pid) groups.delete(child.pid)
-        if (code === 0) resolve(out)
-        else
-          reject(
-            new Error(`${inv.command} exited ${code}: ${(err.trim() || out.trim()).split('\n').slice(-3).join(' ')}`),
-          )
-      })
-      // An agent that exits before reading its prompt closes the pipe: `close` reports it.
-      child.stdin.on('error', () => {})
-      child.stdin.end(inv.stdin)
-    })
-}
 
 // macOS sleeps on its own schedule, and a sleeping machine stops the round's agents: keep
 // it awake while this process runs.
@@ -591,7 +469,7 @@ function untouchedIn(diff: string): (path: string, line: number) => boolean {
   return (path, line) => touched !== null && !touched.get(path)?.has(line)
 }
 
-async function round(args: string[]): Promise<number> {
+async function round(args: string[], spawner: (timeoutMinutes: number) => Spawn): Promise<number> {
   const { values } = parseArgs({
     args,
     options: { base: { type: 'string' }, plan: { type: 'boolean', default: false } },
@@ -775,7 +653,7 @@ function headBranch(): string {
 
 // The reviewers that found it, each resumed in its own session with the author's
 // answer. Withdrawn when every one of them withdraws it.
-async function reply(args: string[]): Promise<number> {
+async function reply(args: string[], spawner: (timeoutMinutes: number) => Spawn): Promise<number> {
   const [id, ...words] = args
   if (!id || words.length === 0) usage('give the finding and the answer')
   const state = readState(headBranch())
@@ -1253,41 +1131,72 @@ export async function main([command, ...args]: string[]): Promise<void> {
     if (command === 'allow') exit(allow(args))
     if (command === 'status') exit(await status(args))
     if (command === 'cost') exit(await cost(args))
-    stopAgentsOnInterrupt()
-    exit(command === 'reply' ? await reply(args) : await round(command === undefined ? [] : [command, ...args]))
-  } catch (error) {
-    if (error instanceof Exit) {
-      await handlerLeaves()
-      throw error
-    }
-    if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
-      usage(error.message)
-    }
-    // `error:` is what the review skill watches for, with `failed`, `limit:` and `round N done`.
-    stderr.write(`lntt review: error: ${(error as Error).message}\n`)
-    // A refused lock means another round owns the progress file: leave it alone.
-    const own = !(error instanceof LockedError)
-    // lntt review status never writes the progress file: it only reads the state.
-    const reads = command === 'status'
-    if (
-      own &&
-      !reads &&
-      command !== 'reply' &&
-      command !== 'allow' &&
-      command !== 'cost' &&
-      !progressFile &&
-      ![command, ...args].includes('--plan')
+    // A round or a reply runs its agents on Effect: an interrupt releases them, then exits 130.
+    const [Effect, { AgentsLive, withAgents }, { runCommand }] = await Promise.all([
+      import('effect/Effect'),
+      import('./review/agents.ts'),
+      import('./run-command.ts'),
+    ])
+    const run = (spawner: (timeoutMinutes: number) => Spawn) =>
+      command === 'reply' ? reply(args, spawner) : round(command === undefined ? [] : [command, ...args], spawner)
+    return runCommand(
+      withAgents(({ spawner }) =>
+        Effect.tryPromise({
+          try: (signal) => {
+            signal.addEventListener('abort', () => interrupted.abort('interrupted'), { once: true })
+            return outcome(command, args, () => run(spawner))
+          },
+          catch: (error) => error,
+        }),
+      ).pipe(Effect.provide(AgentsLive)),
     )
-      startProgress()
-    emit({ type: 'error', message: (error as Error).message })
-    await handlerLeaves()
-    exit(1)
+  } catch (error) {
+    await failed(command, args, error)
   }
 }
 
-// The abort of an interrupt is what ended the round: the handler of the signal owns the exit
-// (130 or 143, after the agents had their five seconds), so a round that fails or ends
-// meanwhile reports itself and then waits for it, instead of exiting first with 1.
+// What a round or a reply ends with: exit(code), or the error report of main.
+async function outcome(command: string | undefined, args: string[], run: () => Promise<number>): Promise<never> {
+  try {
+    return exit(await run())
+  } catch (error) {
+    return failed(command, args, error)
+  }
+}
+
+// The error report of a review command, then its exit: 1, or the code an exit() threw.
+async function failed(command: string | undefined, args: string[], error: unknown): Promise<never> {
+  if (error instanceof Exit) {
+    await handlerLeaves()
+    throw error
+  }
+  if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
+    usage(error.message)
+  }
+  // `error:` is what the review skill watches for, with `failed`, `limit:` and `round N done`.
+  stderr.write(`lntt review: error: ${(error as Error).message}\n`)
+  // A refused lock means another round owns the progress file: leave it alone.
+  const own = !(error instanceof LockedError)
+  // lntt review status never writes the progress file: it only reads the state.
+  const reads = command === 'status'
+  if (
+    own &&
+    !reads &&
+    command !== 'reply' &&
+    command !== 'allow' &&
+    command !== 'cost' &&
+    !progressFile &&
+    ![command, ...args].includes('--plan')
+  )
+    startProgress()
+  emit({ type: 'error', message: (error as Error).message })
+  await handlerLeaves()
+  exit(1)
+}
+
+// The abort of an interrupt is what ended the round: the runner owns the exit (130, once the
+// agents are released), so a round that fails or ends meanwhile reports itself and then waits
+// for it, instead of exiting first with 1.
 async function handlerLeaves(): Promise<void> {
   if (interrupted.signal.aborted) await new Promise<never>(() => {})
 }
