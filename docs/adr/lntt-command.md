@@ -23,7 +23,6 @@ command, so a reader who sees `lntt` in a script knows which package provides it
 
 ```
 lntt path | validate | get | set | operator | sync | guide | local app | viewer | browser | refs
-lntt hook typecheck
 lntt board sync | ready
 lntt check [agents-md | skills | plugin | decisions [structure | board-refs | numbers] | tests [levels | focus | rules | touched | mutate] | body] | check cite
 lntt branch name | check | rename
@@ -113,7 +112,7 @@ lntt ci local | candidate | proved
   reading command keeps the default handling of SIGINT and SIGTERM.
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
   `decisions` and `tests`, whose results their review lenses read, and `agents-md`,
-  `skills`, `plugin` (the Lunette plugin and the install and typecheck hooks in `.claude/settings.json`)
+  `skills`, `plugin` (the Lunette plugin and the install hook in `.claude/settings.json`)
   and `body` (the retrospective block of a pull request body, of a candidate's
   retrospective comment and of the template), which no lens needs; a lens's checks are the area named after it. Alone it runs every
   area, which is what CI runs. Every check reports `PASS`, `FAIL` or `NOT RUN` with its
@@ -147,7 +146,9 @@ lntt ci local | candidate | proved
   it stops every command, exit 1, after the dump is printed with the error in it.
 - **No aliases for old names.** A renamed command answers only to its new name, so its
   callers (workflows, skills, the README) change with it, in the same release: the
-  shared skills ship in `@lntt/lntt` with the command they call.
+  shared skills ship in `@lntt/lntt` with the command they call. A removed command that
+  the settings lines of an earlier sync still call is the one exception
+  ([the compatibility rule](#gates-and-agent-tools-one-package-two-groups-one-compatibility-rule)).
 
 ### Gates and agent tools: one package, two groups, one compatibility rule
 
@@ -231,7 +232,7 @@ So:
   | `lntt validate \| get \| set \| path`: they hold the schema; `set` writes a tracked file | `lntt guide`: it prints the skills |
   | `lntt sync`: it writes tracked files (the `AGENTS.md` block, the skill stubs, the entries of `.claude/settings.json`) that `lntt check` verifies | `lntt operator`: personal context, read by no gate; `lntt pr block`: the empty retrospective block, for the template and the skill; `lntt retro add`: it writes a comment on GitHub, not the commit; `lntt dump` and `lntt issue`: a report on Lunette, filed upstream on the operator's approval |
   | the commitlint configuration (the `@lntt/lntt` export) | `lntt local app`, `lntt viewer`; `lntt board sync`: it reads and writes GitHub, not the commit, so its `--check` is a verdict on the board's state that a hook or a scheduled job runs, never a pull request's gate; `lntt board ready`, for the same reason |
-  | the configuration schema | the plugin's hooks, `lntt hook` (what the settings hooks run) and `lntt refs`; once it exists, `lntt doctor` (#124) |
+  | the configuration schema | the plugin's hooks and `lntt refs`; once it exists, `lntt doctor` (#124) |
 
 - **The configuration schema follows one compatibility rule.** Its version is the
   `@lntt/lntt` version in the project's lockfile; the file carries none.
@@ -271,9 +272,15 @@ So:
       such a change, and these two releases are its coordination.
     - A removal with no replacement takes one release: `lntt validate` fails on the key
       with a message that names it, the release that removed it and what to do
-      (`local.hooks.format was removed in 0.6.4: delete it, formatting is the
-      pre-commit's`), not the generic unknown-property error. The key goes in `REMOVED`
+      (`local.hooks was removed in 0.6.5 (local.hooks.typecheck, and local.hooks.format
+      before it): delete it, the typecheck and the formatting are the pre-commit's`), not
+      the generic unknown-property error. The key goes in `REMOVED`
       of `released-configs.test.ts`, and the release notes name it as a breaking change.
+    - A removed command that the settings lines of an earlier `lntt sync` still call
+      answers for one release with what to do and exits 0, where a usage error would make
+      the line say to upgrade an `lntt` that is already current: `lntt hook typecheck` in
+      0.6.5 says to run `lntt sync`, which removes the line, and the release after drops
+      the command.
 - **When the split's trigger fires**, the agent tools leave `@lntt/lntt` for a second
   command at its latest version, shipped with the plugin and through `npx`. The pinned
   group stays where it is. The skills become full files beside the agent tools and the

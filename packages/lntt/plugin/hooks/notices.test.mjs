@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { INSTALL_HOOK, MARKETPLACE, PLUGIN, TYPECHECK_HOOK } from '../../src/claude-settings.ts'
+import { INSTALL_HOOK, MARKETPLACE, PLUGIN } from '../../src/claude-settings.ts'
 import { notice, settingsProblems } from './notices.mjs'
 
 // The terminal's dim sequence, stripped: what the person reads.
@@ -12,7 +12,6 @@ const SYNCED = {
   enabledPlugins: { [PLUGIN]: true },
   hooks: {
     SessionStart: [{ hooks: [INSTALL_HOOK] }],
-    Stop: [{ hooks: [TYPECHECK_HOOK] }],
   },
 }
 
@@ -55,6 +54,11 @@ describe('the settings the plugin checks at session start', () => {
     assert.deepEqual(settingsProblems(JSON.stringify(SYNCED)), [])
   })
 
+  test('the Stop hook of 0.6.4, left until the next sync, is no problem', () => {
+    const old = { ...SYNCED, hooks: { ...SYNCED.hooks, Stop: [{ hooks: [{ statusMessage: 'lntt: typecheck' }] }] } }
+    assert.deepEqual(settingsProblems(JSON.stringify(old)), [])
+  })
+
   test('names each entry missing or pointing elsewhere', () => {
     const elsewhere = {
       ...SYNCED,
@@ -64,13 +68,11 @@ describe('the settings the plugin checks at session start', () => {
     assert.deepEqual(settingsProblems(JSON.stringify(elsewhere)), [
       'extraKnownMarketplaces.lunette',
       'hooks.SessionStart',
-      'hooks.Stop',
     ])
     assert.deepEqual(settingsProblems('{}'), [
       'extraKnownMarketplaces.lunette',
       'enabledPlugins.lunette@lunette',
       'hooks.SessionStart',
-      'hooks.Stop',
     ])
   })
 
@@ -109,7 +111,6 @@ describe('the settings the plugin checks at session start', () => {
       'extraKnownMarketplaces.lunette',
       'enabledPlugins.lunette@lunette',
       'hooks.SessionStart',
-      'hooks.Stop',
     ])
   })
 
@@ -118,7 +119,6 @@ describe('the settings the plugin checks at session start', () => {
       'extraKnownMarketplaces.lunette',
       'enabledPlugins.lunette@lunette',
       'hooks.SessionStart',
-      'hooks.Stop',
     ])
   })
 

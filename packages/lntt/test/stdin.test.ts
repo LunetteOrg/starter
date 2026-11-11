@@ -86,24 +86,10 @@ describe('a command that reads stdin waits for a writer that starts late and rea
   })
 
   test('lntt hook typecheck', async () => {
-    mkdirSync(join(dir, '.agents'))
-    writeFileSync(
-      join(dir, '.agents/config.jsonc'),
-      JSON.stringify({ local: { hooks: { typecheck: 'echo red; exit 1' } } }),
-    )
-    // A state lntt cannot read makes the hook report a defect of its own, once per session:
-    // the session id on stdin tells the second run it was said. With the input lost, it is
-    // said again.
-    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir })
-    mkdirSync(join(dir, '.git/lntt-typecheck-failure'))
-    const tmp = join(dir, 'tmp')
-    mkdirSync(tmp)
-    const env = { ...process.env, TMPDIR: tmp }
     const input = JSON.stringify({ session_id: 'late-writer', padding: 'x'.repeat(50) })
-    const first = await lateWriter(['hook', 'typecheck'], dir, input, env)
-    assert.match(first.stdout, /systemMessage/, first.stderr)
-    const again = await lateWriter(['hook', 'typecheck'], dir, input, env)
-    assert.equal(again.stdout, '')
+    const r = await lateWriter(['hook', 'typecheck'], dir, input)
+    assert.equal(r.status, 0, r.stderr)
+    assert.match(r.stdout, /removed in 0\.6\.5/)
   })
 
   test('lntt refs', async () => {
@@ -149,8 +135,6 @@ describe('a command that reads stdin waits for a writer that starts late and rea
   })
 
   test('lntt hook typecheck does not wait on a terminal', async () => {
-    mkdirSync(join(dir, '.agents'))
-    writeFileSync(join(dir, '.agents/config.jsonc'), JSON.stringify({ local: { hooks: { typecheck: 'true' } } }))
     // stdin is a pipe that never closes, which a terminal looks like to the hook.
     const r = await new Promise<{ status: number | null }>((done) => {
       const child = spawn(

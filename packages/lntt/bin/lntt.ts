@@ -32,10 +32,8 @@
 //                             Ready-eligible or with what is missing; --apply moves the eligible
 //                             ones to board.fields.status.ready
 //
-//   lntt hook typecheck
-//                             what the hook line lntt sync writes into .claude/settings.json
-//                             runs: local.hooks.typecheck or the typecheck script, exit 1 on a
-//                             failure not seen last time
+//   lntt hook typecheck       removed in 0.6.5 (the typecheck is the pre-commit's): says to run
+//                             lntt sync, exit 0, to the Stop line a sync of 0.6.4 wrote
 //
 //   lntt refs [--cached] [<text>...]
 //                             the issue and pull request references of the text (the arguments,

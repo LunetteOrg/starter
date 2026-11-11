@@ -61,8 +61,9 @@ export function parse(text: string, located: Located): unknown {
 // names it, the release that removed it and what to do, where the generic
 // unknown-property error would only name the property (docs/adr/lntt-command.md).
 const REMOVED_KEYS: Record<string, Record<string, string>> = {
-  '/local/hooks': {
-    format: "local.hooks.format was removed in 0.6.4: delete it, formatting is the pre-commit's",
+  '/local': {
+    hooks:
+      "local.hooks was removed in 0.6.5 (local.hooks.typecheck, and local.hooks.format before it): delete it, the typecheck and the formatting are the pre-commit's",
   },
 }
 
