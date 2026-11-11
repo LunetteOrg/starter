@@ -2,23 +2,29 @@
 // while it runs: `lntt review` (a round, a reply, `allow`) and `lntt check tests mutate`.
 // Either refuses to start while the other holds it. The file sits in the worktree's git
 // directory and holds `<pid> <command>`.
+//
+// The lock is taken by one Effect (src/worktree/lock.ts). `lntt review` holds it as a resource
+// of its scope (lockWorktree), released however the command ends. This module imports no
+// Effect, because `lntt check` and `lntt review status` load it: it holds the rules of who
+// holds the lock, the lock's holder read synchronously, and the Promise entry of
+// `lntt check tests mutate`, whose lock goes with the process's exit until it moves to Effect.
 
-import { closeSync, linkSync, openSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { readFileSync, rmSync, statSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
-
-export class LockedError extends Error {}
 
 // A holder touches its lock this often, and a lock touched within FRESH_MS counts as held
 // even when its pid cannot be seen (another pid namespace answers ESRCH for a live process).
 export const HEARTBEAT_MS = 5_000
 export const FRESH_MS = 15_000
 // A takeover guard older than this was left by a run that died inside the takeover.
-const GUARD_MS = 10_000
+export const GUARD_MS = 10_000
 // A pid answers for a holder that is gone once the system reuses it for another process, so
 // a lock untouched this long is dead whatever its pid does. A holder blocked in a long
 // synchronous step (the mutations of a round) does not touch the lock, which is why the
 // limit is far past any round or mutation run.
-const MAX_HOLD_MS = 12 * 60 * 60 * 1000
+export const MAX_HOLD_MS = 12 * 60 * 60 * 1000
+// A file just created by an older lntt is empty for an instant: held this long.
+const EMPTY_MS = 2_000
 
 export function lockPath(gitDir: string): string {
   return join(gitDir, 'lntt-review.lock')
@@ -26,8 +32,40 @@ export function lockPath(gitDir: string): string {
 
 export type Holder = { pid: number | null; command: string | null }
 
+// The pid a lock's text names, null when it names none.
+export function namedPid(text: string): number | null {
+  const pid = Number(text.trim().split(/\s+/)[0])
+  return Number.isInteger(pid) && pid > 0 ? pid : null
+}
+
+// Who holds a lock with this text, last touched `ageMs` ago, as seen from the process `self`;
+// `visible` says whether the pid it names is running. Null when nobody does: a file naming no
+// pid, this very process, a pid that is gone in a lock nobody has touched lately, or a lock
+// untouched for MAX_HOLD_MS. A fresh empty file counts as held.
+export function judge(text: string, ageMs: number, self: number, visible: boolean): Holder | null {
+  const trimmed = text.trim()
+  if (trimmed === '') return ageMs < EMPTY_MS ? { pid: null, command: null } : null
+  const pid = namedPid(trimmed)
+  if (pid === null || pid === self) return null
+  const command = trimmed.split(/\s+/).slice(1).join(' ') || null
+  return (visible && ageMs < MAX_HOLD_MS) || ageMs < FRESH_MS ? { pid, command } : null
+}
+
+// What a refusal says of the holder: its command, and its pid, `starting` for a lock that
+// names none yet, `unknown` when no holder could be read.
+export function lockedMessage(holder: Holder | null): string {
+  if (holder === null) return 'another lntt command is already running in this worktree (pid unknown)'
+  return `${holder.command ?? 'another lntt command'} is already running in this worktree (pid ${holder.pid ?? 'starting'})`
+}
+
+// A lock refused because another command holds it (LockedError of src/worktree/lock.ts), told
+// apart without loading Effect.
+export function isLocked(error: unknown): error is Error {
+  return error instanceof Error && (error as { _tag?: unknown })._tag === 'LockedError'
+}
+
 // ESRCH is a pid that is gone; EPERM is a process of another user, which is running.
-function visible(pid: number): boolean {
+export function visible(pid: number): boolean {
   try {
     process.kill(pid, 0)
     return true
@@ -36,73 +74,33 @@ function visible(pid: number): boolean {
   }
 }
 
-// Who holds the lock, or null when nobody does: no file, a file naming no pid, this very
-// process, a pid that is gone in a lock nobody has touched lately, or a lock untouched for
-// MAX_HOLD_MS. A file just created
-// by an older lntt is empty for an instant, so a fresh empty one counts as held.
-function holder(lock: string): Holder | null {
-  let text: string
-  let age: number
+function readLock(lock: string): { text: string; ageMs: number } | null {
   try {
-    text = readFileSync(lock, 'utf8').trim()
-    age = Date.now() - statSync(lock).mtimeMs
+    return { text: readFileSync(lock, 'utf8'), ageMs: Date.now() - statSync(lock).mtimeMs }
   } catch {
     return null
   }
-  if (text === '') return age < 2_000 ? { pid: null, command: null } : null
-  const [first = '', ...rest] = text.split(/\s+/)
-  const pid = Number(first)
-  if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return null
-  const found = { pid, command: rest.join(' ') || null }
-  return (visible(pid) && age < MAX_HOLD_MS) || age < FRESH_MS ? found : null
 }
 
 // The holder of the worktree's lock, null when nobody holds it.
 export function heldBy(gitDir: string): Holder | null {
-  return holder(lockPath(gitDir))
+  const read = readLock(lockPath(gitDir))
+  if (read === null) return null
+  const pid = namedPid(read.text)
+  return judge(read.text, read.ageMs, process.pid, pid !== null && visible(pid))
 }
 
-function sleep(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
-}
-
-// Removing a dead lock is serialised by a guard file: of two runs that judged the lock
-// dead, the second finds it alive again once the first has created its own, and leaves it.
-function takeOver(lock: string): void {
-  const guard = `${lock}.takeover`
-  let fd: number
-  try {
-    fd = openSync(guard, 'wx')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-    // Removing an old guard is not atomic: two runs that both find it old can remove each
-    // other's new one. It takes a crash inside a takeover of a few milliseconds, then two
-    // runs starting in the same 10 seconds; the worst case is the race a guard removes.
-    try {
-      if (Date.now() - statSync(guard).mtimeMs > GUARD_MS) rmSync(guard, { force: true })
-    } catch {}
-    sleep(20)
-    return
-  }
-  try {
-    if (holder(lock) === null) rmSync(lock, { force: true })
-  } finally {
-    closeSync(fd)
-    rmSync(guard, { force: true })
-  }
-}
+// The Promise entry, for `lntt check tests mutate`, still on Promises: the lock is taken by the
+// same Effect as a round's, and goes with the process's exit, its heartbeat a timer of its own.
+// A command on Effect holds it with lockWorktree instead.
 
 const beating = new Map<string, NodeJS.Timeout>()
 
 function mine(lock: string): boolean {
-  try {
-    return readFileSync(lock, 'utf8').trim().split(/\s+/)[0] === String(process.pid)
-  } catch {
-    return false
-  }
+  const read = readLock(lock)
+  return read !== null && namedPid(read.text) === process.pid
 }
 
-// The lock goes with the process, and its heartbeat with it.
 export function releaseLock(gitDir: string): void {
   const lock = lockPath(gitDir)
   const timer = beating.get(lock)
@@ -111,46 +109,23 @@ export function releaseLock(gitDir: string): void {
   if (mine(lock)) rmSync(lock, { force: true })
 }
 
-// Created complete by linking a file that already holds the pid and the command, so there is
-// no instant with an empty lock, and atomically: of runs started together, one gets it.
-// `judgedDead` is for tests: it runs between a run judging the lock dead and removing it.
-export function acquireLock(
+export async function acquireLock(
   gitDir: string,
   command: string,
-  options: { heartbeatMs?: number; judgedDead?: () => void } = {},
-): void {
+  options: { heartbeatMs?: number } = {},
+): Promise<void> {
+  const [Effect, { acquire, WorktreeLockLive }] = await Promise.all([
+    import('effect/Effect'),
+    import('./worktree/lock.ts'),
+  ])
+  await Effect.runPromise(acquire(gitDir, command).pipe(Effect.provide(WorktreeLockLive)))
   const lock = lockPath(gitDir)
-  // The file linked to the lock. A run killed between writing and removing it leaves a few
-  // bytes in the git directory, overwritten when its pid comes back; nothing reads it.
-  const own = `${lock}.${process.pid}`
-  writeFileSync(own, `${process.pid} ${command}`)
-  try {
-    for (let attempt = 0; attempt < 50; attempt++) {
-      try {
-        linkSync(own, lock)
-        process.on('exit', () => releaseLock(gitDir))
-        const timer = setInterval(() => {
-          try {
-            if (mine(lock)) utimesSync(lock, new Date(), new Date())
-          } catch {}
-        }, options.heartbeatMs ?? HEARTBEAT_MS)
-        timer.unref()
-        beating.set(lock, timer)
-        return
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-      }
-      const other = holder(lock)
-      if (other !== null) {
-        throw new LockedError(
-          `${other.command ?? 'another lntt command'} is already running in this worktree (pid ${other.pid ?? 'starting'})`,
-        )
-      }
-      options.judgedDead?.()
-      takeOver(lock)
-    }
-    throw new LockedError('another lntt command is already running in this worktree (pid unknown)')
-  } finally {
-    rmSync(own, { force: true })
-  }
+  process.on('exit', () => releaseLock(gitDir))
+  const timer = setInterval(() => {
+    try {
+      if (mine(lock)) utimesSync(lock, new Date(), new Date())
+    } catch {}
+  }, options.heartbeatMs ?? HEARTBEAT_MS)
+  timer.unref()
+  beating.set(lock, timer)
 }

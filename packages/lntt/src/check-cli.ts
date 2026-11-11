@@ -27,7 +27,7 @@ import { retroComment } from './pull-request.ts'
 import { runQuery } from './query.ts'
 import { isCandidate } from './retro.ts'
 import { readStdin } from './stdin.ts'
-import { acquireLock, LockedError } from './worktree-lock.ts'
+import { acquireLock, isLocked } from './worktree-lock.ts'
 
 const USAGE = `usage: lntt check [agents-md | skills | plugin | workflows [automated] | decisions [structure | board-refs [<file>...] | numbers [<file>...]] | tests [levels | focus | rules | touched] | body [template | --pr <n> | -]] [--base <ref>] [--json] [--query <jq>]
        lntt check tests mutate <path:line> --text <on the line> --to <mutated> --test <test file>... [--json]
@@ -151,7 +151,7 @@ async function run(args: string[]): Promise<Result[]> {
     } catch {
       throw new CannotRunError(`${root} has no git directory: a mutation needs one`)
     }
-    acquireLock(gitDir, 'lntt check tests mutate')
+    await acquireLock(gitDir, 'lntt check tests mutate')
   }
   const options = {
     root,
@@ -178,7 +178,7 @@ function queryOf(args: string[]): string | undefined {
 export function errorLine(error: unknown): string | null {
   if (error instanceof CannotRunError) return `lntt: error: ${error.message}`
   if (error instanceof ConfigError) return `lntt: ${error.message}`
-  if (error instanceof LockedError) return `lntt: error: ${error.message}`
+  if (isLocked(error)) return `lntt: error: ${error.message}`
   return null
 }
 

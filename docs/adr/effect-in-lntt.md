@@ -94,9 +94,13 @@ never on `node:` modules, and its test provides in-memory layers.
   Only a command on Effect loads `run-command.ts`.
 - **A resource is acquired with its release** (`Effect.acquireRelease`), in the scope of
   the command or of the step that uses it. Nothing on Effect is released from
-  `process.on('exit')` or from a signal handler. The worktree's lock is taken by Promise
-  code inside a round (`packages/lntt/src/worktree-lock.ts`), and goes with the process's
-  exit until that code moves.
+  `process.on('exit')` or from a signal handler.
+- **The worktree's lock is a resource of the command's scope** in `lntt review` (a round,
+  a reply, `allow`: `lockWorktree` in `packages/lntt/src/worktree/lock.ts`), its heartbeat
+  a fiber of the same scope. The agents run in a scope inside it, so they are released
+  before the lock. `lntt check tests mutate`, still on Promises, takes the lock through
+  the module's Promise entry (`packages/lntt/src/worktree-lock.ts`), which releases it on
+  the process's exit until that command moves.
 - **An agent's process group is a resource.** Its release, when the agent did not exit
   on its own: SIGTERM to the group, up to five seconds for it to go, then SIGKILL to the
   group (the spawner's `killSignal` and `forceKillAfter`). A timeout is an interrupt of
