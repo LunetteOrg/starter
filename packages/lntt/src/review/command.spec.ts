@@ -219,6 +219,9 @@ function world() {
     // lntt check's results for the lenses named after its areas, and the times it ran.
     checks: {} as Record<string, string>,
     checked: 0,
+    areas: [] as string[][],
+    // A bridge that throws where the limit reaches the parent.
+    parentFails: false,
   }
   const bridge = Layer.succeed(ReviewBridge)(
     ReviewBridge.of({
@@ -234,6 +237,7 @@ function world() {
       checks: (areas) =>
         Effect.sync(() => {
           project.checked++
+          project.areas.push([...areas])
           return Object.fromEntries(areas.map((area) => [area, project.checks[area] ?? '[]']))
         }),
       files: () => ({
@@ -249,7 +253,10 @@ function world() {
               : { missing: `no line ${line}`, what: 'line' as const }
         },
       }),
-      reportsTo: () => Effect.sync(() => project.parent),
+      reportsTo: () =>
+        project.parentFails
+          ? Effect.fail(new ReviewFailed({ cause: new Error('the mailbox cannot be read') }))
+          : Effect.sync(() => project.parent),
       askAtLimit: (_marker, _branch, text) =>
         Effect.sync(() => {
           project.sent.push(text)
@@ -574,6 +581,7 @@ describe('lntt review, a round', () => {
       assert.strictEqual(w.project.checked, 0, 'a plan runs no check')
       assert.strictEqual((yield* w.round()).code, 0)
       assert.strictEqual(w.project.checked, 1)
+      assert.deepStrictEqual(w.project.areas, [['decisions']], 'only the lenses named after an area')
       assert.match(w.agent.prompts[0] ?? '', /CHECKED/, 'the reviewer reads the results')
       w.repo.commit({}, 'empty')
       yield* w.round()
@@ -821,6 +829,7 @@ describe('lntt review at delivery.review.maxRounds, and allow', () => {
         failed: 0,
       })
       assert.strictEqual(w.events().at(-1)?.asked, undefined, 'a branch with no parent sends nothing')
+      assert.deepStrictEqual(w.project.sent, [])
     })
   })
 
@@ -841,6 +850,17 @@ describe('lntt review at delivery.review.maxRounds, and allow', () => {
       const [text = ''] = w.project.sent
       assert.match(text.split('\n')[0] ?? '', /^#326 feat\/1\/x: lntt review limit, round 2 would pass/)
       assert.match(text, /^- f1 \[warning, confirmed\] a\.ts:1 — w — a$/m)
+
+      // A parent on no issue: the first line starts with the branch.
+      w.project.parent = { to: 'orchestrator', theme: null, issue: null } as unknown as Started
+      yield* w.round()
+      assert.match(w.project.sent[1]?.split('\n')[0] ?? '', /^feat\/1\/x: lntt review limit, round 2 would pass/)
+
+      // A mailbox the bridge cannot read: the round's error, exit 1.
+      w.project.parentFails = true
+      const failing = yield* w.round()
+      assert.strictEqual(failing.code, 1)
+      assert.match(failing.err, /^lntt review: error: the mailbox cannot be read$/m)
     })
   })
 

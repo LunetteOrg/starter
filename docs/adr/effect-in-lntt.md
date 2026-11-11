@@ -100,7 +100,8 @@ logic depends on services, never on `node:` modules, and its test provides in-me
   which keeps macOS awake while `lntt review` runs, exits with `lntt`'s process however it
   ends. It is started through the spawner in a process group of its own and does not keep
   the process alive; a scope's release would stop it at the end of a step, before an
-  executable written just before can start.
+  executable written just before can start. Where there is none to start (not macOS, not
+  installed) the round goes on; any other failure to start it fails the round.
 - **The worktree's lock is a resource of the command's scope** in `lntt review` (a round,
   a reply, `allow`: `lockWorktree` in `packages/lntt/src/worktree/lock.ts`), its heartbeat
   a fiber of the same scope. The agents run in a scope inside it, so they are released
