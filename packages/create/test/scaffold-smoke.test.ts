@@ -198,7 +198,7 @@ test('the published packages install into a scaffolded project, which lints, typ
   const peers = [
     'stylelint@^17.0.0',
     '@playwright/test@^1.61.1',
-    'vitest@^4.1.10',
+    'vitest@^5.1.0',
     'vite@^8.0.0',
     'drizzle-orm@1.0.0-rc.4',
   ]

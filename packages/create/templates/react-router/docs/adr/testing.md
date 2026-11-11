@@ -76,7 +76,7 @@ Run the **existing stories as browser tests** via `@storybook/addon-vitest`
   proves the story insufficient — not before.
 - **Version lockstep, non-negotiable**: `@vitest/browser` and
   `@vitest/browser-playwright` declare an *exact* peer on `vitest` (e.g.
-  `4.1.10`, not a range). Bump all three together, or the install breaks.
+  `5.1.0`, not a range). Bump all three together, or the install breaks.
 
 ### Consequences
 
