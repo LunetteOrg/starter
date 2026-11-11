@@ -28,9 +28,9 @@ one in a test.
 
 ## Decision
 
-`@lntt/lntt` is written on Effect, module by module. A module moved to Effect follows
-the rules below; a module not yet moved keeps working as it is, and the two meet at a
-bridge (below).
+`@lntt/lntt` is written on Effect, module by module, until every module has moved; a
+module that moved stays on Effect. A module moved to Effect follows the rules below; a
+module not yet moved keeps working as it is, and the two meet at a bridge (below).
 
 ### The dependency
 
@@ -214,6 +214,9 @@ resolves its own version beside `lntt`'s.
   releases resources at the end of a block, but gives no interruption that reaches a
   running child process, no errors in the signature and no service injection: the
   tests would still go through the CLI.
+- **Keeping the modules not yet moved on Promises.** Two styles would live side by side for
+  good, and the bridge between them would stay: the resources, errors and services this
+  record gives a module on Effect would stop at every call into one that is not.
 - **The whole package at once.** One change that rewrites every command can be reviewed
   only as a whole, and keeps the package out of a release until it is all done: a
   module moves with its tests beside it, in a change of its own.
