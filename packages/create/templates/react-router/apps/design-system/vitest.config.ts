@@ -41,8 +41,10 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text-summary', 'json-summary', 'html'],
       reportsDirectory: './coverage',
-      // Measure the components under test, not this showcase app.
+      // Measure the components under test, not this showcase app. They sit outside
+      // this project's root: vitest matches a `../` glob only with `allowExternal`.
       include: ['../../packages/ui/src/**'],
+      allowExternal: true,
     },
   },
 })
