@@ -124,7 +124,8 @@ not yet moved (`git`, the state files and the configuration of
 `Effect.try`. What either throws is a tagged error of the calling module (`ReviewFailed` in
 `packages/lntt/src/review/command.ts`), reported by its message like any expected failure;
 a defect of the Effect code reaches the edge with its stack. That code becomes services as
-its module moves. The library API of
+its module moves, and the unit test of the module on Effect that calls it comes with them,
+on their in-memory layers; until then the `cli` level covers it. The library API of
 `@lntt/lntt` (`packages/lntt/src/index.ts`) stays on `Promise`, so a script that imports
 it needs no Effect.
 
