@@ -59,8 +59,9 @@ What reaches outside the process is a service, and reached only through it: proc
 signal to the group and a forced kill after a delay), the file system (Effect's
 `FileSystem`), the clock (Effect's `Clock`, so a test moves time with `TestClock`), git,
 and the agents built on processes. A service of `lntt`'s own is declared with
-`Context.Service`, its live layer in its module. A module's logic depends on services,
-never on `node:` modules, and its test provides in-memory layers.
+`Context.Service`, its live layer in its module: git is `Git` in
+`packages/lntt/src/git/git.ts`, its operations typed and run through the spawner. A module's
+logic depends on services, never on `node:` modules, and its test provides in-memory layers.
 
 ### Errors
 
@@ -118,14 +119,15 @@ with the caller's `AbortSignal` (`withAgents` in `packages/lntt/src/review/agent
 Each run is a fiber of the command's scope: an abort interrupts it and the promise
 settles once its finalizers have run, and an interrupt of the command interrupts every
 run still going and ends once they are all released. The command's own Promise code runs
-under `Effect.tryPromise`, whose signal an interrupt aborts, and the sync code of a module
-not yet moved (`git`, the state files and the configuration of
-`packages/lntt/src/review-cli.ts`, which the round on Effect calls) runs under
-`Effect.try`. What either throws is a tagged error of the calling module (`ReviewFailed` in
-`packages/lntt/src/review/command.ts`), reported by its message like any expected failure;
-a defect of the Effect code reaches the edge with its stack. That code becomes services as
-its module moves, and the unit test of the module on Effect that calls it comes with them,
-on their in-memory layers; until then the `cli` level covers it. The library API of
+under `Effect.tryPromise`, whose signal an interrupt aborts. The sync code of modules not
+yet moved that a module on Effect needs (for `lntt review`: the project's configuration,
+the place of the state store, the base, `lntt check`'s areas, the agents' CLIs, the limit's
+message, Orca's subagents) is reached through a service of that module, its bridge
+(`ReviewBridge` in `packages/lntt/src/review/bridge.ts`): the live layer runs the code under
+`Effect.try`, and what it throws is a tagged error of the bridge (`ReviewFailed`), reported
+by its message like any expected failure; the unit test gives the bridge's in-memory layer.
+A defect of the Effect code reaches the edge with its stack. A piece leaves the bridge when
+its module moves to Effect. The library API of
 `@lntt/lntt` (`packages/lntt/src/index.ts`) stays on `Promise`, so a script that imports
 it needs no Effect.
 
@@ -135,7 +137,11 @@ it needs no Effect.
   `src/review/agents.spec.ts`, which provides an in-memory `ChildProcessSpawner`), as in
   `@lntt/test-utils`, where `*.spec.ts` is a unit test and `*.test.ts` an integration
   test. It runs on vitest with `@effect/vitest`
-  (`it.effect`, `it.layer`), with the in-memory layers of the services it uses.
+  (`it.effect`, `it.layer`), with the in-memory layers of the services it uses. The specs
+  share one in-memory `FileSystem` (`packages/lntt/src/testing/file-system.ts`), which follows
+  Node's semantics where a module relies on them (a missing directory, `wx`, `link` on an
+  existing path, `utimes` in seconds), so a spec fails where Node would; `src/testing/` is
+  not published.
 - **One `unit` level for the whole repo** (`tests.levels` in `.agents/config.jsonc`), run
   by vitest from the root, whose `vitest.config.ts` only lists the
   packages' own configurations as `projects`. Each package keeps its vitest settings in
