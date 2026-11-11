@@ -2,11 +2,13 @@ import { assert, describe, it } from '@effect/vitest'
 import * as ConfigProvider from 'effect/ConfigProvider'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import * as PlatformError from 'effect/PlatformError'
 import { type ChildProcess, ChildProcessSpawner } from 'effect/process'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 import * as TestConsole from 'effect/testing/TestConsole'
 import { Git, GitError } from '../git/git.ts'
+import type { Started } from '../messages.ts'
 import type { Closed, ReviewState } from '../review.ts'
 import { branchKey } from '../review-store.ts'
 import { memoryFileSystem } from '../testing/file-system.ts'
@@ -129,6 +131,9 @@ function agents() {
     fails: new Set<string>(),
     calls: [] as string[],
     awake: [] as string[][],
+    // caffeinate as the machine has it: there, not installed, or not allowed to start.
+    caffeinate: 'there' as 'there' | 'NotFound' | 'PermissionDenied',
+    prompts: [] as string[],
     // Runs as an agent answers: what a reviewer does to the working tree.
     during: () => {},
   }
@@ -136,7 +141,16 @@ function agents() {
     Effect.gen(function* () {
       if (command._tag !== 'StandardCommand') return yield* Effect.die('a piped command')
       const args = command.args.map(String)
-      if (command.command === 'caffeinate') state.awake.push([...args, `detached=${command.options.detached}`])
+      if (command.command === 'caffeinate') {
+        if (state.caffeinate !== 'there')
+          return yield* PlatformError.systemError({
+            _tag: state.caffeinate,
+            module: 'ChildProcess',
+            method: 'spawn',
+            pathOrDescriptor: 'caffeinate',
+          })
+        state.awake.push([...args, `detached=${command.options.detached}`])
+      }
       const input = command.options.stdin
       const prompt = Stream.isStream(input)
         ? yield* Stream.mkString(Stream.decodeText(input as Stream.Stream<Uint8Array>))
@@ -151,6 +165,7 @@ function agents() {
       let stdout = ''
       let code = 0
       if (command.command === 'claude') {
+        state.prompts.push(prompt)
         state.calls.push(`${kind} ${model}${resume >= 0 ? ` --resume ${args[resume + 1]}` : ''}`)
         state.during()
         if (state.fails.has(kind) || state.fails.has(`${kind}_${model}`)) code = 1
@@ -198,6 +213,12 @@ function world() {
     invalid: null as string | null,
     // A bug of lntt, where the bridge is reached last before the agents.
     defect: false,
+    // The parent the branch reports to, and the limits sent to it.
+    parent: null as Started | null,
+    sent: [] as string[],
+    // lntt check's results for the lenses named after its areas, and the times it ran.
+    checks: {} as Record<string, string>,
+    checked: 0,
   }
   const bridge = Layer.succeed(ReviewBridge)(
     ReviewBridge.of({
@@ -210,7 +231,11 @@ function world() {
       place: () => Effect.succeed(STORE),
       base: (_root, given) => Effect.succeed({ ref: given ?? 'main', said: given ? null : 'base main' }),
       agentProblems: () => Effect.sync(() => project.problems),
-      checks: () => Effect.succeed({}),
+      checks: (areas) =>
+        Effect.sync(() => {
+          project.checked++
+          return Object.fromEntries(areas.map((area) => [area, project.checks[area] ?? '[]']))
+        }),
       files: () => ({
         readBrief: () => '',
         cite: (path, line) => {
@@ -224,8 +249,15 @@ function world() {
               : { missing: `no line ${line}`, what: 'line' as const }
         },
       }),
-      reportsTo: () => Effect.succeed(null),
-      askAtLimit: () => Effect.die('no parent'),
+      reportsTo: () => Effect.sync(() => project.parent),
+      askAtLimit: (_marker, _branch, text) =>
+        Effect.sync(() => {
+          project.sent.push(text)
+          return {
+            asked: { id: 'm1', to: 'orchestrator', path: '/box/m1.md' },
+            line: 'limit: sent m1 to the orchestrator; wait with: pnpm exec lntt ask --wait m1',
+          }
+        }),
       orca: () => (project.defect ? Effect.die(new Error('a bug of lntt')) : Effect.succeed(null)),
     }),
   )
@@ -501,6 +533,54 @@ describe('lntt review, a round', () => {
     })
   })
 
+  it.effect('with no caffeinate the round goes on; one that cannot start for another reason fails the round', () => {
+    const w = world()
+    return Effect.gen(function* () {
+      w.agent.caffeinate = 'NotFound'
+      assert.strictEqual((yield* w.round()).code, 0, 'not macOS, or not installed')
+      w.repo.commit({ 'a.ts': 'export const a = 3' })
+      w.agent.caffeinate = 'PermissionDenied'
+      const denied = yield* w.round()
+      assert.strictEqual(denied.code, 1)
+      assert.match(denied.err, /^lntt review: error: .*caffeinate/m)
+      assert.deepStrictEqual(w.agent.calls, ['REVIEW sonnet'], 'no agent of the second round started')
+    })
+  })
+
+  it.effect('a reviewed commit no longer in the branch (a rebase dropped it): the round reads the whole branch', () => {
+    const w = world()
+    return Effect.gen(function* () {
+      assert.strictEqual((yield* w.round()).code, 0)
+      yield* w.putState({ ...w.state(), reviewed: 'c99' })
+      w.repo.commit({ 'a.ts': 'export const a = 3' })
+      const r = yield* w.round()
+      assert.match(r.err, /round 2, c99 is no longer in the branch: the whole branch: c1\.\.c3, 1 files/)
+    })
+  })
+
+  it.effect('a lens named after an area of lntt check reads its results; an empty delta runs no check', () => {
+    const w = world()
+    return Effect.gen(function* () {
+      w.withConfig((review) => {
+        review.reviewers = {
+          decisions: { with: [{ kind: 'claude', model: 'haiku' }] },
+          tests: { with: [] },
+          code: { with: [] },
+        }
+      })
+      w.project.checks = { decisions: '[{"check":"decisions/index","status":"FAIL","marker":"CHECKED"}]' }
+      const r = yield* w.round({ plan: true })
+      assert.match(r.err, /before the reviewers: lntt check decisions/)
+      assert.strictEqual(w.project.checked, 0, 'a plan runs no check')
+      assert.strictEqual((yield* w.round()).code, 0)
+      assert.strictEqual(w.project.checked, 1)
+      assert.match(w.agent.prompts[0] ?? '', /CHECKED/, 'the reviewer reads the results')
+      w.repo.commit({}, 'empty')
+      yield* w.round()
+      assert.strictEqual(w.project.checked, 1, 'an empty delta runs no check')
+    })
+  })
+
   it.effect('an optional reviewer that fails is reported as skipped and the round can be clean', () => {
     const w = world()
     return Effect.gen(function* () {
@@ -741,6 +821,26 @@ describe('lntt review at delivery.review.maxRounds, and allow', () => {
         failed: 0,
       })
       assert.strictEqual(w.events().at(-1)?.asked, undefined, 'a branch with no parent sends nothing')
+    })
+  })
+
+  it.effect('a branch with a parent sends it what is open, in full, and says how to wait for the answer', () => {
+    const w = world()
+    return Effect.gen(function* () {
+      w.withConfig((review) => {
+        review.maxRounds = 1
+      })
+      w.project.parent = { to: 'orchestrator', theme: null, issue: 326 } as unknown as Started
+      Object.assign(w.agent.answers, WARNING)
+      yield* w.round()
+      w.repo.commit({ 'a.ts': 'export const a = 3' })
+      const r = yield* w.round()
+      assert.strictEqual(r.code, 3, r.err)
+      assert.match(r.err, /^lntt review: limit: sent m1 to the orchestrator; wait with: pnpm exec lntt ask --wait m1$/m)
+      assert.deepStrictEqual(w.events().at(-1)?.asked, { id: 'm1', to: 'orchestrator', path: '/box/m1.md' })
+      const [text = ''] = w.project.sent
+      assert.match(text.split('\n')[0] ?? '', /^#326 feat\/1\/x: lntt review limit, round 2 would pass/)
+      assert.match(text, /^- f1 \[warning, confirmed\] a\.ts:1 — w — a$/m)
     })
   })
 

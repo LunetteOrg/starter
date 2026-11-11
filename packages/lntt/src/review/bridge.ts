@@ -49,14 +49,10 @@ export interface Bridged {
     cite: (path: string, line: number | null) => Cited
   }
   // Who the branch reports to, and the limit sent there.
-  readonly reportsTo: (branch: string, rules: BranchRules) => Effect.Effect<Started | null>
-  readonly askAtLimit: (
-    marker: Started,
-    branch: string,
-    text: string,
-  ) => Effect.Effect<{ asked: Asked | null; line: string }>
+  readonly reportsTo: (branch: string, rules: BranchRules) => Failing<Started | null>
+  readonly askAtLimit: (marker: Started, branch: string, text: string) => Failing<{ asked: Asked | null; line: string }>
   // Orca's subagents of the Claude Code session, when lntt review runs under one.
-  readonly orca: (root: string) => Effect.Effect<Subagents | null>
+  readonly orca: (root: string) => Failing<Subagents | null>
 }
 
 export class ReviewBridge extends Context.Service<ReviewBridge, Bridged>()('@lntt/lntt/review/bridge/ReviewBridge') {}
@@ -92,9 +88,9 @@ export const ReviewBridgeLive = Layer.effect(ReviewBridge)(
         readBrief: (path) => readFileSync(join(root, path), 'utf8'),
         cite: (path, line) => cite(root, path, line),
       }),
-      reportsTo: (branch, rules) => Effect.sync(() => reportsTo(branch, rules)),
-      askAtLimit: (marker, branch, text) => Effect.sync(() => askAtLimit(marker, branch, text)),
-      orca: (root) => Effect.sync(() => orcaSubagents(env, root)),
+      reportsTo: (branch, rules) => bridged(() => reportsTo(branch, rules)),
+      askAtLimit: (marker, branch, text) => bridged(() => askAtLimit(marker, branch, text)),
+      orca: (root) => bridged(() => orcaSubagents(env, root)),
     })
   }),
 )

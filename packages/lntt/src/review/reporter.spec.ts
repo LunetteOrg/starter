@@ -1,6 +1,7 @@
 import { assert, describe, it } from '@effect/vitest'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import * as Layer from 'effect/Layer'
 import * as TestClock from 'effect/testing/TestClock'
 import * as TestConsole from 'effect/testing/TestConsole'
@@ -142,6 +143,54 @@ describe('the reporter of lntt review', () => {
         'stop lntt-review-7-reviewers-0 answered',
         'close after 2 events',
       ])
+    }).pipe(Effect.provide(layer))
+  })
+
+  it.effect('a reply is its own phase', () => {
+    const { layer, events } = setup()
+    return Effect.gen(function* () {
+      yield* (yield* ReviewStore).startProgress
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const report = yield* reporting()
+          report.phase(['reply f1 · claude sonnet'])
+          report.progress({ type: 'start', index: 0, label: 'reply f1 · claude sonnet', optional: false })
+        }),
+      )
+      assert.deepStrictEqual(
+        events().map((e) => [e.type, e.phase]),
+        [
+          ['phase', 'reply'],
+          ['start', 'reply'],
+        ],
+      )
+    }).pipe(Effect.provide(layer))
+  })
+
+  it.effect('a write that dies fails the flush with its defect, instead of leaving it waiting', () => {
+    const fs = memoryFileSystem({ dirs: [GIT_DIR] })
+    const dying = Layer.effect(ReviewStore)(
+      Effect.map(Effect.flatMap(ReviewStore, Effect.succeed), (store) =>
+        ReviewStore.of({ ...store, emit: () => Effect.die(new Error('a bug of lntt')) }),
+      ),
+    ).pipe(Layer.provide(ReviewStore.memory('/store', GIT_DIR)), Layer.provide(fs.layer))
+    const layer = Layer.mergeAll(
+      dying,
+      Layer.succeed(Pids)(Pids.of({ self: 7, visible: () => Effect.succeed(false) })),
+      Layer.fresh(TestConsole.layer),
+    )
+    return Effect.gen(function* () {
+      const ending = yield* Effect.exit(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const report = yield* reporting()
+            report.phase([LABEL])
+            yield* report.flush
+          }),
+        ),
+      )
+      assert.ok(Exit.isFailure(ending))
+      assert.match(String(Exit.isFailure(ending) && ending.cause), /a bug of lntt/)
     }).pipe(Effect.provide(layer))
   })
 })

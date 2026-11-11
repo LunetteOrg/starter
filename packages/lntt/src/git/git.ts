@@ -32,7 +32,8 @@ export interface GitOperations {
   readonly gitDir: Run<string>
   readonly commonDir: Run<string>
   readonly mergeBase: (a: string, b: string) => Run<string>
-  // Whether `a` is an ancestor of `b`: false, not a failure, when it is not or git cannot tell.
+  // Whether `a` is an ancestor of `b`: false for any exit of git but 0 (a commit git no longer
+  // knows too); a GitError only when git does not start.
   readonly isAncestor: (a: string, b: string) => Run<boolean>
   // The files a range changes, and its diff.
   readonly changed: (range: string) => Run<string[]>

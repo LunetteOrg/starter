@@ -94,4 +94,33 @@ describe('Git on the machine', () => {
       assert.strictEqual(yield* repo.isAncestor('gone', 'c2'), false)
     }).pipe(Effect.provide(g.layer))
   })
+
+  it.effect('each operation asks git what it says it asks', () => {
+    const g = git(() => ({ out: 'x' }))
+    return Effect.gen(function* () {
+      const repo = yield* Git
+      yield* Effect.all([
+        repo.branch,
+        repo.short('HEAD'),
+        repo.subject('HEAD'),
+        repo.root,
+        repo.gitDir,
+        repo.commonDir,
+        repo.mergeBase('HEAD', 'origin/main'),
+        repo.isAncestor('c1', 'c2'),
+        repo.diff('c1..c2'),
+      ])
+      assert.deepStrictEqual(g.asked, [
+        ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+        ['git', 'rev-parse', '--short', 'HEAD'],
+        ['git', 'log', '-1', '--format=%s', 'HEAD'],
+        ['git', 'rev-parse', '--show-toplevel'],
+        ['git', 'rev-parse', '--absolute-git-dir'],
+        ['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+        ['git', 'merge-base', 'HEAD', 'origin/main'],
+        ['git', 'merge-base', '--is-ancestor', 'c1', 'c2'],
+        ['git', 'diff', 'c1..c2'],
+      ])
+    }).pipe(Effect.provide(g.layer))
+  })
 })

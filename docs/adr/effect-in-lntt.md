@@ -96,6 +96,11 @@ logic depends on services, never on `node:` modules, and its test provides in-me
 - **A resource is acquired with its release** (`Effect.acquireRelease`), in the scope of
   the command or of the step that uses it. Nothing on Effect is released from
   `process.on('exit')` or from a signal handler.
+- **A child that ends itself with `lntt` belongs to no scope:** `caffeinate -i -w <pid>`,
+  which keeps macOS awake while `lntt review` runs, exits with `lntt`'s process however it
+  ends. It is started through the spawner in a process group of its own and does not keep
+  the process alive; a scope's release would stop it at the end of a step, before an
+  executable written just before can start.
 - **The worktree's lock is a resource of the command's scope** in `lntt review` (a round,
   a reply, `allow`: `lockWorktree` in `packages/lntt/src/worktree/lock.ts`), its heartbeat
   a fiber of the same scope. The agents run in a scope inside it, so they are released
@@ -121,8 +126,9 @@ settles once its finalizers have run, and an interrupt of the command interrupts
 run still going and ends once they are all released. The command's own Promise code runs
 under `Effect.tryPromise`, whose signal an interrupt aborts. The sync code of modules not
 yet moved that a module on Effect needs (for `lntt review`: the project's configuration,
-the place of the state store, the base, `lntt check`'s areas, the agents' CLIs, the limit's
-message, Orca's subagents) is reached through a service of that module, its bridge
+the place of the state store, the base, `lntt check`'s areas, the files the reviewers cite,
+the agents' CLIs, the parent the branch reports to and the limit's message, Orca's
+subagents) is reached through a service of that module, its bridge
 (`ReviewBridge` in `packages/lntt/src/review/bridge.ts`): the live layer runs the code under
 `Effect.try`, and what it throws is a tagged error of the bridge (`ReviewFailed`), reported
 by its message like any expected failure; the unit test gives the bridge's in-memory layer.

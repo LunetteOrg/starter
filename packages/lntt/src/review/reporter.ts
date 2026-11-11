@@ -12,6 +12,7 @@ import * as Console from 'effect/Console'
 import * as Deferred from 'effect/Deferred'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
+import * as Fiber from 'effect/Fiber'
 import * as Queue from 'effect/Queue'
 import type { Progress } from '../headless.ts'
 import type { Subagents } from '../orca-subagents.ts'
@@ -33,14 +34,16 @@ export const reporting = Effect.fnUntraced(function* (orca: Subagents | null = n
   const say = (line: string) => Console.error(`lntt review: ${line}`)
   const queue = yield* Queue.unbounded<Effect.Effect<void>>()
   const later = (effect: Effect.Effect<void>) => void Queue.offerUnsafe(queue, effect)
+  // Released last: Orca hears its subagents stop once all is written.
+  yield* Effect.addFinalizer(() => Effect.sync(() => orca?.close()))
+  const writer = yield* Effect.forkScoped(Effect.forever(Effect.flatten(Queue.take(queue))))
+  // Waits for what is queued: done once the writer reaches it, or with the writer's defect if
+  // one of the writes died, which would leave nothing to reach it.
   const flush = Effect.gen(function* () {
     const done = yield* Deferred.make<void>()
     later(Deferred.succeed(done, undefined).pipe(Effect.asVoid))
-    yield* Deferred.await(done)
+    yield* Effect.raceFirst(Deferred.await(done), Fiber.join(writer))
   })
-  // Released last: Orca hears its subagents stop once all is written.
-  yield* Effect.addFinalizer(() => Effect.sync(() => orca?.close()))
-  yield* Effect.forkScoped(Effect.forever(Effect.flatten(Queue.take(queue))))
 
   // By question, not by label: two agents can carry the same label.
   const running = new Map<number, string>()
