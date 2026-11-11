@@ -121,7 +121,9 @@ describe('the lock of a worktree on Node, as lntt check tests mutate takes it', 
           yield* lockWorktree(gitDir, 'lntt review', { heartbeat: '20 millis' })
           const old = new Date(Date.now() - OLD)
           utimesSync(lock, old, old)
-          yield* Effect.sleep('150 millis')
+          // A beat is awaited, not a span of time: a loaded machine may run it late.
+          for (let waited = 0; Date.now() - statSync(lock).mtimeMs >= FRESH_MS && waited < 10_000; waited += 10)
+            yield* Effect.sleep('10 millis')
           return Date.now() - statSync(lock).mtimeMs
         }),
       ).pipe(Effect.provide(WorktreeLockLive)),

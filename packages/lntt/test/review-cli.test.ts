@@ -252,6 +252,24 @@ describe('lntt review, end to end with a fake agent', () => {
     assert.equal(state().result.findings[0].verdict, 'confirmed')
   })
 
+  test('a reply to a finding no reviewer can take up is refused before any agent starts, and frees the lock', () => {
+    lntt(['--base', 'main'], { FAKE_REVIEW: '- [warning] a.ts:1 — w — a', FAKE_VERIFY: 'confirmed\\np' })
+    const saved = state()
+    for (const [foundBy, refusal] of [
+      [[{ agent: 'claude', session: null }], /f1: cannot resume claude; the person decides on this finding/],
+      [[], /f1: no reviewer to answer/],
+    ] as const) {
+      saved.result.findings[0].foundBy = foundBy
+      writeFileSync(stateFile(), JSON.stringify(saved))
+      writeFileSync(log, '')
+      const r = lntt(['reply', 'f1', 'no'])
+      assert.equal(r.code, 1)
+      assert.match(r.err, refusal)
+      assert.doesNotMatch(readFileSync(log, 'utf8'), /^REPLY/m, 'no agent started')
+      assert.equal(existsSync(join(repo, '.git/lntt-review.lock')), false, 'the lock goes with the refusal')
+    }
+  })
+
   test('a pre-existing finding on a line the branch did not write: clean, listed apart, kept in the ledger', () => {
     git('switch', '-q', 'main')
     writeFileSync(join(repo, 'c.md'), 'one\nOrca 1.2\nthree\n')
@@ -1442,6 +1460,7 @@ describe('lntt review at delivery.review.maxRounds', () => {
   test('allow is refused before any round on the branch, and with a count that is not a whole number from 1', () => {
     assert.match(lntt(['allow', '1']).err, /no round on feat\/1\/x yet/)
     assert.equal(existsSync(join(repo, '.git/lntt-review.progress')), false, 'a refused allow starts no progress')
+    assert.equal(existsSync(join(repo, '.git/lntt-review.lock')), false, 'the lock goes with the refusal')
     lntt(['--base', 'main'])
     const before = readFileSync(stateFile(), 'utf8')
     for (const count of [['0'], [], ['abc'], ['1.5'], ['-1'], ['1', '2']]) {

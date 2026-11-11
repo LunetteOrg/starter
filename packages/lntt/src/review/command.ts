@@ -17,6 +17,7 @@ import { env, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import * as Clock from 'effect/Clock'
 import * as Data from 'effect/Data'
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import type { FileSystem } from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -24,7 +25,7 @@ import type { PlatformError } from 'effect/PlatformError'
 import * as Scope from 'effect/Scope'
 import { branchRules } from '../branch.ts'
 import { cite, formatJson, isArea, runArea } from '../check.ts'
-import { exit } from '../exit.ts'
+import { exit, Exit as LnttExit } from '../exit.ts'
 import { type HeadlessAgent as Agent, askAll, type Spawn, timerMs } from '../headless.ts'
 import { projectPhase } from '../index.ts'
 import { orcaSubagents, type Subagents } from '../orca-subagents.ts'
@@ -62,6 +63,7 @@ import {
   readLedger,
   readState,
   records,
+  reportError,
   reporter,
   startProgress,
   stateView,
@@ -105,22 +107,26 @@ const reporting = (orca: Subagents | null = null) =>
   )
 
 // The agents of a round or a reply, asked by askAll, still on Promises: the signal it is given
-// stops them at the round's deadline, or when the command is interrupted, which aborts the
-// signal of tryPromise. The agents still waiting do not start.
+// stops them at the round's deadline, a fiber that sleeps on the Clock, or when the command is
+// interrupted, which aborts the signal of tryPromise. The agents still waiting do not start.
 const asking = <A>(minutes: number, ask: (signal: AbortSignal) => Promise<A>) =>
-  Effect.tryPromise({
-    try: (interrupt) => {
+  Effect.scoped(
+    Effect.gen(function* () {
       const stop = new AbortController()
-      const timer = setTimeout(
-        () => stop.abort(`the round took longer than ${minutes} minutes`),
-        timerMs(minutes * 60_000),
+      yield* Effect.forkScoped(
+        Effect.sleep(Duration.millis(timerMs(minutes * 60_000))).pipe(
+          Effect.andThen(Effect.sync(() => stop.abort(`the round took longer than ${minutes} minutes`))),
+        ),
       )
-      timer.unref()
-      interrupt.addEventListener('abort', () => stop.abort('interrupted'), { once: true })
-      return ask(stop.signal).finally(() => clearTimeout(timer))
-    },
-    catch: (cause) => new ReviewFailed({ cause }),
-  })
+      return yield* Effect.tryPromise({
+        try: (interrupt) => {
+          interrupt.addEventListener('abort', () => stop.abort('interrupted'), { once: true })
+          return ask(stop.signal)
+        },
+        catch: (cause) => new ReviewFailed({ cause }),
+      })
+    }),
+  )
 
 // macOS sleeps on its own schedule, and a sleeping machine stops the round's agents: keep
 // it awake while this process runs.
@@ -429,6 +435,13 @@ export function runReview(command: string | undefined, args: string[]): Promise<
           )
     const report = (error: unknown) => Effect.promise(() => failed(command, args, error))
     return yield* run.pipe(
+      // A defect is reported as an error too, for whoever watches the round; then the runner
+      // prints it with its stack and exits 1. An exit(code) is no defect: it is the command's code.
+      Effect.tapDefect((defect) =>
+        Effect.sync(() => {
+          if (!(defect instanceof LnttExit)) reportError(command, args, defect)
+        }),
+      ),
       Effect.catchTags({
         ReviewFailed: (error) => report(error.cause),
         ReviewRefused: report,

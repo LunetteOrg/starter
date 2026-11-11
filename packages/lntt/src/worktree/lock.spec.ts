@@ -29,6 +29,7 @@ const failure = (method: string, path: string, tag: 'AlreadyExists' | 'NotFound'
 // `linkFails`: every link finds the lock already there, as when other runs keep taking it.
 function inMemory(options: { linkFails?: boolean } = {}) {
   const files = new Map<string, { text: string; mtime: number }>()
+  const links = { count: 0 }
   const fileSystem = FileSystem.makeNoop({
     readFileString: (path) => {
       const file = files.get(path)
@@ -54,6 +55,7 @@ function inMemory(options: { linkFails?: boolean } = {}) {
       }),
     link: (from, to) =>
       Effect.suspend(() => {
+        links.count++
         const file = files.get(from)
         if (!file) return Effect.fail(failure('link', from, 'NotFound'))
         if (files.has(to) || options.linkFails) return Effect.fail(failure('link', to, 'AlreadyExists'))
@@ -71,7 +73,7 @@ function inMemory(options: { linkFails?: boolean } = {}) {
   const held = (text: string, agoMs = 0) =>
     Effect.map(Clock.currentTimeMillis, (now) => void files.set(LOCK, { text, mtime: now - agoMs }))
   const layer = Layer.mergeAll(Layer.succeed(FileSystem.FileSystem)(fileSystem), Layer.succeed(Pids)(pids))
-  return { files, held, layer, text: () => files.get(LOCK)?.text }
+  return { files, held, layer, links, text: () => files.get(LOCK)?.text }
 }
 
 // The message a refusal carries, or `taken` when the lock was taken.
@@ -269,6 +271,7 @@ describe('lockWorktree', () => {
       yield* fs.held(`${GONE} lntt review`, OLD)
       const refused = yield* outcome(Effect.scoped(lockWorktree(GIT_DIR, 'lntt review')))
       assert.strictEqual(refused, 'another lntt command is already running in this worktree (pid unknown)')
+      assert.strictEqual(fs.links.count, 50)
       assert.deepStrictEqual([...fs.files.keys()], [])
     }).pipe(Effect.provide(fs.layer))
   })

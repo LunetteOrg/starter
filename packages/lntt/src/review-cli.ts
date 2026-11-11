@@ -844,8 +844,16 @@ export async function failed(command: string | undefined, args: string[], error:
   if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
     usage(error.message)
   }
+  reportError(command, args, error)
+  exit(1)
+}
+
+// The error report alone: its `error:` line and its progress event. A defect of a command on
+// Effect gets it too, before the runner prints its stack.
+export function reportError(command: string | undefined, args: string[], error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error)
   // `error:` is what the review skill watches for, with `failed`, `limit:` and `round N done`.
-  stderr.write(`lntt review: error: ${(error as Error).message}\n`)
+  stderr.write(`lntt review: error: ${message}\n`)
   // A refused lock means another round owns the progress file: leave it alone.
   const own = !isLocked(error)
   // lntt review status never writes the progress file: it only reads the state.
@@ -860,6 +868,5 @@ export async function failed(command: string | undefined, args: string[], error:
     ![command, ...args].includes('--plan')
   )
     startProgress()
-  emit({ type: 'error', message: (error as Error).message })
-  exit(1)
+  emit({ type: 'error', message })
 }

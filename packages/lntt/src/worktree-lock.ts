@@ -96,6 +96,8 @@ export function heldBy(gitDir: string): Holder | null {
 // A command on Effect holds it with lockWorktree instead.
 
 const beating = new Map<string, NodeJS.Timeout>()
+// The locks whose release this process's exit already runs: one listener each.
+const onExit = new Set<string>()
 
 function mine(lock: string): boolean {
   const read = readLock(lock)
@@ -121,7 +123,11 @@ export async function acquireLock(
   ])
   await Effect.runPromise(acquire(gitDir, command).pipe(Effect.provide(WorktreeLockLive)))
   const lock = lockPath(gitDir)
-  process.on('exit', () => releaseLock(gitDir))
+  if (!onExit.has(lock)) {
+    onExit.add(lock)
+    process.on('exit', () => releaseLock(gitDir))
+  }
+  clearInterval(beating.get(lock))
   const timer = setInterval(() => {
     try {
       if (mine(lock)) utimesSync(lock, new Date(), new Date())
