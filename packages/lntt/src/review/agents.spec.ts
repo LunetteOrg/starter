@@ -10,7 +10,8 @@ import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 import * as TestClock from 'effect/testing/TestClock'
 import type { Invocation } from '../headless.ts'
-import { AgentFailed, AgentTimedOut, runAgent, STOP_GRACE, withAgents } from './agents.ts'
+import { AgentFailed, AgentsProcesses, runAgent, STOP_GRACE } from './agents.ts'
+import { Agents, askAll } from './asking.ts'
 
 // What the in-memory spawner saw of one agent: what it was started with, and when its scope
 // closed, which is when the real spawner signals the agent's process group.
@@ -57,12 +58,13 @@ function inMemorySpawner(script: Script) {
         stdin,
         released: false,
       }
-      seen.push(record)
+      // Seen once its release is in place, as the real spawner acquires a process.
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
           record.released = true
         }),
       )
+      seen.push(record)
       const exited = yield* Deferred.make<number>()
       if (!script.hang) yield* Deferred.succeed(exited, script.code ?? 0)
       return ChildProcessSpawner.makeHandle({
@@ -94,7 +96,7 @@ describe('runAgent', () => {
   it.effect('starts the agent in a process group of its own, with the prompt on stdin, and gives its stdout', () => {
     const spawner = inMemorySpawner({ stdout: '{"result":"ok"}' })
     return Effect.gen(function* () {
-      const out = yield* runAgent(invocation, { timeoutMinutes: 10, env: { PATH: '/bin' } })
+      const out = yield* runAgent(invocation, { env: { PATH: '/bin' } })
       assert.strictEqual(out, '{"result":"ok"}')
       const [seen] = spawner.seen
       assert.strictEqual(seen?.command, 'claude')
@@ -111,10 +113,7 @@ describe('runAgent', () => {
   it.effect('gives the agent only the environment lntt chose: no host hook variable, no inherited one', () => {
     const spawner = inMemorySpawner({})
     return Effect.gen(function* () {
-      yield* runAgent(invocation, {
-        timeoutMinutes: 10,
-        env: { PATH: '/bin', ORCA_AGENT_HOOK_URL: 'http://x', HERDR_PANE: '3' },
-      })
+      yield* runAgent(invocation, { env: { PATH: '/bin', ORCA_AGENT_HOOK_URL: 'http://x', HERDR_PANE: '3' } })
       const [seen] = spawner.seen
       assert.strictEqual(seen?.extendEnv, false)
       assert.deepStrictEqual(seen?.env, { PATH: '/bin', LNTT_REVIEW: '1' })
@@ -126,7 +125,7 @@ describe('runAgent', () => {
     () => {
       const spawner = inMemorySpawner({ code: 2, stdout: 'partial', stderr: 'one\ntwo\nthree\nfour\n' })
       return Effect.gen(function* () {
-        const error = yield* Effect.flip(runAgent(invocation, { timeoutMinutes: 10, env: {} }))
+        const error = yield* Effect.flip(runAgent(invocation, { env: {} }))
         assert.instanceOf(error, AgentFailed)
         assert.strictEqual(error.message, 'claude exited 2: two three four')
       }).pipe(Effect.provide(spawner.layer))
@@ -136,83 +135,94 @@ describe('runAgent', () => {
   it.effect('names stdout when the agent fails with nothing on stderr', () => {
     const spawner = inMemorySpawner({ code: 1, stdout: 'not logged in' })
     return Effect.gen(function* () {
-      const error = yield* Effect.flip(runAgent(invocation, { timeoutMinutes: 10, env: {} }))
+      const error = yield* Effect.flip(runAgent(invocation, { env: {} }))
       assert.strictEqual(error.message, 'claude exited 1: not logged in')
-    }).pipe(Effect.provide(spawner.layer))
-  })
-
-  it.effect('releases the agent and fails with AgentTimedOut once its minutes are over', () => {
-    const spawner = inMemorySpawner({ hang: true })
-    return Effect.gen(function* () {
-      const fiber = yield* Effect.forkChild(Effect.flip(runAgent(invocation, { timeoutMinutes: 3, env: {} })))
-      yield* TestClock.adjust(Duration.subtract(Duration.minutes(3), Duration.seconds(1)))
-      assert.strictEqual(spawner.seen[0]?.released, false, 'still running a second before its minutes are over')
-      yield* TestClock.adjust(Duration.seconds(1))
-      const error = yield* Fiber.join(fiber)
-      assert.instanceOf(error, AgentTimedOut)
-      assert.strictEqual(error.message, 'timed out after 3 minutes')
-      assert.strictEqual(spawner.seen[0]?.released, true)
     }).pipe(Effect.provide(spawner.layer))
   })
 })
 
-describe('withAgents', () => {
-  it.effect('a spawn aborted by its signal rejects with the reason, once the agent is released', () => {
+// askAll over the agents of the machine, on the in-memory spawner: how an agent's process ends
+// when askAll stops it, times it out or is interrupted.
+describe('the agents as processes', () => {
+  const question = { agent: { kind: 'claude' as const }, prompt: 'the prompt', label: 'code · claude' }
+  const asked = <A, E, R>(effect: Effect.Effect<A, E, R>, spawner: ReturnType<typeof inMemorySpawner>) =>
+    effect.pipe(Effect.provide(AgentsProcesses.pipe(Layer.provide(spawner.layer))))
+
+  it.effect('an agent still running at its timeout is released, and its answer is the timeout', () => {
     const spawner = inMemorySpawner({ hang: true })
     return Effect.gen(function* () {
-      const outcome = yield* withAgents(({ spawner: spawnFor }) =>
-        Effect.promise(async () => {
-          const stop = new AbortController()
-          const running = spawnFor(10)(invocation, stop.signal)
-          await new Promise((r) => setTimeout(r, 10))
-          stop.abort('stopped: the other agents answered 60s before')
-          return running.then(
-            () => 'resolved',
-            (error: Error) => `${error.message} | released: ${spawner.seen[0]?.released}`,
-          )
-        }),
-      )
-      assert.strictEqual(outcome, 'stopped: the other agents answered 60s before | released: true')
-    }).pipe(Effect.provide(spawner.layer))
+      const fiber = yield* Effect.forkChild(askAll([question], { timeoutMinutes: 3 }))
+      yield* TestClock.adjust(Duration.subtract(Duration.minutes(3), Duration.seconds(1)))
+      assert.strictEqual(spawner.seen[0]?.released, false, 'still running a second before its minutes are over')
+      yield* TestClock.adjust(Duration.seconds(1))
+      assert.deepStrictEqual(yield* Fiber.join(fiber), [{ ok: false, error: 'timed out after 3 minutes' }])
+      assert.strictEqual(spawner.seen[0]?.released, true)
+    }).pipe((effect) => asked(effect, spawner))
   })
 
-  it.effect("a spawn rejects with the agent's own failure, and gives the agent lntt's environment", () => {
+  it.effect('a stop answers with its reason once the agent is released', () => {
+    const spawner = inMemorySpawner({ hang: true })
+    return Effect.gen(function* () {
+      const stop = yield* Deferred.make<string>()
+      const released: boolean[] = []
+      const fiber = yield* Effect.forkChild(
+        askAll([question], {
+          stop: Deferred.await(stop),
+          progress: (event) =>
+            Effect.sync(() => {
+              if (event.type === 'end') released.push(spawner.seen[0]?.released === true)
+            }),
+        }),
+      )
+      while (spawner.seen.length < 1) yield* Effect.yieldNow
+      yield* Deferred.succeed(stop, 'the round took longer than 60 minutes')
+      assert.deepStrictEqual(yield* Fiber.join(fiber), [{ ok: false, error: 'the round took longer than 60 minutes' }])
+      assert.deepStrictEqual(released, [true], 'released before its end is reported')
+    }).pipe((effect) => asked(effect, spawner))
+  })
+
+  it.effect("an agent's own failure is its answer, and the agent gets lntt's environment", () => {
     const spawner = inMemorySpawner({ code: 2, stderr: 'quota exceeded' })
     return Effect.gen(function* () {
       process.env.LNTT_SPEC_INHERITED = 'yes'
-      const message = yield* withAgents(({ spawner: spawnFor }) =>
-        Effect.promise(() =>
-          spawnFor(10)(invocation).then(
-            () => 'resolved',
-            (error: Error) => error.message,
-          ),
-        ),
-      ).pipe(Effect.ensuring(Effect.sync(() => delete process.env.LNTT_SPEC_INHERITED)))
-      assert.strictEqual(message, 'claude exited 2: quota exceeded')
+      const answers = yield* askAll([question]).pipe(
+        Effect.ensuring(Effect.sync(() => delete process.env.LNTT_SPEC_INHERITED)),
+      )
+      assert.deepStrictEqual(answers, [{ ok: false, error: 'claude exited 2: quota exceeded' }])
       assert.strictEqual(spawner.seen[0]?.env?.LNTT_SPEC_INHERITED, 'yes')
-      assert.strictEqual(spawner.seen[0]?.env?.LNTT_REVIEW, '1')
-    }).pipe(Effect.provide(spawner.layer))
+      assert.strictEqual(spawner.seen[0]?.extendEnv, false)
+    }).pipe((effect) => asked(effect, spawner))
   })
 
-  it.effect('an interrupted command ends only once its running agents are released', () => {
+  it.effect('an interrupted askAll ends only once its running agents are released', () => {
     const spawner = inMemorySpawner({ hang: true })
     return Effect.gen(function* () {
-      const started = yield* Deferred.make<void>()
-      // The round's Promise code starts an agent and goes on waiting, as askAll does.
-      const command = withAgents(({ spawner: spawnFor }) =>
-        Effect.gen(function* () {
-          void spawnFor(10)(invocation).catch(() => {})
-          yield* Effect.promise(() => new Promise((r) => setTimeout(r, 10)))
-          yield* Deferred.succeed(started, undefined)
-          return yield* Effect.never
-        }),
+      const fiber = yield* Effect.forkChild(askAll([question, question]))
+      while (spawner.seen.length < 2) yield* Effect.yieldNow
+      assert.deepStrictEqual(
+        spawner.seen.map((s) => s.released),
+        [false, false],
       )
-      const fiber = yield* Effect.forkChild(command)
-      yield* Deferred.await(started)
-      assert.strictEqual(spawner.seen[0]?.released, false)
       const exit = yield* Fiber.interrupt(fiber).pipe(Effect.andThen(Fiber.await(fiber)))
       assert.isTrue(Exit.hasInterrupts(exit))
-      assert.strictEqual(spawner.seen[0]?.released, true)
-    }).pipe(Effect.provide(spawner.layer))
+      assert.deepStrictEqual(
+        spawner.seen.map((s) => s.released),
+        [true, true],
+      )
+    }).pipe((effect) => asked(effect, spawner))
+  })
+
+  it.effect('what keeps an agent from starting: a CLI the shell does not find, or no read-only mode', () => {
+    const spawner = inMemorySpawner({ code: 1 })
+    return Effect.gen(function* () {
+      const agents = yield* Agents
+      const problems = yield* agents.problems([{ kind: 'claude', model: 'sonnet' }, { kind: 'codex' }])
+      assert.deepStrictEqual(problems, [
+        'claude sonnet: claude is not on the PATH',
+        'codex: codex has no read-only headless mode here; the agents are claude, opencode',
+      ])
+      assert.deepStrictEqual(spawner.seen[0]?.args, ['-c', 'command -v "claude"'])
+      assert.strictEqual(spawner.seen.length, 1, 'no shell for an agent that cannot be made read-only')
+    }).pipe((effect) => asked(effect, spawner))
   })
 })

@@ -717,7 +717,7 @@ export function renderReviewPrompt(lens: string, values: PromptValues, brief?: s
   })
 }
 
-function anchorOf(f: Pick<Finding, 'path' | 'line'>): string {
+export function anchorOf(f: Pick<Finding, 'path' | 'line'>): string {
   return f.path === null ? '(no anchor)' : f.line === null ? f.path : `${f.path}:${f.line}`
 }
 
@@ -833,11 +833,6 @@ export function roundClean(result: RoundResult): boolean {
 
 export type Ask = (questions: Question[]) => Promise<Answer[]>
 
-function unmarked<F extends Finding>(f: F): F {
-  const { preexisting: _, ...plain } = f
-  return plain as F
-}
-
 // The lines each file has on the new side of a diff with no context (`git diff -U0`,
 // prefixes `a/` and `b/`): the lines the branch wrote. A file the diff deletes has none; a
 // path git quotes is unquoted, and the tab git ends a path with a space with is dropped.
@@ -892,197 +887,15 @@ export interface RoundInput extends PromptValues {
   cite?: (path: string, line: number | null) => { text: string | null } | { missing: string; what: 'file' | 'line' }
 }
 
-function addTokens(total: number | null, answer: Answer): number | null {
-  return answer.ok && answer.reply.tokens !== null ? (total ?? 0) + answer.reply.tokens : total
-}
-
-function addCost(total: number | null, answer: Answer): number | null {
-  return answer.ok && answer.reply.cost !== null ? Math.round(((total ?? 0) + answer.reply.cost) * 1e6) / 1e6 : total
-}
-
-// An answer's tokens and cost in the round's sums, and its agent named where it reported none.
-function account(result: RoundResult, answer: Answer, agent: Agent): void {
-  result.cost = addCost(result.cost, answer)
-  result.tokens = addTokens(result.tokens, answer)
-  const label = agentLabel(agent)
-  if (!(answer.ok && answer.reply.tokens !== null) && !result.noTokens.includes(label)) result.noTokens.push(label)
-  if (!(answer.ok && answer.reply.cost !== null) && !result.noUsd.includes(label)) result.noUsd.push(label)
-}
-
-// One round: the lenses the diff touches, every agent of each at once; then every
-// finding at a verified severity, each to its verifiers at once. An empty delta asks
-// nobody and keeps the findings still open from the last round.
+// One round, for the library's callers: the Effect form (src/review/round.ts), loaded only when
+// a round runs, with the asks, the brief and the cited lines on Promises. A brief is read from
+// the working directory when no readBrief is given.
 export async function runRound(
   config: ReviewConfig,
   input: RoundInput,
   ask: Ask,
   open: Checked[] = [],
 ): Promise<RoundResult> {
-  const round = input.files.length === 0 ? Math.max(1, input.range.round - 1) : input.range.round
-  const result: RoundResult = {
-    round: input.range.round,
-    base: input.base,
-    head: input.head,
-    scope: input.range.reason,
-    lenses: [],
-    findings: [],
-    refuted: [],
-    failed: [],
-    partial: [],
-    skipped: [],
-    closed: [],
-    preexisting: [],
-    // An empty delta is no round more: it blocks as the round it keeps the number of.
-    blocking: round > config.warningRounds ? ['blocker'] : ['blocker', 'warning'],
-    cost: null,
-    tokens: null,
-    noTokens: [],
-    noUsd: [],
-  }
-  if (input.files.length === 0) {
-    result.findings = open.filter((f) => f.verdict !== 'withdrawn')
-    return result
-  }
-  const values = { ...input, scope: input.range.reason }
-  const jobs: { lens: string; agent: Agent; prompt: string }[] = []
-  for (const [lens, def] of Object.entries(config.reviewers)) {
-    if (!lensApplies(def, input.files)) continue
-    result.lenses.push(lens)
-    const brief = def.brief ? (input.readBrief ?? ((p) => readFileSync(p, 'utf8')))(def.brief) : undefined
-    const prompt = renderReviewPrompt(lens, values, brief)
-    for (const agent of def.with) jobs.push({ lens, agent, prompt })
-  }
-  const answers = await ask(
-    jobs.map(({ lens, agent, prompt }) => ({ agent, prompt, label: `${lens} · ${agentLabel(agent)}` })),
-  )
-  const reviewed: Reviewed[] = []
-  for (const [i, answer] of answers.entries()) {
-    const job = jobs[i] as (typeof jobs)[number]
-    account(result, answer, job.agent)
-    const failed = (error: string, reply?: string) =>
-      (job.agent.optional ? result.skipped : result.failed).push({
-        lens: job.lens,
-        agent: agentLabel(job.agent),
-        error,
-        ...(reply === undefined ? {} : { reply }),
-      })
-    if (!answer.ok) {
-      failed(answer.error)
-      continue
-    }
-    const findings = parseFindings(answer.reply.text)
-    // A reply in another shape is a review that did not happen, not a clean one. A line
-    // that cannot be read does not take the readable ones with it: it is reported apart.
-    if (findings.length === 0 && !isNoFindings(answer.reply.text)) {
-      const lines = unreadableLines(answer.reply.text).length
-      failed(
-        lines > 0 ? `${lines} finding lines that cannot be read` : 'no finding line and not "no findings"',
-        answer.reply.text,
-      )
-      continue
-    }
-    const lines = unreadableLines(answer.reply.text)
-    // An optional agent never keeps a round from moving on: its unreadable lines are
-    // reported in skipped, and its readable findings stand.
-    if (lines.length > 0 && job.agent.optional)
-      failed(`${lines.length} finding lines that cannot be read`, answer.reply.text)
-    else if (lines.length > 0)
-      result.partial.push({ lens: job.lens, agent: agentLabel(job.agent), lines, reply: answer.reply.text })
-    reviewed.push({ ...job, session: answer.reply.session, findings })
-  }
-  // Fresh reviewers read only the delta, so a finding still open from the last round
-  // would go unseen: it goes back to the verifiers, at any severity, and stays while
-  // they cannot refute it on the new head. Without verifiers it stays until withdrawn.
-  // Notes are reported once, in the round that found them, and not carried; nor is a
-  // finding the ledger closed (a warning accepted open past warningRounds).
-  const ledger = input.closed ?? []
-  const closedIds = new Set(ledger.map((c) => c.id))
-  const carried = open
-    .filter((f) => f.verdict !== 'withdrawn' && f.severity !== 'note' && !closedIds.has(f.id))
-    .map((f) => ({ ...f }))
-  const last = Math.max(0, ...[...open, ...ledger].map((f) => Number(f.id.slice(1)) || 0))
-  // A fresh finding at the anchor of one still open is the same finding: it joins it. A
-  // pre-existing mark on a line the branch wrote, or on a finding with no line, is dropped:
-  // the finding is reported as any other.
-  const fresh = mergeFindings(reviewed, last)
-    .map((f) =>
-      !f.preexisting || (f.path !== null && f.line !== null && input.untouched?.(f.path, f.line)) ? f : unmarked(f),
-    )
-    .filter((f) => {
-      const same = f.path !== null && carried.find((c) => c.path === f.path && c.line === f.line)
-      // The same agent finding it again replaces its own entry: its new session is the one
-      // a reply resumes.
-      if (same)
-        same.foundBy = [...same.foundBy.filter((b) => !f.foundBy.some((n) => n.agent === b.agent)), ...f.foundBy]
-      return !same
-    })
-  // A finding on a line past the end of its file is refuted before any verifier is
-  // asked; the others carry the line's text to them. A file that is not there may be one
-  // the change deletes: its verifiers decide.
-  const found: Found[] = []
-  for (const f of [...carried, ...fresh]) {
-    const cited = f.path === null || !input.cite ? null : input.cite(f.path, f.line)
-    if (cited && 'missing' in cited && cited.what === 'file') found.push(unmarked(f))
-    else if (cited && 'missing' in cited) {
-      const proof = `${anchorOf(f)}: ${cited.missing}`
-      result.refuted.push({ ...f, verdict: 'refuted', proofs: [{ by: 'lntt check cite', outcome: 'refuted', proof }] })
-    } else {
-      const read = cited ? { ...f, cited: cited.text } : f
-      // A fresh finding that repeats a closed one on an unchanged line asks no verifier.
-      const repeated = carried.some((c) => c.id === f.id) ? undefined : repeats(read, ledger)
-      if (repeated) result.closed.push({ ...read, closedBy: repeated.id, closedWhat: repeated.what })
-      else if (read.preexisting) result.preexisting.push(read)
-      else found.push(read)
-    }
-  }
-  const kept = found.filter((f) => carried.some((c) => c.id === f.id)).length
-  // A finding that proposes a mutation is read like any other: the round runs no test.
-  const verified = (i: number): boolean =>
-    config.verify !== null && (i < kept || config.verify.severities.includes((found[i] as Found).severity))
-
-  const checks: { finding: number; agent: Agent }[] = []
-  found.forEach((f, i) => {
-    if (config.verify && verified(i)) {
-      for (const agent of verifiersFor(f, config.verify.with)) checks.push({ finding: i, agent })
-    }
-  })
-  const verdicts = await (checks.length > 0
-    ? ask(
-        checks.map((c) => ({
-          agent: c.agent,
-          prompt: renderVerifyPrompt(found[c.finding] as Found, values),
-          label: `verify ${(found[c.finding] as Found).id} · ${agentLabel(c.agent)}`,
-        })),
-      )
-    : Promise.resolve([]))
-  const proofs: Proof[][] = found.map(() => [])
-  verdicts.forEach((answer, i) => {
-    const check = checks[i] as (typeof checks)[number]
-    account(result, answer, check.agent)
-    const by = agentLabel(check.agent)
-    if (!answer.ok) {
-      const failure = { lens: `verify ${(found[check.finding] as Found).id}`, agent: by, error: answer.error }
-      ;(check.agent.optional ? result.skipped : result.failed).push(failure)
-    }
-    proofs[check.finding]?.push(
-      answer.ok
-        ? { by, ...parseOutcome(answer.reply.text) }
-        : { by, outcome: 'undecided', proof: answer.error, failed: true },
-    )
-  })
-  found.forEach((f, i) => {
-    const mine = proofs[i] as Proof[]
-    const before = i < kept ? (f as Checked) : null
-    const checked: Checked = {
-      ...f,
-      // Only the verifiers that answered decide; none answering leaves it undecided.
-      verdict: verified(i)
-        ? verdict(mine.filter((p) => !p.failed).map((p) => p.outcome))
-        : (before?.verdict ?? 'unverified'),
-      proofs: mine,
-    }
-    if (checked.verdict === 'refuted') result.refuted.push(checked)
-    else result.findings.push(checked)
-  })
-  return result
+  const { runRoundWith } = await import('./review/round.ts')
+  return runRoundWith(config, { ...input, readBrief: input.readBrief ?? ((p) => readFileSync(p, 'utf8')) }, ask, open)
 }

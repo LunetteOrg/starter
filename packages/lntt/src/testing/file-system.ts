@@ -58,6 +58,8 @@ export function memoryFileSystem(options: { dirs?: string[]; linkFails?: boolean
     writeFileString: (path, text, options) => write('writeFileString', path, text, options?.flag),
     stat: (path) => {
       const file = files.get(path)
+      if (!file && dirs.has(path))
+        return Effect.succeed({ type: 'Directory', mtime: Option.none() } as FileSystem.File.Info)
       if (!file) return Effect.fail(failure('stat', path, 'NotFound'))
       return Effect.succeed({ type: 'File', mtime: Option.some(new Date(file.mtime)) } as FileSystem.File.Info)
     },

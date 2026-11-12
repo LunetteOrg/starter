@@ -232,15 +232,29 @@ export const ANCHOR_LINE = /^(.+?):(\d+)(?:[-–,:]\d+)*$/
 // anchor may carry a heading (`#decision`) or a line in any form ANCHOR_LINE reads; a
 // path alone only has to exist. The text is null for a path alone.
 export function cite(root: string, anchor: string, line: number | null): Cited {
+  const { file, at } = citeTarget(root, anchor, line)
+  if (file === null || !existsSync(file) || !statSync(file).isFile()) return citeText(null, at)
+  return citeText(at === null ? '' : readFileSync(file, 'utf8'), at)
+}
+
+// Where an anchor points: the file, null when it is outside the root, and the line.
+export function citeTarget(
+  root: string,
+  anchor: string,
+  line: number | null,
+): { file: string | null; at: number | null } {
   const m = ANCHOR_LINE.exec(anchor)
   const path = (m ? (m[1] as string) : anchor).replace(/#.*$/, '')
   const at = line ?? (m ? Number(m[2]) : null)
   const rel = isAbsolute(path) ? relative(root, path) : path
-  const abs = join(root, rel)
-  if (rel.startsWith('..') || !existsSync(abs) || !statSync(abs).isFile())
-    return { missing: 'no such file', what: 'file' }
+  return { file: rel.startsWith('..') ? null : join(root, rel), at }
+}
+
+// What the line reads, from the file's text, or null when it is not a file.
+export function citeText(text: string | null, at: number | null): Cited {
+  if (text === null) return { missing: 'no such file', what: 'file' }
   if (at === null) return { text: null }
-  const lines = readFileSync(abs, 'utf8').replace(/\n$/, '').split('\n')
+  const lines = text.replace(/\n$/, '').split('\n')
   if (at < 1 || at > lines.length)
     return {
       missing: `no line ${at}: the file has ${lines.length} line${lines.length === 1 ? '' : 's'}`,

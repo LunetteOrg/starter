@@ -1,6 +1,6 @@
 // The sync code of lntt review that reaches the machine through modules not yet on Effect: the
-// project's configuration, the place of the state store, the base, the agents' CLIs, the limit's
-// message to the parent. No Effect at load: src/review-cli.ts (status, cost) calls it directly,
+// project's configuration, the place of the state store, the base, the limit's message to the
+// parent. No Effect at load: src/review-cli.ts (status, cost) calls it directly,
 // and the live layer of the bridge (src/review/bridge.ts) calls it under Effect.try for the
 // commands on Effect. Each piece leaves as its module moves.
 
@@ -9,14 +9,11 @@ import { projectBase } from '../base.ts'
 import { type BranchRules, fromToolName } from '../branch.ts'
 import { localRef } from '../ci/event.ts'
 import { NoConfigError } from '../files.ts'
-import { type HeadlessAgent as Agent, headlessInvocation } from '../headless.ts'
 import { findConfig, loadConfig } from '../index.ts'
 import { type Message, pending, type Started, send, startedBy } from '../messages.ts'
 import { messagesRoot, systemMailbox } from '../messages-cli.ts'
 import { loadOperator, slug } from '../operator.ts'
-import { agentLabel } from '../review.ts'
 import { migrateOld, type Place, resolvePlace } from '../review-store.ts'
-import { commandExists } from '../viewer.ts'
 
 // No configuration file: the defaults. A file that does not validate is an error: a
 // review on the defaults would pass for the one the project configured.
@@ -65,21 +62,6 @@ export function baseRef(root: string, given: string | undefined): { ref: string;
   if (ref === null)
     throw new Error(`no ${given} or origin/${given} to compare the branch with: run git fetch origin, or check --base`)
   return { ref, said: null }
-}
-
-// What keeps an agent from starting: a CLI that is not installed, or one that cannot be
-// made read-only (headlessInvocation throws). A round refuses before any starts.
-export function agentProblems(agents: Agent[]): string[] {
-  const problems: string[] = []
-  for (const agent of agents) {
-    try {
-      headlessInvocation(agent, '')
-      if (!commandExists(agent.kind)) problems.push(`${agentLabel(agent)}: ${agent.kind} is not on the PATH`)
-    } catch (error) {
-      problems.push(`${agentLabel(agent)}: ${(error as Error).message}`)
-    }
-  }
-  return problems
 }
 
 export type Asked = { id: string; to: string; path: string }
