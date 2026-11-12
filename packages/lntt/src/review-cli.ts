@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { projectBase } from './base.ts'
-import { Exit, exit } from './exit.ts'
+import { Exit, exit, printed } from './exit.ts'
 import { runQuery } from './query.ts'
 import type { ReviewCommand } from './review/command.ts'
 import { loaded, placeFor } from './review/host.ts'
@@ -117,7 +117,7 @@ async function cost(args: string[]): Promise<number> {
       line: total.line,
     },
   }
-  if (values.query !== undefined) return runQuery(query(document, values.query, values.json, 0))
+  if (values.query !== undefined) return printed(await runQuery(query(document, values.query, values.json, 0)))
   stdout.write(values.json ? `${JSON.stringify(document, null, 2)}\n` : `${total.line}\n`)
   return 0
 }
@@ -327,7 +327,7 @@ async function status(args: string[]): Promise<number> {
       // With no state at all, a failure while running exits 4, there being no round to read,
       // with jq's message: the expression may be at fault too.
       const noRound = (exitCode: number) => (exitCode === 5 ? { code: 4, line } : null)
-      return runQuery({ ...query(none, values.query, values.json, 4), onFailure: noRound })
+      return printed(await runQuery({ ...query(none, values.query, values.json, 4), onFailure: noRound }))
     }
     stdout.write(values.json ? `${JSON.stringify(none, null, 2)}\n` : `${line}\n`)
     return 4
@@ -377,7 +377,7 @@ async function status(args: string[]): Promise<number> {
         rounds: state.rounds ?? [],
       },
     }
-    if (values.query !== undefined) return runQuery(query(out, values.query, values.json, code))
+    if (values.query !== undefined) return printed(await runQuery(query(out, values.query, values.json, code)))
     stdout.write(`${JSON.stringify(out, null, 2)}\n`)
     return code
   }

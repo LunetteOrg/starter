@@ -64,7 +64,11 @@ export const CANDIDATE_STATUS = Object.freeze({ inRelease: 'In release', done: '
 
 // delivery.candidate with its defaults, or null when the project has no candidate.
 export function candidateConfig(cwd: string): CandidateConfig | null {
-  const config = data(cwd)
+  return candidateConfigOf(data(cwd))
+}
+
+// The same, from the configuration's data.
+export function candidateConfigOf(config: Record<string, unknown>): CandidateConfig | null {
   const section = (config.delivery as { candidate?: Partial<CandidateConfig> & { prefix: string } } | undefined)
     ?.candidate
   if (!section) return null

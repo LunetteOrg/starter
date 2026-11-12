@@ -68,3 +68,9 @@ export function openCandidateOf<T extends { headRefName: string }>(prs: T[], pre
 export function localRefs(branch: string): string[] {
   return [`origin/${branch}`, branch]
 }
+
+// owner/name of a GitHub remote's URL (https or ssh), null for any other URL or none.
+export function repositoryOf(url: string | null): string | null {
+  const match = /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/.exec(url ?? '')
+  return match ? (match[1] as string) : null
+}

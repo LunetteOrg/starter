@@ -1,8 +1,8 @@
 // Effect's FileSystem in memory, for the specs of lntt (docs/adr/effect-in-lntt.md#tests-beside-each-module).
 // It follows Node's semantics where a module relies on them, so a spec fails where Node would:
 // a file is written only in a directory that exists, `wx` refuses a file that exists, `a`
-// appends, `link` refuses a target that exists, `utimes` reads a number as seconds, `rename`
-// across two filesystems fails with Node's EXDEV in its cause, and a missing path is NotFound. A file's mtime is the Clock's time when it was written. Not
+// appends, `link` refuses a target that exists, `utimes` reads a number as seconds, `rename` and `copyFile`
+// replace no directory, `rename` across two filesystems fails with Node's EXDEV in its cause, and a missing path is NotFound. A file's mtime is the Clock's time when it was written. Not
 // published: tsconfig.build.json leaves src/testing/ out.
 
 import * as Clock from 'effect/Clock'
@@ -49,6 +49,8 @@ export function memoryFileSystem(
       const file = files.get(from)
       if (!file) return Effect.fail(failure(method, from, 'NotFound'))
       if (!dirs.has(parent(to))) return Effect.fail(failure(method, to, 'NotFound'))
+      // A directory is not replaced by a file.
+      if (dirs.has(to)) return Effect.fail(failure(method, to, 'Unknown'))
       files.set(to, { ...file })
       return Effect.void
     })
@@ -129,6 +131,8 @@ export function memoryFileSystem(
     layer: Layer.succeed(FileSystem.FileSystem)(fileSystem),
     // A file as another process wrote it, last touched `agoMs` before the Clock's time; its
     // directories are created.
+    // A directory, as another process made it.
+    dir: (path: string) => Effect.sync(() => makeDir(path)),
     put: (path: string, text: string, agoMs = 0) =>
       Effect.map(Clock.currentTimeMillis, (now) => {
         makeDir(parent(path))
