@@ -28,7 +28,7 @@
     "access": "public"
   },
   "peerDependencies": {
-    "@biomejs/biome": "^2.5.3"
+    "@biomejs/biome": "^2.6.7"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.7",
