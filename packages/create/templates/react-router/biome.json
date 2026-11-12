@@ -9,7 +9,8 @@
       "!**/*.grit",
       "!packages/test-utils/src/__fixtures__",
       "!reference",
-      "!compliance"
+      "!compliance",
+      "!.claude/skills/postgres"
     ]
   },
   "overrides": [

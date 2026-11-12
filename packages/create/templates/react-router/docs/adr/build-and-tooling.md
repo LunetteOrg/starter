@@ -25,7 +25,7 @@ The starter targets complex full-stack TypeScript applications built by small te
 | Webhooks / external HTTP | Hono |
 | Database | Postgres only; Drizzle ORM + Drizzle Kit migrations |
 | Date/time | `Temporal` everywhere; `Date` is banned (see [import boundaries](./architecture-and-boundaries.md#import-boundaries)) |
-| Lint/format | Biome (single tool) |
+| Lint/format | Biome (single tool). `.claude/skills/postgres` is left as written: it comes from `timescale/pg-aiguide`, pinned by hash in `skills-lock.json` |
 | Tests | Vitest + Testcontainers, Storybook + Vitest browser mode for components, Playwright for e2e (see [testing strategy](./testing.md#testing-strategy)) |
 | Git hooks | Lefthook + commitlint (conventional commits) |
 | Styling | CSS Modules for components + Tailwind for utilities |
