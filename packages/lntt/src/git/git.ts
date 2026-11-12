@@ -34,6 +34,9 @@ export interface GitOperations {
   readonly pointingAt: (rev: string, pattern: string) => Run<string[]>
   // The URL of the origin remote, '' when there is none.
   readonly originUrl: Run<string>
+  // The remotes gh resolves the repository from: the url and gh-resolved lines of the git config,
+  // '' when there is none, null when git answers anything else (outside a repository).
+  readonly remotes: Run<string | null>
   // Renames the branch HEAD is on.
   readonly renameBranch: (name: string) => Run<void>
   // The short hash of a revision.
@@ -71,6 +74,7 @@ export class Git extends Context.Service<Git, GitOperations>()('@lntt/lntt/git/G
         originHead: missing('originHead'),
         pointingAt: fn('pointingAt'),
         originUrl: missing('originUrl'),
+        remotes: missing('remotes'),
         renameBranch: fn('renameBranch'),
         short: fn('short'),
         subject: fn('subject'),
@@ -115,6 +119,9 @@ export const gitAt = (dir?: string) =>
             out.split('\n').filter(Boolean),
           ),
         originUrl: Effect.map(ask('remote', 'get-url', 'origin'), (url) => url ?? ''),
+        remotes: Effect.map(exec(['config', '--get-regexp', '^remote\\..*\\.(url|gh-resolved)$']), ({ out, code }) =>
+          code === 0 ? out : code === 1 ? '' : null,
+        ),
         renameBranch: (name) => Effect.asVoid(run('branch', '-m', name)),
         short: (rev) => run('rev-parse', '--short', rev),
         subject: (rev) => run('log', '-1', '--format=%s', rev),

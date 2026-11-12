@@ -17,7 +17,7 @@ export interface MemoryFile {
   mtime: number
 }
 
-const failure = (method: string, path: string, tag: 'AlreadyExists' | 'NotFound') =>
+const failure = (method: string, path: string, tag: 'AlreadyExists' | 'NotFound' | 'BadResource') =>
   PlatformError.systemError({ _tag: tag, module: 'FileSystem', method, pathOrDescriptor: path })
 
 const parent = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf('/'))) || '/'
@@ -80,12 +80,13 @@ export function memoryFileSystem(options: { dirs?: string[]; linkFails?: boolean
         files.set(to, { ...file })
         return Effect.void
       }),
-    // As Node's fs.rename: the target is replaced, in a directory that exists.
+    // As Node's fs.rename: the target is replaced, in a directory that exists; a directory is not.
     rename: (from, to) =>
       Effect.suspend(() => {
         const file = files.get(from)
         if (!file) return Effect.fail(failure('rename', from, 'NotFound'))
         if (!dirs.has(parent(to))) return Effect.fail(failure('rename', to, 'NotFound'))
+        if (dirs.has(to)) return Effect.fail(failure('rename', to, 'BadResource'))
         files.delete(from)
         files.set(to, file)
         return Effect.void
@@ -103,6 +104,8 @@ export function memoryFileSystem(options: { dirs?: string[]; linkFails?: boolean
     layer: Layer.succeed(FileSystem.FileSystem)(fileSystem),
     // A file as another process wrote it, last touched `agoMs` before the Clock's time; its
     // directories are created.
+    // A directory, as another process made it.
+    dir: (path: string) => Effect.sync(() => makeDir(path)),
     put: (path: string, text: string, agoMs = 0) =>
       Effect.map(Clock.currentTimeMillis, (now) => {
         makeDir(parent(path))
