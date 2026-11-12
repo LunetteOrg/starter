@@ -12,6 +12,7 @@ import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 import * as TestClock from 'effect/testing/TestClock'
 import * as TestConsole from 'effect/testing/TestConsole'
+import { ConfigInvalid, ProjectConfig } from '../config/load.ts'
 import { Git, GitError } from '../git/git.ts'
 import type { Started } from '../messages.ts'
 import type { Closed, ReviewState } from '../review.ts'
@@ -250,13 +251,6 @@ function world() {
   }
   const bridge = Layer.succeed(ReviewBridge)(
     ReviewBridge.of({
-      // The configuration as the loader gives it, or the error it throws for a file that does not validate.
-      config: Effect.suspend(() =>
-        project.invalid === null
-          ? Effect.succeed(project.config)
-          : Effect.fail(new ReviewFailed({ cause: new Error(project.invalid) })),
-      ),
-      place: () => Effect.succeed(STORE),
       base: (_root, given) => Effect.succeed({ ref: given ?? 'main', said: given ? null : 'base main' }),
       checks: (areas) =>
         Effect.sync(() => {
@@ -279,6 +273,16 @@ function world() {
       orca: () => (project.defect ? Effect.die(new Error('a bug of lntt')) : Effect.succeed(null)),
     }),
   )
+  // The configuration as the loader gives it, or its failure for a file that does not validate.
+  const config = Layer.succeed(ProjectConfig)(
+    ProjectConfig.of({
+      data: Effect.suspend(() =>
+        project.invalid === null
+          ? Effect.succeed(project.config)
+          : Effect.fail(new ConfigInvalid({ message: project.invalid })),
+      ),
+    }),
+  )
   const pids = Layer.succeed(Pids)(Pids.of({ self: SELF, visible: () => Effect.succeed(false) }))
   // One run of `lntt review`: its exit code, stdout and stderr.
   const lntt = (parsed: ReviewCommand) =>
@@ -293,6 +297,7 @@ function world() {
           ReviewStore.memory(STORE, GIT_DIR).pipe(Layer.provideMerge(fs.layer)),
           repo.layer(),
           bridge,
+          config,
           pids,
           AgentsProcesses.pipe(Layer.provideMerge(agent.layer)),
           Path.layer,

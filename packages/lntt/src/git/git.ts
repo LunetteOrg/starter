@@ -31,6 +31,8 @@ export interface GitOperations {
   readonly root: Run<string>
   readonly gitDir: Run<string>
   readonly commonDir: Run<string>
+  // `git remote get-url origin`: '' when the repository has no origin.
+  readonly originUrl: Run<string>
   readonly mergeBase: (a: string, b: string) => Run<string>
   // Whether `a` is an ancestor of `b`: false for any exit of git but 0 (a commit git no longer
   // knows too); a GitError only when git does not start.
@@ -58,6 +60,7 @@ export class Git extends Context.Service<Git, GitOperations>()('@lntt/lntt/git/G
         root: missing('root'),
         gitDir: missing('gitDir'),
         commonDir: missing('commonDir'),
+        originUrl: missing('originUrl'),
         mergeBase: fn('merge-base'),
         isAncestor: fn('is-ancestor'),
         changed: fn('changed'),
@@ -98,6 +101,8 @@ export const GitLive = Layer.effect(Git)(
       root: run('rev-parse', '--show-toplevel'),
       gitDir: run('rev-parse', '--absolute-git-dir'),
       commonDir: run('rev-parse', '--path-format=absolute', '--git-common-dir'),
+      // No origin is git exiting 2; any exit but 0 is no origin, a GitError only when git does not start.
+      originUrl: Effect.map(exec(['remote', 'get-url', 'origin']), ({ out, code }) => (code === 0 ? out : '')),
       mergeBase: (a, b) => run('merge-base', a, b),
       // A commit git no longer knows (a rebase dropped it) is no ancestor either.
       isAncestor: (a, b) => Effect.map(exec(['merge-base', '--is-ancestor', a, b]), ({ code }) => code === 0),

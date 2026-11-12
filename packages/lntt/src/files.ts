@@ -1,8 +1,8 @@
 // The two formats a Lunette file can take, parsed and validated the same way:
-// `<name>.jsonc` or `<name>.yml`, one of the two in a directory.
+// `<name>.jsonc` or `<name>.yml`, one of the two in a directory. Plain logic, with no file
+// system: the caller says which files exist (src/config/load.ts on Effect, src/config/sync.ts
+// for the modules not yet on it).
 
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import type { ErrorObject, ValidateFunction } from 'ajv'
 import jsonc from 'jsonc-parser'
 import { parseDocument } from 'yaml'
@@ -23,21 +23,31 @@ export class NoConfigError extends ConfigError {
   override name = 'NoConfigError'
 }
 
-// `<dir>/<name>.jsonc` or `<dir>/<name>.yml`; both at once would be two sources of
-// the same values, so it is an error.
-export function locate(dir: string, name: string): Located | undefined {
-  const found = (
+// The files `<dir>/<name>.jsonc` and `<dir>/<name>.yml`, the paths made with the caller's `join`.
+export function candidates(dir: string, name: string, join: (...parts: string[]) => string): Located[] {
+  return (
     [
       [`${name}.jsonc`, 'jsonc'],
       [`${name}.yml`, 'yaml'],
     ] as const
-  )
-    .map(([file, format]) => ({ path: join(dir, file), format }))
-    .filter((f) => existsSync(f.path))
+  ).map(([file, format]) => ({ path: join(dir, file), format }))
+}
+
+// The one of the candidates that exists, given those that do; both at once would be two sources
+// of the same values, so it is an error.
+export function pick(found: Located[]): Located | undefined {
   if (found.length > 1) {
     throw new ConfigError(`both ${found.map((f) => f.path).join(' and ')} exist; keep one`)
   }
   return found[0]
+}
+
+// The directories from `cwd` up to the root, with the caller's `dirname`: where a project's
+// `.agents/` is looked for, nearest first.
+export function ancestors(cwd: string, dirname: (path: string) => string): string[] {
+  const dirs = [cwd]
+  for (let dir = cwd; dirname(dir) !== dir; dir = dirname(dir)) dirs.push(dirname(dir))
+  return dirs
 }
 
 export function parse(text: string, located: Located): unknown {
