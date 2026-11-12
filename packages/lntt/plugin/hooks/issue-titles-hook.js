@@ -194,26 +194,36 @@ async function read($, s, text) {
   if (out?.repository) cite(m, out.mentions, text)
   s.blocks.set(text, m)
   if (s.blocks.size > KEPT) s.blocks.delete(s.blocks.keys().next().value)
-  // What the block cited and the session has a title for goes to the pane's list
-  // (issues-pane.mjs), again when a title arrives.
   const at = out?.repository ? await stamp($, s) : 0
-  const save = () =>
-    remember($, { home: s.home, at, fresh: m.cited.flatMap((k) => (s.info.has(k) ? [{ ref: k, ...s.info.get(k) }] : [])) })
+  const found = out?.repository ? out.mentions.filter((x) => settled(x, text)) : []
+  // A number that touches the end of the text may be cut in two by a pause (#1 of #138):
+  // it waits one more SETTLE_MS, and is looked up only if the block did not grow.
+  const early = [...new Set(found.filter((x) => x.after < text.length).map((x) => x.ref))]
+  const last = [...new Set(found.filter((x) => x.after >= text.length).map((x) => x.ref))]
+  // What the block cited and the session has a title for goes to the pane's list
+  // (issues-pane.mjs), again when a title arrives; a block that grew since is no longer
+  // the one on screen and writes nothing. The numbers at the end of the text wait for
+  // `whole`, as their lookup does.
+  const save = (whole = false) =>
+    s.blocks.get(text) === m
+      ? remember($, {
+          home: s.home,
+          at,
+          fresh: m.cited.flatMap((k) => (s.info.has(k) && (whole || early.includes(k)) ? [{ ref: k, ...s.info.get(k) }] : [])),
+        })
+      : undefined
   if (out?.repository) {
-    await save()
+    // The block is drawn at once; the list is written after, so a slow state never holds it.
     redraw()
-    const found = out.mentions.filter((x) => settled(x, text))
-    // Waited for here, off the drawing: the block is drawn as it is until it ends.
-    // A number that touches the end of the text may be cut in two by a pause (#1 of
-    // #138): it waits one more SETTLE_MS, and is looked up only if the block did not grow.
-    await lookUp($, s, [...new Set(found.filter((x) => x.after < text.length).map((x) => x.ref))])
     await save()
-    const last = [...new Set(found.filter((x) => x.after >= text.length).map((x) => x.ref))]
+    // Waited for here, off the drawing: the block is drawn as it is until it ends.
+    await lookUp($, s, early)
+    await save()
     if (last.length) {
       await $.clock.sleep(SETTLE_MS)
       if (s.blocks.get(text) === m && !s.dead) {
         await lookUp($, s, last)
-        await save()
+        await save(true)
       }
     }
   }

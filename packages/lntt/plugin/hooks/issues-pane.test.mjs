@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { announce, EMPTY, issuesPane, KEPT, merge, PANE, recall, remember, rowsOf, textOf } from './issues-pane.mjs'
+import { readFileSync, existsSync } from 'node:fs'
+import { announce, EMPTY, issuesPane, KEPT, merge, PANE, recall, remember, rowsOf, TRIES, textOf } from './issues-pane.mjs'
 
 const row = (n, at, i = 0, repo = 'o/r') => ({ ref: `${repo}#${n}`, title: `Title ${n}`, url: `https://github.com/${repo}/issues/${n}`, at, i })
 const fresh = (n, repo = 'o/r') => ({ ref: `${repo}#${n}`, title: `Title ${n}`, url: `https://github.com/${repo}/issues/${n}` })
@@ -79,12 +80,32 @@ describe('the list of what the session cited', () => {
     ])
   })
 
+  test('merge: a block read earlier that finds a title late updates it and leaves the later citation on top', () => {
+    const rows = merge([row(1, 20), row(2, 10)], [{ ...fresh(1), title: 'Renamed' }, fresh(3)], 15)
+    assert.deepEqual(rows.map((r) => [r.ref, r.at, r.title]), [
+      ['o/r#1', 20, 'Renamed'],
+      ['o/r#3', 15, 'Title 3'],
+      ['o/r#2', 10, 'Title 2'],
+    ])
+  })
+
   test('merge keeps KEPT rows, the oldest cited forgotten first', () => {
     const many = Array.from({ length: KEPT }, (_, n) => row(n + 1, n + 1))
     const rows = merge(many, [fresh(999)], KEPT + 10)
     assert.equal(rows.length, KEPT)
     assert.equal(rows[0].ref, 'o/r#999')
     assert.ok(!rows.some((r) => r.ref === 'o/r#1'))
+  })
+})
+
+describe('the plugin\'s contract', () => {
+  test('plugin.json names a types file that declares what the plugin keeps', () => {
+    const dir = new URL('../', import.meta.url)
+    const manifest = JSON.parse(readFileSync(new URL('.claude-plugin/plugin.json', dir), 'utf8'))
+    assert.equal(manifest.types, './types/index.d.ts')
+    const file = new URL(manifest.types, dir)
+    assert.ok(existsSync(file))
+    assert.match(readFileSync(file, 'utf8'), /interface PluginState \{\s*lunette: \{ cited: /)
   })
 })
 
@@ -128,7 +149,7 @@ describe('remember and recall', () => {
   test('a write that keeps losing is let go after a few tries', async () => {
     const s = fakeState({ value: { rows: [] }, beat: (st) => (st.version += 1) })
     await remember(s.$, { home: 'o/r', fresh: [fresh(1)], at: 1 })
-    assert.equal(s.sets, 4)
+    assert.equal(s.sets, TRIES)
   })
 
   test('a state that fails never throws: the box does not depend on it', async () => {
@@ -183,8 +204,10 @@ describe('the /issues command and its pane', () => {
   })
 
   test('announce never throws: a refused registration leaves the session as it was', async () => {
-    const { $ } = plugin({ register: async () => { throw new Error('refused') } })
+    let asked = 0
+    const { $ } = plugin({ register: async () => { asked += 1; throw new Error('refused') } })
     await announce($)
+    assert.equal(asked, 1)
   })
 
   test('the command opens the pane by its id and title, and says so', async () => {
@@ -200,8 +223,9 @@ describe('the /issues command and its pane', () => {
   })
 
   test('a pane that cannot be opened (the call fails) also answers with the list', async () => {
-    const { text } = await plugin({ open: async () => { throw new Error('no ui') } }).command()
-    assert.equal(text, EMPTY)
+    const state = fakeState({ value: { home: 'o/r', rows: [row(1, 1)] } })
+    const { text } = await plugin({ state, open: async () => { throw new Error('no ui') } }).command()
+    assert.equal(text, '#1 Title 1\n  https://github.com/o/r/issues/1')
   })
 
   test('the pane lists each reference: number, title, URL under it, the most recent first', async () => {

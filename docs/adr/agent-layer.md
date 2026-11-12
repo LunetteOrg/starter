@@ -255,33 +255,40 @@ How a title is written is the `github-board` skill's.
 ### The issues a session cited are listed in a pane, opened on request
 
 `/issues`, a command of the `lunette` plugin, opens a pane beside the chat
-(`$.ui.open`, drawn by a `ui.render` hook on `Pane` for its id; `packages/lntt/plugin/hooks/issues-pane.mjs`).
-It is opened by the person's command and never by the plugin: a pane the person opens
-seats on the terminal at any width, one opened unasked waits below 110 columns. The pane
-lists each issue or pull request the session cited, the most recently cited first (a
-reference cited again moves to the top; those of one block keep the order of its text):
-its number as the box writes it, its title and its URL under it, drawn with the elements
-of the surface (`Box`, `Text`), so the terminal, desktop, vscode and mobile draw one tree.
-It is as scrolled as the engine scrolls a pane.
+(`$.ui.open`, drawn by a `ui.render` hook on `Pane` for its id;
+`packages/lntt/plugin/hooks/issues-pane.mjs`). The person's command opens it and the plugin
+never does: a pane the person opens seats on the terminal at any width. It lists each issue
+or pull request the session cited, the most recently cited first (a reference cited again
+moves to the top; those of one block keep the order of its text): its number as the box
+writes it, its title and its URL under it, drawn with the elements of the surface (`Box`,
+`Text`), as the box is. The engine scrolls it.
 
-It shows what the box under each block already learned and asks for nothing: the
+It shows what the box under each block already learned and asks for nothing. The
 issue-titles hook writes the references of a block that have a title into the plugin's
-`$.state` (`lunette.cited`, `{ home, rows }`; the contract is `packages/lntt/plugin/types/index.d.ts`,
-named in `plugin.json`) when the block is read and again when a title arrives, and the
-pane draws from that value, so a new citation or a title found later appears in an open
-pane with no redraw of its own, and the list outlives a reload of the plugin. Only the
-messages of the assistant count, the blocks the box reads; a reference with no title
-(`gh` does not know it, lookups are off, the title is still being asked) is not listed,
-as it has no box row, and appears when its title does. Two hundred rows are kept, the
-oldest cited forgotten first. A row read back is checked as a title from `lntt` is (a
-reference of the lower-case shape, a clean title, a plain `https` URL), and a value
-stored in another shape reads as an empty list. Where a surface places no pane, the
-command answers with the same list as text.
+`$.state` (`lunette.cited`, `{ home, rows }`; the contract is
+`packages/lntt/plugin/types/index.d.ts`, named in `plugin.json`) when the block is read and
+again when a title arrives, and the pane draws from that value: a new citation or a title
+found later appears in an open pane, and the list outlives a reload of the plugin.
 
-The state of the issue (open, closed, merged) is not shown: `lntt refs` gives a title and
-a URL, and its cache holds them for a day, so a state kept with them would show an issue
-closed this morning as open. It takes `lntt refs` reading `state` and `pull_request.merged_at`,
-the cache and the JSON gaining a field, and a shorter life for that field than for the title.
+- **What is listed:** the references of the assistant's blocks, those the box reads, that
+  have a title. One with no title (`gh` does not know it, lookups are off, its title is
+  still being asked) appears when its title does. A number touching the end of a block
+  is listed with the same wait as its lookup. `KEPT` rows are kept, the oldest cited
+  forgotten first.
+- **Order:** each block is stamped when it is read, from the clock and always later than
+  the block read before it, so a clock that stands still or goes back does not reorder
+  them, and a reload starts from the clock's epoch time, above what was stored. A row
+  already stored under a later stamp keeps it when an earlier block finds its title late.
+- **Writes:** a value is read, changed and written with the version it was read at
+  (`ifVersion`), again on what stands when another write landed first, `TRIES` times at
+  most. A write that cannot be kept never reaches the box: it is drawn whatever the state
+  does. A block that grew since it was read writes nothing.
+- **Reading back:** a row is checked as a title from `lntt` is (a reference of the
+  lower-case shape, a clean title, a plain `https` URL), and a value stored in another shape
+  reads as an empty list.
+- **Where a surface places no pane,** the command answers with the same list as text.
+- **No state of the issue** (open, closed, merged) is shown: `lntt refs` gives a title and a
+  URL (see the discarded directions).
 
 ## Consequences
 
@@ -326,10 +333,8 @@ the cache and the JSON gaining a field, and a shorter life for that field than f
   Another agent can resolve its references with `lntt refs` before writing, so its
   text carries the titles. A renamed issue shows its old title for up to a day, from
   the cache.
-- The pane lists no reference that has no title, and no number cited by the person: it is the
-  box's list, kept for the session, not a search of the conversation. A surface that places no
-  pane gets the list as the text of `/issues`; how desktop, vscode and mobile draw the pane has
-  not been seen live, only drawn by the tests as the tree of every surface.
+- The pane is the box's list kept for the session: the assistant's blocks, with a title. How
+  desktop, vscode and mobile draw it is the engine's; only the terminal has been seen live.
 - A block that holds a number starts one `lntt` process once its text has stayed as it is
   for `SETTLE_MS` (`lntt refs --cached`, with the whole block on stdin), and one more for
   each `KEYS_PER_RUN` titles still missing: the box appears under the block after the
@@ -435,12 +440,19 @@ the cache and the JSON gaining a field, and a shorter life for that field than f
   did (a wait of up to 800 ms).** A hook that waits holds the drawing of the block, and a title slower
   than the wait showed one message late; drawing at once and redrawing when a title is
   found shows each title as soon as it is known.
-- **The pane opened by the plugin at session start.** A pane seats unasked from 144 columns
-  (110 where the engine allows) and takes the room of the transcript; a person who wants the
-  list asks for it with `/issues`.
+- **The pane opened by the plugin at session start.** A pane opened unasked waits on a narrow
+  terminal and takes the room of the transcript when it seats; a person who wants the list
+  asks for it with `/issues`.
 - **A variable of the hook's module holding the list.** A reload of the plugin starts the
   module over and the pane would open empty in a session that already cited issues; `$.state`
   outlives it.
+- **The state of the issue (open, closed, merged) in the pane.** It takes `lntt refs` reading
+  `state` and `pull_request.merged_at`, a field more in the cache and in its JSON, and a
+  shorter life for that field than for the title: the cache would otherwise show an issue
+  closed this morning as open. A follow-up of its own.
+- **The numbers the person typed in the pane too.** It takes a hook on the person's
+  messages and a second read by `lntt refs`; the box, and so the pane, are about what
+  the assistant wrote.
 - **A second `lntt refs` run for the pane.** The box already asked for each title; the pane
   reads what it learned.
 - **A rule in AGENTS.md that an agent writes each issue's title beside its number.**

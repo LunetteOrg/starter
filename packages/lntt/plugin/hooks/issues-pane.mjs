@@ -13,7 +13,7 @@ export const TITLE = 'Issues and pull requests'
 // Rows kept, the oldest cited forgotten first (as many as the hook keeps blocks).
 export const KEPT = 200
 // Writes that lost a race to another write, tried again before the row is let go.
-const TRIES = 4
+export const TRIES = 4
 
 // The session's list: `{ home, rows }`, `home` the session's repository as `owner/repo`
 // (or null), each row `{ ref, title, url, at, i }`: `at` when its block was read, `i` its
@@ -36,12 +36,17 @@ export function rowsOf(value) {
 export const homeOf = (value) => (typeof value?.home === 'string' ? value.home : null)
 
 // The list with these references cited at `at`, in this order: each replaces its earlier
-// row, so a reference cited again moves to the top. `fresh`: `{ ref, title, url }`.
+// row, so a reference cited again moves to the top. A block read earlier that finds a title
+// late (`at` below the stored row's) updates the title and leaves the row where it is: the
+// later citation stands. `fresh`: `{ ref, title, url }`.
 export function merge(rows, fresh, at) {
+  const stored = new Map(rows.map((r) => [r.ref, r]))
   const again = new Set(fresh.map((f) => f.ref))
-  return [...fresh.map((f, i) => ({ ...f, at, i })), ...rows.filter((r) => !again.has(r.ref))]
-    .sort((a, b) => b.at - a.at || a.i - b.i)
-    .slice(0, KEPT)
+  const cited = fresh.map((f, i) => {
+    const had = stored.get(f.ref)
+    return had && had.at > at ? { ...f, at: had.at, i: had.i } : { ...f, at, i }
+  })
+  return [...cited, ...rows.filter((r) => !again.has(r.ref))].sort((a, b) => b.at - a.at || a.i - b.i).slice(0, KEPT)
 }
 
 // Writes what a block cited into the session's list: the references with a title, at

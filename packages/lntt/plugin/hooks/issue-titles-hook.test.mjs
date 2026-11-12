@@ -66,7 +66,7 @@ const flatten = (node) => {
 // `draw(text)` is the hook's drawing of one AssistantMessage block (what Claude Code
 // draws is the string 'BLOCK'); `flush` plays a message of deltas: the text is drawn when
 // complete, left to settle, and drawn again, as what shows once lookups ended.
-function engine({ gh = {}, cache = {}, home = 'o/r', local = true, lntt = null, auth = 0, version = '0.6.2', hold = false, brokenState = false } = {}) {
+function engine({ gh = {}, cache = {}, home = 'o/r', local = true, lntt = null, auth = 0, version = '0.6.2', hold = false, brokenState = false, now = () => 1000 } = {}) {
   const runs = []
   const waits = []
   const auths = []
@@ -116,7 +116,7 @@ function engine({ gh = {}, cache = {}, home = 'o/r', local = true, lntt = null, 
       },
     },
     clock: {
-      now: async () => 1000,
+      now: async () => now(),
       sleep: (ms) => {
         waits.push(ms)
         // `hold`: a sleep ends when `settle()` says, so that a block grows meanwhile.
@@ -209,6 +209,44 @@ describe('the issue titles hook', () => {
       const none = engine({ home: null })
       await none.flush('m1', '#1\n', true)
       assert.equal(none.kept.value, undefined)
+    })
+
+    test('a clock that goes back never puts a later block under an earlier one', async () => {
+      const times = [5000, 100]
+      const { flush, kept } = engine({ now: () => times.shift(), gh: { 'o/r#1': 'One', 'o/r#2': 'Two' } })
+      await flush('m1', '#1\n', true)
+      await flush('m2', '#2\n', true)
+      assert.deepEqual(listed(kept).map((r) => r[0]), ['o/r#2', 'o/r#1'])
+    })
+
+    test('a block that is read while a slower one waits for a title keeps its place when that one ends', async () => {
+      let found
+      const slow = new Promise((r) => (found = r))
+      const { flush, kept } = engine({ gh: { 'o/r#1': () => slow, 'o/r#2': 'Two' } })
+      const first = flush('m1', 'one #1 and #2\n', true)
+      for (let i = 0; i < 40; i += 1) await tick()
+      await flush('m2', 'again #1\n', true).catch(() => {})
+      found('One')
+      await first
+      for (let i = 0; i < 40; i += 1) await tick()
+      assert.deepEqual(listed(kept).map((r) => r[0]), ['o/r#1', 'o/r#2'])
+    })
+
+    test('a number at the end of a block waits one more SETTLE_MS to be listed, and a block that grows lists none of it', async () => {
+      const { draw, settle, kept } = engine({ hold: true, cache: { 'o/r#1': 'One' }, gh: { 'o/r#138': 'Publish lntt' } })
+      await draw('See #1')
+      await settle()
+      assert.equal(kept.value, undefined)
+      await draw('See #138 and more')
+      await settle()
+      await settle()
+      assert.deepEqual(listed(kept), [['o/r#138', 'Publish lntt']])
+      const calm = engine({ hold: true, gh: { 'o/r#5': 'Five' } })
+      await calm.draw('See #5')
+      await calm.settle()
+      assert.equal(calm.kept.value, undefined)
+      await calm.settle()
+      assert.deepEqual(listed(calm.kept), [['o/r#5', 'Five']])
     })
 
     test('a block that cites nothing leaves the list as it was', async () => {
