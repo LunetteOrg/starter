@@ -410,7 +410,7 @@ describe('the board skills', () => {
     assert.match(reference, /updateProjectV2View\(input:\{viewId:\$v, filter:\$f\}\)/)
     assert.match(
       reference,
-      /the grouping, the\s+sort and \*Show hierarchy\* have no input and are set by a person in the UI/,
+      /the grouping, the\s+sort and [*_]Show hierarchy[*_] have no input and are set by a person in the UI/,
     )
     assert.match(reference, /A new view\s+is a change to the Project: only with the person's go/)
   })

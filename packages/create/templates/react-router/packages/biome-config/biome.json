@@ -16,6 +16,9 @@
       "preset": "recommended"
     }
   },
+  "markdown": {
+    "parser": { "frontmatter": true }
+  },
   "javascript": {
     "formatter": {
       "quoteStyle": "single",

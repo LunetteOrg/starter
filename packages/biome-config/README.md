@@ -28,7 +28,8 @@ Biome resolves `extends` by package name; a plugin is a path, so it points into
 
 Formatter: two spaces, 100 columns, single quotes, no semicolons. Linter: the
 `recommended` preset. VCS: git, honouring `.gitignore`. `*.grit` files are not
-formatted.
+formatted. Markdown: a YAML frontmatter is read as one (`markdown.parser.frontmatter`), so
+the formatter leaves it as written.
 
 ## The plugins
 
