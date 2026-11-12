@@ -139,7 +139,12 @@ module, its bridge
 by its message like any expected failure; the unit test gives the bridge's in-memory layer.
 A command with no bridge of its own reads such code at one place, a `Context.Reference` whose
 default is the sync function (the project's configuration in `lntt branch` and `lntt pr`),
-run under `Effect.try`, which its spec replaces.
+run under `Effect.try`, which its spec replaces. What a module on Effect and the sync code of a
+module not yet moved both read, and which reaches nothing, is plain functions in a module that
+imports no Effect (what the base reads from the names git and GitHub give,
+`packages/lntt/src/base/names.ts`); the sync module keeps its own call to git or gh until it
+moves (`packages/lntt/src/ci/event.ts` and `packages/lntt/src/ci/candidate.ts`, until `lntt ci`
+moves, #340).
 A defect of the Effect code reaches the edge with its stack. A piece leaves the bridge when
 its module moves to Effect. The library API of
 `@lntt/lntt` (`packages/lntt/src/index.ts`) stays on `Promise`, so a script that imports

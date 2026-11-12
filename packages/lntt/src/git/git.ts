@@ -1,6 +1,6 @@
 // Git as a service of lntt's own (docs/adr/effect-in-lntt.md#services): the operations lntt's
 // modules on Effect ask of the repository of the current directory, each a typed Effect. The live
-// layer runs git through Effect's ChildProcessSpawner, in the current directory or the one Git.at
+// layer runs git through Effect's ChildProcessSpawner, in the current directory or the one gitAt
 // names; Git.memory answers from a record, for a spec.
 
 import * as Context from 'effect/Context'

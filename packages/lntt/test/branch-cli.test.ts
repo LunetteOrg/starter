@@ -103,6 +103,15 @@ describe('lntt branch rename', () => {
     assert.equal(r.status, 0, r.stderr)
     assert.equal(git('branch', '--show-current'), 'chore/98/orca-yaml')
   })
+
+  test('in Orca, builds the name from the linked issue', () => {
+    git('switch', '-q', '-c', 'ilmeskio/probe-a')
+    stub('gh', ISSUE_77)
+    stub('orca', JSON.stringify({ ok: true, result: { worktree: { linkedIssue: 77 } } }))
+    const r = lntt(['branch', 'rename'], { TERM_PROGRAM: 'Orca', ORCA_WORKTREE_ID: 'r::/p' })
+    assert.equal(r.status, 0, r.stderr)
+    assert.equal(git('branch', '--show-current'), 'feat/77/branch-names-follow-type')
+  })
 })
 
 describe('lntt worktree start', () => {

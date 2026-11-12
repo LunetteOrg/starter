@@ -48,13 +48,11 @@ export const localRef = Effect.fnUntraced(function* (branch: string) {
 })
 
 // The candidate branch whose origin/ ref points at `rev` (a detached HEAD at a candidate's head),
-// the highest when several do; null when none does, or git cannot list the refs.
+// the highest when several do; null when none does. A git that cannot list the refs is its
+// GitError, not "none".
 export const candidateAt = Effect.fnUntraced(function* (prefix: string, rev = 'HEAD') {
   const git = yield* Git
-  const refs = yield* git
-    .pointingAt(rev, `refs/remotes/origin/${prefix}*`)
-    .pipe(Effect.catchTag('GitError', () => Effect.succeed([])))
-  return highestCandidate(refs, prefix)
+  return highestCandidate(yield* git.pointingAt(rev, `refs/remotes/origin/${prefix}*`), prefix)
 })
 
 // What resolveBase needs besides git.

@@ -3,6 +3,7 @@ import * as ConfigProvider from 'effect/ConfigProvider'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import { Gh, GhError, type GhOperations } from '../gh/gh.ts'
+import { Git, GitError } from '../git/git.ts'
 import { clone } from '../testing/repository.ts'
 import {
   type BaseLookup,
@@ -175,6 +176,18 @@ describe('the candidate at a detached HEAD', () => {
         c.ref('refs/remotes/origin/rc/9', null)
         assert.strictEqual(yield* candidateAt('rc/').pipe(Effect.provide(c.layer())), null)
       }),
+  )
+})
+
+describe('the candidate at a detached HEAD, when git cannot list the refs', () => {
+  it.effect('is the GitError, not "no candidate"', () =>
+    Effect.gen(function* () {
+      const failing = Git.memory({
+        pointingAt: () => Effect.fail(new GitError({ args: ['for-each-ref'], output: 'fatal: bad object' })),
+      })
+      const error = yield* Effect.flip(candidateAt('candidate/').pipe(Effect.provide(failing)))
+      assert.strictEqual(error.message, 'git for-each-ref failed: fatal: bad object')
+    }),
   )
 })
 

@@ -109,7 +109,8 @@ lntt ci local | candidate | proved
   3.9 MB to the install. A jq failure exits 2 with jq's message on stderr and nothing on
   stdout; with no round to read, a failure while running (`.state.open[]`) exits 4, the
   no-round line before jq's message. A query that does not end is ended by a signal: a
-  reading command keeps the default handling of SIGINT and SIGTERM.
+  command that runs a jq query keeps the default handling of SIGINT and SIGTERM
+  ([Effect in `lntt`](./effect-in-lntt.md#how-a-command-runs-is-interrupted-and-exits)).
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
   `decisions` and `tests`, whose results their review lenses read, and `agents-md`,
   `skills`, `plugin` (the Lunette plugin and the install hook in `.claude/settings.json`)
@@ -186,7 +187,7 @@ rests on these criteria:
    read the branch rules (`branchRules`, from `delivery`) for the conventional name of a branch (`liveBranches` in
    `packages/lntt/src/messages-cli.ts`); `lntt worktree start`,
    `lntt review` and `lntt ci local` read `delivery.candidate` to find a branch's base
-   (`projectBase` in `packages/lntt/src/base/base.ts`); `lntt retro add` reads
+   (`projectBase` in `packages/lntt/src/base.ts`); `lntt retro add` reads
    `delivery.candidate` and `delivery.pullRequest.retrospective` (`candidateConfig` in
    `packages/lntt/src/ci/config.ts`, `retrospectiveRules` in
    `packages/lntt/src/pull-request.ts`). Every read validates the

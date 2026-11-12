@@ -27,6 +27,8 @@ function world() {
     issues: {} as Record<number, Issue>,
     // What `orca worktree current --json` prints; null: orca is not there.
     orca: null as string | null,
+    // Its exit code when it is there.
+    orcaCode: 0,
     orcaAsked: 0,
     config: {} as Record<string, unknown>,
     // What the loader throws for a configuration that does not validate.
@@ -38,7 +40,7 @@ function world() {
       state.orcaAsked++
       return ChildProcessSpawner.makeHandle({
         pid: ChildProcessSpawner.ProcessId(1),
-        exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(state.orca === null ? 127 : 0)),
+        exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(state.orca === null ? 127 : state.orcaCode)),
         isRunning: Effect.succeed(false),
         kill: () => Effect.void,
         stdin: Sink.drain,
@@ -219,7 +221,7 @@ describe('lntt branch rename', () => {
     }),
   )
 
-  it.effect('in Orca, an issue gh cannot read, or an Orca that says nothing, leaves the branch alone', () =>
+  it.effect('in Orca, an issue gh cannot read, or an Orca that says nothing or fails, leaves the branch alone', () =>
     Effect.gen(function* () {
       const w = world()
       w.repo.switch('ilmeskio/probe-d', 'HEAD')
@@ -227,8 +229,16 @@ describe('lntt branch rename', () => {
       const unread = yield* w.rename('orca')
       assert.strictEqual(unread.code, 0)
       assert.match(unread.err, /could not read issue #404: gh api .* failed: HTTP 404/)
-      for (const said of [null, 'not json', JSON.stringify({ result: { worktree: {} } })]) {
+      const linked = JSON.stringify({ ok: true, result: { worktree: { linkedIssue: 77 } } })
+      w.issues[77] = ISSUE_77
+      for (const [said, code] of [
+        [null, 0],
+        ['not json', 0],
+        [JSON.stringify({ result: { worktree: {} } }), 0],
+        [linked, 1],
+      ] as const) {
         w.orca = said
+        w.orcaCode = code
         const r = yield* w.rename('orca')
         assert.strictEqual(r.code, 0)
         assert.match(r.err, /holds nothing to rebuild it from/)
