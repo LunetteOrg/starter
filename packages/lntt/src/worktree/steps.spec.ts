@@ -18,7 +18,7 @@ type Reply = { out?: string; err?: string; code?: number } | 'missing'
 
 // The tools as a spawner in memory: each call recorded as one line, answered by the first key of
 // `replies` it starts with; a tool with no reply prints nothing and exits 0.
-function tools(replies: Record<string, Reply> = {}) {
+function tools(replies: Record<string, Reply | (() => Reply)> = {}) {
   const calls: string[] = []
   const fs = memoryFileSystem({ dirs: ['/repo/.worktrees'] })
   const spawn = (cmd: ChildProcess.Command) =>
@@ -27,7 +27,8 @@ function tools(replies: Record<string, Reply> = {}) {
       const line = [cmd.command, ...cmd.args.map(String)].join(' ')
       calls.push(cmd.options.cwd ? `${line} (in ${cmd.options.cwd})` : line)
       const key = Object.keys(replies).find((k) => line.startsWith(k))
-      const reply = key === undefined ? {} : replies[key]
+      const given = key === undefined ? {} : replies[key]
+      const reply = typeof given === 'function' ? given() : given
       if (reply === 'missing') {
         return yield* PlatformError.systemError({
           _tag: 'NotFound',
@@ -156,6 +157,24 @@ describe('the steps on Effect', () => {
         [error._tag, error.message],
         ['ToolFailed', 'no pane found in the workspace herdr created: {}'],
       )
+    }).pipe(Effect.provide(t.layer))
+  })
+
+  it.effect('an agent Herdr finds on its third look gets the brief, two seconds after the first', () => {
+    let looked = 0
+    const t = tools({
+      'herdr worktree create': { out: JSON.stringify({ result: { pane: { pane_id: 'w2:p1' } } }) },
+      'herdr agent list': () => ({ out: JSON.stringify({ agents: ++looked >= 3 ? [{ pane_id: 'w2:p1' }] : [] }) }),
+    })
+    return Effect.gen(function* () {
+      const opencode = { kind: 'opencode', model: 'opencode/big-pickle' }
+      const starting = yield* Effect.forkChild(runSteps(startHerdr({ ...START, agent: opencode })))
+      yield* TestClock.adjust('1 second')
+      assert.strictEqual(starting.pollUnsafe(), undefined, 'still looking after one second')
+      yield* TestClock.adjust('1 second')
+      const started = yield* Fiber.join(starting)
+      assert.deepStrictEqual([looked, started.agent], [3, 'w2:p1'])
+      assert.strictEqual(t.calls.at(-1), 'herdr agent prompt w2:p1 BRIEF')
     }).pipe(Effect.provide(t.layer))
   })
 

@@ -79,7 +79,9 @@ small adapter that makes the calls it understands.
     created when none is bound.
   - opencode with a model, on any host: its inline configuration
     (`OPENCODE_CONFIG_CONTENT`) on a standalone server, started as a shell command in a
-    terminal or pane of its own, and prompted once the tool sees it ready.
+    terminal or pane of its own, and prompted once the tool sees it ready (Orca's
+    `terminal wait --for tui-idle`, up to two minutes; Herdr's agent list, looked at once a
+    second for a minute); one not ready by then gets no brief, and the start fails.
   - Herdr: `herdr agent start --kind` with the model and effort after `--`.
 - **One base, found one way** (`packages/lntt/src/base/base.ts`) by `lntt worktree start` on
   every host, `lntt review` and `lntt ci local`; an explicit `--base` wins in each

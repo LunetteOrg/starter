@@ -296,6 +296,7 @@ describe('lntt worktree start --theme (a coordinator’s child)', () => {
       assert.strictEqual(w.creates().length, 2)
       assert.strictEqual((yield* pending(BOX, 'orchestrator')).length, 0)
       assert.notInclude(again.err, 'sent to the orchestrator')
+      assert.strictEqual(w.fs.text(`${BOX}/approved-${THEME}.txt`), '89\n', 'the list is not written again')
     }).pipe(Effect.provide(w.layer))
   })
 

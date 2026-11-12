@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -165,6 +166,38 @@ describe('lntt ask / inbox / answer', () => {
     })
     assert.equal(outside.status, 1)
     assert.match(outside.stderr, /^lntt inbox: the mailbox lives in the git common directory/)
+  })
+
+  test('stdin that cannot be read is one line and exit 1', () => {
+    const asked = spawnSync(process.execPath, [BIN, 'ask', '--to', 'orchestrator', '-'], {
+      cwd: repo,
+      encoding: 'utf8',
+      env: clean(),
+      // A directory as stdin: a read of it fails with EISDIR.
+      stdio: [openSync(tmp, 'r'), 'pipe', 'pipe'],
+    })
+    assert.equal(asked.status, 1, asked.stderr)
+    assert.match(asked.stderr, /^lntt ask: EISDIR/)
+    assert.equal(asked.stderr.trim().split('\n').length, 1)
+  })
+
+  test('an --issue left empty on ask is no issue: the topic is not tagged', () => {
+    const asked = lntt([
+      'ask',
+      '--to',
+      'orchestrator',
+      '--issue',
+      '',
+      '--topic',
+      't',
+      '--timeout',
+      '0.1',
+      '--interval',
+      '0.05',
+      'q',
+    ])
+    assert.equal(asked.status, 1)
+    assert.match(asked.stderr, /no answer to \d{8}-\d{6}-t in 0\.1 s/)
   })
 
   test('ask --wait takes no question and no address', () => {

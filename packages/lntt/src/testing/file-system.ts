@@ -20,7 +20,7 @@ export interface MemoryFile {
 const failure = (
   method: string,
   path: string,
-  tag: 'AlreadyExists' | 'NotFound' | 'PermissionDenied' | 'Unknown',
+  tag: 'AlreadyExists' | 'NotFound' | 'PermissionDenied' | 'BadResource' | 'Unknown',
   cause?: unknown,
 ) => PlatformError.systemError({ _tag: tag, module: 'FileSystem', method, pathOrDescriptor: path, cause })
 
@@ -78,11 +78,12 @@ export function memoryFileSystem(
       const file = files.get(path)
       return file ? Effect.succeed(file.text) : Effect.fail(failure('readFileString', path, 'NotFound'))
     },
-    // The names of what a directory holds, files and directories, as Node's readdir.
+    // The names of what a directory holds, files and directories, as Node's readdir; a file is
+    // BadResource, as Node's ENOTDIR.
     readDirectory: (path) =>
       Effect.suspend(() => {
         if (!dirs.has(path))
-          return Effect.fail(failure('readDirectory', path, files.has(path) ? 'Unknown' : 'NotFound'))
+          return Effect.fail(failure('readDirectory', path, files.has(path) ? 'BadResource' : 'NotFound'))
         const prefix = path === '/' ? '/' : `${path}/`
         const names = new Set<string>()
         for (const at of [...files.keys(), ...dirs]) {

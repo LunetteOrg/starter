@@ -187,8 +187,9 @@ rests on these criteria:
    read the branch rules (`branchRules`, from `delivery`) for the conventional name of a branch (`checkedOutBranches` in
    `packages/lntt/src/messages/mailbox.ts`); `lntt worktree start`,
    `lntt review` and `lntt ci local` read `delivery.candidate` to find a branch's base
-   (`projectBase` in `packages/lntt/src/base/base.ts` for the first two, on Effect, and in
-   `packages/lntt/src/base.ts`, its Promise form, for `lntt ci local`); `lntt retro add` reads
+   (`projectBase` in `packages/lntt/src/base/base.ts` for `lntt worktree start` and a round of
+   `lntt review`, on Effect, and in `packages/lntt/src/base.ts`, its Promise form, for
+   `lntt review status` and `lntt ci local`); `lntt retro add` reads
    `delivery.candidate` and `delivery.pullRequest.retrospective` (`candidateConfig` in
    `packages/lntt/src/ci/config.ts`, `retrospectiveRules` in
    `packages/lntt/src/pull-request.ts`). Every read validates the

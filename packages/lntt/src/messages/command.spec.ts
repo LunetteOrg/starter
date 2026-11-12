@@ -182,6 +182,23 @@ describe('lntt ask --wait', () => {
     }).pipe(Effect.provide(w.layer))
   })
 
+  it.effect('the answer is printed with one newline at its end, whatever the file ends with', () => {
+    const w = world()
+    return Effect.gen(function* () {
+      const cases = [
+        ['20260101-000000-bare', 'Go.', 'Go.'],
+        ['20260101-000000-one', 'Go.\n', 'Go.'],
+        ['20260101-000000-two', 'Go.\n\n', 'Go.\n'],
+      ] as const
+      for (const [id, text, printed] of cases) {
+        yield* w.fs.put(`${DIR}/to-orchestrator/${id}.md`, 'q\n')
+        yield* w.fs.put(`${DIR}/to-orchestrator/${id}.answer.md`, text)
+        const r = yield* wait(w, id)
+        assert.deepStrictEqual([r.code, r.out], [0, printed], id)
+      }
+    }).pipe(Effect.provide(w.layer))
+  })
+
   it.effect('finds a message sent to a child', () => {
     const w = world()
     return Effect.gen(function* () {

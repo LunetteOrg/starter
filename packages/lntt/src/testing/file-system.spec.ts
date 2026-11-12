@@ -17,7 +17,7 @@ describe('the file system in memory', () => {
     }).pipe(Effect.provide(memory.layer))
   })
 
-  it.effect('a directory that is not there is NotFound; a file is not a directory', () => {
+  it.effect('a directory that is not there is NotFound; a file is BadResource, as Node’s ENOTDIR', () => {
     const memory = memoryFileSystem()
     return Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem
@@ -25,7 +25,7 @@ describe('the file system in memory', () => {
       const missing = yield* Effect.flip(fs.readDirectory('/nowhere'))
       assert.strictEqual(missing.reason._tag, 'NotFound')
       const file = yield* Effect.flip(fs.readDirectory('/box/b.md'))
-      assert.notStrictEqual(file.reason._tag, 'NotFound')
+      assert.strictEqual(file.reason._tag, 'BadResource')
     }).pipe(Effect.provide(memory.layer))
   })
 })
