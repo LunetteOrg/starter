@@ -5,7 +5,7 @@
 // them: what to show is review-band.mjs, tested on its own. The issue titles on screen
 // are issue-titles-hook.js. At session start it reads the project's .claude/settings.json:
 // entries that are not as lntt sync writes them are said in the band, with the command
-// that fixes them, until the first message ends.
+// that fixes them, until the first turn ends.
 
 import { issueTitles } from './issue-titles-hook.js'
 import { noticeText, settingsProblems } from './notices.mjs'
@@ -15,7 +15,7 @@ let progressFile = null
 let session = null // this Claude Code session's id, which lntt review records with its round
 let view = null
 let alive = null // whether the round's lntt review process still runs, null when unknown
-let settings = null // what .claude/settings.json lacks, said until the first message ends
+let settings = null // what .claude/settings.json lacks, said until the first turn ends
 
 async function locate($) {
   try {

@@ -67,8 +67,8 @@ async function plugin({ id, session, ids, settings = SYNCED, git = 0, unreadable
     refresh: () => timers[0](),
     band: () => hooks['ui.render']($, { surface: 'terminal' }, async () => 'below'),
     status: async () => (await hooks['command.run']($, {})).text,
-    // A message's last delta, through the issue titles hook.
-    end: () => hooks['classic.MessageDisplay']($, { message_id: 'm', delta: 'done', final: true }, async () => ({})),
+    // The end of a turn, through the issue titles hook.
+    end: () => hooks['turn.complete']($, {}, async () => ({})),
   }
 }
 

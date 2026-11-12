@@ -184,18 +184,23 @@ A mechanism of the plugin or a hook of `lntt` that cannot work never errors and 
 blocks a turn: it says once per session what is missing and the command that fixes it,
 after a fix by hand when `lntt sync` cannot read the file
 (`packages/lntt/plugin/hooks/notices.mjs`). The band says it in the band, until the
-first message ends (`.claude/settings.json` not as `lntt sync` writes it); the titles at
-the end of a message (`lntt` not installed, an `lntt` with no `refs`, `gh` missing or
+first turn ends (`.claude/settings.json` not as `lntt sync` writes it); the titles under
+the first block that finds it out (`lntt` not installed, an `lntt` with no `refs`, `gh` missing or
 not logged in); a settings hook in a `systemMessage`, which Claude Code shows the
 person.
 
 ### What a number means is shown on screen, not asked of the agent
 
-In Claude Code the `lunette` plugin ends each message with a box of the issues and pull
-requests it cited (`#N`, `repo#N` or `owner/repo#N`): each with its title and its URL
-(`packages/lntt/plugin/hooks/issue-titles.mjs`). The text of the message is not touched.
-It is a `MessageDisplay` hook: it changes the screen only, and what the agent wrote and
-reads stays as it was.
+In Claude Code the `lunette` plugin draws, under each block of a message that cites
+issues or pull requests (`#N`, `repo#N` or `owner/repo#N`), a box of them: each with its
+title and its URL (`packages/lntt/plugin/hooks/issue-titles.mjs`). The text of the message
+is not touched. It is a `ui.render` hook on `AssistantMessage`, drawn with the elements of
+the surface (`$.ui.resolve`), one tree for the terminal, desktop, vscode and mobile by
+the engine's contract: it changes the screen only, and what the agent wrote and reads stays as it was.
+The hook never waits for `lntt`: it draws the block as Claude Code does with the titles
+the session knows, reads a block's text once it has stopped growing, and redraws the
+blocks (`$.ui.invalidate`) when a lookup finds a title. A block drawn again, on a scroll,
+asks `lntt refs` for nothing the session knows.
 
 The rules below, the cache and the `gh` lookups are `lntt refs`
 (`packages/lntt/src/refs.ts`), for the hook and for any agent: it reads a text and
@@ -207,17 +212,19 @@ a credential: a fork, `gh repo set-default` or a changed URL asks for it again;
 concurrent calls merge, the newest entry of each key kept, and an entry lost in a race
 is only asked again): `#N` (and `repo#N` naming the same repository) from the session's
 repository as `gh repo view` names it, `owner/repo#N` from that repository. The hook
-keeps the display and calls `lntt refs`, the project's `node_modules/.bin/lntt`, else
-`lntt` on `PATH`. The deltas of a message only add to its text, in the order they come,
-and show as they are; the last one calls `lntt refs` with the whole text and waits for
-lntt and the titles at most `WAIT_MS` (`issue-titles-hook.js`); a slower title is cached
-and shows in the box of the next message that cites it, and a `--cached` answer later
-than that still gives the session its repository and the titles it holds. The titles
-still missing are asked in `lntt refs` runs of at most `KEYS_PER_RUN` references, side
-by side, so that one run fits
-`LNTT_TIMEOUT_MS` however many a message cites; the runs of one lookup count as one
-failure at most. The text read is the one Claude wrote (`delta`), never the display
-another hook below may have changed; the box goes after that display.
+draws the block as Claude Code does and calls `lntt refs`, the project's
+`node_modules/.bin/lntt`, else `lntt` on `PATH`. A block's text is read, with the whole
+text on stdin, once it has stayed as it is for `SETTLE_MS` (`issue-titles-hook.js`); the
+box under it shows the titles the session knows, and the block is drawn again when a
+lookup finds one, so that a slow title shows without a message waiting for it. The
+titles still missing are asked in `lntt refs` runs of at most `KEYS_PER_RUN` references,
+side by side, so that one run fits `LNTT_TIMEOUT_MS` however many a block cites; the runs
+of one lookup count as one failure at most. The text read is the block's markdown as
+the transcript draws it (`e.props.text`). A block that grows is read again at its last
+text, and the shorter texts it passed through are forgotten; a number touching the end
+of the text waits one more `SETTLE_MS` (a complete block ending in a number shows its
+title that much later), so that a pause cutting `#138` after `#1` looks up no wrong
+issue.
 
 - **Never a title from the wrong repository:** a message that cites another
   repository shows every bare `#N` after that as written. Any other `word#N` is no
@@ -234,7 +241,7 @@ another hook below may have changed; the box goes after that display.
   start, runs past `LNTT_TIMEOUT_MS` or answers no JSON with `mentions` and `refs`;
   it finds no repository when `gh repo view` fails or does not answer within
   `GH_TIMEOUT_MS` (`gh` missing, not logged in, no GitHub remote). Such a run shows
-  its delta as written, with no reference, not even a cached one, and the next lookup
+  the block as written, with no reference, not even a cached one, and the next lookup
   runs `lntt` again; a run that finds the repository starts the count again. A lookup
   that fails otherwise (past `GH_TIMEOUT_MS`, the network, a rate limit) is tried
   again. A `ref` from `lntt` that is not a lower-case `owner/repo#N` is ignored.
@@ -283,14 +290,14 @@ How a title is written is the `github-board` skill's.
   they would have been right, so that none is ever wrong.
 - The titles on screen are Claude Code's and the plugin's alone: another agent, a
   session without `gh`, or one where an organization manages Claude Code (plugin
-  hooks on `MessageDisplay` run only for plugins it lists) shows numbers as written.
+  hooks run only for plugins it lists) shows numbers as written.
   Another agent can resolve its references with `lntt refs` before writing, so its
   text carries the titles. A renamed issue shows its old title for up to a day, from
   the cache.
-- A message that holds a number starts one `lntt` process at its last delta (`lntt refs
-  --cached`, with the whole message on stdin) within `WAIT_MS`, and one more for each
-  `KEYS_PER_RUN` titles still missing: a machine slow to start Node shows more titles a
-  message late.
+- A block that holds a number starts one `lntt` process once its text has stayed as it is
+  for `SETTLE_MS` (`lntt refs --cached`, with the whole block on stdin), and one more for
+  each `KEYS_PER_RUN` titles still missing: the box appears under the block after the
+  block is drawn, and a machine slow to start Node shows it later.
 - Skills depend on `lntt`; a generated project needs it installed, which ties the
   template to a published `@lntt/lntt`.
 - Reading the profile from the main checkout fails over to the home directory when the
@@ -382,8 +389,16 @@ How a title is written is the `github-board` skill's.
 - **The title beside each number, inserted into the streamed text.** A title goes at a
   position counted in the message so far, and the hook read that message delta by delta
   on screen: in live sessions three titles landed inside an earlier line (a backticked
-  path, words), none after their numbers. The box at the end of the message reads the
+  path, words), none after their numbers. The box under the block reads the
   whole text once and cannot misplace anything.
+- **A `classic.MessageDisplay` hook that ends the message's last delta with the box.**
+  Claude Code's built-in plugins sit before every plugin of a project and send the event
+  past it: the hook was skipped at every message, with a notice of it, when this was
+  found (#329). A `ui.render` hook on `AssistantMessage` runs beside them.
+- **A `ui.render` hook that waits for `lntt` and the titles, as the `MessageDisplay` one
+  did (a wait of up to 800 ms).** A hook that waits holds the drawing of the block, and a title slower
+  than the wait showed one message late; drawing at once and redrawing when a title is
+  found shows each title as soon as it is known.
 - **A rule in AGENTS.md that an agent writes each issue's title beside its number.**
   Agents given it broke it in three samples of four, always the same way: an opening
   line repeating the numbers the person used, before any title. The reader needs to see
