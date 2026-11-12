@@ -184,18 +184,23 @@ A mechanism of the plugin or a hook of `lntt` that cannot work never errors and 
 blocks a turn: it says once per session what is missing and the command that fixes it,
 after a fix by hand when `lntt sync` cannot read the file
 (`packages/lntt/plugin/hooks/notices.mjs`). The band says it in the band, until the
-first message ends (`.claude/settings.json` not as `lntt sync` writes it); the titles at
-the end of a message (`lntt` not installed, an `lntt` with no `refs`, `gh` missing or
+first turn ends (`.claude/settings.json` not as `lntt sync` writes it); the titles under
+the first block that finds it out (`lntt` not installed, an `lntt` with no `refs`, `gh` missing or
 not logged in); a settings hook in a `systemMessage`, which Claude Code shows the
 person.
 
 ### What a number means is shown on screen, not asked of the agent
 
-In Claude Code the `lunette` plugin ends each message with a box of the issues and pull
-requests it cited (`#N`, `repo#N` or `owner/repo#N`): each with its title and its URL
-(`packages/lntt/plugin/hooks/issue-titles.mjs`). The text of the message is not touched.
-It is a `MessageDisplay` hook: it changes the screen only, and what the agent wrote and
-reads stays as it was.
+In Claude Code the `lunette` plugin draws, under each block of a message that cites
+issues or pull requests (`#N`, `repo#N` or `owner/repo#N`), a box of them: each with its
+title and its URL (`packages/lntt/plugin/hooks/issue-titles.mjs`). The text of the message
+is not touched. It is a `ui.render` hook on `AssistantMessage`, drawn with the elements of
+the surface (`$.ui.resolve`), so that the terminal, desktop, vscode and mobile draw the
+same tree: it changes the screen only, and what the agent wrote and reads stays as it was.
+The hook never waits for `lntt`: it draws the block as Claude Code does with the titles
+the session knows, reads a block's text once it has stopped growing, and redraws the
+blocks (`$.ui.invalidate`) when a lookup finds a title. A block drawn again, on a scroll,
+asks `lntt refs` for nothing the session knows.
 
 The rules below, the cache and the `gh` lookups are `lntt refs`
 (`packages/lntt/src/refs.ts`), for the hook and for any agent: it reads a text and
@@ -283,14 +288,14 @@ How a title is written is the `github-board` skill's.
   they would have been right, so that none is ever wrong.
 - The titles on screen are Claude Code's and the plugin's alone: another agent, a
   session without `gh`, or one where an organization manages Claude Code (plugin
-  hooks on `MessageDisplay` run only for plugins it lists) shows numbers as written.
+  hooks run only for plugins it lists) shows numbers as written.
   Another agent can resolve its references with `lntt refs` before writing, so its
   text carries the titles. A renamed issue shows its old title for up to a day, from
   the cache.
-- A message that holds a number starts one `lntt` process at its last delta (`lntt refs
-  --cached`, with the whole message on stdin) within `WAIT_MS`, and one more for each
-  `KEYS_PER_RUN` titles still missing: a machine slow to start Node shows more titles a
-  message late.
+- A block that holds a number starts one `lntt` process once its text has stayed as it is
+  for `SETTLE_MS` (`lntt refs --cached`, with the whole block on stdin), and one more for
+  each `KEYS_PER_RUN` titles still missing: the box appears under the block after the
+  block is drawn, and a machine slow to start Node shows it later.
 - Skills depend on `lntt`; a generated project needs it installed, which ties the
   template to a published `@lntt/lntt`.
 - Reading the profile from the main checkout fails over to the home directory when the
@@ -382,8 +387,12 @@ How a title is written is the `github-board` skill's.
 - **The title beside each number, inserted into the streamed text.** A title goes at a
   position counted in the message so far, and the hook read that message delta by delta
   on screen: in live sessions three titles landed inside an earlier line (a backticked
-  path, words), none after their numbers. The box at the end of the message reads the
+  path, words), none after their numbers. The box under the block reads the
   whole text once and cannot misplace anything.
+- **A `classic.MessageDisplay` hook that ends the message's last delta with the box.**
+  Claude Code's built-in plugins sit before every plugin of a project and send the event
+  past it: on Claude Code 2.1.322 the hook is skipped at every message, with a notice of
+  it. A `ui.render` hook on `AssistantMessage` runs beside them.
 - **A rule in AGENTS.md that an agent writes each issue's title beside its number.**
   Agents given it broke it in three samples of four, always the same way: an opening
   line repeating the numbers the person used, before any title. The reader needs to see

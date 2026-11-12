@@ -1,20 +1,23 @@
-// Issue titles on screen: each message ends with a box of what it cited, with their
-// titles and URLs. Display-only: what Claude wrote and reads is unchanged, and nothing
-// is put inside the text. The message is read whole, at its last delta; the deltas
-// before it only add to its text, in the order they come. Which numbers are references,
-// their titles, the cache and the gh calls are `lntt refs`'s (the project's
-// node_modules/.bin/lntt, else lntt on PATH); what to show is issue-titles.mjs, tested
-// on its own. The functions that take `$` are declared at the top of the file, as the
-// engine requires; the session's state is passed to them.
+// Issue titles on screen: a block of a message that cites issues or pull requests ends
+// with a box of them, with their titles and URLs, drawn by a `ui.render` hook on
+// AssistantMessage (the built-in plugins skip a classic.MessageDisplay hook). Display-only:
+// what Claude wrote and reads is unchanged. The block's text is read whole (`e.props.text`)
+// once it stops growing; the hook never waits for lntt: it draws what the session knows
+// and a lookup that ends later redraws the blocks (`$.ui.invalidate`). A block drawn again
+// (a scroll) asks lntt for nothing the session knows. Which numbers are references, their
+// titles, the cache and the gh calls are `lntt refs`'s (the project's
+// node_modules/.bin/lntt, else lntt on PATH); what to show is issue-titles.mjs, tested on
+// its own. The functions that take `$` are declared at the top of the file, as the engine
+// requires; the session's state is passed to them.
 
-import { cite, entry, footer, isKey, message, settled } from './issue-titles.mjs'
-import { notice } from './notices.mjs'
+import { box, cite, entry, isKey, message, settled } from './issue-titles.mjs'
+import { noticeText } from './notices.mjs'
 
-// How long the last delta waits, for lntt and the titles together: what is slower goes
-// on, and its title is cached for the next message that cites it.
-export const WAIT_MS = 800
-// Messages kept at once: one interrupted before its last delta is never closed.
-export const KEPT = 20
+// How long a block's text must stay as it is before lntt reads it: a block streams in
+// and is drawn at each step, and only its last text is asked for.
+export const SETTLE_MS = 300
+// Blocks the session remembers the references of, the oldest forgotten first.
+export const KEPT = 200
 // How long one gh call of lntt refs may run (GH_TIMEOUT_MS in packages/lntt/src/refs.ts).
 const GH_TIMEOUT_MS = 3000
 // References one lntt refs is asked for at most: as many as it looks up at once
@@ -40,9 +43,11 @@ function session() {
     dead: false, // lntt has no refs, or failed FAILURES times in a row: the titles are off
     home: null, // the session's repository, owner/repo, as lntt names it
     lntt: null, // the look for lntt, started at the first number
-    messages: new Map(), // message_id -> what that message has shown so far
+    blocks: new Map(), // text of a block -> what it cited ({ cited }), once lntt has read it
+    waiting: new Set(), // texts drawn and not yet read: the last of a growing block is
+    noticeOn: null, // the text of the block that carries the notice
     problem: null, // what keeps the titles off, for its notice (notices.mjs)
-    told: false, // the notice was shown: once per session
+    told: false, // the notice was given to a block: once per session
     gh: null, // the look at gh (auth status), once, when the titles cannot be found
   }
 }
@@ -125,8 +130,8 @@ function learn(s, out) {
 }
 
 // The lookups of these references, one lntt refs for each KEYS_PER_RUN of those not yet
-// asked, side by side, waited for within the message's timer: a run that ends past it gives
-// its titles to the next message. A failed one is asked again at the next lookup.
+// asked, side by side, waited for until `wait()` ends. A failed one is asked again at the
+// next lookup, by another block.
 async function lookUp($, s, keys, wait) {
   if (s.off || !keys.length) return
   const todo = keys.filter((k) => !s.info.has(k) && !s.unknown.has(k) && !s.pending.has(k))
@@ -144,68 +149,91 @@ async function lookUp($, s, keys, wait) {
   if (waiting.length) await Promise.race([Promise.all(waiting), wait()])
 }
 
-// The message so far, with this delta added: synchronous, so that deltas arriving while
-// an earlier one still waits are added in the order they came. It is the text Claude
-// wrote (`e.delta`), whatever a hook below made of the display.
-function hold(s, e) {
-  let m = s.messages.get(e.message_id)
-  if (!m) {
-    m = message()
-    s.messages.set(e.message_id, m)
-    if (s.messages.size > KEPT) s.messages.delete(s.messages.keys().next().value)
+// What the block shows now: its box lines, from what the session knows.
+function linesOf(s, text) {
+  const m = s.blocks.get(text)
+  return m ? box(m, s.info, s.home) : []
+}
+
+// A signature of what a block would show, to redraw only when it changes.
+const signature = (lines) => JSON.stringify(lines)
+
+// A block's references and titles, read once its text has settled; each stage that changes
+// what the block shows redraws it. Never throws: a failing lookup leaves the block as drawn.
+async function read($, s, text) {
+  await $.clock.sleep(SETTLE_MS)
+  // The block grew meanwhile (a longer text was drawn): only the last is read.
+  if (!s.waiting.delete(text) || s.dead) return
+  let drawn = signature(linesOf(s, text))
+  const redraw = (force = false) => {
+    const now = signature(linesOf(s, text))
+    if (now === drawn && !force) return
+    drawn = now
+    $.ui.invalidate('ui.render')
   }
-  m.text += e.delta
-  if (e.final) s.messages.delete(e.message_id)
-  return m
-}
-
-// The last delta: the box of what the message cited, when lntt finds a title for any.
-async function show($, s, e, base, m) {
-  if (s.dead || !e.final || !/#[1-9]/.test(m.text)) return base
-  // One timer for the whole wait, started only when something is waited for.
-  let deadline = null
-  const wait = () => (deadline ??= $.clock.sleep(WAIT_MS))
-  // An answer later than the wait still counts for the session: the repository and the
-  // titles it holds.
-  const call = refs($, s, ['--cached'], m.text).then((out) => {
-    if (out?.repository) {
-      s.home = out.repository
-      learn(s, out)
-    }
-    return out
-  })
-  call.catch(() => {})
-  const out = await Promise.race([call, wait().then(() => undefined)])
+  const out = await refs($, s, ['--cached'], text)
+  if (out?.repository) {
+    s.home = out.repository
+    learn(s, out)
+  }
+  const m = message()
   // Without the session's repository nothing can be told for certain: shown as written.
-  if (!out?.repository) return base
-  cite(m, out.mentions, m.text)
-  const keys = out.mentions.filter((x) => settled(x, m.text)).map((x) => x.ref)
-  await lookUp($, s, [...new Set(keys)], wait)
-  const box = footer(m, s.info, s.home)
-  return box ? { ...base, displayContent: `${base?.displayContent ?? e.delta}${box}` } : base
+  if (out?.repository) cite(m, out.mentions, text)
+  s.blocks.set(text, m)
+  if (s.blocks.size > KEPT) s.blocks.delete(s.blocks.keys().next().value)
+  if (out?.repository) {
+    redraw()
+    const keys = out.mentions.filter((x) => settled(x, text)).map((x) => x.ref)
+    // Every lookup is waited for here, off the drawing: nothing is drawn meanwhile.
+    await lookUp($, s, [...new Set(keys)], () => new Promise(() => {}))
+  }
+  // The notice of what keeps the titles off goes to the first block that finds it out.
+  if (s.problem && !s.told && noticeText(s.problem)) {
+    s.told = true
+    s.noticeOn = text
+    redraw(true)
+  } else redraw()
 }
 
-// The last delta of a message ends with the notice of what keeps the titles off, once in
-// the session.
-function tell(s, e, shown) {
-  if (!e.final || !s.problem || s.told) return shown
-  const text = notice(s.problem)
-  if (!text) return shown
-  s.told = true
-  return { ...shown, displayContent: `${shown?.displayContent ?? e.delta}\n${text}` }
+// The block as drawn by the engine, with the box of what it cited under it, and the
+// notice when it carries it.
+function draw($, s, e, base) {
+  const text = e.props.text
+  if (typeof text !== 'string' || !/#[1-9]/.test(text)) return base
+  if (!s.dead && !s.blocks.has(text) && !s.waiting.has(text)) {
+    // A longer text drawn replaces the shorter one it began with.
+    for (const t of s.waiting) if (text.startsWith(t)) s.waiting.delete(t)
+    s.waiting.add(text)
+    read($, s, text).catch(() => {})
+  }
+  const lines = linesOf(s, text)
+  const note = s.noticeOn === text && s.problem ? noticeText(s.problem) : ''
+  if (!lines.length && !note) return base
+  const { Box, Text } = $.ui.resolve(e)
+  const segment = (g) => Text({ dimColor: g.dim, children: [g.text] })
+  return Box({
+    flexDirection: 'column',
+    children: [
+      base,
+      ...lines.map((line) => Box({ flexDirection: 'row', children: line.map(segment) })),
+      ...(note ? [Text({ dimColor: true, children: [note] })] : []),
+    ],
+  })
 }
 
-// `ended`: called when a message's last delta is shown.
+// `ended`: called when a turn ends.
 export function issueTitles(on, { ended } = {}) {
   const s = session()
-  on('classic.MessageDisplay', async ($, e, next) => {
-    const m = hold(s, e)
+  on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     const base = await next(e)
-    if (e.final) ended?.()
     try {
-      return tell(s, e, await show($, s, e, base, m))
+      return draw($, s, e, base)
     } catch {
       return base
     }
-  }).catch(($, e, next) => next(e)) // a failing hook shows the message as written
+  }).catch(($, e, next) => next(e)) // a failing hook draws the block as Claude Code does
+  on('turn.complete', async ($, e, next) => {
+    ended?.()
+    return next(e)
+  })
 }

@@ -1,18 +1,14 @@
-// What a number means, on screen: the message ends with a box of the issues and pull
-// requests it cited, each with its title and URL. Pure: which numbers are references,
-// and their titles, are `lntt refs`'s; the hook that calls it is issue-titles-hook.js.
-// A message streams in deltas: `message()` holds the text Claude wrote so far, and the
-// last delta reads it whole. Nothing is put inside the text: the box alone shows the titles.
+// What a number means, on screen: a block of the message that cites issues and pull
+// requests ends with a box of them, each with its title and URL. Pure: which numbers are
+// references, and their titles, are `lntt refs`'s; the hook that calls it is
+// issue-titles-hook.js. The box is data (lines of dim or plain segments): the hook draws
+// it with the elements of the surface, so no terminal sequence is put in a text.
 
 export const TITLE_MAX = 60
 
-const ESC = '\u001b'
-const dim = (text) => `${ESC}[2m${text}${ESC}[22m`
-
-// What one message holds so far: its text as Claude wrote it, and the references it
-// cited, in order.
+// What one block cites so far: its references, in order.
 export function message() {
-  return { text: '', cited: [] }
+  return { cited: [] }
 }
 
 // `home` is the session's repository as `owner/repo`, lower case, or null while unknown.
@@ -68,24 +64,25 @@ export const settled = (x, text) =>
   x.after <= text.length
 
 // Records the references these mentions cite, in the order given, once each. `text`:
-// the whole message they were found in.
+// the whole block they were found in.
 export function cite(m, found, text) {
   for (const x of found) if (settled(x, text) && !m.cited.includes(x.ref)) m.cited.push(x.ref)
 }
 
-// The box closing the message: each reference it cited that has a title, its URL plain
-// so the terminal can open it. Empty when there is none.
-export function footer(m, info, home) {
+// The box closing the block: each reference it cited that has a title, its URL plain so
+// the terminal can open it. Lines of segments `{ text, dim }`; none when no reference
+// has a title.
+export function box(m, info, home) {
   const rows = m.cited.filter((k) => info.get(k)?.title)
-  if (!rows.length) return ''
+  if (!rows.length) return []
   const width = Math.max(...rows.map((k) => label(k, home).length))
+  const bar = { text: '│ ', dim: true }
   return [
-    '',
-    dim('╭─ cited'),
+    [{ text: '╭─ cited', dim: true }],
     ...rows.flatMap((k) => [
-      `${dim('│')} ${label(k, home).padEnd(width)} ${dim(cut(info.get(k).title))}`,
-      `${dim('│')} ${' '.repeat(width)} ${info.get(k).url}`,
+      [bar, { text: `${label(k, home).padEnd(width)} `, dim: false }, { text: cut(info.get(k).title), dim: true }],
+      [bar, { text: `${' '.repeat(width)} `, dim: false }, { text: info.get(k).url, dim: false }],
     ]),
-    dim('╰─'),
-  ].join('\n')
+    [{ text: '╰─', dim: true }],
+  ]
 }
