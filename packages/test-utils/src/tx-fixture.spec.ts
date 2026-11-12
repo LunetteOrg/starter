@@ -7,13 +7,12 @@ const pkg = '{ "name": "x" }'
 const FIXTURE = "import { createTestDb, txTest } from '@lntt/test-utils'\nexport const it = txTest(db.withTestDb)\n"
 
 describe('findDirectTestDbCalls', () => {
-  it.each([
-    'await db.withTestDb(seed)',
-    'await withTestDb(seed)',
-    'await testDb.withTestDb (run)',
-  ])('reports %s', (source) => {
-    expect(findDirectTestDbCalls(source)).toEqual([1])
-  })
+  it.each(['await db.withTestDb(seed)', 'await withTestDb(seed)', 'await testDb.withTestDb (run)'])(
+    'reports %s',
+    (source) => {
+      expect(findDirectTestDbCalls(source)).toEqual([1])
+    },
+  )
 
   it.each([
     'export const it = txTest(db.withTestDb)',

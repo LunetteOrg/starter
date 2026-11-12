@@ -5,7 +5,7 @@
 TypeScript monorepo starter template. Architectural decisions live in `docs/adr/` and product decisions in `docs/product/decisions/`: one file per subject, corrected in place. Recommended patterns for the app you build on the template, which it does not ship, live in `docs/guidances/`. Read the relevant ADR before changing anything it covers. See [recording decisions](docs/adr/recording-decisions.md).
 
 **A changed decision is rewritten in its file.** The file states what holds now,
-options not taken go in *Discarded directions*, and git keeps the history: no
+options not taken go in _Discarded directions_, and git keeps the history: no
 `superseded by`, no struck-through text, no new file for an existing subject.
 
 **Record shared decisions in the repo.** Any team/project decision (config
@@ -65,9 +65,9 @@ the line-by-line pass:
 - `product-check` — `docs/product/` PDRs vs their Storybook `Product/` review pages: missing pages, broken `?raw` imports, a PDR citing `reference/`, stale links.
 - `design-check` — design/UX discipline: tokens vs raw values, light+dark theming, AA contrast, focus/keyboard, motion, tooltips (scope: `packages/ui` and `ui-tokens`).
 
-To *record* a product/design decision (and its review page), use the
+To _record_ a product/design decision (and its review page), use the
 `product-decision` skill — it writes the PDR + the `Product/*.mdx` that renders it.
-To *explore* 2–3 visual directions as Storybook prototypes before choosing, use
+To _explore_ 2–3 visual directions as Storybook prototypes before choosing, use
 `design-explore`.
 
 **Deliver feedback on the PR.** When the review targets a PR (it has a GitHub

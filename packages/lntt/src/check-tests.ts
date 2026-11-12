@@ -288,9 +288,7 @@ function focus(options: CheckOptions, s: Scope): Result[] {
         const offset = lines.slice(0, i).join('\n').length + (i > 0 ? 1 : 0)
         return {
           line: i + 1,
-          at:
-            offset +
-            (l.indexOf('(', l.search(/\b(?:it|test)\b/)) >= 0 ? l.indexOf('(', l.search(/\b(?:it|test)\b/)) : 0),
+          at: offset + Math.max(l.indexOf('(', l.search(/\b(?:it|test)\b/)), 0),
         }
       })
     for (const start of starts) {

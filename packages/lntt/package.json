@@ -76,12 +76,12 @@
     }
   },
   "devDependencies": {
-    "@commitlint/config-conventional": "^21.2.0",
-    "@commitlint/lint": "^21.2.0",
-    "@commitlint/load": "^21.2.0",
+    "@commitlint/config-conventional": "^21.2.4",
+    "@commitlint/lint": "^21.2.4",
+    "@commitlint/load": "^21.2.4",
     "@effect/vitest": "4.1.4",
-    "@playwright/test": "^1.64.0",
-    "@types/node": "^26.1.1",
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^26.6.6",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"
   }

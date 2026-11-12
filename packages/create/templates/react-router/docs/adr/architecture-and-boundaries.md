@@ -30,16 +30,16 @@ app/
 
 Dependency matrix:
 
-| Layer | May import | Must not import |
-|---|---|---|
-| routes | `#app/context`, react-router | use-cases, domain, lib/db, bootstrap |
-| use-cases | domain | react-router, lib/db and other infrastructure (interfaces are injected) |
-| domain | nothing from the app | react-router, lib |
-| lib/db/repos | domain interfaces, drizzle | react-router |
-| bootstrap | everything | — |
-| config | zod | anything else |
+| Layer        | May import                   | Must not import                                                         |
+| ------------ | ---------------------------- | ----------------------------------------------------------------------- |
+| routes       | `#app/context`, react-router | use-cases, domain, lib/db, bootstrap                                    |
+| use-cases    | domain                       | react-router, lib/db and other infrastructure (interfaces are injected) |
+| domain       | nothing from the app         | react-router, lib                                                       |
+| lib/db/repos | domain interfaces, drizzle   | react-router                                                            |
+| bootstrap    | everything                   | —                                                                       |
+| config       | zod                          | anything else                                                           |
 
-This matrix governs cross-*layer* imports, not external libraries: a layer may use any external package that doesn't breach a boundary. `zod` in particular is not confined to `config` — it also shapes presentation read-views in `routes` (which import `zod` only, never domain/db), the runtime projection that keeps entity fields off the wire ([loader/action serialization boundary](#loaderaction-serialization-boundary)).
+This matrix governs cross-_layer_ imports, not external libraries: a layer may use any external package that doesn't breach a boundary. `zod` in particular is not confined to `config` — it also shapes presentation read-views in `routes` (which import `zod` only, never domain/db), the runtime projection that keeps entity fields off the wire ([loader/action serialization boundary](#loaderaction-serialization-boundary)).
 
 Wiring: `createApp(env)` builds repos, services and use-cases once; `export type App = ReturnType<typeof createApp>` is the single source of truth for the app type. Routes receive the app through React Router context (`getLoadContext` / middleware), whose signature takes only a web-standard `Request` — no Express types — keeping the Cloudflare Workers path open.
 
@@ -113,7 +113,7 @@ describe('architecture boundaries', () => {
 A ready-to-copy version lives at `packages/test-utils/templates/layer.arch.spec.ts.template`.
 
 **Both nets exclude test files (`*.spec.ts`, `*.test.ts`).** The boundaries
-constrain *production* wiring: a route reaches the app through `context.app`, not
+constrain _production_ wiring: a route reaches the app through `context.app`, not
 by importing `#app/bootstrap`. A route's integration test legitimately does the
 opposite — it builds the app from the composition root (`createApp` from
 `#app/bootstrap`) and injects it as the load context. That is exactly what the
@@ -148,7 +148,7 @@ remove excess keys at runtime — the excess-property check only fires on object
 literals, not on a value flowing through a typed variable. Only a runtime
 projection actually strips them. Footgun #1 is `return { ...entity }`.
 
-The [import boundaries](#import-boundaries) already stop a route from *naming* a
+The [import boundaries](#import-boundaries) already stop a route from _naming_ a
 domain/db type (`#app/domain` / `#app/lib/db` are banned in `routes/**`, type
 imports included), so the residual risk is **structural**: spreading, or passing
 through, a value whose inferred type is an entity.
@@ -169,7 +169,7 @@ a domain/db entity, never a nested entity, never `return { ...entity }`.
   object-literal spread inside a loader/action return; it ships in the canonical
   `layer.arch.spec.ts.template`, so every app that copies the arch test inherits
   it and `meta-arch` keeps it present. (2) A per-route **golden integration
-  test** pins the *exact* key set of the serialized payload for both the loader
+  test** pins the _exact_ key set of the serialized payload for both the loader
   and the action, catching structural leaks (a new column, a nested entity) the
   spread scan cannot see.
 - Reference application code ships as inert `.template` files under
@@ -185,7 +185,7 @@ a domain/db entity, never a nested entity, never `return { ...entity }`.
 - − Each data-returning route copies its golden test; accepted — it is the
   copy-paste pattern that keeps the harness armed as the app grows.
 - − The spread scanner is a pragmatic text scan (like the boundary scanner): it
-  flags object-property spreads *inside a return expression*, not every
+  flags object-property spreads _inside a return expression_, not every
   conceivable leak. In particular, hoisting the spread out of the return
   (`const dto = { ...user }; return dto`) evades both the scanner and the grit —
   by design, they are a cheap syntactic early-warning for the `return { ...entity }`

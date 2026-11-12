@@ -13,11 +13,11 @@ pnpm dev            # daily — infra up + all apps in watch mode
 {type}/{issue-id}/{short-slug}
 ```
 
-| Segment | Values | Example |
-|---|---|---|
-| `type` | `feat`, `fix`, `chore`, `refactor`, `docs` | `feat` |
-| `issue-id` | Tracker issue number, or `no-issue` | `42` |
-| `short-slug` | 2-4 word kebab-case description | `project-scaffolding` |
+| Segment      | Values                                     | Example               |
+| ------------ | ------------------------------------------ | --------------------- |
+| `type`       | `feat`, `fix`, `chore`, `refactor`, `docs` | `feat`                |
+| `issue-id`   | Tracker issue number, or `no-issue`        | `42`                  |
+| `short-slug` | 2-4 word kebab-case description            | `project-scaffolding` |
 
 Examples:
 
@@ -37,16 +37,16 @@ chore: bump drizzle-kit to 0.22
 
 ## File & Code Naming
 
-| Context | Convention | Example |
-|---|---|---|
-| Files | `kebab-case` | `user-repository.ts` |
-| React components | `PascalCase` | `UserCard.tsx` |
-| Folders | `kebab-case` | `test-utils/` |
-| Functions / variables | `camelCase` | `registerUser` |
-| Types / interfaces | `PascalCase` | `UserRepository` |
-| Constants | `SCREAMING_SNAKE_CASE` | `MAX_OTP_ATTEMPTS` |
-| DB tables | `snake_case` plural | `otp_codes` |
-| DB columns | `snake_case` | `created_at` |
+| Context               | Convention             | Example              |
+| --------------------- | ---------------------- | -------------------- |
+| Files                 | `kebab-case`           | `user-repository.ts` |
+| React components      | `PascalCase`           | `UserCard.tsx`       |
+| Folders               | `kebab-case`           | `test-utils/`        |
+| Functions / variables | `camelCase`            | `registerUser`       |
+| Types / interfaces    | `PascalCase`           | `UserRepository`     |
+| Constants             | `SCREAMING_SNAKE_CASE` | `MAX_OTP_ATTEMPTS`   |
+| DB tables             | `snake_case` plural    | `otp_codes`          |
+| DB columns            | `snake_case`           | `created_at`         |
 
 ## Import Rules
 
@@ -93,8 +93,8 @@ Strategy and tiers are defined in [testing](./docs/adr/testing.md)
 ([strategy](./docs/adr/testing.md#testing-strategy) and
 [test database isolation](./docs/adr/testing.md#test-database-isolation)). The working rules:
 
-- **Bug → red test first.** Before fixing a bug, write a test that fails *for the
-  right reason* (reproduces the actual defect), then make it pass. The failing
+- **Bug → red test first.** Before fixing a bug, write a test that fails _for the
+  right reason_ (reproduces the actual defect), then make it pass. The failing
   run is the proof the test bites.
 - **Pick the tier by what you're proving**, not by habit:
   - `*.spec.ts` — **unit**: pure logic (domain, use-case wiring, helpers). No I/O.
@@ -111,10 +111,10 @@ Strategy and tiers are defined in [testing](./docs/adr/testing.md)
 
 ## Merge Strategy
 
-| Story Type | Merge | UAT |
-|---|---|---|
-| Tech Story | Merge freely to main — no user surface | None |
-| User Story | Merge behind feature flag | Flag on staging → PO sign off → flag on prod |
+| Story Type | Merge                                  | UAT                                          |
+| ---------- | -------------------------------------- | -------------------------------------------- |
+| Tech Story | Merge freely to main — no user surface | None                                         |
+| User Story | Merge behind feature flag              | Flag on staging → PO sign off → flag on prod |
 
 Trunk-based development: all branches max **1-2 days**.
 

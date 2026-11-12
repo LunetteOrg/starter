@@ -244,7 +244,7 @@ function clock(iso: string): string {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
-function describe(owner: Owner, now: number): string {
+function describeHolder(owner: Owner, now: number): string {
   return `${owner.worktree} (pid ${owner.pid} on ${owner.host}, since ${clock(owner.started)}, ${duration(now - Date.parse(owner.started))} ago)`
 }
 
@@ -271,13 +271,13 @@ function judge(text: string, path: string, deps: LockDeps): Verdict {
   }
   if (now - Date.parse(owner.started) > (MAX_HOLD_MINUTES + TAKEOVER_GRACE_MINUTES) * 60_000) {
     return {
-      stale: `lntt ci: TAKING OVER the ci:local lock held by ${describe(owner, now)}, past the maximum hold time of ${MAX_HOLD_MINUTES} minutes — ${path}`,
+      stale: `lntt ci: TAKING OVER the ci:local lock held by ${describeHolder(owner, now)}, past the maximum hold time of ${MAX_HOLD_MINUTES} minutes — ${path}`,
     }
   }
   if (deps.alive(owner.pid)) return { owner, orphan: false }
   if (owner.group !== undefined && deps.groupAlive(owner.group)) return { owner, orphan: true }
   return {
-    stale: `lntt ci: the ci:local lock was held by ${describe(owner, now)}, which is no longer running: taking it over — ${path}`,
+    stale: `lntt ci: the ci:local lock was held by ${describeHolder(owner, now)}, which is no longer running: taking it over — ${path}`,
   }
 }
 
@@ -375,8 +375,8 @@ export async function acquire(deps: LockDeps): Promise<Lock> {
         announced.add(key)
         deps.log(
           orphan
-            ? `lntt ci: waiting for the ci:local lock held by ${describe(holder, deps.now())}, which is no longer running, but its step (process group ${holder.group}) still is — ${deps.path}`
-            : `lntt ci: waiting for the ci:local lock held by ${describe(holder, deps.now())} — ${deps.path}`,
+            ? `lntt ci: waiting for the ci:local lock held by ${describeHolder(holder, deps.now())}, which is no longer running, but its step (process group ${holder.group}) still is — ${deps.path}`
+            : `lntt ci: waiting for the ci:local lock held by ${describeHolder(holder, deps.now())} — ${deps.path}`,
         )
       }
     }
