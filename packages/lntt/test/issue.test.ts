@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  closeSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -100,6 +110,24 @@ describe('lntt issue', () => {
     assert.equal(run.status, 0, run.stderr)
     assert.match(run.stdout, /### Project\n\nacme-app, template react-router, @lntt\/create 0\.4\.1\n/)
     assert.match(run.stdout, /- template: react-router, @lntt\/create 0\.4\.1/)
+  })
+
+  test('a draft on stdin that cannot be read: one line on stderr, exit 1, nothing sent', () => {
+    const fd = openSync(root, 'r')
+    try {
+      const run = spawnSync(process.execPath, [BIN, 'issue', '-', '--send'], {
+        cwd: root,
+        encoding: 'utf8',
+        stdio: [fd, 'pipe', 'pipe'],
+        env: { PATH: `${bin}:${process.env.PATH}`, HOME: root },
+      })
+      assert.equal(run.status, 1)
+      assert.match(run.stderr, /^lntt issue: EISDIR\b.*\n$/)
+      assert.equal(run.stdout, '')
+      assert.equal(sent(), '')
+    } finally {
+      closeSync(fd)
+    }
   })
 
   test('search prints one JSON line per open issue that matches', () => {
