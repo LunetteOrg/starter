@@ -724,7 +724,7 @@ id of what it changes, so no item or issue loses a value:
   and visible fields of each set as declared (a key a view leaves out is not managed; a
   view it does not name is left alone).
 
-What the API cannot do, or what is risky, it lists under *by hand, in GitHub's UI*, each
+What the API cannot do, or what is risky, it lists under _by hand, in GitHub's UI_, each
 with the reason, the settings page and the steps: a view's grouping or a board's columns
 that differ from `groupBy` or `columns` (read from the view, set only in the UI), a
 field of another type (the API never changes a type), an iteration field (its iterations

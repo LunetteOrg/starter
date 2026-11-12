@@ -33,11 +33,11 @@ Consequences:
 
 Secrets must reach three contexts (local dev, CI, production) without a dedicated secrets manager, and must never be readable from the repo or from deploy-tool metadata. We suggest managing them via GitHub Secrets.
 
-| Context | Mechanism |
-|---|---|
-| Local dev | `.env` per app (gitignored); `.env.example` committed as the reference inventory |
-| CI (GitHub Actions) | GitHub Secrets → env vars in the workflow |
-| Production | GitHub Secrets injected at deploy time as environment variables |
+| Context             | Mechanism                                                                        |
+| ------------------- | -------------------------------------------------------------------------------- |
+| Local dev           | `.env` per app (gitignored); `.env.example` committed as the reference inventory |
+| CI (GitHub Actions) | GitHub Secrets → env vars in the workflow                                        |
+| Production          | GitHub Secrets injected at deploy time as environment variables                  |
 
 Use GitHub Secrets as the single source of truth for CI and production. Adding a secret takes three explicit steps: update `.env.example`, add it to GitHub Secrets, add it to the deploy workflow's env block.
 
@@ -55,10 +55,10 @@ Consequences:
 
 Container platforms used for deploy have no native cron. Scheduled/async work splits into two kinds with very different reliability needs: business logic ("expire OTP codes", "retry webhooks") and ops maintenance ("nightly cleanup"). We suggest splitting them across two mechanisms — pg-boss for business logic, GitHub Actions for ops.
 
-| Task type | Pattern |
-|---|---|
-| Business logic — needs reliability, retry, exactly-once | **pg-boss** scheduled job |
-| Ops/maintenance — low criticality | **GitHub Actions** scheduled workflow |
+| Task type                                               | Pattern                               |
+| ------------------------------------------------------- | ------------------------------------- |
+| Business logic — needs reliability, retry, exactly-once | **pg-boss** scheduled job             |
+| Ops/maintenance — low criticality                       | **GitHub Actions** scheduled workflow |
 
 - Use pg-boss (Postgres-backed: no Redis, schedule survives restarts, no clock drift). Run the worker as a separate service from the same image (`node workers/index.ts` — Node 24 strip types), and have its handlers call use-cases via the same composition root (`context.app.useCases…`).
 - Use GitHub Actions cron to run standalone scripts with `DATABASE_URL` from GitHub Secrets — zero infrastructure, logs and retries in GitHub.
@@ -98,10 +98,10 @@ process.on('SIGTERM', () => {
 
 Compose config: `stop_grace_period: 30s` + an HTTP healthcheck, so the platform only removes the old container from rotation after the new one is healthy.
 
-| Process type | Stop accepting | Drain | Cleanup |
-|---|---|---|---|
-| HTTP server (RR7, Hono) | `server.close()` | destroy keep-alive after 5s | `db.end()`, pool teardown |
-| Job worker (pg-boss) | `worker.close()` | finish current job | release DB/queue connections |
+| Process type            | Stop accepting   | Drain                       | Cleanup                      |
+| ----------------------- | ---------------- | --------------------------- | ---------------------------- |
+| HTTP server (RR7, Hono) | `server.close()` | destroy keep-alive after 5s | `db.end()`, pool teardown    |
+| Job worker (pg-boss)    | `worker.close()` | finish current job          | release DB/queue connections |
 
 Consequences:
 

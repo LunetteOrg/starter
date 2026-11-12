@@ -13,11 +13,11 @@ it for review, keeping the markdown as the single source of truth (see
 ## Procedure
 
 1. **Confirm intent.** Get the decision title and the gist (context, the choice,
-   why). If the user is only exploring, stop — a PDR records a *made* decision.
+   why). If the user is only exploring, stop — a PDR records a _made_ decision.
 
 2. **Find the subject.** List `docs/product/decisions/`. If a file covers the
    subject, the decision is written into it: rewrite what changed, keep the rest,
-   move the options not taken to *Discarded directions*. A new file, named after the
+   move the options not taken to _Discarded directions_. A new file, named after the
    subject in kebab-case (`onboarding.md`), only for a new subject.
 
 3. **Write the PDR.** For a new subject, copy `docs/product/decisions/template.md`

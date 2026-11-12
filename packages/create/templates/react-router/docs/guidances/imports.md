@@ -2,7 +2,7 @@
 
 - Status: guidance
 
-> **Recommended, not enforced (yet).** The *decision* — why explicit `.ts`
+> **Recommended, not enforced (yet).** The _decision_ — why explicit `.ts`
 > everywhere — lives in [build & tooling → Module resolution & import convention](../adr/build-and-tooling.md#module-resolution--import-convention).
 > This page is the operational how-to. It is not linted today; if a rule is added
 > it must carve out generated code (see below).
@@ -12,10 +12,10 @@
 Relative imports carry the **explicit source extension**:
 
 ```ts
-import { Button } from './button.tsx'   // ✓  a component
-import { toCents } from './money.ts'     // ✓  a module
-import { Button } from './button'        // ✗  extensionless — not resolvable by Node ESM
-import { toCents } from './money.js'     // ✗  the .js-pointing-at-.ts workaround, now obsolete
+import { Button } from './button.tsx' // ✓  a component
+import { toCents } from './money.ts' // ✓  a module
+import { Button } from './button' // ✗  extensionless — not resolvable by Node ESM
+import { toCents } from './money.js' // ✗  the .js-pointing-at-.ts workaround, now obsolete
 ```
 
 Bare specifiers are unchanged — no extension on packages or `node:` builtins
@@ -35,10 +35,10 @@ import { toCents, type Currency } from './money.ts'
 
 The extension is uniform; the resolver is not, and it follows the runtime.
 
-| Layer | `moduleResolution` | Runs under |
-|---|---|---|
-| UI / app packages | `bundler` | Vite/Rolldown (JSX, CSS, assets) |
-| Domain & non-UI libraries | `nodenext` | Node directly (native type stripping) |
+| Layer                     | `moduleResolution` | Runs under                            |
+| ------------------------- | ------------------ | ------------------------------------- |
+| UI / app packages         | `bundler`          | Vite/Rolldown (JSX, CSS, assets)      |
+| Domain & non-UI libraries | `nodenext`         | Node directly (native type stripping) |
 
 Keep the **domain Node-first**: no bundler-only imports — no JSX, no
 `.css`/asset/`?raw`/`virtual:` — so `node` can run it without a build. That

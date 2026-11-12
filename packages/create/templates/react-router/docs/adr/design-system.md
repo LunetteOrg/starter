@@ -61,10 +61,7 @@ Storybook lives in `apps/design-system` as a **generic tooling app**, on `@story
 
 ```ts
 // apps/design-system/.storybook/main.ts
-stories: [
-  '../src/**/*.mdx',
-  '../../../packages/ui/src/**/*.stories.@(ts|tsx)',
-]
+stories: ['../src/**/*.mdx', '../../../packages/ui/src/**/*.stories.@(ts|tsx)']
 ```
 
 ### Consequences

@@ -10,7 +10,7 @@ The durable recommendation is simple: **own your auth**. Model sessions and OTP 
 
 Auth frameworks that own their database schema (e.g. Better-Auth-style batteries-included frameworks) prevent expressing sessions and OTP codes behind your own repository interfaces, breaking the [layered architecture](../adr/architecture-and-boundaries.md#layered-architecture). That schema lock-in is the trade-off to avoid. (For reference, Lucia v3 is deprecated by its author, so it is not a path forward either.)
 
-None of the libraries below are mandatory — pick primitives that let *you* keep ownership.
+None of the libraries below are mandatory — pick primitives that let _you_ keep ownership.
 
 ## Recommendation
 
@@ -23,7 +23,7 @@ None of the libraries below are mandatory — pick primitives that let *you* kee
 
 ### A suggested primitive: Oslo
 
-**Oslo** is *one* option for the underlying crypto/session utilities — a set of primitives (by the original Lucia author) with no framework opinions and full schema ownership. It gives you the building blocks (secure random IDs, hashing, cookie helpers) without owning your tables, which is exactly what keeps auth inside your own layering.
+**Oslo** is _one_ option for the underlying crypto/session utilities — a set of primitives (by the original Lucia author) with no framework opinions and full schema ownership. It gives you the building blocks (secure random IDs, hashing, cookie helpers) without owning your tables, which is exactly what keeps auth inside your own layering.
 
 Treat Oslo as an implementation detail behind `SessionRepository` / `OtpRepository`, not as the decision. Any library that leaves the schema and the interfaces in your hands is a valid substitute.
 

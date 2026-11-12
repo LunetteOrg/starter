@@ -11,7 +11,7 @@ interaction mechanism: spawn one **persistent background agent per lens** once,
 then **continue each via SendMessage** on every user turn — the main loop is the
 facilitator (Pia), never a separate agent. This is the difference from a
 one-shot Workflow (which can't be paused for input) and from single-model
-role-play (which only *simulates* independence).
+role-play (which only _simulates_ independence).
 
 Invoking this skill **is** the explicit opt-in to multi-agent orchestration.
 Each turn messages several live agents — real cost and latency; use it for

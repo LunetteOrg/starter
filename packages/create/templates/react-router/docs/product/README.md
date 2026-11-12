@@ -3,14 +3,14 @@
 The **log of product & design decisions** (PDRs): one file per product subject,
 corrected in place, the same rules as the [ADRs](../adr/README.md)
 ([recording decisions](../adr/recording-decisions.md)). The two logs are split by
-*subject matter*: architecture there, product and design here.
+_subject matter_: architecture there, product and design here.
 
-| Space | Holds | Nature |
-|---|---|---|
-| [`../adr/`](../adr/README.md) | architectural decisions | one file per subject, corrected in place |
-| **`decisions/`** | product/design decisions (PDR) | one file per product subject, corrected in place; the source of truth |
-| [`../../compliance/`](../../compliance/README.md) | stable texts the project complies with (statute, regulations, brand guidelines) | received, dated, a new version beside the old; quarantined |
-| [`../../reference/`](../../reference/README.md) | raw input (legacy, dumps, prototypes) | read-only history, quarantined |
+| Space                                             | Holds                                                                           | Nature                                                                |
+| ------------------------------------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| [`../adr/`](../adr/README.md)                     | architectural decisions                                                         | one file per subject, corrected in place                              |
+| **`decisions/`**                                  | product/design decisions (PDR)                                                  | one file per product subject, corrected in place; the source of truth |
+| [`../../compliance/`](../../compliance/README.md) | stable texts the project complies with (statute, regulations, brand guidelines) | received, dated, a new version beside the old; quarantined            |
+| [`../../reference/`](../../reference/README.md)   | raw input (legacy, dumps, prototypes)                                           | read-only history, quarantined                                        |
 
 ## Recording a product decision
 
@@ -19,7 +19,7 @@ corrected in place, the same rules as the [ADRs](../adr/README.md)
    [`decisions/template.md`](./decisions/template.md) and named after its subject,
    only for a new subject. The `product-decision` skill does both.
 2. Keep it short: Context, Decision, Consequences, and the options not taken in
-   *Discarded directions*. **Cite `docs/` and `compliance/`, never `reference/`**
+   _Discarded directions_. **Cite `docs/` and `compliance/`, never `reference/`**
    ([the rule on sources](../adr/product-and-reference-spaces.md#the-rule-on-sources)).
 3. Show it to the reviewers on its Storybook page before it is accepted.
 
@@ -32,5 +32,5 @@ markdown reading required. Stakeholders review and comment there. See
 [the product-decisions guidance](../guidances/product-decisions.md) for how to wire
 the review (Chromatic by default).
 
-> The *shape* (a PDR log rendered for review) ships ready to use; the decisions
+> The _shape_ (a PDR log rendered for review) ships ready to use; the decisions
 > themselves are your project's content.

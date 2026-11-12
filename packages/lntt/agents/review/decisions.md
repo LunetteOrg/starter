@@ -17,7 +17,7 @@ is what needs judgement.
    those: a process rule inside an ADR, a configuration value copied instead of cited
    by its key, a document that narrates how it was reached instead of the state it
    proposes, options not taken scattered through the text instead of closing it under
-   *Discarded directions*.
+   _Discarded directions_.
 6. **Figures** (the `figures` lines, from the records the change touches): a figure
    about the world outside (a price, a count of users, another tool's version, what is
    on the board) or a count of the code as it is today goes stale without anyone

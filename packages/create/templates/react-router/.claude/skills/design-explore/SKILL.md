@@ -7,12 +7,12 @@ description: Scaffold 2–3 design directions as prototype pages in Storybook (p
 
 Create 2–3 **prototype pages** in Storybook, one per visual direction, so that
 palette, typography and the signature element are compared **on screen**
-instead of in words (see the *Design tokens* decision in
+instead of in words (see the _Design tokens_ decision in
 [`docs/adr/`](../../../docs/adr/README.md) and, if available, the
 `frontend-design` skill). They are **throwaway** prototypes for deciding: not
 catalogue components, not final tokens.
 
-> Prototypes may use raw inline values: here we are *choosing* the palette and
+> Prototypes may use raw inline values: here we are _choosing_ the palette and
 > the typography, so the "only `var(--token)`" discipline does not apply until
 > the direction is formalised. They live under `Explorations/`, separate from
 > the component catalogue and the `Product/` pages.
