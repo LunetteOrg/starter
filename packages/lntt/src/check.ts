@@ -232,13 +232,15 @@ export const ANCHOR_LINE = /^(.+?):(\d+)(?:[-–,:]\d+)*$/
 // anchor may carry a heading (`#decision`) or a line in any form ANCHOR_LINE reads; a
 // path alone only has to exist. The text is null for a path alone.
 export function cite(root: string, anchor: string, line: number | null): Cited {
-  const { file, at } = citeTarget(root, anchor, line)
+  const { file, at } = citeTarget({ isAbsolute, join, relative }, root, anchor, line)
   if (file === null || !existsSync(file) || !statSync(file).isFile()) return citeText(null, at)
   return citeText(at === null ? '' : readFileSync(file, 'utf8'), at)
 }
 
-// Where an anchor points: the file, null when it is outside the root, and the line.
+// Where an anchor points: the file, null when it is outside the root, and the line. The path
+// functions are given: node:path here, Effect's Path service in lntt review.
 export function citeTarget(
+  paths: Pick<typeof import('node:path'), 'isAbsolute' | 'join' | 'relative'>,
   root: string,
   anchor: string,
   line: number | null,
@@ -246,8 +248,8 @@ export function citeTarget(
   const m = ANCHOR_LINE.exec(anchor)
   const path = (m ? (m[1] as string) : anchor).replace(/#.*$/, '')
   const at = line ?? (m ? Number(m[2]) : null)
-  const rel = isAbsolute(path) ? relative(root, path) : path
-  return { file: rel.startsWith('..') ? null : join(root, rel), at }
+  const rel = paths.isAbsolute(path) ? paths.relative(root, path) : path
+  return { file: rel.startsWith('..') ? null : paths.join(root, rel), at }
 }
 
 // What the line reads, from the file's text, or null when it is not a file.

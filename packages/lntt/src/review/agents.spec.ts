@@ -167,7 +167,7 @@ describe('the agents as processes', () => {
       const released: boolean[] = []
       const fiber = yield* Effect.forkChild(
         askAll([question], {
-          stop: Deferred.await(stop),
+          stop,
           progress: (event) =>
             Effect.sync(() => {
               if (event.type === 'end') released.push(spawner.seen[0]?.released === true)
@@ -223,6 +223,14 @@ describe('the agents as processes', () => {
       ])
       assert.deepStrictEqual(spawner.seen[0]?.args, ['-c', 'command -v "claude"'])
       assert.strictEqual(spawner.seen.length, 1, 'no shell for an agent that cannot be made read-only')
+    }).pipe((effect) => asked(effect, spawner))
+  })
+
+  it.effect('a CLI the shell finds is no problem', () => {
+    const spawner = inMemorySpawner({ code: 0 })
+    return Effect.gen(function* () {
+      assert.deepStrictEqual(yield* (yield* Agents).problems([{ kind: 'opencode', model: 'x/y' }]), [])
+      assert.deepStrictEqual(spawner.seen[0]?.args, ['-c', 'command -v "opencode"'])
     }).pipe((effect) => asked(effect, spawner))
   })
 })

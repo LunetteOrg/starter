@@ -110,6 +110,8 @@ export const runRound = <E>(
     for (const [lens, def] of Object.entries(config.reviewers)) {
       if (!lensApplies(def, input.files)) continue
       result.lenses.push(lens)
+      // A lens with a brief and no way to read it is a bug of the caller, not a lens without one.
+      if (def.brief && !input.readBrief) return yield* Effect.die(new Error(`${lens}: a brief and no readBrief`))
       const brief = def.brief && input.readBrief ? yield* input.readBrief(def.brief) : undefined
       const prompt = renderReviewPrompt(lens, values, brief)
       for (const agent of def.with) jobs.push({ lens, agent, prompt })

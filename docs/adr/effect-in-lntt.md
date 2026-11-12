@@ -124,8 +124,8 @@ layers.
 
 ### The bridge, while modules move
 
-A Promise function a module on Effect still calls runs under `Effect.tryPromise`, whose
-signal an interrupt aborts. The sync code of modules not
+A Promise function a module on Effect still calls runs under `Effect.tryPromise`, which
+passes it a signal an interrupt aborts when it takes one (a `Spawn` does). The sync code of modules not
 yet moved that a module on Effect needs (for `lntt review`: the project's configuration,
 the place of the state store, the base, `lntt check`'s areas, the parent the branch
 reports to and the limit's message, Orca's subagents) is reached through a service of that
@@ -139,8 +139,10 @@ its module moves to Effect. The library API of
 it needs no Effect: a library function whose logic moved (`askAll`, `runRound`) imports its
 Effect form with `await import(...)` when it is called and runs it with `Effect.runPromise`,
 its callbacks under `Effect.sync`, `Effect.try` and `Effect.tryPromise` (a `Spawn` is the
-`Agents` layer `Agents.fromSpawn`, an `AbortSignal` the stop), and rejects with what the
-callback threw. A command that does not call it loads no Effect for it.
+`Agents` layer `Agents.fromSpawn`, an `AbortSignal` the stop), and each callback's failure
+means what it meant before: a `Spawn` that rejects is that agent's failed answer in
+`askAll`, an ask, a brief or a cited line that throws rejects `runRound` with what it threw.
+A command that does not call it loads no Effect for it.
 
 ### Tests beside each module
 

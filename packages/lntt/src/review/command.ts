@@ -117,12 +117,12 @@ const deadline = Effect.fnUntraced(function* (minutes: number) {
       Effect.andThen(Deferred.succeed(passed, `the round took longer than ${minutes} minutes`)),
     ),
   )
-  return Deferred.await(passed)
+  return passed
 })
 
 // How a round or a reply asks its agents: the project's slots, grace and timeouts, the
 // deadline, and what the reporter writes as each agent starts and ends.
-const asking = (config: ReviewConfig, stop: Effect.Effect<string>, progress: (event: Progress) => void) => ({
+const asking = (config: ReviewConfig, stop: Deferred.Deferred<string>, progress: (event: Progress) => void) => ({
   perProvider: config.perProvider,
   optionalGraceMs: config.optionalGraceMinutes * 60_000,
   timeoutMinutes: config.timeoutMinutes,
@@ -316,16 +316,16 @@ export const round = Effect.fnUntraced(function* (
   // The working tree as the reviewers read it: a lens's brief, and the line a finding cites.
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
+  // A path no file answers for (missing, a directory, a component that is a file, one it may
+  // not read) is no file, as lntt check cite says it.
   const cite = (anchor: string, line: number | null) =>
     Effect.gen(function* () {
-      const { file, at } = citeTarget(root, anchor, line)
+      const { file, at } = citeTarget(path, root, anchor, line)
       const isFile =
         file !== null &&
         (yield* fs.stat(file).pipe(
           Effect.map((info) => info.type === 'File'),
-          Effect.catchTag('PlatformError', (error) =>
-            error.reason._tag === 'NotFound' ? Effect.succeed(false) : Effect.fail(error),
-          ),
+          Effect.orElseSucceed(() => false),
         ))
       if (!isFile) return citeText(null, at)
       return citeText(at === null ? '' : yield* fs.readFileString(file), at)

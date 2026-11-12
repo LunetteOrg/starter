@@ -649,6 +649,44 @@ describe('lntt review, a round', () => {
   })
 })
 
+describe('lntt review, the working tree the reviewers read', () => {
+  it.effect("a lens's brief and a finding's line are read from the working tree", () => {
+    const w = world()
+    return Effect.gen(function* () {
+      w.repo.commit({ 'docs/story.md': 'Tell the story of the change.' })
+      w.withConfig((review) => {
+        review.reviewers = {
+          ...(review.reviewers as object),
+          code: { with: [] },
+          story: { brief: 'docs/story.md', with: [{ kind: 'claude', model: 'haiku' }] },
+        }
+      })
+      w.agent.answers.REVIEW_haiku = [
+        '- [warning] a.ts:1 — w — a',
+        '- [warning] a.ts:9 — past the end — a',
+        '- [warning] a.ts/x.ts:1 — under a file — a',
+        '- [warning] ../out.ts:1 — outside the root — a',
+      ].join('\n')
+      w.agent.answers.VERIFY = 'confirmed\np'
+      yield* w.round()
+      assert.match(w.agent.prompts[0] ?? '', /Tell the story of the change\./)
+      const state = w.state()
+      assert.deepStrictEqual(
+        state.result.findings.map((f) => [f.path, f.line, f.cited]),
+        [
+          ['../out.ts', 1, undefined],
+          ['a.ts', 1, 'export const a = 2'],
+          ['a.ts/x.ts', 1, undefined],
+        ],
+      )
+      assert.deepStrictEqual(
+        state.result.refuted.map((f) => f.proofs[0]?.proof),
+        ['a.ts:9: no line 9: the file has 1 line'],
+      )
+    })
+  })
+})
+
 describe('lntt review, a reply', () => {
   it.effect('kept by its reviewer, the finding stays open and reply exits 1', () => {
     const w = world()

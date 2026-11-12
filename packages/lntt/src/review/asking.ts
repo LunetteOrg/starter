@@ -18,6 +18,7 @@ import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
+import type { PlatformError } from 'effect/PlatformError'
 import * as Semaphore from 'effect/Semaphore'
 import {
   type HeadlessAgent as Agent,
@@ -34,9 +35,12 @@ import {
 } from '../headless.ts'
 import { agentLabel } from '../review.ts'
 
-// What kept an agent from answering, by its message: the process's own failure, a CLI that is
-// not there, a Spawn that rejected.
-export type AgentError = { readonly message: string }
+// An agent that exited non-zero: its code and the last lines it wrote.
+export class AgentFailed extends Data.TaggedError('AgentFailed')<{ command: string; code: number; output: string }> {
+  get message() {
+    return `${this.command} exited ${this.code}: ${this.output}`
+  }
+}
 
 // A Spawn of the library's caller that rejected: its message is the answer's error.
 export class SpawnRejected extends Data.TaggedError('SpawnRejected')<{ cause: unknown }> {
@@ -44,6 +48,17 @@ export class SpawnRejected extends Data.TaggedError('SpawnRejected')<{ cause: un
     return this.cause instanceof Error ? this.cause.message : String(this.cause)
   }
 }
+
+// What headlessInvocation refused for the agent, or parseReply for its reply.
+export class AnswerUnread extends Data.TaggedError('AnswerUnread')<{ cause: unknown }> {
+  get message() {
+    return this.cause instanceof Error ? this.cause.message : String(this.cause)
+  }
+}
+
+// What kept an agent from answering: the process's own failure, a process that could not
+// start, a Spawn of the library's caller that rejected.
+export type AgentError = AgentFailed | PlatformError | SpawnRejected
 
 // An agent still running when its minutes were over: it was released first.
 export class AgentTimedOut extends Data.TaggedError('AgentTimedOut')<{ minutes: number }> {
@@ -98,8 +113,9 @@ export interface AskOptions {
   // How long each agent may run; then it is released and its answer is the timeout.
   readonly timeoutMinutes?: number
   // Done with a reason when every agent must stop, required ones too: those running are
-  // released, those waiting never start, and each answer is the reason.
-  readonly stop?: Effect.Effect<string>
+  // released, those waiting never start, and each answer is the reason. A Deferred, so that
+  // one already done is seen before any agent starts.
+  readonly stop?: Deferred.Deferred<string>
   // Each start, when the agent starts, and each end.
   readonly progress?: (event: Progress) => Effect.Effect<void>
 }
@@ -110,7 +126,7 @@ const answerOf = (q: Question, timeoutMinutes: number | undefined) =>
     const agents = yield* Agents
     const invocation = yield* Effect.try({
       try: () => headlessInvocation(q.agent, q.prompt, q.session),
-      catch: (error) => error as Error,
+      catch: (cause) => new AnswerUnread({ cause }),
     })
     const run = agents.run(invocation)
     const stdout = yield* timeoutMinutes === undefined
@@ -121,9 +137,12 @@ const answerOf = (q: Question, timeoutMinutes: number | undefined) =>
             orElse: () => Effect.fail(new AgentTimedOut({ minutes: timeoutMinutes })),
           }),
         )
-    const reply = yield* Effect.try({ try: () => parseReply(q.agent.kind, stdout), catch: (error) => error as Error })
+    const reply = yield* Effect.try({
+      try: () => parseReply(q.agent.kind, stdout),
+      catch: (cause) => new AnswerUnread({ cause }),
+    })
     return { ok: true, reply } as Answer
-  }).pipe(Effect.catch((error: AgentError) => Effect.succeed<Answer>({ ok: false, error: error.message })))
+  }).pipe(Effect.catch((error) => Effect.succeed<Answer>({ ok: false, error: error.message })))
 
 // Every question runs as soon as its provider has a free slot; each answer stays in its
 // question's place.
@@ -135,9 +154,8 @@ export const askAll = Effect.fnUntraced(function* (questions: Question[], option
   const slots = new Map<string, Semaphore.Semaphore>()
   for (const q of questions) if (!slots.has(slotOf(q.agent))) slots.set(slotOf(q.agent), yield* Semaphore.make(limit))
   // Done with the reason the agents stop: every one, or the optional ones.
-  const all = yield* Deferred.make<string>()
+  const all = options.stop ?? (yield* Deferred.make<string>())
   const optionals = yield* Deferred.make<string>()
-  if (options.stop) yield* Effect.forkScoped(Effect.flatMap(options.stop, (reason) => Deferred.succeed(all, reason)))
   const required = questions.filter((q) => !q.agent.optional).length
   let answered = 0
   const grace = options.optionalGraceMs
@@ -196,15 +214,12 @@ export function askWithSpawn(
   options: PromiseOptions,
 ): Promise<Answer[]> {
   const signal = options.signal
-  const stop =
-    signal === undefined
-      ? undefined
-      : Effect.callback<string>((resume) => {
-          const reason = () => resume(Effect.succeed(String(signal.reason)))
-          if (signal.aborted) reason()
-          else signal.addEventListener('abort', reason, { once: true })
-          return Effect.sync(() => signal.removeEventListener('abort', reason))
-        })
+  const stop = signal === undefined ? undefined : Deferred.makeUnsafe<string>()
+  const abort = () => {
+    if (stop && signal) Deferred.doneUnsafe(stop, Effect.succeed(String(signal.reason)))
+  }
+  if (signal?.aborted) abort()
+  else signal?.addEventListener('abort', abort, { once: true })
   return Effect.runPromise(
     askAll(questions, {
       ...(options.perProvider === undefined ? {} : { perProvider: options.perProvider }),
@@ -212,5 +227,5 @@ export function askWithSpawn(
       ...(stop === undefined ? {} : { stop }),
       progress: (event) => Effect.sync(() => progress(event)),
     }).pipe(Effect.provide(Agents.fromSpawn(spawn))),
-  )
+  ).finally(() => signal?.removeEventListener('abort', abort))
 }

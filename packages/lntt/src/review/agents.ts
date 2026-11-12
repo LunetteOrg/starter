@@ -8,7 +8,6 @@
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
-import * as Data from 'effect/Data'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -17,17 +16,12 @@ import * as Stream from 'effect/Stream'
 import type { HeadlessAgent as Agent, Invocation } from '../headless.ts'
 import { agentLabel } from '../review.ts'
 import { agentEnv } from './agent-env.ts'
-import { Agents, unmakeable } from './asking.ts'
+import { AgentFailed, Agents, unmakeable } from './asking.ts'
+
+export { AgentFailed }
 
 // How long an agent has between SIGTERM and SIGKILL.
 export const STOP_GRACE = Duration.seconds(5)
-
-// An agent that exited non-zero: its code and the last lines it wrote.
-export class AgentFailed extends Data.TaggedError('AgentFailed')<{ command: string; code: number; output: string }> {
-  get message() {
-    return `${this.command} exited ${this.code}: ${this.output}`
-  }
-}
 
 const text = <E>(stream: Stream.Stream<Uint8Array, E>) => Stream.mkString(Stream.decodeText(stream))
 
@@ -59,6 +53,7 @@ export const runAgent = (invocation: Invocation, options: { env: Record<string, 
 export const AgentsProcesses = Layer.effect(Agents)(
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+    // Only a kind headlessInvocation takes (claude, opencode) reaches the shell.
     const onPath = (command: string) =>
       spawner.exitCode(ChildProcess.make('sh', ['-c', `command -v "${command}"`], { stdin: 'ignore' })).pipe(
         Effect.map((code) => code === 0),

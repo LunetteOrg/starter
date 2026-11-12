@@ -717,7 +717,7 @@ describe('a pre-existing finding', () => {
 })
 
 describe('the library runRound', () => {
-  test('runs the round on its Promise asks, its brief and its cited lines, and rejects with what an ask threw', async () => {
+  test('runs the round on its Promise asks, its brief and its cited lines, and rejects with what any of them threw', async () => {
     const config = reviewConfig({
       delivery: {
         review: {
@@ -770,6 +770,22 @@ describe('the library runRound', () => {
       }),
       (error) => error === down,
     )
+    const unreadable = new Error('EACCES: b.md')
+    const blocked = {
+      ...input,
+      readBrief: () => {
+        throw unreadable
+      },
+    }
+    await assert.rejects(runRound(config, blocked, ask), (error) => error === unreadable)
+    const gone = new Error('EIO: a.ts')
+    const uncited = {
+      ...input,
+      cite: () => {
+        throw gone
+      },
+    }
+    await assert.rejects(runRound(config, uncited, ask), (error) => error === gone)
   })
 })
 
