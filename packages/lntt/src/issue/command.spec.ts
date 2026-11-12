@@ -1,12 +1,15 @@
+import * as NodePath from '@effect/platform-node-shared/NodePath'
 import { assert, describe, it } from '@effect/vitest'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import { ChildProcessSpawner } from 'effect/process'
 import * as TestConsole from 'effect/testing/TestConsole'
+import { ConfigInvalid, ProjectConfig } from '../config/load.ts'
 import { type Dump, withAgent } from '../dump.ts'
 import { Gh, type IssueHit } from '../gh/gh.ts'
-import { Git } from '../git/git.ts'
+import { Git, GitError } from '../git/git.ts'
 import { memoryFileSystem } from '../testing/file-system.ts'
-import { command, IssueBridge, type IssueCommand } from './command.ts'
+import { command, GitIn, IssueBridge, type IssueCommand } from './command.ts'
 
 const ROOT = '/home/me/app'
 
@@ -41,19 +44,36 @@ const UPSTREAM = { cycle: { retrospective: { upstream: { repository: 'LunetteOrg
 function world() {
   const state = {
     config: structuredClone(UPSTREAM) as Record<string, unknown>,
-    origin: '',
+    // The origin remote's URL; null: git cannot start.
+    origin: '' as string | null,
     collected: 0,
     // What the configuration's loader throws, for one that does not validate.
     refused: null as string | null,
   }
   const asked: string[] = []
+  // The directories git was asked in.
+  const gitDirs: string[] = []
   const writes: { args: string; body: string }[] = []
   const fs = memoryFileSystem({ dirs: [ROOT] })
   const put = (path: string, text: string) => fs.put(`${ROOT}/${path}`, text)
   const hits: IssueHit[] = [{ number: 7, title: 't', url: 'u' }]
   const layer = Layer.mergeAll(
     fs.layer,
-    Git.memory({ originUrl: Effect.sync(() => state.origin) }),
+    NodePath.layer,
+    // The project's configuration, read from the state when the command asks for it.
+    Layer.succeed(ProjectConfig)(
+      ProjectConfig.of({
+        data: Effect.suspend(() =>
+          state.refused === null
+            ? Effect.succeed(state.config)
+            : Effect.fail(new ConfigInvalid({ message: state.refused })),
+        ),
+      }),
+    ),
+    // No process runs: git is the in-memory one GitIn gives.
+    Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
+      ChildProcessSpawner.make(() => Effect.die('no process runs in this spec')),
+    ),
     Gh.memory({
       searchIssues: ({ repo, words }) =>
         Effect.sync(() => {
@@ -74,7 +94,7 @@ function world() {
   )
   // One run of `lntt issue`: its exit code, stdout and stderr.
   const lntt = (parsed: Partial<Extract<IssueCommand, { kind: 'file' }>> = {}, env: Record<string, string> = {}) =>
-    run({ kind: 'file', draft: { path: `${ROOT}/draft.md` }, send: false, env, ...parsed })
+    run({ kind: 'file', draft: { path: `${ROOT}/draft.md` }, send: false, env, cwd: ROOT, ...parsed })
   const run = (parsed: IssueCommand) =>
     Effect.gen(function* () {
       const code = yield* command(parsed)
@@ -82,11 +102,17 @@ function world() {
       const err = (yield* TestConsole.errorLines).map((line) => `${line}\n`).join('')
       return { code, out, err }
     }).pipe(
+      Effect.provideService(GitIn, (dir) => {
+        gitDirs.push(dir)
+        return Git.memory({
+          originUrl: Effect.suspend(() =>
+            state.origin === null
+              ? Effect.fail(new GitError({ args: ['remote', 'get-url', 'origin'], output: 'cannot start' }))
+              : Effect.succeed(state.origin),
+          ),
+        })
+      }),
       Effect.provideService(IssueBridge, {
-        project: () => {
-          if (state.refused !== null) throw new Error(state.refused)
-          return { root: ROOT, config: state.config }
-        },
         collect: ({ harness, model }) => {
           state.collected++
           return withAgent(DUMP, { ...(harness ? { harness } : {}), ...(model ? { model } : {}) })
@@ -95,8 +121,12 @@ function world() {
       }),
       Effect.provide(Layer.mergeAll(layer, Layer.fresh(TestConsole.layer))),
     )
-  const ready = Effect.all([put('draft.md', DRAFT), put('package.json', '{"name":"acme-app"}')])
-  return { state, asked, writes, put, lntt, run, ready }
+  const ready = Effect.all([
+    put('draft.md', DRAFT),
+    put('package.json', '{"name":"acme-app"}'),
+    put('.agents/config.jsonc', '{}'),
+  ])
+  return { state, asked, gitDirs, writes, put, lntt, run, ready }
 }
 
 describe('lntt issue', () => {
@@ -231,6 +261,8 @@ describe('lntt issue', () => {
       const r = yield* w.lntt()
       assert.strictEqual(r.code, 1)
       assert.strictEqual(r.err, 'lntt issue: .agents/config.jsonc: nope is not a key\n')
+      const err = yield* w.run({ kind: 'search', words: 'x', env: {}, cwd: ROOT })
+      assert.strictEqual(err.code, 1)
     }),
   )
 
@@ -239,7 +271,7 @@ describe('lntt issue', () => {
       const w = world()
       yield* w.ready
       w.state.config = {}
-      for (const r of [yield* w.lntt(), yield* w.run({ kind: 'search', words: 'x', env: {} })]) {
+      for (const r of [yield* w.lntt(), yield* w.run({ kind: 'search', words: 'x', env: {}, cwd: ROOT })]) {
         assert.strictEqual(r.code, 1)
         assert.match(r.err, /^lntt issue: no cycle\.retrospective\.upstream\.repository in the configuration/)
       }
@@ -272,7 +304,7 @@ describe('lntt issue', () => {
           /is not cycle\.retrospective\.upstream\.repository \(LunetteOrg\/starter\): only that one is sent/,
         )
       }
-      const search = yield* w.run({ kind: 'search', words: 'hmr', repo: 'remix-run/react-router', env: {} })
+      const search = yield* w.run({ kind: 'search', words: 'hmr', repo: 'remix-run/react-router', env: {}, cwd: ROOT })
       assert.strictEqual(search.code, 0, search.err)
       assert.deepStrictEqual(w.asked, ['issue list --repo remix-run/react-router --search hmr'])
       assert.deepStrictEqual(w.writes, [])
@@ -339,7 +371,7 @@ describe('lntt issue', () => {
       const dry = yield* w.lntt({ repo: 'remix-run/react-router' })
       assert.strictEqual(dry.code, 0, dry.err)
       assert.match(dry.out, /^To remix-run\/react-router: /)
-      const search = yield* w.run({ kind: 'search', words: 'hmr', repo: 'remix-run/react-router', env: {} })
+      const search = yield* w.run({ kind: 'search', words: 'hmr', repo: 'remix-run/react-router', env: {}, cwd: ROOT })
       assert.strictEqual(search.code, 0)
       const send = yield* w.lntt({ repo: 'remix-run/react-router', send: true })
       assert.strictEqual(send.code, 1)
@@ -350,7 +382,7 @@ describe('lntt issue', () => {
   it.effect('search prints one JSON line per open issue that matches', () =>
     Effect.gen(function* () {
       const w = world()
-      const r = yield* w.run({ kind: 'search', words: 'review state', env: {} })
+      const r = yield* w.run({ kind: 'search', words: 'review state', env: {}, cwd: ROOT })
       assert.strictEqual(r.code, 0, r.err)
       assert.strictEqual(r.out, '{"number":7,"title":"t","url":"u"}\n')
       assert.deepStrictEqual(w.asked, ['issue list --repo LunetteOrg/starter --search review state'])
@@ -362,6 +394,49 @@ describe('lntt issue', () => {
       const w = world()
       yield* w.put('draft.md', DRAFT)
       assert.match((yield* w.lntt()).out, /### Project\n\napp\n/)
+    }),
+  )
+
+  it.effect('from a subdirectory: the root is the directory of .agents/, where git reads the origin', () =>
+    Effect.gen(function* () {
+      const w = world()
+      yield* w.ready
+      yield* w.put('src/deep/keep', '')
+      w.state.origin = 'git@github.com:LunetteOrg/starter.git'
+      const r = yield* w.lntt()
+      assert.deepStrictEqual(w.gitDirs, [ROOT])
+      assert.match(r.err, /nothing to send/)
+      const deep = yield* w.run({
+        kind: 'file',
+        draft: { path: `${ROOT}/draft.md` },
+        send: false,
+        env: {},
+        cwd: `${ROOT}/src/deep`,
+      })
+      assert.strictEqual(deep.code, 0, deep.err)
+      assert.deepStrictEqual(w.gitDirs, [ROOT, ROOT])
+    }),
+  )
+
+  it.effect('a git that cannot read the origin: the repository is not known, and the report is printed', () =>
+    Effect.gen(function* () {
+      const w = world()
+      yield* w.ready
+      w.state.origin = null
+      const r = yield* w.lntt()
+      assert.strictEqual(r.code, 0, r.err)
+      assert.match(r.out, /^To LunetteOrg\/starter: /)
+    }),
+  )
+
+  it.effect('a package.json with an empty name, or that does not parse, names the project after its directory', () =>
+    Effect.gen(function* () {
+      const w = world()
+      yield* w.ready
+      for (const text of ['{"name":""}', '{bad']) {
+        yield* w.put('package.json', text)
+        assert.match((yield* w.lntt()).out, /### Project\n\napp\n/)
+      }
     }),
   )
 })

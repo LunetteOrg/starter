@@ -1,4 +1,5 @@
 import { assert, describe, it } from '@effect/vitest'
+import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
@@ -58,15 +59,36 @@ describe('resolveRefs on Effect', () => {
     }).pipe(Effect.provide(m.layer))
   })
 
-  it.effect(`a gh that does not answer in ${GH_TIMEOUT_MS} ms: the lookup failed, and its call is interrupted`, () => {
-    let interrupted = 0
-    const m = machine({ 3: Effect.never.pipe(Effect.onInterrupt(() => Effect.sync(() => interrupted++))) })
-    return Effect.gen(function* () {
-      const fiber = yield* Effect.forkChild(resolveRefs('#3'))
+  it.effect(`a gh that does not answer in ${GH_TIMEOUT_MS} ms: the lookup failed, and its call is interrupted`, () =>
+    Effect.gen(function* () {
+      let interrupted = 0
+      // Set once the lookup runs: the clock moves only then, past the steps before it that are not
+      // synchronous (the digest of the remotes).
+      const started = yield* Deferred.make<void>()
+      const hanging = Deferred.succeed(started, undefined).pipe(
+        Effect.andThen(Effect.never),
+        Effect.onInterrupt(() => Effect.sync(() => interrupted++)),
+      )
+      const m = machine({ 3: hanging })
+      const fiber = yield* Effect.forkChild(resolveRefs('#3').pipe(Effect.provide(m.layer)))
+      yield* Deferred.await(started)
       yield* TestClock.adjust(GH_TIMEOUT_MS)
       const out = yield* Fiber.join(fiber)
       assert.deepStrictEqual(out.refs, [{ ref: 'o/r#3', title: null, url: null, why: 'failed' }])
       assert.strictEqual(interrupted, 1)
+    }),
+  )
+
+  it.effect('a git that does not answer in time: no git directory, no cache, nothing looked up', () => {
+    const m = machine({ 1: Effect.succeed({ title: 'One', url: url(1) }) })
+    return Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(
+        resolveRefs('#1').pipe(Effect.provide(Git.memory({ gitDir: Effect.never }))),
+      )
+      yield* TestClock.adjust(GH_TIMEOUT_MS)
+      const out = yield* Fiber.join(fiber)
+      assert.strictEqual(out.repository, null)
+      assert.deepStrictEqual(m.asked, [])
     }).pipe(Effect.provide(m.layer))
   })
 

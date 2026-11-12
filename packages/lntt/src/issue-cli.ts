@@ -9,7 +9,7 @@ import { cwd, env, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { collectDump, redactionFor, renderDump, runFailing } from './dump.ts'
 import { Exit, exit, printed } from './exit.ts'
-import { findConfig, loadConfig, NoConfigError } from './index.ts'
+import { findConfig, NoConfigError } from './index.ts'
 import type { IssueBridgeService, IssueCommand } from './issue/command.ts'
 import { REPOSITORY } from './issue.ts'
 import { runQuery } from './query.ts'
@@ -36,7 +36,15 @@ export async function main(command: 'dump' | 'issue', args: string[]): Promise<v
     usage((error as Error).message)
   }
   if (command === 'issue') {
-    const report = await issue(parsed)
+    let report: IssueCommand
+    try {
+      report = await issue(parsed)
+    } catch (error) {
+      if (error instanceof Exit || !(error instanceof Error)) throw error
+      // A draft on stdin that cannot be read: one line, no stack.
+      stderr.write(`lntt issue: ${error.message}\n`)
+      exit(1)
+    }
     const { runIssue } = await import('./issue/command.ts')
     return runIssue(report)
   }
@@ -57,16 +65,6 @@ function projectRoot(): string {
     return dirname(dirname(findConfig(cwd()).path))
   } catch (error) {
     if (error instanceof NoConfigError) return cwd()
-    throw error
-  }
-}
-
-// The configuration, or none: a project without one reports with the defaults.
-function projectConfig(): Record<string, unknown> {
-  try {
-    return loadConfig(cwd()).data
-  } catch (error) {
-    if (error instanceof NoConfigError) return {}
     throw error
   }
 }
@@ -111,7 +109,7 @@ async function issue({ values, positionals }: Parsed): Promise<IssueCommand> {
       if (values[flag] !== undefined) usage(`search takes no --${flag}`)
     }
     if (values.send) usage('search takes no --send')
-    return { kind: 'search', words: rest.join(' '), ...repo, env }
+    return { kind: 'search', words: rest.join(' '), ...repo, env, cwd: cwd() }
   }
   if (first === undefined || rest.length > 0) usage('issue takes one draft: a file, or - for stdin')
   if (values.comment !== undefined && !/^[1-9]\d*$/.test(values.comment)) {
@@ -128,12 +126,12 @@ async function issue({ values, positionals }: Parsed): Promise<IssueCommand> {
     ...(values.comment === undefined ? {} : { comment: Number(values.comment) }),
     send: values.send,
     env,
+    cwd: cwd(),
   }
 }
 
 // What lntt issue reads with the code not yet on Effect (its IssueBridge).
 export const issueBridge: IssueBridgeService = {
-  project: () => ({ root: projectRoot(), config: projectConfig() }),
   collect: (input) => collectDump(input),
   redaction: (root, environment) => redactionFor(root, environment),
 }

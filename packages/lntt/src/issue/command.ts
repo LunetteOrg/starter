@@ -3,24 +3,29 @@
 // `lntt issue search`, the open issues a draft would repeat. src/issue-cli.ts parses the arguments
 // and loads this module when the command runs.
 //
-// The logic reaches the machine only through services: GitHub (Gh), git (Git, the origin remote),
-// the file system (the draft, a saved dump, the project's package.json), the terminal (Console).
-// What is not yet on Effect is read at one place, IssueBridge, whose default is the sync code (the
-// project's configuration and root, lntt dump's collection and redaction, #335 and #341) and which
-// a spec replaces. src/issue/command.spec.ts runs it on in-memory layers.
+// The logic reaches the machine only through services: GitHub (Gh), git in the project's root
+// (GitIn, the origin remote), the project's configuration (ProjectConfig, and findConfig for its
+// root), the file system (the draft, a saved dump, the project's package.json), the terminal
+// (Console). What is not yet on Effect, lntt dump's collection and redaction (#341), is read at one
+// place, IssueBridge, whose default is the sync code and which a spec replaces.
+// src/issue/command.spec.ts runs it on in-memory layers.
 
 import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
+import * as NodePath from '@effect/platform-node-shared/NodePath'
 import * as Console from 'effect/Console'
 import * as Context from 'effect/Context'
 import * as Data from 'effect/Data'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
+import * as Path from 'effect/Path'
+import type { ChildProcessSpawner } from 'effect/process'
 import { repositoryOf } from '../base/names.ts'
+import { findConfig, ProjectConfig, ProjectConfigLive } from '../config/load.ts'
 import { type Dump, type Redaction, redact, withAgent } from '../dump.ts'
 import { exit } from '../exit.ts'
 import { Gh, GhLive } from '../gh/gh.ts'
-import { Git, GitLive } from '../git/git.ts'
+import { Git, gitAt } from '../git/git.ts'
 import {
   bodyTooLong,
   type Draft,
@@ -36,9 +41,10 @@ import { SpawnerLive } from '../spawner.ts'
 
 type Env = Record<string, string | undefined>
 
-// A command as issue-cli.ts parsed it. `draft`: the text read from stdin, or the file to read.
+// A command as issue-cli.ts parsed it, with the environment and the directory it runs in. `draft`:
+// the text read from stdin, or the file to read.
 export type IssueCommand =
-  | { kind: 'search'; words: string; repo?: string; env: Env }
+  | { kind: 'search'; words: string; repo?: string; env: Env; cwd: string }
   | {
       kind: 'file'
       draft: { text: string } | { path: string }
@@ -50,13 +56,11 @@ export type IssueCommand =
       comment?: number
       send: boolean
       env: Env
+      cwd: string
     }
 
 // What lntt issue reads with the code not yet on Effect.
 export interface IssueBridgeService {
-  // The project's root (the directory of .agents/, else the current one) and its configuration
-  // (none: the defaults).
-  readonly project: () => { root: string; config: Record<string, unknown> }
   // lntt dump's collection of the environment, and what it redacts.
   readonly collect: (input: { root: string; env: Env; harness?: string; model?: string }) => Dump
   readonly redaction: (root: string, env: Env) => Redaction
@@ -65,6 +69,11 @@ export interface IssueBridgeService {
 export const IssueBridge = Context.Reference<IssueBridgeService>('@lntt/lntt/issue/command/IssueBridge', {
   defaultValue: () => issueBridge,
 })
+
+// git in a directory: on the machine gitAt over the spawner; a spec gives its in-memory Git.
+export const GitIn = Context.Reference<
+  (dir: string) => Layer.Layer<Git, never, ChildProcessSpawner.ChildProcessSpawner>
+>('@lntt/lntt/issue/command/GitIn', { defaultValue: () => gitAt })
 
 // An expected failure of lntt issue, reported on one line, exit 1: a refusal with a reason the
 // person can act on, a file that cannot be read, a gh that fails.
@@ -103,13 +112,28 @@ const upstreamOrNone = (config: Record<string, unknown>, lenient: boolean) =>
 // read from git with no network call (gh repo view would follow gh's default repository, the
 // upstream in a fork). Null when neither tells: a report to it is no report, its items are
 // handled here.
-const currentRepository = (env: Env) =>
+const currentRepository = (env: Env, root: string) =>
   env.GITHUB_REPOSITORY
     ? Effect.succeed<string | null>(env.GITHUB_REPOSITORY)
-    : Effect.flatMap(Git, (git) => git.originUrl).pipe(
+    : Effect.flatMap(GitIn, (gitIn) =>
+        Effect.flatMap(Git, (git) => git.originUrl).pipe(Effect.provide(gitIn(root))),
+      ).pipe(
         Effect.map((url) => repositoryOf(url || null)),
         Effect.orElseSucceed(() => null),
       )
+
+// The project's root (the directory of .agents/, else the current one) and its configuration (the
+// defaults with no file); one that does not validate is an IssueFailed.
+const project = (cwd: string) =>
+  Effect.gen(function* () {
+    const path = yield* Path.Path
+    const root = yield* findConfig(cwd).pipe(
+      Effect.map((located) => path.dirname(path.dirname(located.path))),
+      Effect.catchTag('NoConfig', () => Effect.succeed(cwd)),
+    )
+    const config = yield* (yield* ProjectConfig).data
+    return { root, config }
+  }).pipe(Effect.mapError((error) => new IssueFailed({ message: error.message })))
 
 const readText = (path: string) =>
   Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(path)).pipe(
@@ -152,7 +176,7 @@ const projectName = (root: string) =>
 const printed = (text: string) => Console.log(text.endsWith('\n') ? text.slice(0, -1) : text)
 
 const search = Effect.fnUntraced(function* (parsed: Extract<IssueCommand, { kind: 'search' }>) {
-  const { config } = yield* bridged((bridge) => bridge.project())
+  const { config } = yield* project(parsed.cwd)
   // Lunette's repository, where reports are sent; --repo names another one.
   const upstream = yield* upstreamOrNone(config, parsed.repo !== undefined)
   const repo = parsed.repo ?? (upstream as string)
@@ -163,7 +187,7 @@ const search = Effect.fnUntraced(function* (parsed: Extract<IssueCommand, { kind
 })
 
 const file = Effect.fnUntraced(function* (parsed: Extract<IssueCommand, { kind: 'file' }>) {
-  const { root, config } = yield* bridged((bridge) => bridge.project())
+  const { root, config } = yield* project(parsed.cwd)
   // Lunette's repository, where reports are sent; --repo names another one (a library the project
   // uses), whose report is only printed, for the operator to file by hand: that one needs no
   // upstream, --send does.
@@ -178,7 +202,7 @@ const file = Effect.fnUntraced(function* (parsed: Extract<IssueCommand, { kind: 
     })
   }
   // Lunette's own repository reports to itself: its items are handled here, by the harvest.
-  const current = yield* currentRepository(parsed.env)
+  const current = yield* currentRepository(parsed.env, root)
   if (toUpstream && sameRepository(current, upstream)) {
     yield* say(`nothing to send: ${upstream} is this repository (${current}), the harvest handles its items here`)
     return 0
@@ -229,7 +253,9 @@ export const command = (parsed: IssueCommand) =>
   )
 
 // The services on the machine.
-const Live = Layer.mergeAll(GhLive, GitLive, NodeFileSystem.layer).pipe(Layer.provideMerge(SpawnerLive))
+const Live = Layer.mergeAll(GhLive, ProjectConfigLive).pipe(
+  Layer.provideMerge(Layer.mergeAll(SpawnerLive, NodeFileSystem.layer, NodePath.layer)),
+)
 
 // Runs the command as the process's main program (src/run-command.ts): its exit code.
 export function runIssue(parsed: IssueCommand): Promise<never> {

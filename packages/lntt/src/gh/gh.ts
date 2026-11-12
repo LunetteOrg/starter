@@ -119,7 +119,8 @@ export const ghAt = (dir?: string) =>
               }),
           ),
           Effect.flatMap(({ out, err, code }) =>
-            code === 0 ? Effect.succeed(out) : Effect.fail(new GhError({ args, output: err })),
+            // A failure with nothing on stderr says it on stdout (an error body of gh api).
+            code === 0 ? Effect.succeed(out) : Effect.fail(new GhError({ args, output: err || out })),
           ),
         )
       const run = (...args: string[]) => runWith(undefined, args)

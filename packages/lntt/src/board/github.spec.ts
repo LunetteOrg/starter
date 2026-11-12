@@ -83,6 +83,16 @@ describe('applyStep: the writes of a view', () => {
     }).pipe(Effect.provide(layer))
   })
 
+  it.effect('an issue type is created enabled, gray, on the organization, with its description', () => {
+    const { calls, layer } = recorder(() => ({ createIssueType: { issueType: { id: 'T' } } }))
+    return Effect.gen(function* () {
+      yield* applyStep(live, { kind: 'createIssueType', name: 'Bug', description: 'Something broken' })
+      assert.deepStrictEqual(calls[0]?.variables, {
+        input: { ownerId: 'O_1', name: 'Bug', isEnabled: true, color: 'GRAY', description: 'Something broken' },
+      })
+    }).pipe(Effect.provide(layer))
+  })
+
   it.effect("a user's Project creates no issue type", () => {
     const { calls, layer } = recorder()
     return Effect.gen(function* () {

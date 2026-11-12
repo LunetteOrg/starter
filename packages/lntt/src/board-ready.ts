@@ -287,17 +287,22 @@ export function firstStatusPage(
 ): { found: ProjectIssue[]; after: string | null } {
   const root = rules.project.ownerType === 'user' ? 'user' : 'organization'
   const project = (
-    answer[root] as {
-      projectV2: {
-        id: string
-        field?: StatusField | null
-        items: {
-          pageInfo: { hasNextPage: boolean; endCursor: string | null }
-          nodes: Array<LiveValues & { content?: (LiveIssue & { __typename: string }) | null }>
+    answer[root] as
+      | {
+          projectV2: {
+            id: string
+            field?: StatusField | null
+            items: {
+              pageInfo: { hasNextPage: boolean; endCursor: string | null }
+              nodes: Array<LiveValues & { content?: (LiveIssue & { __typename: string }) | null }>
+            }
+          } | null
         }
-      }
-    }
-  ).projectV2
+      | null
+      | undefined
+  )?.projectV2
+  // A Project that does not exist, or one the token cannot see, reads as null.
+  if (!project) throw new NotOnBoard(`no Project ${rules.project.number} of ${rules.project.owner}`)
   const where = readyOption(rules, project.field)
   const found: ProjectIssue[] = []
   for (const node of project.items.nodes) {

@@ -111,6 +111,8 @@ lntt ci local | candidate | proved
   no-round line before jq's message. A query that does not end is ended by a signal: a
   command that runs a jq query keeps the default handling of SIGINT and SIGTERM
   ([Effect in `lntt`](./effect-in-lntt.md#how-a-command-runs-is-interrupted-and-exits)).
+  `runQuery` (`src/query.ts`) computes what the query prints on each stream and its exit code,
+  with no Effect and no `node:` module; the command writes them with `printed` (`src/exit.ts`).
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
   `decisions` and `tests`, whose results their review lenses read, and `agents-md`,
   `skills`, `plugin` (the Lunette plugin and the install hook in `.claude/settings.json`)

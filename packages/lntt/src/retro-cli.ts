@@ -2,14 +2,10 @@
 // written when the friction is met (usage: bin/lntt.ts). This module parses the arguments, exit 2
 // before Effect loads; the command runs on Effect (src/retro/command.ts).
 
-import { cwd, env, stderr } from 'node:process'
+import { env, stderr } from 'node:process'
 import { parseArgs } from 'node:util'
-import { retrospectiveComment } from './ci/candidate.ts'
-import { candidateConfig } from './ci/config.ts'
 import { exit } from './exit.ts'
-import { loadConfig } from './index.ts'
-import { retrospectiveRules } from './pull-request.ts'
-import type { RetroCommand, RetroProject } from './retro/command.ts'
+import type { RetroCommand } from './retro/command.ts'
 
 const USAGE = 'usage: lntt retro add --label <label> [--pr <n>] [--dry-run] <one sentence>'
 
@@ -17,13 +13,6 @@ function usage(message?: string): never {
   if (message) stderr.write(`lntt retro: ${message}\n`)
   stderr.write(`${USAGE}\n`)
   exit(2)
-}
-
-// The project's configuration, for the command on Effect (its ProjectData).
-export function projectData(): RetroProject {
-  const rules = retrospectiveRules(loadConfig(cwd()).data)
-  const config = candidateConfig(cwd())
-  return { rules, candidate: config === null ? null : { config, comment: retrospectiveComment(config) } }
 }
 
 // A command from its arguments: usage, exit 2, before Effect loads.

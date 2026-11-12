@@ -9,11 +9,10 @@
 // This module parses the arguments, exit 2 before Effect loads; the command runs on Effect
 // (src/board/command.ts).
 
-import { cwd, env, stderr } from 'node:process'
+import { env, stderr } from 'node:process'
 import { parseArgs } from 'node:util'
 import type { BoardCommand } from './board/command.ts'
 import { Exit, exit } from './exit.ts'
-import { loadConfig } from './index.ts'
 
 const USAGE = 'usage: lntt board sync [--apply | --check]\n       lntt board ready [--apply]'
 
@@ -21,11 +20,6 @@ function usage(message?: string): never {
   if (message) stderr.write(`lntt board: ${message}\n`)
   stderr.write(`${USAGE}\n`)
   exit(2)
-}
-
-// The project's configuration, for the command on Effect (its ProjectData).
-export function projectData(): Record<string, unknown> {
-  return loadConfig(cwd()).data
 }
 
 // A command from its arguments: usage, exit 2, before Effect loads.

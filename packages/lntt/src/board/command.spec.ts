@@ -5,9 +5,9 @@ import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import * as TestClock from 'effect/testing/TestClock'
 import * as TestConsole from 'effect/testing/TestConsole'
-import { ConfigError } from '../files.ts'
+import { ConfigInvalid, ProjectConfig } from '../config/load.ts'
 import { Gh, GhError } from '../gh/gh.ts'
-import { type BoardCommand, command, ProjectData } from './command.ts'
+import { type BoardCommand, command } from './command.ts'
 
 // GitHub's GraphQL API in memory, for lntt board: the Project and the organization's issue types
 // live in `state`, the read query answers from it, and the mutations lntt board sends change it
@@ -71,6 +71,19 @@ interface Quirks {
   pages?: boolean
   noOrg?: boolean
 }
+
+// The project's configuration, read from the test's state when the command asks for it;
+// `refused`: what a configuration that does not validate says.
+const configOf = (state: { config: Json; refused: string | null }) =>
+  Layer.succeed(ProjectConfig)(
+    ProjectConfig.of({
+      data: Effect.suspend(() =>
+        state.refused === null
+          ? Effect.succeed(state.config)
+          : Effect.fail(new ConfigInvalid({ message: state.refused })),
+      ),
+    }),
+  )
 
 const MUTATION =
   /(createProjectV2Field|updateProjectV2Field|createIssueType|updateIssueType|createProjectV2View|updateProjectV2View)/
@@ -214,13 +227,7 @@ function github(live: Json = structuredClone(LIVE)) {
       const out = (yield* TestConsole.logLines).join('\n')
       const err = (yield* TestConsole.errorLines).join('\n')
       return { code, out: `${out}\n`, err }
-    }).pipe(
-      Effect.provideService(ProjectData, () => {
-        if (state.refused !== null) throw new ConfigError(state.refused)
-        return state.config
-      }),
-      Effect.provide(Layer.mergeAll(Gh.memory({ graphql }), Layer.fresh(TestConsole.layer))),
-    )
+    }).pipe(Effect.provide(Layer.mergeAll(Gh.memory({ graphql }), configOf(state), Layer.fresh(TestConsole.layer))))
   // The reads and writes, without the counts of what a removal would touch.
   const io = () => calls.filter((c) => c !== 'items' && c !== 'search')
   const clear = () => {
@@ -692,6 +699,8 @@ interface ReadyQuirks {
   page?: number
   // GITHUB_REPOSITORY, as board-cli.ts reads it.
   repository?: string
+  // The Project is not there, or the token cannot see it.
+  noProject?: boolean
 }
 
 function readyBoard() {
@@ -718,6 +727,7 @@ function readyBoard() {
         }
         return {}
       }
+      if (state.quirks.noProject) return { organization: { projectV2: null } }
       const size = state.quirks.page ?? 100
       const start = v.after ? Number(v.after) : 0
       const end = start + size
@@ -750,11 +760,9 @@ function readyBoard() {
       const err = (yield* TestConsole.errorLines).join('\n')
       return { code, out: `${out}\n`, err }
     }).pipe(
-      Effect.provideService(ProjectData, () => {
-        if (state.refused !== null) throw new ConfigError(state.refused)
-        return state.config
-      }),
-      Effect.provide(Layer.mergeAll(Gh.memory({ graphql, repository }), Layer.fresh(TestConsole.layer))),
+      Effect.provide(
+        Layer.mergeAll(Gh.memory({ graphql, repository }), configOf(state), Layer.fresh(TestConsole.layer)),
+      ),
     )
   const status = (id: string) => state.items.find((i) => i.id === id)?.status?.name
   return { state, moves, times, lntt, status }
@@ -897,6 +905,14 @@ describe('lntt board ready', () => {
       assert.strictEqual(r.code, 0, r.err)
       assert.deepStrictEqual(b.moves, ['move I_40 o_ready', 'move I_41 o_ready'])
       assert.strictEqual((b.times[1] as number) - (b.times[0] as number), 1200)
+    }),
+  )
+
+  it.effect('a Project that is not there, or the token cannot see: exit 1, naming it', () =>
+    Effect.gen(function* () {
+      const r = yield* readyBoard().lntt(false, { noProject: true })
+      assert.strictEqual(r.code, 1)
+      assert.strictEqual(r.err, 'lntt board ready: reading the board: no Project 1 of DemoOrg')
     }),
   )
 

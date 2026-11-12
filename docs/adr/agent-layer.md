@@ -203,8 +203,9 @@ the session knows, reads a block's text once it has stopped growing, and redraws
 blocks (`$.ui.invalidate`) when a lookup finds a title. A block drawn again, on a scroll,
 asks `lntt refs` for nothing the session knows.
 
-The rules below, the cache and the `gh` lookups are `lntt refs`
-(`packages/lntt/src/refs.ts`), for the hook and for any agent: it reads a text and
+The rules below, the cache and the `gh` lookups are `lntt refs` (the rules and the
+cache's text in `packages/lntt/src/refs.ts`, the lookups and the cache's file in
+`packages/lntt/src/refs/resolve.ts`), for the hook and for any agent: it reads a text and
 prints, as JSON, each reference with where it sits, its title and URL, or why it has
 none. The titles come from `gh`, cached for a day in the git directory
 (`lntt-issue-titles.json`, with the session's repository, which holds while the git

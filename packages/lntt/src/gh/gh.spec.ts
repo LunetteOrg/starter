@@ -10,7 +10,10 @@ import { Gh, ghAt } from './gh.ts'
 const encode = (text: string) => new TextEncoder().encode(text)
 
 // gh as a spawner in memory: what it was asked and where, and its answer by its arguments.
-function gh(answer: (args: string[]) => { out?: string; err?: string; code?: number } | 'missing', dir?: string) {
+function gh(
+  answer: (args: string[]) => { out?: string; err?: string; code?: number } | 'missing' | 'refused',
+  dir?: string,
+) {
   const asked: string[][] = []
   const cwds: (string | undefined)[] = []
   // What each call got on its stdin, '' for none.
@@ -28,9 +31,9 @@ function gh(answer: (args: string[]) => { out?: string; err?: string; code?: num
           : '',
       )
       const said = answer(args)
-      if (said === 'missing')
+      if (said === 'missing' || said === 'refused')
         return yield* PlatformError.systemError({
-          _tag: 'NotFound',
+          _tag: said === 'missing' ? 'NotFound' : 'PermissionDenied',
           module: 'ChildProcess',
           method: 'spawn',
           pathOrDescriptor: 'gh',
@@ -196,6 +199,24 @@ describe('Gh on the machine', () => {
         Effect.flatMap(Gh, (g) => g.issueLink({ repo: 'o/r', number: 1 })).pipe(Effect.provide(missing.layer)),
       )
       assert.strictEqual(gone.missing, true)
+      const refusedStart = gh(() => 'refused')
+      const denied = yield* Effect.flip(
+        Effect.flatMap(Gh, (g) => g.issueLink({ repo: 'o/r', number: 1 })).pipe(Effect.provide(refusedStart.layer)),
+      )
+      assert.strictEqual(denied.missing, false, 'gh is there, it could not start')
+    }),
+  )
+
+  it.effect('a search with no match is no issue; a failure with nothing on stderr says what is on stdout', () =>
+    Effect.gen(function* () {
+      const empty = gh(() => ({ out: '' }))
+      const none = yield* Effect.flatMap(Gh, (g) => g.searchIssues({ repo: 'o/r', words: 'x' })).pipe(
+        Effect.provide(empty.layer),
+      )
+      assert.deepStrictEqual(none, [])
+      const body = gh(() => ({ out: '{"message":"Not Found"}', code: 1 }))
+      const error = yield* Effect.flip(Effect.flatMap(Gh, (g) => g.issue(7)).pipe(Effect.provide(body.layer)))
+      assert.strictEqual(error.output, '{"message":"Not Found"}')
     }),
   )
 

@@ -1,4 +1,5 @@
-import { assert, describe, it } from '@effect/vitest'
+import { afterEach, assert, describe, it, vi } from '@effect/vitest'
+import { printed } from './exit.ts'
 import { runQuery } from './query.ts'
 
 const doc = JSON.stringify({ area: 'agents-md', results: [{ id: 'a' }, { id: 'b' }] })
@@ -34,5 +35,29 @@ describe('runQuery', () => {
     assert.strictEqual(own.code, 4)
     assert.strictEqual(own.out, '')
     assert.match(own.err, /^none \(5\)\n/)
+  })
+
+  it('what jq writes to stderr on a success goes to stderr, the code kept', async () => {
+    const debug = await query('.area | debug')
+    assert.strictEqual(debug.code, 0)
+    assert.strictEqual(debug.out, 'agents-md\n')
+    assert.match(debug.err, /\["DEBUG:","agents-md"\]\n$/)
+  })
+})
+
+describe('printed', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('writes stderr, then stdout, each only when it holds something, and gives the code', () => {
+    const writes: string[] = []
+    const record = (stream: string) => (text: string | Uint8Array) => {
+      writes.push(`${stream}:${text}`)
+      return true
+    }
+    vi.spyOn(process.stderr, 'write').mockImplementation(record('err'))
+    vi.spyOn(process.stdout, 'write').mockImplementation(record('out'))
+    assert.strictEqual(printed({ code: 4, out: 'a\n', err: 'b\n' }), 4)
+    assert.strictEqual(printed({ code: 0, out: '', err: '' }), 0)
+    assert.deepStrictEqual(writes, ['err:b\n', 'out:a\n'])
   })
 })

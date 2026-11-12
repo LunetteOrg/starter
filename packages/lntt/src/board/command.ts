@@ -1,22 +1,21 @@
 // `lntt board sync` and `lntt board ready` on Effect (docs/adr/effect-in-lntt.md). src/board-cli.ts
 // parses the arguments and loads this module when the command runs.
 //
-// The logic reaches the machine only through services: GitHub (Gh), the clock (the pause between
-// two writes, which a spec moves with TestClock), the terminal (Console). The project's
-// configuration is read at one place, `configured`, with the loader that is not yet on Effect
-// (ProjectData, which a spec replaces). src/board/command.spec.ts runs it on in-memory layers.
+// The logic reaches the machine only through services: GitHub (Gh), the project's configuration
+// (ProjectConfig), the clock (the pause between two writes, which a spec moves with TestClock), the
+// terminal (Console). src/board/command.spec.ts runs it on in-memory layers.
 
+import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
+import * as NodePath from '@effect/platform-node-shared/NodePath'
 import * as Console from 'effect/Console'
-import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import { type BoardConfig, describeStep, type Manual, PAUSE_MS, planBoard } from '../board.ts'
-import { projectData } from '../board-cli.ts'
 import { holdsLine, type ProjectIssue, type ReadyRules, readyRules } from '../board-ready.ts'
+import { ProjectConfig, ProjectConfigLive } from '../config/load.ts'
+import { getValue } from '../config/project.ts'
 import { exit } from '../exit.ts'
-import { ConfigError } from '../files.ts'
 import { Gh, type GhError, GhLive } from '../gh/gh.ts'
-import { getValue } from '../index.ts'
 import { runCommand } from '../run-command.ts'
 import { SpawnerLive } from '../spawner.ts'
 import {
@@ -36,23 +35,12 @@ export type BoardCommand =
   | { kind: 'sync'; mode: 'dry run' | 'apply' | 'check' }
   | { kind: 'ready'; apply: boolean; repository?: string }
 
-// The loader of the project's configuration, sync until it moves to Effect (#335).
-export const ProjectData = Context.Reference<() => Record<string, unknown>>('@lntt/lntt/board/command/ProjectData', {
-  defaultValue: () => projectData,
-})
-
-// What `pick` reads of the project's configuration; one the loader refuses, or a key it lacks, is
-// a BoardFailed.
+// What `pick` reads of the project's configuration (the defaults with no file); one that does not
+// validate, or a key `pick` finds missing, is a BoardFailed.
 const configured = <A>(pick: (data: Record<string, unknown>) => A) =>
-  Effect.flatMap(ProjectData, (load) =>
-    Effect.suspend(() => {
-      try {
-        return Effect.succeed(pick(load()))
-      } catch (error) {
-        if (error instanceof ConfigError) return Effect.fail(new BoardFailed({ message: error.message }))
-        return Effect.die(error)
-      }
-    }),
+  Effect.flatMap(ProjectConfig, (config) => config.data).pipe(
+    Effect.flatMap((data) => Effect.try({ try: () => pick(data), catch: (cause) => cause })),
+    Effect.mapError((cause) => new BoardFailed({ message: cause instanceof Error ? cause.message : String(cause) })),
   )
 
 // What a failure of GitHub says: gh's own message.
@@ -69,7 +57,8 @@ const printManual = (manual: Manual[]) => {
 }
 
 // The plan from the board GitHub shows: planned once to learn which removals it has, whose counts
-// are read only then, and again with them. Any failure ends the run with gh's message.
+// are read only then, and again with them. It holds because planBoard lists the same removals
+// whatever the counts: a count only enters the text of a manual entry. Any failure ends the run with gh's message.
 const planOf = (board: BoardConfig, project: ProjectRef) =>
   Effect.gen(function* () {
     const state = yield* readBoard(project)
@@ -224,7 +213,9 @@ export const command = (parsed: BoardCommand) =>
   )
 
 // The services on the machine.
-const Live = GhLive.pipe(Layer.provide(SpawnerLive))
+const Live = Layer.mergeAll(GhLive, ProjectConfigLive).pipe(
+  Layer.provide(Layer.mergeAll(SpawnerLive, NodeFileSystem.layer, NodePath.layer)),
+)
 
 // Runs a command as the process's main program (src/run-command.ts): its exit code.
 export function runBoard(parsed: BoardCommand): Promise<never> {

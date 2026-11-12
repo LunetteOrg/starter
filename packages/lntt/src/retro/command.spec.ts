@@ -2,26 +2,22 @@ import { assert, describe, it } from '@effect/vitest'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as TestConsole from 'effect/testing/TestConsole'
-import type { CandidateConfig } from '../ci/candidate.ts'
+import { type CandidateConfig, retrospectiveComment } from '../ci/candidate.ts'
+import { ConfigInvalid, ProjectConfig } from '../config/load.ts'
 import { type Comment, Gh, GhError, type PullRequestHead } from '../gh/gh.ts'
 import { appendRetro, retrospectiveBlock, retrospectiveRules } from '../pull-request.ts'
 import { isCandidate, itemCount } from '../retro.ts'
-import { command, ProjectData, type RetroCommand, type RetroProject } from './command.ts'
+import { command, projectOf, type RetroCommand } from './command.ts'
 
 const RULES = retrospectiveRules({})
 const EMPTY = retrospectiveBlock(RULES)
 
-const config: CandidateConfig = {
-  base: 'main',
-  prefix: 'candidate/',
-  hotfix: { prefix: 'hotfix/', label: 'hotfix' },
-  status: { inRelease: 'In release', done: 'Done' },
-  retrospective: EMPTY,
-  automated: [],
-}
+// A project with a candidate, and one without.
+const DATA = { delivery: { candidate: { prefix: 'candidate/' } } }
+const NO_CANDIDATE = {}
+const config = (projectOf(DATA).candidate as { config: CandidateConfig }).config
 // The comment the candidate automation opens a candidate with.
-const OPENING = `The retrospective of this candidate: the friction of the batch.\n\n${EMPTY}`
-const PROJECT: RetroProject = { rules: RULES, candidate: { config, comment: OPENING } }
+const OPENING = retrospectiveComment(config)
 const OPEN = [{ number: 80, headRefName: 'candidate/8' }]
 
 // GitHub in memory for lntt retro: the open pull requests, the comments of each, and the writes
@@ -78,17 +74,14 @@ function github(
 const retro = (
   gh: ReturnType<typeof github>,
   parsed: Partial<RetroCommand> & { label: string; item: string },
-  project: RetroProject = PROJECT,
+  data: Record<string, unknown> = DATA,
 ) =>
   Effect.gen(function* () {
     const code = yield* command({ kind: 'add', dryRun: false, repository: 'o/r', ...parsed })
     const out = (yield* TestConsole.logLines).join('\n')
     const err = (yield* TestConsole.errorLines).join('\n')
     return { code, out, err }
-  }).pipe(
-    Effect.provideService(ProjectData, () => project),
-    Effect.provide(Layer.mergeAll(gh.layer, Layer.fresh(TestConsole.layer))),
-  )
+  }).pipe(Effect.provide(Layer.mergeAll(gh.layer, ProjectConfig.memory(data), Layer.fresh(TestConsole.layer))))
 
 const body = (write: { input: string } | undefined) => JSON.parse(write?.input ?? '').body as string
 
@@ -132,8 +125,7 @@ describe('lntt retro add', () => {
       const gh = github({ 80: [{ id: 7, body: EMPTY }] })
       const { repository: _, ...parsed } = { repository: '', label: 'friction', item: 'x' }
       const r = yield* command({ kind: 'add', dryRun: false, ...parsed }).pipe(
-        Effect.provideService(ProjectData, () => PROJECT),
-        Effect.provide(Layer.mergeAll(gh.layer, Layer.fresh(TestConsole.layer))),
+        Effect.provide(Layer.mergeAll(gh.layer, ProjectConfig.memory(DATA), Layer.fresh(TestConsole.layer))),
       )
       assert.strictEqual(r, 0)
       assert.strictEqual(gh.writes[0]?.args, 'api -X PATCH repos/me/mine/issues/comments/7 --input -')
@@ -143,11 +135,21 @@ describe('lntt retro add', () => {
   it.effect('--pr names the pull request, and no candidate is looked for', () =>
     Effect.gen(function* () {
       const gh = github({ 12: [{ id: 9, body: EMPTY }] })
-      const r = yield* retro(gh, { pr: 12, label: 'rework', item: 'x' }, { rules: RULES, candidate: null })
+      const r = yield* retro(gh, { pr: 12, label: 'rework', item: 'x' }, NO_CANDIDATE)
       assert.strictEqual(r.code, 0, r.err)
       assert.match(r.out, /on #12\./)
       assert.deepStrictEqual(gh.asked, [])
       assert.strictEqual(gh.writes[0]?.args, 'api -X PATCH repos/o/r/issues/comments/9 --input -')
+    }),
+  )
+
+  it.effect('--pr with no delivery.candidate and no retrospective comment: the empty block, with the item', () =>
+    Effect.gen(function* () {
+      const gh = github({ 12: [{ id: 3, body: 'Looks good.' }] })
+      const r = yield* retro(gh, { pr: 12, label: 'friction', item: 'x' }, NO_CANDIDATE)
+      assert.strictEqual(r.out, 'retro: added under "Friction" on #12, in a new retrospective comment.')
+      assert.strictEqual(gh.writes[0]?.args, 'pr comment 12 --repo o/r --body-file -')
+      assert.strictEqual(gh.writes[0]?.input, appendRetro(EMPTY, 'Friction', 'x', RULES))
     }),
   )
 
@@ -285,7 +287,7 @@ describe('lntt retro add', () => {
       const r = yield* retro(gh, { label: 'friction', item: 'x' })
       assert.strictEqual(r.code, 1)
       assert.match(r.err, /no open candidate \(candidate\/<N> into main\): give the pull request with --pr <n>/)
-      const none = yield* retro(gh, { label: 'friction', item: 'x' }, { rules: RULES, candidate: null })
+      const none = yield* retro(gh, { label: 'friction', item: 'x' }, NO_CANDIDATE)
       assert.match(none.err, /no open candidate \(no delivery.candidate\)/)
       assert.deepStrictEqual(gh.writes, [])
     }),
@@ -309,11 +311,11 @@ describe('lntt retro add', () => {
       assert.strictEqual(label.code, 1)
       assert.match(label.err, /^lntt retro: no label "cost": one of Friction, To automate/)
       assert.match((yield* retro(gh, { label: 'friction', item: ' \n' })).err, /empty/)
+      const invalid = Layer.succeed(ProjectConfig)(
+        ProjectConfig.of({ data: Effect.fail(new ConfigInvalid({ message: 'delivery must be an object' })) }),
+      )
       const refused = yield* command({ kind: 'add', dryRun: false, label: 'friction', item: 'x' }).pipe(
-        Effect.provideService(ProjectData, () => {
-          throw new Error('.agents/config.jsonc: delivery must be an object')
-        }),
-        Effect.provide(Layer.mergeAll(gh.layer, Layer.fresh(TestConsole.layer))),
+        Effect.provide(Layer.mergeAll(gh.layer, invalid, Layer.fresh(TestConsole.layer))),
       )
       assert.strictEqual(refused, 1)
       assert.deepStrictEqual(gh.writes, [])
