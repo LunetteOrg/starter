@@ -1,10 +1,12 @@
 import { assert, describe, it } from '@effect/vitest'
 import * as Effect from 'effect/Effect'
+import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
 import * as PlatformError from 'effect/PlatformError'
 import { type ChildProcess, ChildProcessSpawner } from 'effect/process'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
+import * as TestClock from 'effect/testing/TestClock'
 import * as TestConsole from 'effect/testing/TestConsole'
 import { memoryFileSystem } from '../testing/file-system.ts'
 import { run, type Start, type Steps, startGit, startHerdr } from './hosts.ts'
@@ -154,6 +156,26 @@ describe('the steps on Effect', () => {
         [error._tag, error.message],
         ['ToolFailed', 'no pane found in the workspace herdr created: {}'],
       )
+    }).pipe(Effect.provide(t.layer))
+  })
+
+  it.effect('a pause is on the Clock: Herdr gets a second between looks for the agent, sixty times', () => {
+    const t = tools({
+      'herdr worktree create': { out: JSON.stringify({ result: { pane: { pane_id: 'w2:p1' } } }) },
+      'herdr agent list': { out: JSON.stringify({ agents: [] }) },
+    })
+    return Effect.gen(function* () {
+      const opencode = { kind: 'opencode', model: 'opencode/big-pickle' }
+      const starting = yield* Effect.forkChild(Effect.flip(runSteps(startHerdr({ ...START, agent: opencode }))))
+      const looks = () => t.calls.filter((call) => call === 'herdr agent list').length
+      yield* TestClock.adjust('10 millis')
+      assert.strictEqual(looks(), 1)
+      yield* TestClock.adjust('1 second')
+      assert.strictEqual(looks(), 2, 'one more look a second later')
+      yield* TestClock.adjust('60 seconds')
+      const error = yield* Fiber.join(starting)
+      assert.strictEqual(looks(), 60)
+      assert.strictEqual(error.message, 'herdr detected no agent in w2:p1; the brief was not sent')
     }).pipe(Effect.provide(t.layer))
   })
 })

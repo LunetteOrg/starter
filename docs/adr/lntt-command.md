@@ -184,10 +184,11 @@ rests on these criteria:
    (`gateOf` in `packages/lntt/src/worktree/coordinator.ts`) and `local` (`localApp` in
    `packages/lntt/src/local.ts`); `lntt worktree start` reads `delivery.candidate`
    and `delivery.branches` through the gate's branch code; `lntt inbox --wait` and `--follow`
-   read the branch rules (`branchRules`, from `delivery`) for the conventional name of a branch (the inbox's `worktrees` in
-   `packages/lntt/src/messages/command.ts`); `lntt worktree start`,
+   read the branch rules (`branchRules`, from `delivery`) for the conventional name of a branch (`checkedOutBranches` in
+   `packages/lntt/src/messages/mailbox.ts`); `lntt worktree start`,
    `lntt review` and `lntt ci local` read `delivery.candidate` to find a branch's base
-   (`projectBase` in `packages/lntt/src/base.ts`); `lntt retro add` reads
+   (`projectBase` in `packages/lntt/src/base/base.ts` for the first two, on Effect, and in
+   `packages/lntt/src/base.ts`, its Promise form, for `lntt ci local`); `lntt retro add` reads
    `delivery.candidate` and `delivery.pullRequest.retrospective` (`candidateConfig` in
    `packages/lntt/src/ci/config.ts`, `retrospectiveRules` in
    `packages/lntt/src/pull-request.ts`). Every read validates the

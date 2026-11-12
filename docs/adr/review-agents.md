@@ -230,7 +230,9 @@ same way every time; the `review` skill keeps the judgement.
 - **Seen where the person works:** under a Claude Code session in Orca, each agent is
   announced as a subagent of that session (Claude Code's `SubagentStart` and
   `SubagentStop`, sent through Orca's hook script, the start repeated every two seconds
-  while the agent works, since Orca drops subagents when the parent's turn stops). This
+  while the agent works, since Orca drops subagents when the parent's turn stops). When the
+  round ends, the agents still running are stopped and the last events get up to two seconds
+  to reach Orca, so a hook script that hangs never holds the round. This
   follows an internal Orca protocol: one small adapter, silent when any piece is
   missing. The agents themselves get none of the host's hook variables, so they never
   report as the session that started them.

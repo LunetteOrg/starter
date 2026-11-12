@@ -72,7 +72,7 @@ function line(message: Message): string {
   })
 }
 
-// The answer as written: Console.log ends it with its own newline.
+// The answer, ending with one newline: Console.log adds it, so one the file ends with is taken off.
 const printAnswer = (text: string) => Console.log(text.endsWith('\n') ? text.slice(0, -1) : text)
 
 // Writes the question, then polls for its answer; stdout is the answer. The wait is the point of

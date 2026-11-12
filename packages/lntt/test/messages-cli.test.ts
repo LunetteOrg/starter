@@ -167,6 +167,20 @@ describe('lntt ask / inbox / answer', () => {
     assert.match(outside.stderr, /^lntt inbox: the mailbox lives in the git common directory/)
   })
 
+  test('ask --wait takes no question and no address', () => {
+    assert.equal(lntt(['ask', '--wait', '20261015-090000-q', 'question']).status, 2)
+    for (const [flag, value] of [
+      ['--to', 'orchestrator'],
+      ['--issue', '84'],
+      ['--theme', 'alpha'],
+      ['--topic', 'q'],
+    ]) {
+      const r = lntt(['ask', '--wait', '20261015-090000-q', flag as string, value as string])
+      assert.equal(r.status, 2, `${flag}: ${r.stderr}`)
+      assert.match(r.stderr, new RegExp(`--wait takes no ${flag}`))
+    }
+  })
+
   test('usage errors exit 2, others exit 1 with one line', () => {
     assert.equal(lntt(['ask', 'Question without --to']).status, 2)
     assert.equal(lntt(['ask', '--to', 'coordinator', '--timeout', 'soon', 'q']).status, 2)

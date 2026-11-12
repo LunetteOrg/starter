@@ -67,7 +67,9 @@ are `Agents` in `packages/lntt/src/review/asking.ts` (one agent run, and what ke
 from starting), its live layer in `packages/lntt/src/review/agents.ts` over the spawner, and
 `askAll` the logic over it (a slot per provider, the optional agents' grace, a stop). A
 module's logic depends on services, never on `node:` modules, and its test provides in-memory
-layers.
+layers. The environment is read at the edge, in the command's parser, and passed in as an input
+(the operator's home, `LNTT_MESSAGES_DIR`, the session's variables as `HostEnv` in
+`packages/lntt/src/review/orca.ts`): Effect's `Config` alone takes some 70 ms to load.
 
 ### Errors
 

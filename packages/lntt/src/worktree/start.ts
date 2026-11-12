@@ -20,7 +20,7 @@ import { localRef, projectBase } from '../base/base.ts'
 import { branchName, branchRules, checkBranch, nameFromIssue } from '../branch.ts'
 import { captured } from '../captured.ts'
 import { isHotfix } from '../ci/candidate.ts'
-import { candidateOf } from '../ci/config.ts'
+import { candidateConfigOf } from '../ci/config.ts'
 import { ProjectConfig, ProjectConfigLive } from '../config/load.ts'
 import { exit } from '../exit.ts'
 import { Gh, GhLive } from '../gh/gh.ts'
@@ -153,7 +153,7 @@ const startBase = Effect.fnUntraced(function* (given: string | undefined, data: 
     const ref = (yield* localRef(given)) ?? given
     return (_hotfix: boolean) => Effect.succeed(ref)
   }
-  const candidate = candidateOf(data)
+  const candidate = candidateConfigOf(data)
   const rules = candidate ? { base: candidate.base, prefix: candidate.prefix } : null
   const resolved = new Map<boolean, string>()
   return (hotfix: boolean) =>
@@ -221,7 +221,7 @@ const start = Effect.fnUntraced(function* (parsed: StartCommand) {
   })
   const root = yield* mainCheckout
   const base = yield* startBase(parsed.base, data)
-  const candidate = candidateOf(data)
+  const candidate = candidateConfigOf(data)
   const ruleset = branchRules(data)
   const orca = yield* orcaPath(host)
   const brief = yield* templates

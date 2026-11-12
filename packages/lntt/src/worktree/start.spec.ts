@@ -290,6 +290,12 @@ describe('lntt worktree start --theme (a coordinator’s child)', () => {
       assert.strictEqual(r.code, 0, r.err)
       assert.strictEqual(w.creates().length, 1)
       assert.strictEqual(w.fs.text(`${BOX}/approved-${THEME}.txt`), '89\n')
+      // The same child again: started at once, with no new proposal.
+      const again = yield* w.lntt(w.child())
+      assert.strictEqual(again.code, 0, again.err)
+      assert.strictEqual(w.creates().length, 2)
+      assert.strictEqual((yield* pending(BOX, 'orchestrator')).length, 0)
+      assert.notInclude(again.err, 'sent to the orchestrator')
     }).pipe(Effect.provide(w.layer))
   })
 

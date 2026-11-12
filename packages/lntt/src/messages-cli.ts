@@ -5,7 +5,7 @@
 
 import { env, stderr } from 'node:process'
 import { parseArgs } from 'node:util'
-import { exit } from './exit.ts'
+import { Exit, exit } from './exit.ts'
 import type { MessagesCommand } from './messages/command.ts'
 import { type Address, POLL_MS } from './messages/rules.ts'
 import { readStdin } from './stdin.ts'
@@ -76,7 +76,7 @@ async function ask(args: string[]): Promise<MessagesCommand> {
   }
   if (!values.to) usage('give --to')
   if (positionals.length !== 1) usage('give the question as one argument')
-  const issue = issueNumber(values.issue)
+  const issue = values.issue ? issueNumber(values.issue) : undefined
   return {
     kind: 'ask',
     to: values.to,
@@ -137,7 +137,15 @@ async function parse(command: 'ask' | 'inbox' | 'answer', args: string[]): Promi
 }
 
 export async function main(command: 'ask' | 'inbox' | 'answer', args: string[]): Promise<void> {
-  const parsed = await parse(command, args)
+  let parsed: MessagesCommand
+  try {
+    parsed = await parse(command, args)
+  } catch (error) {
+    // stdin that cannot be read: one line and exit 1, as any failure of the command.
+    if (error instanceof Exit) throw error
+    stderr.write(`lntt ${command}: ${(error as Error).message}\n`)
+    exit(1)
+  }
   const { runMessages } = await import('./messages/command.ts')
   await runMessages(parsed, env.LNTT_MESSAGES_DIR || undefined)
 }
