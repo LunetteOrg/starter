@@ -5,18 +5,20 @@ import * as PlatformError from 'effect/PlatformError'
 import { type ChildProcess, ChildProcessSpawner } from 'effect/process'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
-import { Git, GitLive } from './git.ts'
+import { Git, GitLive, gitAt } from './git.ts'
 
 const encode = (text: string) => new TextEncoder().encode(text)
 
-// git as a spawner in memory: what it was asked, and its answer by its arguments.
-function git(answer: (args: string[]) => { out?: string; err?: string; code?: number } | 'missing') {
+// git as a spawner in memory: what it was asked and where, and its answer by its arguments.
+function git(answer: (args: string[]) => { out?: string; err?: string; code?: number } | 'missing', dir?: string) {
   const asked: string[][] = []
+  const cwds: (string | undefined)[] = []
   const spawn = (command: ChildProcess.Command) =>
     Effect.gen(function* () {
       if (command._tag !== 'StandardCommand') return yield* Effect.die('a piped command')
       const args = command.args.map(String)
       asked.push([command.command, ...args])
+      cwds.push(command.options.cwd)
       const said = answer(args)
       if (said === 'missing')
         return yield* PlatformError.systemError({
@@ -39,10 +41,10 @@ function git(answer: (args: string[]) => { out?: string; err?: string; code?: nu
         unref: Effect.succeed(Effect.void),
       })
     })
-  const layer = GitLive.pipe(
+  const layer = (dir === undefined ? GitLive : gitAt(dir)).pipe(
     Layer.provide(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(ChildProcessSpawner.make(spawn))),
   )
-  return { asked, layer }
+  return { asked, cwds, layer }
 }
 
 describe('Git on the machine', () => {
@@ -138,6 +140,59 @@ describe('Git on the machine', () => {
         ['git', 'merge-base', '--is-ancestor', 'c1', 'c2'],
         ['git', 'diff', 'c1..c2'],
       ])
+    }).pipe(Effect.provide(g.layer))
+  })
+
+  it.effect('the refs: a revision that names nothing, no origin/HEAD and no origin are answers, not failures', () => {
+    const g = git(
+      (args) => ({ code: args.includes('missing') || args[0] !== 'rev-parse' ? 1 : 0, out: 'abc' }),
+      '/repo',
+    )
+    return Effect.gen(function* () {
+      const repo = yield* Git
+      assert.strictEqual(yield* repo.verify('HEAD'), 'abc')
+      assert.strictEqual(yield* repo.verify('missing'), null)
+      assert.strictEqual(yield* repo.originHead, null)
+      assert.strictEqual(yield* repo.originUrl, '')
+      assert.deepStrictEqual(g.asked, [
+        ['git', 'rev-parse', '--verify', '--quiet', 'HEAD'],
+        ['git', 'rev-parse', '--verify', '--quiet', 'missing'],
+        ['git', 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD'],
+        ['git', 'remote', 'get-url', 'origin'],
+      ])
+      assert.deepStrictEqual(g.cwds, ['/repo', '/repo', '/repo', '/repo'], 'git runs in the directory gitAt names')
+    }).pipe(Effect.provide(g.layer))
+  })
+
+  it.effect('the current branch, the refs at a commit, a rename: what each asks and reads', () => {
+    const g = git((args) => ({
+      out:
+        args[0] === 'for-each-ref'
+          ? 'refs/remotes/origin/candidate/13\nrefs/remotes/origin/candidate/9\n'
+          : args[0] === 'branch' && args[1] === '--show-current'
+            ? ''
+            : 'git@github.com:o/r.git',
+    }))
+    return Effect.gen(function* () {
+      const repo = yield* Git
+      assert.strictEqual(yield* repo.current, '', 'a detached HEAD')
+      assert.deepStrictEqual(yield* repo.pointingAt('HEAD', 'refs/remotes/origin/candidate/*'), [
+        'refs/remotes/origin/candidate/13',
+        'refs/remotes/origin/candidate/9',
+      ])
+      assert.strictEqual(yield* repo.originUrl, 'git@github.com:o/r.git')
+      yield* repo.renameBranch('feat/1/x')
+      assert.deepStrictEqual(g.asked, [
+        ['git', 'branch', '--show-current'],
+        ['git', 'for-each-ref', '--points-at=HEAD', '--format=%(refname)', 'refs/remotes/origin/candidate/*'],
+        ['git', 'remote', 'get-url', 'origin'],
+        ['git', 'branch', '-m', 'feat/1/x'],
+      ])
+      assert.deepStrictEqual(
+        g.cwds,
+        [undefined, undefined, undefined, undefined],
+        'GitLive runs in the current directory',
+      )
     }).pipe(Effect.provide(g.layer))
   })
 })

@@ -13,6 +13,7 @@ import * as Stream from 'effect/Stream'
 import * as TestClock from 'effect/testing/TestClock'
 import * as TestConsole from 'effect/testing/TestConsole'
 import { ConfigInvalid, ProjectConfig } from '../config/load.ts'
+import { Gh } from '../gh/gh.ts'
 import { Git, GitError } from '../git/git.ts'
 import type { Started } from '../messages.ts'
 import type { Closed, ReviewState } from '../review.ts'
@@ -58,6 +59,8 @@ function repository(checkout: (tree: Tree) => void = () => {}) {
   let count = 0
   const repo = {
     dirty: '',
+    // Whether the clone has fetched origin: then origin/<branch> is the branch.
+    fetched: false,
     commit(tree: Tree, subject = 'change') {
       const parent = repo.head()
       const id = `c${++count}`
@@ -85,8 +88,11 @@ function repository(checkout: (tree: Tree) => void = () => {}) {
     tree: (rev: string) =>
       commits.get(rev === 'HEAD' ? (repo.head() as string) : (branches.get(rev) ?? rev))?.tree ?? {},
   }
-  const resolve = (rev: string) =>
-    rev === 'HEAD' ? repo.head() : (branches.get(rev) ?? (commits.has(rev) ? rev : null))
+  // origin/<branch> is the branch once the clone has fetched, and nothing before.
+  const resolve = (rev: string): string | null => {
+    if (rev.startsWith('origin/')) return repo.fetched ? resolve(rev.slice('origin/'.length)) : null
+    return rev === 'HEAD' ? repo.head() : (branches.get(rev) ?? (commits.has(rev) ? rev : null))
+  }
   const ok = <A>(value: A) => Effect.succeed(value)
   const fail = (args: string[]) => Effect.fail(new GitError({ args, output: 'unknown revision' }))
   const ends = (range: string) => range.split('..') as [string, string]
@@ -116,6 +122,9 @@ function repository(checkout: (tree: Tree) => void = () => {}) {
       branch: Effect.sync(() => current ?? 'HEAD'),
       short: (rev) => Effect.suspend(() => (resolve(rev) ? ok(resolve(rev) as string) : fail(['rev-parse', rev]))),
       subject: (rev) => Effect.sync(() => commits.get(resolve(rev) as string)?.subject ?? ''),
+      current: Effect.sync(() => current ?? ''),
+      originHead: ok(null),
+      verify: (rev) => Effect.sync(() => resolve(rev.replace(/\^\{commit\}$/, '').replace(/^refs\/remotes\//, ''))),
       root: ok(ROOT),
       gitDir: ok(GIT_DIR),
       commonDir: ok(GIT_DIR),
@@ -254,7 +263,6 @@ function world() {
   }
   const bridge = Layer.succeed(ReviewBridge)(
     ReviewBridge.of({
-      base: (_root, given) => Effect.succeed({ ref: given ?? 'main', said: given ? null : 'base main' }),
       checks: (areas) =>
         Effect.sync(() => {
           project.checked++
@@ -307,6 +315,7 @@ function world() {
               )
           ).pipe(Layer.provideMerge(fs.layer)),
           repo.layer(),
+          Gh.memory({}),
           bridge,
           config,
           pids,
@@ -694,6 +703,60 @@ describe('lntt review, a round', () => {
           ['code · claude opus', true],
         ],
       )
+    })
+  })
+})
+
+describe('lntt review, the base it compares the branch with', () => {
+  const noBase = { kind: 'round', base: undefined, plan: false } as const
+
+  it.effect("with no --base, the project's base, named on its line: origin/main with no delivery.candidate", () => {
+    const w = world()
+    return Effect.gen(function* () {
+      w.repo.fetched = true
+      const r = yield* w.lntt(noBase)
+      assert.strictEqual(r.code, 0, r.err)
+      assert.strictEqual(
+        r.err.split('\n')[1],
+        'lntt review: base origin/main: the default branch (no delivery.candidate)',
+      )
+    })
+  })
+
+  it.effect(
+    'with a candidate GitHub cannot name, the round compares with origin/main and says the base may be wrong',
+    () => {
+      const w = world()
+      return Effect.gen(function* () {
+        w.repo.fetched = true
+        w.project.config = {
+          ...w.project.config,
+          delivery: { ...(w.project.config.delivery as object), candidate: { prefix: 'candidate/' } },
+        }
+        const r = yield* w.lntt(noBase)
+        assert.strictEqual(r.code, 0, r.err)
+        assert.match(
+          r.err,
+          /^lntt review: the open candidate is unknown \(gh repository failed: not answered\): the base is origin\/main; give --base if the branch is on a candidate$/m,
+        )
+      })
+    },
+  )
+
+  it.effect('a --base that names nothing, or a base the clone has not fetched: an error line, exit 1, no round', () => {
+    const w = world()
+    return Effect.gen(function* () {
+      const named = yield* w.round({ base: 'nowhere' })
+      assert.strictEqual(named.code, 1)
+      assert.match(
+        named.err,
+        /^lntt review: error: no nowhere or origin\/nowhere to compare the branch with: run git fetch origin, or check --base$/m,
+      )
+      const unfetched = yield* w.lntt(noBase)
+      assert.strictEqual(unfetched.code, 1)
+      assert.match(unfetched.err, /no origin\/main in this clone: run git fetch origin, or give --base/)
+      assert.deepStrictEqual(w.agent.calls, [], 'no agent asked')
+      assert.strictEqual(w.hasState(), false)
     })
   })
 })

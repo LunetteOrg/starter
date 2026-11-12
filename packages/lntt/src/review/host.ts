@@ -1,15 +1,13 @@
 // The code of lntt review that reaches the machine through modules not yet on Effect: the
-// project's configuration for status and cost, the base, the limit's message to the parent. No
-// Effect at load: src/review-cli.ts (status, cost) calls it directly, and the live layer of the
-// bridge (src/review/bridge.ts) calls it under Effect.try for the commands on Effect. The place of
-// the state store is on Effect (src/review/place.ts): placeFor loads it when called. Each piece
-// leaves as its module moves.
+// project's configuration for status and cost, the limit's message to the parent. No Effect at
+// load: src/review-cli.ts (status, cost) calls it directly, and the live layer of the bridge
+// (src/review/bridge.ts) calls it under Effect.try for the commands on Effect. The place of the
+// state store is on Effect (src/review/place.ts): placeFor loads it when called. Each piece leaves
+// as its module moves.
 
 import { homedir } from 'node:os'
 import { cwd } from 'node:process'
-import { projectBase } from '../base.ts'
 import { type BranchRules, fromToolName } from '../branch.ts'
-import { localRef } from '../ci/event.ts'
 import { findConfig, loadConfig } from '../config/sync.ts'
 import { NoConfigError } from '../files.ts'
 import { type Message, pending, type Started, send, startedBy } from '../messages.ts'
@@ -35,20 +33,6 @@ export function loaded(): Record<string, unknown> {
 export async function placeFor(): Promise<Place> {
   const { runPlace } = await import('./place.ts')
   return runPlace(homedir())
-}
-
-// The ref the branch is compared with: --base as given (origin/<base>, else <base>), else the
-// base every lntt command resolves (src/base.ts), which may ask GitHub for the open candidate;
-// `said` is the line that names it.
-export function baseRef(root: string, given: string | undefined): { ref: string; said: string | null } {
-  if (given === undefined) {
-    const base = projectBase(root, 'head')
-    return { ref: base.ref, said: base.warning ?? `base ${base.reason}` }
-  }
-  const ref = localRef(root, given)
-  if (ref === null)
-    throw new Error(`no ${given} or origin/${given} to compare the branch with: run git fetch origin, or check --base`)
-  return { ref, said: null }
 }
 
 export type Asked = { id: string; to: string; path: string }

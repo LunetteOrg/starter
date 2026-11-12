@@ -109,7 +109,8 @@ lntt ci local | candidate | proved
   3.9 MB to the install. A jq failure exits 2 with jq's message on stderr and nothing on
   stdout; with no round to read, a failure while running (`.state.open[]`) exits 4, the
   no-round line before jq's message. A query that does not end is ended by a signal: a
-  reading command keeps the default handling of SIGINT and SIGTERM.
+  command that runs a jq query keeps the default handling of SIGINT and SIGTERM
+  ([Effect in `lntt`](./effect-in-lntt.md#how-a-command-runs-is-interrupted-and-exits)).
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
   `decisions` and `tests`, whose results their review lenses read, and `agents-md`,
   `skills`, `plugin` (the Lunette plugin and the install hook in `.claude/settings.json`)

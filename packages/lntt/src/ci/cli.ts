@@ -68,18 +68,22 @@ function giveBack(lock: Lock | null): void {
 }
 
 // The event's base and its options: --base as given; else, for a pull request, the base
-// every lntt command resolves (src/base.ts), and for a push the default branch; both as
+// every lntt command resolves (src/base/base.ts), and for a push the default branch; both as
 // the remote's copy.
-function base(root: string, event: 'pull_request' | 'push', given: string | undefined): [string, EventOptions] {
+async function base(
+  root: string,
+  event: 'pull_request' | 'push',
+  given: string | undefined,
+): Promise<[string, EventOptions]> {
   const candidate = candidateConfig(root)
   const options: EventOptions = { candidatePrefix: candidate?.prefix ?? CANDIDATE_PREFIX }
   if (given !== undefined) return [given, options]
   if (event === 'push') {
-    const branch = defaultBranch(root, candidate)
-    return [branch, { ...options, baseRef: remoteRef(root, branch) }]
+    const branch = await defaultBranch(root, candidate)
+    return [branch, { ...options, baseRef: await remoteRef(root, branch) }]
   }
   // The report names the base and the ref; only a base that may be wrong is said here.
-  const resolved = projectBase(root, 'head')
+  const resolved = await projectBase(root, 'head')
   if (resolved.warning) stderr.write(`lntt ci: ${resolved.warning}\n`)
   return [resolved.branch, { ...options, baseRef: resolved.ref }]
 }
@@ -104,7 +108,7 @@ async function local(args: string[]): Promise<number> {
   const root = git('rev-parse', '--show-toplevel')
   process.chdir(root)
   const config = ciConfig(root)
-  const localEv = localEvent(root, event, ...base(root, event, values.base))
+  const localEv = localEvent(root, event, ...(await base(root, event, values.base)))
   const jobs = [...(await githubJobs(root, localEv, config)), ...circleciJobs(root, localEv, config)]
   const only = values.job
   for (const key of only ?? []) {
