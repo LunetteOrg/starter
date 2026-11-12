@@ -219,8 +219,11 @@ box under it shows the titles the session knows, and the block is drawn again wh
 lookup finds one, so that a slow title shows without a message waiting for it. The
 titles still missing are asked in `lntt refs` runs of at most `KEYS_PER_RUN` references,
 side by side, so that one run fits `LNTT_TIMEOUT_MS` however many a block cites; the runs
-of one lookup count as one failure at most. The text read is the one the block holds
-(`e.props.text`), as Claude wrote it.
+of one lookup count as one failure at most. The text read is the block's markdown as
+the transcript draws it (`e.props.text`). A block that grows is read again at its last
+text, and the shorter texts it passed through are forgotten; a number touching the end
+of the text waits one more `SETTLE_MS`, so that a pause cutting `#138` after `#1` looks
+up no wrong issue.
 
 - **Never a title from the wrong repository:** a message that cites another
   repository shows every bare `#N` after that as written. Any other `word#N` is no
@@ -389,7 +392,12 @@ How a title is written is the `github-board` skill's.
   whole text once and cannot misplace anything.
 - **A `classic.MessageDisplay` hook that ends the message's last delta with the box.**
   Claude Code's built-in plugins sit before every plugin of a project and send the event
-  past it: the hook is skipped at every message, with a notice of it (#329). A `ui.render` hook on `AssistantMessage` runs beside them.
+  past it: the hook was skipped at every message, with a notice of it, when this was
+  found (#329). A `ui.render` hook on `AssistantMessage` runs beside them.
+- **A `ui.render` hook that waits for `lntt` and the titles, as the `MessageDisplay` one
+  did (`WAIT_MS`).** A hook that waits holds the drawing of the block, and a title slower
+  than the wait showed one message late; drawing at once and redrawing when a title is
+  found shows each title as soon as it is known.
 - **A rule in AGENTS.md that an agent writes each issue's title beside its number.**
   Agents given it broke it in three samples of four, always the same way: an opening
   line repeating the numbers the person used, before any title. The reader needs to see

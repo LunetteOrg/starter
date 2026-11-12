@@ -112,7 +112,11 @@ function engine({ gh = {}, cache = {}, home = 'o/r', local = true, lntt = null, 
   issueTitles(
     (event, matcher, hook) => {
       hooks[event] = { matcher, hook: hook ?? matcher }
-      return { catch: () => {} }
+      return {
+        catch: (catcher) => {
+          hooks[event].catcher = catcher
+        },
+      }
     },
     { ended: () => ended.push(true) },
   )
@@ -593,17 +597,18 @@ describe('the issue titles hook', () => {
   })
 
   test('the box is drawn with the elements of the surface, with no terminal sequence in a text', async () => {
-    const { draw, flush } = engine({ gh: { 'o/r#138': 'Publish lntt' } })
+    const { draw, flush } = engine({ gh: { 'o/r#138': 'Publish\u001b[2m lntt' } })
     await flush('m1', 'See #138\n', true)
     const tree = await draw('See #138\n')
     assert.equal(tree.type, 'Box')
     assert.equal(tree.props.children[0], 'BLOCK')
-    assert.ok(!JSON.stringify(tree).includes('\u001b'))
+    assert.ok(flatten(tree).includes('Publish[2m lntt'))
+    assert.ok(!flatten(tree).includes('\u001b'))
     const row = tree.props.children[2]
     assert.equal(row.type, 'Box')
     assert.deepEqual(
       row.props.children.map((t) => [t.props.children[0], t.props.dimColor]),
-      [['│ ', true], ['#138 ', false], ['Publish lntt', true]],
+      [['│ ', true], ['#138 ', false], ['Publish[2m lntt', true]],
     )
   })
 
@@ -698,6 +703,36 @@ describe('the issue titles hook', () => {
     await draw('See #1')
     await settle()
     assert.equal(cached(), 3)
+  })
+
+  test('a block that does not begin with the one drawn before stays kept: drawn again, it is not read again', async () => {
+    const { draw, runs, settle } = engine({ gh: { 'o/r#1': 'One', 'o/r#2': 'Two' } })
+    const cached = () => runs.filter((r) => r.argv[2] === '--cached').length
+    await draw('See #1')
+    await settle()
+    await draw('Other #2')
+    await settle()
+    assert.equal(cached(), 2)
+    await draw('See #1')
+    await draw('Other #2')
+    await settle()
+    assert.equal(cached(), 2)
+  })
+
+  test('a number cut at the end of a text is looked up only if the block did not grow', async () => {
+    const { draw, lookups, settle } = engine({ hold: true, gh: { 'o/r#1': 'One', 'o/r#138': 'Publish lntt' } })
+    await draw('See #1')
+    await settle()
+    await draw('See #138 and more')
+    await settle()
+    await settle()
+    assert.deepEqual(lookups(), [['o/r#138']])
+  })
+
+  test('a failing hook draws the block as Claude Code does', async () => {
+    const { hooks, $ } = engine()
+    const e = { surface: 'terminal', component: 'AssistantMessage', props: {} }
+    assert.equal(await hooks['ui.render'].catcher($, e, async () => 'BLOCK'), 'BLOCK')
   })
 
   test('a notice that only appears, with no box, redraws the block', async () => {

@@ -183,9 +183,16 @@ async function read($, s, text) {
   if (s.blocks.size > KEPT) s.blocks.delete(s.blocks.keys().next().value)
   if (out?.repository) {
     redraw()
-    const keys = out.mentions.filter((x) => settled(x, text)).map((x) => x.ref)
+    const found = out.mentions.filter((x) => settled(x, text))
     // Waited for here, off the drawing: the block is drawn as it is until it ends.
-    await lookUp($, s, [...new Set(keys)])
+    // A number that touches the end of the text may be cut in two by a pause (#1 of
+    // #138): it waits one more SETTLE_MS, and is looked up only if the block did not grow.
+    await lookUp($, s, [...new Set(found.filter((x) => x.after < text.length).map((x) => x.ref))])
+    const last = [...new Set(found.filter((x) => x.after >= text.length).map((x) => x.ref))]
+    if (last.length) {
+      await $.clock.sleep(SETTLE_MS)
+      if (s.blocks.get(text) === m) await lookUp($, s, last)
+    }
   }
   // The notice of what keeps the titles off goes to the first block that finds it out.
   if (s.problem && !s.told && noticeText(s.problem)) {
@@ -202,8 +209,7 @@ function draw($, s, e, base) {
   if (typeof text !== 'string' || !/#[1-9]/.test(text)) return base
   if (!s.dead && !s.blocks.has(text) && !s.waiting.has(text)) {
     // A longer text drawn replaces the shorter one it began with: the block grew, and the
-    // shorter is neither read nor kept. (A pause of SETTLE_MS reads the text as it stands;
-    // a number cut in two then costs one lookup, cached, and is never boxed.)
+    // shorter is neither read nor kept.
     for (const t of s.waiting) if (text.startsWith(t)) s.waiting.delete(t)
     for (const t of s.blocks.keys()) if (t !== text && text.startsWith(t)) s.blocks.delete(t)
     s.waiting.add(text)
