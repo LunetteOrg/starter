@@ -9,8 +9,9 @@
       // Left as written: check.test.ts asserts the line of each defect planted in these
       // records, and formatting moves the lines.
       "!packages/lntt/test/fixtures/decisions",
-      // Left as written: lntt worktree start sets this fragment inside a list item of the
-      // coordinator's brief, so its lines keep their indent; coordinator.test.ts reads it.
+      // Left as written: the coordinator's brief sets the issues and the waiting fragment
+      // inside list items, so their indent is the code's; coordinator.test.ts reads the brief.
+      "!packages/lntt/agents/coordinator.md",
       "!packages/lntt/agents/coordinator-waiting.md",
       "packages/biome-config/**",
       "packages/typescript-config/**",
