@@ -66,12 +66,15 @@ const flatten = (node) => {
 // `draw(text)` is the hook's drawing of one AssistantMessage block (what Claude Code
 // draws is the string 'BLOCK'); `flush` plays a message of deltas: the text is drawn when
 // complete, left to settle, and drawn again, as what shows once lookups ended.
-function engine({ gh = {}, cache = {}, home = 'o/r', local = true, lntt = null, auth = 0, version = '0.6.2', hold = false } = {}) {
+function engine({ gh = {}, cache = {}, home = 'o/r', local = true, lntt = null, auth = 0, version = '0.6.2', hold = false, brokenState = false } = {}) {
   const runs = []
   const waits = []
   const auths = []
   const invalidated = []
   const gates = []
+  // The session's list of what was cited (`$.state`, one value), and a clock that says one
+  // time always: the order of the list must not depend on it.
+  const kept = { value: undefined, version: 0, writes: [] }
   const el = (type) => (props) => ({ type, props })
   const $ = {
     process: {
@@ -98,7 +101,22 @@ function engine({ gh = {}, cache = {}, home = 'o/r', local = true, lntt = null, 
         throw new Error(`ENOENT: ${p}`)
       },
     },
+    state: {
+      get: async () => {
+        if (brokenState) throw new Error('state is down')
+        return { value: kept.value, version: kept.version }
+      },
+      set: async (ref, value, opts) => {
+        if (brokenState) throw new Error('state is down')
+        if (opts?.ifVersion !== undefined && opts.ifVersion !== kept.version) return { isSet: false, version: kept.version }
+        kept.writes.push(ref)
+        kept.value = value
+        kept.version += 1
+        return { isSet: true, version: kept.version }
+      },
+    },
     clock: {
+      now: async () => 1000,
       sleep: (ms) => {
         waits.push(ms)
         // `hold`: a sleep ends when `settle()` says, so that a block grows meanwhile.
@@ -139,7 +157,7 @@ function engine({ gh = {}, cache = {}, home = 'o/r', local = true, lntt = null, 
     for (const r of gates.splice(from, count)) r()
     for (let i = 0; i < 40; i += 1) await tick()
   }
-  return { draw, flush, runs, waits, lookups, cache, auths, invalidated, hooks, $, ended, settle }
+  return { draw, flush, runs, waits, lookups, cache, auths, invalidated, hooks, $, ended, settle, kept }
 }
 
 // Whether a message ends with its box of what it cited.
@@ -151,6 +169,70 @@ const tick = () => new Promise((r) => setImmediate(r))
 const plain = (text) => (text ?? '').replaceAll(/\u001b\[\d+m/g, '')
 
 describe('the issue titles hook', () => {
+  describe('the list of what the session cited, for the pane (issues-pane.mjs)', () => {
+    // The rows of the list, most recent first, as [ref, title].
+    const listed = (kept) => (kept.value?.rows ?? []).sort((a, b) => b.at - a.at || a.i - b.i).map((r) => [r.ref, r.title])
+
+    test('a block that cites titled references puts them in the list, under the lunette.cited name', async () => {
+      const { flush, kept } = engine({ gh: { 'o/r#1': 'One', 'o/r#2': 'Two' } })
+      await flush('m1', 'see #1 and #2\n', true)
+      assert.deepEqual(listed(kept), [['o/r#1', 'One'], ['o/r#2', 'Two']])
+      assert.equal(kept.value.home, 'o/r')
+      assert.deepEqual(kept.writes[0], { plugin: 'lunette', key: 'cited' })
+      assert.deepEqual(kept.value.rows.map((r) => r.url), ['https://github.com/o/r/issues/1', 'https://github.com/o/r/issues/2'])
+    })
+
+    test('the most recently cited block comes first, a reference cited again moves up, with a clock that stands still', async () => {
+      const { flush, kept } = engine({ gh: { 'o/r#1': 'One', 'o/r#2': 'Two', 'o/r#3': 'Three' } })
+      await flush('m1', '#1 and #2\n', true)
+      await flush('m2', '#2 and #3\n', true)
+      assert.deepEqual(listed(kept).map((r) => r[0]), ['o/r#2', 'o/r#3', 'o/r#1'])
+    })
+
+    test('a cached title is in the list at once, one that arrives later is added when it does, with no second lookup', async () => {
+      let found
+      const slow = new Promise((r) => (found = r))
+      const { flush, kept, lookups } = engine({ cache: { 'o/r#1': 'One' }, gh: { 'o/r#2': () => slow } })
+      const message = flush('m1', '#1 and #2\n', true)
+      for (let i = 0; i < 40; i += 1) await tick()
+      assert.deepEqual(listed(kept), [['o/r#1', 'One']])
+      found('Two')
+      await message
+      assert.deepEqual(listed(kept), [['o/r#1', 'One'], ['o/r#2', 'Two']])
+      assert.deepEqual(lookups(), [['o/r#2']])
+    })
+
+    test('a reference with no title is not in the list: gh does not know it, or lookups are off', async () => {
+      const { flush, kept } = engine({ gh: { 'o/r#1': 'One' } })
+      await flush('m1', '#1 and #2\n', true)
+      assert.deepEqual(listed(kept), [['o/r#1', 'One']])
+      const none = engine({ home: null })
+      await none.flush('m1', '#1\n', true)
+      assert.equal(none.kept.value, undefined)
+    })
+
+    test('a block that cites nothing leaves the list as it was', async () => {
+      const { flush, kept } = engine({ gh: { 'o/r#1': 'One' } })
+      await flush('m1', 'plain text\n', true)
+      assert.equal(kept.value, undefined)
+    })
+
+    test('the list survives a reload: the new copy of the hook adds to what the state holds', async () => {
+      const first = engine({ gh: { 'o/r#1': 'One' } })
+      await first.flush('m1', '#1\n', true)
+      const second = engine({ gh: { 'o/r#2': 'Two' } })
+      second.kept.value = first.kept.value
+      second.kept.version = first.kept.version
+      await second.flush('m1', '#2\n', true)
+      assert.deepEqual(listed(second.kept).map((r) => r[0]), ['o/r#2', 'o/r#1'])
+    })
+
+    test('a state that fails leaves the box under the block as it was', async () => {
+      const { flush } = engine({ gh: { 'o/r#1': 'One' }, brokenState: true })
+      assert.ok(boxed(await flush('m1', '#1\n', true)))
+    })
+  })
+
   test('the plugin registers it', () => {
     const events = []
     register((event) => {

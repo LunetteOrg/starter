@@ -416,7 +416,7 @@ fails in CI until it does. A project gets a new version of every guide with the 
 ## The Lunette plugin
 
 The plugin holds the Claude Code hooks a project setting cannot carry (the `lntt review`
-band, the issue titles on screen), in `packages/lntt/plugin/`, and ships with the next
+band, the issue titles on screen, the pane of what a session cited), in `packages/lntt/plugin/`, and ships with the next
 release of `@lntt/lntt`, at its version
 ([one version](../adr/cli-runtime-and-publishing.md#one-version-for-every-published-package-one-release):
 `scripts/packages-version.mts` sets and checks it). A project reaches it through `lntt

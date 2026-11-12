@@ -129,7 +129,8 @@ guidance use `.agents/skills/` and `~/.agents/skills/` across clients.
 
 A hook goes in the `lunette` plugin only when a project setting cannot carry it: the
 hooks that change what Claude Code draws (the `lntt review` band above the prompt and
-`/review-status`, the issue titles in a message). Every other hook goes in the
+`/review-status`, the issue titles in a message and the pane of the issues a session
+cited). Every other hook goes in the
 project's `.claude/settings.json`, written by `lntt sync` beside the project's own
 hooks. A settings line runs the worktree's `lntt` and reaches a cloud session; the plugin
 does neither (below). It is the path the skills take, and `lntt sync` can write the
@@ -251,6 +252,37 @@ issue.
 
 How a title is written is the `github-board` skill's.
 
+### The issues a session cited are listed in a pane, opened on request
+
+`/issues`, a command of the `lunette` plugin, opens a pane beside the chat
+(`$.ui.open`, drawn by a `ui.render` hook on `Pane` for its id; `packages/lntt/plugin/hooks/issues-pane.mjs`).
+It is opened by the person's command and never by the plugin: a pane the person opens
+seats on the terminal at any width, one opened unasked waits below 110 columns. The pane
+lists each issue or pull request the session cited, the most recently cited first (a
+reference cited again moves to the top; those of one block keep the order of its text):
+its number as the box writes it, its title and its URL under it, drawn with the elements
+of the surface (`Box`, `Text`), so the terminal, desktop, vscode and mobile draw one tree.
+It is as scrolled as the engine scrolls a pane.
+
+It shows what the box under each block already learned and asks for nothing: the
+issue-titles hook writes the references of a block that have a title into the plugin's
+`$.state` (`lunette.cited`, `{ home, rows }`; the contract is `packages/lntt/plugin/types/index.d.ts`,
+named in `plugin.json`) when the block is read and again when a title arrives, and the
+pane draws from that value, so a new citation or a title found later appears in an open
+pane with no redraw of its own, and the list outlives a reload of the plugin. Only the
+messages of the assistant count, the blocks the box reads; a reference with no title
+(`gh` does not know it, lookups are off, the title is still being asked) is not listed,
+as it has no box row, and appears when its title does. Two hundred rows are kept, the
+oldest cited forgotten first. A row read back is checked as a title from `lntt` is (a
+reference of the lower-case shape, a clean title, a plain `https` URL), and a value
+stored in another shape reads as an empty list. Where a surface places no pane, the
+command answers with the same list as text.
+
+The state of the issue (open, closed, merged) is not shown: `lntt refs` gives a title and
+a URL, and its cache holds them for a day, so a state kept with them would show an issue
+closed this morning as open. It takes `lntt refs` reading `state` and `pull_request.merged_at`,
+the cache and the JSON gaining a field, and a shorter life for that field than for the title.
+
 ## Consequences
 
 ### Positive
@@ -294,6 +326,10 @@ How a title is written is the `github-board` skill's.
   Another agent can resolve its references with `lntt refs` before writing, so its
   text carries the titles. A renamed issue shows its old title for up to a day, from
   the cache.
+- The pane lists no reference that has no title, and no number cited by the person: it is the
+  box's list, kept for the session, not a search of the conversation. A surface that places no
+  pane gets the list as the text of `/issues`; how desktop, vscode and mobile draw the pane has
+  not been seen live, only drawn by the tests as the tree of every surface.
 - A block that holds a number starts one `lntt` process once its text has stayed as it is
   for `SETTLE_MS` (`lntt refs --cached`, with the whole block on stdin), and one more for
   each `KEYS_PER_RUN` titles still missing: the box appears under the block after the
@@ -399,6 +435,14 @@ How a title is written is the `github-board` skill's.
   did (a wait of up to 800 ms).** A hook that waits holds the drawing of the block, and a title slower
   than the wait showed one message late; drawing at once and redrawing when a title is
   found shows each title as soon as it is known.
+- **The pane opened by the plugin at session start.** A pane seats unasked from 144 columns
+  (110 where the engine allows) and takes the room of the transcript; a person who wants the
+  list asks for it with `/issues`.
+- **A variable of the hook's module holding the list.** A reload of the plugin starts the
+  module over and the pane would open empty in a session that already cited issues; `$.state`
+  outlives it.
+- **A second `lntt refs` run for the pane.** The box already asked for each title; the pane
+  reads what it learned.
 - **A rule in AGENTS.md that an agent writes each issue's title beside its number.**
   Agents given it broke it in three samples of four, always the same way: an opening
   line repeating the numbers the person used, before any title. The reader needs to see

@@ -11,6 +11,7 @@
 // requires; the session's state is passed to them.
 
 import { box, cite, entry, isKey, message, settled } from './issue-titles.mjs'
+import { remember } from './issues-pane.mjs'
 import { noticeText } from './notices.mjs'
 
 // How long a block's text must stay as it is before lntt reads it: a block streams in
@@ -49,6 +50,7 @@ function session() {
     problem: null, // what keeps the titles off, for its notice (notices.mjs)
     told: false, // the notice was given to a block: once per session
     gh: null, // the look at gh (auth status), once, when the titles cannot be found
+    at: 0, // when the last block was read, for the pane's order (strictly rising)
   }
 }
 
@@ -149,6 +151,17 @@ async function lookUp($, s, keys) {
   if (waiting.length) await Promise.all(waiting)
 }
 
+// When a block was read, for the order of the pane of issues: the clock's time, and
+// always later than the block read before it.
+async function stamp($, s) {
+  let now = 0
+  try {
+    now = await $.clock.now()
+  } catch {}
+  s.at = Math.max(Number.isFinite(now) ? now : 0, s.at + 1)
+  return s.at
+}
+
 // What the block shows now: its box lines, from what the session knows.
 function linesOf(s, text) {
   const m = s.blocks.get(text)
@@ -181,17 +194,27 @@ async function read($, s, text) {
   if (out?.repository) cite(m, out.mentions, text)
   s.blocks.set(text, m)
   if (s.blocks.size > KEPT) s.blocks.delete(s.blocks.keys().next().value)
+  // What the block cited and the session has a title for goes to the pane's list
+  // (issues-pane.mjs), again when a title arrives.
+  const at = out?.repository ? await stamp($, s) : 0
+  const save = () =>
+    remember($, { home: s.home, at, fresh: m.cited.flatMap((k) => (s.info.has(k) ? [{ ref: k, ...s.info.get(k) }] : [])) })
   if (out?.repository) {
+    await save()
     redraw()
     const found = out.mentions.filter((x) => settled(x, text))
     // Waited for here, off the drawing: the block is drawn as it is until it ends.
     // A number that touches the end of the text may be cut in two by a pause (#1 of
     // #138): it waits one more SETTLE_MS, and is looked up only if the block did not grow.
     await lookUp($, s, [...new Set(found.filter((x) => x.after < text.length).map((x) => x.ref))])
+    await save()
     const last = [...new Set(found.filter((x) => x.after >= text.length).map((x) => x.ref))]
     if (last.length) {
       await $.clock.sleep(SETTLE_MS)
-      if (s.blocks.get(text) === m && !s.dead) await lookUp($, s, last)
+      if (s.blocks.get(text) === m && !s.dead) {
+        await lookUp($, s, last)
+        await save()
+      }
     }
   }
   // The notice of what keeps the titles off goes to the first block that finds it out
