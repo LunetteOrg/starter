@@ -8,12 +8,13 @@
 //
 // The logic reaches the machine only through services: git (Git), GitHub (Gh), the agents (Agents), the state
 // store and the progress file (ReviewStore), the working tree (FileSystem, Path), the clock
-// (Clock), processes (ChildProcessSpawner), the terminal (Console), the environment (Config),
-// and the sync code of modules not yet on Effect through the bridge (ReviewBridge). src/review/command.spec.ts runs it on their in-memory layers.
+// (Clock), processes (ChildProcessSpawner), the terminal (Console), the environment (Config), the
+// project's configuration (ProjectConfig), and the sync code of modules not yet on Effect through the bridge (ReviewBridge). src/review/command.spec.ts runs it on their in-memory layers.
 
 import * as Clock from 'effect/Clock'
 import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
+import * as Digest from 'effect/crypto/Digest'
 import * as Data from 'effect/Data'
 import * as Deferred from 'effect/Deferred'
 import * as Duration from 'effect/Duration'
@@ -28,11 +29,12 @@ import { BaseError, localRef, projectBase } from '../base/base.ts'
 import { type CandidateRules, candidateRules } from '../base/names.ts'
 import { type BranchRules, branchRules } from '../branch.ts'
 import { citeTarget, citeText, isArea } from '../check.ts'
+import { ProjectConfig, ProjectConfigLive } from '../config/load.ts'
+import { projectPhase } from '../config/project.ts'
 import { exit, Exit as LnttExit } from '../exit.ts'
 import { GhLive } from '../gh/gh.ts'
 import { Git, type GitError, GitLive } from '../git/git.ts'
 import { type HeadlessAgent as Agent, type Progress, type Question, timerMs } from '../headless.ts'
-import { projectPhase } from '../index.ts'
 import {
   agentLabel,
   type Checked,
@@ -259,7 +261,7 @@ export const round = Effect.fnUntraced(function* (
     yield* lock('lntt review')
     yield* store.startProgress
   }
-  const data = yield* bridge.config
+  const data = yield* (yield* ProjectConfig).data
   const config = yield* validConfig(data)
   const dirty = yield* git.status
   if (dirty !== '') {
@@ -430,12 +432,11 @@ export const round = Effect.fnUntraced(function* (
 // answer. Withdrawn when every one of them withdraws it.
 export const reply = Effect.fnUntraced(function* ({ id, answer }: { id: string; answer: string }, { lock }: Tools) {
   const store = yield* ReviewStore
-  const bridge = yield* ReviewBridge
   const state = yield* store.readState(yield* headBranch)
   const finding = state?.result.findings.find((f) => f.id === id)
   if (!state || !finding) return yield* new ReviewRefused({ message: `no open finding ${id} in the last round` })
   yield* lock('lntt review reply')
-  const config = yield* validConfig(yield* bridge.config)
+  const config = yield* validConfig(yield* (yield* ProjectConfig).data)
   const known = new Map<string, Agent>()
   for (const lens of Object.values(config.reviewers)) for (const a of lens.with) known.set(agentLabel(a), a)
   // Withdrawn only by every reviewer that found it: one that cannot be resumed (no
@@ -484,12 +485,11 @@ export const reply = Effect.fnUntraced(function* ({ id, answer }: { id: string; 
 // state: the configuration, and every other branch, stay as they are.
 export const allow = Effect.fnUntraced(function* ({ rounds }: { rounds: number }, { lock }: Pick<Tools, 'lock'>) {
   const store = yield* ReviewStore
-  const bridge = yield* ReviewBridge
   yield* lock('lntt review allow')
   const branch = yield* headBranch
   const state = yield* store.readState(branch)
   if (!state) return yield* new ReviewRefused({ message: `no round on ${branch} yet: nothing to allow more rounds to` })
-  const { maxRounds } = yield* validConfig(yield* bridge.config)
+  const { maxRounds } = yield* validConfig(yield* (yield* ProjectConfig).data)
   state.allowed = (state.allowed ?? 0) + rounds
   yield* store.writeState(state)
   // The band stops showing the limit: the next round may run.
@@ -544,19 +544,25 @@ export const command = (parsed: ReviewCommand) =>
         LockedError: failure,
         PlatformError: failure,
         GitError: failure,
+        ConfigInvalid: failure,
+        PlaceInvalid: failure,
         BaseError: failure,
       }),
     )
   }).pipe(Effect.scoped)
 
-// The services on the machine.
-const Live = ReviewStoreLive.pipe(
-  Layer.provideMerge(Layer.mergeAll(GitLive, GhLive)),
-  Layer.provideMerge(Layer.mergeAll(AgentsLive, WorktreeLockLive, ReviewBridgeLive, Path.layer)),
-)
+// The services on the machine; the operator's home is read at the edge.
+const live = (home: string) =>
+  ReviewStoreLive(home).pipe(
+    Layer.provideMerge(Layer.mergeAll(GitLive, GhLive)),
+    Layer.provideMerge(ProjectConfigLive),
+    Layer.provideMerge(
+      Layer.mergeAll(AgentsLive, WorktreeLockLive, ReviewBridgeLive, Path.layer, Digest.layerWebCrypto),
+    ),
+  )
 
 // Runs a round, a reply or `allow` as the process's main program (src/run-command.ts): its exit
 // code; 130 for an interrupt once the agents and the lock are released.
-export function runReview(parsed: ReviewCommand): Promise<never> {
-  return runCommand(command(parsed).pipe(Effect.map(exit), Effect.provide(Live)))
+export function runReview(parsed: ReviewCommand, home: string): Promise<never> {
+  return runCommand(command(parsed).pipe(Effect.map(exit), Effect.provide(live(home))))
 }

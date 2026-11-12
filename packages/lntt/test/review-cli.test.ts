@@ -2203,28 +2203,13 @@ describe("where lntt review keeps a branch's rounds", () => {
     assert.equal(JSON.parse(lntt(['status', '--json'], env).out).state.round, 1, 'and holds the branch from now on')
   })
 
-  test('a place with ~ starts at the home; with no origin the repository is keyed by its git directory', () => {
-    const env = { HOME: home({ review: { stateDir: '~/store' } }) }
-    assert.equal(lntt(['--base', 'main'], env).code, 0)
-    const [keyed] = readdirSync(join(env.HOME, 'store/local'))
-    assert.match(keyed as string, /^[0-9a-f]{12}$/)
-    assert.equal(existsSync(stateFile('feat/1/x', join(env.HOME, 'store/local', keyed as string))), true)
-  })
-
-  test("the project's place, relative, starts at the main checkout", () => {
-    git('remote', 'add', 'origin', 'https://github.com/org/proj')
-    const config = JSON.parse(CONFIG)
-    config.delivery.review.stateDir = '.git/elsewhere'
-    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify(config))
-    git('commit', '-qam', 'a relative place')
-    assert.equal(lntt(['--base', 'main']).code, 0)
-    assert.equal(existsSync(stateFile('feat/1/x', join(repo, '.git/elsewhere/org/proj'))), true)
-  })
-
-  test("the operator's place must be absolute or start with ~", () => {
-    const r = lntt(['--base', 'main'], { HOME: home({ review: { stateDir: 'relative/dir' } }) })
-    assert.equal(r.code, 1)
-    assert.match(r.err, /review\.stateDir must be an absolute path or start with ~: relative\/dir/)
+  test("an operator's place that is not absolute stops a round and status alike, with the reason", () => {
+    const HOME = home({ review: { stateDir: 'relative/dir' } })
+    for (const args of [['--base', 'main'], ['status']]) {
+      const r = lntt(args, { HOME })
+      assert.equal(r.code, 1, args.join(' '))
+      assert.match(r.err, /review\.stateDir must be an absolute path or start with ~: relative\/dir/, args.join(' '))
+    }
   })
 
   describe('--prune', () => {
@@ -2311,37 +2296,6 @@ describe("where lntt review keeps a branch's rounds", () => {
       assert.equal(existsSync(stateFile()) && existsSync(ledgerFile()), true)
       assert.equal(lntt(['status']).err, '', 'said once')
     })
-
-    test("is moved to its own branch's file, whichever branch is checked out", () => {
-      assert.equal(lntt(['--base', 'main']).code, 0)
-      renameSync(stateFile(), old())
-      git('switch', '-q', 'main')
-      git('switch', '-qc', 'feat/2/y')
-      assert.equal(lntt(['status']).code, 4)
-      assert.equal(existsSync(stateFile()), true, "feat/1/x's state is kept, not dropped")
-      assert.equal(existsSync(old()), false)
-    })
-
-    test('does not replace a newer one of the place, and a file that cannot be read is set aside', () => {
-      assert.equal(lntt(['--base', 'main']).code, 0)
-      const before = readFileSync(stateFile(), 'utf8')
-      writeFileSync(old(), JSON.stringify({ branch: 'feat/1/x', round: 9 }))
-      utimesSync(old(), new Date(2000, 0, 1), new Date(2000, 0, 1))
-      const r = lntt(['status'])
-      assert.match(
-        r.err,
-        /^lntt review: the state of feat\/1\/x in .+lntt-review\.json is older than the one in .+: dropped$/m,
-      )
-      assert.equal(readFileSync(stateFile(), 'utf8'), before)
-      assert.equal(existsSync(old()), false)
-
-      writeFileSync(old('lntt-review-ledger.json'), '{ cut')
-      assert.match(
-        lntt(['status']).err,
-        /lntt-review-ledger\.json cannot be read: set aside as lntt-review-ledger\.json\.unreadable/,
-      )
-      assert.equal(existsSync(old('lntt-review-ledger.json.unreadable')), true)
-    })
   })
 
   test('a state file that names another branch than its own file is not read', () => {
@@ -2365,28 +2319,6 @@ describe("where lntt review keeps a branch's rounds", () => {
     assert.equal(lntt(['--base', 'main']).code, 0)
     assert.equal(existsSync(join(storeDir(), 'state', '%46ix%2F%41.json')), true)
     assert.equal(state('Fix/A').branch, 'Fix/A')
-  })
-
-  test('a place of ~ alone, and a project place starting with ~/', () => {
-    git('remote', 'add', 'origin', 'git@github.com:org/proj.git')
-    const bare = home({ review: { stateDir: '~' } })
-    assert.equal(lntt(['--base', 'main'], { HOME: bare }).code, 0)
-    assert.equal(existsSync(stateFile('feat/1/x', join(bare, 'org/proj'))), true)
-
-    const config = JSON.parse(CONFIG)
-    config.delivery.review.stateDir = '~/shared'
-    writeFileSync(join(repo, '.agents/config.jsonc'), JSON.stringify(config))
-    git('commit', '-qam', 'a place in the home')
-    const plain = temp('plain')
-    assert.equal(lntt(['--base', 'main'], { HOME: plain }).code, 0)
-    assert.equal(existsSync(stateFile('feat/1/x', join(plain, 'shared/org/proj'))), true)
-  })
-
-  test('an origin whose org is .. cannot take the state out of its place', () => {
-    git('remote', 'add', 'origin', 'https://example.com/../proj')
-    const mine = temp('mine')
-    assert.equal(lntt(['--base', 'main'], { HOME: home({ review: { stateDir: mine } }) }).code, 0)
-    assert.deepEqual(readdirSync(mine), ['local'], 'keyed by the git directory, inside the place')
   })
 
   test('--clear of a ledger with no state: refused until the branch is merged; a detached HEAD has nothing', () => {
@@ -2426,31 +2358,5 @@ describe("where lntt review keeps a branch's rounds", () => {
     assert.equal(r.out, 'lntt review: pruned HEAD (no branch of that name is left): state\n')
     assert.equal(existsSync(join(storeDir(), 'state', '%E0.json')), true)
     assert.equal(existsSync(join(storeDir(), 'state', 'Feat%2FOld.json')), true, 'not listed, not removed')
-  })
-
-  describe('a state in the old place, more cases', () => {
-    const old = (name = 'lntt-review.json') => join(repo, '.git', name)
-
-    test('a state that cannot be read is set aside, and an older ledger does not replace the place’s', () => {
-      writeFileSync(old(), '{ cut')
-      const set = lntt(['status'])
-      assert.match(set.err, /lntt-review\.json cannot be read: set aside as lntt-review\.json\.unreadable/)
-      assert.equal(existsSync(old('lntt-review.json.unreadable')), true)
-
-      assert.equal(lntt(['--base', 'main'], { FAKE_REVIEW: note }).code, 0)
-      const ledger = readFileSync(ledgerFile(), 'utf8')
-      writeFileSync(old('lntt-review-ledger.json'), JSON.stringify({ branch: 'feat/1/x', closed: [{ id: 'old' }] }))
-      utimesSync(old('lntt-review-ledger.json'), new Date(2000, 0, 1), new Date(2000, 0, 1))
-      assert.match(lntt(['status']).err, /the ledger of feat\/1\/x in .+ is older than the one in .+: dropped/)
-      assert.equal(readFileSync(ledgerFile(), 'utf8'), ledger)
-    })
-
-    test('a newer one replaces the place’s', () => {
-      assert.equal(lntt(['--base', 'main']).code, 0)
-      utimesSync(stateFile(), new Date(2000, 0, 1), new Date(2000, 0, 1))
-      writeFileSync(old(), JSON.stringify({ ...state(), round: 7 }))
-      assert.match(lntt(['status']).err, /moved the state of feat\/1\/x/)
-      assert.equal(state().round, 7)
-    })
   })
 })

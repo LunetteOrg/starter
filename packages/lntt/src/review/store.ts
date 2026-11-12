@@ -12,14 +12,16 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import type * as PlatformError from 'effect/PlatformError'
 import * as Ref from 'effect/Ref'
+import type { ConfigInvalid } from '../config/load.ts'
 import { Git, type GitError } from '../git/git.ts'
 import type { Closed, Ledger, ReviewState } from '../review.ts'
 import { ledgerPathIn, parseLedger, parseState, statePathIn } from '../review-store.ts'
-import { ReviewBridge, ReviewFailed } from './bridge.ts'
+import { ReviewFailed } from './bridge.ts'
+import { type PlaceInvalid, placeOf } from './place.ts'
 
-// What reading or writing the store can end with: the place not found, a file the platform
-// refused, a state file that cannot be read.
-export type StoreError = ReviewFailed | GitError | PlatformError.PlatformError
+// What reading or writing the store can end with: the place not found or not valid, a file the
+// platform refused, a state file that cannot be read.
+export type StoreError = ReviewFailed | GitError | ConfigInvalid | PlaceInvalid | PlatformError.PlatformError
 
 export interface Store {
   readonly readState: (branch: string) => Effect.Effect<ReviewState | null, StoreError>
@@ -106,19 +108,19 @@ export const makeStore = Effect.fnUntraced(function* <E extends StoreError>(wher
   })
 })
 
-// The store on the machine: the place the operator, the project or the clone names, found from git
-// and the project's configuration through the bridge.
-export const ReviewStoreLive = Layer.effect(ReviewStore)(
-  Effect.gen(function* () {
-    const git = yield* Git
-    const bridge = yield* ReviewBridge
-    return yield* makeStore({
-      dir: Effect.gen(function* () {
-        const common = yield* git.commonDir
-        const data = yield* bridge.config
-        return yield* bridge.place(common, yield* git.gitDir, data)
-      }),
-      gitDir: git.gitDir,
-    })
-  }),
-)
+// The store on the machine: the place the operator (whose home is `home`), the project or the
+// clone names (src/review/place.ts), found on first use with the services the layer is built with.
+export const ReviewStoreLive = (home: string) =>
+  Layer.effect(ReviewStore)(
+    Effect.gen(function* () {
+      const services = yield* Effect.context<Effect.Services<ReturnType<typeof placeOf>>>()
+      const git = yield* Git
+      return yield* makeStore({
+        dir: placeOf(home).pipe(
+          Effect.map((placed) => placed.dir),
+          Effect.provideContext(services),
+        ),
+        gitDir: git.gitDir,
+      })
+    }),
+  )

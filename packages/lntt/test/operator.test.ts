@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { ConfigError, loadOperator } from '../src/index.ts'
+import { loadOperator } from '../src/index.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
 
@@ -41,7 +41,9 @@ afterEach(() => {
   rmSync(tmp, { recursive: true, force: true })
 })
 
-describe('finding the operator profile', () => {
+// The synchronous profile of the modules not yet on Effect (src/config/sync.ts), on a real git
+// clone; the lookup itself is specified in src/config/load.spec.ts.
+describe('finding the operator profile, synchronously', () => {
   test("from a linked worktree, reads the main checkout's .agents/local/", () => {
     const path = write(join(main, '.agents/local/operator.jsonc'), '{ "handle": "ada" // me\n}')
     const { profile, sources } = loadOperator(worktree, { home })
@@ -74,51 +76,11 @@ describe('finding the operator profile', () => {
     assert.deepEqual(sources, [path])
   })
 
-  test('with no profile at all, the speaker is a developer', () => {
-    assert.deepEqual(loadOperator(worktree, { home }), { profile: { role: 'developer' }, sources: [] })
-  })
-
   test('outside a git repository, only the global profile counts', () => {
     const outside = join(tmp, 'outside')
     mkdirSync(outside)
     write(join(home, '.agents/operator.yml'), 'handle: ada\n')
     assert.equal(loadOperator(outside, { home }).profile.handle, 'ada')
-  })
-
-  test('refuses both formats in one place, and a profile the schema rejects', () => {
-    write(join(main, '.agents/local/operator.jsonc'), '{}')
-    write(join(main, '.agents/local/operator.yml'), '{}')
-    assert.throws(() => loadOperator(worktree, { home }), /keep one/)
-    rmSync(join(main, '.agents/local/operator.yml'))
-    write(join(main, '.agents/local/operator.jsonc'), '{ "confidence": { "git": { "level": 9 } } }')
-    assert.throws(
-      () => loadOperator(worktree, { home }),
-      (e: unknown) => {
-        assert.ok(e instanceof ConfigError)
-        assert.match(e.message, /operator\.jsonc/)
-        assert.match(e.message, /\/confidence\/git\/level/)
-        return true
-      },
-    )
-  })
-})
-
-describe('review.stateDir', () => {
-  test('is a path in the profile, and a project profile wins over the global one', () => {
-    write(join(home, '.agents/operator.jsonc'), '{ "review": { "stateDir": "~/a" } }')
-    write(join(main, '.agents/local/operator.jsonc'), '{ "review": { "stateDir": "~/b" } }')
-    assert.deepEqual(loadOperator(worktree, { home }).profile.review, { stateDir: '~/b' })
-  })
-
-  test('refuses a value that is not a path, and a key the section does not have', () => {
-    for (const bad of [
-      '{ "review": { "stateDir": 3 } }',
-      '{ "review": { "stateDir": "" } }',
-      '{ "review": { "dir": "x" } }',
-    ]) {
-      write(join(main, '.agents/local/operator.jsonc'), bad)
-      assert.throws(() => loadOperator(worktree, { home }), ConfigError, bad)
-    }
   })
 })
 

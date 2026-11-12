@@ -3,6 +3,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync, unlinkSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
@@ -11,12 +12,12 @@ import { Exit, exit } from './exit.ts'
 import { runQuery } from './query.ts'
 import type { ReviewCommand } from './review/command.ts'
 import { loaded, placeFor } from './review/host.ts'
+import type { Place } from './review/place.ts'
 import { closedIn, legacyRounds, noRoundLine, stateView, summary, withDefaults } from './review/view.ts'
 import { formatTokens, type Ledger, type ReviewState, reviewConfig, reviewCost } from './review.ts'
 import {
   branchesIn,
   ledgerPathIn,
-  type Place,
   parseRefs,
   parseState,
   pruneReason,
@@ -49,15 +50,14 @@ export function git(...args: string[]): string {
     .trimEnd()
 }
 
-// Where each branch's state and ledger are kept between runs (src/review/host.ts).
+// Where each branch's state and ledger are kept between runs (src/review/host.ts): found once,
+// on Effect, by status and cost once their arguments are read, before anything reads the place.
 let placed: Place | null = null
+async function findPlace(): Promise<void> {
+  placed ??= await placeFor()
+}
 function place(): Place {
-  placed ??= placeFor(
-    git('rev-parse', '--path-format=absolute', '--git-common-dir'),
-    git('rev-parse', '--absolute-git-dir'),
-    loaded(),
-    (line) => stderr.write(`lntt review: ${line}\n`),
-  )
+  if (placed === null) throw new Error('the place of the review state was read before it was found')
   return placed
 }
 
@@ -101,6 +101,7 @@ async function cost(args: string[]): Promise<number> {
     args,
     options: { json: { type: 'boolean', default: false }, query: { type: 'string' } },
   })
+  await findPlace()
   const branch = git('rev-parse', '--abbrev-ref', 'HEAD')
   const state = branch === 'HEAD' ? null : readState(branch)
   const rounds = state?.rounds ?? []
@@ -303,6 +304,7 @@ async function status(args: string[]): Promise<number> {
     usage('--prune takes only --dry-run')
   }
   if (values['dry-run'] && !values.prune) usage('--dry-run goes with --prune')
+  await findPlace()
   const root = git('rev-parse', '--show-toplevel')
   // The branch HEAD names, also before its first commit; null when HEAD is detached.
   let current: string | null = null
@@ -399,7 +401,7 @@ export async function main([command, ...args]: string[]): Promise<void> {
     // A round, a reply or allow holds the worktree's lock, a round or a reply its agents: they
     // run on Effect, which releases both however the command ends (src/review/command.ts).
     const { runReview } = await import('./review/command.ts')
-    return runReview(parsed)
+    return runReview(parsed, homedir())
   } catch (error) {
     await failed(error)
   }
