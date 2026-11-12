@@ -222,8 +222,9 @@ side by side, so that one run fits `LNTT_TIMEOUT_MS` however many a block cites;
 of one lookup count as one failure at most. The text read is the block's markdown as
 the transcript draws it (`e.props.text`). A block that grows is read again at its last
 text, and the shorter texts it passed through are forgotten; a number touching the end
-of the text waits one more `SETTLE_MS`, so that a pause cutting `#138` after `#1` looks
-up no wrong issue.
+of the text waits one more `SETTLE_MS` (a complete block ending in a number shows its
+title that much later), so that a pause cutting `#138` after `#1` looks up no wrong
+issue.
 
 - **Never a title from the wrong repository:** a message that cites another
   repository shows every bare `#N` after that as written. Any other `word#N` is no
@@ -395,7 +396,7 @@ How a title is written is the `github-board` skill's.
   past it: the hook was skipped at every message, with a notice of it, when this was
   found (#329). A `ui.render` hook on `AssistantMessage` runs beside them.
 - **A `ui.render` hook that waits for `lntt` and the titles, as the `MessageDisplay` one
-  did (`WAIT_MS`).** A hook that waits holds the drawing of the block, and a title slower
+  did (a wait of up to 800 ms).** A hook that waits holds the drawing of the block, and a title slower
   than the wait showed one message late; drawing at once and redrawing when a title is
   found shows each title as soon as it is known.
 - **A rule in AGENTS.md that an agent writes each issue's title beside its number.**

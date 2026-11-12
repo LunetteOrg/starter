@@ -191,11 +191,12 @@ async function read($, s, text) {
     const last = [...new Set(found.filter((x) => x.after >= text.length).map((x) => x.ref))]
     if (last.length) {
       await $.clock.sleep(SETTLE_MS)
-      if (s.blocks.get(text) === m) await lookUp($, s, last)
+      if (s.blocks.get(text) === m && !s.dead) await lookUp($, s, last)
     }
   }
-  // The notice of what keeps the titles off goes to the first block that finds it out.
-  if (s.problem && !s.told && noticeText(s.problem)) {
+  // The notice of what keeps the titles off goes to the first block that finds it out
+  // and is still drawn: one that grew meanwhile leaves it to the next.
+  if (s.problem && !s.told && s.blocks.get(text) === m && noticeText(s.problem)) {
     s.told = true
     s.noticeOn = text
     redraw(true)

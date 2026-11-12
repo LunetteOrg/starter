@@ -135,8 +135,8 @@ function engine({ gh = {}, cache = {}, home = 'o/r', local = true, lntt = null, 
   }
   // The references each full lookup asked for.
   const lookups = () => runs.filter((r) => r.argv[2] !== '--cached').map((r) => r.argv.slice(2))
-  const settle = async (count = gates.length) => {
-    for (const r of gates.splice(0, count)) r()
+  const settle = async (count = gates.length, from = 0) => {
+    for (const r of gates.splice(from, count)) r()
     for (let i = 0; i < 40; i += 1) await tick()
   }
   return { draw, flush, runs, waits, lookups, cache, auths, invalidated, hooks, $, ended, settle }
@@ -727,6 +727,46 @@ describe('the issue titles hook', () => {
     await settle()
     await settle()
     assert.deepEqual(lookups(), [['o/r#138']])
+  })
+
+  test('a number at the end of a block that does not grow is looked up after one more SETTLE_MS', async () => {
+    const { draw, lookups, waits, settle } = engine({ hold: true, gh: { 'o/r#5': 'Five' } })
+    await draw('See #5')
+    await settle()
+    assert.deepEqual(lookups(), [])
+    await settle()
+    assert.deepEqual(lookups(), [['o/r#5']])
+    assert.deepEqual(waits, [SETTLE_MS, SETTLE_MS])
+    assert.match(flatten(await draw('See #5')), /#5 Five/)
+  })
+
+  test('a block that grew while it was read leaves the notice to the next one', async () => {
+    let release
+    const slow = () => new Promise((r) => (release = () => r('off')))
+    const { draw, settle } = engine({ hold: true, auth: 1, gh: { 'o/r#1': slow } })
+    await draw('See #1 now')
+    await settle()
+    await draw('See #1 now, and more')
+    release()
+    await settle(0)
+    await settle()
+    await settle()
+    assert.match(plain(flatten(await draw('See #1 now, and more'))), /gh is not logged in/)
+  })
+
+  test('a block asleep for its last number is not looked up when the titles turned off meanwhile', async () => {
+    const lntt = (argv, init) =>
+      init?.stdin?.startsWith('Other')
+        ? { exitCode: 2, stdout: '', stderr: 'usage: lntt path' }
+        : fakeRun(argv, init, { gh: { 'o/r#7': 'Seven' } })
+    const { draw, settle, lookups } = engine({ hold: true, lntt })
+    await draw('See #7')
+    await settle()
+    await draw('Other #9 now')
+    // Only the second block wakes: its lntt has no refs, the titles are off.
+    await settle(1, 1)
+    await settle()
+    assert.deepEqual(lookups(), [])
   })
 
   test('a failing hook draws the block as Claude Code does', async () => {
