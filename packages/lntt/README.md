@@ -352,7 +352,7 @@ The worktree starts from the base (`--base` names another one), on every host:
 ### The base of a branch
 
 `lntt worktree start`, `lntt review` and `lntt ci local` find a branch's base one way
-(`packages/lntt/src/base.ts`, decided in the project's worktree tooling record):
+(`packages/lntt/src/base/base.ts`, decided in the project's worktree tooling record):
 
 - **The open candidate**, asked to GitHub with `gh pr list` when `delivery.candidate` is
   set: a new worktree starts from `origin/<candidate>`; a branch that descends from it

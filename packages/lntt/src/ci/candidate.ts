@@ -43,6 +43,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { type Automated, matchAutomated } from '../automated.ts'
+import { candidateNumber as numberOf, openCandidateOf } from '../base/names.ts'
 import type { Graphql } from '../board.ts'
 import { same } from '../board.ts'
 import { holdsLine, moveToReady, NotOnBoard, type ReadyRules, readIssueOnBoard, readWaiting } from '../board-ready.ts'
@@ -121,8 +122,6 @@ const PRS_END = '<!-- candidate:prs:end -->'
 const CLOSES_START = '<!-- candidate:closes:start -->'
 const CLOSES_END = '<!-- candidate:closes:end -->'
 
-const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
 // `candidate/` → `candidate`: the word titles and messages use.
 export function candidateName(config: CandidateConfig): string {
   return config.prefix.replace(/[/\-_.]+$/, '') || config.prefix
@@ -130,8 +129,7 @@ export function candidateName(config: CandidateConfig): string {
 
 // The candidate number of a branch name, or null.
 export function candidateNumber(config: CandidateConfig, name: string | undefined): number | null {
-  const match = new RegExp(`^${escapeRegExp(config.prefix)}(\\d+)$`).exec(name ?? '')
-  return match ? Number(match[1]) : null
+  return numberOf(config.prefix, name)
 }
 
 // The highest candidate number among `names`, plus one.
@@ -545,8 +543,9 @@ function openCandidates({ gh, repo, config }: Pick<Run, 'gh' | 'repo' | 'config'
     .sort((a, b) => (candidateNumber(config, a.headRefName) ?? 0) - (candidateNumber(config, b.headRefName) ?? 0))
 }
 
+// The lowest open one, as the base reads it (src/base/names.ts).
 export function openCandidate(run: Pick<Run, 'gh' | 'repo' | 'config'>): CandidatePr | null {
-  return openCandidates(run)[0] ?? null
+  return openCandidateOf(openCandidates(run), run.config.prefix)
 }
 
 function candidateNames({ gh, repo, config }: Run) {

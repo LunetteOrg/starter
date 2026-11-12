@@ -80,7 +80,7 @@ small adapter that makes the calls it understands.
     (`OPENCODE_CONFIG_CONTENT`) on a standalone server, started as a shell command in a
     terminal or pane of its own, and prompted once the tool sees it ready.
   - Herdr: `herdr agent start --kind` with the model and effort after `--`.
-- **One base, found one way** (`packages/lntt/src/base.ts`) by `lntt worktree start` on
+- **One base, found one way** (`packages/lntt/src/base/base.ts`) by `lntt worktree start` on
   every host, `lntt review` and `lntt ci local`; an explicit `--base` wins in each
   (`origin/<base>`, else the branch of that name, which a stacked child's sibling may
   have only locally). Without `--base` the base is the open candidate when there is one,

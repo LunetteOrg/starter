@@ -50,7 +50,7 @@ module not yet moved keeps working as it is, and the two meet at a bridge (below
   fresh processes: the eight modules a command uses load in 23 ms, the index in 84 ms.
 - **The Node services are Effect's where `@effect/platform-node-shared` has them**
   (`NodeChildProcessSpawner`, `NodeFileSystem`, `NodeRuntime`), and `lntt`'s own only
-  where it has none (git). Code of `lntt`'s own is what Effect does not do.
+  where it has none (git, gh). Code of `lntt`'s own is what Effect does not do.
 
 ### Services
 
@@ -58,9 +58,11 @@ What reaches outside the process is a service, and reached only through it: proc
 (Effect's `ChildProcessSpawner`: a command in a process group of its own, stopped with a
 signal to the group and a forced kill after a delay), the file system (Effect's
 `FileSystem`), the clock (Effect's `Clock`, so a test moves time with `TestClock`), git,
-and the agents built on processes. A service of `lntt`'s own is declared with
+GitHub's CLI, and the agents built on processes. A service of `lntt`'s own is declared with
 `Context.Service`, its live layer in its module: git is `Git` in
-`packages/lntt/src/git/git.ts`, its operations typed and run through the spawner; the agents
+`packages/lntt/src/git/git.ts` and GitHub's CLI is `Gh` in `packages/lntt/src/gh/gh.ts`, their
+operations typed and run through the spawner, in the current directory or the one the layer
+names (`gitAt`, `ghAt`); the agents
 are `Agents` in `packages/lntt/src/review/asking.ts` (one agent run, and what keeps an agent
 from starting), its live layer in `packages/lntt/src/review/agents.ts` over the spawner, and
 `askAll` the logic over it (a slot per provider, the optional agents' grace, a stop). A
@@ -118,25 +120,31 @@ layers.
   group (the spawner's `killSignal` and `forceKillAfter`). A timeout, a stop (the round's
   deadline, the optional agents' grace) and an interrupt are interrupts of the agent's
   fiber, so it releases the same way, and `askAll` goes on once the release is done.
-- **A reading command keeps the default handling of signals** (a jq query that holds
-  the event loop is ended by the signal itself,
-  [the `lntt` command](./lntt-command.md#decision)): only a command that holds resources runs under the runner's handlers.
+- **A command whose work can hold the event loop keeps the default handling of signals,**
+  and does not run under the runner: a jq query that holds the loop is ended by the signal
+  itself ([the `lntt` command](./lntt-command.md#decision)). Every other command on Effect
+  runs under it, one that holds no resource too (`lntt branch`, `lntt pr`): one way to run,
+  its expected failures reported at the edge, and 130 for a signal.
 
 ### The bridge, while modules move
 
 A Promise function a module on Effect still calls runs under `Effect.tryPromise`, which
 passes it a signal an interrupt aborts when it takes one (a `Spawn` does). The sync code of modules not
 yet moved that a module on Effect needs (for `lntt review`: the project's configuration,
-the place of the state store, the base, `lntt check`'s areas, the parent the branch
+the place of the state store, `lntt check`'s areas, the parent the branch
 reports to and the limit's message, Orca's subagents) is reached through a service of that
 module, its bridge
 (`ReviewBridge` in `packages/lntt/src/review/bridge.ts`): the live layer runs the code under
 `Effect.try`, and what it throws is a tagged error of the bridge (`ReviewFailed`), reported
 by its message like any expected failure; the unit test gives the bridge's in-memory layer.
+A command with no bridge of its own reads such code at one place, a `Context.Reference` whose
+default is the sync function (the project's configuration in `lntt branch` and `lntt pr`),
+run under `Effect.try`, which its spec replaces.
 A defect of the Effect code reaches the edge with its stack. A piece leaves the bridge when
 its module moves to Effect. The library API of
 `@lntt/lntt` (`packages/lntt/src/index.ts`) stays on `Promise`, so a script that imports
-it needs no Effect: a library function whose logic moved (`askAll`, `runRound`) imports its
+it needs no Effect: a library function whose logic moved (`askAll`, `runRound`), and a
+function a command not yet on Effect calls (`projectBase` in `packages/lntt/src/base.ts`), imports its
 Effect form with `await import(...)` when it is called and runs it with `Effect.runPromise`,
 its callbacks under `Effect.sync`, `Effect.try` and `Effect.tryPromise` (a `Spawn` is the
 `Agents` layer `Agents.fromSpawn`, an `AbortSignal` the stop). A `Spawn` that rejects is
@@ -210,7 +218,7 @@ resolves its own version beside `lntt`'s.
   modules a command uses.
 - Effect's source vendored in the repo with `git subtree`, as the Effect team recommends
   for agents (#319): `AGENTS.md` sends the agents there instead of `node_modules`.
-- A service `lntt` writes itself (git) appears in `@effect/platform-node-shared`: it
+- A service `lntt` writes itself (git, gh) appears in `@effect/platform-node-shared`: it
   replaces `lntt`'s own.
 
 ## Discarded directions

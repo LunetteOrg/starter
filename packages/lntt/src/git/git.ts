@@ -1,13 +1,14 @@
 // Git as a service of lntt's own (docs/adr/effect-in-lntt.md#services): the operations lntt's
 // modules on Effect ask of the repository of the current directory, each a typed Effect. The live
-// layer runs git through Effect's ChildProcessSpawner; Git.memory answers from a record, for a spec.
+// layer runs git through Effect's ChildProcessSpawner, in the current directory or the one Git.at
+// names; Git.memory answers from a record, for a spec.
 
 import * as Context from 'effect/Context'
 import * as Data from 'effect/Data'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import { ChildProcess, ChildProcessSpawner } from 'effect/process'
-import * as Stream from 'effect/Stream'
+import { ChildProcessSpawner } from 'effect/process'
+import { captured } from '../captured.ts'
 
 // git exited non-zero, or could not start: the command and what it said.
 export class GitError extends Data.TaggedError('GitError')<{ args: readonly string[]; output: string }> {
@@ -23,6 +24,18 @@ export interface GitOperations {
   readonly status: Run<string>
   // The branch HEAD names, 'HEAD' when it is detached.
   readonly branch: Run<string>
+  // `git branch --show-current`: '' when HEAD is detached.
+  readonly current: Run<string>
+  // The object a revision names (`git rev-parse --verify --quiet`), null when it names none.
+  readonly verify: (rev: string) => Run<string | null>
+  // The branch origin/HEAD points at, as `origin/<branch>`; null when origin has no HEAD.
+  readonly originHead: Run<string | null>
+  // The refs under `pattern` that point at `rev`, full names (`refs/remotes/origin/candidate/13`).
+  readonly pointingAt: (rev: string, pattern: string) => Run<string[]>
+  // The URL of the origin remote, '' when there is none.
+  readonly originUrl: Run<string>
+  // Renames the branch HEAD is on.
+  readonly renameBranch: (name: string) => Run<void>
   // The short hash of a revision.
   readonly short: (rev: string) => Run<string>
   // The subject of a revision's commit.
@@ -53,6 +66,12 @@ export class Git extends Context.Service<Git, GitOperations>()('@lntt/lntt/git/G
       Git.of({
         status: missing('status'),
         branch: missing('branch'),
+        current: missing('current'),
+        verify: fn('verify'),
+        originHead: missing('originHead'),
+        pointingAt: fn('pointingAt'),
+        originUrl: missing('originUrl'),
+        renameBranch: fn('renameBranch'),
         short: fn('short'),
         subject: fn('subject'),
         root: missing('root'),
@@ -69,53 +88,60 @@ export class Git extends Context.Service<Git, GitOperations>()('@lntt/lntt/git/G
   }
 }
 
-const text = <E>(stream: Stream.Stream<Uint8Array, E>) => Stream.mkString(Stream.decodeText(stream))
+// git on the machine, in `dir`, else in the current directory.
+export const gitAt = (dir?: string) =>
+  Layer.effect(Git)(
+    Effect.gen(function* () {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+      // Its stdout without the trailing newline, and its exit code.
+      const exec = (args: string[]) =>
+        captured(spawner, 'git', args, dir).pipe(
+          Effect.mapError((error) => new GitError({ args, output: error.message })),
+        )
+      const run = (...args: string[]) =>
+        Effect.flatMap(exec(args), ({ out, err, code }) =>
+          code === 0 ? Effect.succeed(out) : Effect.fail(new GitError({ args, output: err })),
+        )
+      // Its output, or null for any exit but 0: an answer of "none", not a failure.
+      const ask = (...args: string[]) => Effect.map(exec(args), ({ out, code }) => (code === 0 ? out : null))
+      return Git.of({
+        status: run('status', '--porcelain'),
+        branch: run('rev-parse', '--abbrev-ref', 'HEAD'),
+        current: run('branch', '--show-current'),
+        verify: (rev) => ask('rev-parse', '--verify', '--quiet', rev),
+        originHead: ask('symbolic-ref', '--short', 'refs/remotes/origin/HEAD'),
+        pointingAt: (rev, pattern) =>
+          Effect.map(run('for-each-ref', `--points-at=${rev}`, '--format=%(refname)', pattern), (out) =>
+            out.split('\n').filter(Boolean),
+          ),
+        originUrl: Effect.map(ask('remote', 'get-url', 'origin'), (url) => url ?? ''),
+        renameBranch: (name) => Effect.asVoid(run('branch', '-m', name)),
+        short: (rev) => run('rev-parse', '--short', rev),
+        subject: (rev) => run('log', '-1', '--format=%s', rev),
+        root: run('rev-parse', '--show-toplevel'),
+        gitDir: run('rev-parse', '--absolute-git-dir'),
+        commonDir: run('rev-parse', '--path-format=absolute', '--git-common-dir'),
+        mergeBase: (a, b) => run('merge-base', a, b),
+        // A commit git no longer knows (a rebase dropped it) is no ancestor either.
+        isAncestor: (a, b) => Effect.map(exec(['merge-base', '--is-ancestor', a, b]), ({ code }) => code === 0),
+        changed: (range) => Effect.map(run('diff', '--name-only', range), (out) => out.split('\n').filter(Boolean)),
+        diff: (range) => run('diff', range),
+        written: (range) =>
+          run(
+            '-c',
+            'core.quotePath=false',
+            'diff',
+            '-U0',
+            '--no-color',
+            '--no-ext-diff',
+            '--no-relative',
+            '--src-prefix=a/',
+            '--dst-prefix=b/',
+            range,
+          ),
+      })
+    }),
+  )
 
 // git on the machine, in the current directory.
-export const GitLive = Layer.effect(Git)(
-  Effect.gen(function* () {
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-    // Its stdout without the trailing newline, and its exit code.
-    const exec = (args: string[]) =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const git = yield* spawner.spawn(ChildProcess.make('git', args, { stdin: 'ignore' }))
-          const [out, err, code] = yield* Effect.all([text(git.stdout), text(git.stderr), git.exitCode], {
-            concurrency: 'unbounded',
-          })
-          return { out: out.trimEnd(), err: err.trim(), code }
-        }),
-      ).pipe(Effect.mapError((error) => new GitError({ args, output: error.message })))
-    const run = (...args: string[]) =>
-      Effect.flatMap(exec(args), ({ out, err, code }) =>
-        code === 0 ? Effect.succeed(out) : Effect.fail(new GitError({ args, output: err })),
-      )
-    return Git.of({
-      status: run('status', '--porcelain'),
-      branch: run('rev-parse', '--abbrev-ref', 'HEAD'),
-      short: (rev) => run('rev-parse', '--short', rev),
-      subject: (rev) => run('log', '-1', '--format=%s', rev),
-      root: run('rev-parse', '--show-toplevel'),
-      gitDir: run('rev-parse', '--absolute-git-dir'),
-      commonDir: run('rev-parse', '--path-format=absolute', '--git-common-dir'),
-      mergeBase: (a, b) => run('merge-base', a, b),
-      // A commit git no longer knows (a rebase dropped it) is no ancestor either.
-      isAncestor: (a, b) => Effect.map(exec(['merge-base', '--is-ancestor', a, b]), ({ code }) => code === 0),
-      changed: (range) => Effect.map(run('diff', '--name-only', range), (out) => out.split('\n').filter(Boolean)),
-      diff: (range) => run('diff', range),
-      written: (range) =>
-        run(
-          '-c',
-          'core.quotePath=false',
-          'diff',
-          '-U0',
-          '--no-color',
-          '--no-ext-diff',
-          '--no-relative',
-          '--src-prefix=a/',
-          '--dst-prefix=b/',
-          range,
-        ),
-    })
-  }),
-)
+export const GitLive = gitAt()

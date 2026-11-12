@@ -161,13 +161,17 @@ function ledgerFile(branch: string): Partial<Ledger> | null {
 }
 
 // A branch is merged when its tip (its local ref, else the head its last round read) is
-// in the base every lntt command resolves (src/base.ts), which may ask GitHub for the open
+// in the base every lntt command resolves (src/base/base.ts), which may ask GitHub for the open
 // candidate. Null, with the reason, when that cannot be told: no base to compare with, a
 // candidate GitHub could not name, no tip. Never a guess of "not merged".
-function mergedInto(root: string, branch: string, head: string | null): { merged: boolean | null; why: string } {
+async function mergedInto(
+  root: string,
+  branch: string,
+  head: string | null,
+): Promise<{ merged: boolean | null; why: string }> {
   let ref: string
   try {
-    const base = projectBase(root, 'head')
+    const base = await projectBase(root, 'head')
     if (base.warning) return { merged: null, why: base.warning }
     ref = base.ref
     git('rev-parse', '--verify', '--quiet', `${ref}^{commit}`)
@@ -196,7 +200,7 @@ function listed(words: string[]): string {
 // when its state cannot be read; never while a round holds the lock, and never the lock itself.
 // The ledger of a branch that is not merged stays when only an unreadable state goes. The
 // states of branches that no longer exist go with --prune.
-function clear(root: string, current: string | null): number {
+async function clear(root: string, current: string | null): Promise<number> {
   const holder = lockHolder()
   if (holder !== null)
     throw new Error(
@@ -215,7 +219,7 @@ function clear(root: string, current: string | null): number {
     stdout.write('lntt review: nothing to clear\n')
     return 0
   }
-  const check = mergedInto(root, current, own?.state.result.head ?? null)
+  const check = await mergedInto(root, current, own?.state.result.head ?? null)
   const merged = check.merged === true
   if (!merged && !unreadable)
     throw new Error(
@@ -340,7 +344,7 @@ async function status(args: string[]): Promise<number> {
         // The place holds a branch's own state: it is always the current branch's.
         current: true,
         updated: updated.toISOString(),
-        merged: mergedInto(root, state.branch, result.head).merged,
+        merged: (await mergedInto(root, state.branch, result.head)).merged,
         round: state.round,
         maxRounds,
         allowed: view.allowed,

@@ -1,7 +1,7 @@
 // The bridge of lntt review's commands on Effect to the sync code of modules not yet moved
 // (docs/adr/effect-in-lntt.md#the-bridge-while-modules-move): the project's configuration, the
-// place of the state store, the base, lntt check's areas, the limit's message to the parent,
-// Orca's subagents. The live layer runs that
+// place of the state store, lntt check's areas, the limit's message to the parent, Orca's
+// subagents. The live layer runs that
 // code under Effect.try, and what it throws is a ReviewFailed; a spec gives its own answers.
 // Each piece leaves the bridge when its module moves to Effect.
 
@@ -15,7 +15,7 @@ import type { BranchRules } from '../branch.ts'
 import { type Area, formatJson, runArea } from '../check.ts'
 import type { Started } from '../messages.ts'
 import { orcaSubagents, type Subagents } from '../orca-subagents.ts'
-import { type Asked, askAtLimit, baseRef, loaded, placeFor, reportsTo } from './host.ts'
+import { type Asked, askAtLimit, loaded, placeFor, reportsTo } from './host.ts'
 
 // What the sync code threw: an expected failure, reported by its message.
 export class ReviewFailed extends Data.TaggedError('ReviewFailed')<{ cause: unknown }> {
@@ -31,8 +31,6 @@ export interface Bridged {
   readonly config: Failing<Record<string, unknown>>
   // The directory of the state store, from the clone's common and own git directories.
   readonly place: (common: string, gitDir: string, data: Record<string, unknown>) => Failing<string>
-  // The ref a round compares the branch with, --base or the project's base, and the line that names it.
-  readonly base: (root: string, given: string | undefined) => Failing<{ ref: string; said: string | null }>
   // The results of lntt check's areas a lens is named after, as their JSON.
   readonly checks: (
     areas: Area[],
@@ -62,7 +60,6 @@ export const ReviewBridgeLive = Layer.effect(ReviewBridge)(
           for (const line of said) yield* Console.error(`lntt review: ${line}`)
           return placed.dir
         }),
-      base: (root, given) => bridged(() => baseRef(root, given)),
       checks: (areas, { root, data, base }) =>
         bridged(() =>
           // A round runs no test: touched places the lines from the imports, never by coverage.

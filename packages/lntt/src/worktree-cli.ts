@@ -5,12 +5,11 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { cwd, env, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
-import { projectBase } from './base.ts'
+import { localRef, projectBase } from './base.ts'
 import { branchName, checkBranch } from './branch.ts'
 import { nameFromIssue, readIssue, rules } from './branch-cli.ts'
 import { isHotfix } from './ci/candidate.ts'
 import { candidateConfig } from './ci/config.ts'
-import { localRef } from './ci/event.ts'
 import {
   agentFor,
   approvals,
@@ -109,18 +108,18 @@ export function projectConfig(dir: string = cwd()): Config {
 }
 
 // What every host branches from: --base as given (origin/<base>, else <base>: a sibling's
-// branch may exist only here), else the base every lntt command resolves (src/base.ts),
+// branch may exist only here), else the base every lntt command resolves (src/base/base.ts),
 // asked once per kind: a hotfix (branch prefix or label) stays on the default branch.
-function startBase(root: string, given: string | undefined): (hotfix: boolean) => string {
+async function startBase(root: string, given: string | undefined): Promise<(hotfix: boolean) => Promise<string>> {
   if (given !== undefined) {
-    const ref = localRef(root, given) ?? given
-    return () => ref
+    const ref = (await localRef(root, given)) ?? given
+    return async () => ref
   }
   const resolved = new Map<boolean, string>()
-  return (hotfix) => {
+  return async (hotfix) => {
     const known = resolved.get(hotfix)
     if (known !== undefined) return known
-    const base = projectBase(root, hotfix ? 'hotfix' : 'new')
+    const base = await projectBase(root, hotfix ? 'hotfix' : 'new')
     stderr.write(`lntt worktree: ${base.warning ?? `base ${base.reason}`}\n`)
     resolved.set(hotfix, base.ref)
     return base.ref
@@ -201,7 +200,7 @@ function hasCoordinator(theme: string): boolean {
   return marker?.issue === null && marker.theme === theme
 }
 
-function start(args: string[]): void {
+async function start(args: string[]): Promise<void> {
   const { values } = parseArgs({
     args,
     options: {
@@ -259,7 +258,7 @@ function start(args: string[]): void {
   const context = values.context ? readFileSync(values.context, 'utf8') : undefined
   if (values.context && !context?.trim()) usage(`--context ${values.context} is empty`)
   const root = mainCheckout()
-  const base = startBase(root, values.base)
+  const base = await startBase(root, values.base)
   const candidate = candidateConfig(root)
   const ruleset = rules()
   const orca = orcaPath(host)
@@ -281,12 +280,13 @@ function start(args: string[]): void {
     const branch = branchName('chore', null, themeName)
     const check = checkBranch(branch, ruleset)
     if (!check.ok) throw new Error(`${branch} is not a valid name: ${check.reason}`)
-    const listed = issues.map((raw) => ({ issue: Number(raw), title: readIssue(Number(raw)).title }))
+    const listed = []
+    for (const raw of issues) listed.push({ issue: Number(raw), title: (await readIssue(Number(raw))).title })
     jobs.push({
       issue: null,
       title: `Theme ${themeName}`,
       branch,
-      base: base(false),
+      base: await base(false),
       agent: launched,
       root,
       brief: withPrompt(
@@ -305,8 +305,8 @@ function start(args: string[]): void {
   } else {
     for (const raw of issues) {
       const issue = Number(raw)
-      const data = readIssue(issue)
-      const branch = nameFromIssue(issue, {}, data)
+      const data = await readIssue(issue)
+      const branch = await nameFromIssue(issue, {}, data)
       const check = checkBranch(branch, ruleset)
       if (!check.ok) throw new Error(`#${issue}: ${branch} is not a valid name: ${check.reason}`)
       const worktree = wherever(branch)
@@ -315,7 +315,7 @@ function start(args: string[]): void {
         issue,
         title: data.title,
         branch,
-        base: base(
+        base: await base(
           candidate !== null && isHotfix(candidate, { headRef: branch, labels: data.labels.map((l) => l.name) }),
         ),
         agent: launched,
@@ -372,9 +372,9 @@ function start(args: string[]): void {
   }
 }
 
-export function main([command, ...args]: string[]): void {
+export async function main([command, ...args]: string[]): Promise<void> {
   try {
-    if (command === 'start') start(args)
+    if (command === 'start') await start(args)
     else usage()
   } catch (error) {
     if (error instanceof Exit) throw error

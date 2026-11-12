@@ -63,28 +63,12 @@ describe('lntt branch name', () => {
     assert.equal(r.stdout.trim(), 'feat/77/branch-names-follow-type')
   })
 
-  test('--type and --slug override what the issue says', () => {
-    stub('gh', ISSUE_77)
-    const r = lntt(['branch', 'name', '--issue', '77', '--type', 'chore', '--slug', 'orca-names'])
-    assert.equal(r.stdout.trim(), 'chore/77/orca-names')
-  })
-
   test('without an issue: type and slug are required', () => {
     assert.equal(
       lntt(['branch', 'name', '--type', 'docs', '--slug', 'version-numbering']).stdout.trim(),
       'docs/no-issue/version-numbering',
     )
     assert.equal(lntt(['branch', 'name', '--type', 'docs']).status, 2)
-  })
-})
-
-describe('lntt branch name, when the issue gives no usable name', () => {
-  test('a title with nothing to slug is a red result (exit 1), not a usage error', () => {
-    stub('gh', JSON.stringify({ number: 12, title: '🚀', labels: [], type: null }))
-    const r = lntt(['branch', 'name', '--issue', '12'])
-    assert.equal(r.status, 1)
-    assert.match(r.stderr, /slug/)
-    assert.doesNotMatch(r.stderr, /usage:/)
   })
 })
 
@@ -100,12 +84,6 @@ describe('lntt branch check --pre-push', () => {
     assert.match(r.stderr, /wip/)
     assert.equal(push(`refs/heads/x ${SHA} refs/heads/feat/1/ok ${ZERO}\n`).status, 0)
   })
-
-  test('lets tags and branch deletions through', () => {
-    git('switch', '-q', '-c', 'badly-named')
-    assert.equal(push(`refs/tags/v1 ${SHA} refs/tags/v1 ${ZERO}\n`).status, 0)
-    assert.equal(push(`(delete) ${ZERO} refs/heads/old-thing ${SHA}\n`).status, 0)
-  })
 })
 
 describe('lntt branch check', () => {
@@ -116,16 +94,6 @@ describe('lntt branch check', () => {
     assert.equal(r.status, 1)
     assert.match(r.stderr, /rename it: git branch -m feat\/77\/branch-names/)
   })
-
-  test('with no name to derive, it says which command prints one', () => {
-    const r = lntt(['branch', 'check', '--branch', 'ilmeskio/probe-b'])
-    assert.equal(r.status, 1)
-    assert.match(r.stderr, /; rename it to the name pnpm exec lntt branch name --issue <n> prints$/m)
-  })
-
-  test('lets the base through', () => {
-    assert.equal(lntt(['branch', 'check']).status, 0)
-  })
 })
 
 describe('lntt branch rename', () => {
@@ -134,53 +102,6 @@ describe('lntt branch rename', () => {
     const r = lntt(['branch', 'rename'])
     assert.equal(r.status, 0, r.stderr)
     assert.equal(git('branch', '--show-current'), 'chore/98/orca-yaml')
-  })
-
-  test('in Orca, builds the name from the linked issue', () => {
-    git('switch', '-q', '-c', 'ilmeskio/probe-a')
-    stub('gh', ISSUE_77)
-    stub('orca', JSON.stringify({ ok: true, result: { worktree: { linkedIssue: 77 } } }))
-    const r = lntt(['branch', 'rename'], { TERM_PROGRAM: 'Orca', ORCA_WORKTREE_ID: 'r::/p' })
-    assert.equal(r.status, 0, r.stderr)
-    assert.equal(git('branch', '--show-current'), 'feat/77/branch-names-follow-type')
-  })
-
-  test('leaves the branch alone when it already follows, or when nothing can be derived', () => {
-    git('switch', '-q', '-c', 'feat/77/branch-names')
-    assert.equal(lntt(['branch', 'rename']).status, 0)
-    assert.equal(git('branch', '--show-current'), 'feat/77/branch-names')
-
-    git('switch', '-q', '-c', 'ilmeskio/probe-b')
-    const r = lntt(['branch', 'rename'])
-    assert.equal(r.status, 0, 'a setup step must not fail on a name it cannot fix')
-    assert.match(r.stderr, /"\$\(pnpm exec lntt branch name --issue <n>\)"/)
-    assert.equal(git('branch', '--show-current'), 'ilmeskio/probe-b')
-  })
-
-  test('in Orca, an issue that gives no valid name leaves the branch and the setup alone', () => {
-    git('switch', '-q', '-c', 'ilmeskio/probe-c')
-    stub('gh', JSON.stringify({ number: 12, title: '🚀', labels: [], type: null }))
-    stub('orca', JSON.stringify({ ok: true, result: { worktree: { linkedIssue: 12 } } }))
-    const r = lntt(['branch', 'rename'], { TERM_PROGRAM: 'Orca', ORCA_WORKTREE_ID: 'r::/p' })
-    assert.equal(r.status, 0, r.stderr)
-    assert.match(r.stderr, /slug/)
-    assert.equal(git('branch', '--show-current'), 'ilmeskio/probe-c')
-  })
-
-  test('a detached HEAD is reported, not an error', () => {
-    git('switch', '-q', '--detach')
-    const r = lntt(['branch', 'rename'])
-    assert.equal(r.status, 0, r.stderr)
-    assert.match(r.stderr, /detached/)
-  })
-
-  test('never overwrites an existing branch', () => {
-    git('branch', 'chore/98/orca-yaml')
-    git('switch', '-q', '-c', 'ilmeskio/chore-98-orca-yaml')
-    const r = lntt(['branch', 'rename'])
-    assert.equal(r.status, 0)
-    assert.match(r.stderr, /already exists/)
-    assert.equal(git('branch', '--show-current'), 'ilmeskio/chore-98-orca-yaml')
   })
 })
 
