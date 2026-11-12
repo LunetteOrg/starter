@@ -13,7 +13,7 @@ import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import { exit } from '../exit.ts'
-import { GitLive } from '../git/git.ts'
+import { gitAt } from '../git/git.ts'
 import { runCommand } from '../run-command.ts'
 import { ConfigInvalid, findConfig, loadConfig, loadOperator, plain, setConfig } from './load.ts'
 import { getConfigValue, getValue } from './project.ts'
@@ -52,9 +52,9 @@ const operator = Effect.fnUntraced(function* (
   yield* json(yield* plain(() => getValue(profile, show.key)))
 })
 
-// A command on the configuration found from `cwd`, the operator's home `home`: its exit code.
-// `operator` does not read `cwd`: its project profile is the repository Git runs in, the
-// process's directory.
+// A command on the configuration found from `cwd`, the operator's home `home`: its exit code. The
+// operator's project profile is the repository the Git service runs in, which runConfig places at
+// `cwd`.
 export const command = (parsed: ConfigCommand, cwd: string, home: string) =>
   Effect.gen(function* () {
     switch (parsed.kind) {
@@ -86,13 +86,14 @@ export const command = (parsed: ConfigCommand, cwd: string, home: string) =>
     }),
   )
 
-// The services on the machine.
-const Live = GitLive.pipe(
-  Layer.provide(NodeChildProcessSpawner.layer),
-  Layer.provideMerge(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)),
-)
+// The services on the machine, git in `cwd`.
+const live = (cwd: string) =>
+  gitAt(cwd).pipe(
+    Layer.provide(NodeChildProcessSpawner.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)),
+  )
 
 // Runs a configuration command as the process's main program (src/run-command.ts).
 export function runConfig(parsed: ConfigCommand, cwd: string, home: string): Promise<never> {
-  return runCommand(command(parsed, cwd, home).pipe(Effect.map(exit), Effect.provide(Live)))
+  return runCommand(command(parsed, cwd, home).pipe(Effect.map(exit), Effect.provide(live(cwd))))
 }
