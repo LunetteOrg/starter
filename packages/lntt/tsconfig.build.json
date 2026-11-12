@@ -13,6 +13,7 @@
     "outDir": "dist"
   },
   "include": ["src/**/*.ts", "bin/**/*.ts"],
-  // The unit tests sit beside their modules and stay out of the published package.
-  "exclude": ["src/**/*.spec.ts"]
+  // The unit tests sit beside their modules and, with the in-memory services they share
+  // (src/testing/), stay out of the published package.
+  "exclude": ["src/**/*.spec.ts", "src/testing/**"]
 }

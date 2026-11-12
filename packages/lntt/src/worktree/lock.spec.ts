@@ -5,11 +5,10 @@ import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
-import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
-import * as Option from 'effect/Option'
-import * as PlatformError from 'effect/PlatformError'
+import type * as PlatformError from 'effect/PlatformError'
 import * as TestClock from 'effect/testing/TestClock'
+import { memoryFileSystem } from '../testing/file-system.ts'
 import { FRESH_MS, HEARTBEAT_MS, lockPath } from '../worktree-lock.ts'
 import { type LockedError, lockWorktree, Pids } from './lock.ts'
 
@@ -22,58 +21,17 @@ const GONE = 999_999
 const OLD = FRESH_MS * 4
 const HOUR = 60 * 60 * 1000
 
-const failure = (method: string, path: string, tag: 'AlreadyExists' | 'NotFound') =>
-  PlatformError.systemError({ _tag: tag, module: 'FileSystem', method, pathOrDescriptor: path })
-
-// A file system in memory: each file its text and when it was last touched, by the test's clock.
-// `linkFails`: every link finds the lock already there, as when other runs keep taking it.
+// The lock's git directory in memory, and the processes as the lock sees them.
 function inMemory(options: { linkFails?: boolean } = {}) {
-  const files = new Map<string, { text: string; mtime: number }>()
-  const links = { count: 0 }
-  const fileSystem = FileSystem.makeNoop({
-    readFileString: (path) => {
-      const file = files.get(path)
-      return file ? Effect.succeed(file.text) : Effect.fail(failure('readFileString', path, 'NotFound'))
-    },
-    writeFileString: (path, text, options) =>
-      Effect.gen(function* () {
-        if (options?.flag === 'wx' && files.has(path)) return yield* failure('writeFileString', path, 'AlreadyExists')
-        files.set(path, { text, mtime: yield* Clock.currentTimeMillis })
-      }),
-    stat: (path) => {
-      const file = files.get(path)
-      if (!file) return Effect.fail(failure('stat', path, 'NotFound'))
-      return Effect.succeed({ mtime: Option.some(new Date(file.mtime)) } as FileSystem.File.Info)
-    },
-    utimes: (path, _atime, mtime) =>
-      Effect.suspend(() => {
-        const file = files.get(path)
-        if (!file) return Effect.fail(failure('utimes', path, 'NotFound'))
-        // As Node's fs.utimes: a Date, or a number of seconds.
-        file.mtime = mtime instanceof Date ? mtime.getTime() : Number(mtime) * 1000
-        return Effect.void
-      }),
-    link: (from, to) =>
-      Effect.suspend(() => {
-        links.count++
-        const file = files.get(from)
-        if (!file) return Effect.fail(failure('link', from, 'NotFound'))
-        if (files.has(to) || options.linkFails) return Effect.fail(failure('link', to, 'AlreadyExists'))
-        files.set(to, { ...file })
-        return Effect.void
-      }),
-    remove: (path, options) =>
-      Effect.suspend(() => {
-        if (!files.delete(path) && !options?.force) return Effect.fail(failure('remove', path, 'NotFound'))
-        return Effect.void
-      }),
-  })
+  const memory = memoryFileSystem({ dirs: [GIT_DIR], ...options })
   const pids = Pids.of({ self: SELF, visible: (pid) => Effect.succeed(pid === LIVE || pid === SELF) })
-  // A lock as another run wrote it, last touched `agoMs` ago.
-  const held = (text: string, agoMs = 0) =>
-    Effect.map(Clock.currentTimeMillis, (now) => void files.set(LOCK, { text, mtime: now - agoMs }))
-  const layer = Layer.mergeAll(Layer.succeed(FileSystem.FileSystem)(fileSystem), Layer.succeed(Pids)(pids))
-  return { files, held, layer, links, text: () => files.get(LOCK)?.text }
+  return {
+    ...memory,
+    // A lock as another run wrote it, last touched `agoMs` ago.
+    held: (text: string, agoMs = 0) => memory.put(LOCK, text, agoMs),
+    layer: Layer.mergeAll(memory.layer, Layer.succeed(Pids)(pids)),
+    text: () => memory.text(LOCK),
+  }
 }
 
 // The message a refusal carries, or `taken` when the lock was taken.

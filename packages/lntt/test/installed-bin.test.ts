@@ -165,7 +165,7 @@ describe('the installed package', () => {
     execFileSync('git', ['init', '-q', '-b', 'feat/1/x'], { cwd: repo })
     const r = spawnSync('node', [bin, 'review', '--plan'], { cwd: repo, encoding: 'utf8' })
     assert.equal(r.status, 1, r.stderr)
-    assert.match(r.stderr, /^lntt review: error: Command failed: git rev-parse/)
+    assert.match(r.stderr, /^lntt review: error: git rev-parse --abbrev-ref HEAD failed: /)
     assert.doesNotMatch(r.stderr, /ERR_MODULE_NOT_FOUND|Cannot find (package|module)/)
   })
 

@@ -23,6 +23,7 @@ import {
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
+import type { Closed, Ledger, ReviewState } from './review.ts'
 
 export interface PlaceInput {
   // `git rev-parse --path-format=absolute --git-common-dir`
@@ -96,6 +97,26 @@ export function resolvePlace(input: PlaceInput): Place {
 
 export const statePathIn = (dir: string, branch: string): string => join(dir, 'state', `${branchKey(branch)}.json`)
 export const ledgerPathIn = (dir: string, branch: string): string => join(dir, 'ledger', `${branchKey(branch)}.json`)
+
+// A branch's state file as a round reads it: one that names another branch is an error, as one
+// that is not JSON throws, never a round started on a guess.
+export function parseState(text: string, path: string, branch: string): ReviewState {
+  const state = JSON.parse(text) as ReviewState | null
+  if (state?.branch !== branch)
+    throw new Error(`${path} cannot be read: pnpm exec lntt review status --clear removes it`)
+  return state
+}
+
+// A branch's ledger file: its closed findings, [] when it names another branch, null when it
+// cannot be read (a write cut short), which the reader says.
+export function parseLedger(text: string, branch: string): Closed[] | null {
+  try {
+    const ledger = JSON.parse(text) as Partial<Ledger>
+    if (ledger.branch !== branch) return []
+    if (Array.isArray(ledger.closed)) return ledger.closed
+  } catch {}
+  return null
+}
 
 function keysIn(folder: string): string[] {
   if (!existsSync(folder)) return []
