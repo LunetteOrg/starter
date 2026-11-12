@@ -186,6 +186,7 @@ describe('the candidate at a detached HEAD, when git cannot list the refs', () =
         pointingAt: () => Effect.fail(new GitError({ args: ['for-each-ref'], output: 'fatal: bad object' })),
       })
       const error = yield* Effect.flip(candidateAt('candidate/').pipe(Effect.provide(failing)))
+      assert.strictEqual(error._tag, 'GitError')
       assert.strictEqual(error.message, 'git for-each-ref failed: fatal: bad object')
     }),
   )

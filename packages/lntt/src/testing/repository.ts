@@ -11,6 +11,8 @@ export function repository() {
   let head: { branch: string } | { detached: string } = { branch: 'main' }
   let originHead: string | null = null
   let renamed: string[] = []
+  // A git that cannot list the refs: pointingAt fails as git would.
+  let refsUnreadable = false
 
   // The commit a revision names, as `git rev-parse --verify` resolves it; null for none.
   const resolve = (rev: string): string | null => {
@@ -59,6 +61,9 @@ export function repository() {
     originHead(name: string | null) {
       originHead = name
     },
+    unreadableRefs() {
+      refsUnreadable = true
+    },
     current: () => ('detached' in head ? '' : head.branch),
     resolve,
     renamed: () => renamed,
@@ -69,11 +74,13 @@ export function repository() {
         verify: (rev) => Effect.sync(() => resolve(rev)),
         originHead: Effect.sync(() => originHead),
         pointingAt: (rev, pattern) =>
-          Effect.sync(() => {
-            const at = resolve(rev)
-            const prefix = pattern.replace(/\*$/, '')
-            return [...refs].filter(([name, id]) => id === at && name.startsWith(prefix)).map(([name]) => name)
-          }),
+          refsUnreadable
+            ? Effect.fail(new GitError({ args: ['for-each-ref'], output: 'fatal: bad object' }))
+            : Effect.sync(() => {
+                const at = resolve(rev)
+                const prefix = pattern.replace(/\*$/, '')
+                return [...refs].filter(([name, id]) => id === at && name.startsWith(prefix)).map(([name]) => name)
+              }),
         mergeBase: (a, b) =>
           Effect.suspend(() => {
             const of = ancestors(resolve(b))

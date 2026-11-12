@@ -178,6 +178,18 @@ describe('lntt branch check', () => {
   )
 })
 
+describe('lntt branch check, when git cannot list the refs at a detached HEAD', () => {
+  it.effect("ends with git's message and exit 1, not the detached HEAD's", () =>
+    Effect.gen(function* () {
+      const w = world()
+      w.repo.detach('HEAD')
+      w.repo.unreadableRefs()
+      const r = yield* w.lntt({ kind: 'check' })
+      assert.deepStrictEqual([r.code, r.err], [1, 'lntt branch: git for-each-ref failed: fatal: bad object'])
+    }),
+  )
+})
+
 describe('lntt branch rename', () => {
   it.effect('in Orca, builds the name from the linked issue', () =>
     Effect.gen(function* () {
