@@ -23,7 +23,8 @@ import { lockPath } from '../worktree-lock.ts'
 import { AgentsProcesses } from './agents.ts'
 import { ReviewBridge, ReviewFailed } from './bridge.ts'
 import { command, type ReviewCommand } from './command.ts'
-import { ReviewStore } from './store.ts'
+import { PlaceInvalid } from './place.ts'
+import { makeStore, ReviewStore } from './store.ts'
 
 const ROOT = '/repo'
 const GIT_DIR = '/repo/.git'
@@ -237,6 +238,8 @@ function world() {
     config: CONFIG() as Record<string, unknown>,
     env: {} as Record<string, string>,
     invalid: null as string | null,
+    // The place of the state store that cannot be resolved, as resolvePlace refuses it.
+    placeInvalid: null as string | null,
     // A bug of lntt, where the bridge is reached last before the agents.
     defect: false,
     // The parent the branch reports to, and the limits sent to it.
@@ -294,7 +297,15 @@ function world() {
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
-          ReviewStore.memory(STORE, GIT_DIR).pipe(Layer.provideMerge(fs.layer)),
+          (project.placeInvalid === null
+            ? ReviewStore.memory(STORE, GIT_DIR)
+            : Layer.effect(ReviewStore)(
+                makeStore({
+                  dir: Effect.fail(new PlaceInvalid({ message: project.placeInvalid })),
+                  gitDir: Effect.succeed(GIT_DIR),
+                }),
+              )
+          ).pipe(Layer.provideMerge(fs.layer)),
           repo.layer(),
           bridge,
           config,
@@ -420,6 +431,20 @@ describe('lntt review, a round', () => {
       const real = yield* w.round()
       assert.strictEqual(real.code, 1, 'a real round refuses')
       assert.match(real.err, /error: cannot start opencode x\/y/)
+    })
+  })
+
+  it.effect('a place of the state store that cannot be resolved is an error line, exit 1', () => {
+    const w = world()
+    return Effect.gen(function* () {
+      w.project.placeInvalid =
+        "the operator profile's review.stateDir must be an absolute path or start with ~: relative/dir"
+      const run = yield* w.round()
+      assert.strictEqual(run.code, 1)
+      assert.match(
+        run.err,
+        /^lntt review: error: the operator profile's review\.stateDir must be an absolute path or start with ~: relative\/dir$/m,
+      )
     })
   })
 

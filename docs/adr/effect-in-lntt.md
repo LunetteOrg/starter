@@ -95,7 +95,8 @@ layers.
   `runMain`'s own error reporting is off: its log format is not `lntt`'s.
 - **`exit.ts` imports no Effect,** because every command loads it: `effect/Runtime` and
   `NodeRuntime` take about 24 ms each to load (measured on 2026-11-11, `effect` 4.1.4,
-  node 24.22.1, median of 11 fresh processes), against 150 ms for a whole `lntt get`.
+  node 24.22.1, median of 11 fresh processes), against about 140 ms for a whole command
+  that loads none (`lntt guide`, measured on 2026-11-12, median of 21).
   Only a command on Effect loads `run-command.ts`.
 - **A resource is acquired with its release** (`Effect.acquireRelease`), in the scope of
   the command or of the step that uses it. Nothing on Effect is released from

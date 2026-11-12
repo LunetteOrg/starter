@@ -17,15 +17,22 @@ export interface MemoryFile {
   mtime: number
 }
 
-const failure = (method: string, path: string, tag: 'AlreadyExists' | 'NotFound' | 'Unknown', cause?: unknown) =>
-  PlatformError.systemError({ _tag: tag, module: 'FileSystem', method, pathOrDescriptor: path, cause })
+const failure = (
+  method: string,
+  path: string,
+  tag: 'AlreadyExists' | 'NotFound' | 'PermissionDenied' | 'Unknown',
+  cause?: unknown,
+) => PlatformError.systemError({ _tag: tag, module: 'FileSystem', method, pathOrDescriptor: path, cause })
 
 const parent = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf('/'))) || '/'
 
 // `dirs`: the directories that exist from the start, with their ancestors. `linkFails`: every
 // link finds its target already there, as when other runs keep taking a lock. `devices`: the
-// directories mounted on a filesystem of their own, which a rename cannot cross.
-export function memoryFileSystem(options: { dirs?: string[]; linkFails?: boolean; devices?: string[] } = {}) {
+// directories mounted on a filesystem of their own, which a rename cannot cross. `unreadable`: the
+// directories that cannot be searched, where looking at a path fails with PermissionDenied.
+export function memoryFileSystem(
+  options: { dirs?: string[]; linkFails?: boolean; devices?: string[]; unreadable?: string[] } = {},
+) {
   const files = new Map<string, MemoryFile>()
   const dirs = new Set<string>(['/'])
   const links = { count: 0 }
@@ -55,7 +62,10 @@ export function memoryFileSystem(options: { dirs?: string[]; linkFails?: boolean
     })
 
   const fileSystem = FileSystem.makeNoop({
-    exists: (path) => Effect.sync(() => files.has(path) || dirs.has(path)),
+    exists: (path) =>
+      (options.unreadable ?? []).some((dir) => path.startsWith(`${dir}/`))
+        ? Effect.fail(failure('exists', path, 'PermissionDenied'))
+        : Effect.sync(() => files.has(path) || dirs.has(path)),
     makeDirectory: (path, options) =>
       Effect.suspend(() => {
         if (!options?.recursive && !dirs.has(parent(path)))

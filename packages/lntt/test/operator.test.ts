@@ -51,6 +51,31 @@ describe('finding the operator profile, synchronously', () => {
     assert.deepEqual(sources, [path])
   })
 
+  test('the project profile wins over the global one, key by key', () => {
+    const global = write(
+      join(home, '.agents/operator.yml'),
+      'language: en\nrole: developer\naccounts:\n  github: ada\n',
+    )
+    const project = write(
+      join(main, '.agents/local/operator.jsonc'),
+      '{ "role": "product", "accounts": { "google": "ada@example.org" } }',
+    )
+    const { profile, sources } = loadOperator(worktree, { home })
+    assert.deepEqual(profile, {
+      language: 'en',
+      role: 'product',
+      accounts: { github: 'ada', google: 'ada@example.org' },
+    })
+    assert.deepEqual(sources, [global, project])
+  })
+
+  test('without a main-checkout file, falls back to ~/.agents/projects/<org>/<repo>/', () => {
+    const path = write(join(home, '.agents/projects/LunetteOrg/demo/operator.yml'), 'handle: ada\n')
+    const { profile, sources } = loadOperator(worktree, { home })
+    assert.equal(profile.handle, 'ada')
+    assert.deepEqual(sources, [path])
+  })
+
   test('outside a git repository, only the global profile counts', () => {
     const outside = join(tmp, 'outside')
     mkdirSync(outside)

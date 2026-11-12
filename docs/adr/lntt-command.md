@@ -190,7 +190,7 @@ rests on these criteria:
    `delivery.candidate` and `delivery.pullRequest.retrospective` (`candidateConfig` in
    `packages/lntt/src/ci/config.ts`, `retrospectiveRules` in
    `packages/lntt/src/pull-request.ts`). Every read validates the
-   whole file with Ajv (`loadConfig` in `packages/lntt/src/index.ts`) against a schema
+   whole file with Ajv (`readConfig` in `packages/lntt/src/config/project.ts`) against a schema
    that rejects unknown fields (`additionalProperties: false` in
    `packages/lntt/schema/config.schema.json`), so the contract is the whole file.
 4. **The skills call both groups.** `review` calls `lntt review`, `lntt check cite` and

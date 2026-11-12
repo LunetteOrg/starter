@@ -88,6 +88,16 @@ describe('finding the file', () => {
   })
 })
 
+describe('a directory that cannot be searched', () => {
+  it.effect('holds no file: the walk goes on up', () => {
+    const fs = memoryFileSystem({ dirs: [ROOT], unreadable: [`${ROOT}/locked`] })
+    return Effect.gen(function* () {
+      yield* fs.put(`${ROOT}/.agents/config.jsonc`, JSONC)
+      assert.strictEqual((yield* findConfig(`${ROOT}/locked/deep`)).path, `${ROOT}/.agents/config.jsonc`)
+    }).pipe(Effect.provide(Layer.mergeAll(fs.layer, Path.layer)))
+  })
+})
+
 describe('reading and validating', () => {
   it.effect('JSONC and YAML give the same data, comments ignored', () => {
     const { fs, layer, put } = setup()

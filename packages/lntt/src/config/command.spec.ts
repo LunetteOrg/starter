@@ -14,10 +14,11 @@ const HOME = '/home/me'
 
 // One run of a configuration command on a project whose configuration is `config`: its exit
 // code, stdout and stderr.
-const lntt = (parsed: ConfigCommand, config: string) => {
-  const fs = memoryFileSystem({ dirs: [ROOT] })
+const lntt = (parsed: ConfigCommand, config: string | null, files: Record<string, string> = {}) => {
+  const fs = memoryFileSystem({ dirs: [ROOT, HOME] })
   return Effect.gen(function* () {
-    yield* fs.put(CONFIG, config)
+    if (config !== null) yield* fs.put(CONFIG, config)
+    for (const [path, text] of Object.entries(files)) yield* fs.put(path, text)
     const code = yield* command(parsed, ROOT, HOME)
     const out = (yield* TestConsole.logLines).join('\n')
     const err = (yield* TestConsole.errorLines).join('\n')
@@ -119,6 +120,43 @@ describe('the other commands', () => {
       assert.strictEqual((yield* lntt({ kind: 'operator', show: 'profile' }, '{}')).out, '{"role":"developer"}')
       const missing = yield* lntt({ kind: 'operator', show: { key: 'handle' } }, '{}')
       assert.deepStrictEqual([missing.code, missing.err], [1, 'lntt: no handle in the configuration'])
+    }),
+  )
+})
+
+describe('with no configuration', () => {
+  it.effect('path, get and validate say so on stderr and exit 1', () =>
+    Effect.gen(function* () {
+      for (const parsed of [{ kind: 'path' }, { kind: 'get', key: 'project' }, { kind: 'validate' }] as const) {
+        const run = yield* lntt(parsed, null)
+        assert.deepStrictEqual(
+          run,
+          { code: 1, out: '', err: 'lntt: no .agents/config.jsonc or .agents/config.yml in /project or above' },
+          parsed.kind,
+        )
+      }
+    }),
+  )
+})
+
+describe('the operator', () => {
+  it.effect('sources lists the profiles read, one per line; none with no profile', () =>
+    Effect.gen(function* () {
+      assert.deepStrictEqual(yield* lntt({ kind: 'operator', show: 'sources' }, null), { code: 0, out: '', err: '' })
+      const global = `${HOME}/.agents/operator.yml`
+      const run = yield* lntt({ kind: 'operator', show: 'sources' }, null, { [global]: 'handle: ada\n' })
+      assert.deepStrictEqual(run, { code: 0, out: global, err: '' })
+    }),
+  )
+})
+
+describe('a delivery.review the schema accepts and lntt review refuses', () => {
+  it.effect('validates with no warning: it is the first round that refuses it', () =>
+    Effect.gen(function* () {
+      const run = yield* validate(
+        '{ "delivery": { "review": { "reviewers": { "custom": { "with": [{ "kind": "claude", "model": "sonnet" }] } } } } }',
+      )
+      assert.deepStrictEqual([run.code, run.err], [0, ''])
     }),
   )
 })

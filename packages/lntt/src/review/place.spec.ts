@@ -204,6 +204,17 @@ describe('a state in the old place, the worktree’s git directory', () => {
     })
   })
 
+  it.effect("at the same time as the place's, the old file is dropped: the place's wins", () => {
+    const { fs, said, migrate } = setup()
+    return Effect.gen(function* () {
+      yield* fs.put(STATE, JSON.stringify({ branch: 'feat/1/x', round: 2 }))
+      yield* fs.put(old(), JSON.stringify({ branch: 'feat/1/x', round: 9 }))
+      yield* migrate
+      assert.strictEqual(JSON.parse(fs.text(STATE) ?? '').round, 2)
+      assert.match(said[0] ?? '', /is older than the one in .*: dropped$/)
+    })
+  })
+
   it.effect('a file that cannot be read, or that names no branch, is set aside and not migrated', () => {
     const { fs, said, migrate } = setup()
     return Effect.gen(function* () {
@@ -258,4 +269,31 @@ describe('the place of a clone', () => {
       assert.match((yield* TestConsole.errorLines).join('\n'), /^lntt review: moved the state of feat\/1\/x from /)
     }).pipe(Effect.provide(layer))
   })
+
+  const placed = (common: string, config: Record<string, unknown>) => {
+    const fs = memoryFileSystem({ dirs: [common, '/home/me'] })
+    return placeOf('/home/me').pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          fs.layer,
+          resolving,
+          ProjectConfig.memory(config),
+          Git.memory({
+            commonDir: Effect.succeed(common),
+            gitDir: Effect.succeed(common),
+            originUrl: Effect.succeed(''),
+          }),
+          TestConsole.layer,
+        ),
+      ),
+    )
+  }
+
+  it.effect("a project's relative place starts at the main checkout; a bare clone's at its git directory", () =>
+    Effect.gen(function* () {
+      const relative = { delivery: { review: { stateDir: 'store' } } }
+      assert.match((yield* placed('/repo/.git', relative)).dir, /^\/repo\/store\/local\/[0-9a-f]{12}$/)
+      assert.match((yield* placed('/srv/repo.git', relative)).dir, /^\/srv\/repo\.git\/store\/local\/[0-9a-f]{12}$/)
+    }),
+  )
 })

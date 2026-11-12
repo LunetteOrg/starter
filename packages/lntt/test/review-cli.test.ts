@@ -2203,6 +2203,15 @@ describe("where lntt review keeps a branch's rounds", () => {
     assert.equal(JSON.parse(lntt(['status', '--json'], env).out).state.round, 1, 'and holds the branch from now on')
   })
 
+  test("an operator's place that is not absolute stops a round and status alike, with the reason", () => {
+    const HOME = home({ review: { stateDir: 'relative/dir' } })
+    for (const args of [['--base', 'main'], ['status']]) {
+      const r = lntt(args, { HOME })
+      assert.equal(r.code, 1, args.join(' '))
+      assert.match(r.err, /review\.stateDir must be an absolute path or start with ~: relative\/dir/, args.join(' '))
+    }
+  })
+
   describe('--prune', () => {
     const origin = () => {
       const dir = temp('origin')

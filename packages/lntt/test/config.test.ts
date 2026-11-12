@@ -810,7 +810,8 @@ describe("the starter's own configuration", () => {
 
   test('the file passes lntt validate, and its board is the lunette roadmap Project', () => {
     assert.ok(existsSync(join(REPO, '.agents/config.jsonc')), REPO)
-    const valid = validateAt(REPO)
+    // The real command, end to end, on a real configuration.
+    const valid = spawnSync(process.execPath, [BIN, 'validate'], { cwd: REPO, encoding: 'utf8' })
     assert.equal(valid.status, 0, valid.stderr)
     const data = loadConfig(REPO).data
     assert.deepEqual(getValue(data, 'board.github.project'), {

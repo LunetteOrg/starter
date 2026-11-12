@@ -1,6 +1,6 @@
 // The project's configuration and the operator profile on Effect (docs/adr/effect-in-lntt.md):
 // found, read and written through Effect's FileSystem and Path, the repository through Git; the
-// operator's home is an input, read at the edge (effect/Config alone takes some 70 ms to load). The logic is plain (src/config/project.ts,
+// operator's home is an input, read at the edge. The logic is plain (src/config/project.ts,
 // src/config/operator.ts); what it throws is an expected failure here, a ConfigInvalid, and no
 // file at all is a NoConfig, the one case a command may answer with its defaults.
 //
@@ -37,7 +37,11 @@ export const plain = <A>(run: () => A) =>
 const locate = Effect.fnUntraced(function* (dir: string, name: string) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
-  const found = yield* Effect.filter(candidates(dir, name, path.join), (file) => fs.exists(file.path))
+  // A path that cannot be looked at (a directory that cannot be searched, a file where a directory
+  // would be) holds no file, as with existsSync: the walk goes on up.
+  const found = yield* Effect.filter(candidates(dir, name, path.join), (file) =>
+    fs.exists(file.path).pipe(Effect.orElseSucceed(() => false)),
+  )
   return yield* plain(() => pick(found))
 })
 
