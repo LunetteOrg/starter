@@ -31,6 +31,13 @@ const drained = (stream: NodeJS.WriteStream) =>
     else stream.write('', () => resolve())
   })
 
+// What a command computed for its two streams, written: its exit code (a jq query, src/query.ts).
+export function printed({ code, out, err }: { code: number; out: string; err: string }): number {
+  if (err) stderr.write(err)
+  if (out) stdout.write(out)
+  return code
+}
+
 export async function leave(code: number): Promise<never> {
   await Promise.all([drained(stdout), drained(stderr)])
   process.exit(code)

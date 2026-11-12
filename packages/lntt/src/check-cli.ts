@@ -21,7 +21,7 @@ import {
 import { mutateTests } from './check-tests.ts'
 import { comments } from './ci/candidate.ts'
 import { candidateConfig } from './ci/config.ts'
-import { Exit, exit } from './exit.ts'
+import { Exit, exit, printed } from './exit.ts'
 import { ConfigError, loadConfig } from './index.ts'
 import { retroComment } from './pull-request.ts'
 import { runQuery } from './query.ts'
@@ -204,7 +204,7 @@ export async function main(
   const expression = queryOf(args)
   if (expression !== undefined) {
     const json = args.includes('--json')
-    exit(await runQuery({ input: formatJson(results), expression, json, code, command: 'lntt check' }))
+    exit(printed(await runQuery({ input: formatJson(results), expression, json, code, command: 'lntt check' })))
   }
   stdout.write(args.includes('--json') ? formatJson(results) : formatText(results))
   exit(code)

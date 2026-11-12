@@ -8,7 +8,7 @@ import { cwd, env, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { makeGh } from './ci/candidate.ts'
 import { collectDump, type Dump, redact, redactionFor, renderDump, runFailing, withAgent } from './dump.ts'
-import { Exit, exit } from './exit.ts'
+import { Exit, exit, printed } from './exit.ts'
 import { findConfig, loadConfig, NoConfigError } from './index.ts'
 import {
   bodyTooLong,
@@ -95,7 +95,9 @@ async function dump({ values, positionals }: Parsed): Promise<void> {
   if (values.query !== undefined) {
     const input = JSON.stringify(result)
     const code = result.configError === undefined ? 0 : 1
-    const ran = await runQuery({ input, expression: values.query, json: values.json, code, command: 'lntt dump' })
+    const ran = printed(
+      await runQuery({ input, expression: values.query, json: values.json, code, command: 'lntt dump' }),
+    )
     if (ran !== code) exit(ran)
   } else stdout.write(values.json ? `${JSON.stringify(result)}\n` : renderDump(result))
   // Printed whole, then red: a configuration that does not validate is an error.

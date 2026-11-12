@@ -1,7 +1,7 @@
 // Effect's FileSystem in memory, for the specs of lntt (docs/adr/effect-in-lntt.md#tests-beside-each-module).
 // It follows Node's semantics where a module relies on them, so a spec fails where Node would:
 // a file is written only in a directory that exists, `wx` refuses a file that exists, `a`
-// appends, `link` refuses a target that exists, `utimes` reads a number as seconds, and a
+// appends, `link` refuses a target that exists, `rename` replaces it, `utimes` reads a number as seconds, and a
 // missing path is NotFound. A file's mtime is the Clock's time when it was written. Not
 // published: tsconfig.build.json leaves src/testing/ out.
 
@@ -78,6 +78,16 @@ export function memoryFileSystem(options: { dirs?: string[]; linkFails?: boolean
         if (!file) return Effect.fail(failure('link', from, 'NotFound'))
         if (files.has(to) || options.linkFails) return Effect.fail(failure('link', to, 'AlreadyExists'))
         files.set(to, { ...file })
+        return Effect.void
+      }),
+    // As Node's fs.rename: the target is replaced, in a directory that exists.
+    rename: (from, to) =>
+      Effect.suspend(() => {
+        const file = files.get(from)
+        if (!file) return Effect.fail(failure('rename', from, 'NotFound'))
+        if (!dirs.has(parent(to))) return Effect.fail(failure('rename', to, 'NotFound'))
+        files.delete(from)
+        files.set(to, file)
         return Effect.void
       }),
     remove: (path, options) =>

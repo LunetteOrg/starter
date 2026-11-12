@@ -13,12 +13,20 @@ const encode = (text: string) => new TextEncoder().encode(text)
 function gh(answer: (args: string[]) => { out?: string; err?: string; code?: number } | 'missing', dir?: string) {
   const asked: string[][] = []
   const cwds: (string | undefined)[] = []
+  // What each call got on its stdin, '' for none.
+  const inputs: string[] = []
   const spawn = (command: ChildProcess.Command) =>
     Effect.gen(function* () {
       if (command._tag !== 'StandardCommand') return yield* Effect.die('a piped command')
       const args = command.args.map(String)
       asked.push([command.command, ...args])
       cwds.push(command.options.cwd)
+      const stdin = command.options.stdin
+      inputs.push(
+        Stream.isStream(stdin)
+          ? yield* Stream.mkString(Stream.decodeText(stdin as Stream.Stream<Uint8Array>)).pipe(Effect.orDie)
+          : '',
+      )
       const said = answer(args)
       if (said === 'missing')
         return yield* PlatformError.systemError({
@@ -44,7 +52,7 @@ function gh(answer: (args: string[]) => { out?: string; err?: string; code?: num
   const layer = ghAt(dir).pipe(
     Layer.provide(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(ChildProcessSpawner.make(spawn))),
   )
-  return { asked, cwds, layer }
+  return { asked, cwds, inputs, layer }
 }
 
 describe('Gh on the machine', () => {
@@ -104,6 +112,90 @@ describe('Gh on the machine', () => {
       const garbled = gh(() => ({ out: '<html>' }))
       const notJson = yield* Effect.flip(Effect.flatMap(Gh, (g) => g.issue(7)).pipe(Effect.provide(garbled.layer)))
       assert.match(notJson.message, /not JSON: <html>/)
+    }),
+  )
+
+  it.effect('the writes give the body on stdin, and the reads parse what gh prints', () => {
+    const g = gh((args) => {
+      if (args[1] === 'graphql') return { out: '{"data":{"viewer":{"login":"me"}}}' }
+      if (args[0] === 'issue' && args[1] === 'list') return { out: '[{"number":4,"title":"T","url":"https://x/4"}]' }
+      if (args[1] === '--paginate') return { out: '{"id":1,"body":"a"}\n{"id":2,"body":"b"}\n' }
+      if (args[0] === 'api' && args[2] === '--jq') return { out: 'A title\thttps://github.com/o/r/issues/5\n' }
+      return { out: 'https://github.com/o/r/issues/9' }
+    })
+    return Effect.gen(function* () {
+      const github = yield* Gh
+      assert.deepStrictEqual(yield* github.graphql('query{ viewer{ login } }', { n: 1 }), {
+        viewer: { login: 'me' },
+      })
+      assert.deepStrictEqual(yield* github.searchIssues({ repo: 'o/r', words: 'lock held' }), [
+        { number: 4, title: 'T', url: 'https://x/4' },
+      ])
+      assert.deepStrictEqual(yield* github.issueComments({ repo: 'o/r', number: 3 }), [
+        { id: 1, body: 'a' },
+        { id: 2, body: 'b' },
+      ])
+      assert.deepStrictEqual(yield* github.issueLink({ repo: 'o/r', number: 5 }), {
+        title: 'A title',
+        url: 'https://github.com/o/r/issues/5',
+      })
+      assert.strictEqual(
+        yield* github.createIssue({ repo: 'o/r', title: 'T', body: 'B1' }),
+        'https://github.com/o/r/issues/9',
+      )
+      yield* github.commentIssue({ repo: 'o/r', number: 9, body: 'B2' })
+      yield* github.commentPullRequest({ repo: 'o/r', number: 8, body: 'B3' })
+      yield* github.updateComment({ repo: 'o/r', id: 7, body: 'B4' })
+      assert.deepStrictEqual(g.asked, [
+        ['gh', 'api', 'graphql', '--input', '-'],
+        [
+          'gh',
+          'issue',
+          'list',
+          '--repo',
+          'o/r',
+          '--state',
+          'open',
+          '--search',
+          'lock held',
+          '--json',
+          'number,title,url',
+          '--limit',
+          '20',
+        ],
+        ['gh', 'api', '--paginate', 'repos/o/r/issues/3/comments', '--jq', '.[] | {id, body}'],
+        ['gh', 'api', 'repos/o/r/issues/5', '--jq', '[.title, .html_url] | @tsv'],
+        ['gh', 'issue', 'create', '--repo', 'o/r', '--title', 'T', '--body-file', '-'],
+        ['gh', 'issue', 'comment', '9', '--repo', 'o/r', '--body-file', '-'],
+        ['gh', 'pr', 'comment', '8', '--repo', 'o/r', '--body-file', '-'],
+        ['gh', 'api', '-X', 'PATCH', 'repos/o/r/issues/comments/7', '--input', '-'],
+      ])
+      assert.deepStrictEqual(g.inputs, [
+        JSON.stringify({ query: 'query{ viewer{ login } }', variables: { n: 1 } }),
+        '',
+        '',
+        '',
+        'B1',
+        'B2',
+        'B3',
+        JSON.stringify({ body: 'B4' }),
+      ])
+    }).pipe(Effect.provide(g.layer))
+  })
+
+  it.effect('a GraphQL answer with errors is a GhError of their messages; a missing gh says so', () =>
+    Effect.gen(function* () {
+      const refused = gh(() => ({ out: '{"errors":[{"message":"no field x"},{"message":"no field y"}]}' }))
+      const error = yield* Effect.flip(
+        Effect.flatMap(Gh, (g) => g.graphql('q', {})).pipe(Effect.provide(refused.layer)),
+      )
+      assert.strictEqual(error.output, 'no field x; no field y')
+      assert.notStrictEqual(error.missing, true)
+      const missing = gh(() => 'missing')
+      const gone = yield* Effect.flip(
+        Effect.flatMap(Gh, (g) => g.issueLink({ repo: 'o/r', number: 1 })).pipe(Effect.provide(missing.layer)),
+      )
+      assert.strictEqual(gone.missing, true)
     }),
   )
 
