@@ -428,9 +428,8 @@ plugin shows in a session once it is merged and installed there, or at once with
 `claude --plugin-dir packages/lntt/plugin`. CI validates the marketplace and the plugin
 with `claude plugin validate`, which refuses a hooks module the engine would not load
 ([agent layer](../adr/agent-layer.md#where-hooks-live)).
-The issue titles are drawn by a `ui.render` hook on `AssistantMessage`: under each block
-of a message that cites issues or pull requests, a box with their titles and URLs
-(`packages/lntt/plugin/hooks/issue-titles-hook.js`).
+The issue titles are drawn under the block of a message that cites them
+([how and why](../adr/agent-layer.md#what-a-number-means-is-shown-on-screen-not-asked-of-the-agent)).
 
 ## Releasing
 

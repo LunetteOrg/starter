@@ -130,9 +130,9 @@ function learn(s, out) {
 }
 
 // The lookups of these references, one lntt refs for each KEYS_PER_RUN of those not yet
-// asked, side by side, waited for until `wait()` ends. A failed one is asked again at the
-// next lookup, by another block.
-async function lookUp($, s, keys, wait) {
+// asked, side by side, all waited for. A failed one is asked again at the next lookup, by
+// another block.
+async function lookUp($, s, keys) {
   if (s.off || !keys.length) return
   const todo = keys.filter((k) => !s.info.has(k) && !s.unknown.has(k) && !s.pending.has(k))
   const batch = { failed: false }
@@ -146,7 +146,7 @@ async function lookUp($, s, keys, wait) {
     for (const k of run) s.pending.set(k, call)
   }
   const waiting = [...new Set(keys.map((k) => s.pending.get(k)).filter(Boolean))]
-  if (waiting.length) await Promise.race([Promise.all(waiting), wait()])
+  if (waiting.length) await Promise.all(waiting)
 }
 
 // What the block shows now: its box lines, from what the session knows.
@@ -184,8 +184,8 @@ async function read($, s, text) {
   if (out?.repository) {
     redraw()
     const keys = out.mentions.filter((x) => settled(x, text)).map((x) => x.ref)
-    // Every lookup is waited for here, off the drawing: nothing is drawn meanwhile.
-    await lookUp($, s, [...new Set(keys)], () => new Promise(() => {}))
+    // Waited for here, off the drawing: the block is drawn as it is until it ends.
+    await lookUp($, s, [...new Set(keys)])
   }
   // The notice of what keeps the titles off goes to the first block that finds it out.
   if (s.problem && !s.told && noticeText(s.problem)) {
@@ -201,8 +201,11 @@ function draw($, s, e, base) {
   const text = e.props.text
   if (typeof text !== 'string' || !/#[1-9]/.test(text)) return base
   if (!s.dead && !s.blocks.has(text) && !s.waiting.has(text)) {
-    // A longer text drawn replaces the shorter one it began with.
+    // A longer text drawn replaces the shorter one it began with: the block grew, and the
+    // shorter is neither read nor kept. (A pause of SETTLE_MS reads the text as it stands;
+    // a number cut in two then costs one lookup, cached, and is never boxed.)
     for (const t of s.waiting) if (text.startsWith(t)) s.waiting.delete(t)
+    for (const t of s.blocks.keys()) if (t !== text && text.startsWith(t)) s.blocks.delete(t)
     s.waiting.add(text)
     read($, s, text).catch(() => {})
   }
@@ -233,7 +236,9 @@ export function issueTitles(on, { ended } = {}) {
     }
   }).catch(($, e, next) => next(e)) // a failing hook draws the block as Claude Code does
   on('turn.complete', async ($, e, next) => {
-    ended?.()
+    try {
+      ended?.()
+    } catch {}
     return next(e)
   })
 }

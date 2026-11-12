@@ -135,3 +135,17 @@ describe('the box of what the block cited', () => {
     assert.equal(lines[3], '│ x/pelion#3 Pelion three')
   })
 })
+
+describe('what lntt gave, checked again before it is shown', () => {
+  test('control characters in a title are dropped, so it cannot write to the terminal', () => {
+    assert.deepEqual(entry('ok\u001b]0;pwned\u0007 title', url(6)), { title: 'ok]0;pwned title', url: url(6) })
+  })
+
+  test('a title of control characters only, or a URL that is not plain https, gives nothing', () => {
+    assert.equal(entry('\u001b\u0007', url(6)), null)
+    assert.equal(entry('ok', 'http://x.org/1'), null)
+    assert.equal(entry('ok', 'https://x.org/1\u001b[2m'), null)
+    assert.equal(entry('ok', 'https://x.org/a\u202eb'), null)
+    assert.equal(entry('ok', undefined), null)
+  })
+})

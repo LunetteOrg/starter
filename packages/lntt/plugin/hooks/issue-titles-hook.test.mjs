@@ -131,8 +131,8 @@ function engine({ gh = {}, cache = {}, home = 'o/r', local = true, lntt = null, 
   }
   // The references each full lookup asked for.
   const lookups = () => runs.filter((r) => r.argv[2] !== '--cached').map((r) => r.argv.slice(2))
-  const settle = async () => {
-    for (const r of gates.splice(0)) r()
+  const settle = async (count = gates.length) => {
+    for (const r of gates.splice(0, count)) r()
     for (let i = 0; i < 40; i += 1) await tick()
   }
   return { draw, flush, runs, waits, lookups, cache, auths, invalidated, hooks, $, ended, settle }
@@ -598,7 +598,7 @@ describe('the issue titles hook', () => {
     const tree = await draw('See #138\n')
     assert.equal(tree.type, 'Box')
     assert.equal(tree.props.children[0], 'BLOCK')
-    assert.ok(!JSON.stringify(tree).includes('\\u001b'))
+    assert.ok(!JSON.stringify(tree).includes('\u001b'))
     const row = tree.props.children[2]
     assert.equal(row.type, 'Box')
     assert.deepEqual(
@@ -629,11 +629,81 @@ describe('the issue titles hook', () => {
     assert.equal(await draw('#2 second\n'), 'BLOCK')
   })
 
-  test('the end of a turn tells the plugin its first message ended', async () => {
+  test('the end of a turn tells the plugin its first message ended, and goes on to the hooks beneath', async () => {
     const { hooks, $, ended } = engine()
     assert.equal(ended.length, 0)
-    await hooks['turn.complete'].hook($, {}, async () => ({}))
+    const result = await hooks['turn.complete'].hook($, {}, async () => ({ below: true }))
     assert.equal(ended.length, 1)
+    assert.deepEqual(result, { below: true })
+  })
+
+  test('a failing `ended` never stops the end of a turn', async () => {
+    const { $ } = engine()
+    const on = []
+    issueTitles((event, matcher, hook) => (on.push([event, hook ?? matcher]), { catch: () => {} }), {
+      ended: () => {
+        throw new Error('boom')
+      },
+    })
+    const turn = on.find(([event]) => event === 'turn.complete')[1]
+    assert.deepEqual(await turn($, {}, async () => ({ below: true })), { below: true })
+  })
+
+  test('the hook is registered for the AssistantMessage component alone', () => {
+    const { hooks } = engine()
+    assert.deepEqual(hooks['ui.render'].matcher, { component: 'AssistantMessage' })
+  })
+
+  test('a block with no text, or props with no text, is drawn as Claude Code draws it', async () => {
+    const { hooks, $, runs } = engine()
+    for (const props of [{}, { text: 42 }, { text: null }]) {
+      const e = { surface: 'terminal', component: 'AssistantMessage', props }
+      assert.equal(await hooks['ui.render'].hook($, e, async () => 'BLOCK'), 'BLOCK')
+    }
+    assert.deepEqual(runs, [])
+  })
+
+  test('a block that fails to be read is read once: drawn again it asks lntt for nothing', async () => {
+    const { draw, flush, runs } = engine({ lntt: async () => ({ exitCode: 1, stdout: '', stderr: 'boom' }) })
+    await flush('m1', '#1 here\n', true)
+    const asked = runs.length
+    await draw('#1 here\n')
+    await draw('#1 here\n')
+    await tick()
+    assert.equal(runs.length, asked)
+  })
+
+  test('a block asleep when the titles turn off is not read', async () => {
+    const { draw, settle, runs } = engine({
+      hold: true,
+      lntt: async () => ({ exitCode: 2, stdout: '', stderr: 'usage: lntt path' }),
+    })
+    await draw('first #1')
+    await draw('second #2')
+    await settle(1)
+    assert.equal(runs.length, 1)
+    await settle()
+    assert.equal(runs.length, 1)
+  })
+
+  test('a block that grows drops the shorter text it began with: that one is read again if drawn', async () => {
+    const { draw, runs, settle } = engine({ gh: { 'o/r#138': 'Publish lntt' } })
+    const cached = () => runs.filter((r) => r.argv[2] === '--cached').length
+    await draw('See #1')
+    await settle()
+    assert.equal(cached(), 1)
+    await draw('See #138 now.')
+    await settle()
+    assert.equal(cached(), 2)
+    await draw('See #1')
+    await settle()
+    assert.equal(cached(), 3)
+  })
+
+  test('a notice that only appears, with no box, redraws the block', async () => {
+    const { flush, invalidated } = engine({ local: false, lntt: () => Promise.reject(new Error('spawn lntt ENOENT')) })
+    await flush('m1', '#1 first\n', true)
+    assert.deepEqual(invalidated, ['ui.render'])
   })
 })
 

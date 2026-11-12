@@ -195,8 +195,8 @@ In Claude Code the `lunette` plugin draws, under each block of a message that ci
 issues or pull requests (`#N`, `repo#N` or `owner/repo#N`), a box of them: each with its
 title and its URL (`packages/lntt/plugin/hooks/issue-titles.mjs`). The text of the message
 is not touched. It is a `ui.render` hook on `AssistantMessage`, drawn with the elements of
-the surface (`$.ui.resolve`), so that the terminal, desktop, vscode and mobile draw the
-same tree: it changes the screen only, and what the agent wrote and reads stays as it was.
+the surface (`$.ui.resolve`), one tree for the terminal, desktop, vscode and mobile by
+the engine's contract: it changes the screen only, and what the agent wrote and reads stays as it was.
 The hook never waits for `lntt`: it draws the block as Claude Code does with the titles
 the session knows, reads a block's text once it has stopped growing, and redraws the
 blocks (`$.ui.invalidate`) when a lookup finds a title. A block drawn again, on a scroll,
@@ -212,17 +212,15 @@ a credential: a fork, `gh repo set-default` or a changed URL asks for it again;
 concurrent calls merge, the newest entry of each key kept, and an entry lost in a race
 is only asked again): `#N` (and `repo#N` naming the same repository) from the session's
 repository as `gh repo view` names it, `owner/repo#N` from that repository. The hook
-keeps the display and calls `lntt refs`, the project's `node_modules/.bin/lntt`, else
-`lntt` on `PATH`. The deltas of a message only add to its text, in the order they come,
-and show as they are; the last one calls `lntt refs` with the whole text and waits for
-lntt and the titles at most `WAIT_MS` (`issue-titles-hook.js`); a slower title is cached
-and shows in the box of the next message that cites it, and a `--cached` answer later
-than that still gives the session its repository and the titles it holds. The titles
-still missing are asked in `lntt refs` runs of at most `KEYS_PER_RUN` references, side
-by side, so that one run fits
-`LNTT_TIMEOUT_MS` however many a message cites; the runs of one lookup count as one
-failure at most. The text read is the one Claude wrote (`delta`), never the display
-another hook below may have changed; the box goes after that display.
+draws the block as Claude Code does and calls `lntt refs`, the project's
+`node_modules/.bin/lntt`, else `lntt` on `PATH`. A block's text is read, with the whole
+text on stdin, once it has stayed as it is for `SETTLE_MS` (`issue-titles-hook.js`); the
+box under it shows the titles the session knows, and the block is drawn again when a
+lookup finds one, so that a slow title shows without a message waiting for it. The
+titles still missing are asked in `lntt refs` runs of at most `KEYS_PER_RUN` references,
+side by side, so that one run fits `LNTT_TIMEOUT_MS` however many a block cites; the runs
+of one lookup count as one failure at most. The text read is the one the block holds
+(`e.props.text`), as Claude wrote it.
 
 - **Never a title from the wrong repository:** a message that cites another
   repository shows every bare `#N` after that as written. Any other `word#N` is no
@@ -239,7 +237,7 @@ another hook below may have changed; the box goes after that display.
   start, runs past `LNTT_TIMEOUT_MS` or answers no JSON with `mentions` and `refs`;
   it finds no repository when `gh repo view` fails or does not answer within
   `GH_TIMEOUT_MS` (`gh` missing, not logged in, no GitHub remote). Such a run shows
-  its delta as written, with no reference, not even a cached one, and the next lookup
+  the block as written, with no reference, not even a cached one, and the next lookup
   runs `lntt` again; a run that finds the repository starts the count again. A lookup
   that fails otherwise (past `GH_TIMEOUT_MS`, the network, a rate limit) is tried
   again. A `ref` from `lntt` that is not a lower-case `owner/repo#N` is ignored.
@@ -391,8 +389,7 @@ How a title is written is the `github-board` skill's.
   whole text once and cannot misplace anything.
 - **A `classic.MessageDisplay` hook that ends the message's last delta with the box.**
   Claude Code's built-in plugins sit before every plugin of a project and send the event
-  past it: on Claude Code 2.1.322 the hook is skipped at every message, with a notice of
-  it. A `ui.render` hook on `AssistantMessage` runs beside them.
+  past it: the hook is skipped at every message, with a notice of it (#329). A `ui.render` hook on `AssistantMessage` runs beside them.
 - **A rule in AGENTS.md that an agent writes each issue's title beside its number.**
   Agents given it broke it in three samples of four, always the same way: an opening
   line repeating the numbers the person used, before any title. The reader needs to see
