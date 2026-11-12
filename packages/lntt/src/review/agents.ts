@@ -5,9 +5,6 @@
 // an agent is started with and what its ending means, and gives the Agents service of
 // src/review/asking.ts over the spawner (docs/adr/effect-in-lntt.md).
 
-import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
-import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
-import * as NodePath from '@effect/platform-node-shared/NodePath'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -15,6 +12,7 @@ import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import * as Stream from 'effect/Stream'
 import type { HeadlessAgent as Agent, Invocation } from '../headless.ts'
 import { agentLabel } from '../review.ts'
+import { SpawnerLive } from '../spawner.ts'
 import { agentEnv } from './agent-env.ts'
 import { AgentFailed, Agents, unmakeable } from './asking.ts'
 
@@ -76,12 +74,6 @@ export const AgentsProcesses = Layer.effect(Agents)(
       problems: (agents) => Effect.map(Effect.forEach(agents, problemsOf), (lines) => lines.flat()),
     })
   }),
-)
-
-// Effect's spawner on Node, which resolves a working directory through the file system and the
-// path services.
-export const SpawnerLive = NodeChildProcessSpawner.layer.pipe(
-  Layer.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)),
 )
 
 // The agents on Node, and the spawner they run on, which the command uses too (caffeinate).

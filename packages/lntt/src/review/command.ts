@@ -6,7 +6,7 @@
 // and the agents are fibers of askAll inside it (src/review/asking.ts). However the command ends
 // (an answer, a failure, an interrupt), the agents are released first, then the lock.
 //
-// The logic reaches the machine only through services: git (Git), the agents (Agents), the state
+// The logic reaches the machine only through services: git (Git), GitHub (Gh), the agents (Agents), the state
 // store and the progress file (ReviewStore), the working tree (FileSystem, Path), the clock
 // (Clock), processes (ChildProcessSpawner), the terminal (Console), the environment (Config),
 // and the sync code of modules not yet on Effect through the bridge (ReviewBridge). src/review/command.spec.ts runs it on their in-memory layers.
@@ -24,9 +24,12 @@ import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import * as Scope from 'effect/Scope'
+import { BaseError, localRef, projectBase } from '../base/base.ts'
+import { type CandidateRules, candidateRules } from '../base/names.ts'
 import { type BranchRules, branchRules } from '../branch.ts'
 import { citeTarget, citeText, isArea } from '../check.ts'
 import { exit, Exit as LnttExit } from '../exit.ts'
+import { GhLive } from '../gh/gh.ts'
 import { Git, type GitError, GitLive } from '../git/git.ts'
 import { type HeadlessAgent as Agent, type Progress, type Question, timerMs } from '../headless.ts'
 import { projectPhase } from '../index.ts'
@@ -71,6 +74,23 @@ import {
 } from './view.ts'
 
 export { ReviewFailed }
+
+// The ref the branch is compared with: --base as given (origin/<base>, else <base>), else the base
+// every lntt command resolves (src/base/base.ts), which may ask GitHub for the open candidate;
+// `said` is the line that names it.
+const comparedWith = Effect.fnUntraced(function* (given: string | undefined, candidate: CandidateRules | null) {
+  if (given === undefined) {
+    const base = yield* projectBase(candidate, 'head')
+    return { ref: base.ref, said: base.warning ?? `base ${base.reason}` }
+  }
+  const ref = yield* localRef(given)
+  if (ref === null) {
+    return yield* new BaseError({
+      message: `no ${given} or origin/${given} to compare the branch with: run git fetch origin, or check --base`,
+    })
+  }
+  return { ref, said: null as string | null }
+})
 
 // A command as review-cli.ts parsed it.
 export type ReviewCommand =
@@ -258,7 +278,7 @@ export const round = Effect.fnUntraced(function* (
   yield* say(`reviewing ${head} ${yield* git.subject('HEAD')} (${branch})`)
   const root = yield* git.root
   const state = yield* store.readState(branch)
-  const given = yield* bridge.base(root, options.base)
+  const given = yield* comparedWith(options.base, candidateRules(data))
   if (given.said !== null) yield* say(given.said)
   const base = yield* git.short(yield* git.mergeBase('HEAD', given.ref))
   // The commit the last round read is still in the branch, or the round reads it all again.
@@ -524,13 +544,14 @@ export const command = (parsed: ReviewCommand) =>
         LockedError: failure,
         PlatformError: failure,
         GitError: failure,
+        BaseError: failure,
       }),
     )
   }).pipe(Effect.scoped)
 
 // The services on the machine.
 const Live = ReviewStoreLive.pipe(
-  Layer.provideMerge(GitLive),
+  Layer.provideMerge(Layer.mergeAll(GitLive, GhLive)),
   Layer.provideMerge(Layer.mergeAll(AgentsLive, WorktreeLockLive, ReviewBridgeLive, Path.layer)),
 )
 

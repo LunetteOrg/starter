@@ -1,13 +1,16 @@
 // The event a local run stands in for, read from the local git state. ci:local never
-// fetches: the base is a ref of this clone (src/base.ts finds it), and the report names it.
+// fetches: the base is a ref of this clone (src/base/base.ts finds it), and the report names it.
 //
 // - `pull_request` (the default): the pull request of the current branch into `base`,
 //   ready for review, which is what the cloud runs once a draft leaves draft.
 // - `push`: a push of the current commit to `base` (the main branch: what gates a
 //   release).
+//
+// Sync until lntt ci moves to Effect (#340): it calls git itself, and reads the names git gives
+// with the same functions as the base on Effect (src/base/names.ts).
 
 import { execFileSync } from 'node:child_process'
-import { candidateAt, repositoryDefault } from '../base.ts'
+import { defaultOf, highestCandidate, localRefs } from '../base/names.ts'
 
 export type EventName = 'pull_request' | 'push'
 
@@ -37,7 +40,9 @@ function git(cwd: string, ...args: string[]): string | null {
 }
 
 // The branch origin/HEAD points at, else `main`.
-export const defaultBranch = repositoryDefault
+export function defaultBranch(cwd: string): string {
+  return defaultOf(git(cwd, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD'))
+}
 
 export function repositoryOf(url: string | null): string | null {
   const match = /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/.exec(url ?? '')
@@ -51,9 +56,16 @@ function changedSince(cwd: string, ref: string): string[] | null {
 }
 
 // `origin/<branch>` when it exists locally, else `<branch>`, else null: the ref of a base
-// --base names, which may be a branch only this clone has.
-export function localRef(cwd: string, branch: string): string | null {
-  return [`origin/${branch}`, branch].find((ref) => git(cwd, 'rev-parse', '--verify', '-q', ref) !== null) ?? null
+// --base names, which may be a branch only this clone has (localRef in src/base/base.ts).
+function localRef(cwd: string, branch: string): string | null {
+  return localRefs(branch).find((ref) => git(cwd, 'rev-parse', '--verify', '-q', ref) !== null) ?? null
+}
+
+// The candidate whose origin/ ref points at HEAD, the highest when several do (candidateAt in
+// src/base/base.ts).
+function candidateAt(cwd: string, prefix: string): string | null {
+  const out = git(cwd, 'for-each-ref', '--points-at=HEAD', '--format=%(refname)', `refs/remotes/origin/${prefix}*`)
+  return highestCandidate((out ?? '').split('\n').filter(Boolean), prefix)
 }
 
 // Files changed from the merge base with `branch` to HEAD; null without a local ref.
@@ -63,7 +75,7 @@ export function changedAgainst(cwd: string, branch: string): string[] | null {
 }
 
 export interface EventOptions {
-  // The ref to diff against, when the base was resolved (src/base.ts); else localRef's.
+  // The ref to diff against, when the base was resolved (src/base/base.ts); else localRef's.
   baseRef?: string
   // delivery.candidate.prefix: a detached HEAD at a candidate's head is that candidate.
   candidatePrefix?: string
