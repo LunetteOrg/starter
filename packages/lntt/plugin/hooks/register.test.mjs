@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import { INSTALL_HOOK, MARKETPLACE, PLUGIN } from '../../src/claude-settings.ts'
+import { PANE } from './issues-pane.mjs'
 
 const PROGRESS = '/repo/.git/lntt-review.progress'
 const SETTINGS = '/repo/.claude/settings.json'
@@ -28,11 +29,14 @@ const roundOf = (session) =>
 async function plugin({ id, session, ids, settings = SYNCED, git = 0, unreadable = false }) {
   const { register } = await import(`./register.js?case=${Math.random()}`)
   const hooks = {}
+  const all = []
   register((event, matcher, hook) => {
+    all.push([event, hook ? matcher : undefined])
     hooks[event] = hook ?? matcher
     return { catch: () => {} }
   })
   const timers = []
+  const registered = []
   const el = (type) => (props) => ({ type, props })
   const $ = {
     session: {
@@ -58,12 +62,14 @@ async function plugin({ id, session, ids, settings = SYNCED, git = 0, unreadable
       },
     },
     clock: { now: async () => 2_000, every: (ms, fn) => timers.push(fn) },
-    command: { register: async () => {} },
+    command: { register: async (spec) => registered.push(spec.name) },
     ui: { invalidate: () => {}, resolve: () => ({ Text: el('Text'), Box: el('Box') }) },
   }
   await hooks['session.start']($, {}, async () => {})
   await timers[0]() // the first refresh reads the progress file
   return {
+    registered,
+    hooks: all,
     refresh: () => timers[0](),
     band: () => hooks['ui.render']($, { surface: 'terminal' }, async () => 'below'),
     status: async () => (await hooks['command.run']($, {})).text,
@@ -71,6 +77,15 @@ async function plugin({ id, session, ids, settings = SYNCED, git = 0, unreadable
     end: () => hooks['turn.complete']($, {}, async () => ({})),
   }
 }
+
+describe('what the plugin registers', () => {
+  test('the pane of the issues: its command is registered at session start, its hooks are the plugin\'s', async () => {
+    const p = await plugin({ id: 's1' })
+    assert.deepEqual([...p.registered].sort(), ['issues', 'review-status'])
+    assert.ok(p.hooks.some(([e, m]) => e === 'command.run' && m?.command === 'issues'))
+    assert.ok(p.hooks.some(([e, m]) => e === 'ui.render' && m?.component === 'Pane' && m?.requestId === PANE))
+  })
+})
 
 describe('the band in a session of the checkout', () => {
   test('the session that started the round draws it', async () => {
