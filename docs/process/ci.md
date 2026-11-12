@@ -307,7 +307,7 @@ since the script needs the install, and saves no entry: the version is checked a
 the next day.
 
 Whoever takes the issue reads the log, then fixes
-lntt's adapter (`packages/lntt/src/worktree.ts`, `headless.ts`, `orca-subagents.ts`) or
+lntt's adapter (`packages/lntt/src/worktree/hosts.ts`, `headless.ts`, `review/orca.ts`) or
 records the tool's change in the decision that relies on it
 ([worktree tooling](../adr/worktree-tooling.md), [review agents](../adr/review-agents.md)).
 When Homebrew installs another opencode than the one the versions job read, the job

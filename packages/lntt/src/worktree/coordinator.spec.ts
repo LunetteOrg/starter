@@ -1,8 +1,7 @@
-import assert from 'node:assert/strict'
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { afterEach, beforeEach, describe, test } from 'node:test'
+import { readdirSync, readFileSync } from 'node:fs'
+import { assert, describe, it } from '@effect/vitest'
+import * as Effect from 'effect/Effect'
+import { memoryFileSystem } from '../testing/file-system.ts'
 import {
   agentFor,
   approvals,
@@ -12,7 +11,16 @@ import {
   coordinatorBrief,
   gateOf,
   isApproval,
-} from '../src/coordinator.ts'
+} from './coordinator.ts'
+import type { Templates } from './hosts.ts'
+
+// The templates lntt ships in agents/, as the command reads them.
+const AGENTS = new URL('../../agents/', import.meta.url)
+const T: Templates = Object.fromEntries(
+  readdirSync(AGENTS)
+    .filter((name) => name.endsWith('.md'))
+    .map((name) => [name, readFileSync(new URL(name, AGENTS), 'utf8')]),
+)
 
 const CONFIG: Config = {
   coordinator: {
@@ -30,47 +38,47 @@ const CONFIG: Config = {
 }
 
 describe('the model per role', () => {
-  test('the coordinator has its own', () => {
-    assert.deepEqual(agentFor(CONFIG, { role: 'coordinator' }, {}), { kind: 'claude', model: 'sonnet' })
+  it('the coordinator has its own', () => {
+    assert.deepStrictEqual(agentFor(CONFIG, { role: 'coordinator' }, {}), { kind: 'claude', model: 'sonnet' })
   })
 
-  test('a child’s comes from its Size', () => {
-    assert.deepEqual(agentFor(CONFIG, { role: 'child', size: 'XS' }, {}), { kind: 'claude', model: 'sonnet' })
-    assert.deepEqual(agentFor(CONFIG, { role: 'child', size: 'M' }, {}), {
+  it('a child’s comes from its Size', () => {
+    assert.deepStrictEqual(agentFor(CONFIG, { role: 'child', size: 'XS' }, {}), { kind: 'claude', model: 'sonnet' })
+    assert.deepStrictEqual(agentFor(CONFIG, { role: 'child', size: 'M' }, {}), {
       kind: 'claude',
       model: 'opus',
       effort: 'high',
     })
   })
 
-  test('the command line wins over the configuration, field by field', () => {
-    assert.deepEqual(agentFor(CONFIG, { role: 'child', size: 'M' }, { model: 'haiku' }), {
+  it('the command line wins over the configuration, field by field', () => {
+    assert.deepStrictEqual(agentFor(CONFIG, { role: 'child', size: 'M' }, { model: 'haiku' }), {
       kind: 'claude',
       model: 'haiku',
       effort: 'high',
     })
-    assert.deepEqual(agentFor(CONFIG, { role: 'child', size: 'M' }, { kind: 'codex' }).kind, 'codex')
+    assert.deepStrictEqual(agentFor(CONFIG, { role: 'child', size: 'M' }, { kind: 'codex' }).kind, 'codex')
   })
 
-  test('no Size, no entry, no configuration: the agent’s own default', () => {
-    assert.deepEqual(agentFor(CONFIG, { role: 'child' }, {}), { kind: 'claude' })
-    assert.deepEqual(agentFor(CONFIG, { role: 'child', size: 'XL' }, {}), { kind: 'claude' })
-    assert.deepEqual(agentFor({}, { role: 'coordinator' }, {}), { kind: 'claude' })
+  it('no Size, no entry, no configuration: the agent’s own default', () => {
+    assert.deepStrictEqual(agentFor(CONFIG, { role: 'child' }, {}), { kind: 'claude' })
+    assert.deepStrictEqual(agentFor(CONFIG, { role: 'child', size: 'XL' }, {}), { kind: 'claude' })
+    assert.deepStrictEqual(agentFor({}, { role: 'coordinator' }, {}), { kind: 'claude' })
   })
 
-  test('a Size that does not exist is refused', () => {
+  it('a Size that does not exist is refused', () => {
     assert.throws(() => agentFor(CONFIG, { role: 'child', size: 'XXL' }, {}), /XS, S, M, L or XL/)
   })
 })
 
 describe('the gate', () => {
-  test('propose unless the project says free', () => {
-    assert.equal(gateOf({}), 'propose')
-    assert.equal(gateOf(CONFIG), 'propose')
-    assert.equal(gateOf({ coordinator: { gate: 'free' } }), 'free')
+  it('propose unless the project says free', () => {
+    assert.strictEqual(gateOf({}), 'propose')
+    assert.strictEqual(gateOf(CONFIG), 'propose')
+    assert.strictEqual(gateOf({ coordinator: { gate: 'free' } }), 'free')
   })
 
-  test('an answer approves only when it is the word', () => {
+  it('an answer approves only when it is the word', () => {
     for (const yes of ['approve', 'Approved.', 'yes!', 'OK', '  ok.\n', 'approved']) assert.ok(isApproval(yes), yes)
     for (const no of [
       'no',
@@ -91,41 +99,49 @@ describe('the gate', () => {
 })
 
 describe('the approved issues', () => {
-  let dir: string
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'lntt-approved-'))
-  })
-  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+  const DIR = '/repo/.git/lntt-messages'
+  const fs = () => memoryFileSystem({ dirs: ['/repo/.git'] })
 
-  test('are written whole: no temporary file is left, and a hand-edited CRLF file is read', () => {
-    approve(dir, 'alpha', [89])
-    assert.deepEqual(readdirSync(dir), ['approved-alpha.txt'])
-    writeFileSync(join(dir, 'approved-beta.txt'), '5\r\n6\r\n')
-    assert.deepEqual([...approvals(dir, 'beta')], [5, 6])
-  })
-
-  test('a theme that is not a slug is refused', () => {
-    for (const theme of ['../x', 'a/b', 'a.b', 'A', '', 'a-', '-a', 'a--b']) {
-      assert.throws(() => approve(dir, theme, [1]), /not a slug/, theme)
-    }
+  it.effect('are written whole: no temporary file is left, and a hand-edited CRLF file is read', () => {
+    const files = fs()
+    return Effect.gen(function* () {
+      yield* approve(DIR, 'alpha', [89])
+      assert.deepStrictEqual([...files.files.keys()], [`${DIR}/approved-alpha.txt`])
+      yield* files.put(`${DIR}/approved-beta.txt`, '5\r\n6\r\n')
+      assert.deepStrictEqual([...(yield* approvals(DIR, 'beta'))], [5, 6])
+    }).pipe(Effect.provide(files.layer))
   })
 
-  test('skip lines that are not issue numbers', () => {
-    writeFileSync(join(dir, 'approved-alpha.txt'), '89\n\n0\n-3\nabc\n111\n')
-    assert.deepEqual([...approvals(dir, 'alpha')], [89, 111])
+  it.effect('a theme that is not a slug is refused', () =>
+    Effect.gen(function* () {
+      for (const theme of ['../x', 'a/b', 'a.b', 'A', '', 'a-', '-a', 'a--b']) {
+        const error = yield* Effect.flip(approve(DIR, theme, [1]))
+        assert.match(error.message, /not a slug/, theme)
+      }
+    }).pipe(Effect.provide(fs().layer)),
+  )
+
+  it.effect('skip lines that are not issue numbers', () => {
+    const files = fs()
+    return Effect.gen(function* () {
+      yield* files.put(`${DIR}/approved-alpha.txt`, '89\n\n0\n-3\nabc\n111\n')
+      assert.deepStrictEqual([...(yield* approvals(DIR, 'alpha'))], [89, 111])
+    }).pipe(Effect.provide(files.layer))
   })
 
-  test('are kept per theme, in the shared mailbox directory', () => {
-    assert.deepEqual([...approvals(dir, 'alpha')], [])
-    approve(dir, 'alpha', [89, 111])
-    approve(dir, 'alpha', [111, 117])
-    approve(dir, 'beta', [5])
-    assert.deepEqual(
-      [...approvals(dir, 'alpha')].sort((a, b) => a - b),
-      [89, 111, 117],
-    )
-    assert.deepEqual([...approvals(dir, 'beta')], [5])
-  })
+  it.effect('are kept per theme, in the shared mailbox directory', () =>
+    Effect.gen(function* () {
+      assert.deepStrictEqual([...(yield* approvals(DIR, 'alpha'))], [])
+      yield* approve(DIR, 'alpha', [89, 111])
+      yield* approve(DIR, 'alpha', [111, 117])
+      yield* approve(DIR, 'beta', [5])
+      assert.deepStrictEqual(
+        [...(yield* approvals(DIR, 'alpha'))].sort((a, b) => a - b),
+        [89, 111, 117],
+      )
+      assert.deepStrictEqual([...(yield* approvals(DIR, 'beta'))], [5])
+    }).pipe(Effect.provide(fs().layer)),
+  )
 })
 
 const VALUES = {
@@ -142,29 +158,29 @@ const VALUES = {
 }
 
 describe('the coordinator’s brief', () => {
-  test('says it writes no code, lists the issues and names the placeholder branch', () => {
-    const brief = coordinatorBrief(VALUES)
+  it('says it writes no code, lists the issues and names the placeholder branch', () => {
+    const brief = coordinatorBrief(T, VALUES)
     assert.match(brief, /`release-0-6-1`\. You write no code/)
     // One indent under their list item: a nested list, not a code block.
     assert.match(brief, /\n- \*\*The theme's issues:\*\*\n {2}- #84: Coordinator mode\n {2}- #89: Board status\n/)
     assert.match(brief, /chore\/no-issue\/release-0-6-1/)
     assert.match(brief, /Never merge, never mark a pull request ready/)
-    assert.doesNotMatch(brief, /\{\{/)
+    assert.notMatch(brief, /\{\{/)
   })
 
-  test('never carries the opt-in keyword of the harness’s multi-agent mode: the switch is --workflow', () => {
-    assert.doesNotMatch(coordinatorBrief(VALUES), /ultracode/i)
-    assert.match(coordinatorBrief(VALUES), /--workflow/)
+  it('never carries the opt-in keyword of the harness’s multi-agent mode: the switch is --workflow', () => {
+    assert.notMatch(coordinatorBrief(T, VALUES), /ultracode/i)
+    assert.match(coordinatorBrief(T, VALUES), /--workflow/)
   })
 
-  test('calls orca by absolute path', () => {
-    const brief = coordinatorBrief(VALUES)
+  it('calls orca by absolute path', () => {
+    const brief = coordinatorBrief(T, VALUES)
     assert.match(brief, /\/usr\/local\/bin\/orca worktree set/)
-    assert.doesNotMatch(brief, /(^|[^/\w])orca (worktree|terminal)/m)
+    assert.notMatch(brief, /(^|[^/\w])orca (worktree|terminal)/m)
   })
 
-  test('says every wait goes through the mailbox, its own and its children’s', () => {
-    const brief = coordinatorBrief(VALUES)
+  it('says every wait goes through the mailbox, its own and its children’s', () => {
+    const brief = coordinatorBrief(T, VALUES)
     assert.match(brief, /Every wait goes through the mailbox/)
     assert.match(brief, /1Password/)
     assert.match(brief, /review limit/)
@@ -178,26 +194,26 @@ describe('the coordinator’s brief', () => {
     )
   })
 
-  test('on a host with no Orca there is no Orca line', () => {
-    const brief = coordinatorBrief({ ...VALUES, orca: null })
-    assert.doesNotMatch(brief, /orca/i)
+  it('on a host with no Orca there is no Orca line', () => {
+    const brief = coordinatorBrief(T, { ...VALUES, orca: null })
+    assert.notMatch(brief, /orca/i)
   })
 
-  test('under propose, names the approved children and the proposal flow', () => {
-    const brief = coordinatorBrief(VALUES)
+  it('under propose, names the approved children and the proposal flow', () => {
+    const brief = coordinatorBrief(T, VALUES)
     assert.match(brief, /Approved to start now: #89/)
     assert.match(brief, /`pnpm exec lntt worktree start --theme` asks the orchestrator/)
     assert.match(brief, /#84/)
   })
 
-  test('under free, no proposal', () => {
-    const brief = coordinatorBrief({ ...VALUES, config: { coordinator: { gate: 'free' } }, approved: [] })
+  it('under free, no proposal', () => {
+    const brief = coordinatorBrief(T, { ...VALUES, config: { coordinator: { gate: 'free' } }, approved: [] })
     assert.match(brief, /as soon as their order allows/)
-    assert.doesNotMatch(brief, /asks the orchestrator to approve/)
+    assert.notMatch(brief, /asks the orchestrator to approve/)
   })
 
-  test('says which model each role runs on', () => {
-    const brief = coordinatorBrief(VALUES)
+  it('says which model each role runs on', () => {
+    const brief = coordinatorBrief(T, VALUES)
     assert.match(brief, /XS sonnet/)
     assert.match(brief, /M opus \(effort high\)/)
     assert.match(brief, /--size/)
@@ -205,37 +221,37 @@ describe('the coordinator’s brief', () => {
 })
 
 describe('the brief without a model or a gate', () => {
-  test('says no model is configured, and that every child is proposed first', () => {
-    const brief = coordinatorBrief({ ...VALUES, config: {}, approved: [] })
+  it('says no model is configured, and that every child is proposed first', () => {
+    const brief = coordinatorBrief(T, { ...VALUES, config: {}, approved: [] })
     assert.match(brief, /none is configured/)
     assert.match(brief, /No child is approved yet\. To propose first: #84, #89\./)
   })
 
-  test('under free, and with only part of the models configured', () => {
-    const free = coordinatorBrief({
+  it('under free, and with only part of the models configured', () => {
+    const free = coordinatorBrief(T, {
       ...VALUES,
       config: { coordinator: { gate: 'free', models: { children: { S: { model: 'sonnet' } } } } },
     })
     assert.match(free, /as soon as their order allows/)
     assert.match(free, /you run on default; `--size` picks a child’s by the issue’s Size \(S sonnet\)/)
-    const own = coordinatorBrief({
+    const own = coordinatorBrief(T, {
       ...VALUES,
       config: { coordinator: { models: { coordinator: { model: 'haiku' } } } },
     })
     assert.match(own, /you run on haiku;.*\(none configured\)/)
   })
 
-  test('when every child is approved there is nothing to propose', () => {
-    assert.match(coordinatorBrief({ ...VALUES, approved: [84, 89] }), /Nothing is left to propose/)
+  it('when every child is approved there is nothing to propose', () => {
+    assert.match(coordinatorBrief(T, { ...VALUES, approved: [84, 89] }), /Nothing is left to propose/)
   })
 })
 
 describe('the child’s brief', () => {
   const base = { issue: 84, title: 'Coordinator mode', branch: 'feat/84/coordinator-mode', worktree: '/w' }
 
-  test('without a theme it is the plain brief, with its waits sent to the orchestrator, byte for byte', () => {
-    const plain = childBrief(base, {})
-    assert.equal(
+  it('without a theme it is the plain brief, with its waits sent to the orchestrator, byte for byte', () => {
+    const plain = childBrief(T, base, {})
+    assert.strictEqual(
       plain,
       [
         'You are working on issue #84: Coordinator mode.',
@@ -289,15 +305,15 @@ describe('the child’s brief', () => {
         '',
       ].join('\n'),
     )
-    assert.doesNotMatch(plain, /theme|workflow|ultracode/i)
-    assert.doesNotMatch(plain, /\{\{/)
+    assert.notMatch(plain, /theme|workflow|ultracode/i)
+    assert.notMatch(plain, /\{\{/)
   })
 
-  test('a child of a theme routes every wait to its coordinator, and re-reads its mailbox', () => {
-    const brief = childBrief(base, { theme: 'release-0-6-1' })
+  it('a child of a theme routes every wait to its coordinator, and re-reads its mailbox', () => {
+    const brief = childBrief(T, base, { theme: 'release-0-6-1' })
     assert.match(brief, /## Every wait goes through the mailbox/)
     assert.match(brief, /ask with `pnpm exec lntt ask --to coordinator --theme release-0-6-1 --issue 84 "<…>"`/)
-    assert.doesNotMatch(brief, /--to orchestrator/)
+    assert.notMatch(brief, /--to orchestrator/)
     assert.match(brief, /1Password/)
     assert.match(brief, /at `lntt review: limit:` the round sends the open findings/)
     assert.match(brief, /`pnpm exec lntt ask --wait <id>`/)
@@ -308,11 +324,11 @@ describe('the child’s brief', () => {
       brief,
       /new rounds need the person's go: a round does not restart on its own, and past\n`delivery\.review\.maxRounds` the go is `pnpm exec lntt review allow <rounds>`/,
     )
-    assert.doesNotMatch(brief, /workflow|orca/i)
+    assert.notMatch(brief, /workflow|orca/i)
   })
 
-  test('a child of a theme with no coordinator reports and waits to the orchestrator, with the theme’s context', () => {
-    const brief = childBrief(base, {
+  it('a child of a theme with no coordinator reports and waits to the orchestrator, with the theme’s context', () => {
+    const brief = childBrief(T, base, {
       theme: 'standalone',
       coordinator: false,
       context: 'Touch only the brief.',
@@ -324,36 +340,36 @@ describe('the child’s brief', () => {
     assert.match(brief, /`pnpm exec lntt ask --to orchestrator --issue 84 "#84 ready: /)
     assert.match(brief, /lntt inbox --as child --issue 84/)
     assert.match(brief, /the orchestrator reads it/)
-    assert.doesNotMatch(brief, /--to coordinator|your coordinator|the coordinator/i)
-    assert.doesNotMatch(brief, /\{\{/)
+    assert.notMatch(brief, /--to coordinator|your coordinator|the coordinator/i)
+    assert.notMatch(brief, /\{\{/)
   })
 
-  test('explicitly coordinated is the default: the coordinator is asked', () => {
-    const brief = childBrief(base, { theme: 't', coordinator: true })
-    assert.equal(brief, childBrief(base, { theme: 't' }))
+  it('explicitly coordinated is the default: the coordinator is asked', () => {
+    const brief = childBrief(T, base, { theme: 't', coordinator: true })
+    assert.strictEqual(brief, childBrief(T, base, { theme: 't' }))
     assert.match(brief, /--to coordinator --theme t --issue 84/)
   })
 
-  test('with a context and a parent it carries the theme section and how to report', () => {
-    const brief = childBrief(base, { theme: 'release-0-6-1', context: 'Your neighbours: #89 and #111.\n' })
+  it('with a context and a parent it carries the theme section and how to report', () => {
+    const brief = childBrief(T, base, { theme: 'release-0-6-1', context: 'Your neighbours: #89 and #111.\n' })
     assert.match(brief, /## The theme\n\nYour neighbours: #89 and #111\./)
     assert.match(brief, /`pnpm exec lntt ask --to coordinator --theme release-0-6-1 --issue 84 "<question>"`/)
     assert.match(brief, /`pnpm exec lntt ask --to coordinator --theme release-0-6-1 --issue 84 "#84 ready: /)
     assert.match(brief, /lntt inbox --as child --issue 84/)
-    assert.doesNotMatch(brief, /\{\{/)
+    assert.notMatch(brief, /\{\{/)
   })
 
-  test('the workflow section is there only on request, and it limits the agents', () => {
-    assert.doesNotMatch(childBrief(base, { theme: 't' }), /workflow/i)
-    const brief = childBrief(base, { theme: 't', workflow: true })
+  it('the workflow section is there only on request, and it limits the agents', () => {
+    assert.notMatch(childBrief(T, base, { theme: 't' }), /workflow/i)
+    const brief = childBrief(T, base, { theme: 't', workflow: true })
     assert.match(brief, /ultracode/)
     assert.match(brief, /At most 6 agents/)
     assert.match(brief, /Never `isolation: 'worktree'`/)
     assert.match(brief, /\*\*one\*\* writing agent/)
   })
 
-  test('on Orca the child keeps its card current, by absolute path', () => {
-    const brief = childBrief(base, { theme: 't', orca: '/usr/local/bin/orca' })
+  it('on Orca the child keeps its card current, by absolute path', () => {
+    const brief = childBrief(T, base, { theme: 't', orca: '/usr/local/bin/orca' })
     assert.match(brief, /\/usr\/local\/bin\/orca worktree set --worktree current --comment/)
   })
 })

@@ -10,7 +10,7 @@
       // records, and formatting moves the lines.
       "!packages/lntt/test/fixtures/decisions",
       // Left as written: the coordinator's brief sets the issues and the waiting fragment
-      // inside list items, so their indent is the code's; coordinator.test.ts reads the brief.
+      // inside list items, so their indent is the code's; src/worktree/coordinator.spec.ts reads the brief.
       "!packages/lntt/agents/coordinator.md",
       "!packages/lntt/agents/coordinator-waiting.md",
       "packages/biome-config/**",

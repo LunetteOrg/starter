@@ -1,45 +1,15 @@
-// `lntt worktree start`: an agent on an issue, in its own worktree, on the host the
-// session runs in (usage: bin/lntt.ts).
+// `lntt worktree start`: an agent on an issue, in its own worktree, on the host the session runs in
+// (usage: bin/lntt.ts). This module parses the arguments, reads the environment and the context
+// file, and exits 2 on a usage error before Effect loads; the command runs on Effect
+// (src/worktree/start.ts).
 
-import { execFileSync, spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { cwd, env, stderr, stdout } from 'node:process'
+import { env, stderr } from 'node:process'
 import { parseArgs } from 'node:util'
-import { localRef, projectBase } from './base.ts'
-import { branchName, checkBranch } from './branch.ts'
-import { nameFromIssue, readIssue, rules } from './branch-cli.ts'
-import { isHotfix } from './ci/candidate.ts'
-import { candidateConfig } from './ci/config.ts'
-import {
-  agentFor,
-  approvals,
-  approve,
-  type Config,
-  childBrief,
-  coordinatorBrief,
-  gateOf,
-  isApproval,
-} from './coordinator.ts'
-import { Exit, exit } from './exit.ts'
-import { NoConfigError } from './files.ts'
-import { loadConfig } from './index.ts'
-import { forgetStarted, recordStarted, type Started, send, startedBy, waitForAnswer } from './messages.ts'
-import { messagesRoot, pollInterval, systemMailbox } from './messages-cli.ts'
-import {
-  type Agent,
-  agentArgs,
-  type Runner,
-  renderBrief,
-  type Start,
-  setupScript,
-  shellLaunch,
-  startGit,
-  startHerdr,
-  startOrca,
-  toolFailure,
-  type WorktreeHost,
-  worktreeHost,
-} from './worktree.ts'
+import { exit } from './exit.ts'
+import { pollInterval } from './messages-cli.ts'
+import type { StartCommand } from './worktree/start.ts'
+import { type Agent, type WorktreeHost, worktreeHost } from './worktree.ts'
 
 const USAGE = [
   'usage: lntt worktree start --issue <n> [--issue <n>]... [--host orca|herdr|git] [--kind <agent>] [--model <id>] [--effort <level>] [--no-agent] [--base <branch>] [--prompt <text>]',
@@ -47,6 +17,7 @@ const USAGE = [
   '       lntt worktree start --coordinator --theme <slug> --issue <n> [--issue <n>]... [--approve <n>]... [same options]',
 ].join('\n')
 const HOSTS: WorktreeHost[] = ['orca', 'herdr', 'git']
+const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
 function usage(message?: string): never {
   if (message) stderr.write(`lntt worktree: ${message}\n`)
@@ -54,153 +25,7 @@ function usage(message?: string): never {
   exit(2)
 }
 
-// One call to a tool. stdout, trimmed, is the result. When the call succeeds, what the
-// tool said on stderr reaches the person after it; when it fails, the error carries the
-// reason (Orca's JSON message, else what the tool printed, else its exit code), once,
-// and a failure the caller expects (removing an upstream that is not there) stays
-// silent. The setup goes through runner.shell, which shows its output as it runs; the
-// long calls here (Orca creating a worktree, waiting on a terminal) show their work in
-// Orca. stderr is never filtered by its words, which change with the tool's version: a
-// call whose stderr is noise would say so itself.
-export function runTool(
-  command: string,
-  args: string[],
-  dir: string,
-  say: (text: string) => void = (text) => stderr.write(text),
-): string {
-  const r = spawnSync(command, args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-  if (r.error) throw r.error
-  if (r.status !== 0) {
-    const why = toolFailure(command, args, r.stdout ?? '', r.stderr ?? '')
-    throw new Error(why.endsWith(' failed') ? `${why} (exit ${r.status ?? r.signal})` : why)
-  }
-  if (r.stderr) say(r.stderr)
-  return (r.stdout ?? '').trim()
-}
-
-// The real tools; exported for the upstream tests (test/upstream-*.test.ts), which run
-// lntt's adapters against them.
-export const runner: Runner = {
-  run: (command, args, opts) => runTool(command, args, opts?.cwd ?? cwd()),
-  sleep: (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms),
-  shell: (script, dir) => {
-    // The setup's output goes to stderr: stdout carries one JSON line per worktree.
-    execFileSync('bash', ['-e', '-c', script], { cwd: dir, stdio: ['ignore', process.stderr, 'inherit'] })
-  },
-}
-
-// The main checkout, also from a linked worktree: new worktrees go next to the others.
-function mainCheckout(): string {
-  const common = runner.run('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'])
-  return common.replace(/\/\.git$/, '')
-}
-
-// The project's configuration; a project without one has the defaults. A file that does
-// not validate is an error: a child on the default gate and models would pass for the one
-// the project configured.
-export function projectConfig(dir: string = cwd()): Config {
-  try {
-    return loadConfig(dir).data as Config
-  } catch (error) {
-    if (error instanceof NoConfigError) return {}
-    throw error
-  }
-}
-
-// What every host branches from: --base as given (origin/<base>, else <base>: a sibling's
-// branch may exist only here), else the base every lntt command resolves (src/base/base.ts),
-// asked once per kind: a hotfix (branch prefix or label) stays on the default branch.
-async function startBase(root: string, given: string | undefined): Promise<(hotfix: boolean) => Promise<string>> {
-  if (given !== undefined) {
-    const ref = (await localRef(root, given)) ?? given
-    return async () => ref
-  }
-  const resolved = new Map<boolean, string>()
-  return async (hotfix) => {
-    const known = resolved.get(hotfix)
-    if (known !== undefined) return known
-    const base = await projectBase(root, hotfix ? 'hotfix' : 'new')
-    stderr.write(`lntt worktree: ${base.warning ?? `base ${base.reason}`}\n`)
-    resolved.set(hotfix, base.ref)
-    return base.ref
-  }
-}
-
-// The orca binary by absolute path, which every brief uses: a PATH that reaches it from
-// one session does not from another. Null when Orca is not the host.
-function orcaPath(host: WorktreeHost): string | null {
-  if (host !== 'orca') return null
-  try {
-    return runner.run('sh', ['-c', 'command -v orca']) || null
-  } catch {
-    return null
-  }
-}
-
-const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/
-
-// --prompt: instructions of one's own, after the whole brief.
-export function withPrompt(brief: string, prompt: string | undefined): string {
-  if (!prompt?.trim()) return brief
-  return `${brief.trimEnd()}\n\n## Added at start\n\n${prompt.trim()}\n`
-}
-
-// Who the agent started on a branch reports to, for `lntt review` at its limit: a
-// coordinator to the orchestrator, a child of a theme to its coordinator, a plain issue
-// to the orchestrator, and so is a child of a theme that has no coordinator.
-function marker(job: Start, coordinator: boolean, theme: string | undefined, coordinated: boolean): Started {
-  if (coordinator) return { branch: job.branch, issue: null, to: 'orchestrator', theme: theme as string }
-  if (theme && coordinated) return { branch: job.branch, issue: job.issue, to: 'coordinator', theme }
-  return { branch: job.branch, issue: job.issue, to: 'orchestrator' }
-}
-
-// A marker that cannot be written costs the review limit its message, not the start:
-// it is said.
-function recordMarker(started: Started): void {
-  try {
-    recordStarted(messagesRoot(), started)
-  } catch (error) {
-    stderr.write(
-      `lntt worktree start: could not record who ${started.branch} reports to: ${(error as Error).message}\n`,
-    )
-  }
-}
-
-// A coordinator's child waits for the person's go before anything is created, unless the
-// theme's approved list already has it: the gate is the project's setting
-// (coordinator.gate), not a sentence in a brief. The proposal is one message for the batch.
-function passTheGate(config: Config, theme: string, jobs: Start[], size: string | undefined): void {
-  if (gateOf(config) === 'free') return
-  const root = messagesRoot()
-  const approved = approvals(root, theme)
-  const proposed = jobs.filter((job) => job.issue !== null && !approved.has(job.issue))
-  if (proposed.length === 0) return
-  const list = proposed.map((job) => `- #${job.issue}: ${job.title} (on ${job.base})`).join('\n')
-  const box = systemMailbox()
-  const issues = proposed.map((job) => job.issue as number)
-  const sent = send(
-    box,
-    'orchestrator',
-    `Coordinator ${theme} proposes to start${size ? ` (size ${size})` : ''}:\n${list}\nAnswer "approve" (or "yes", "ok") alone to start; anything else declines.`,
-    {
-      topic: `start-${issues.join('-')}`,
-    },
-  )
-  stderr.write(`lntt worktree: ${sent.id} sent to the orchestrator; no child is created until it approves\n`)
-  const reply = waitForAnswer(box, sent, { intervalMs: pollInterval() })
-  if (!isApproval(reply)) throw new Error(`not approved by the orchestrator: ${reply.trim()}`)
-  approve(root, theme, issues)
-}
-
-// Whether the theme has a coordinator worktree: the one `lntt worktree start --coordinator`
-// left its marker for. A child started with --theme for the context and the Size alone
-// has none, and reports to the orchestrator.
-function hasCoordinator(theme: string): boolean {
-  const marker = startedBy(messagesRoot(), branchName('chore', null, theme))
-  return marker?.issue === null && marker.theme === theme
-}
-
-async function start(args: string[]): Promise<void> {
+function parse(args: string[]): StartCommand {
   const { values } = parseArgs({
     args,
     options: {
@@ -227,8 +52,7 @@ async function start(args: string[]): Promise<void> {
   const host = (values.host ?? worktreeHost(env)) as WorktreeHost
   if (!HOSTS.includes(host)) usage(`--host is ${HOSTS.join(', ')}, not ${values.host}`)
 
-  const coordinator = values.coordinator
-  const theme = values.theme
+  const { coordinator, theme } = values
   if (theme !== undefined && !SLUG.test(theme)) usage(`--theme is a slug (a-z, 0-9, -), not ${theme}`)
   if (coordinator && !theme) usage('--coordinator needs the theme: --theme <slug>')
   for (const flag of ['parent', 'context', 'size', 'workflow'] as const) {
@@ -238,150 +62,54 @@ async function start(args: string[]): Promise<void> {
   for (const flag of ['parent', 'context', 'size', 'workflow'] as const) {
     if (!coordinator && !theme && values[flag]) usage(`--${flag} needs the theme the child belongs to: --theme <slug>`)
   }
-  const approved = (values.approve ?? []).map((raw) => {
+  const approve = (values.approve ?? []).map((raw) => {
     if (!issues.includes(raw)) usage(`--approve ${raw} is not one of the --issue of the theme`)
     return Number(raw)
   })
-
-  const config = projectConfig()
+  let context: string | undefined
+  if (values.context) {
+    try {
+      context = readFileSync(values.context, 'utf8')
+    } catch (error) {
+      stderr.write(`lntt worktree: ${(error as Error).message}\n`)
+      exit(1)
+    }
+    if (!context.trim()) usage(`--context ${values.context} is empty`)
+  }
   const given: Partial<Agent> = {
     ...(values.kind ? { kind: values.kind } : {}),
     ...(values.model ? { model: values.model } : {}),
     ...(values.effort ? { effort: values.effort } : {}),
   }
-  const agent: Agent = coordinator
-    ? agentFor(config, { role: 'coordinator' }, given)
-    : agentFor(config, { role: 'child', ...(values.size ? { size: values.size } : {}) }, given)
-  // Refused before anything is created: what the agent cannot take.
-  agentArgs(agent)
-  shellLaunch(agent)
-  const context = values.context ? readFileSync(values.context, 'utf8') : undefined
-  if (values.context && !context?.trim()) usage(`--context ${values.context} is empty`)
-  const root = mainCheckout()
-  const base = await startBase(root, values.base)
-  const candidate = candidateConfig(root)
-  const ruleset = rules()
-  const orca = orcaPath(host)
-  const wherever = (branch: string) =>
-    host === 'orca' ? 'the worktree this session starts in' : `${root}/.worktrees/${branch.replace(/\//g, '-')}`
-  const launched = values['no-agent'] || host === 'git' ? null : agent
-
-  // Every issue is read and named before anything is created: a batch either starts
-  // whole or not at all.
-  const jobs: Start[] = []
-  const coordinated = Boolean(theme) && hasCoordinator(theme as string)
-  if (theme && !coordinator && !coordinated) {
-    stderr.write(
-      `lntt worktree start: theme ${theme} has no coordinator worktree: the children report to the orchestrator\n`,
-    )
-  }
-  if (coordinator) {
-    const themeName = theme as string
-    const branch = branchName('chore', null, themeName)
-    const check = checkBranch(branch, ruleset)
-    if (!check.ok) throw new Error(`${branch} is not a valid name: ${check.reason}`)
-    const listed = []
-    for (const raw of issues) listed.push({ issue: Number(raw), title: (await readIssue(Number(raw))).title })
-    jobs.push({
-      issue: null,
-      title: `Theme ${themeName}`,
-      branch,
-      base: await base(false),
-      agent: launched,
-      root,
-      brief: withPrompt(
-        coordinatorBrief({
-          theme: themeName,
-          worktree: wherever(branch),
-          branch,
-          issues: listed,
-          approved,
-          config,
-          orca,
-        }),
-        values.prompt,
-      ),
-    })
-  } else {
-    for (const raw of issues) {
-      const issue = Number(raw)
-      const data = await readIssue(issue)
-      const branch = await nameFromIssue(issue, {}, data)
-      const check = checkBranch(branch, ruleset)
-      if (!check.ok) throw new Error(`#${issue}: ${branch} is not a valid name: ${check.reason}`)
-      const worktree = wherever(branch)
-      const common = { issue, title: data.title, branch, worktree }
-      jobs.push({
-        issue,
-        title: data.title,
-        branch,
-        base: await base(
-          candidate !== null && isHotfix(candidate, { headRef: branch, labels: data.labels.map((l) => l.name) }),
-        ),
-        agent: launched,
-        root,
-        ...(values.parent ? { parent: values.parent } : {}),
-        brief: withPrompt(
-          theme
-            ? childBrief(common, {
-                theme,
-                coordinator: coordinated,
-                ...(context ? { context } : {}),
-                workflow: values.workflow,
-                orca,
-              })
-            : renderBrief(undefined, common),
-          values.prompt,
-        ),
-      })
-    }
-  }
-  if (coordinator && approved.length > 0) approve(messagesRoot(), theme as string, approved)
-  // The gate is the coordinator's: with none, the orchestrator is the one starting.
-  if (!coordinator && theme && coordinated) passTheGate(config, theme, jobs, values.size)
-
-  for (const job of jobs) {
-    // Before the host starts: a start that fails once the worktree exists still leaves it.
-    // A second start of a coordinator that fails must not take the live one's marker with it.
-    const earlier = coordinator ? startedBy(messagesRoot(), job.branch) : null
-    recordMarker(marker(job, coordinator, theme, coordinated))
-    let started: ReturnType<typeof startOrca>
-    try {
-      started =
-        host === 'orca'
-          ? startOrca(job, runner, setupScript)
-          : host === 'herdr'
-            ? startHerdr(job, runner, setupScript)
-            : startGit(job, runner, setupScript)
-    } catch (error) {
-      // A coordinator whose start failed is none: later children of the theme must not wait on it.
-      // The marker of an earlier start of it stays.
-      if (coordinator) {
-        if (earlier) recordMarker(earlier)
-        else forgetStarted(messagesRoot(), job.branch)
-      }
-      throw error
-    }
-    stdout.write(`${JSON.stringify(started)}\n`)
-    // Nobody was asked to start an agent: the command and the brief are for the person who will.
-    if (job.agent === null) {
-      const launch = shellLaunch(agent) ?? [agent.kind, ...agentArgs(agent)].join(' ')
-      const command = host === 'git' ? `${launch}  # in ${started.path}\n\n` : ''
-      stdout.write(`\n${command}${job.brief}\n`)
-    }
+  return {
+    issues: issues.map(Number),
+    host,
+    given,
+    noAgent: values['no-agent'],
+    ...(values.base === undefined ? {} : { base: values.base }),
+    ...(values.prompt === undefined ? {} : { prompt: values.prompt }),
+    coordinator,
+    ...(theme === undefined ? {} : { theme }),
+    approve,
+    ...(values.parent ? { parent: values.parent } : {}),
+    ...(context === undefined ? {} : { context }),
+    ...(values.size ? { size: values.size } : {}),
+    workflow: values.workflow,
+    pollMs: pollInterval(),
   }
 }
 
 export async function main([command, ...args]: string[]): Promise<void> {
+  if (command !== 'start') usage()
+  let parsed: StartCommand
   try {
-    if (command === 'start') await start(args)
-    else usage()
+    parsed = parse(args)
   } catch (error) {
-    if (error instanceof Exit) throw error
     if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
       usage(error.message)
     }
-    stderr.write(`lntt worktree: ${(error as Error).message}\n`)
-    exit(1)
+    throw error
   }
+  const { runStart } = await import('./worktree/start.ts')
+  await runStart(parsed, env.LNTT_MESSAGES_DIR || undefined)
 }

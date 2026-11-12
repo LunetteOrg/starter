@@ -9,7 +9,7 @@ import * as Layer from 'effect/Layer'
 import type * as PlatformError from 'effect/PlatformError'
 import * as TestClock from 'effect/testing/TestClock'
 import { memoryFileSystem } from '../testing/file-system.ts'
-import { FRESH_MS, HEARTBEAT_MS, lockPath } from '../worktree-lock.ts'
+import { FRESH_MS, HEARTBEAT_MS, lockPath } from './holder.ts'
 import { type LockedError, lockWorktree, Pids } from './lock.ts'
 
 const GIT_DIR = '/repo/.git'

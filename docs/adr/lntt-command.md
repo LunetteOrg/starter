@@ -181,11 +181,11 @@ rests on these criteria:
    template does not depend on it yet (#60), and this repo runs it from the workspace.
 3. **The configuration is a contract between versions.** The agent tools read
    `delivery.review` (`reviewConfig` in `packages/lntt/src/review.ts`), `coordinator`
-   (`gateOf` in `packages/lntt/src/coordinator.ts`) and `local` (`localApp` in
+   (`gateOf` in `packages/lntt/src/worktree/coordinator.ts`) and `local` (`localApp` in
    `packages/lntt/src/local.ts`); `lntt worktree start` reads `delivery.candidate`
    and `delivery.branches` through the gate's branch code; `lntt inbox --wait` and `--follow`
-   read the branch rules (`branchRules`, from `delivery`) for the conventional name of a branch (`liveBranches` in
-   `packages/lntt/src/messages-cli.ts`); `lntt worktree start`,
+   read the branch rules (`branchRules`, from `delivery`) for the conventional name of a branch (the inbox's `worktrees` in
+   `packages/lntt/src/messages/command.ts`); `lntt worktree start`,
    `lntt review` and `lntt ci local` read `delivery.candidate` to find a branch's base
    (`projectBase` in `packages/lntt/src/base.ts`); `lntt retro add` reads
    `delivery.candidate` and `delivery.pullRequest.retrospective` (`candidateConfig` in
@@ -206,7 +206,7 @@ rests on these criteria:
    the gate side. In the code, `lntt review` imports the check
    areas and runs them in-process (`packages/lntt/src/review-cli.ts`
    imports `runArea`), and `lntt worktree start` names branches with
-   the gate's code (`packages/lntt/src/worktree-cli.ts` imports `branchName` and
+   the gate's code (`packages/lntt/src/worktree/start.ts` imports `branchName` and
    `checkBranch`).
 5. **The cost of a split.** A second package needs its placeholder published by hand
    ([publishing](./cli-runtime-and-publishing.md#one-version-for-every-published-package-one-release)),

@@ -6,7 +6,8 @@
 // It is a resource of the command's scope. `progress` and `phase` are synchronous (askAll's
 // progress calls them under Effect.sync, as Orca's subagents need): they queue what to write,
 // and one fiber writes it in order. `flush` waits for
-// what is queued; the scope's release flushes, stops the beat and closes Orca's subagents.
+// what is queued; the scope's release flushes and stops the beat. Orca's subagents are a resource
+// of the scope around it (src/review/orca.ts): they stop once all is written.
 
 import * as Clock from 'effect/Clock'
 import * as Console from 'effect/Console'
@@ -16,9 +17,9 @@ import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
 import * as Queue from 'effect/Queue'
 import type { Progress } from '../headless.ts'
-import type { Subagents } from '../orca-subagents.ts'
 import { formatTokens } from '../review.ts'
 import { Pids } from '../worktree/lock.ts'
+import type { Subagents } from './orca.ts'
 import { ReviewStore } from './store.ts'
 import { duration } from './view.ts'
 
@@ -35,8 +36,6 @@ export const reporting = Effect.fnUntraced(function* (orca: Subagents | null = n
   const say = (line: string) => Console.error(`lntt review: ${line}`)
   const queue = yield* Queue.unbounded<Effect.Effect<void>>()
   const later = (effect: Effect.Effect<void>) => void Queue.offerUnsafe(queue, effect)
-  // Released last: Orca hears its subagents stop once all is written.
-  yield* Effect.addFinalizer(() => Effect.sync(() => orca?.close()))
   const writer = yield* Effect.forkScoped(Effect.forever(Effect.flatten(Queue.take(queue))))
   // Waits for what is queued: done once the writer reaches it, or with the writer's defect if
   // one of the writes died, which would leave nothing to reach it.

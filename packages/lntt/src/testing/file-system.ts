@@ -78,6 +78,18 @@ export function memoryFileSystem(
       const file = files.get(path)
       return file ? Effect.succeed(file.text) : Effect.fail(failure('readFileString', path, 'NotFound'))
     },
+    // The names of what a directory holds, files and directories, as Node's readdir.
+    readDirectory: (path) =>
+      Effect.suspend(() => {
+        if (!dirs.has(path))
+          return Effect.fail(failure('readDirectory', path, files.has(path) ? 'Unknown' : 'NotFound'))
+        const prefix = path === '/' ? '/' : `${path}/`
+        const names = new Set<string>()
+        for (const at of [...files.keys(), ...dirs]) {
+          if (at.startsWith(prefix) && at !== path) names.add(at.slice(prefix.length).split('/')[0] as string)
+        }
+        return Effect.succeed([...names].sort())
+      }),
     writeFileString: (path, text, options) => write('writeFileString', path, text, options?.flag),
     stat: (path) => {
       const file = files.get(path)

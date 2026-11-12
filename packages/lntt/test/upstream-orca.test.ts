@@ -3,9 +3,12 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
-import { orcaSubagents, subagentEvent } from '../src/orca-subagents.ts'
-import { type Start, setupScript, startOrca } from '../src/worktree.ts'
-import { runner } from '../src/worktree-cli.ts'
+import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
+import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
+import { HostEnv, orcaSubagents, subagentEvent } from '../src/review/orca.ts'
+import { SpawnerLive } from '../src/spawner.ts'
+import { runner, type Start, setupScript, startOrca } from '../src/worktree.ts'
 import {
   background,
   collect,
@@ -212,23 +215,28 @@ describe('Orca headless', () => {
     })
     assert.equal(direct.status, 0, direct.stderr)
     assert.equal(direct.stderr, '')
-    const subagents = orcaSubagents(env, repo)
-    assert.ok(subagents, 'orcaSubagents finds the script and the variables')
-    try {
-      subagents.start('upstream-1', 'upstream check')
-      // Orca lists the subagent under the pane that sent it.
-      const seen = await waitFor('the subagent in orca worktree ps', () => {
-        const ps = JSON.parse(tool('orca', ['worktree', 'ps', '--json'])) as {
-          result: { worktrees: { agents?: { subagents?: { id: string; agentType: string }[] }[] }[] }
-        }
-        return ps.result.worktrees
-          .flatMap((w) => w.agents ?? [])
-          .flatMap((a) => a.subagents ?? [])
-          .find((s) => s.id === 'upstream-1')
-      })
-      assert.equal(seen.agentType, 'upstream check')
-    } finally {
-      subagents.close()
-    }
+    // The subagents are a resource of a scope, as in a round: its end stops them.
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const subagents = yield* orcaSubagents(repo)
+          assert.ok(subagents, 'orcaSubagents finds the script and the variables')
+          subagents.start('upstream-1', 'upstream check')
+          // Orca lists the subagent under the pane that sent it.
+          const seen = yield* Effect.promise(() =>
+            waitFor('the subagent in orca worktree ps', () => {
+              const ps = JSON.parse(tool('orca', ['worktree', 'ps', '--json'])) as {
+                result: { worktrees: { agents?: { subagents?: { id: string; agentType: string }[] }[] }[] }
+              }
+              return ps.result.worktrees
+                .flatMap((w) => w.agents ?? [])
+                .flatMap((a) => a.subagents ?? [])
+                .find((s) => s.id === 'upstream-1')
+            }),
+          )
+          assert.equal(seen.agentType, 'upstream check')
+        }),
+      ).pipe(Effect.provideService(HostEnv, env), Effect.provide(Layer.mergeAll(NodeFileSystem.layer, SpawnerLive))),
+    )
   })
 })
