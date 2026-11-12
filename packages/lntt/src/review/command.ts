@@ -3,30 +3,32 @@
 // module only for them, so `lntt review status` and `cost` do not load Effect.
 //
 // A command runs in one scope, the command's: the worktree's lock is a resource of that scope,
-// and the agents run in a scope inside it (withAgents). However the command ends (an answer, a
-// failure, an interrupt), the agents are released first, then the lock.
+// and the agents are fibers of askAll inside it (src/review/asking.ts). However the command ends
+// (an answer, a failure, an interrupt), the agents are released first, then the lock.
 //
-// The logic reaches the machine only through services: git (Git), the state store and the
-// progress file (ReviewStore), the clock (Clock), processes (ChildProcessSpawner), the terminal
-// (Console), the environment (Config), and the sync code of modules not yet on Effect through
-// the bridge (ReviewBridge). src/review/command.spec.ts runs it on their in-memory layers.
+// The logic reaches the machine only through services: git (Git), the agents (Agents), the state
+// store and the progress file (ReviewStore), the working tree (FileSystem, Path), the clock
+// (Clock), processes (ChildProcessSpawner), the terminal (Console), the environment (Config),
+// and the sync code of modules not yet on Effect through the bridge (ReviewBridge). src/review/command.spec.ts runs it on their in-memory layers.
 
 import * as Clock from 'effect/Clock'
 import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
 import * as Data from 'effect/Data'
+import * as Deferred from 'effect/Deferred'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
-import type { FileSystem } from 'effect/FileSystem'
+import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
+import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import * as Scope from 'effect/Scope'
 import { type BranchRules, branchRules } from '../branch.ts'
-import { isArea } from '../check.ts'
+import { citeTarget, citeText, isArea } from '../check.ts'
 import { exit, Exit as LnttExit } from '../exit.ts'
 import { Git, type GitError, GitLive } from '../git/git.ts'
-import { type HeadlessAgent as Agent, askAll, type Spawn, timerMs } from '../headless.ts'
+import { type HeadlessAgent as Agent, type Progress, type Question, timerMs } from '../headless.ts'
 import { projectPhase } from '../index.ts'
 import {
   agentLabel,
@@ -47,13 +49,14 @@ import {
   roundCosts,
   roundLimit,
   roundRange,
-  runRound,
 } from '../review.ts'
 import { runCommand } from '../run-command.ts'
 import { type LockedError, lockWorktree, Pids, WorktreeLockLive } from '../worktree/lock.ts'
-import { AgentsLive, withAgents } from './agents.ts'
+import { AgentsLive } from './agents.ts'
+import { Agents, askAll } from './asking.ts'
 import { ReviewBridge, ReviewBridgeLive, ReviewFailed } from './bridge.ts'
 import { reporting } from './reporter.ts'
+import { runRound } from './round.ts'
 import { ReviewStore, ReviewStoreLive } from './store.ts'
 import {
   destinations,
@@ -79,11 +82,10 @@ export type ReviewCommand =
 // does not validate, an agent that cannot start, a finding that is not open, a branch with no round.
 export class ReviewRefused extends Data.TaggedError('ReviewRefused')<{ message: string }> {}
 
-// What a command is given: the agents' spawner, and the worktree's lock, taken in the command's
-// scope whichever step takes it.
+// What a command is given: the worktree's lock, taken in the command's scope whichever step
+// takes it.
 export type Tools = {
-  spawner: (timeoutMinutes: number) => Spawn
-  lock: (command: string) => Effect.Effect<void, GitError | LockedError | PlatformError, FileSystem | Pids>
+  lock: (command: string) => Effect.Effect<void, GitError | LockedError | PlatformError, FileSystem.FileSystem | Pids>
 }
 
 const say = (line: string) => Console.error(`lntt review: ${line}`)
@@ -104,27 +106,29 @@ const headBranch = Effect.gen(function* () {
   return branch
 })
 
-// The agents of a round or a reply, asked by askAll, still on Promises: the signal it is given
-// stops them at the round's deadline, a fiber that sleeps on the Clock, or when the command is
-// interrupted, which aborts the signal of tryPromise. The agents still waiting do not start.
-const asking = <A>(minutes: number, ask: (signal: AbortSignal) => Promise<A>) =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const stop = new AbortController()
-      yield* Effect.forkScoped(
-        Effect.sleep(Duration.millis(timerMs(minutes * 60_000))).pipe(
-          Effect.andThen(Effect.sync(() => stop.abort(`the round took longer than ${minutes} minutes`))),
-        ),
-      )
-      return yield* Effect.tryPromise({
-        try: (interrupt) => {
-          interrupt.addEventListener('abort', () => stop.abort('interrupted'), { once: true })
-          return ask(stop.signal)
-        },
-        catch: (cause) => new ReviewFailed({ cause }),
-      })
-    }),
+// The deadline of a round or a reply, from now: one for all its asks (a round asks its reviewers,
+// then its verifiers). A fiber of the command's scope sleeps on the Clock, then every agent still
+// running is stopped, those waiting do not start, and each answer is the reason. An interrupt of
+// the command stops them too, as an interrupt: nothing is answered.
+const deadline = Effect.fnUntraced(function* (minutes: number) {
+  const passed = yield* Deferred.make<string>()
+  yield* Effect.forkScoped(
+    Effect.sleep(Duration.millis(timerMs(minutes * 60_000))).pipe(
+      Effect.andThen(Deferred.succeed(passed, `the round took longer than ${minutes} minutes`)),
+    ),
   )
+  return passed
+})
+
+// How a round or a reply asks its agents: the project's slots, grace and timeouts, the
+// deadline, and what the reporter writes as each agent starts and ends.
+const asking = (config: ReviewConfig, stop: Deferred.Deferred<string>, progress: (event: Progress) => void) => ({
+  perProvider: config.perProvider,
+  optionalGraceMs: config.optionalGraceMinutes * 60_000,
+  timeoutMinutes: config.timeoutMinutes,
+  stop,
+  progress: (event: Progress) => Effect.sync(() => progress(event)),
+})
 
 // macOS sleeps on its own schedule, and a sleeping machine stops the round's agents: caffeinate
 // keeps it awake while this process runs. Its release is its own `-w <pid>`: it exits with this
@@ -224,9 +228,10 @@ const stopAtLimit = Effect.fnUntraced(function* (
 
 export const round = Effect.fnUntraced(function* (
   options: { base: string | undefined; plan: boolean },
-  { spawner, lock }: Tools,
+  { lock }: Tools,
 ) {
   const git = yield* Git
+  const agents = yield* Agents
   const store = yield* ReviewStore
   const bridge = yield* ReviewBridge
   const { self } = yield* Pids
@@ -269,7 +274,7 @@ export const round = Effect.fnUntraced(function* (
     ...lenses.map(([name, lens]) => `  ${name}: ${lens.with.map(agentLabel).join(', ')}`),
     `  verify ${config.verify ? `${config.verify.severities.join(', ')}: ${config.verify.with.map(agentLabel).join(', ')}` : 'off'}`,
   ]
-  const agents: Agent[] = [...lenses.flatMap(([, lens]) => lens.with), ...(config.verify?.with ?? [])]
+  const asked: Agent[] = [...lenses.flatMap(([, lens]) => lens.with), ...(config.verify?.with ?? [])]
   // A lens named after an area of lntt check reads its results instead of redoing them.
   const areas = lenses.map(([name]) => name).filter(isArea)
   if (areas.length > 0) plan.push(`  before the reviewers: ${areas.map((a) => `lntt check ${a}`).join(', ')}`)
@@ -278,10 +283,10 @@ export const round = Effect.fnUntraced(function* (
       `  limit: round ${range.round} would pass delivery.review.maxRounds (${config.maxRounds}): it will not start`,
     )
   }
-  plan.push(`  the diff goes to: ${destinations(agents)}`)
+  plan.push(`  the diff goes to: ${destinations(asked)}`)
   for (const warning of reviewWarnings(config)) plan.push(`  warning: ${warning}`)
   yield* say(plan.join('\n'))
-  const problems = yield* bridge.agentProblems(agents)
+  const problems = yield* agents.problems(asked)
   if (options.plan) {
     for (const problem of problems) yield* say(`cannot start ${problem}`)
     return 0
@@ -308,34 +313,47 @@ export const round = Effect.fnUntraced(function* (
   const diff = files.length > 0 ? yield* git.diff(`${range.from}..${head}`) : ''
   // The lines the whole branch wrote, from the merge base whatever range the round reads.
   const written = yield* git.written(`${base}..${head}`)
-  const { readBrief, cite } = bridge.files(root)
-  const result = yield* asking(config.roundTimeoutMinutes, (signal) =>
-    runRound(
-      config,
-      {
-        base: range.from,
-        head,
-        files,
-        diff,
-        records: records(data),
-        phase: projectPhase(data),
-        range,
-        readBrief,
-        checks,
-        closed: ledger,
-        untouched: untouchedIn(written),
-        cite,
-      },
-      (questions) => {
-        report.phase(questions.map((q) => q.label ?? ''))
-        return askAll(questions, spawner(config.timeoutMinutes), report.progress, {
-          perProvider: config.perProvider,
-          optionalGraceMs: config.optionalGraceMinutes * 60_000,
-          signal,
-        })
-      },
-      open,
-    ),
+  // The working tree as the reviewers read it: a lens's brief, and the line a finding cites.
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  // A path no file answers for (missing, a directory, a component that is a file, one it may
+  // not read) is no file, as lntt check cite says it.
+  const cite = (anchor: string, line: number | null) =>
+    Effect.gen(function* () {
+      const { file, at } = citeTarget(path, root, anchor, line)
+      const isFile =
+        file !== null &&
+        (yield* fs.stat(file).pipe(
+          Effect.map((info) => info.type === 'File'),
+          Effect.orElseSucceed(() => false),
+        ))
+      if (!isFile) return citeText(null, at)
+      return citeText(at === null ? '' : yield* fs.readFileString(file), at)
+    })
+  const stop = yield* deadline(config.roundTimeoutMinutes)
+  const ask = (questions: Question[]) =>
+    Effect.gen(function* () {
+      report.phase(questions.map((q) => q.label ?? ''))
+      return yield* askAll(questions, asking(config, stop, report.progress)).pipe(Effect.provideService(Agents, agents))
+    })
+  const result = yield* runRound<PlatformError>(
+    config,
+    {
+      base: range.from,
+      head,
+      files,
+      diff,
+      records: records(data),
+      phase: projectPhase(data),
+      range,
+      readBrief: (brief) => fs.readFileString(path.join(root, brief)),
+      checks,
+      closed: ledger,
+      untouched: untouchedIn(written),
+      cite,
+    },
+    ask,
+    open,
   )
   yield* report.flush
   // The reviewers read the working tree: a commit or an edit during the round means they
@@ -390,10 +408,7 @@ export const round = Effect.fnUntraced(function* (
 
 // The reviewers that found it, each resumed in its own session with the author's
 // answer. Withdrawn when every one of them withdraws it.
-export const reply = Effect.fnUntraced(function* (
-  { id, answer }: { id: string; answer: string },
-  { spawner, lock }: Tools,
-) {
+export const reply = Effect.fnUntraced(function* ({ id, answer }: { id: string; answer: string }, { lock }: Tools) {
   const store = yield* ReviewStore
   const bridge = yield* ReviewBridge
   const state = yield* store.readState(yield* headBranch)
@@ -414,18 +429,14 @@ export const reply = Effect.fnUntraced(function* (
   const finders = finding.foundBy
   if (finders.length === 0) return yield* new ReviewRefused({ message: `${id}: no reviewer to answer` })
   const report = yield* reporting()
-  const answers = yield* asking(config.roundTimeoutMinutes, (signal) =>
-    askAll(
-      finders.map((b) => ({
-        agent: known.get(b.agent) as Agent,
-        prompt: renderReplyPrompt(finding, answer),
-        session: b.session as string,
-        label: `reply ${id} · ${b.agent}`,
-      })),
-      spawner(config.timeoutMinutes),
-      report.progress,
-      { perProvider: config.perProvider, optionalGraceMs: config.optionalGraceMinutes * 60_000, signal },
-    ),
+  const answers = yield* askAll(
+    finders.map((b) => ({
+      agent: known.get(b.agent) as Agent,
+      prompt: renderReplyPrompt(finding, answer),
+      session: b.session as string,
+      label: `reply ${id} · ${b.agent}`,
+    })),
+    asking(config, yield* deadline(config.roundTimeoutMinutes), report.progress),
   )
   yield* report.flush
   const replies = answers.map((a, i) => ({
@@ -501,9 +512,9 @@ export const command = (parsed: ReviewCommand) =>
     const run =
       parsed.kind === 'allow'
         ? allow(parsed, { lock })
-        : withAgents(({ spawner }) =>
-            parsed.kind === 'reply' ? reply(parsed, { spawner, lock }) : round(parsed, { spawner, lock }),
-          )
+        : parsed.kind === 'reply'
+          ? reply(parsed, { lock })
+          : round(parsed, { lock })
     const failure = (error: Error) => reportError(parsed, error).pipe(Effect.as(1))
     return yield* run.pipe(
       Effect.tapDefect((defect) => (defect instanceof LnttExit ? Effect.void : reportError(parsed, defect))),
@@ -520,7 +531,7 @@ export const command = (parsed: ReviewCommand) =>
 // The services on the machine.
 const Live = ReviewStoreLive.pipe(
   Layer.provideMerge(GitLive),
-  Layer.provideMerge(Layer.mergeAll(AgentsLive, WorktreeLockLive, ReviewBridgeLive)),
+  Layer.provideMerge(Layer.mergeAll(AgentsLive, WorktreeLockLive, ReviewBridgeLive, Path.layer)),
 )
 
 // Runs a round, a reply or `allow` as the process's main program (src/run-command.ts): its exit

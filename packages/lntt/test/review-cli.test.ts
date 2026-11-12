@@ -301,36 +301,6 @@ describe('lntt review, end to end with a fake agent', () => {
     assert.match(lntt(['status']).out, /^ {2}pre-existing f9 warning c\.md:2 — Orca 1\.2 is stale$/m)
   })
 
-  test('an optional agent still running after the others answered is stopped, not awaited', { timeout: 30000 }, () => {
-    writeFileSync(
-      join(repo, '.agents/config.jsonc'),
-      JSON.stringify({
-        delivery: {
-          review: {
-            reviewers: {
-              decisions: { with: [] },
-              tests: { with: [] },
-              code: {
-                with: [
-                  { kind: 'claude', model: 'sonnet' },
-                  { kind: 'claude', model: 'opus', optional: true },
-                ],
-              },
-            },
-            verify: false,
-            optionalGraceMinutes: 0,
-          },
-        },
-      }),
-    )
-    git('commit', '-qam', 'slow optional')
-    const began = Date.now()
-    const r = lntt(['--base', 'main'], { FAKE_SLEEP_opus: '1' })
-    assert.equal(r.code, 0, r.err)
-    assert.ok(Date.now() - began < 20000, 'not awaited')
-    assert.match(reading().skipped[0].error, /stopped: the other agents answered/)
-  })
-
   test('under Claude Code in Orca: each agent is a subagent of the session, and the agents get no hook variables', () => {
     const hooks = join(repo, '.orca/agent-hooks')
     mkdirSync(hooks, { recursive: true })
@@ -420,17 +390,6 @@ describe('lntt review, end to end with a fake agent', () => {
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
     }
     assert.throws(() => process.kill(pid, 0), 'the stubborn agent is gone')
-  })
-
-  test('a round past roundTimeoutMinutes stops its agents and fails', { timeout: 30000 }, () => {
-    writeFileSync(
-      join(repo, '.agents/config.jsonc'),
-      JSON.stringify({ delivery: { review: { roundTimeoutMinutes: 0.02, verify: false } } }),
-    )
-    git('commit', '-qam', 'short round')
-    const r = lntt(['--base', 'main'], { FAKE_SLEEP_sonnet: '1', FAKE_SLEEP_haiku: '1' })
-    assert.equal(r.code, 1)
-    assert.match(reading().failed[0].error, /the round took longer than/)
   })
 
   test('Ctrl-C gives the agents SIGTERM before anything harder', { timeout: 30000 }, async () => {
@@ -579,52 +538,6 @@ describe('lntt review, end to end with a fake agent', () => {
     }
   })
 
-  test('Ctrl-C keeps the agents still waiting for a slot from starting', { timeout: 30000 }, async () => {
-    writeFileSync(
-      join(repo, '.agents/config.jsonc'),
-      JSON.stringify({
-        delivery: {
-          review: {
-            reviewers: {
-              decisions: { with: [] },
-              tests: { with: [] },
-              code: {
-                with: [
-                  { kind: 'claude', model: 'sonnet' },
-                  { kind: 'claude', model: 'opus' },
-                ],
-              },
-            },
-            verify: false,
-            perProvider: 1,
-          },
-        },
-      }),
-    )
-    git('commit', '-qam', 'two in one slot')
-    const pids = join(repo, '.pids')
-    writeFileSync(pids, '')
-    const child = spawn(process.execPath, [BIN, 'review', '--base', 'main'], {
-      cwd: repo,
-      env: {
-        HOME: repo,
-        PATH: [bin, dirname(process.execPath), '/usr/bin', '/bin'].join(':'),
-        FAKE_LOG: log,
-        FAKE_LOG_TERM_sonnet: '1',
-        FAKE_LOG_TERM_opus: '1',
-        FAKE_PIDS: pids,
-      },
-      stdio: 'ignore',
-    })
-    const until = Date.now() + 10_000
-    while (!readFileSync(pids, 'utf8').includes('started') && Date.now() < until)
-      await new Promise((r) => setTimeout(r, 50))
-    child.kill('SIGINT')
-    await new Promise((r) => child.on('exit', r))
-    await new Promise((r) => setTimeout(r, 300))
-    assert.equal(readFileSync(pids, 'utf8').match(/started/g)?.length, 1)
-  })
-
   test('one round at a time in a worktree: a second is refused while the first runs', () => {
     const lock = join(repo, '.git/lntt-review.lock')
     writeFileSync(lock, `${process.pid} lntt review`)
@@ -635,20 +548,6 @@ describe('lntt review, end to end with a fake agent', () => {
     ageLock(lock)
     assert.equal(lntt(['--base', 'main']).code, 0, 'a lock left by a process that is gone is taken over')
     assert.equal(existsSync(lock), false, 'the lock goes with the round')
-  })
-
-  test('a reply stops at the round deadline too', { timeout: 30000 }, () => {
-    // The round runs with the usual deadline: on a slow machine a short one would stop the
-    // round itself. Only the reply gets the short deadline.
-    const r = lntt(['--base', 'main'], { FAKE_REVIEW: '- [warning] a.ts:1 — w — a' })
-    assert.equal(reading().findings[0].id, 'f1', r.err)
-    writeFileSync(
-      join(repo, '.agents/config.jsonc'),
-      JSON.stringify({ delivery: { review: { roundTimeoutMinutes: 0.02, verify: false } } }),
-    )
-    const reply = lntt(['reply', 'f1', 'no'], { FAKE_SLEEP_sonnet: '1', FAKE_SLEEP_haiku: '1' })
-    assert.equal(reply.code, 1)
-    assert.match(reply.out, /took longer than/)
   })
 
   test('the lock is taken atomically: of two rounds started together, one runs and one is refused', {

@@ -60,8 +60,12 @@ signal to the group and a forced kill after a delay), the file system (Effect's
 `FileSystem`), the clock (Effect's `Clock`, so a test moves time with `TestClock`), git,
 and the agents built on processes. A service of `lntt`'s own is declared with
 `Context.Service`, its live layer in its module: git is `Git` in
-`packages/lntt/src/git/git.ts`, its operations typed and run through the spawner. A module's
-logic depends on services, never on `node:` modules, and its test provides in-memory layers.
+`packages/lntt/src/git/git.ts`, its operations typed and run through the spawner; the agents
+are `Agents` in `packages/lntt/src/review/asking.ts` (one agent run, and what keeps an agent
+from starting), its live layer in `packages/lntt/src/review/agents.ts` over the spawner, and
+`askAll` the logic over it (a slot per provider, the optional agents' grace, a stop). A
+module's logic depends on services, never on `node:` modules, and its test provides in-memory
+layers.
 
 ### Errors
 
@@ -104,39 +108,41 @@ logic depends on services, never on `node:` modules, and its test provides in-me
   installed) the round goes on; any other failure to start it fails the round.
 - **The worktree's lock is a resource of the command's scope** in `lntt review` (a round,
   a reply, `allow`: `lockWorktree` in `packages/lntt/src/worktree/lock.ts`), its heartbeat
-  a fiber of the same scope. The agents run in a scope inside it, so they are released
-  before the lock. `lntt check tests mutate`, still on Promises, takes the lock through
+  a fiber of the same scope. The agents are fibers of `askAll` inside it, so they are
+  released before the lock. `lntt check tests mutate`, still on Promises, takes the lock through
   the module's Promise entry (`packages/lntt/src/worktree-lock.ts`), which loads Effect to
   run the same acquisition and releases the lock on the process's exit until that command
   moves.
 - **An agent's process group is a resource.** Its release, when the agent did not exit
   on its own: SIGTERM to the group, up to five seconds for it to go, then SIGKILL to the
-  group (the spawner's `killSignal` and `forceKillAfter`). A timeout is an interrupt of
-  the agent's fiber, so it releases the same way.
+  group (the spawner's `killSignal` and `forceKillAfter`). A timeout, a stop (the round's
+  deadline, the optional agents' grace) and an interrupt are interrupts of the agent's
+  fiber, so it releases the same way, and `askAll` goes on once the release is done.
 - **A reading command keeps the default handling of signals** (a jq query that holds
   the event loop is ended by the signal itself,
   [the `lntt` command](./lntt-command.md#decision)): only a command that holds resources runs under the runner's handlers.
 
 ### The bridge, while modules move
 
-A module on Effect exposes, besides its Effects, the `Promise` functions its callers
-still use (the `Spawn` of `askAll` is one), run through `FiberSet.makeRuntimePromise`
-with the caller's `AbortSignal` (`withAgents` in `packages/lntt/src/review/agents.ts`).
-Each run is a fiber of the command's scope: an abort interrupts it and the promise
-settles once its finalizers have run, and an interrupt of the command interrupts every
-run still going and ends once they are all released. The command's own Promise code runs
-under `Effect.tryPromise`, whose signal an interrupt aborts. The sync code of modules not
+A Promise function a module on Effect still calls runs under `Effect.tryPromise`, which
+passes it a signal an interrupt aborts when it takes one (a `Spawn` does). The sync code of modules not
 yet moved that a module on Effect needs (for `lntt review`: the project's configuration,
-the place of the state store, the base, `lntt check`'s areas, the files the reviewers cite,
-the agents' CLIs, the parent the branch reports to and the limit's message, Orca's
-subagents) is reached through a service of that module, its bridge
+the place of the state store, the base, `lntt check`'s areas, the parent the branch
+reports to and the limit's message, Orca's subagents) is reached through a service of that
+module, its bridge
 (`ReviewBridge` in `packages/lntt/src/review/bridge.ts`): the live layer runs the code under
 `Effect.try`, and what it throws is a tagged error of the bridge (`ReviewFailed`), reported
 by its message like any expected failure; the unit test gives the bridge's in-memory layer.
 A defect of the Effect code reaches the edge with its stack. A piece leaves the bridge when
 its module moves to Effect. The library API of
 `@lntt/lntt` (`packages/lntt/src/index.ts`) stays on `Promise`, so a script that imports
-it needs no Effect.
+it needs no Effect: a library function whose logic moved (`askAll`, `runRound`) imports its
+Effect form with `await import(...)` when it is called and runs it with `Effect.runPromise`,
+its callbacks under `Effect.sync`, `Effect.try` and `Effect.tryPromise` (a `Spawn` is the
+`Agents` layer `Agents.fromSpawn`, an `AbortSignal` the stop). A `Spawn` that rejects is
+that agent's failed answer in `askAll`; an ask, a brief or a cited line that throws rejects
+`runRound` with what it threw.
+A command that does not call it loads no Effect for it.
 
 ### Tests beside each module
 

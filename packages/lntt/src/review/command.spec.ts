@@ -1,11 +1,16 @@
 import { assert, describe, it } from '@effect/vitest'
 import * as ConfigProvider from 'effect/ConfigProvider'
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
+import * as Fiber from 'effect/Fiber'
 import * as Layer from 'effect/Layer'
+import * as Path from 'effect/Path'
 import * as PlatformError from 'effect/PlatformError'
 import { type ChildProcess, ChildProcessSpawner } from 'effect/process'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
+import * as TestClock from 'effect/testing/TestClock'
 import * as TestConsole from 'effect/testing/TestConsole'
 import { Git, GitError } from '../git/git.ts'
 import type { Started } from '../messages.ts'
@@ -14,6 +19,7 @@ import { branchKey } from '../review-store.ts'
 import { memoryFileSystem } from '../testing/file-system.ts'
 import { Pids } from '../worktree/lock.ts'
 import { lockPath } from '../worktree-lock.ts'
+import { AgentsProcesses } from './agents.ts'
 import { ReviewBridge, ReviewFailed } from './bridge.ts'
 import { command, type ReviewCommand } from './command.ts'
 import { ReviewStore } from './store.ts'
@@ -40,8 +46,9 @@ const CONFIG = () => ({
 
 type Tree = Record<string, string>
 
-// A repository in memory: commits on branches, each a whole tree, and the working tree's state.
-function repository() {
+// A repository in memory: commits on branches, each a whole tree, and the working tree's state:
+// `checkout` hears the tree HEAD names after each commit and switch.
+function repository(checkout: (tree: Tree) => void = () => {}) {
   const commits = new Map<string, { parent: string | null; tree: Tree; subject: string }>()
   const branches = new Map<string, string>()
   let current: string | null = 'main'
@@ -54,6 +61,7 @@ function repository() {
       const id = `c${++count}`
       commits.set(id, { parent, tree: { ...(parent ? commits.get(parent)?.tree : {}), ...tree }, subject })
       if (current) branches.set(current, id)
+      checkout(repo.tree('HEAD'))
       return id
     },
     head: () => (current ? (branches.get(current) ?? null) : detached),
@@ -61,6 +69,7 @@ function repository() {
       if (create) branches.set(branch, repo.head() as string)
       current = branch
       detached = null
+      checkout(repo.tree('HEAD'))
     },
     detach() {
       detached = repo.head()
@@ -125,6 +134,9 @@ const encode = (text: string) => new TextEncoder().encode(text)
 
 // The agents as review-cli.test.ts's fake claude: the kind of prompt it reads (REVIEW, VERIFY,
 // REPLY) picks its answer, by model first; a kind or kind_model in `fails` exits 1 with `boom`.
+// The shell finds every CLI on the PATH but those in `missing`. An agent in `minutes` (by
+// kind_model, or model) answers after that many minutes of the Clock; `released` names each
+// agent whose process was released, in order.
 function agents() {
   const state = {
     answers: {} as Record<string, string>,
@@ -133,6 +145,9 @@ function agents() {
     awake: [] as string[][],
     // caffeinate as the machine has it: there, not installed, or not allowed to start.
     caffeinate: 'there' as 'there' | 'NotFound' | 'PermissionDenied',
+    missing: new Set<string>(),
+    minutes: {} as Record<string, number>,
+    released: [] as string[],
     prompts: [] as string[],
     // Runs as an agent answers: what a reviewer does to the working tree.
     during: () => {},
@@ -164,6 +179,7 @@ function agents() {
       const resume = args.indexOf('--resume')
       let stdout = ''
       let code = 0
+      if (command.command === 'sh') code = state.missing.has(/command -v "(.+)"/.exec(args[1] ?? '')?.[1] ?? '') ? 1 : 0
       if (command.command === 'claude') {
         state.prompts.push(prompt)
         state.calls.push(`${kind} ${model}${resume >= 0 ? ` --resume ${args[resume + 1]}` : ''}`)
@@ -178,9 +194,16 @@ function agents() {
             usage: { input_tokens: 1000, output_tokens: 500 },
           })
       }
+      const minutes =
+        command.command === 'claude' ? (state.minutes[`${kind}_${model}`] ?? state.minutes[model ?? '']) : undefined
+      if (minutes !== undefined)
+        yield* Effect.addFinalizer(() => Effect.sync(() => state.released.push(`${kind} ${model}`)))
       return ChildProcessSpawner.makeHandle({
         pid: ChildProcessSpawner.ProcessId(state.calls.length + 1),
-        exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(code)),
+        exitCode:
+          minutes === undefined
+            ? Effect.succeed(ChildProcessSpawner.ExitCode(code))
+            : Effect.as(Effect.sleep(Duration.minutes(minutes)), ChildProcessSpawner.ExitCode(code)),
         isRunning: Effect.succeed(false),
         kill: () => Effect.void,
         stdin: Sink.drain,
@@ -200,15 +223,17 @@ function agents() {
 // state store under its git directory: each run of `lntt` is a fresh process on the same files.
 function world() {
   const fs = memoryFileSystem({ dirs: [GIT_DIR] })
-  const repo = repository()
+  // The working tree is the tree HEAD names: what a reviewer reads, and a finding cites.
+  const repo = repository((tree) => {
+    for (const path of [...fs.files.keys()]) if (!path.startsWith(`${GIT_DIR}/`)) fs.files.delete(path)
+    for (const [path, text] of Object.entries(tree)) fs.files.set(`${ROOT}/${path}`, { text, mtime: 0 })
+  })
   repo.commit({ 'a.ts': 'export const a = 1' }, 'base')
   repo.switch('feat/1/x', true)
   repo.commit({ 'a.ts': 'export const a = 2' }, 'change')
   const agent = agents()
   const project = {
     config: CONFIG() as Record<string, unknown>,
-    // Agents that cannot start, as agentProblems says it.
-    problems: [] as string[],
     env: {} as Record<string, string>,
     invalid: null as string | null,
     // A bug of lntt, where the bridge is reached last before the agents.
@@ -233,26 +258,12 @@ function world() {
       ),
       place: () => Effect.succeed(STORE),
       base: (_root, given) => Effect.succeed({ ref: given ?? 'main', said: given ? null : 'base main' }),
-      agentProblems: () => Effect.sync(() => project.problems),
       checks: (areas) =>
         Effect.sync(() => {
           project.checked++
           project.areas.push([...areas])
           return Object.fromEntries(areas.map((area) => [area, project.checks[area] ?? '[]']))
         }),
-      files: () => ({
-        readBrief: () => '',
-        cite: (path, line) => {
-          const text = repo.tree('HEAD')[path]
-          if (text === undefined) return { missing: 'no such file', what: 'file' as const }
-          const lines = text.split('\n')
-          return line === null
-            ? { text: null }
-            : line <= lines.length
-              ? { text: lines[line - 1] as string }
-              : { missing: `no line ${line}`, what: 'line' as const }
-        },
-      }),
       reportsTo: () =>
         project.parentFails
           ? Effect.fail(new ReviewFailed({ cause: new Error('the mailbox cannot be read') }))
@@ -283,7 +294,8 @@ function world() {
           repo.layer(),
           bridge,
           pids,
-          agent.layer,
+          AgentsProcesses.pipe(Layer.provideMerge(agent.layer)),
+          Path.layer,
           // Fresh: each run is a process with its own terminal.
           Layer.fresh(TestConsole.layer),
           ConfigProvider.layer(ConfigProvider.fromEnvRecord(project.env)),
@@ -382,10 +394,21 @@ describe('lntt review, a round', () => {
   it.effect('--plan prints the plan and what cannot start, takes no lock and starts nothing', () => {
     const w = world()
     return Effect.gen(function* () {
-      w.project.problems = ['opencode x/y: opencode is not on the PATH']
+      w.withConfig((review) => {
+        review.reviewers = {
+          ...(review.reviewers as object),
+          code: {
+            with: [
+              { kind: 'claude', model: 'sonnet' },
+              { kind: 'opencode', model: 'x/y' },
+            ],
+          },
+        }
+      })
+      w.agent.missing.add('opencode')
       const plan = yield* w.round({ plan: true })
       assert.strictEqual(plan.code, 0, plan.err)
-      assert.match(plan.err, /round 1, first round: c1\.\.c2, 1 files\n {2}code: claude sonnet/)
+      assert.match(plan.err, /round 1, first round: c1\.\.c2, 1 files\n {2}code: claude sonnet, opencode x\/y/)
       assert.match(plan.err, /cannot start opencode x\/y: opencode is not on the PATH/)
       assert.deepStrictEqual(w.agent.calls, [])
       assert.strictEqual(w.fs.text(PROGRESS), undefined, 'no progress file')
@@ -621,6 +644,44 @@ describe('lntt review, a round', () => {
           ['code · claude sonnet', false],
           ['code · claude opus', true],
         ],
+      )
+    })
+  })
+})
+
+describe('lntt review, the working tree the reviewers read', () => {
+  it.effect("a lens's brief and a finding's line are read from the working tree", () => {
+    const w = world()
+    return Effect.gen(function* () {
+      w.repo.commit({ 'docs/story.md': 'Tell the story of the change.' })
+      w.withConfig((review) => {
+        review.reviewers = {
+          ...(review.reviewers as object),
+          code: { with: [] },
+          story: { brief: 'docs/story.md', with: [{ kind: 'claude', model: 'haiku' }] },
+        }
+      })
+      w.agent.answers.REVIEW_haiku = [
+        '- [warning] a.ts:1 — w — a',
+        '- [warning] a.ts:9 — past the end — a',
+        '- [warning] a.ts/x.ts:1 — under a file — a',
+        '- [warning] ../out.ts:1 — outside the root — a',
+      ].join('\n')
+      w.agent.answers.VERIFY = 'confirmed\np'
+      yield* w.round()
+      assert.match(w.agent.prompts[0] ?? '', /Tell the story of the change\./)
+      const state = w.state()
+      assert.deepStrictEqual(
+        state.result.findings.map((f) => [f.path, f.line, f.cited]),
+        [
+          ['../out.ts', 1, undefined],
+          ['a.ts', 1, 'export const a = 2'],
+          ['a.ts/x.ts', 1, undefined],
+        ],
+      )
+      assert.deepStrictEqual(
+        state.result.refuted.map((f) => f.proofs[0]?.proof),
+        ['a.ts:9: no line 9: the file has 1 line'],
       )
     })
   })
@@ -980,4 +1041,136 @@ describe('lntt review, its lock and its errors', () => {
       assert.strictEqual(w.locked(), false)
     })
   })
+})
+
+describe('lntt review, the agents stopped: a deadline, a grace, an interrupt', () => {
+  // Until `n` agents have started.
+  const started = (w: ReturnType<typeof world>, n: number) =>
+    Effect.gen(function* () {
+      while (w.agent.calls.length < n) yield* Effect.yieldNow
+    })
+
+  it.effect('a round past roundTimeoutMinutes stops its agents and fails', () => {
+    const w = world()
+    return Effect.gen(function* () {
+      w.withConfig((review) => {
+        review.roundTimeoutMinutes = 60
+        review.timeoutMinutes = 180
+        review.verify = false
+      })
+      w.agent.minutes.sonnet = 120
+      const fiber = yield* Effect.forkChild(w.round())
+      yield* started(w, 1)
+      yield* TestClock.adjust(Duration.minutes(60))
+      const r = yield* Fiber.join(fiber)
+      assert.strictEqual(r.code, 1, r.err)
+      assert.strictEqual(w.state().result.failed[0]?.error, 'the round took longer than 60 minutes')
+      assert.deepStrictEqual(w.agent.released, ['REVIEW sonnet'])
+      assert.strictEqual(w.locked(), false)
+    })
+  })
+
+  it.effect('the deadline is the whole round: the verifiers have what the reviewers left of it', () => {
+    const w = world()
+    return Effect.gen(function* () {
+      w.withConfig((review) => {
+        review.roundTimeoutMinutes = 60
+        review.timeoutMinutes = 180
+      })
+      Object.assign(w.agent.answers, BLOCKER)
+      w.agent.minutes.REVIEW_sonnet = 40
+      w.agent.minutes.VERIFY_opus = 40
+      const fiber = yield* Effect.forkChild(w.round())
+      yield* started(w, 1)
+      yield* TestClock.adjust(Duration.minutes(40))
+      yield* started(w, 2)
+      yield* TestClock.adjust(Duration.minutes(20))
+      const r = yield* Fiber.join(fiber)
+      assert.strictEqual(r.code, 1, r.err)
+      assert.deepStrictEqual(w.state().result.failed, [
+        { lens: 'verify f1', agent: 'claude opus', error: 'the round took longer than 60 minutes' },
+      ])
+      assert.deepStrictEqual(w.agent.released, ['REVIEW sonnet', 'VERIFY opus'])
+    })
+  })
+
+  it.effect('a reply stops at the round deadline too', () => {
+    const w = world()
+    return Effect.gen(function* () {
+      Object.assign(w.agent.answers, WARNING)
+      yield* w.round()
+      w.withConfig((review) => {
+        review.roundTimeoutMinutes = 1
+      })
+      w.agent.minutes.REPLY_sonnet = 5
+      const fiber = yield* Effect.forkChild(w.reply('f1', 'no'))
+      yield* started(w, 3)
+      yield* TestClock.adjust(Duration.minutes(1))
+      const r = yield* Fiber.join(fiber)
+      assert.strictEqual(r.code, 1, r.err)
+      assert.match(r.out, /the round took longer than 1 minutes/)
+      assert.deepStrictEqual(w.agent.released, ['REPLY sonnet'])
+    })
+  })
+
+  it.effect('an optional agent still running a grace after the others answered is stopped, not awaited', () => {
+    const w = world()
+    return Effect.gen(function* () {
+      w.withConfig((review) => {
+        review.reviewers = {
+          ...(review.reviewers as object),
+          code: {
+            with: [
+              { kind: 'claude', model: 'sonnet' },
+              { kind: 'claude', model: 'opus', optional: true },
+            ],
+          },
+        }
+        review.verify = false
+        review.optionalGraceMinutes = 2
+      })
+      w.agent.minutes.opus = 30
+      const fiber = yield* Effect.forkChild(w.round())
+      yield* started(w, 2)
+      yield* TestClock.adjust(Duration.minutes(2))
+      const r = yield* Fiber.join(fiber)
+      assert.strictEqual(r.code, 0, r.err)
+      assert.deepStrictEqual(w.state().result.skipped, [
+        { lens: 'code', agent: 'claude opus', error: 'stopped: the other agents answered 120s before' },
+      ])
+      assert.deepStrictEqual(w.agent.released, ['REVIEW opus'])
+    })
+  })
+
+  it.effect(
+    'an interrupt releases the running agents, then the lock, and the agents waiting for a slot never start',
+    () => {
+      const w = world()
+      return Effect.gen(function* () {
+        w.withConfig((review) => {
+          review.reviewers = {
+            ...(review.reviewers as object),
+            code: {
+              with: [
+                { kind: 'claude', model: 'sonnet' },
+                { kind: 'claude', model: 'opus' },
+              ],
+            },
+          }
+          review.verify = false
+          review.perProvider = 1
+        })
+        w.agent.minutes.sonnet = 30
+        w.agent.minutes.opus = 30
+        const fiber = yield* Effect.forkChild(w.round())
+        yield* started(w, 1)
+        assert.strictEqual(w.locked(), true)
+        const exit = yield* Fiber.interrupt(fiber).pipe(Effect.andThen(Fiber.await(fiber)))
+        assert.isTrue(Exit.hasInterrupts(exit))
+        assert.deepStrictEqual(w.agent.calls, ['REVIEW sonnet'], 'the one waiting for the slot never started')
+        assert.deepStrictEqual(w.agent.released, ['REVIEW sonnet'])
+        assert.strictEqual(w.locked(), false, 'the lock goes once the agents are released')
+      })
+    },
+  )
 })

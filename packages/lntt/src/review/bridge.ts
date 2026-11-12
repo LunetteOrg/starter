@@ -1,12 +1,10 @@
 // The bridge of lntt review's commands on Effect to the sync code of modules not yet moved
 // (docs/adr/effect-in-lntt.md#the-bridge-while-modules-move): the project's configuration, the
-// place of the state store, the base, lntt check's areas and the files the reviewers cite, the
-// agents' CLIs, the limit's message to the parent, Orca's subagents. The live layer runs that
+// place of the state store, the base, lntt check's areas, the limit's message to the parent,
+// Orca's subagents. The live layer runs that
 // code under Effect.try, and what it throws is a ReviewFailed; a spec gives its own answers.
 // Each piece leaves the bridge when its module moves to Effect.
 
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { env } from 'node:process'
 import * as Console from 'effect/Console'
 import * as Context from 'effect/Context'
@@ -14,11 +12,10 @@ import * as Data from 'effect/Data'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import type { BranchRules } from '../branch.ts'
-import { type Area, type Cited, cite, formatJson, runArea } from '../check.ts'
-import type { HeadlessAgent as Agent } from '../headless.ts'
+import { type Area, formatJson, runArea } from '../check.ts'
 import type { Started } from '../messages.ts'
 import { orcaSubagents, type Subagents } from '../orca-subagents.ts'
-import { type Asked, agentProblems, askAtLimit, baseRef, loaded, placeFor, reportsTo } from './host.ts'
+import { type Asked, askAtLimit, baseRef, loaded, placeFor, reportsTo } from './host.ts'
 
 // What the sync code threw: an expected failure, reported by its message.
 export class ReviewFailed extends Data.TaggedError('ReviewFailed')<{ cause: unknown }> {
@@ -36,18 +33,11 @@ export interface Bridged {
   readonly place: (common: string, gitDir: string, data: Record<string, unknown>) => Failing<string>
   // The ref a round compares the branch with, --base or the project's base, and the line that names it.
   readonly base: (root: string, given: string | undefined) => Failing<{ ref: string; said: string | null }>
-  // What keeps each agent from starting, as a line each.
-  readonly agentProblems: (agents: Agent[]) => Failing<string[]>
   // The results of lntt check's areas a lens is named after, as their JSON.
   readonly checks: (
     areas: Area[],
     options: { root: string; data: Record<string, unknown>; base: string },
   ) => Failing<Record<string, string>>
-  // The working tree as runRound (still on Promises) reads it: a brief, and a cited line.
-  readonly files: (root: string) => {
-    readBrief: (path: string) => string
-    cite: (path: string, line: number | null) => Cited
-  }
   // Who the branch reports to, and the limit sent there.
   readonly reportsTo: (branch: string, rules: BranchRules) => Failing<Started | null>
   readonly askAtLimit: (marker: Started, branch: string, text: string) => Failing<{ asked: Asked | null; line: string }>
@@ -73,7 +63,6 @@ export const ReviewBridgeLive = Layer.effect(ReviewBridge)(
           return placed.dir
         }),
       base: (root, given) => bridged(() => baseRef(root, given)),
-      agentProblems: (agents) => bridged(() => agentProblems(agents)),
       checks: (areas, { root, data, base }) =>
         bridged(() =>
           // A round runs no test: touched places the lines from the imports, never by coverage.
@@ -84,10 +73,6 @@ export const ReviewBridgeLive = Layer.effect(ReviewBridge)(
             ]),
           ),
         ),
-      files: (root) => ({
-        readBrief: (path) => readFileSync(join(root, path), 'utf8'),
-        cite: (path, line) => cite(root, path, line),
-      }),
       reportsTo: (branch, rules) => bridged(() => reportsTo(branch, rules)),
       askAtLimit: (marker, branch, text) => bridged(() => askAtLimit(marker, branch, text)),
       orca: (root) => bridged(() => orcaSubagents(env, root)),

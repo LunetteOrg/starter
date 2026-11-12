@@ -6,9 +6,6 @@ import { fileURLToPath } from 'node:url'
 import {
   type Ask,
   agentLabel,
-  type Checked,
-  type Closed,
-  closeRound,
   type Found,
   isNoFindings,
   lensApplies,
@@ -22,13 +19,10 @@ import {
   renderVerifyPrompt,
   reviewConfig,
   reviewCost,
-  reviewedAfter,
-  roundClean,
   roundCosts,
   roundLimit,
   roundRange,
   runRound,
-  type Severity,
   TEST_PATHS,
   touchedLines,
   unreadableFindings,
@@ -358,284 +352,6 @@ describe('the prompt', () => {
   })
 })
 
-describe('a round', () => {
-  // A reviewer's prompt names its lens on the first line; a verifier's never does.
-  const isLens = (prompt: string, lens = '') => (prompt.split('\n')[0] as string).includes(`Lens: ${lens}`)
-  // Answers by who is asked: the lens brief names its lens, the verify brief its finding.
-  function asker(answers: (prompt: string, kind: string, model?: string) => string | Error): {
-    ask: Ask
-    asked: string[]
-    labels: string[]
-  } {
-    const asked: string[] = []
-    const labels: string[] = []
-    const ask: Ask = async (jobs) =>
-      jobs.map((job) => {
-        asked.push(`${agentLabel(job.agent)}${job.session ? ` resumes ${job.session}` : ''}`)
-        labels.push(job.label ?? '')
-        const answer = answers(job.prompt, job.agent.kind, job.agent.model)
-        return answer instanceof Error
-          ? { ok: false as const, error: answer.message }
-          : { ok: true as const, reply: { text: answer, session: `s-${job.agent.model}`, cost: 0.01, tokens: 1000 } }
-      })
-    return { ask, asked, labels }
-  }
-
-  const config = reviewConfig({
-    delivery: {
-      review: {
-        reviewers: {
-          decisions: { with: [{ kind: 'claude', model: 'haiku' }] },
-          code: {
-            with: [
-              { kind: 'claude', model: 'sonnet' },
-              { kind: 'claude', model: 'opus' },
-            ],
-          },
-          tests: { with: [{ kind: 'claude', model: 'haiku' }] },
-        },
-        verify: {
-          with: [
-            { kind: 'claude', model: 'sonnet' },
-            { kind: 'claude', model: 'opus' },
-          ],
-        },
-      },
-    },
-  })
-  const input = {
-    base: 'mb',
-    head: 'h2',
-    files: ['a.ts'],
-    diff: 'DIFF',
-    records: 'R',
-    range: roundRange(null, 'b', 'h2', 'mb', () => true),
-  }
-
-  test('reviewers in parallel, then each blocker or warning verified by the others, notes left unverified', async () => {
-    const { ask, asked, labels } = asker((prompt, _kind, model) => {
-      if (isLens(prompt, 'decisions')) return 'no findings'
-      if (isLens(prompt, 'code') && model === 'sonnet')
-        return '- [blocker] a.ts:1 — breaks — fix\n- [note] a.ts:5 — wording — reword'
-      if (isLens(prompt, 'code')) return 'no findings'
-      return 'confirmed\na.ts:1 throws on an empty title'
-    })
-    const result = await runRound(config, input, ask)
-    assert.deepEqual(asked.slice(0, 3), ['claude haiku', 'claude sonnet', 'claude opus'])
-    assert.deepEqual(asked.slice(3), ['claude opus'], 'the finder does not verify its own finding')
-    assert.deepEqual(labels, [
-      'decisions · claude haiku',
-      'code · claude sonnet',
-      'code · claude opus',
-      'verify f1 · claude opus',
-    ])
-    assert.deepEqual(
-      result.findings.map((f) => [f.id, f.severity, f.verdict]),
-      [
-        ['f1', 'blocker', 'confirmed'],
-        ['f2', 'note', 'unverified'],
-      ],
-    )
-    assert.deepEqual(result.refuted, [])
-    assert.equal(result.cost, 0.04)
-    assert.equal(result.tokens, 4000)
-    assert.equal(roundClean(result), false)
-  })
-
-  test('refuted findings leave the list; a clean round is one with nothing left and no failure', async () => {
-    const { ask } = asker((prompt, _kind, model) => {
-      if (isLens(prompt, 'code') && model === 'sonnet') return '- [warning] a.ts:1 — maybe — check'
-      if (isLens(prompt)) return 'no findings'
-      return 'refuted\na.ts:2 guards it'
-    })
-    const result = await runRound(config, input, ask)
-    assert.deepEqual(result.findings, [])
-    assert.equal(result.refuted.length, 1)
-    assert.deepEqual(result.refuted[0]?.proofs, [{ by: 'claude opus', outcome: 'refuted', proof: 'a.ts:2 guards it' }])
-    assert.equal(roundClean(result), true)
-  })
-
-  test('a finding whose line does not exist is refuted by cite before any verifier; the others carry their line', async () => {
-    const { ask, asked } = asker((prompt, _kind, model) => {
-      if (isLens(prompt, 'code') && model === 'sonnet')
-        return '- [blocker] a.ts:1 — breaks — fix\n- [warning] a.ts:99 — invented — fix'
-      if (isLens(prompt)) return 'no findings'
-      return prompt.includes('const x = 1') ? 'confirmed\na.ts:1' : 'undecided\nno line given'
-    })
-    const cite = (path: string, line: number | null) =>
-      path === 'a.ts' && line === 1
-        ? { text: 'const x = 1' }
-        : { missing: 'no line 99: the file has 3 lines', what: 'line' as const }
-    const result = await runRound(config, { ...input, cite }, ask)
-    assert.deepEqual(asked.slice(3), ['claude opus'], 'only the finding on a real line is verified')
-    assert.deepEqual(
-      result.findings.map((f) => [f.path, f.line, f.verdict, f.cited]),
-      [['a.ts', 1, 'confirmed', 'const x = 1']],
-    )
-    assert.deepEqual(
-      result.refuted.map((f) => [f.line, f.proofs]),
-      [[99, [{ by: 'lntt check cite', outcome: 'refuted', proof: 'a.ts:99: no line 99: the file has 3 lines' }]]],
-    )
-  })
-
-  test('a finding on a file that is not there goes to its verifiers: the change may delete it', async () => {
-    const { ask, asked } = asker((prompt, _kind, model) => {
-      if (isLens(prompt, 'code') && model === 'sonnet') return '- [warning] gone.ts:3 — still imported — fix'
-      if (isLens(prompt)) return 'no findings'
-      return 'confirmed\nb.ts:1 imports it'
-    })
-    const cite = () => ({ missing: 'no such file', what: 'file' as const })
-    const result = await runRound(config, { ...input, cite }, ask)
-    assert.deepEqual(asked.slice(3), ['claude opus'])
-    assert.deepEqual(
-      result.findings.map((f) => [f.path, f.verdict]),
-      [['gone.ts', 'confirmed']],
-    )
-  })
-
-  test('a finding carried from the last round whose line is gone is refuted by cite; the next carried one stays carried', async () => {
-    const carried = (id: string, line: number, severity: 'warning' | 'note' = 'warning'): Checked => ({
-      id,
-      severity,
-      path: 'a.ts',
-      line,
-      what: `open-${id}`,
-      action: 'a',
-      foundBy: [{ lens: 'code', agent: 'claude sonnet', session: 's' }],
-      verdict: 'unverified',
-      proofs: [],
-    })
-    // A fresh note after them: never verified, wherever the carried ones end.
-    const { ask, labels } = asker((prompt, _kind, model) => {
-      if (isLens(prompt, 'code') && model === 'sonnet') return '- [note] a.ts:3 — wording — reword'
-      if (isLens(prompt)) return 'no findings'
-      return prompt.includes('open-f2') ? 'undecided\nstill there' : 'confirmed\na.ts:1'
-    })
-    const cite = (_path: string, line: number | null) =>
-      line === 40 ? { missing: 'no line 40: the file has 3 lines', what: 'line' as const } : { text: 'x' }
-    const result = await runRound(config, { ...input, cite }, ask, [carried('f1', 40), carried('f2', 2)])
-    assert.deepEqual(
-      result.refuted.map((f) => [f.id, f.proofs[0]?.by]),
-      [['f1', 'lntt check cite']],
-    )
-    // f2 is still a carried finding: verified on the new head, keeping its id; the note
-    // is not.
-    assert.deepEqual(
-      result.findings.map((f) => [f.id, f.verdict]),
-      [
-        ['f2', 'undecided'],
-        ['f3', 'unverified'],
-      ],
-    )
-    assert.deepEqual(
-      labels.filter((l) => l.startsWith('verify')),
-      ['verify f2 · claude opus'],
-    )
-  })
-
-  test('the agents that reported no tokens or no USD, once each; a failed agent reported none', async () => {
-    const ask: Ask = async (jobs) =>
-      jobs.map((job) => {
-        if (job.agent.model === 'opus') return { ok: false as const, error: 'boom' }
-        const haiku = job.agent.model === 'haiku'
-        return {
-          ok: true as const,
-          reply: { text: 'no findings', session: 's', cost: haiku ? null : 0.01, tokens: haiku ? 700 : null },
-        }
-      })
-    const result = await runRound(config, { ...input, files: ['a.ts', 'a.test.ts'] }, ask)
-    assert.deepEqual(result.noUsd, ['claude haiku', 'claude opus'], 'haiku answers twice and is named once')
-    assert.deepEqual(result.noTokens, ['claude sonnet', 'claude opus'])
-    assert.equal(result.tokens, 1400)
-    assert.equal(result.cost, 0.01)
-    const silent: Ask = async (jobs) =>
-      jobs.map((job) => ({
-        ok: true as const,
-        reply: { text: 'no findings', session: 's', cost: 0.01, tokens: job.agent.model === 'haiku' ? null : 10 },
-      }))
-    const again = await runRound(config, { ...input, files: ['a.ts', 'a.test.ts'] }, silent)
-    assert.deepEqual(again.noTokens, ['claude haiku'], 'haiku answers twice with no tokens and is named once')
-  })
-
-  test('a verifier that reports no cost is named too; an empty delta names nobody', async () => {
-    const { ask } = asker((prompt, _kind, model) => {
-      if (isLens(prompt, 'code') && model === 'sonnet') return '- [blocker] a.ts:1 — breaks — fix'
-      if (isLens(prompt)) return 'no findings'
-      return 'confirmed\np'
-    })
-    const priced: Ask = async (jobs) =>
-      (await ask(jobs)).map((a, i) =>
-        a.ok && (jobs[i]?.label ?? '').startsWith('verify ') ? { ...a, reply: { ...a.reply, cost: null } } : a,
-      )
-    const result = await runRound(config, input, priced)
-    assert.deepEqual(result.noUsd, ['claude opus'])
-    assert.deepEqual(result.noTokens, [])
-    const empty = await runRound(config, { ...input, files: [] }, priced)
-    assert.deepEqual([empty.noTokens, empty.noUsd], [[], []])
-  })
-
-  test('a reviewer that fails makes the round not clean, never "no findings"', async () => {
-    const { ask } = asker((prompt, _kind, model) => {
-      if (isLens(prompt, 'code') && model === 'opus') return new Error('timed out after 20 minutes')
-      return 'no findings'
-    })
-    const result = await runRound(config, input, ask)
-    assert.deepEqual(result.findings, [])
-    assert.deepEqual(result.failed, [{ lens: 'code', agent: 'claude opus', error: 'timed out after 20 minutes' }])
-    assert.equal(roundClean(result), false)
-  })
-
-  test('a finding still open goes back to the verifiers on the new head; new ones are numbered after it', async () => {
-    const open: Checked[] = [
-      {
-        id: 'f3',
-        severity: 'warning',
-        path: 'a.ts',
-        line: 9,
-        what: 'stale-x',
-        action: 'a',
-        foundBy: [{ lens: 'code', agent: 'claude sonnet', session: 's' }],
-        verdict: 'unverified',
-        proofs: [],
-      },
-    ]
-    const { ask } = asker((prompt, _kind, model) => {
-      if (isLens(prompt, 'code') && model === 'sonnet') return '- [warning] a.ts:1 — new — fix'
-      if (isLens(prompt)) return 'no findings'
-      if (prompt.includes('stale-x')) return 'refuted\na.ts:9 was rewritten'
-      return 'confirmed\na.ts:1 proves it'
-    })
-    const result = await runRound(config, input, ask, open)
-    assert.deepEqual(
-      result.refuted.map((f) => f.id),
-      ['f3'],
-    )
-    assert.deepEqual(
-      result.findings.map((f) => [f.id, f.verdict]),
-      [['f4', 'confirmed']],
-    )
-  })
-
-  test('without verifiers, a finding still open stays open', async () => {
-    const { ask } = asker(() => 'no findings')
-    const open = [{ id: 'f1', severity: 'warning', foundBy: [], verdict: 'confirmed', proofs: [] }] as never
-    const result = await runRound({ ...config, verify: null }, input, ask, open)
-    assert.deepEqual(
-      result.findings.map((f) => [f.id, f.verdict]),
-      [['f1', 'confirmed']],
-    )
-  })
-
-  test('an empty delta asks nobody and carries the open findings of the last round', async () => {
-    const { ask, asked } = asker(() => 'no findings')
-    const open = [{ id: 'f1', severity: 'warning', verdict: 'confirmed' }] as never
-    const result = await runRound(config, { ...input, files: [], diff: '' }, ask, open)
-    assert.deepEqual(asked, [])
-    assert.deepEqual(result.findings, open)
-    assert.equal(roundClean(result), false)
-  })
-})
-
 describe('what the first real round taught', () => {
   test('a column, an en-dash range or a list of lines names the first line', () => {
     assert.deepEqual(
@@ -725,72 +441,6 @@ describe('what the first real round taught', () => {
       })
   }
 
-  test('a reviewer whose reply has no finding line and no "no findings" counts as failed', async () => {
-    const result = await runRound(
-      one,
-      input,
-      ask((p) => (reviewerFirst(p) ? 'Looks good overall.' : 'confirmed\nx')),
-    )
-    assert.deepEqual(
-      result.failed.map((f) => [f.lens, f.agent]),
-      [['code', 'claude sonnet']],
-    )
-    assert.match(result.failed[0]?.error ?? '', /no finding line/)
-    assert.equal(roundClean(result), false)
-  })
-
-  test('one unreadable line keeps the readable findings: the lens is partial, with the full reply', async () => {
-    const reply = '- [warning] a.ts:1 — x — y\n- [blocker] something went wrong\n\nclosing words'
-    const result = await runRound(
-      one,
-      input,
-      ask((p) => (reviewerFirst(p) ? reply : 'confirmed\nx')),
-    )
-    assert.deepEqual(result.failed, [])
-    assert.deepEqual(
-      result.findings.map((f) => f.path),
-      ['a.ts'],
-    )
-    assert.deepEqual(result.partial, [
-      { lens: 'code', agent: 'claude sonnet', lines: ['- [blocker] something went wrong'], reply },
-    ])
-    assert.equal(roundClean(result), false)
-  })
-
-  test('only unreadable lines and a note: the lens is partial and the round is not clean', async () => {
-    const reply = `- [note] a.ts:1 — x — y\n\n- [blocker] ${'z'.repeat(300)}`
-    const result = await runRound(
-      one,
-      input,
-      ask((p) => (reviewerFirst(p) ? reply : 'confirmed\nx')),
-    )
-    assert.deepEqual(result.failed, [])
-    assert.equal(result.partial[0]?.reply, reply)
-    assert.equal(roundClean(result), false)
-  })
-
-  test('a reply of only unreadable finding lines fails, with the whole reply', async () => {
-    const reply = `- [blocker] ${'z'.repeat(300)}`
-    const result = await runRound(
-      one,
-      input,
-      ask((p) => (reviewerFirst(p) ? reply : 'confirmed\nx')),
-    )
-    assert.match(result.failed[0]?.error ?? '', /1 finding lines that cannot be read/)
-    assert.equal(result.failed[0]?.reply, reply)
-    assert.deepEqual(result.partial, [])
-  })
-
-  test('a reply that fails keeps its full text, not 160 characters', async () => {
-    const reply = `Looks good overall. ${'x'.repeat(400)}`
-    const result = await runRound(
-      one,
-      input,
-      ask((p) => (reviewerFirst(p) ? reply : 'confirmed\nx')),
-    )
-    assert.equal(result.failed[0]?.reply, reply)
-  })
-
   test('the reply that showed the problem in #170: all thirteen lines read, none dropped', async () => {
     const reply = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), 'fixtures/review-reply-decisions-170.txt'),
@@ -817,90 +467,6 @@ describe('what the first real round taught', () => {
     assert.equal(result.findings.length, 13)
   })
 
-  test('notes do not block a clean round; blockers and warnings do', async () => {
-    const notes = await runRound(
-      one,
-      input,
-      ask(() => '- [note] a.ts:1 — wording — reword'),
-    )
-    assert.equal(notes.findings.length, 1)
-    assert.equal(roundClean(notes), true)
-    const warning = await runRound(
-      one,
-      input,
-      ask((p) => (reviewerFirst(p) ? '- [warning] a.ts:1 — w — a' : 'undecided\n?')),
-    )
-    assert.equal(roundClean(warning), false)
-  })
-
-  test('a verifier that fails is a failure of the round, besides an undecided proof', async () => {
-    const result = await runRound(
-      one,
-      input,
-      ask((p) => (reviewerFirst(p) ? '- [blocker] a.ts:1 — b — a' : new Error('opencode exited 1'))),
-    )
-    assert.equal(result.findings[0]?.verdict, 'undecided')
-    assert.deepEqual(result.failed, [{ lens: 'verify f1', agent: 'claude opus', error: 'opencode exited 1' }])
-  })
-
-  test('a fresh finding at the anchor of one still open joins it instead of opening a second', async () => {
-    const open: Checked[] = [
-      {
-        id: 'f2',
-        severity: 'warning',
-        path: 'a.ts',
-        line: 1,
-        what: 'old',
-        action: 'a',
-        foundBy: [{ lens: 'code', agent: 'claude haiku', session: 'h' }],
-        verdict: 'confirmed',
-        proofs: [],
-      },
-    ]
-    const result = await runRound(
-      one,
-      input,
-      ask((p) => (reviewerFirst(p) ? '- [warning] a.ts:1 — same — a' : 'confirmed\np')),
-      open,
-    )
-    assert.deepEqual(
-      result.findings.map((f) => [f.id, f.foundBy.map((b) => b.agent)]),
-      [['f2', ['claude haiku', 'claude sonnet']]],
-    )
-  })
-
-  test('notes are not carried to the next round; the others are, until withdrawn', async () => {
-    const carried = (id: string, severity: Severity, verdict: Checked['verdict']): Checked => ({
-      id,
-      severity,
-      path: `${id}.ts`,
-      line: 1,
-      what: 'w',
-      action: 'a',
-      foundBy: [],
-      verdict,
-      proofs: [],
-    })
-    const open = [
-      carried('f1', 'note', 'unverified'),
-      carried('f2', 'warning', 'withdrawn'),
-      carried('f3', 'warning', 'confirmed'),
-    ]
-    const result = await runRound(
-      { ...one, verify: null },
-      input,
-      ask(() => '- [warning] z.ts:1 — new — a'),
-      open,
-    )
-    assert.deepEqual(
-      result.findings.map((f) => [f.id, f.verdict]),
-      [
-        ['f3', 'confirmed'],
-        ['f4', 'unverified'],
-      ],
-    )
-  })
-
   test("two reviewers at the same anchor and severity: the first one's words stay", () => {
     const sonnet = { kind: 'claude', model: 'sonnet' }
     const opus = { kind: 'claude', model: 'opus' }
@@ -925,134 +491,6 @@ describe('what the first real round taught', () => {
       merged.map((f) => [f.id, f.what, f.foundBy.length]),
       [['f5', 'first', 2]],
     )
-  })
-
-  describe('what the second real round taught', () => {
-    const sonnet = { kind: 'claude', model: 'sonnet' }
-    const glm = { kind: 'opencode', model: 'opencode/glm', optional: true }
-    const deepseek = { kind: 'opencode', model: 'opencode/deepseek', optional: true }
-    const config = reviewConfig({
-      delivery: {
-        review: {
-          reviewers: {
-            decisions: { with: [] },
-            tests: { with: [] },
-            code: { with: [{ kind: 'claude', model: 'haiku' }, deepseek] },
-          },
-          verify: { with: [sonnet, glm] },
-        },
-      },
-    })
-    const input = {
-      base: 'mb',
-      head: 'h',
-      files: ['a.ts'],
-      diff: 'D',
-      records: '',
-      range: roundRange(null, 'b', 'h', 'mb', () => true),
-    }
-    const first = (p: string) => p.split('\n')[0] as string
-    const ask =
-      (answer: (prompt: string, model?: string) => string | Error): Ask =>
-      async (qs) =>
-        qs.map((q) => {
-          const a = answer(q.prompt, q.agent.model)
-          return a instanceof Error
-            ? { ok: false as const, error: a.message }
-            : { ok: true as const, reply: { text: a, session: 's', cost: null, tokens: null } }
-        })
-
-    test('the verdict counts the verifiers that answered; one that failed does not split it', async () => {
-      const result = await runRound(
-        { ...config, verify: { with: [sonnet, { ...glm, optional: false }], severities: ['blocker', 'warning'] } },
-        input,
-        ask((p, model) => {
-          if (first(p).includes('Lens:')) return model === 'haiku' ? '- [blocker] a.ts:1 — b — a' : 'no findings'
-          return model === 'sonnet' ? 'refuted\na.ts:2 guards it' : new Error('timed out after 20 minutes')
-        }),
-      )
-      assert.deepEqual(
-        result.refuted.map((f) => f.id),
-        ['f1'],
-      )
-      assert.equal(result.failed.length, 1, 'the failed verifier is still a failure of the round')
-    })
-
-    test('when no verifier answered, the finding is undecided', async () => {
-      const result = await runRound(
-        { ...config, verify: { with: [{ ...glm, optional: false }], severities: ['blocker'] } },
-        input,
-        ask((p, model) =>
-          first(p).includes('Lens:')
-            ? model === 'haiku'
-              ? '- [blocker] a.ts:1 — b — a'
-              : 'no findings'
-            : new Error('down'),
-        ),
-      )
-      assert.equal(result.findings[0]?.verdict, 'undecided')
-    })
-
-    test('an optional agent that fails is reported in skipped and does not keep the round from being clean', async () => {
-      const result = await runRound(
-        config,
-        input,
-        ask((p, model) => {
-          if (first(p).includes('Lens:'))
-            return model === 'haiku' ? '- [warning] a.ts:1 — w — a' : new Error('timed out')
-          return model === 'sonnet' ? 'refuted\nno' : new Error('timed out')
-        }),
-      )
-      assert.deepEqual(result.failed, [])
-      assert.deepEqual(
-        result.skipped.map((s) => [s.lens, s.agent]),
-        [
-          ['code', 'opencode opencode/deepseek'],
-          ['verify f1', 'opencode opencode/glm'],
-        ],
-      )
-      assert.equal(roundClean(result), true)
-    })
-
-    test('an optional agent that answers counts like any other', async () => {
-      const result = await runRound(
-        config,
-        input,
-        ask((p, model) => {
-          if (first(p).includes('Lens:')) return model === 'haiku' ? '- [warning] a.ts:1 — w — a' : 'no findings'
-          return model === 'sonnet' ? 'refuted\nno' : 'confirmed\nyes'
-        }),
-      )
-      assert.equal(result.findings[0]?.verdict, 'undecided', 'sonnet refutes, glm confirms: split')
-    })
-
-    test('a fresh finding at another line of the same file is not joined to an open one', async () => {
-      const open: Checked[] = [
-        {
-          id: 'f1',
-          severity: 'warning',
-          path: 'a.ts',
-          line: 9,
-          what: 'o',
-          action: 'a',
-          foundBy: [],
-          verdict: 'confirmed',
-          proofs: [],
-        },
-      ]
-      const result = await runRound(
-        { ...config, verify: null },
-        input,
-        ask((p, model) =>
-          first(p).includes('Lens:') && model === 'haiku' ? '- [warning] a.ts:1 — new — a' : 'no findings',
-        ),
-        open,
-      )
-      assert.deepEqual(
-        result.findings.map((f) => f.id),
-        ['f1', 'f2'],
-      )
-    })
   })
 })
 
@@ -1193,52 +631,6 @@ describe('what the fourth real round taught', () => {
     )
     assert.equal(unreadableFindings('- [note] checked it, all fine'), 1)
   })
-
-  test('the same agent finding an open finding again is not counted twice', async () => {
-    const config = reviewConfig({
-      delivery: {
-        review: {
-          reviewers: {
-            decisions: { with: [] },
-            tests: { with: [] },
-            code: { with: [{ kind: 'claude', model: 'sonnet' }] },
-          },
-          verify: false,
-        },
-      },
-    })
-    const open: Checked[] = [
-      {
-        id: 'f1',
-        severity: 'warning',
-        path: 'a.ts',
-        line: 1,
-        what: 'w',
-        action: 'a',
-        foundBy: [{ lens: 'code', agent: 'claude sonnet', session: 's' }],
-        verdict: 'confirmed',
-        proofs: [],
-      },
-    ]
-    const input = {
-      base: 'mb',
-      head: 'h',
-      files: ['a.ts'],
-      diff: 'D',
-      records: '',
-      range: roundRange(null, 'b', 'h', 'mb', () => true),
-    }
-    const ask: Ask = async (qs) =>
-      qs.map(() => ({
-        ok: true as const,
-        reply: { text: '- [warning] a.ts:1 — w — a', session: 's2', cost: null, tokens: null },
-      }))
-    const result = await runRound(config, input, ask, open)
-    assert.deepEqual(
-      result.findings[0]?.foundBy.map((b) => [b.agent, b.session]),
-      [['claude sonnet', 's2']],
-    )
-  })
 })
 
 describe('what the fifth real round taught', () => {
@@ -1284,361 +676,15 @@ describe('how many rounds a branch may take', () => {
 })
 
 describe('what the branch already closed, and the rounds where a warning blocks', () => {
-  const config = reviewConfig({
-    delivery: {
-      review: {
-        reviewers: {
-          decisions: { with: [] },
-          tests: { with: [] },
-          code: { with: [{ kind: 'claude', model: 'haiku' }] },
-        },
-        verify: { with: [{ kind: 'claude', model: 'sonnet' }] },
-      },
-    },
-  })
-  const roundAt = (n: number) =>
-    roundRange(
-      n === 1 ? null : ({ branch: 'b', round: n - 1, reviewed: 'h0' } as ReviewState),
-      'b',
-      'h',
-      'mb',
-      () => true,
-    )
-  const input = (n: number, lines: Record<number, string>) => ({
-    base: 'mb',
-    head: `h${n}`,
-    files: ['a.ts'],
-    diff: 'D',
-    records: '',
-    range: roundAt(n),
-    cite: (_path: string, line: number | null) => ({ text: lines[line ?? 0] ?? null }),
-  })
-  function asker(review: string, verify: (prompt: string) => string) {
-    const prompts: string[] = []
-    const ask: Ask = async (qs) =>
-      qs.map((q) => {
-        prompts.push(q.prompt)
-        const text = q.prompt.startsWith('You are reviewing') ? review : verify(q.prompt)
-        return { ok: true as const, reply: { text, session: 's', cost: null, tokens: null } }
-      })
-    return { ask, prompts }
-  }
-
   test('warningRounds is read from delivery.review, and is 2 by default', () => {
     assert.equal(reviewConfig({}).warningRounds, 2)
     assert.equal(reviewConfig({ delivery: { review: { warningRounds: 5 } } }).warningRounds, 5)
-  })
-
-  test('a refuted finding is not reported again on an unchanged line, and is on a changed one', async () => {
-    const lines = { 3: 'const x = a ?? b' }
-    const one = asker('- [warning] a.ts:3 — x may be null — guard it', () => 'refuted\na.ts:2 sets a')
-    const first = await runRound(config, input(1, lines), one.ask)
-    const ledger = closeRound([], first, [], config.warningRounds)
-    assert.deepEqual(
-      ledger.map((c) => [c.id, c.outcome, c.cited, c.proof]),
-      [['f1', 'refuted', 'const x = a ?? b', 'claude sonnet: a.ts:2 sets a']],
-    )
-
-    const two = asker('- [warning] a.ts:3 — x may be null — guard it', () => 'confirmed\nyes')
-    const second = await runRound(config, { ...input(2, lines), closed: ledger }, two.ask, first.findings)
-    assert.equal(two.prompts.length, 1, 'no verifier is asked for a repeat')
-    assert.match(two.prompts[0] as string, /## Findings this branch already closed/)
-    assert.match(
-      two.prompts[0] as string,
-      /- f1 \(warning\) `a\.ts:3` — x may be null — refuted: claude sonnet: a\.ts:2 sets a/,
-    )
-    assert.deepEqual(
-      second.closed.map((f) => [f.id, f.closedBy, f.closedWhat]),
-      [['f2', 'f1', 'x may be null']],
-    )
-    assert.deepEqual(second.findings, [])
-    assert.equal(roundClean(second), true)
-
-    const changed = asker('- [warning] a.ts:3 — x may be null — guard it', () => 'confirmed\nyes')
-    const third = await runRound(config, { ...input(2, { 3: 'const x = a' }), closed: ledger }, changed.ask)
-    assert.deepEqual(third.closed, [])
-    assert.deepEqual(
-      third.findings.map((f) => [f.id, f.verdict]),
-      [['f2', 'confirmed']],
-      'numbered after the ledger',
-    )
-  })
-
-  test('a fixed finding is never repeated: one on its line again is new, and verified', async () => {
-    const ledger = [
-      {
-        id: 'f1',
-        round: 1,
-        severity: 'warning',
-        path: 'a.ts',
-        line: 3,
-        what: 'w',
-        cited: 'same',
-        outcome: 'fixed',
-        commit: 'h1',
-      },
-    ] as Closed[]
-    const { ask, prompts } = asker('- [warning] a.ts:3 — w — a', () => 'confirmed\ny')
-    const result = await runRound(config, { ...input(2, { 3: 'same' }), closed: ledger }, ask)
-    assert.deepEqual(result.closed, [])
-    assert.deepEqual(
-      result.findings.map((f) => [f.id, f.verdict]),
-      [['f2', 'confirmed']],
-    )
-    assert.equal(prompts.length, 2)
-  })
-
-  test('the reviewers read the entries on the files of the change, and those with no anchor', async () => {
-    const ledger = [
-      {
-        id: 'f1',
-        round: 1,
-        severity: 'warning',
-        path: 'a.ts',
-        line: 9,
-        what: 'here',
-        cited: 'x',
-        outcome: 'refuted',
-        proof: 'p',
-      },
-      {
-        id: 'f2',
-        round: 1,
-        severity: 'warning',
-        path: 'b.ts',
-        line: 1,
-        what: 'elsewhere',
-        cited: 'y',
-        outcome: 'refuted',
-        proof: 'q',
-      },
-      {
-        id: 'f3',
-        round: 1,
-        severity: 'note',
-        path: null,
-        line: null,
-        what: 'loose',
-        cited: null,
-        outcome: 'accepted',
-        reason: 'r',
-      },
-    ] as Closed[]
-    const { ask, prompts } = asker('no findings', () => '')
-    await runRound(config, { ...input(2, {}), closed: ledger }, ask)
-    assert.match(prompts[0] as string, /here/)
-    assert.match(prompts[0] as string, /loose/)
-    assert.doesNotMatch(prompts[0] as string, /elsewhere/)
-  })
-
-  test('a repeat at a higher severity than the closed finding is a new finding', async () => {
-    const lines = { 3: 'same' }
-    const ledger = closeRound(
-      [],
-      await runRound(config, input(1, lines), asker('- [note] a.ts:3 — n — a', () => '').ask),
-      [],
-      2,
-    )
-    assert.deepEqual(
-      ledger.map((c) => [c.outcome, c.reason]),
-      [['accepted', 'a note: reported once, it does not block']],
-    )
-    const again = await runRound(
-      config,
-      { ...input(2, lines), closed: ledger },
-      asker('- [blocker] a.ts:3 — b — a', () => 'confirmed\ny').ask,
-    )
-    assert.deepEqual(
-      again.findings.map((f) => [f.severity, f.verdict]),
-      [['blocker', 'confirmed']],
-    )
-  })
-
-  test('the verifier reads what was closed on the finding’s file', async () => {
-    const ledger = [
-      {
-        id: 'f1',
-        round: 1,
-        severity: 'warning',
-        path: 'a.ts',
-        line: 9,
-        what: 'old',
-        cited: 'x',
-        outcome: 'refuted',
-        proof: 'p',
-      },
-      {
-        id: 'f2',
-        round: 1,
-        severity: 'warning',
-        path: 'b.ts',
-        line: 1,
-        what: 'elsewhere',
-        cited: 'y',
-        outcome: 'refuted',
-        proof: 'q',
-      },
-    ] as Closed[]
-    const { ask, prompts } = asker('- [warning] a.ts:3 — w — a', () => 'confirmed\ny')
-    await runRound(config, { ...input(2, { 3: 'z' }), closed: ledger }, ask)
-    const verify = prompts.find((p) => p.startsWith('You are checking')) as string
-    assert.match(verify, /- f1 \(warning\) `a\.ts:9` — old — refuted: p/)
-    assert.doesNotMatch(verify, /elsewhere/)
-  })
-
-  test('a finding carried from an earlier round and refuted on a later head is fixed, with that head', async () => {
-    const lines = { 3: 'before' }
-    const first = await runRound(config, input(1, lines), asker('- [warning] a.ts:3 — w — a', () => 'confirmed\ny').ask)
-    const second = await runRound(
-      config,
-      input(2, { 3: 'after' }),
-      asker('no findings', () => 'refuted\na.ts:3 guards it now').ask,
-      first.findings,
-    )
-    assert.deepEqual(
-      closeRound([], second, first.findings, 2).map((c) => [c.id, c.outcome, c.commit]),
-      [['f1', 'fixed', 'h2']],
-    )
-  })
-
-  test('past warningRounds only a blocker blocks; the warning is accepted open and not carried', async () => {
-    const lines = { 3: 'w', 4: 'b' }
-    const third = await runRound(config, input(3, lines), asker('- [warning] a.ts:3 — w — a', () => 'confirmed\ny').ask)
-    assert.deepEqual(third.blocking, ['blocker'])
-    assert.equal(roundClean(third), true, 'a confirmed warning past round 2')
-    const ledger = closeRound([], third, [], 2)
-    assert.deepEqual(
-      ledger.map((c) => [c.id, c.outcome, c.reason]),
-      [['f1', 'accepted', 'a warning past round 2: an open item of the pull request']],
-    )
-    const { ask, prompts } = asker('no findings', () => 'confirmed\ny')
-    const fourth = await runRound(config, { ...input(4, lines), closed: ledger }, ask, third.findings)
-    assert.equal(prompts.length, 1, 'the accepted warning goes to no verifier')
-    assert.deepEqual(fourth.findings, [])
-
-    const undecided = await runRound(
-      config,
-      input(3, lines),
-      asker('- [warning] a.ts:3 — w — a', () => 'undecided\n?').ask,
-    )
-    assert.equal(roundClean(undecided), true)
-    assert.deepEqual(closeRound([], undecided, [], 2), [], 'an undecided warning stays carried, to be verified again')
-
-    const empty = await runRound(config, { ...input(3, lines), files: [] }, asker('', () => '').ask, [])
-    assert.deepEqual(empty.blocking, ['blocker', 'warning'], 'an empty delta after round 2 is still round 2')
-
-    const blocker = await runRound(
-      config,
-      input(3, lines),
-      asker('- [blocker] a.ts:4 — b — a', () => 'confirmed\ny').ask,
-    )
-    assert.equal(roundClean(blocker), false)
-    const second = await runRound(
-      config,
-      input(2, lines),
-      asker('- [warning] a.ts:3 — w — a', () => 'confirmed\ny').ask,
-    )
-    assert.deepEqual(second.blocking, ['blocker', 'warning'])
-    assert.equal(roundClean(second), false)
-    assert.deepEqual(closeRound([], second, [], 2), [], 'a warning up to round 2 stays open')
-  })
-
-  test('an optional agent never widens the next range: neither its failure nor an unreadable line', async () => {
-    const optional = reviewConfig({
-      delivery: {
-        review: {
-          reviewers: {
-            decisions: { with: [] },
-            tests: { with: [] },
-            code: {
-              with: [
-                { kind: 'claude', model: 'haiku' },
-                { kind: 'opencode', model: 'x/free', optional: true },
-              ],
-            },
-          },
-          verify: false,
-        },
-      },
-    })
-    const ask: Ask = async (qs) =>
-      qs.map((q) =>
-        q.agent.optional
-          ? {
-              ok: true as const,
-              reply: {
-                text: '- [warning] a.ts:3 — w — a\n- [warning] nonsense',
-                session: 's',
-                cost: null,
-                tokens: null,
-              },
-            }
-          : { ok: true as const, reply: { text: 'no findings', session: 's', cost: null, tokens: null } },
-      )
-    const result = await runRound(optional, input(1, { 3: 'x' }), ask)
-    assert.deepEqual(result.partial, [])
-    assert.deepEqual(
-      result.skipped.map((s) => [s.agent, s.error]),
-      [['opencode x/free', '1 finding lines that cannot be read']],
-    )
-    assert.equal(result.findings.length, 1, 'its readable findings stand')
-    assert.equal(reviewedAfter(result, 'h0', 'h1'), 'h1')
-
-    const quota = await runRound(optional, input(1, {}), async (qs) =>
-      qs.map((q) =>
-        q.agent.optional
-          ? { ok: false as const, error: 'opencode exited 1: 429 Too Many Requests' }
-          : { ok: true as const, reply: { text: 'no findings', session: 's', cost: null, tokens: null } },
-      ),
-    )
-    assert.equal(quota.skipped.length, 1)
-    assert.equal(reviewedAfter(quota, 'h0', 'h1'), 'h1')
-    assert.equal(reviewedAfter({ ...quota, failed: [{ lens: 'code', agent: 'a', error: 'e' }] }, 'h0', 'h1'), 'h0')
   })
 })
 
 // A finding on a line the branch did not write, which the change does not contradict: the
 // reviewer marks it, lntt keeps the mark only on a line the branch left untouched.
 describe('a pre-existing finding', () => {
-  const config = reviewConfig({
-    delivery: {
-      review: {
-        reviewers: {
-          decisions: { with: [] },
-          tests: { with: [] },
-          code: { with: [{ kind: 'claude', model: 'haiku' }] },
-        },
-        verify: { with: [{ kind: 'claude', model: 'sonnet' }] },
-      },
-    },
-  })
-  const input = (n: number, lines: Record<number, string>, written: number[] = []) => ({
-    base: 'mb',
-    head: `h${n}`,
-    files: ['a.ts'],
-    diff: 'D',
-    records: '',
-    range: roundRange(
-      n === 1 ? null : ({ branch: 'b', round: n - 1, reviewed: 'h0' } as ReviewState),
-      'b',
-      'h',
-      'mb',
-      () => true,
-    ),
-    cite: (_path: string, line: number | null) => ({ text: lines[line ?? 0] ?? null }),
-    untouched: (path: string, line: number) => path !== 'a.ts' || !written.includes(line),
-  })
-  function asker(review: string, verify = 'confirmed\ny') {
-    const prompts: string[] = []
-    const ask: Ask = async (qs) =>
-      qs.map((q) => {
-        prompts.push(q.prompt)
-        const text = q.prompt.startsWith('You are reviewing') ? review : verify
-        return { ok: true as const, reply: { text, session: 's', cost: null, tokens: null } }
-      })
-    return { ask, prompts }
-  }
-
   test('the reviewer marks it after the severity; a line without the mark is read as before', () => {
     const [marked, plain] = parseFindings(
       '- [warning] [pre-existing] docs/adr/x.md:51 — Orca 1.2 is stale — update it\n- [warning] a.ts:3 — w — a',
@@ -1655,72 +701,6 @@ describe('a pre-existing finding', () => {
     assert.equal(parseFindings('- **[blocker]** [Pre-existing] `a.ts:2` — b — a')[0]?.preexisting, true)
     assert.deepEqual(parseFindings('- [pre-existing] a.ts:1 — w — a'), [], 'the mark is no severity')
   })
-
-  test('on an untouched line it goes to no verifier, never blocks, and the round is clean', async () => {
-    const { ask, prompts } = asker('- [blocker] [pre-existing] a.ts:9 — old — a')
-    const result = await runRound(config, input(1, { 9: 'old line' }, [1]), ask)
-    assert.equal(prompts.length, 1, 'no verifier is asked')
-    assert.deepEqual(result.findings, [])
-    assert.deepEqual(
-      result.preexisting.map((f) => [f.id, f.severity, f.path, f.line, f.cited]),
-      [['f1', 'blocker', 'a.ts', 9, 'old line']],
-    )
-    assert.equal(roundClean(result), true)
-    assert.match(prompts[0] as string, /\[pre-existing\]/, 'the reviewers are told how to mark one')
-  })
-
-  test('on a line the branch wrote, or with no line, the mark is dropped: reported as today, and it blocks', async () => {
-    const touched = await runRound(
-      config,
-      input(1, { 1: 'new line' }, [1]),
-      asker('- [warning] [pre-existing] a.ts:1 — w — a').ask,
-    )
-    assert.deepEqual(touched.preexisting, [])
-    assert.deepEqual(
-      touched.findings.map((f) => [f.id, f.verdict, f.preexisting]),
-      [['f1', 'confirmed', undefined]],
-    )
-    assert.equal(roundClean(touched), false)
-
-    const loose = await runRound(config, input(1, {}), asker('- [warning] [pre-existing] a.ts — w — a').ask)
-    assert.deepEqual(loose.preexisting, [])
-    assert.equal(loose.findings.length, 1)
-    assert.equal(roundClean(loose), false)
-
-    const blind = await runRound(
-      config,
-      { ...input(1, { 9: 'x' }), untouched: undefined },
-      asker('- [warning] [pre-existing] a.ts:9 — w — a').ask,
-    )
-    assert.deepEqual(blind.preexisting, [], 'with nothing to tell untouched lines, none is')
-
-    // A file that is not there may be one the change deletes: its verifiers decide.
-    const deleted = await runRound(
-      config,
-      { ...input(1, {}), cite: () => ({ missing: 'no such file', what: 'file' as const }) },
-      asker('- [warning] [pre-existing] gone.ts:2 — w — a').ask,
-    )
-    assert.deepEqual(deleted.preexisting, [])
-    assert.deepEqual(
-      deleted.findings.map((f) => [f.path, f.verdict, f.preexisting]),
-      [['gone.ts', 'confirmed', undefined]],
-    )
-  })
-
-  test('an unmarked finding on an untouched line, which the change contradicts, is reported as today and blocks', async () => {
-    const result = await runRound(
-      config,
-      input(1, { 51: 'Orca 1.2' }, [1]),
-      asker('- [warning] a.ts:51 — the change makes this wrong — fix it').ask,
-    )
-    assert.deepEqual(result.preexisting, [])
-    assert.deepEqual(
-      result.findings.map((f) => [f.id, f.verdict]),
-      [['f1', 'confirmed']],
-    )
-    assert.equal(roundClean(result), false)
-  })
-
   test('two reviewers at one anchor: pre-existing only when both mark it', () => {
     const agent = { kind: 'claude', model: 'haiku' } as const
     const merged = mergeFindings([
@@ -1734,44 +714,78 @@ describe('a pre-existing finding', () => {
     ])
     assert.deepEqual([both[0]?.preexisting, both[0]?.severity], [true, 'warning'])
   })
+})
 
-  test('the ledger keeps it: the next round does not report it again; an unmarked finding there is verified', async () => {
-    const lines = { 9: 'old line' }
-    const first = await runRound(config, input(1, lines, [1]), asker('- [warning] [pre-existing] a.ts:9 — old — a').ask)
-    const ledger = closeRound([], first, [], config.warningRounds)
+describe('the library runRound', () => {
+  test('runs the round on its Promise asks, its brief and its cited lines, and rejects with what any of them threw', async () => {
+    const config = reviewConfig({
+      delivery: {
+        review: {
+          reviewers: {
+            decisions: { with: [] },
+            tests: { with: [] },
+            code: { with: [] },
+            story: { brief: 'b.md', with: [{ kind: 'claude', model: 'haiku' }] },
+          },
+          verify: false,
+        },
+      },
+    })
+    const briefs: string[] = []
+    const input = {
+      base: 'mb',
+      head: 'h',
+      files: ['a.ts'],
+      diff: 'D',
+      records: '',
+      range: roundRange(null, 'b', 'h', 'mb', () => true),
+      readBrief: (path: string) => {
+        briefs.push(path)
+        return 'Tell the story of the change.'
+      },
+      cite: (path: string, line: number | null) => ({ text: `${path}:${line} reads x` }),
+    }
+    const ask: Ask = async (qs) => {
+      await Promise.resolve()
+      return qs.map((q) => ({
+        ok: true as const,
+        reply: {
+          text: q.prompt.includes('Tell the story of the change.') ? '- [warning] a.ts:3 — w — a' : 'no findings',
+          session: 's',
+          cost: null,
+          tokens: null,
+        },
+      }))
+    }
+    const result = await runRound(config, input, ask)
+    assert.deepEqual(briefs, ['b.md'], 'the brief of the project lens is read through readBrief')
     assert.deepEqual(
-      ledger.map((c) => [c.id, c.outcome, c.cited, c.reason]),
-      [['f1', 'pre-existing', 'old line', 'on a line the change did not touch: listed for the person']],
+      result.findings.map((f) => [f.id, f.foundBy[0]?.lens, f.path, f.line, f.cited]),
+      [['f1', 'story', 'a.ts', 3, 'a.ts:3 reads x']],
     )
-    assert.deepEqual(closeRound(ledger, first, [], 2), ledger, 'closed once')
-
-    const again = asker('- [warning] [pre-existing] a.ts:9 — stale — a')
-    const second = await runRound(config, { ...input(2, lines, [1]), closed: ledger }, again.ask, first.findings)
-    assert.equal(again.prompts.length, 1)
-    assert.match(again.prompts[0] as string, /- f1 \(warning\) `a\.ts:9` — old — pre-existing:/)
-    assert.deepEqual(second.preexisting, [], 'not reported again')
-    assert.deepEqual(
-      second.closed.map((f) => [f.id, f.closedBy]),
-      [['f2', 'f1']],
+    const down = new Error('the agent is down')
+    await assert.rejects(
+      runRound(config, input, async () => {
+        throw down
+      }),
+      (error) => error === down,
     )
-    assert.deepEqual(closeRound(ledger, second, [], 2), ledger)
-    assert.equal(roundClean(second), true)
-
-    const contradicted = asker('- [warning] a.ts:9 — now contradicted — fix')
-    const third = await runRound(config, { ...input(2, lines, [1]), closed: ledger }, contradicted.ask)
-    assert.deepEqual(third.closed, [])
-    assert.deepEqual(
-      third.findings.map((f) => [f.id, f.verdict]),
-      [['f2', 'confirmed']],
-    )
-    const verify = contradicted.prompts.find((p) => p.startsWith('You are checking')) as string
-    assert.doesNotMatch(verify, /f1 \(warning\)/, 'the verifier is not told to refute it as a repeat')
-    assert.equal(roundClean(third), false)
-  })
-
-  test('an empty delta reports none', async () => {
-    const empty = await runRound(config, { ...input(2, {}), files: [] }, asker('').ask, [])
-    assert.deepEqual(empty.preexisting, [])
+    const unreadable = new Error('EACCES: b.md')
+    const blocked = {
+      ...input,
+      readBrief: () => {
+        throw unreadable
+      },
+    }
+    await assert.rejects(runRound(config, blocked, ask), (error) => error === unreadable)
+    const gone = new Error('EIO: a.ts')
+    const uncited = {
+      ...input,
+      cite: () => {
+        throw gone
+      },
+    }
+    await assert.rejects(runRound(config, uncited, ask), (error) => error === gone)
   })
 })
 

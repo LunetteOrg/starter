@@ -3,8 +3,9 @@
 // progress file. A watcher that should wake only when it matters (the review skill's) filters
 // `failed`, `error:`, `limit:` and `round N done`: every other line is routine.
 //
-// It is a resource of the command's scope. askAll, still on Promises, calls `progress` and `phase`
-// synchronously: they queue what to write, and one fiber writes it in order. `flush` waits for
+// It is a resource of the command's scope. `progress` and `phase` are synchronous (askAll's
+// progress calls them under Effect.sync, as Orca's subagents need): they queue what to write,
+// and one fiber writes it in order. `flush` waits for
 // what is queued; the scope's release flushes, stops the beat and closes Orca's subagents.
 
 import * as Clock from 'effect/Clock'
