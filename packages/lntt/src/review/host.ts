@@ -1,16 +1,18 @@
-// The sync code of lntt review that reaches the machine through modules not yet on Effect: the
-// project's configuration, the place of the state store, the limit's message to the parent. No Effect at load: src/review-cli.ts (status, cost) calls it directly,
-// and the live layer of the bridge (src/review/bridge.ts) calls it under Effect.try for the
-// commands on Effect. Each piece leaves as its module moves.
+// The code of lntt review that reaches the machine through modules not yet on Effect: the
+// project's configuration for status and cost, the limit's message to the parent. No Effect at
+// load: src/review-cli.ts (status, cost) calls it directly, and the live layer of the bridge
+// (src/review/bridge.ts) calls it under Effect.try for the commands on Effect. The place of the
+// state store is on Effect (src/review/place.ts): placeFor loads it when called. Each piece leaves
+// as its module moves.
 
+import { homedir } from 'node:os'
 import { cwd } from 'node:process'
 import { type BranchRules, fromToolName } from '../branch.ts'
+import { findConfig, loadConfig } from '../config/sync.ts'
 import { NoConfigError } from '../files.ts'
-import { findConfig, loadConfig } from '../index.ts'
 import { type Message, pending, type Started, send, startedBy } from '../messages.ts'
 import { messagesRoot, systemMailbox } from '../messages-cli.ts'
-import { loadOperator, slug } from '../operator.ts'
-import { migrateOld, type Place, resolvePlace } from '../review-store.ts'
+import type { Place } from './place.ts'
 
 // No configuration file: the defaults. A file that does not validate is an error: a
 // review on the defaults would pass for the one the project configured.
@@ -24,27 +26,13 @@ export function loaded(): Record<string, unknown> {
   return loadConfig(cwd()).data
 }
 
-// Where each branch's state and ledger are kept between runs: one file of each per branch,
-// in the place the operator, the project or the clone names (src/review-store.ts). The first
-// look also takes in what this worktree kept in its git directory before the place existed;
-// `say` hears what that moved.
-export function placeFor(
-  common: string,
-  gitDir: string,
-  data: Record<string, unknown>,
-  say: (line: string) => void,
-): Place {
-  const review = (data.delivery as { review?: { stateDir?: unknown } } | undefined)?.review
-  const operator = (loadOperator(cwd()).profile.review as { stateDir?: unknown } | undefined)?.stateDir
-  const placed = resolvePlace({
-    common,
-    main: common.endsWith('/.git') ? common.slice(0, -'/.git'.length) : common,
-    slug: slug(cwd()),
-    operator,
-    project: review?.stateDir,
-  })
-  migrateOld(gitDir, placed.dir, say)
-  return placed
+// Where each branch's state and ledger are kept between runs: one file of each per branch, in the
+// place the operator, the project or the clone names (src/review/place.ts), which the first look
+// also fills with what this worktree kept in its git directory before the place existed, saying
+// so on stderr. It rejects with the failure, its message what to say.
+export async function placeFor(): Promise<Place> {
+  const { runPlace } = await import('./place.ts')
+  return runPlace(homedir())
 }
 
 export type Asked = { id: string; to: string; path: string }

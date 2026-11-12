@@ -1,11 +1,13 @@
 // The configuration commands of `lntt` (usage: bin/lntt.ts).
 
 import { execFileSync } from 'node:child_process'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { dirname } from 'node:path'
 import { cwd, env, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { syncAutomated } from './automated.ts'
+import type { ConfigCommand } from './config/command.ts'
+import { findConfig } from './config/sync.ts'
 import { exit, printed } from './exit.ts'
 import {
   browserApp,
@@ -15,16 +17,11 @@ import {
   chooseViewer,
   commandExists,
   type Driver,
-  findConfig,
   formatPlan,
-  getConfigValue,
-  getValue,
   guide,
-  loadConfig,
   loadOperator,
   localApp,
   openWith,
-  setValue,
   sharedSkills,
   syncAgentsBlock,
   syncClaudeSettings,
@@ -32,8 +29,6 @@ import {
   type Viewer,
 } from './index.ts'
 import { runQuery } from './query.ts'
-import { checkMissing, checkReferences } from './references.ts'
-import { reviewConfig, reviewWarnings } from './review.ts'
 
 const USAGE = [
   'usage: lntt path | validate | get <key> | set <key> <json> | operator [get <key> | sources]',
@@ -56,6 +51,12 @@ function usage(message?: string): never {
 export async function main(args: string[]): Promise<void> {
   const [command, key, raw] = args
   try {
+    const config = configCommand(command, key, raw)
+    if (config !== null) {
+      // On Effect (src/config/command.ts), loaded only for these commands.
+      const { runConfig } = await import('./config/command.ts')
+      return runConfig(config, cwd(), homedir())
+    }
     if (command === 'browser') await browser(args.slice(1))
     else run(command, key, raw)
   } catch (e) {
@@ -63,6 +64,40 @@ export async function main(args: string[]): Promise<void> {
     if (!(e instanceof ConfigError)) throw e
     stderr.write(`lntt: ${e.message}\n`)
     exit(1)
+  }
+}
+
+// A configuration command from its arguments, null for any other: usage, exit 2, before Effect
+// loads.
+function configCommand(
+  command: string | undefined,
+  key: string | undefined,
+  raw: string | undefined,
+): ConfigCommand | null {
+  switch (command) {
+    case 'path':
+      return { kind: 'path' }
+    case 'validate':
+      return { kind: 'validate' }
+    case 'get':
+      if (!key) usage()
+      return { kind: 'get', key }
+    case 'set': {
+      if (!key || raw === undefined) usage()
+      try {
+        return { kind: 'set', key, value: JSON.parse(raw) }
+      } catch {
+        stderr.write(`lntt: ${raw} is not JSON (a string needs quotes: '"it"')\n`)
+        return exit(2)
+      }
+    }
+    case 'operator':
+      if (key === undefined) return { kind: 'operator', show: 'profile' }
+      if (key === 'sources') return { kind: 'operator', show: 'sources' }
+      if (key === 'get' && raw) return { kind: 'operator', show: { key: raw } }
+      return usage()
+    default:
+      return null
   }
 }
 
@@ -74,54 +109,6 @@ function run(command: string | undefined, key: string | undefined, raw: string |
     case 'help':
       stdout.write(`${USAGE}\n`)
       break
-    case 'path':
-      stdout.write(`${findConfig(cwd()).path}\n`)
-      break
-    case 'validate': {
-      // The schema on load, then what it cannot express (./references.ts): the
-      // references between lists, and the keys the board skills need.
-      const { path, data } = loadConfig(cwd())
-      const indent = (lines: string[]) => lines.map((l) => `  ${l}`).join('\n')
-      const wrong = checkReferences(data)
-      const missing = checkMissing(data)
-      const parts = [
-        ...(wrong.length > 0 ? [`a value names no entry of its list:\n${indent(wrong)}`] : []),
-        ...(missing.length > 0 ? [`a key the board skills need is missing:\n${indent(missing)}`] : []),
-      ]
-      if (parts.length > 0) throw new ConfigError(`${path}: ${parts.join('\n')}`)
-      // What matches the schema and still reads otherwise: said, the file stays valid.
-      // A delivery.review lntt review refuses is its own error, at its first round.
-      let warnings: string[] = []
-      try {
-        warnings = reviewWarnings(reviewConfig(data))
-      } catch {}
-      for (const warning of warnings) stderr.write(`lntt validate: warning: ${warning}\n`)
-      break
-    }
-    case 'get':
-      if (!key) usage()
-      stdout.write(`${JSON.stringify(getConfigValue(loadConfig(cwd()).data, key))}\n`)
-      break
-    case 'set': {
-      if (!key || raw === undefined) usage()
-      let value: unknown
-      try {
-        value = JSON.parse(raw)
-      } catch {
-        stderr.write(`lntt: ${raw} is not JSON (a string needs quotes: '"it"')\n`)
-        exit(2)
-      }
-      setValue(cwd(), key, value)
-      break
-    }
-    case 'operator': {
-      const { profile, sources } = loadOperator(cwd())
-      if (key === undefined) stdout.write(`${JSON.stringify(profile)}\n`)
-      else if (key === 'sources') stdout.write(sources.map((s) => `${s}\n`).join(''))
-      else if (key === 'get' && raw) stdout.write(`${JSON.stringify(getValue(profile, raw))}\n`)
-      else usage()
-      break
-    }
     case 'sync':
       // The skills first: a clash with a project skill stops the command before any write.
       syncSkills(cwd())

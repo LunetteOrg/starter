@@ -12,6 +12,7 @@ import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 import * as TestClock from 'effect/testing/TestClock'
 import * as TestConsole from 'effect/testing/TestConsole'
+import { ConfigInvalid, ProjectConfig } from '../config/load.ts'
 import { Gh } from '../gh/gh.ts'
 import { Git, GitError } from '../git/git.ts'
 import type { Started } from '../messages.ts'
@@ -23,7 +24,8 @@ import { lockPath } from '../worktree-lock.ts'
 import { AgentsProcesses } from './agents.ts'
 import { ReviewBridge, ReviewFailed } from './bridge.ts'
 import { command, type ReviewCommand } from './command.ts'
-import { ReviewStore } from './store.ts'
+import { PlaceInvalid } from './place.ts'
+import { makeStore, ReviewStore } from './store.ts'
 
 const ROOT = '/repo'
 const GIT_DIR = '/repo/.git'
@@ -245,6 +247,8 @@ function world() {
     config: CONFIG() as Record<string, unknown>,
     env: {} as Record<string, string>,
     invalid: null as string | null,
+    // The place of the state store that cannot be resolved, as resolvePlace refuses it.
+    placeInvalid: null as string | null,
     // A bug of lntt, where the bridge is reached last before the agents.
     defect: false,
     // The parent the branch reports to, and the limits sent to it.
@@ -259,13 +263,6 @@ function world() {
   }
   const bridge = Layer.succeed(ReviewBridge)(
     ReviewBridge.of({
-      // The configuration as the loader gives it, or the error it throws for a file that does not validate.
-      config: Effect.suspend(() =>
-        project.invalid === null
-          ? Effect.succeed(project.config)
-          : Effect.fail(new ReviewFailed({ cause: new Error(project.invalid) })),
-      ),
-      place: () => Effect.succeed(STORE),
       checks: (areas) =>
         Effect.sync(() => {
           project.checked++
@@ -287,6 +284,16 @@ function world() {
       orca: () => (project.defect ? Effect.die(new Error('a bug of lntt')) : Effect.succeed(null)),
     }),
   )
+  // The configuration as the loader gives it, or its failure for a file that does not validate.
+  const config = Layer.succeed(ProjectConfig)(
+    ProjectConfig.of({
+      data: Effect.suspend(() =>
+        project.invalid === null
+          ? Effect.succeed(project.config)
+          : Effect.fail(new ConfigInvalid({ message: project.invalid })),
+      ),
+    }),
+  )
   const pids = Layer.succeed(Pids)(Pids.of({ self: SELF, visible: () => Effect.succeed(false) }))
   // One run of `lntt review`: its exit code, stdout and stderr.
   const lntt = (parsed: ReviewCommand) =>
@@ -298,10 +305,19 @@ function world() {
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
-          ReviewStore.memory(STORE, GIT_DIR).pipe(Layer.provideMerge(fs.layer)),
+          (project.placeInvalid === null
+            ? ReviewStore.memory(STORE, GIT_DIR)
+            : Layer.effect(ReviewStore)(
+                makeStore({
+                  dir: Effect.fail(new PlaceInvalid({ message: project.placeInvalid })),
+                  gitDir: Effect.succeed(GIT_DIR),
+                }),
+              )
+          ).pipe(Layer.provideMerge(fs.layer)),
           repo.layer(),
           Gh.memory({}),
           bridge,
+          config,
           pids,
           AgentsProcesses.pipe(Layer.provideMerge(agent.layer)),
           Path.layer,
@@ -424,6 +440,39 @@ describe('lntt review, a round', () => {
       const real = yield* w.round()
       assert.strictEqual(real.code, 1, 'a real round refuses')
       assert.match(real.err, /error: cannot start opencode x\/y/)
+    })
+  })
+
+  it.effect(
+    'a delivery.review the schema accepts with a lens no one ships and no brief is refused at the round',
+    () => {
+      const w = world()
+      return Effect.gen(function* () {
+        w.project.config = {
+          delivery: { review: { reviewers: { custom: { with: [{ kind: 'claude', model: 'sonnet' }] } } } },
+        }
+        const run = yield* w.round()
+        assert.strictEqual(run.code, 1)
+        assert.match(
+          run.err,
+          /^lntt review: error: delivery\.review\.reviewers\.custom needs a brief: no lens custom ships$/m,
+        )
+        assert.strictEqual(w.hasState(), false)
+      })
+    },
+  )
+
+  it.effect('a place of the state store that cannot be resolved is an error line, exit 1', () => {
+    const w = world()
+    return Effect.gen(function* () {
+      w.project.placeInvalid =
+        "the operator profile's review.stateDir must be an absolute path or start with ~: relative/dir"
+      const run = yield* w.round()
+      assert.strictEqual(run.code, 1)
+      assert.match(
+        run.err,
+        /^lntt review: error: the operator profile's review\.stateDir must be an absolute path or start with ~: relative\/dir$/m,
+      )
     })
   })
 

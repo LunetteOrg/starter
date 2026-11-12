@@ -82,9 +82,15 @@ same way every time; the `review` skill keeps the judgement.
   directory (`<common dir>/lntt-review/state/` and `ledger/`), which every worktree of
   the clone reaches; `review.stateDir` in the operator's profile (`lntt operator`), else
   `delivery.review.stateDir` in the project configuration, names another place, with a
-  folder per repository (`<org>/<repo>`, from the origin URL; a hash of the clone's common git
-  directory with no origin, or when an org or repo is `.` or `..`) inside it. The operator's own place is personal and never in the project
-  configuration; a project value is its default for everyone. The lock and the progress
+  folder per repository (`<org>/<repo>`, from the origin URL; `local/` and the first 12
+  hexadecimal digits of the SHA-1 of the clone's common git directory with no origin, or
+  when an org or repo is `.` or `..`) inside it. The operator's place is an absolute path or
+  starts with `~`; a project's relative place starts at the main checkout (the git directory
+  of a bare clone). The operator's own place is personal and never in the project
+  configuration; a project value is its default for everyone. A state or a ledger a worktree
+  kept in its own git directory before the place existed is moved in on the first look, once:
+  the newer of the two files wins, the place's when they are as old, and one that cannot be
+  read is set aside with the suffix `.unreadable`. The lock and the progress
   file belong to a running process and stay in each worktree's own git directory. The
   state is read with `lntt review status` (each level folded and a summary, `--json`, or
   `--query` for a part), never from those files. `lntt review status --clear` removes the

@@ -87,6 +87,23 @@ describe('Git on the machine', () => {
     })
   })
 
+  it.effect("the origin's URL, '' with no origin; a git that cannot start is a GitError", () =>
+    Effect.gen(function* () {
+      const origin = Effect.gen(function* () {
+        return yield* (yield* Git).originUrl
+      })
+      const remote = (out: string, code: number) =>
+        Effect.provide(
+          origin,
+          git((args) => (args.join(' ') === 'remote get-url origin' ? { out, code } : { code: 1 })).layer,
+        )
+      assert.strictEqual(yield* remote('git@github.com:org/proj.git\n', 0), 'git@github.com:org/proj.git')
+      assert.strictEqual(yield* remote('', 2), '')
+      const missing = yield* Effect.flip(Effect.provide(origin, git(() => 'missing').layer))
+      assert.strictEqual(missing._tag, 'GitError')
+    }),
+  )
+
   it.effect('an ancestor is exit 0; any other exit, a commit git no longer knows too, is not one', () => {
     const g = git((args) => ({ code: args.at(-2) === 'c1' ? 0 : args.at(-2) === 'c9' ? 1 : 128 }))
     return Effect.gen(function* () {

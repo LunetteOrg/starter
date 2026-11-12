@@ -97,7 +97,8 @@ layers.
   `runMain`'s own error reporting is off: its log format is not `lntt`'s.
 - **`exit.ts` imports no Effect,** because every command loads it: `effect/Runtime` and
   `NodeRuntime` take about 24 ms each to load (measured on 2026-11-11, `effect` 4.1.4,
-  node 24.22.1, median of 11 fresh processes), against 150 ms for a whole `lntt get`.
+  node 24.22.1, median of 11 fresh processes), against about 140 ms for a whole command
+  that loads none (`lntt guide`, measured on 2026-11-12, median of 21).
   Only a command on Effect loads `run-command.ts`.
 - **A resource is acquired with its release** (`Effect.acquireRelease`), in the scope of
   the command or of the step that uses it. Nothing on Effect is released from
@@ -130,9 +131,8 @@ layers.
 
 A Promise function a module on Effect still calls runs under `Effect.tryPromise`, which
 passes it a signal an interrupt aborts when it takes one (a `Spawn` does). The sync code of modules not
-yet moved that a module on Effect needs (for `lntt review`: the project's configuration,
-the place of the state store, `lntt check`'s areas, the parent the branch
-reports to and the limit's message, Orca's subagents) is reached through a service of that
+yet moved that a module on Effect needs (for `lntt review`: `lntt check`'s areas, the parent
+the branch reports to and the limit's message, Orca's subagents) is reached through a service of that
 module, its bridge
 (`ReviewBridge` in `packages/lntt/src/review/bridge.ts`): the live layer runs the code under
 `Effect.try`, and what it throws is a tagged error of the bridge (`ReviewFailed`), reported
@@ -156,6 +156,15 @@ its callbacks under `Effect.sync`, `Effect.try` and `Effect.tryPromise` (a `Spaw
 that agent's failed answer in `askAll`; an ask, a brief or a cited line that throws rejects
 `runRound` with what it threw.
 A command that does not call it loads no Effect for it.
+
+The other way round, a module on Effect that modules not yet moved call synchronously keeps a
+synchronous form for them: a thin shell over `node:` around the same plain logic, which loads
+no Effect. The project's configuration and the operator profile are such a module: their logic
+is plain (`packages/lntt/src/config/project.ts`, `packages/lntt/src/config/operator.ts`), their
+Effect form `packages/lntt/src/config/load.ts` (with `ProjectConfig`, the configuration as a
+service), and their shell `packages/lntt/src/config/sync.ts`, which is also the library's
+synchronous `findConfig`, `loadConfig`, `setValue` and `loadOperator`. The shell is
+transitional: it goes when the last module that calls it moves, with #341.
 
 ### Tests beside each module
 
