@@ -34,7 +34,7 @@ Both logs follow the same rules:
   file is rewritten and the change lands as a commit; the history of a subject is
   `git log --follow -- <file>`. No `superseded by`, no struck-through text, no
   amendment sections.
-- **Options not taken** close the file in *Discarded directions*, each with the
+- **Options not taken** close the file in _Discarded directions_, each with the
   reason it does not hold.
 - **MADR format** ([`template.md`](./template.md); the PDR log has its own): YAML
   frontmatter (`status`, `date`, `tags`, optional `deciders`; tags make the log

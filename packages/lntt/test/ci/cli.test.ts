@@ -700,7 +700,7 @@ describe('lntt ci proved', () => {
     [`repos/o/r/actions/workflows/ci.yml/runs?head_sha=${HEAD}&per_page=100`]: {
       workflow_runs: [{ id: 11, event: 'pull_request', status: 'completed', conclusion: 'success', html_url: 'u/11' }],
     },
-    [`repos/o/r/actions/runs/11/jobs?per_page=100`]: {
+    'repos/o/r/actions/runs/11/jobs?per_page=100': {
       jobs: [{ name: 'ci', conclusion: 'success', steps: [{ name: 'Full CI', conclusion: 'success' }] }],
     },
   }

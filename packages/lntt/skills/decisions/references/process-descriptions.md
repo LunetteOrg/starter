@@ -16,16 +16,16 @@ technical decisions. It has two parts:
 The names are fixed, so a skill finds an area's values and prose without being told
 where they are.
 
-| Area | What it covers |
-|---|---|
-| `recording` | Which decision logs exist, where, in which language, what each holds |
-| `board` | The GitHub project: fields and options, iterations, track labels, owners |
-| `ci` | Providers, what runs on drafts, pull requests and the main branch, deploy gates, cost rules |
-| `delivery` | Pull request body and its language, review rounds, merge rules, hand-off |
-| `cycle` | Planning, grooming and retrospective cadence, where a retrospective is published |
-| `spaces` | Reference material, prototypes, spikes, personal notes: where they live and when they are archived |
-| `team` | Handles, roles and ownership that other people need (never personal profiles) |
-| `local` | How the apps are started and reached locally: commands, base ports, seeded users in the configuration; how to sign in and what log lines mean in `docs/process/local.md` |
+| Area        | What it covers                                                                                                                                                           |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `recording` | Which decision logs exist, where, in which language, what each holds                                                                                                     |
+| `board`     | The GitHub project: fields and options, iterations, track labels, owners                                                                                                 |
+| `ci`        | Providers, what runs on drafts, pull requests and the main branch, deploy gates, cost rules                                                                              |
+| `delivery`  | Pull request body and its language, review rounds, merge rules, hand-off                                                                                                 |
+| `cycle`     | Planning, grooming and retrospective cadence, where a retrospective is published                                                                                         |
+| `spaces`    | Reference material, prototypes, spikes, personal notes: where they live and when they are archived                                                                       |
+| `team`      | Handles, roles and ownership that other people need (never personal profiles)                                                                                            |
+| `local`     | How the apps are started and reached locally: commands, base ports, seeded users in the configuration; how to sign in and what log lines mean in `docs/process/local.md` |
 
 A skill working in an area reads `docs/process/<area>.md` when it exists, and the
 area's section of the configuration always.
@@ -36,7 +36,7 @@ area's section of the configuration always.
   (`board.fields.horizon`) and never repeats their values: a value lives in one place.
 - **Kept apart from ADRs.** A process rule inside an ADR is a finding.
 - **Corrected in place**, like every record ([`recording-rules.md`](./recording-rules.md)),
-  with *Discarded directions* at the end.
+  with _Discarded directions_ at the end.
 - **No frontmatter values.** The configuration is the only place a skill reads values
   from.
 

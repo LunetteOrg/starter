@@ -14,11 +14,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@testcontainers/postgresql": "^12.0.4",
+    "@testcontainers/postgresql": "^12.2.1",
     "drizzle-orm": "1.0.0-rc.4",
-    "glob": "^13.0.6",
-    "postgres": "^3.4.9",
-    "testcontainers": "^12.0.4",
+    "glob": "^14.0.6",
+    "postgres": "^4.1.1",
+    "testcontainers": "^12.2.1",
     "vitest": "^5.1.0"
   },
   "devDependencies": {

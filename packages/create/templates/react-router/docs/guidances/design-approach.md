@@ -2,15 +2,15 @@
 
 - Status: guidance
 
-> **Recommended, not enforced.** The template mechanically enforces *structural
-> boundaries* (see [Architecture & boundaries](../adr/architecture-and-boundaries.md)).
+> **Recommended, not enforced.** The template mechanically enforces _structural
+> boundaries_ (see [Architecture & boundaries](../adr/architecture-and-boundaries.md)).
 > Everything below is design vocabulary we recommend inside those boundaries — it
 > is modelling discipline, not something a linter can check. Use it where it earns
 > its keep; ignore it where it doesn't.
 
 ## The one rule above the rest: YAGNI / KISS
 
-The boundaries are strict *because* they let the code inside stay simple. Do **not**
+The boundaries are strict _because_ they let the code inside stay simple. Do **not**
 add abstraction for its own sake. The composition root already gives you dependency
 injection, so you rarely need Factory/Builder/Singleton boilerplate. Reach for a
 pattern when the pain is real, not in anticipation.
@@ -24,7 +24,7 @@ function needs the network or the clock, that's a smell — inject a port.
 
 ## Errors as values (railway-oriented)
 
-Prefer typed error *values* over thrown exceptions: a use-case returns
+Prefer typed error _values_ over thrown exceptions: a use-case returns
 `Success | TypedError`, and callers handle the union exhaustively. This is a
 functional-programming stance ("railway-oriented programming"). Here it is not just
 recommended — the template **concretizes it into an enforced rule**: `throw` is

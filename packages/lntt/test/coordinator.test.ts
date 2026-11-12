@@ -145,8 +145,8 @@ describe('the coordinator’s brief', () => {
   test('says it writes no code, lists the issues and names the placeholder branch', () => {
     const brief = coordinatorBrief(VALUES)
     assert.match(brief, /`release-0-6-1`\. You write no code/)
-    assert.match(brief, /- #84: Coordinator mode/)
-    assert.match(brief, /- #89: Board status/)
+    // One indent under their list item: a nested list, not a code block.
+    assert.match(brief, /\n- \*\*The theme's issues:\*\*\n {2}- #84: Coordinator mode\n {2}- #89: Board status\n/)
     assert.match(brief, /chore\/no-issue\/release-0-6-1/)
     assert.match(brief, /Never merge, never mark a pull request ready/)
     assert.doesNotMatch(brief, /\{\{/)

@@ -16,19 +16,19 @@ Tests must be fast enough to run on every PR, trustworthy enough to gate deploys
 
 ### Decision
 
-| Layer | Tool | Convention |
-|---|---|---|
-| Unit | Vitest | `.spec.ts`, co-located with the source — TDD red-green |
-| Integration | Vitest + Testcontainers | `.test.ts`, co-located — real Postgres, the `tx` fixture rolled back |
-| Component | Vitest browser mode + Storybook | `*.stories.tsx` in `packages/ui` — **the story is the test** |
-| E2E | Playwright | `*.e2e.ts` — critical flows only: revenue, onboarding, data loss |
+| Layer       | Tool                            | Convention                                                           |
+| ----------- | ------------------------------- | -------------------------------------------------------------------- |
+| Unit        | Vitest                          | `.spec.ts`, co-located with the source — TDD red-green               |
+| Integration | Vitest + Testcontainers         | `.test.ts`, co-located — real Postgres, the `tx` fixture rolled back |
+| Component   | Vitest browser mode + Storybook | `*.stories.tsx` in `packages/ui` — **the story is the test**         |
+| E2E         | Playwright                      | `*.e2e.ts` — critical flows only: revenue, onboarding, data loss     |
 
 Rules:
 
 - Never `vi.mock` the database or a repository in `.test.ts` — an integration test asks for `tx` from the app's `it`, built once as `export const it = txTest(db.withTestDb)` with `@starter/test-utils`: `it('…', async ({ tx }) => …)` runs inside a transaction that is rolled back when the test ends, passed or failed, so no state leaks between tests. `withTestDb` underneath stays runner-agnostic; `txTest` is the only code that knows Vitest's `test.extend`.
 - External services get stub implementations in `@starter/test-utils` (e.g. stub `EmailService`, noop analytics) injected through the composition root — full flows are testable offline.
 - `test` does not depend on `build` in the Turbo pipeline — Vitest runs on TypeScript sources (fast PR feedback). `test:e2e` depends on `build` and runs only on main push: Playwright gates the deploy, not the PR.
-- A shared UI component is covered by its story, not by a separate spec file ([component tests](#component-tests)). Playwright is the browser *engine* there, never the runner: `@playwright/test` stays reserved for e2e.
+- A shared UI component is covered by its story, not by a separate spec file ([component tests](#component-tests)). Playwright is the browser _engine_ there, never the runner: `@playwright/test` stays reserved for e2e.
 - Playwright starts from clean cookie state (`storageState: { cookies: [], origins: [] }`); tests that need cookies set them explicitly.
 - E2E hygiene is linted ([import boundaries](./architecture-and-boundaries.md#import-boundaries)): no `waitForTimeout()`, no reaching into React internals.
 - Every route that returns data ships a **golden serialization test** (`.test.ts`) pinning the exact key set of the loader/action payload, so a leaked field fails the build ([loader/action serialization boundary](./architecture-and-boundaries.md#loaderaction-serialization-boundary)). Copy-paste template: `packages/test-utils/templates/serialization/`.
@@ -75,7 +75,7 @@ Run the **existing stories as browser tests** via `@storybook/addon-vitest`
   boundaries, controlled/uncontrolled state). Reach for it when a real case
   proves the story insufficient — not before.
 - **Version lockstep, non-negotiable**: `@vitest/browser` and
-  `@vitest/browser-playwright` declare an *exact* peer on `vitest` (their own
+  `@vitest/browser-playwright` declare an _exact_ peer on `vitest` (their own
   version, not a range). Bump all three together, or the install breaks.
 
 ### Consequences
@@ -161,6 +161,6 @@ Component tests:
   already write and leaves the a11y promise unenforced. Two artefacts
   for one job.
 - **Both from day one**: the destination, not the starting point. Shipping two
-  conventions in a template makes *every* derived project pay to learn both.
+  conventions in a template makes _every_ derived project pay to learn both.
 - **Leaving a11y advisory**: keeps a documented bar that nothing enforces —
   precisely the gap this decision closes.

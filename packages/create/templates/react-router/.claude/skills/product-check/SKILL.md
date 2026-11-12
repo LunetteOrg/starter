@@ -56,6 +56,6 @@ only. This is the product-side sibling of `adr-check` and `story-check`.
 ## Notes
 
 - Report-only. Recommend `product-decision` for anything that needs a file written.
-- `reference/` and `compliance/` are quarantined input — check that they are *cited*
+- `reference/` and `compliance/` are quarantined input — check that they are _cited_
   correctly, never that they lint or build (they are excluded from the toolchain by
   design).

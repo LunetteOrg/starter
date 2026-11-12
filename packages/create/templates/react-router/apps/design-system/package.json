@@ -12,8 +12,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@starter/typescript-config": "workspace:*",
@@ -23,16 +23,16 @@
     "@storybook/addon-docs": "^10.6.7",
     "@storybook/addon-vitest": "10.6.7",
     "@storybook/react-vite": "^10.6.7",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@vitest/browser": "5.1.0",
     "@vitest/browser-playwright": "5.1.0",
     "@vitest/coverage-v8": "5.1.0",
-    "playwright": "^1.61.1",
+    "playwright": "^1.65.0",
     "storybook": "^10.6.7",
     "storybook-design-token": "^5.0.0",
     "typescript": "7.0.2",
-    "vite": "^8.1.4",
+    "vite": "^8.3.8",
     "vitest": "5.1.0"
   }
 }
