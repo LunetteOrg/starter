@@ -29,7 +29,8 @@ const parent = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf('/')
 // `dirs`: the directories that exist from the start, with their ancestors. `linkFails`: every
 // link finds its target already there, as when other runs keep taking a lock. `devices`: the
 // directories mounted on a filesystem of their own, which a rename cannot cross. `unreadable`: the
-// directories that cannot be searched, where looking at a path fails with PermissionDenied.
+// directories that cannot be searched, where `exists` fails with PermissionDenied (only `exists`:
+// the other operations read the files as they are).
 export function memoryFileSystem(
   options: { dirs?: string[]; linkFails?: boolean; devices?: string[]; unreadable?: string[] } = {},
 ) {

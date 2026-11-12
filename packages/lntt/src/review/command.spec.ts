@@ -434,6 +434,25 @@ describe('lntt review, a round', () => {
     })
   })
 
+  it.effect(
+    'a delivery.review the schema accepts with a lens no one ships and no brief is refused at the round',
+    () => {
+      const w = world()
+      return Effect.gen(function* () {
+        w.project.config = {
+          delivery: { review: { reviewers: { custom: { with: [{ kind: 'claude', model: 'sonnet' }] } } } },
+        }
+        const run = yield* w.round()
+        assert.strictEqual(run.code, 1)
+        assert.match(
+          run.err,
+          /^lntt review: error: delivery\.review\.reviewers\.custom needs a brief: no lens custom ships$/m,
+        )
+        assert.strictEqual(w.hasState(), false)
+      })
+    },
+  )
+
   it.effect('a place of the state store that cannot be resolved is an error line, exit 1', () => {
     const w = world()
     return Effect.gen(function* () {

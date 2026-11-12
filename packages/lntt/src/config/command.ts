@@ -52,9 +52,9 @@ const operator = Effect.fnUntraced(function* (
   yield* json(yield* plain(() => getValue(profile, show.key)))
 })
 
-// A command on the configuration found from `cwd`, the operator's home `home`: its exit code. The
-// operator's project profile is the repository Git runs in, the process's directory. A configuration that cannot be found, read or
-// validated, or a key it lacks, is said on stderr and exits 1.
+// A command on the configuration found from `cwd`, the operator's home `home`: its exit code.
+// `operator` does not read `cwd`: its project profile is the repository Git runs in, the
+// process's directory.
 export const command = (parsed: ConfigCommand, cwd: string, home: string) =>
   Effect.gen(function* () {
     switch (parsed.kind) {

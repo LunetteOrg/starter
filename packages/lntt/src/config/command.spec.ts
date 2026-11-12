@@ -4,7 +4,7 @@ import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
 import * as TestConsole from 'effect/testing/TestConsole'
 import schema from '../../schema/config.schema.json' with { type: 'json' }
-import { Git } from '../git/git.ts'
+import { Git, GitError } from '../git/git.ts'
 import { memoryFileSystem } from '../testing/file-system.ts'
 import { type ConfigCommand, command } from './command.ts'
 
@@ -14,7 +14,12 @@ const HOME = '/home/me'
 
 // One run of a configuration command on a project whose configuration is `config`: its exit
 // code, stdout and stderr.
-const lntt = (parsed: ConfigCommand, config: string | null, files: Record<string, string> = {}) => {
+const lntt = (
+  parsed: ConfigCommand,
+  config: string | null,
+  files: Record<string, string> = {},
+  git: Layer.Layer<Git> = Git.memory({}),
+) => {
   const fs = memoryFileSystem({ dirs: [ROOT, HOME] })
   return Effect.gen(function* () {
     if (config !== null) yield* fs.put(CONFIG, config)
@@ -23,7 +28,7 @@ const lntt = (parsed: ConfigCommand, config: string | null, files: Record<string
     const out = (yield* TestConsole.logLines).join('\n')
     const err = (yield* TestConsole.errorLines).join('\n')
     return { code, out, err }
-  }).pipe(Effect.provide(Layer.mergeAll(fs.layer, Path.layer, Git.memory({}), Layer.fresh(TestConsole.layer))))
+  }).pipe(Effect.provide(Layer.mergeAll(fs.layer, Path.layer, git, Layer.fresh(TestConsole.layer))))
 }
 
 const get = (key: string, config: string) => lntt({ kind: 'get', key }, config)
@@ -146,6 +151,27 @@ describe('the operator', () => {
       const global = `${HOME}/.agents/operator.yml`
       const run = yield* lntt({ kind: 'operator', show: 'sources' }, null, { [global]: 'handle: ada\n' })
       assert.deepStrictEqual(run, { code: 0, out: global, err: '' })
+    }),
+  )
+})
+
+describe('git that cannot start', () => {
+  it.effect('is said on stderr, exit 1', () =>
+    Effect.gen(function* () {
+      const run = yield* lntt(
+        { kind: 'operator', show: 'profile' },
+        null,
+        {},
+        Git.memory({
+          commonDir: Effect.succeed('/main/.git'),
+          originUrl: Effect.fail(new GitError({ args: ['remote', 'get-url', 'origin'], output: 'spawn git ENOENT' })),
+        }),
+      )
+      assert.deepStrictEqual(run, {
+        code: 1,
+        out: '',
+        err: 'lntt: git remote get-url origin failed: spawn git ENOENT',
+      })
     }),
   )
 })
