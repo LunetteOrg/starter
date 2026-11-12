@@ -139,9 +139,9 @@ its module moves to Effect. The library API of
 it needs no Effect: a library function whose logic moved (`askAll`, `runRound`) imports its
 Effect form with `await import(...)` when it is called and runs it with `Effect.runPromise`,
 its callbacks under `Effect.sync`, `Effect.try` and `Effect.tryPromise` (a `Spawn` is the
-`Agents` layer `Agents.fromSpawn`, an `AbortSignal` the stop), and each callback's failure
-means what it meant before: a `Spawn` that rejects is that agent's failed answer in
-`askAll`, an ask, a brief or a cited line that throws rejects `runRound` with what it threw.
+`Agents` layer `Agents.fromSpawn`, an `AbortSignal` the stop). A `Spawn` that rejects is
+that agent's failed answer in `askAll`; an ask, a brief or a cited line that throws rejects
+`runRound` with what it threw.
 A command that does not call it loads no Effect for it.
 
 ### Tests beside each module
