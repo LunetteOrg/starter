@@ -219,6 +219,16 @@ describe('the issue titles hook', () => {
       assert.deepEqual(listed(kept).map((r) => r[0]), ['o/r#2', 'o/r#1'])
     })
 
+    test('a clock that fails or answers no time still lists the block, in the order of the blocks', async () => {
+      for (const now of [() => { throw new Error('no clock') }, () => Number.NaN]) {
+        const { flush, kept } = engine({ now, gh: { 'o/r#1': 'One', 'o/r#2': 'Two' } })
+        await flush('m1', '#1\n', true)
+        await flush('m2', '#2\n', true)
+        assert.deepEqual(listed(kept).map((r) => r[0]), ['o/r#2', 'o/r#1'])
+        assert.ok(kept.value.rows.every((r) => Number.isFinite(r.at)))
+      }
+    })
+
     test('a block that is read while a slower one waits for a title keeps its place when that one ends', async () => {
       let found
       const slow = new Promise((r) => (found = r))

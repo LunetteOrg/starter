@@ -89,6 +89,13 @@ describe('the list of what the session cited', () => {
     ])
   })
 
+  test('merge: a row stored at the same stamp is replaced by the block\'s own place, one stored later keeps its place', () => {
+    const same = merge([row(1, 15, 5), row(2, 15, 0)], [fresh(1)], 15)
+    assert.deepEqual(same.map((r) => [r.ref, r.at, r.i]), [['o/r#1', 15, 0], ['o/r#2', 15, 0]])
+    const later = merge([row(2, 20, 0), row(1, 20, 5)], [fresh(1)], 15)
+    assert.deepEqual(later.map((r) => [r.ref, r.at, r.i]), [['o/r#2', 20, 0], ['o/r#1', 20, 5]])
+  })
+
   test('merge keeps KEPT rows, the oldest cited forgotten first', () => {
     const many = Array.from({ length: KEPT }, (_, n) => row(n + 1, n + 1))
     const rows = merge(many, [fresh(999)], KEPT + 10)

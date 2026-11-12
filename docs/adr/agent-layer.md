@@ -449,7 +449,7 @@ found later appears in an open pane, and the list outlives a reload of the plugi
 - **The state of the issue (open, closed, merged) in the pane.** It takes `lntt refs` reading
   `state` and `pull_request.merged_at`, a field more in the cache and in its JSON, and a
   shorter life for that field than for the title: the cache would otherwise show an issue
-  closed this morning as open. A follow-up of its own.
+  closed this morning as open.
 - **The numbers the person typed in the pane too.** It takes a hook on the person's
   messages and a second read by `lntt refs`; the box, and so the pane, are about what
   the assistant wrote.
