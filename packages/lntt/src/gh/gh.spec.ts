@@ -17,6 +17,7 @@ function gh(
 ) {
   const asked: string[][] = []
   const envs: (Record<string, unknown> | undefined)[] = []
+  const extend: (boolean | undefined)[] = []
   const cwds: (string | undefined)[] = []
   // What each call got on its stdin, '' for none.
   const inputs: string[] = []
@@ -27,6 +28,7 @@ function gh(
       asked.push([command.command, ...args])
       cwds.push(command.options.cwd)
       envs.push(command.options.env)
+      extend.push(command.options.extendEnv)
       const stdin = command.options.stdin
       inputs.push(
         Stream.isStream(stdin)
@@ -58,7 +60,7 @@ function gh(
   const layer = ghAt(dir, options).pipe(
     Layer.provide(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(ChildProcessSpawner.make(spawn))),
   )
-  return { asked, cwds, envs, inputs, layer }
+  return { asked, cwds, envs, extend, inputs, layer }
 }
 
 describe('Gh on the machine', () => {
@@ -291,6 +293,8 @@ describe("the candidate automation's operations", () => {
     return Effect.gen(function* () {
       yield* (yield* Gh).repository
       assert.deepStrictEqual(g.envs[0], { GH_TOKEN: 'projects' })
+      // Added to what gh inherits: PATH and HOME stay.
+      assert.strictEqual(g.extend[0], true)
     }).pipe(Effect.provide(g.layer))
   })
 
@@ -302,16 +306,27 @@ describe("the candidate automation's operations", () => {
       yield* client.retarget({ repo: 'o/r', number: 7, base: 'candidate/4' })
       yield* client.commentPullRequest({ repo: 'o/r', number: 7, body: 'moved' })
       yield* client.graphqlWrite('mutation', { item: 'I 1' })
+      yield* client.commentIssue({ repo: 'o/r', number: 9, body: 'told' })
+      yield* client.createIssue({ repo: 'o/r', title: 'a bug', body: 'what' })
       yield* client.pullRequestHeads({ repo: 'o/r', prefix: 'candidate/' })
+      yield* client.graphqlFields('query', { number: 1 })
       assert.deepStrictEqual(lines, [
         '[dry-run] gh pr edit 7 --repo o/r --base candidate/4',
         '[dry-run] gh pr comment 7 --repo o/r --body-file -',
         '[dry-run] stdin:\nmoved',
         '[dry-run] gh api graphql -f query=mutation -f "item=I 1"',
+        '[dry-run] gh issue comment 9 --repo o/r --body-file -',
+        '[dry-run] stdin:\ntold',
+        '[dry-run] gh issue create --repo o/r --title "a bug" --body-file -',
+        '[dry-run] stdin:\nwhat',
       ])
+      // The reads still run, a GraphQL query included: the Ready check reads through one.
       assert.deepStrictEqual(
         g.asked.map((a) => a.slice(1, 3)),
-        [['pr', 'list']],
+        [
+          ['pr', 'list'],
+          ['api', 'graphql'],
+        ],
       )
     }).pipe(Effect.provide(g.layer))
   })

@@ -71,7 +71,8 @@ export interface GhOperations extends CandidateGhOperations {
   // Opens an issue, comments an issue or a pull request: the URL gh prints.
   readonly createIssue: (issue: { repo: string; title: string; body: string }) => Run<string>
   readonly commentIssue: (comment: { repo: string; number: number; body: string }) => Run<string>
-  readonly commentPullRequest: (comment: { repo: string; number: number; body: string }) => Run<string>
+  // `<new>`: a pull request a dry run created, with no number yet.
+  readonly commentPullRequest: (comment: { repo: string; number: number | '<new>'; body: string }) => Run<string>
   // Every comment of issue or pull request `number`, in order, read page by page.
   readonly issueComments: (query: { repo: string; number: number }) => Run<Comment[]>
   // Replaces the body of comment `id`.

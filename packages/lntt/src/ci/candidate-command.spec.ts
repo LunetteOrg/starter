@@ -9,8 +9,8 @@ import { ProjectConfig } from '../config/load.ts'
 import { Gh, GhError } from '../gh/gh.ts'
 import { Git } from '../git/git.ts'
 import { memoryFileSystem } from '../testing/file-system.ts'
-import { Board } from './candidate.ts'
 import { type CandidateInput, candidate, candidateLayers, proved, reported } from './candidate-command.ts'
+import { Board } from './candidate-steps.ts'
 
 const CONFIG = { delivery: { candidate: { prefix: 'candidate/' } } }
 
@@ -245,6 +245,23 @@ describe('lntt ci candidate', () => {
       }),
   )
 
+  it.effect('--follow follows the base with the clone, and handles no pull request', () => {
+    const w = world(CONFIG)
+    const lines: string[] = []
+    return Effect.gen(function* () {
+      assert.strictEqual(yield* reported(candidate(input(lines, { follow: true }))), 0)
+      assert.ok(
+        lines.some((l) => /^candidate: follow main: /.test(l)),
+        lines.join('\n'),
+      )
+      assert.notOk(
+        lines.some((l) => /no git client/.test(l)),
+        lines.join('\n'),
+      )
+      assert.notOk(w.gh.reads.some((r) => r.startsWith('pr view')))
+    }).pipe(Effect.provide(w.layer))
+  })
+
   it.effect(
     'a push to the base follows it with the clone; outside Actions the repository is the one gh works on',
     () => {
@@ -329,6 +346,27 @@ describe('the board’s client', () => {
   )
 })
 
+describe('the clone’s git', () => {
+  it.effect('authenticates through its environment in Actions, never through its arguments', () => {
+    const s = spawner()
+    return Effect.gen(function* () {
+      yield* (yield* Git).isShallow
+      const env = s.envs[0] as Record<string, string>
+      assert.strictEqual(env.GIT_CONFIG_KEY_0, 'http.https://github.com/.extraheader')
+      assert.match(env.GIT_CONFIG_VALUE_0 ?? '', /^AUTHORIZATION: basic /)
+    }).pipe(
+      Effect.provide(
+        candidateLayers({
+          env: { GITHUB_ACTIONS: 'true', GH_TOKEN: 'secret' },
+          cwd: '/clone',
+          dryRun: false,
+          log: () => {},
+        }).pipe(Layer.provide(s.layer)),
+      ),
+    )
+  })
+})
+
 describe('lntt ci proved', () => {
   const provedWorld = (gh: ReturnType<typeof github>, git = Git.memory({})) =>
     Layer.mergeAll(gh.layer, git, memoryFileSystem({ dirs: ['/events'] }).layer, TestConsole.layer)
@@ -354,6 +392,37 @@ describe('lntt ci proved', () => {
       )
     }).pipe(Effect.provide(provedWorld(github(PR, 'HTTP 502'))))
   })
+
+  it.effect(
+    'in Actions, the previous tip is the push event’s: a commit id goes on to GitHub, anything else is none',
+    () => {
+      const fs = memoryFileSystem({ dirs: ['/events'] })
+      const lines: string[] = []
+      const layer = Layer.mergeAll(github(PR, 'HTTP 502').layer, Git.memory({}), fs.layer, TestConsole.layer)
+      return Effect.gen(function* () {
+        yield* fs.put('/events/push.json', JSON.stringify({ before: 'c'.repeat(40) }))
+        yield* fs.put('/events/odd.json', JSON.stringify({ before: 7 }))
+        for (const path of ['/events/push.json', '/events/odd.json']) {
+          yield* reported(
+            proved({
+              jobs: ['ci'],
+              workflow: 'ci.yml',
+              env: {
+                GITHUB_REPOSITORY: 'o/r',
+                GITHUB_SHA: 'd'.repeat(40),
+                GITHUB_REF_NAME: 'main',
+                GITHUB_EVENT_PATH: path,
+              },
+              cwd: '/clone',
+              log: (line) => lines.push(line),
+            }),
+          )
+        }
+        assert.match(lines[0] ?? '', /^not proved: gh api repos\/o\/r\/commits\/d{40}\/pulls failed: HTTP 502$/)
+        assert.strictEqual(lines[1], 'not proved: no previous tip of main to compare with')
+      }).pipe(Effect.provide(layer))
+    },
+  )
 
   it.effect('from a terminal, the sha is HEAD; with no push event there is no previous tip', () => {
     const lines: string[] = []

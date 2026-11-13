@@ -69,7 +69,9 @@ export class Git extends Context.Service<Git, GitOperations>()('@lntt/lntt/git/G
     const fn = (name: string) => () => missing(name)
     return Layer.succeed(Git)(
       Git.of({
-        ...(Object.fromEntries(FOLLOW_OPERATIONS.map((name) => [name, fn(name)])) as unknown as FollowOperations),
+        ...(Object.fromEntries(
+          FOLLOW_OPERATIONS.map((name) => [name, name === 'isShallow' ? missing(name) : fn(name)]),
+        ) as unknown as FollowOperations),
         status: missing('status'),
         branch: missing('branch'),
         current: missing('current'),

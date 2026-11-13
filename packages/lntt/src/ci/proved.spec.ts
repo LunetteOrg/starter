@@ -227,6 +227,12 @@ describe('lntt ci proved', () => {
     assert.match(refusal(a), /tree/)
   })
 
+  it('a page of another shape, which throws where it is read, is not proved either', () => {
+    const a = api()
+    for (const key of Object.keys(a)) if (key.includes('/actions/workflows/')) a[key] = {}
+    assert.match(refusal(a), /workflow_runs|undefined|not iterable/)
+  })
+
   it('a malformed input is not proved', () => {
     assert.match(refusal(api(), { sha: 'HEAD' }), /sha/)
     assert.match(refusal(api(), { jobs: [] }), /job/)

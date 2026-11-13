@@ -57,6 +57,7 @@ function github(
     commentPullRequest: ({ repo, number, body }) =>
       Effect.sync(() => {
         if (record(`pr comment ${number} --repo ${repo} --body-file -`, body)) return ''
+        if (typeof number !== 'number') return ''
         const all = comments[number] ?? []
         comments[number] = [...all, { id: 100 + all.length, body }]
         return `https://github.com/${repo}/pull/${number}#issuecomment-1`

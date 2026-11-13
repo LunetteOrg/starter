@@ -235,6 +235,11 @@ A project that installs `@lntt/lntt` gets `effect` in its `node_modules`, at the
 imports the library, gets `Promise` functions. A project that uses Effect itself
 resolves its own version beside `lntt`'s.
 
+`@lntt/lntt/ci` exports what plans and runs a project's CI on the machine (`lntt ci local`'s
+loaders, its run, its lock), in their synchronous and `Promise` forms. The candidate automation and
+the check of a tree already proved belong to their commands, `lntt ci candidate` and `lntt ci
+proved`, their only callers, and are not exported (from 0.6.5).
+
 ## Consequences
 
 ### Positive

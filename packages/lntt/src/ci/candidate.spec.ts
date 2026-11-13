@@ -308,6 +308,21 @@ const noGit = (): Git => ({
 })
 
 describe('retarget', () => {
+  it('a dry run that creates the candidate comments it as <new>, the number it does not have yet', () => {
+    const lines: string[] = []
+    const gh = dryGh(
+      fakeGh({
+        '--state open': [],
+        'matching-refs': [],
+        '--state all': [],
+        'commits/main': { sha: 'b'.repeat(40), commit: { tree: { sha: 'c'.repeat(40) } } },
+      }),
+      (l) => lines.push(l),
+    )
+    retarget({ ...run(gh), log: (l) => lines.push(l) }, pr)
+    assert.ok(lines.includes('[dry-run] gh pr comment <new> --repo o/r --body-file -'), lines.join('\n'))
+  })
+
   it('moves the pull request onto the open candidate and comments', () => {
     const gh = fakeGh({ '--state open': [{ number: 40, headRefName: 'candidate/4', body: '' }], ...hasRetro(40) })
     retarget(run(gh), pr)
@@ -868,6 +883,25 @@ const notices = () => {
 }
 
 describe('setBoardStatus', () => {
+  it('an answer of another shape fails that issue only, as a refused call would, and the others go on', () => {
+    const lines: string[] = []
+    const board: Gh = {
+      read: (args) =>
+        args.includes('number=69')
+          ? '{}'
+          : JSON.stringify({ data: { repository: { issue: { projectItems: { nodes: [] } } } } }),
+      write: () => '',
+    }
+    assert.throws(
+      () => setBoardStatus({ ...run(fakeGh({})), board, log: (l) => lines.push(l) }, [69, 70], 'In release'),
+      /issues not moved to "In release": #69: /,
+    )
+    assert.ok(
+      lines.some((l) => l.includes('#70 is on no project')),
+      lines.join('\n'),
+    )
+  })
+
   it('moves the issue to the status on each project that has it', () => {
     const board = fakeGh(items(item('i1')))
     const { moved, skipped } = setBoardStatus({ ...run(fakeGh({})), board }, [69], 'In release')

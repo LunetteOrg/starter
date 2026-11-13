@@ -20,18 +20,14 @@ import { Git, gitAt } from '../git/git.ts'
 import { runCommand } from '../run-command.ts'
 import { SpawnerLive } from '../spawner.ts'
 import {
-  Board,
   type CandidateConfig,
   gitAuthEnv,
   guardDecision,
-  handle,
-  handlePush,
   type PullRequest,
   pickBoard,
   prFromEvent,
-  prFromGh,
-  type Run,
 } from './candidate.ts'
+import { Board, handle, handlePush, prFromGh, type Run } from './candidate-steps.ts'
 import { candidateConfigOf } from './config.ts'
 import { proved as provedOf } from './proved.ts'
 import { usageText } from './usage.ts'
@@ -163,9 +159,7 @@ export const candidateLayers = (input: Pick<CandidateInput, 'env' | 'cwd' | 'dry
     ghAt(input.cwd, { token, ...dryRun }),
   )
   // Board holds the Gh its own layer gives, apart from the repository's.
-  const boardLayer = boardGh
-    ? Layer.effect(Board)(Effect.map(Gh, (client) => Board.of({ gh: client }))).pipe(Layer.provide(boardGh))
-    : Board.none
+  const boardLayer = boardGh ? Board.over(boardGh) : Board.none
   return Layer.mergeAll(gh, boardLayer, gitAt(input.cwd, { env: gitAuthEnv(input.env), ...dryRun }))
 }
 
