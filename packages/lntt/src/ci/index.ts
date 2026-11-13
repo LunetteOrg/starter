@@ -4,7 +4,6 @@
 // the same plain logic (src/ci/sync.ts, src/ci/lock-sync.ts, src/ci/run.ts).
 
 export { actionName, versionMatches } from './actions.ts'
-export * as candidate from './candidate.ts'
 export { CircleciLoginRejected, mappingParameters, type Processor } from './circleci.ts'
 export { evaluateWhen } from './circleci-when.ts'
 export { type CiConfig, candidateConfig, ciConfig, emptyConfig } from './config.ts'
@@ -13,7 +12,6 @@ export { evaluate, interpolate } from './expressions.ts'
 export { holdDeadline, type LockScope, MAX_HOLD_MINUTES } from './lock-rules.ts'
 export { acquireLock, type Lock, LockError } from './lock-sync.ts'
 export type { Job, JobState, Local, Step } from './plan.ts'
-export { type Proved, type ProvedInput, proved } from './proved.ts'
 export { formatList, formatReport } from './report.ts'
 export { exitCode, type JobResult, machineLoad, runJobs, stopRunning, timeoutText } from './run.ts'
 export {

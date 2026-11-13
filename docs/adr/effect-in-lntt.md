@@ -62,7 +62,11 @@ GitHub's CLI, and the agents built on processes. A service of `lntt`'s own is de
 `Context.Service`, its live layer in its module: git is `Git` in
 `packages/lntt/src/git/git.ts` and GitHub's CLI is `Gh` in `packages/lntt/src/gh/gh.ts`, their
 operations typed and run through the spawner, in the current directory or the one the layer
-names (`gitAt`, `ghAt`); the agents
+names (`gitAt`, `ghAt`). A layer takes what changes how a run reaches GitHub or git: `ghAt` a token
+(the candidate automation's Projects token is a second layer of `Gh`, its service `Board` in
+`packages/lntt/src/ci/candidate.ts`) and a dry run, which prints a write's command instead of
+running it; `gitAt` the environment git starts with and a dry run of its push. `Gh.over` runs the
+same operations over any runner of gh's arguments, for a spec. The agents
 are `Agents` in `packages/lntt/src/review/asking.ts` (one agent run, and what keeps an agent
 from starting), its live layer in `packages/lntt/src/review/agents.ts` over the spawner, and
 `askAll` the logic over it (a slot per provider, the optional agents' grace, a stop). A
@@ -154,10 +158,8 @@ default is the sync function (the project's configuration in `lntt branch` and `
 run under `Effect.try`, which its spec replaces. What a module on Effect and the sync code of a
 module not yet moved both read, and which reaches nothing, is plain functions in a module that
 imports no Effect (what the base reads from the names git and GitHub give,
-`packages/lntt/src/base/names.ts`); the sync module keeps its own call to git or gh until it
-moves (`packages/lntt/src/ci/candidate.ts`, until `lntt ci candidate` moves, #340). The
-library's synchronous `localEvent` keeps its own calls to git too (`packages/lntt/src/ci/sync.ts`),
-until the shells go with #341.
+`packages/lntt/src/base/names.ts`); the library's synchronous `localEvent` keeps its own calls
+to git (`packages/lntt/src/ci/sync.ts`), until the shells go with #341.
 A defect of the Effect code reaches the edge with its stack. A piece leaves the bridge when
 its module moves to Effect. The library API of
 `@lntt/lntt` (`packages/lntt/src/index.ts`) stays on `Promise`, so a script that imports

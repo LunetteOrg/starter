@@ -10,15 +10,21 @@ import { Git, GitLive, gitAt } from './git.ts'
 const encode = (text: string) => new TextEncoder().encode(text)
 
 // git as a spawner in memory: what it was asked and where, and its answer by its arguments.
-function git(answer: (args: string[]) => { out?: string; err?: string; code?: number } | 'missing', dir?: string) {
+function git(
+  answer: (args: string[]) => { out?: string; err?: string; code?: number } | 'missing',
+  dir?: string,
+  options?: Parameters<typeof gitAt>[1],
+) {
   const asked: string[][] = []
   const cwds: (string | undefined)[] = []
+  const envs: (Record<string, unknown> | undefined)[] = []
   const spawn = (command: ChildProcess.Command) =>
     Effect.gen(function* () {
       if (command._tag !== 'StandardCommand') return yield* Effect.die('a piped command')
       const args = command.args.map(String)
       asked.push([command.command, ...args])
       cwds.push(command.options.cwd)
+      envs.push(command.options.env)
       const said = answer(args)
       if (said === 'missing')
         return yield* PlatformError.systemError({
@@ -41,10 +47,10 @@ function git(answer: (args: string[]) => { out?: string; err?: string; code?: nu
         unref: Effect.succeed(Effect.void),
       })
     })
-  const layer = (dir === undefined ? GitLive : gitAt(dir)).pipe(
+  const layer = (dir === undefined && options === undefined ? GitLive : gitAt(dir, options)).pipe(
     Layer.provide(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(ChildProcessSpawner.make(spawn))),
   )
-  return { asked, cwds, layer }
+  return { asked, cwds, envs, layer }
 }
 
 describe('Git on the machine', () => {
@@ -193,6 +199,71 @@ describe('Git on the machine', () => {
         [undefined, undefined, undefined, undefined],
         'GitLive runs in the current directory',
       )
+    }).pipe(Effect.provide(g.layer))
+  })
+})
+
+describe('the follow of the candidate', () => {
+  it.effect('reads each outcome, a failure included, without failing; the hooks never run on its rebase', () => {
+    const g = git((args) => (args.includes('rebase') ? { err: 'CONFLICT (content)\n', code: 1 } : { out: 'true\n' }))
+    return Effect.gen(function* () {
+      const repo = yield* Git
+      assert.deepStrictEqual(yield* repo.isShallow, { status: 0, stdout: 'true', stderr: '' })
+      assert.deepStrictEqual(yield* repo.rebaseIn({ dir: '/w', onto: 'abc' }), {
+        status: 1,
+        stdout: '',
+        stderr: 'CONFLICT (content)',
+      })
+      assert.deepStrictEqual(g.asked[1], [
+        'git',
+        '-C',
+        '/w',
+        '-c',
+        'core.hooksPath=/dev/null',
+        'rebase',
+        '--keep-empty',
+        'abc',
+      ])
+      yield* repo.fetchBranches({ branches: ['main', 'candidate/4'], unshallow: true })
+      assert.deepStrictEqual(g.asked[2], [
+        'git',
+        'fetch',
+        '--no-tags',
+        '--unshallow',
+        'origin',
+        '+refs/heads/main:refs/remotes/origin/main',
+        '+refs/heads/candidate/4:refs/remotes/origin/candidate/4',
+      ])
+    }).pipe(Effect.provide(g.layer))
+  })
+
+  it.effect('pushes with a lease on the head as read, without the hooks, and with the environment given', () => {
+    const g = git(() => ({}), '/clone', { env: { GIT_CONFIG_COUNT: '1' } })
+    return Effect.gen(function* () {
+      yield* (yield* Git).pushBranch({ sha: 'new', branch: 'candidate/4', expected: 'old' })
+      assert.deepStrictEqual(g.asked[0], [
+        'git',
+        '-c',
+        'core.hooksPath=/dev/null',
+        'push',
+        '--force-with-lease=refs/heads/candidate/4:old',
+        'origin',
+        'new:refs/heads/candidate/4',
+      ])
+      assert.deepStrictEqual(g.envs[0], { GIT_CONFIG_COUNT: '1' })
+      assert.strictEqual(g.cwds[0], '/clone')
+    }).pipe(Effect.provide(g.layer))
+  })
+
+  it.effect('a dry run prints the push and makes none; the rest still runs', () => {
+    const lines: string[] = []
+    const g = git(() => ({ out: 'sha' }), '/clone', { dryRun: (line) => lines.push(line) })
+    return Effect.gen(function* () {
+      const repo = yield* Git
+      assert.strictEqual((yield* repo.pushBranch({ sha: 'new', branch: 'candidate/4' })).status, 0)
+      yield* repo.headIn('/w')
+      assert.deepStrictEqual(lines, ['[dry-run] git push origin new:refs/heads/candidate/4'])
+      assert.deepStrictEqual(g.asked, [['git', '-C', '/w', 'rev-parse', 'HEAD']])
     }).pipe(Effect.provide(g.layer))
   })
 })

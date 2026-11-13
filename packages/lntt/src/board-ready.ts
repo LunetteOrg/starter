@@ -12,10 +12,10 @@
 //
 // Plain logic, no node: module: the queries and how an answer reads. lntt board ready runs
 // them as Effects over the Gh service (src/board/ready.ts); the candidate's merge runs them
-// over its synchronous Graphql (readWaiting, readIssueOnBoard, moveToReady) until lntt ci
-// moves to Effect (#340).
+// over the Gh service too, with the queries and the readings below (waitingQuery and waitingOf,
+// issueQuery, itemsQuery and issueOnBoardOf) and MOVE_TO_READY (src/ci/candidate.ts).
 
-import { type Graphql, same } from './board.ts'
+import { same } from './board.ts'
 
 export const DEFAULT_READY = 'Ready'
 
@@ -327,12 +327,6 @@ export const MOVE_TO_READY = `mutation($project: ID!, $item: ID!, $field: ID!, $
       }) { projectV2Item { id } }
     }`
 
-// The move, synchronous, for the candidate's merge until lntt ci moves to Effect (#340); lntt
-// board ready writes it through the Gh service (src/board/ready.ts).
-export function moveToReady(graphql: Graphql, target: ReadyTarget): void {
-  graphql(MOVE_TO_READY, { ...target })
-}
-
 // --- One issue, for the candidate's merge -----------------------------------------
 
 export interface Waiting {
@@ -345,14 +339,18 @@ export interface Waiting {
   more: boolean
 }
 
-// Who waits on `number`, read with the repository's token.
-export function readWaiting(graphql: Graphql, repo: string, number: number): Waiting {
+// Who waits on `number`: the query, read with the repository's token, and its answer's reading.
+export function waitingQuery(repo: string, number: number): { query: string; variables: Record<string, unknown> } {
   const [owner, name] = repo.split('/')
-  const data = graphql(
-    `query($owner:String!,$name:String!,$number:Int!){ repository(owner:$owner,name:$name){ issue(number:$number){
+  return {
+    query: `query($owner:String!,$name:String!,$number:Int!){ repository(owner:$owner,name:$name){ issue(number:$number){
       state blocking(first:100){ pageInfo{ hasNextPage } nodes{ number state repository{ nameWithOwner } } } } } }`,
-    { owner, name, number },
-  ).repository as {
+    variables: { owner, name, number },
+  }
+}
+
+export function waitingOf(answer: Record<string, unknown>, repo: string): Waiting {
+  const data = answer.repository as {
     issue: {
       state: string
       blocking: {
@@ -379,29 +377,35 @@ export interface IssueOnBoard {
   target: ReadyTarget | null
 }
 
-// One issue's facts with the repository's token (`graphql`) and its item on the
-// configured Project with the Projects token (`board`).
-export function readIssueOnBoard(
-  graphql: Graphql,
-  board: Graphql,
-  rules: ReadyRules,
-  repo: string,
-  number: number,
-): IssueOnBoard {
+// One issue's facts, read with the repository's token (issueQuery), and its item on the configured
+// Project, read with the Projects token (itemsQuery); issueOnBoardOf reads the two answers.
+export function issueQuery(rules: ReadyRules, repo: string, number: number) {
   const [owner, name] = repo.split('/')
-  const issue = (
-    graphql(
-      `query($owner:String!,$name:String!,$number:Int!){ repository(owner:$owner,name:$name){ issue(number:$number){ ${issueFields(rules)} } } }`,
-      { owner, name, number },
-    ).repository as { issue: LiveIssue }
-  ).issue
-  const items = (
-    board(
-      `query($owner:String!,$name:String!,$number:Int!){ repository(owner:$owner,name:$name){ issue(number:$number){
+  return {
+    query: `query($owner:String!,$name:String!,$number:Int!){ repository(owner:$owner,name:$name){ issue(number:$number){ ${issueFields(rules)} } } }`,
+    variables: { owner, name, number } as Record<string, unknown>,
+  }
+}
+
+export function itemsQuery(rules: ReadyRules, repo: string, number: number) {
+  const [owner, name] = repo.split('/')
+  return {
+    query: `query($owner:String!,$name:String!,$number:Int!){ repository(owner:$owner,name:$name){ issue(number:$number){
         projectItems(first:50){ nodes{ id isArchived ${STATUS_VALUE(rules)} ${itemFields(rules)}
           project{ id number owner{ ... on Organization{ login } ... on User{ login } } ${STATUS_FIELD(rules)} } } } } } }`,
-      { owner, name, number },
-    ).repository as {
+    variables: { owner, name, number } as Record<string, unknown>,
+  }
+}
+
+export function issueOnBoardOf(
+  issueAnswer: Record<string, unknown>,
+  itemsAnswer: Record<string, unknown>,
+  rules: ReadyRules,
+  repo: string,
+): IssueOnBoard {
+  const issue = (issueAnswer.repository as { issue: LiveIssue }).issue
+  const items = (
+    itemsAnswer.repository as {
       issue: {
         projectItems: {
           nodes: Array<

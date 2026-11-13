@@ -1,7 +1,7 @@
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
-import type { Gh } from '../../src/ci/candidate.ts'
-import { type ProvedInput, proved } from '../../src/ci/proved.ts'
+import { assert, describe, it } from '@effect/vitest'
+import * as Effect from 'effect/Effect'
+import { Gh, GhError } from '../gh/gh.ts'
+import { type ProvedInput, proved } from './proved.ts'
 
 const R = 'acme/app'
 const SHA = 'a'.repeat(40)
@@ -51,10 +51,11 @@ function api(): Api {
   }
 }
 
-function fake(answers: Api): Gh {
-  return {
-    read: (args) => {
-      assert.equal(args[0], 'api')
+// GitHub's API in memory: each path answered from `answers`, gh as the runner of Gh's operations.
+function fake(answers: Api) {
+  const client = {
+    read: (args: string[]) => {
+      assert.strictEqual(args[0], 'api')
       const path = args[1] as string
       if (!(path in answers)) throw new Error(`Command failed: gh api: HTTP 404 ${path}`)
       const answer = answers[path]
@@ -65,10 +66,16 @@ function fake(answers: Api): Gh {
       throw new Error('lntt ci proved never writes')
     },
   }
+  return Gh.over((args, { write } = {}) =>
+    Effect.try({
+      try: () => (write ? client.write() : client.read(args)),
+      catch: (error) => new GhError({ args, output: (error as Error).message }),
+    }),
+  )
 }
 
 function check(answers: Api, over: Partial<ProvedInput> = {}) {
-  return proved(fake(answers), { ...input, ...over })
+  return Effect.runSync(proved({ ...input, ...over }).pipe(Effect.provide(fake(answers))))
 }
 
 // The reason of a refusal; a tree proved reads `(proved)`, which no refusal matches.
@@ -78,32 +85,32 @@ function refusal(answers: Api, over: Partial<ProvedInput> = {}): string {
 }
 
 describe('lntt ci proved', () => {
-  test('proved: same tree, the base an ancestor of the head, the full CI green on the head', () => {
+  it('proved: same tree, the base an ancestor of the head, the full CI green on the head', () => {
     const result = check(api())
-    assert.equal(result.proved, true)
+    assert.strictEqual(result.proved, true)
     assert.match(result.reason, /#7/)
     assert.match(result.reason, /https:\/\/run\/11/)
   })
 
-  test('a base identical to the head proves too', () => {
+  it('a base identical to the head proves too', () => {
     const a = api()
     a[`repos/${R}/compare/${BEFORE}...${HEAD}`] = { status: 'identical' }
-    assert.equal(check(a).proved, true)
+    assert.strictEqual(check(a).proved, true)
   })
 
-  test('a different tree is not proved', () => {
+  it('a different tree is not proved', () => {
     const a = api()
     a[`repos/${R}/git/commits/${HEAD}`] = { tree: { sha: 'd'.repeat(40) } }
     assert.match(refusal(a), /tree/)
   })
 
-  test('a push no pull request explains is not proved', () => {
+  it('a push no pull request explains is not proved', () => {
     const a = api()
     a[`repos/${R}/commits/${SHA}/pulls`] = []
     assert.match(refusal(a), /no merged pull request/)
   })
 
-  test('a pull request merged into another branch, or not merged, does not count', () => {
+  it('a pull request merged into another branch, or not merged, does not count', () => {
     const a = api()
     a[`repos/${R}/commits/${SHA}/pulls`] = [
       { number: 7, merged_at: '2026-10-27T10:00:00Z', base: { ref: 'candidate/9' }, head: { sha: HEAD } },
@@ -112,7 +119,7 @@ describe('lntt ci proved', () => {
     assert.match(refusal(a), /no merged pull request/)
   })
 
-  test('two merged pull requests are ambiguous', () => {
+  it('two merged pull requests are ambiguous', () => {
     const a = api()
     const pr = { merged_at: '2026-10-27T10:00:00Z', base: { ref: 'main' }, head: { sha: HEAD } }
     a[`repos/${R}/commits/${SHA}/pulls`] = [
@@ -122,7 +129,7 @@ describe('lntt ci proved', () => {
     assert.match(refusal(a), /#7, #8/)
   })
 
-  test('a head that does not contain the previous tip of the branch is not proved', () => {
+  it('a head that does not contain the previous tip of the branch is not proved', () => {
     for (const status of ['behind', 'diverged']) {
       const a = api()
       a[`repos/${R}/compare/${BEFORE}...${HEAD}`] = { status }
@@ -130,18 +137,18 @@ describe('lntt ci proved', () => {
     }
   })
 
-  test('a push with no previous tip (a new branch) is not proved', () => {
+  it('a push with no previous tip (a new branch) is not proved', () => {
     assert.match(refusal(api(), { before: '0'.repeat(40) }), /previous tip/)
     assert.match(refusal(api(), { before: '' }), /previous tip/)
   })
 
-  test('no run of the workflow on the head is not proved', () => {
+  it('no run of the workflow on the head is not proved', () => {
     const a = api()
     a[`repos/${R}/actions/workflows/ci.yml/runs?head_sha=${HEAD}&per_page=100`] = { workflow_runs: [] }
     assert.match(refusal(a), /no pull request run/)
   })
 
-  test('a push run, or one still in progress, proves nothing', () => {
+  it('a push run, or one still in progress, proves nothing', () => {
     for (const run of [
       { id: 11, event: 'push', status: 'completed', conclusion: 'success' },
       { id: 11, event: 'pull_request', status: 'in_progress', conclusion: null },
@@ -152,7 +159,7 @@ describe('lntt ci proved', () => {
     }
   })
 
-  test('a job that failed, was skipped or is missing proves nothing', () => {
+  it('a job that failed, was skipped or is missing proves nothing', () => {
     for (const jobs of [
       [{ name: 'ci', conclusion: 'failure', steps: [{ name: 'Full CI', conclusion: 'skipped' }] }],
       [{ name: 'ci', conclusion: 'skipped', steps: [] }],
@@ -164,7 +171,7 @@ describe('lntt ci proved', () => {
     }
   })
 
-  test('a green run at the minimal level (the marker step skipped) proves nothing', () => {
+  it('a green run at the minimal level (the marker step skipped) proves nothing', () => {
     const a = api()
     a[`repos/${R}/actions/runs/11/jobs?per_page=100`] = {
       jobs: [{ name: 'ci', conclusion: 'success', steps: [{ name: 'Full CI', conclusion: 'skipped' }] }],
@@ -172,13 +179,13 @@ describe('lntt ci proved', () => {
     assert.match(refusal(a), /no pull request run/)
   })
 
-  test('without a marker step, the green jobs prove the tree', () => {
+  it('without a marker step, the green jobs prove the tree', () => {
     const a = api()
     a[`repos/${R}/actions/runs/11/jobs?per_page=100`] = { jobs: [{ name: 'ci', conclusion: 'success', steps: [] }] }
-    assert.equal(check(a, { step: undefined }).proved, true)
+    assert.strictEqual(check(a, { step: undefined }).proved, true)
   })
 
-  test('every named job must be green in the same run', () => {
+  it('every named job must be green in the same run', () => {
     const a = api()
     a[`repos/${R}/actions/runs/11/jobs?per_page=100`] = {
       jobs: [
@@ -189,7 +196,7 @@ describe('lntt ci proved', () => {
     assert.match(refusal(a, { jobs: ['ci', 'e2e'], step: undefined }), /no pull request run/)
   })
 
-  test('a red run beside a green one: the green one proves', () => {
+  it('a red run beside a green one: the green one proves', () => {
     const a = api()
     a[`repos/${R}/actions/workflows/ci.yml/runs?head_sha=${HEAD}&per_page=100`] = {
       workflow_runs: [
@@ -204,23 +211,23 @@ describe('lntt ci proved', () => {
       ],
     }
     a[`repos/${R}/actions/runs/10/jobs?per_page=100`] = { jobs: [{ name: 'ci', conclusion: 'failure', steps: [] }] }
-    assert.equal(check(a).proved, true)
+    assert.strictEqual(check(a).proved, true)
   })
 
-  test('an API error is not proved, never thrown', () => {
+  it('an API error is not proved, never thrown', () => {
     const a = api()
     a[`repos/${R}/compare/${BEFORE}...${HEAD}`] = new Error('Command failed: gh api: HTTP 502')
     assert.match(refusal(a), /HTTP 502/)
     assert.match(refusal({}), /404/)
   })
 
-  test('an answer of the wrong shape is not proved', () => {
+  it('an answer of the wrong shape is not proved', () => {
     const a = api()
     a[`repos/${R}/git/commits/${SHA}`] = { tree: null }
     assert.match(refusal(a), /tree/)
   })
 
-  test('a malformed input is not proved', () => {
+  it('a malformed input is not proved', () => {
     assert.match(refusal(api(), { sha: 'HEAD' }), /sha/)
     assert.match(refusal(api(), { jobs: [] }), /job/)
   })
