@@ -13,6 +13,8 @@ export function repository() {
   let renamed: string[] = []
   // A git that cannot list the refs: pointingAt fails as git would.
   let refsUnreadable = false
+  // A git whose merge-base fails for a reason other than "no common history".
+  let mergeBaseBroken = false
 
   // The commit a revision names, as `git rev-parse --verify` resolves it; null for none.
   const resolve = (rev: string): string | null => {
@@ -64,6 +66,11 @@ export function repository() {
     unreadableRefs() {
       refsUnreadable = true
     },
+    // merge-base fails as git does on a revision it does not know (exit 128), not as it does on
+    // histories with nothing in common (exit 1).
+    brokenMergeBase() {
+      mergeBaseBroken = true
+    },
     current: () => ('detached' in head ? '' : head.branch),
     resolve,
     renamed: () => renamed,
@@ -83,10 +90,15 @@ export function repository() {
               }),
         mergeBase: (a, b) =>
           Effect.suspend(() => {
+            if (mergeBaseBroken) {
+              return Effect.fail(
+                new GitError({ args: ['merge-base', a, b], output: `fatal: Not a valid object name ${b}`, code: 128 }),
+              )
+            }
             const of = ancestors(resolve(b))
             const common = ancestors(resolve(a)).find((id) => of.includes(id))
             return common === undefined
-              ? Effect.fail(new GitError({ args: ['merge-base', a, b], output: '' }))
+              ? Effect.fail(new GitError({ args: ['merge-base', a, b], output: '', code: 1 }))
               : Effect.succeed(common)
           }),
         isAncestor: (a, b) => Effect.sync(() => ancestors(resolve(b)).includes(resolve(a) as string)),

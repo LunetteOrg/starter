@@ -153,6 +153,43 @@ describe('the base of a branch', () => {
   )
 })
 
+describe('the base of a branch, when git cannot find the fork point', () => {
+  it.effect('a merge-base that fails for another reason than "no common history" is its GitError', () =>
+    Effect.gen(function* () {
+      const { c, resolve } = setup()
+      c.switch('feat/8/x', 'origin/candidate/13')
+      c.brokenMergeBase()
+      const error = yield* Effect.flip(resolve({}))
+      assert.strictEqual(error._tag, 'GitError')
+      assert.match(error.message, /merge-base.*fatal: Not a valid object name/)
+    }),
+  )
+})
+
+describe('the base of a branch, when git cannot start', () => {
+  it.effect('a merge-base that has no exit code (git did not start) is its GitError, not a fallback', () =>
+    Effect.gen(function* () {
+      const { c } = setup()
+      c.switch('feat/9/x', 'origin/candidate/13')
+      const gone = Git.memory({
+        current: Effect.succeed('feat/9/x'),
+        originHead: Effect.succeed(null),
+        verify: (rev) => Effect.sync(() => c.resolve(rev)),
+        mergeBase: () => Effect.fail(new GitError({ args: ['merge-base'], output: 'spawn git ENOENT' })),
+      })
+      const error = yield* Effect.flip(
+        resolveBase({ candidate: CANDIDATE, openCandidate: Effect.succeed('candidate/13'), for: 'head' }).pipe(
+          Effect.provide(gone),
+        ),
+      )
+      assert.deepStrictEqual(error._tag === 'GitError' ? [error._tag, error.code] : [error._tag], [
+        'GitError',
+        undefined,
+      ])
+    }),
+  )
+})
+
 describe('the candidate at a detached HEAD', () => {
   it.effect('is the candidate whose origin/ ref points at it; none for another commit', () =>
     Effect.gen(function* () {

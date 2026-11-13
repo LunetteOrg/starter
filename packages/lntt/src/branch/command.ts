@@ -31,13 +31,15 @@ import { Gh, GhLive } from '../gh/gh.ts'
 import { Git, GitLive } from '../git/git.ts'
 import { runCommand } from '../run-command.ts'
 import { SpawnerLive } from '../spawner.ts'
+import { readStdin } from '../stdin.ts'
 import type { Host } from '../viewer.ts'
 
 // A command as branch-cli.ts parsed it.
 export type BranchCommand =
   | { kind: 'name'; issue: number | null; type?: string; slug?: string }
-  // `pushed`: the lines git gave the pre-push hook on stdin, when the check runs there.
-  | { kind: 'check'; branch?: string; pushed?: string }
+  // `fromStdin`: the check runs in the pre-push hook, and reads the lines git gives it on stdin.
+  // `pushed`: those lines already read.
+  | { kind: 'check'; branch?: string; pushed?: string; fromStdin?: true }
   // `host`: where the session runs; in Orca, the worktree's linked issue gives the name.
   | { kind: 'rename'; host: Host }
 
@@ -48,6 +50,22 @@ export class BranchFailed extends Data.TaggedError('BranchFailed')<{ message: st
 export const ProjectData = Context.Reference<() => Record<string, unknown>>('@lntt/lntt/branch/command/ProjectData', {
   defaultValue: () => projectData,
 })
+
+// The reader of stdin, which a spec replaces.
+export const Stdin = Context.Reference<() => Promise<string>>('@lntt/lntt/branch/command/Stdin', {
+  defaultValue: () => readStdin,
+})
+
+// What git gave the pre-push hook on stdin; a stdin that cannot be read is a BranchFailed.
+const pushedOnStdin = Effect.flatMap(Stdin, (read) =>
+  Effect.tryPromise({
+    try: read,
+    catch: (cause) =>
+      new BranchFailed({
+        message: `cannot read the pushed refs from stdin: ${cause instanceof Error ? cause.message : String(cause)}`,
+      }),
+  }),
+)
 
 // The project's configuration; one the loader refuses is a BranchFailed.
 const configured = Effect.flatMap(ProjectData, (load) =>
@@ -118,8 +136,8 @@ const name = Effect.fnUntraced(function* (parsed: Extract<BranchCommand, { kind:
 const check = Effect.fnUntraced(function* (parsed: Extract<BranchCommand, { kind: 'check' }>) {
   const data = yield* configured
   const rules = branchRules(data)
-  const branches =
-    parsed.pushed === undefined ? [parsed.branch || (yield* currentBranch(data))] : pushedBranches(parsed.pushed)
+  const pushed = parsed.fromStdin ? yield* pushedOnStdin : parsed.pushed
+  const branches = pushed === undefined ? [parsed.branch || (yield* currentBranch(data))] : pushedBranches(pushed)
   let failed = false
   for (const branch of branches) {
     const result = checkBranch(branch, rules)

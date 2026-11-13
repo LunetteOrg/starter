@@ -8,21 +8,43 @@ import { candidateConfig } from './ci/config.ts'
 
 export type { Base, BaseFor, CandidateRules }
 
+// What an Effect of the base runs on: its modules and the layer of git and gh in one directory,
+// loaded and built once per `cwd` (the layer is a description: the services are built by each run).
+const machines = new Map<
+  string,
+  Promise<{ base: typeof import('./base/base.ts'); run: <A>(effect: Eff<A>) => Promise<A> }>
+>()
+
+type Eff<A> = import('effect/Effect').Effect<A, unknown, unknown>
+
+function machine(cwd: string) {
+  let loaded = machines.get(cwd)
+  if (loaded === undefined) {
+    loaded = (async () => {
+      const [Effect, Layer, base, { gitAt }, { ghAt }, { SpawnerLive }] = await Promise.all([
+        import('effect/Effect'),
+        import('effect/Layer'),
+        import('./base/base.ts'),
+        import('./git/git.ts'),
+        import('./gh/gh.ts'),
+        import('./spawner.ts'),
+      ])
+      const live = Layer.mergeAll(gitAt(cwd), ghAt(cwd)).pipe(Layer.provide(SpawnerLive))
+      return {
+        base,
+        run: <A>(effect: Eff<A>) =>
+          Effect.runPromise(Effect.provide(effect, live) as import('effect/Effect').Effect<A>),
+      }
+    })()
+    machines.set(cwd, loaded)
+  }
+  return loaded
+}
+
 // Runs an Effect of the base on git and gh in `cwd`; a failure rejects with its error.
-async function onMachine<A>(
-  cwd: string,
-  program: (base: typeof import('./base/base.ts')) => import('effect/Effect').Effect<A, unknown, unknown>,
-): Promise<A> {
-  const [Effect, Layer, base, { gitAt }, { ghAt }, { SpawnerLive }] = await Promise.all([
-    import('effect/Effect'),
-    import('effect/Layer'),
-    import('./base/base.ts'),
-    import('./git/git.ts'),
-    import('./gh/gh.ts'),
-    import('./spawner.ts'),
-  ])
-  const live = Layer.mergeAll(gitAt(cwd), ghAt(cwd)).pipe(Layer.provide(SpawnerLive))
-  return Effect.runPromise(Effect.provide(program(base), live) as import('effect/Effect').Effect<A>)
+async function onMachine<A>(cwd: string, program: (base: typeof import('./base/base.ts')) => Eff<A>): Promise<A> {
+  const { base, run } = await machine(cwd)
+  return run(program(base))
 }
 
 // The branch pull requests go into: delivery.candidate.base, else origin/HEAD's, else main.

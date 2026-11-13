@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  closeSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
@@ -83,6 +93,20 @@ describe('lntt branch check --pre-push', () => {
     assert.equal(r.status, 1)
     assert.match(r.stderr, /wip/)
     assert.equal(push(`refs/heads/x ${SHA} refs/heads/feat/1/ok ${ZERO}\n`).status, 0)
+  })
+
+  test('a stdin it cannot read is one line and exit 1', () => {
+    // A directory as stdin: a read of it fails with EISDIR.
+    const directory = openSync(tmp, 'r')
+    const r = spawnSync(process.execPath, [BIN, 'branch', 'check', '--pre-push'], {
+      cwd: repo,
+      encoding: 'utf8',
+      stdio: [directory, 'pipe', 'pipe'],
+    })
+    closeSync(directory)
+    assert.equal(r.status, 1, r.stderr)
+    assert.match(r.stderr, /^lntt branch: cannot read the pushed refs from stdin: EISDIR\b/)
+    assert.equal(r.stderr.trim().split('\n').length, 1)
   })
 })
 

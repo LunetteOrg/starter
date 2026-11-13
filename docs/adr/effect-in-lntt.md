@@ -153,7 +153,10 @@ round).
 ### The bridge, while modules move
 
 A Promise function a module on Effect still calls runs under `Effect.tryPromise`, which
-passes it a signal an interrupt aborts when it takes one (a `Spawn` does). The sync code of
+passes it a signal an interrupt aborts when it takes one (a `Spawn` does). One that takes none is
+read at one place the same way as the sync code below: stdin, `readStdin` in
+`packages/lntt/src/stdin.ts`, which `lntt branch check --pre-push` reads through a
+`Context.Reference` its spec replaces. The sync code of
 modules not yet moved that a module on Effect needs is read at one place, a `Context.Reference`
 whose default is the sync function, run under `Effect.try`, which its spec replaces: what it
 throws is a tagged error of the command, reported by its message like any expected failure (the
@@ -173,7 +176,9 @@ it needs no Effect: a library function whose logic moved (`askAll`, `runRound`),
 function a command not yet on Effect calls (`projectBase` in `packages/lntt/src/base.ts`), imports its
 Effect form with `await import(...)` when it is called and runs it with `Effect.runPromise`,
 its callbacks under `Effect.sync`, `Effect.try` and `Effect.tryPromise` (a `Spawn` is the
-`Agents` layer `Agents.fromSpawn`, an `AbortSignal` the stop). A `Spawn` that rejects is
+`Agents` layer `Agents.fromSpawn`, an `AbortSignal` the stop). The base keeps its modules and
+its layer of git and gh per directory (`packages/lntt/src/base.ts`); the layer is a description
+that holds no resource, so each run builds the services again. A `Spawn` that rejects is
 that agent's failed answer in `askAll`; an ask, a brief or a cited line that throws rejects
 `runRound` with what it threw.
 A command that does not call it loads no Effect for it.

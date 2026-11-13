@@ -8,7 +8,7 @@ import * as TestConsole from 'effect/testing/TestConsole'
 import { Gh, GhError, type Issue } from '../gh/gh.ts'
 import { repository } from '../testing/repository.ts'
 import type { Host } from '../viewer.ts'
-import { type BranchCommand, command, ProjectData } from './command.ts'
+import { type BranchCommand, command, ProjectData, Stdin } from './command.ts'
 
 const ISSUE_77: Issue = {
   title: 'Branch names follow type/issue/slug whatever tool creates the worktree',
@@ -116,6 +116,32 @@ describe('lntt branch name', () => {
     }),
   )
 
+  it.effect('without --issue, --type and --slug give the name type/no-issue/slug', () =>
+    Effect.gen(function* () {
+      const r = yield* world().lntt({ kind: 'name', issue: null, type: 'docs', slug: 'readme-fix' })
+      assert.deepStrictEqual([r.code, r.out], [0, 'docs/no-issue/readme-fix'])
+    }),
+  )
+
+  // docs/process/delivery.md: a slug is one to four lower-case words joined by `-`.
+  it.effect('without --issue, a slug of four lower-case words is a valid name, one of five is not', () =>
+    Effect.gen(function* () {
+      const four = yield* world().lntt({ kind: 'name', issue: null, type: 'docs', slug: 'a-b-c-d' })
+      assert.deepStrictEqual([four.code, four.out], [0, 'docs/no-issue/a-b-c-d'])
+      const five = yield* world().lntt({ kind: 'name', issue: null, type: 'docs', slug: 'a-b-c-d-e' })
+      assert.strictEqual(five.code, 1)
+      assert.match(five.err, /slug a-b-c-d-e is not 1 to 4 lower-case words joined by -/)
+    }),
+  )
+
+  it.effect('without --issue, a slug that is not lower-case is not a valid name', () =>
+    Effect.gen(function* () {
+      const r = yield* world().lntt({ kind: 'name', issue: null, type: 'docs', slug: 'Not A Slug' })
+      assert.strictEqual(r.code, 1)
+      assert.match(r.err, /docs\/no-issue\/Not A Slug is not a valid name: slug Not A Slug is not 1 to 4/)
+    }),
+  )
+
   it.effect("a type the project's delivery.branches.types does not list is not a valid name", () =>
     Effect.gen(function* () {
       const w = world()
@@ -142,6 +168,56 @@ describe('lntt branch check', () => {
         (yield* w.lntt({ kind: 'check', pushed: `(delete) ${ZERO} refs/heads/old-thing ${SHA}\n` })).code,
         0,
       )
+    }),
+  )
+
+  it.effect('reads the pushed refs from stdin in the pre-push hook', () =>
+    Effect.gen(function* () {
+      const w = world()
+      const ZERO = '0000000000000000000000000000000000000000'
+      const SHA = '1111111111111111111111111111111111111111'
+      const r = yield* w
+        .lntt({ kind: 'check', fromStdin: true })
+        .pipe(Effect.provideService(Stdin, () => Promise.resolve(`refs/heads/main ${SHA} refs/heads/wip ${ZERO}\n`)))
+      assert.strictEqual(r.code, 1)
+      assert.match(r.err, /wip does not follow type\/issue\/slug/)
+    }),
+  )
+
+  it.effect('a stdin it cannot read is one line with its reason and exit 1, not a crash', () =>
+    Effect.gen(function* () {
+      const w = world()
+      const r = yield* w
+        .lntt({ kind: 'check', fromStdin: true })
+        .pipe(
+          Effect.provideService(Stdin, () =>
+            Promise.reject(new Error('EISDIR: illegal operation on a directory, read')),
+          ),
+        )
+      assert.deepStrictEqual(
+        [r.code, r.err],
+        [1, 'lntt branch: cannot read the pushed refs from stdin: EISDIR: illegal operation on a directory, read'],
+      )
+    }),
+  )
+
+  it.effect('a stdin that rejects with something that is not an Error is still one line', () =>
+    Effect.gen(function* () {
+      const r = yield* world()
+        .lntt({ kind: 'check', fromStdin: true })
+        .pipe(Effect.provideService(Stdin, () => Promise.reject('closed')))
+      assert.deepStrictEqual([r.code, r.err], [1, 'lntt branch: cannot read the pushed refs from stdin: closed'])
+    }),
+  )
+
+  it.effect('refs already read (no fromStdin) never ask stdin', () =>
+    Effect.gen(function* () {
+      const w = world()
+      const SHA = '1111111111111111111111111111111111111111'
+      const r = yield* w
+        .lntt({ kind: 'check', pushed: `refs/heads/x ${SHA} refs/heads/feat/1/ok ${SHA}\n` })
+        .pipe(Effect.provideService(Stdin, () => Promise.reject(new Error('stdin was read'))))
+      assert.deepStrictEqual([r.code, r.err], [0, ''])
     }),
   )
 
