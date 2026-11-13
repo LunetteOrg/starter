@@ -116,6 +116,24 @@ describe('lntt branch name', () => {
     }),
   )
 
+  it.effect('without --issue, --type and --slug give the name type/no-issue/slug', () =>
+    Effect.gen(function* () {
+      const r = yield* world().lntt({ kind: 'name', issue: null, type: 'docs', slug: 'readme-fix' })
+      assert.deepStrictEqual([r.code, r.out], [0, 'docs/no-issue/readme-fix'])
+    }),
+  )
+
+  it.effect('without --issue, a slug that is not 1 to 5 lower-case words is not a valid name', () =>
+    Effect.gen(function* () {
+      const r = yield* world().lntt({ kind: 'name', issue: null, type: 'docs', slug: 'Not A Slug' })
+      assert.strictEqual(r.code, 1)
+      assert.match(
+        r.err,
+        /docs\/no-issue\/Not A Slug is not a valid name: slug Not A Slug is not 1 to \d+ lower-case words/,
+      )
+    }),
+  )
+
   it.effect("a type the project's delivery.branches.types does not list is not a valid name", () =>
     Effect.gen(function* () {
       const w = world()
