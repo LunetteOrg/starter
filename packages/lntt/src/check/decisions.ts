@@ -3,11 +3,19 @@
 // DiscenTech/pelion's adr-lint.mjs. The rules checked are the decisions skill's
 // recording rules: one file per subject, named after it, corrected in place, cited by
 // file.
+//
+// The checks are plain functions over the project as read (Tree, src/check/tree.ts) and the
+// paths' functions (Effect's Path); the diff from a base comes from Git. src/check/decisions.spec.ts
+// runs them on a tree in memory.
 
-import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, statSync } from 'node:fs'
-import { join, matchesGlob, posix, relative, resolve } from 'node:path'
-import { type CheckOptions, projectFiles, type Result } from './check.ts'
+import * as Effect from 'effect/Effect'
+import * as Path from 'effect/Path'
+import { Git } from '../git/git.ts'
+import { matchesGlob } from './glob.ts'
+import type { CheckOptions, Result } from './results.ts'
+import type { Tree } from './tree.ts'
+
+type Paths = Path.Path
 
 interface Log {
   name: string
@@ -26,18 +34,23 @@ function externalOf(data: Record<string, unknown>): Record<string, string> {
   return (data.recording as { externalReferences?: Record<string, string> } | undefined)?.externalReferences ?? {}
 }
 
-function logsOf(data: Record<string, unknown>): Log[] | null {
+function logsOf(p: Paths, data: Record<string, unknown>): Log[] | null {
   const recording = data.recording as { logs?: Record<string, Omit<Log, 'name'>> } | undefined
   if (!recording) return null
-  return Object.entries(recording.logs ?? {}).map(([name, log]) => ({ name, ...log, path: trimSlash(log.path) }))
+  return Object.entries(recording.logs ?? {}).map(([name, log]) => ({ name, ...log, path: trimSlash(p, log.path) }))
 }
 
-function trimSlash(path: string): string {
-  return posix.normalize(path).replace(/\/+$/, '')
+function trimSlash(p: Paths, path: string): string {
+  return p.normalize(path).replace(/\/+$/, '')
 }
 
-function read(root: string, path: string): string {
-  return readFileSync(join(root, path), 'utf8')
+function read(tree: Tree, path: string): string {
+  return tree.text(path) ?? ''
+}
+
+// A file of the project, or a folder holding one.
+function exists(tree: Tree, path: string): boolean {
+  return tree.isFile(path) || tree.files.some((f) => f.startsWith(`${path}/`))
 }
 
 function lineOf(text: string, index: number): number {
@@ -46,14 +59,14 @@ function lineOf(text: string, index: number): number {
 
 // The records of a log: the Markdown files right in its folder, less its index, its
 // template and any README.
-function recordsOf(log: Log, files: string[]): string[] {
+function recordsOf(p: Paths, log: Log, files: string[]): string[] {
   return files.filter(
     (f) =>
-      posix.dirname(f) === log.path &&
+      p.dirname(f) === log.path &&
       f.endsWith('.md') &&
       f !== log.index &&
       f !== log.template &&
-      posix.basename(f) !== 'README.md',
+      p.basename(f) !== 'README.md',
   )
 }
 
@@ -84,23 +97,23 @@ function links(text: string): Link[] {
 
 // A link's file, relative to the root: null for a URL, an anchor in the same file, or a
 // place outside the repository.
-function resolveLink(from: string, target: string): string | null {
+function resolveLink(p: Paths, from: string, target: string): string | null {
   if (/^([a-z][a-z0-9+.-]*:|#)/i.test(target)) return null
   let path = target.split('#')[0] as string
   if (!path) return null
   try {
     path = decodeURIComponent(path)
   } catch {}
-  const joined = path.startsWith('/') ? path.slice(1) : posix.join(posix.dirname(from), path)
-  const normal = posix.normalize(joined)
-  return normal.startsWith('..') ? null : trimSlash(normal)
+  const joined = path.startsWith('/') ? path.slice(1) : p.join(p.dirname(from), path)
+  const normal = p.normalize(joined)
+  return normal.startsWith('..') ? null : trimSlash(p, normal)
 }
 
 function inLog(path: string, logs: Log[]): boolean {
   return logs.some((log) => path === log.path || path.startsWith(`${log.path}/`))
 }
 
-function indexCheck(root: string, logs: Log[], files: string[]): Draft[] {
+function indexCheck(p: Paths, tree: Tree, logs: Log[], files: string[]): Draft[] {
   const out: Draft[] = []
   const counts: string[] = []
   for (const log of logs) {
@@ -114,7 +127,7 @@ function indexCheck(root: string, logs: Log[], files: string[]): Draft[] {
       })
       continue
     }
-    if (!existsSync(join(root, log.index))) {
+    if (!tree.isFile(log.index)) {
       out.push({
         check: 'index',
         status: 'FAIL',
@@ -124,19 +137,19 @@ function indexCheck(root: string, logs: Log[], files: string[]): Draft[] {
       })
       continue
     }
-    const records = recordsOf(log, files)
-    const text = prose(read(root, log.index))
+    const records = recordsOf(p, log, files)
+    const text = prose(read(tree, log.index))
     const listed = new Set<string>()
     let rows = 0
     for (const link of links(text)) {
-      const target = resolveLink(log.index, link.target)
-      if (target === null || posix.dirname(target) !== log.path || !target.endsWith('.md')) continue
+      const target = resolveLink(p, log.index, link.target)
+      if (target === null || p.dirname(target) !== log.path || !target.endsWith('.md')) continue
       if (target === log.template || target === log.index) continue
       listed.add(target)
       const line = lineOf(text, link.index)
       const row = (text.split('\n')[line - 1] as string).trimStart().startsWith('|')
       if (row) rows++
-      if (!existsSync(join(root, target))) {
+      if (!exists(tree, target)) {
         out.push({
           check: 'index',
           status: 'FAIL',
@@ -147,7 +160,7 @@ function indexCheck(root: string, logs: Log[], files: string[]): Draft[] {
         continue
       }
       // A row labelled with a file's subject names that file; a label in words is a title.
-      const subject = posix.basename(target, '.md')
+      const subject = p.basename(target, '.md')
       if (row && link.text !== null && /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.md)?$/.test(link.text)) {
         const label = link.text.replace(/\.md$/, '')
         if (label !== subject) {
@@ -156,7 +169,7 @@ function indexCheck(root: string, logs: Log[], files: string[]): Draft[] {
             status: 'FAIL',
             path: log.index,
             line,
-            message: `the row "${label}" points at ${posix.basename(target)}: the label is the file's subject, ${subject}`,
+            message: `the row "${label}" points at ${p.basename(target)}: the label is the file's subject, ${subject}`,
           })
         }
       }
@@ -189,11 +202,17 @@ const WRAP = String.raw`(?:[ \t]*\n[ \t]*(?:#|\/\/|\*|--|<!--)?[ \t]*)`
 // `ADR-NNNN`, `PDR NN`, `ADR #N`, also wrapped; not a numbered list item on the next line.
 const NUMBERED = new RegExp(String.raw`\b([AP]DR)[ \t]?[-#]?${WRAP}?(\d+)\b(?![.)][ \t])`, 'g')
 
-function referencesCheck(root: string, logs: Log[], files: string[], external: Record<string, string>): Draft[] {
+function referencesCheck(
+  p: Paths,
+  tree: Tree,
+  logs: Log[],
+  files: string[],
+  external: Record<string, string>,
+): Draft[] {
   const out: Draft[] = []
   const fail = (path: string, line: number, message: string) =>
     out.push({ check: 'references', status: 'FAIL', path, line, message })
-  const exists = (path: string) => existsSync(join(root, path))
+  const there = (path: string) => exists(tree, path)
   const templates = new Set(logs.map((l) => l.template).filter(Boolean))
   // A path to a record from the root, in a document or in code: split after its folder
   // or at a hyphen when a line was rewrapped.
@@ -220,9 +239,9 @@ function referencesCheck(root: string, logs: Log[], files: string[], external: R
   let scanned = 0
   let elsewhere = 0
   for (const file of files) {
-    if (!TEXT.test(file) || templates.has(file) || statSync(join(root, file)).size > 1024 * 1024) continue
+    if (!TEXT.test(file) || templates.has(file) || tree.size(file) > 1024 * 1024) continue
     scanned++
-    const text = read(root, file)
+    const text = read(tree, file)
     const markdown = /\.mdx?$/.test(file)
     const body = markdown ? prose(text) : text
     // Its paths name another project's records; a number is wrong in any project.
@@ -231,10 +250,10 @@ function referencesCheck(root: string, logs: Log[], files: string[], external: R
     if (markdown && !foreign) {
       const ownIndex = logs.find((l) => l.index === file)
       for (const link of links(body)) {
-        const target = resolveLink(file, link.target)
-        if (target === null || !inLog(target, logs) || exists(target)) continue
+        const target = resolveLink(p, file, link.target)
+        if (target === null || !inLog(target, logs) || there(target)) continue
         // An index's rows are the index check's.
-        if (ownIndex && posix.dirname(target) === ownIndex.path) continue
+        if (ownIndex && p.dirname(target) === ownIndex.path) continue
         fail(file, lineOf(body, link.index), `a link to ${target}, which does not exist`)
       }
     }
@@ -245,7 +264,7 @@ function referencesCheck(root: string, logs: Log[], files: string[], external: R
         // file name: a sentence that ends on the folder goes on with a word.
         if (!m[4] && /^[^/]*\/\s*\n/.test(m[0].slice(m[1].length))) continue
         const base = `${m[1]}/${m[2]}${m[3] ?? ''}`
-        const ok = m[4] ? exists(`${base}${m[4]}`) : exists(base) || exists(`${base}.md`)
+        const ok = m[4] ? there(`${base}${m[4]}`) : there(base) || there(`${base}.md`)
         if (!ok) fail(file, lineOf(text, m.index), `cites ${base}${m[4] ?? ''}, which does not exist`)
       }
     }
@@ -278,7 +297,7 @@ const BOARD = /(?<![\w&/#])(?<!\]\()#\d+(?![\w-])|(?<=\bhttps?:\/\/\S*)\/(?:issu
 // The Markdown files of the logs whose `boardReferences` is false, at any depth and the
 // index included, or those of the files given (what pre-commit stages): none cites the
 // board.
-function boardRefsCheck(root: string, logs: Log[], files: string[], given: string[] | null): Draft[] {
+function boardRefsCheck(tree: Tree, logs: Log[], files: string[], given: string[] | null): Draft[] {
   const strict = logs.filter((log) => log.boardReferences === false)
   if (strict.length === 0) {
     return [
@@ -292,13 +311,13 @@ function boardRefsCheck(root: string, logs: Log[], files: string[], given: strin
     ]
   }
   const known = new Set(files)
-  const read = given === null ? files : given.filter((f) => known.has(f))
+  const reading = given === null ? files : given.filter((f) => known.has(f))
   const logOf = (file: string) =>
     /\.mdx?$/.test(file) ? strict.find((log) => file.startsWith(`${log.path}/`)) : undefined
-  const scope = read.filter((f) => logOf(f) !== undefined)
+  const scope = reading.filter((f) => logOf(f) !== undefined)
   const out: Draft[] = []
   for (const file of scope) {
-    const body = prose(readFileSync(join(root, file), 'utf8'))
+    const body = prose(read(tree, file))
     for (const m of body.matchAll(BOARD)) {
       out.push({
         check: 'board-refs',
@@ -340,10 +359,10 @@ const RESIDUES: [string, RegExp][] = [
   ['## Aggiornamento', /^#{2,}\s*(?:aggiornamento|emendamento)\b/i],
 ]
 
-function residuesCheck(root: string, records: string[], only: Set<string> | null): Draft[] {
+function residuesCheck(tree: Tree, records: string[], only: Set<string> | null): Draft[] {
   const out: Draft[] = []
   for (const record of records) {
-    prose(read(root, record))
+    prose(read(tree, record))
       .split('\n')
       .forEach((line, i) => {
         for (const [name, re] of RESIDUES) {
@@ -392,25 +411,25 @@ function frontmatter(text: string): Frontmatter | null {
   return { status: value.replace(/^["']|["']$/g, ''), allowed: [...new Set([value, ...listed])], line: at + 2 }
 }
 
-function namesCheck(root: string, logs: Log[], files: string[], only: Set<string> | null): Draft[] {
+function namesCheck(p: Paths, tree: Tree, logs: Log[], files: string[], only: Set<string> | null): Draft[] {
   const out: Draft[] = []
   const fail = (path: string, line: number, message: string) =>
     out.push({ check: 'names', status: 'FAIL', path, line, message })
   const summary: string[] = []
   for (const log of logs) {
     const allowed =
-      log.template && existsSync(join(root, log.template)) ? frontmatter(read(root, log.template))?.allowed : undefined
+      log.template && tree.isFile(log.template) ? frontmatter(read(tree, log.template))?.allowed : undefined
     // Only a template that lists them (`status: proposed # proposed | accepted`) says
     // which statuses the log allows.
     const statuses = allowed && allowed.length > 1 ? allowed : null
-    const records = recordsOf(log, files).filter((r) => !only || only.has(r))
+    const records = recordsOf(p, log, files).filter((r) => !only || only.has(r))
     for (const record of records) {
-      const name = posix.basename(record)
+      const name = p.basename(record)
       if (/^\d/.test(name)) fail(record, 1, 'the file name starts with a number: a record is named after its subject')
       else if (/\d{4}-\d{2}(-\d{2})?/.test(name))
         fail(record, 1, 'the file name carries a date: name it after its subject')
       else if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*\.md$/.test(name)) fail(record, 1, 'the file name is not kebab-case')
-      const text = read(root, record)
+      const text = read(tree, record)
       const lines = text.split('\n')
       // Code is not prose here either: a title that quotes `ADR NN` in a code span names it.
       const bare = prose(text).split('\n')
@@ -449,32 +468,27 @@ interface Touched {
   from: string | null
 }
 
-function diffOf(root: string, base: string): Touched[] | null {
-  try {
-    return execFileSync(
-      'git',
-      ['-C', root, '-c', 'core.quotepath=off', 'diff', '--name-status', '-M', `${base}...HEAD`],
-      {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-        maxBuffer: 256 * 1024 * 1024,
-      },
-    )
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => {
-        const [status, a, b] = line.split('\t') as [string, string, string | undefined]
-        return { status: status.charAt(0), path: b ?? a, from: b ? a : null }
-      })
-  } catch {
-    return null
-  }
+// `git diff --name-status -M` as touched files.
+export function parseNameStatus(text: string): Touched[] {
+  return text
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [status, a, b] = line.split('\t') as [string, string, string | undefined]
+      return { status: status.charAt(0), path: b ?? a, from: b ? a : null }
+    })
 }
+
+// What the branch changes from the merge base with `base`; null when that diff does not run.
+const diffOf = Effect.fnUntraced(function* (root: string, base: string) {
+  const status = yield* (yield* Git).nameStatus(root, `${base}...HEAD`).pipe(Effect.orElseSucceed(() => null))
+  return status === null ? null : parseNameStatus(status)
+})
 
 const VERBS: Record<string, string> = { A: 'added', M: 'modified', D: 'deleted', R: 'renamed', C: 'copied' }
 
-function inventory(logs: Log[], diff: Touched[]): Draft[] {
-  const recordLog = (path: string) => logs.find((log) => recordsOf(log, [path]).length > 0)
+function inventory(p: Paths, logs: Log[], diff: Touched[]): Draft[] {
+  const recordLog = (path: string) => logs.find((log) => recordsOf(p, log, [path]).length > 0)
   const out: Draft[] = []
   const code: string[] = []
   for (const t of [...diff].sort((a, b) => a.path.localeCompare(b.path))) {
@@ -510,14 +524,14 @@ function inventory(logs: Log[], diff: Touched[]): Draft[] {
 
 // Every line carrying a figure: a percentage, an "N of M", a number of two digits or
 // more; the frontmatter, issue numbers and dates are identifiers, not figures.
-function figures(root: string, paths: string[]): Draft[] {
+function figures(tree: Tree, paths: string[]): Draft[] {
   const out: Draft[] = []
   for (const path of paths) {
-    if (!existsSync(join(root, path)) || !statSync(join(root, path)).isFile()) {
+    if (!tree.isFile(path)) {
       out.push({ check: 'figures', status: 'FAIL', path, line: null, message: 'no such file' })
       continue
     }
-    const text = read(root, path)
+    const text = read(tree, path)
     const front = /^---\n[\s\S]*?\n---(?:\n|$)/.exec(text)?.[0].split('\n').length ?? 0
     text.split('\n').forEach((line, i) => {
       if (i < front - 1) return
@@ -534,7 +548,7 @@ function withArea(drafts: Draft[]): Result[] {
   return drafts.map((d) => ({ area: 'decisions', ...d }))
 }
 
-const NO_RECORDING: Result = {
+export const NO_RECORDING: Result = {
   area: 'decisions',
   check: 'structure',
   status: 'NOT RUN',
@@ -543,76 +557,80 @@ const NO_RECORDING: Result = {
   message: 'no recording section in the configuration',
 }
 
-function touchedRecords(logs: Log[], diff: Touched[]): Set<string> {
+function touchedRecords(p: Paths, logs: Log[], diff: Touched[]): Set<string> {
   return new Set(
-    diff.filter((t) => t.status !== 'D' && logs.some((log) => recordsOf(log, [t.path]).length > 0)).map((t) => t.path),
+    diff
+      .filter((t) => t.status !== 'D' && logs.some((log) => recordsOf(p, log, [t.path]).length > 0))
+      .map((t) => t.path),
   )
 }
+
+const NOT_DIFFED = (base: string | undefined) =>
+  `git diff ${base}...HEAD does not run: the ref does not resolve, or has no merge base with HEAD`
 
 // The structure of every log: index and files, references, residues, names. With a
 // base, the inventory of the diff, residues and names on the records it touches only,
 // and (with `figures`) the figures of those records.
-export function checkDecisions(options: CheckOptions, { figures: withFigures }: { figures: boolean }): Result[] {
-  const logs = logsOf(options.data)
+export const checkDecisions = Effect.fnUntraced(function* (
+  options: CheckOptions,
+  tree: Tree,
+  { figures: withFigures }: { figures: boolean },
+) {
+  const p = yield* Path.Path
+  const logs = logsOf(p, options.data)
   if (logs === null) return [NO_RECORDING]
-  const { root } = options
-  const files = projectFiles(root)
+  const { files } = tree
   let only: Set<string> | null = null
   const extra: Draft[] = []
   if (options.base !== undefined) {
-    const diff = diffOf(root, options.base)
+    const diff = yield* diffOf(options.root, options.base)
     if (diff === null) {
-      extra.push({
-        check: 'inventory',
-        status: 'NOT RUN',
-        path: null,
-        line: null,
-        message: `git diff ${options.base}...HEAD does not run: the ref does not resolve, or has no merge base with HEAD`,
-      })
+      extra.push({ check: 'inventory', status: 'NOT RUN', path: null, line: null, message: NOT_DIFFED(options.base) })
     } else {
-      only = touchedRecords(logs, diff)
-      extra.push(...inventory(logs, diff))
-      if (withFigures) extra.push(...figures(root, [...only].sort()))
+      only = touchedRecords(p, logs, diff)
+      extra.push(...inventory(p, logs, diff))
+      if (withFigures) extra.push(...figures(tree, [...only].sort()))
     }
   }
-  const records = logs.flatMap((log) => recordsOf(log, files)).filter((r) => !only || only.has(r))
+  const records = logs.flatMap((log) => recordsOf(p, log, files)).filter((r) => !only || only.has(r))
   return withArea([
-    ...indexCheck(root, logs, files),
-    ...referencesCheck(root, logs, files, externalOf(options.data)),
-    ...boardRefsCheck(root, logs, files, null),
-    ...residuesCheck(root, records, only),
-    ...namesCheck(root, logs, files, only),
+    ...indexCheck(p, tree, logs, files),
+    ...referencesCheck(p, tree, logs, files, externalOf(options.data)),
+    ...boardRefsCheck(tree, logs, files, null),
+    ...residuesCheck(tree, records, only),
+    ...namesCheck(p, tree, logs, files, only),
     ...extra,
   ])
-}
+})
 
-// `lntt check decisions numbers [<file>...]`: the figures of the files given, else of
-// the records the diff from the base touches.
-export function decisionFigures(options: CheckOptions, paths: string[]): Result[] {
-  if (paths.length > 0) return withArea(figures(options.root, paths))
-  const logs = logsOf(options.data)
+// `lntt check decisions numbers [<file>...]`: the figures of the files given (read into the tree
+// as `also`), else of the records the diff from the base touches.
+export const decisionFigures = Effect.fnUntraced(function* (options: CheckOptions, tree: Tree, paths: string[]) {
+  if (paths.length > 0) return withArea(figures(tree, paths))
+  const p = yield* Path.Path
+  const logs = logsOf(p, options.data)
   if (logs === null) return [NO_RECORDING]
-  const diff = diffOf(options.root, options.base as string)
+  const diff = yield* diffOf(options.root, options.base as string)
   if (diff === null) {
     return withArea([
-      {
-        check: 'figures',
-        status: 'NOT RUN',
-        path: null,
-        line: null,
-        message: `git diff ${options.base}...HEAD does not run: the ref does not resolve, or has no merge base with HEAD`,
-      },
+      { check: 'figures', status: 'NOT RUN', path: null, line: null, message: NOT_DIFFED(options.base) },
     ])
   }
-  return withArea(figures(options.root, [...touchedRecords(logs, diff)].sort()))
-}
+  return withArea(figures(tree, [...touchedRecords(p, logs, diff)].sort()))
+})
+
+// The paths a command line gives, relative to the root: a shell gives them from `cwd`, where lntt
+// runs.
+export const givenPaths = Effect.fnUntraced(function* (root: string, cwd: string, paths: string[]) {
+  const p = yield* Path.Path
+  return paths.map((given) => p.relative(root, p.resolve(cwd, given)))
+})
 
 // `lntt check decisions board-refs [<file>...]`: the board references of the files
-// given, else of every log that forbids them.
-export function decisionBoardRefs(options: CheckOptions, paths: string[]): Result[] {
-  const logs = logsOf(options.data)
+// given (relative to the root), else of every log that forbids them.
+export const decisionBoardRefs = Effect.fnUntraced(function* (options: CheckOptions, tree: Tree, given: string[]) {
+  const p = yield* Path.Path
+  const logs = logsOf(p, options.data)
   if (logs === null) return [NO_RECORDING]
-  // A path given is read from where lntt runs, as a shell gives it.
-  const given = paths.map((p) => relative(options.root, resolve(p)))
-  return withArea(boardRefsCheck(options.root, logs, projectFiles(options.root), given.length > 0 ? given : null))
-}
+  return withArea(boardRefsCheck(tree, logs, tree.files, given.length > 0 ? given : null))
+})

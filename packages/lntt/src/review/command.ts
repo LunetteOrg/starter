@@ -9,9 +9,8 @@
 // The logic reaches the machine only through services: git (Git), GitHub (Gh), the agents (Agents), the state
 // store and the progress file (ReviewStore), the working tree (FileSystem, Path), the clock
 // (Clock), processes (ChildProcessSpawner), the terminal (Console), the environment (Config, HostEnv), the
-// project's configuration (ProjectConfig), the agents' mailbox (Mailbox), and lntt check's areas, not
-// yet on Effect, through the bridge (ReviewBridge). src/review/command.spec.ts runs it on their
-// in-memory layers.
+// project's configuration (ProjectConfig), the agents' mailbox (Mailbox), and lntt check's areas
+// (Checks, src/check/command.ts). src/review/command.spec.ts runs it on their in-memory layers.
 
 import * as Clock from 'effect/Clock'
 import * as Config from 'effect/Config'
@@ -30,7 +29,9 @@ import * as Scope from 'effect/Scope'
 import { BaseError, localRef, projectBase } from '../base/base.ts'
 import { type CandidateRules, candidateRules } from '../base/names.ts'
 import { type BranchRules, branchRules } from '../branch.ts'
-import { citeTarget, citeText, isArea } from '../check.ts'
+import { Checks, ChecksLive } from '../check/command.ts'
+import { TestRunnerLive } from '../check/mutate.ts'
+import { citeTarget, citeText, isArea } from '../check/results.ts'
 import { ProjectConfig, ProjectConfigLive } from '../config/load.ts'
 import { projectPhase } from '../config/project.ts'
 import { exit, Exit as LnttExit } from '../exit.ts'
@@ -62,11 +63,10 @@ import { runCommand } from '../run-command.ts'
 import { type LockedError, lockWorktree, Pids, WorktreeLockLive } from '../worktree/lock.ts'
 import { AgentsLive } from './agents.ts'
 import { Agents, askAll } from './asking.ts'
-import { ReviewBridge, ReviewBridgeLive, ReviewFailed } from './bridge.ts'
 import { HostEnv, orcaSubagents } from './orca.ts'
 import { reporting } from './reporter.ts'
 import { runRound } from './round.ts'
-import { ReviewStore, ReviewStoreLive } from './store.ts'
+import { ReviewFailed, ReviewStore, ReviewStoreLive } from './store.ts'
 import {
   destinations,
   duration,
@@ -258,7 +258,7 @@ export const round = Effect.fnUntraced(function* (
   const git = yield* Git
   const agents = yield* Agents
   const store = yield* ReviewStore
-  const bridge = yield* ReviewBridge
+  const checked = yield* Checks
   const { self } = yield* Pids
   if (!options.plan) {
     yield* lock('lntt review')
@@ -332,7 +332,7 @@ export const round = Effect.fnUntraced(function* (
     files: files.length,
     optionalGraceMs: config.optionalGraceMinutes * 60_000,
   })
-  const checks = files.length === 0 ? {} : yield* bridge.checks(areas, { root, data, base: range.from })
+  const checks = files.length === 0 ? {} : yield* checked.lenses(areas, { root, data, base: range.from })
   const report = yield* reporting(yield* orcaSubagents(root))
   const began = yield* Clock.currentTimeMillis
   const diff = files.length > 0 ? yield* git.diff(`${range.from}..${head}`) : ''
@@ -543,6 +543,7 @@ export const command = (parsed: ReviewCommand) =>
       Effect.tapDefect((defect) => (defect instanceof LnttExit ? Effect.void : reportError(parsed, defect))),
       Effect.catchTags({
         ReviewFailed: failure,
+        CheckFailed: failure,
         ReviewRefused: failure,
         LockedError: failure,
         PlatformError: failure,
@@ -556,12 +557,10 @@ export const command = (parsed: ReviewCommand) =>
 
 // The services on the machine; the operator's home and the environment are read at the edge.
 const live = (home: string, env: Record<string, string | undefined>) =>
-  Layer.mergeAll(ReviewStoreLive(home), mailboxIn(env.LNTT_MESSAGES_DIR || undefined)).pipe(
-    Layer.provideMerge(Layer.mergeAll(GitLive, GhLive)),
+  Layer.mergeAll(ReviewStoreLive(home), mailboxIn(env.LNTT_MESSAGES_DIR || undefined), ChecksLive).pipe(
+    Layer.provideMerge(Layer.mergeAll(GitLive, GhLive, TestRunnerLive)),
     Layer.provideMerge(ProjectConfigLive),
-    Layer.provideMerge(
-      Layer.mergeAll(AgentsLive, WorktreeLockLive, ReviewBridgeLive, Path.layer, Digest.layerWebCrypto),
-    ),
+    Layer.provideMerge(Layer.mergeAll(AgentsLive, WorktreeLockLive, Path.layer, Digest.layerWebCrypto)),
   )
 
 // Runs a round, a reply or `allow` as the process's main program (src/run-command.ts): its exit

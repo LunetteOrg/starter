@@ -125,9 +125,12 @@ lntt ci local | candidate | proved
   `path`, `line`, `message`), `--base <ref>` limits a check to what the diff touches
   where that makes sense. What a project ships to others (a shared package, a skill)
   cites the records of the project that installs it: `recording.externalReferences`
-  names those files with the reason, and a glob that matches nothing fails. A new
-  deterministic check is a check of an area, or a new area, never a script beside a
-  skill.
+  names those files with the reason, and a glob that matches nothing fails. The checks
+  read the project's files once (`packages/lntt/src/check/tree.ts`): a binary file, known by
+  its extension, and a file past 16 MiB are there with their size and no text; a file that
+  is there and cannot be read fails the command, so a check never passes on a file it did
+  not read. A new deterministic check is a check of an area, or a new area, never a script
+  beside a skill.
 - **A report on Lunette itself goes upstream through `lntt issue`, on the operator's
   approval.** The flow and the marker are in
   [delivery](../process/delivery.md#the-retrospective). The `retrospective` skill calls

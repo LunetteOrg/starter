@@ -51,6 +51,13 @@ export interface Comment {
   body: string
 }
 
+// A pull request's body and head, as lntt check reads them.
+export interface PullRequestBody {
+  number: number
+  body: string | null
+  headRefName: string
+}
+
 export interface GhOperations {
   // owner/name of the repository gh works on.
   readonly repository: Run<string>
@@ -74,6 +81,10 @@ export interface GhOperations {
   readonly issueComments: (query: { repo: string; number: number }) => Run<Comment[]>
   // Replaces the body of comment `id`.
   readonly updateComment: (comment: { repo: string; id: number; body: string }) => Run<void>
+
+  // What lntt check's body area reads: pull request `number` of the repository gh works on, the
+  // current branch's when none is given.
+  readonly pullRequest: (number?: number) => Run<PullRequestBody>
 }
 
 export class Gh extends Context.Service<Gh, GhOperations>()('@lntt/lntt/gh/Gh') {
@@ -95,6 +106,7 @@ export class Gh extends Context.Service<Gh, GhOperations>()('@lntt/lntt/gh/Gh') 
         commentPullRequest: fn('commentPullRequest'),
         issueComments: fn('issueComments'),
         updateComment: fn('updateComment'),
+        pullRequest: fn('pullRequest'),
         ...answers,
       }),
     )
@@ -209,6 +221,14 @@ export const ghAt = (dir?: string) =>
               '--input',
               '-',
             ]),
+          ),
+        pullRequest: (number) =>
+          json<PullRequestBody>(
+            'pr',
+            'view',
+            ...(number === undefined ? [] : [String(number)]),
+            '--json',
+            'number,body,headRefName',
           ),
       })
     }),
