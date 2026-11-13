@@ -232,8 +232,6 @@ describe('recordMerges', () => {
   })
 })
 
-// A gh double: reads answered from `answers` by the first key the command line
-// contains (a string as is, anything else as JSON), writes recorded.
 describe('isCandidateMerge', () => {
   it('only the merged candidate into the base', () => {
     assert.strictEqual(isCandidateMerge(config, { merged: true, baseRef: 'main', headRef: 'candidate/4' }), true)
@@ -424,5 +422,3 @@ describe('gitAuthEnv', () => {
     assert.deepStrictEqual(gitAuthEnv({ GITHUB_ACTIONS: 'true' }), {})
   })
 })
-
-// The fake's reads, and the writes of a real dry run: logged, never made.

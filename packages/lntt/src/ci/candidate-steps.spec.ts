@@ -123,6 +123,17 @@ const notices = () => {
 }
 
 describe('retarget', () => {
+  it('a real run whose gh pr create gives no pull request number fails, naming what gh said', () => {
+    const gh = fakeGh({
+      '--state open': [],
+      'matching-refs': [],
+      '--state all': [],
+      'commits/main': { sha: 'b'.repeat(40), commit: { tree: { sha: 'c'.repeat(40) } } },
+    })
+    const odd: Gh = { ...gh, write: (args, input) => (args[1] === 'create' ? 'created' : gh.write(args, input)) }
+    assert.throws(() => retarget(run(odd), pr), /gh pr create gave no pull request number: created/)
+  })
+
   it('a dry run that creates the candidate comments it as <new>, the number it does not have yet', () => {
     const lines: string[] = []
     const gh = dryGh(
@@ -436,6 +447,11 @@ describe('candidateMerged', () => {
 })
 
 describe('sweep', () => {
+  it('an open pull request of another shape fails the sweep, naming the read', () => {
+    const gh = fakeGh({ '--state open': [], 'api graphql': [{ number: 12 }] })
+    assert.throws(() => sweep(run(gh)), /the open pull requests: an answer of another shape/)
+  })
+
   it('moves stranded pull requests onto the open candidate before the event is handled', () => {
     const gh = fakeGh({
       'api graphql': [node(12, { baseRefName: 'candidate/3' })],
@@ -554,6 +570,32 @@ describe('sweep', () => {
 // A board double: the issue's project items answered to the GraphQL read, the
 // mutations recorded.
 describe('setBoardStatus', () => {
+  it('a project of another shape fails that issue before any write, and the others go on', () => {
+    const lines: string[] = []
+    const writes: string[] = []
+    const board: Gh = {
+      read: (args) =>
+        args.includes('number=69')
+          ? JSON.stringify({
+              data: { repository: { issue: { projectItems: { nodes: [{ id: 'I', project: null }] } } } },
+            })
+          : JSON.stringify({ data: { repository: { issue: { projectItems: { nodes: [] } } } } }),
+      write: (args) => {
+        writes.push(args.join(' '))
+        return ''
+      },
+    }
+    assert.throws(
+      () => setBoardStatus({ ...run(fakeGh({})), board, log: (l) => lines.push(l) }, [69, 70], 'In release'),
+      /#69: the projects of #69: an answer of another shape/,
+    )
+    assert.deepStrictEqual(writes, [])
+    assert.ok(
+      lines.some((l) => l.includes('#70 is on no project')),
+      lines.join('\n'),
+    )
+  })
+
   it('an answer of another shape fails that issue only, as a refused call would, and the others go on', () => {
     const lines: string[] = []
     const board: Gh = {
@@ -962,6 +1004,32 @@ describe("the Ready check on the candidate's merge", () => {
   const lines: string[] = []
   const go = ({ gh, board }: { gh: Gh; board: Gh }, c = withReady, r = merge) =>
     readyAfterMerge({ gh, board, repo: 'o/r', config: c, log: (l) => lines.push(l) }, r)
+
+  it('an answer of another shape fails the issue it is about, by name, not as a notice', () => {
+    const shaped = (fake: ReturnType<typeof fakeBoard>, query: string): { gh: Gh; board: Gh } => ({
+      ...fake,
+      gh: {
+        ...fake.gh,
+        read: (args) => (args.join(' ').includes(query) ? '{"data":{}}' : fake.gh.read(args)),
+      },
+    })
+    const issues = { 69: { blocking: [486] }, 486: { blockedBy: [{ number: 69, state: 'CLOSED' }] } }
+    // Who waits on the closed issue.
+    assert.throws(
+      () => go(shaped(fakeBoard(issues, { merged }), 'blocking(first')),
+      /#69: who waits on #69: an answer of another shape/,
+    )
+    // The waiting issue's own facts.
+    const facts = fakeBoard(issues, { merged })
+    const factsGh: Gh = {
+      ...facts.gh,
+      read: (args) =>
+        args.join(' ').includes('number=486') && !args.join(' ').includes('projectItems')
+          ? '{"data":{}}'
+          : facts.gh.read(args),
+    }
+    assert.throws(() => go({ ...facts, gh: factsGh }), /#486: #486 on the board: an answer of another shape/)
+  })
 
   it('an issue the merge unblocked moves, with the evidence on the candidate', () => {
     const fake = fakeBoard(

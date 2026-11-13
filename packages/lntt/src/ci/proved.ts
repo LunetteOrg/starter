@@ -47,13 +47,14 @@ const treeOf = Effect.fnUntraced(function* (repo: string, sha: string) {
 
 // The run's jobs are all green, and each ran the marker step green.
 const runProves = Effect.fnUntraced(function* (input: ProvedInput, run: WorkflowRun) {
-  if (!PR_EVENTS.has(run.event) || run.status !== 'completed') return false
+  // An element of another shape proves nothing.
+  if (!PR_EVENTS.has(run?.event) || run?.status !== 'completed') return false
   const jobs = yield* (yield* Gh).runJobs({ repo: input.repo, run: run.id })
   return input.jobs.every((name) => {
-    const job = jobs.find((j) => j.name === name)
+    const job = jobs.find((j) => j?.name === name)
     if (job?.conclusion !== 'success') return false
     if (input.step === undefined) return true
-    return (job?.steps ?? []).some((s) => s.name === input.step && s.conclusion === 'success')
+    return (job?.steps ?? []).some((s) => s?.name === input.step && s?.conclusion === 'success')
   })
 })
 
@@ -65,7 +66,7 @@ const prove = Effect.fnUntraced(function* (input: ProvedInput) {
   if (!SHA.test(before) || NO_COMMIT.test(before)) return yield* fail(`no previous tip of ${branch} to compare with`)
 
   const merged = (yield* gh.commitPullRequests({ repo, sha })).filter(
-    (pr) => pr.merged_at !== null && pr.base?.ref === branch,
+    (pr) => pr?.merged_at != null && pr?.base?.ref === branch,
   )
   if (merged.length === 0) return yield* fail(`no merged pull request into ${branch} explains ${sha}`)
   if (merged.length > 1)
@@ -73,7 +74,7 @@ const prove = Effect.fnUntraced(function* (input: ProvedInput) {
       `more than one merged pull request explains ${sha}: ${merged.map((p) => `#${p.number}`).join(', ')}`,
     )
   const [pr] = merged as [(typeof merged)[number]]
-  const head = pr.head.sha
+  const head = String(pr.head?.sha)
   if (!SHA.test(head)) return yield* fail(`#${pr.number} has no head commit`)
 
   // The same tree as the head the pull request ran on.

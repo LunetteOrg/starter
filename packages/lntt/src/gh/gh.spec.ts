@@ -5,7 +5,7 @@ import * as PlatformError from 'effect/PlatformError'
 import { type ChildProcess, ChildProcessSpawner } from 'effect/process'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
-import { Gh, ghAt } from './gh.ts'
+import { Gh, GhError, ghAt } from './gh.ts'
 
 const encode = (text: string) => new TextEncoder().encode(text)
 
@@ -336,6 +336,26 @@ describe("the candidate automation's operations", () => {
     return Effect.gen(function* () {
       const error = yield* Effect.flip((yield* Gh).closeIssue({ repo: 'o/r', number: 9 }))
       assert.strictEqual(error.message, 'gh issue close failed: GraphQL: Resource not accessible by integration')
+    }).pipe(Effect.provide(g.layer))
+  })
+})
+
+describe("the candidate automation's reads of another shape", () => {
+  it.effect('a list that is not one, or a field missing, is a GhError naming the answer', () => {
+    const g = gh(() => ({ out: '{}' }))
+    return Effect.gen(function* () {
+      const client = yield* Gh
+      const reads: Effect.Effect<unknown, GhError>[] = [
+        client.candidatePullRequests({ repo: 'o/r', base: 'main', prefix: 'candidate/' }),
+        client.branchesUnder({ repo: 'o/r', prefix: 'candidate/' }),
+        client.commitPullRequests({ repo: 'o/r', sha: 'abc' }),
+        client.commitOf({ repo: 'o/r', ref: 'main' }),
+      ]
+      for (const read of reads) {
+        const error = yield* Effect.flip(read)
+        assert.instanceOf(error, GhError)
+        assert.match(error.message, /an answer of another shape: \{\}$/)
+      }
     }).pipe(Effect.provide(g.layer))
   })
 })

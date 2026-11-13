@@ -315,39 +315,46 @@ export const setBoardStatus = Effect.fnUntraced(function* (run: Run, issues: num
   const [owner, name] = repo.split('/')
   const moveOne = Effect.fnUntraced(function* (number: number) {
     const answer = yield* board.graphqlFields(BOARD_QUERY, { owner, name, number })
-    const nodes = yield* reading(
-      `the projects of #${number}`,
-      () =>
-        (answer as { repository: { issue: { projectItems: { nodes: BoardItem[] } } } }).repository.issue.projectItems
-          .nodes,
+    // Every project the issue is on, read whole before anything is moved: an answer of another
+    // shape fails this issue before a write.
+    const projects = yield* reading(`the projects of #${number}`, () =>
+      (
+        answer as { repository: { issue: { projectItems: { nodes: BoardItem[] } } } }
+      ).repository.issue.projectItems.nodes.map((node) => ({
+        item: String(node.id),
+        id: String(node.project.id),
+        title: String(node.project.title),
+        field: node.project.field?.id ? String(node.project.field.id) : null,
+        options: (node.project.field?.options ?? []).map((o) => ({ id: String(o.id), name: String(o.name) })),
+        current: node.fieldValueByName?.optionId,
+      })),
     )
-    if (nodes.length === 0) {
+    if (projects.length === 0) {
       log(`::notice title=Board not moved::#${number} is on no project: nothing to move to "${status}".`)
       skipped.push(number)
       return
     }
     let found = false
-    for (const node of nodes) {
-      const field = node.project.field
-      if (!field?.id) {
+    for (const project of projects) {
+      if (!project.field) {
         log(
-          `::notice title=Board not moved::project "${node.project.title}" has no Status field: #${number} is not moved to "${status}".`,
+          `::notice title=Board not moved::project "${project.title}" has no Status field: #${number} is not moved to "${status}".`,
         )
         continue
       }
-      const option = field.options?.find((o) => o.name.toLowerCase() === status.toLowerCase())
+      const option = project.options.find((o) => o.name.toLowerCase() === status.toLowerCase())
       if (!option) {
         log(
-          `::notice title=Board not moved::"${status}" is not an option of the Status field of project "${node.project.title}" (${(field.options ?? []).map((o) => o.name).join(', ')}): #${number} is not moved. Check delivery.candidate.status, or add it from the project's web UI (field menu, edit), never with updateProjectV2Field, which resets every item's status (the github-board skill, references/github-project.md, "Changing a field's options").`,
+          `::notice title=Board not moved::"${status}" is not an option of the Status field of project "${project.title}" (${project.options.map((o) => o.name).join(', ')}): #${number} is not moved. Check delivery.candidate.status, or add it from the project's web UI (field menu, edit), never with updateProjectV2Field, which resets every item's status (the github-board skill, references/github-project.md, "Changing a field's options").`,
         )
         continue
       }
       found = true
-      if (node.fieldValueByName?.optionId === option.id) continue
+      if (project.current === option.id) continue
       yield* board.graphqlWrite(BOARD_MUTATION, {
-        project: node.project.id,
-        item: node.id,
-        field: field.id,
+        project: project.id,
+        item: project.item,
+        field: project.field,
         option: option.id,
       })
       if (!moved.includes(number)) moved.push(number)

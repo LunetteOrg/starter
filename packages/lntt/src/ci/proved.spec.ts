@@ -235,6 +235,25 @@ describe('lntt ci proved', () => {
     assert.match(result.reason, /an answer of another shape/)
   })
 
+  it('an element of another shape in a list is not proved either, with the reason', () => {
+    const a = api()
+    a[`repos/${R}/commits/${SHA}/pulls`] = [null]
+    assert.deepStrictEqual(check(a).proved, false)
+    const b = api()
+    for (const key of Object.keys(b)) if (key.includes('/actions/workflows/')) b[key] = { workflow_runs: [null] }
+    const result = check(b)
+    assert.strictEqual(result.proved, false)
+    assert.match(result.reason, /^no pull request run of ci\.yml/)
+  })
+
+  it('a call gh refuses is not proved, with what gh said', () => {
+    const a = api()
+    a[`repos/${R}/commits/${SHA}/pulls`] = new Error('HTTP 403: rate limit')
+    const result = check(a)
+    assert.strictEqual(result.proved, false)
+    assert.match(result.reason, /HTTP 403: rate limit/)
+  })
+
   it('a malformed input is not proved', () => {
     assert.match(refusal(api(), { sha: 'HEAD' }), /sha/)
     assert.match(refusal(api(), { jobs: [] }), /job/)
