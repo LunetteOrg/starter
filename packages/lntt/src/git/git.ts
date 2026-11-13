@@ -59,6 +59,27 @@ export interface GitOperations {
   readonly written: (range: string) => Run<string>
   // `git worktree list --porcelain` of the repository whose git directory is `gitDir`.
   readonly worktrees: (gitDir: string) => Run<string>
+
+  // What lntt check reads, in `dir` (`git -C <dir>`): the project's root, below the top of the
+  // working tree when the project is nested.
+  // The files tracked or new and not ignored, relative to `dir`; with `others`, only the new ones.
+  readonly listFiles: (dir: string, options?: { others?: boolean }) => Run<string[]>
+  // The directories git ignores that are left whole, each ending in `/`.
+  readonly ignoredDirectories: (dir: string) => Run<string[]>
+  // The lines the working tree adds from `base`, with no context, the paths relative to `dir`.
+  readonly addedFrom: (dir: string, base: string) => Run<string>
+  // `git diff --name-status -M <range>`, the paths unquoted; null when the range does not resolve.
+  readonly nameStatus: (dir: string, range: string) => Run<string | null>
+  // The tracked files the working tree changes from HEAD, staged or not, deletions included.
+  readonly changedFromHead: (dir: string) => Run<string[]>
+  // The top of the working tree `dir` is in.
+  readonly topOf: (dir: string) => Run<string>
+  // `git rev-parse --absolute-git-dir` in `dir`.
+  readonly gitDirOf: (dir: string) => Run<string>
+  // A detached worktree of HEAD at `path`, its removal, and the prune of those whose folder is gone.
+  readonly addWorktree: (dir: string, path: string) => Run<void>
+  readonly removeWorktree: (dir: string, path: string) => Run<void>
+  readonly pruneWorktrees: (dir: string) => Run<void>
 }
 
 export class Git extends Context.Service<Git, GitOperations>()('@lntt/lntt/git/Git') {
@@ -89,11 +110,24 @@ export class Git extends Context.Service<Git, GitOperations>()('@lntt/lntt/git/G
         diff: fn('diff'),
         written: fn('written'),
         worktrees: fn('worktrees'),
+        listFiles: fn('listFiles'),
+        ignoredDirectories: fn('ignoredDirectories'),
+        addedFrom: fn('addedFrom'),
+        nameStatus: fn('nameStatus'),
+        changedFromHead: fn('changedFromHead'),
+        topOf: fn('topOf'),
+        gitDirOf: fn('gitDirOf'),
+        addWorktree: fn('addWorktree'),
+        removeWorktree: fn('removeWorktree'),
+        pruneWorktrees: fn('pruneWorktrees'),
         ...answers,
       }),
     )
   }
 }
+
+// The paths of a -z listing.
+const split = (out: string) => out.split('\0').filter(Boolean)
 
 // git on the machine, in `dir`, else in the current directory.
 export const gitAt = (dir?: string) =>
@@ -150,6 +184,42 @@ export const gitAt = (dir?: string) =>
             range,
           ),
         worktrees: (gitDir) => run('--git-dir', gitDir, 'worktree', 'list', '--porcelain'),
+        listFiles: (dir, options = {}) =>
+          Effect.map(
+            run('-C', dir, 'ls-files', '-z', ...(options.others ? [] : ['--cached']), '--others', '--exclude-standard'),
+            split,
+          ),
+        ignoredDirectories: (dir) =>
+          Effect.map(
+            run('-C', dir, 'ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory'),
+            split,
+          ),
+        addedFrom: (dir, base) =>
+          run(
+            '-C',
+            dir,
+            '-c',
+            'core.quotePath=false',
+            'diff',
+            '-U0',
+            '--no-renames',
+            '--no-color',
+            '--no-ext-diff',
+            '--relative',
+            '--src-prefix=a/',
+            '--dst-prefix=b/',
+            base,
+          ),
+        nameStatus: (dir, range) =>
+          ask('-C', dir, '-c', 'core.quotePath=false', 'diff', '--name-status', '-M', '--no-color', range),
+        changedFromHead: (dir) =>
+          Effect.map(run('-C', dir, 'diff', '-z', '--name-only', '--no-renames', 'HEAD'), split),
+        topOf: (dir) => run('-C', dir, 'rev-parse', '--show-toplevel'),
+        gitDirOf: (dir) => run('-C', dir, 'rev-parse', '--absolute-git-dir'),
+        addWorktree: (dir, path) =>
+          Effect.asVoid(run('-C', dir, 'worktree', 'add', '--detach', '--quiet', path, 'HEAD')),
+        removeWorktree: (dir, path) => Effect.asVoid(run('-C', dir, 'worktree', 'remove', '--force', path)),
+        pruneWorktrees: (dir) => Effect.asVoid(run('-C', dir, 'worktree', 'prune')),
       })
     }),
   )

@@ -1,33 +1,13 @@
-// `lntt check`: every configured area, one area, or one of its checks; `cite` prints
-// what is on lines (usage: bin/lntt.ts).
+// `lntt check`: every configured area, one area, or one of its checks; `cite` prints what is on
+// lines (usage: bin/lntt.ts). This module parses the arguments, exit 2 before Effect loads, and
+// reads stdin for `body -`; the command runs on Effect (src/check/command.ts).
 
-import { execFileSync } from 'node:child_process'
-import { dirname } from 'node:path'
-import { cwd, stderr, stdout } from 'node:process'
+import { cwd, stderr } from 'node:process'
 import { parseArgs } from 'node:util'
-import {
-  ANCHOR_LINE,
-  AREAS,
-  type Area,
-  CannotRunError,
-  citeAll,
-  failed,
-  formatJson,
-  formatText,
-  isArea,
-  type Result,
-  runArea,
-} from './check.ts'
-import { mutateTests } from './check-tests.ts'
-import { comments } from './ci/candidate.ts'
-import { candidateConfig } from './ci/config.ts'
-import { Exit, exit, printed } from './exit.ts'
-import { ConfigError, loadConfig } from './index.ts'
-import { retroComment } from './pull-request.ts'
-import { runQuery } from './query.ts'
-import { isCandidate } from './retro.ts'
+import type { CheckCommand } from './check/command.ts'
+import { ANCHOR_LINE, AREAS, type Area, CHECKS, isArea } from './check/results.ts'
+import { exit } from './exit.ts'
 import { readStdin } from './stdin.ts'
-import { acquireLock, isLocked } from './worktree-lock.ts'
 
 const USAGE = `usage: lntt check [agents-md | skills | plugin | workflows [automated] | decisions [structure | board-refs [<file>...] | numbers [<file>...]] | tests [levels | focus | rules | touched] | body [template | --pr <n> | -]] [--base <ref>] [--json] [--query <jq>]
        lntt check tests mutate <path:line> --text <on the line> --to <mutated> --test <test file>... [--json]
@@ -40,51 +20,9 @@ function usage(message?: string): never {
   exit(2)
 }
 
-const CHECKS: Record<string, string[]> = {
-  'agents-md': [],
-  skills: [],
-  workflows: ['automated'],
-  decisions: ['structure', 'board-refs', 'numbers'],
-  tests: ['levels', 'focus', 'rules', 'touched', 'mutate'],
-  body: ['-', 'template'],
-}
-
-// The text the body area's retrospective check reads: stdin for `-`, else the pull request
-// named, else the current branch's, read with gh. A candidate's block is not in its body,
-// which the automation rebuilds at every squash, but in its retrospective comment.
-async function readBody(check: string | undefined, pr: string | undefined): Promise<{ text: string; from: string }> {
-  if (check === '-') return { text: await readStdin(), from: 'stdin' }
-  const view = ['pr', 'view', ...(pr === undefined ? [] : [pr]), '--json', 'number,body,headRefName']
-  const read = (args: string[]) => {
-    try {
-      return execFileSync('gh', args, { cwd: cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-    } catch (error) {
-      const said = (error as { stderr?: string }).stderr?.trim().split('\n')[0]
-      throw new CannotRunError(`gh ${args.join(' ')} failed${said ? `: ${said}` : ''}`)
-    }
-  }
-  let found: { number: number; body: string | null; headRefName: string }
-  try {
-    found = JSON.parse(read(view))
-  } catch (error) {
-    if (error instanceof CannotRunError) throw error
-    throw new CannotRunError(`gh ${view.join(' ')} printed no JSON`)
-  }
-  if (isCandidate(candidateConfig(cwd()), found.headRefName)) {
-    const gh = { read: (args: string[]) => read(args).trim(), write: () => '' }
-    const comment = retroComment(comments(gh, '{owner}/{repo}', found.number))
-    return {
-      text: comment?.body ?? '',
-      from: `${comment === null ? 'the comments' : 'the retrospective comment'} of candidate #${found.number}`,
-    }
-  }
-  return {
-    text: found.body ?? '',
-    from: pr === undefined ? "the current branch's pull request" : `pull request #${pr}`,
-  }
-}
-
-async function run(args: string[]): Promise<Result[]> {
+// A command from its arguments: every argument is checked before the configuration is read, so a
+// usage error is one in any project.
+export async function parse(args: string[]): Promise<CheckCommand> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
@@ -98,20 +36,28 @@ async function run(args: string[]): Promise<Result[]> {
       test: { type: 'string', multiple: true },
     },
   })
-  // Every argument is checked before the configuration is read: a usage error is one
-  // in any project.
   const [area, check, ...rest] = positionals
   const { base } = values
   if (base !== undefined && (base === '' || base.startsWith('-'))) usage(`--base ${base || "''"} is not a ref`)
+  const common = {
+    cwd: cwd(),
+    json: values.json,
+    ...(base === undefined ? {} : { base }),
+    ...(values.query === undefined ? {} : { query: values.query }),
+  }
   if (area === 'cite') {
     const anchors = positionals.slice(1)
     if (anchors.length === 0) usage('give at least one path:line')
     const bad = anchors.find((a) => !ANCHOR_LINE.test(a))
     if (bad) usage(`${bad} is not path:line`)
-  } else if (area !== undefined) {
+    if (values.pr !== undefined) usage('--pr is for body')
+    return { kind: 'cite', anchors, ...common }
+  }
+  if (area !== undefined) {
     if (!isArea(area)) usage(`no area ${area}: ${[...AREAS, 'cite'].join(', ')}`)
-    if (check !== undefined && !(CHECKS[area] as string[]).includes(check)) {
-      usage(`no check ${check} in ${area}${CHECKS[area]?.length ? `: ${CHECKS[area]?.join(', ')}` : ''}`)
+    const checks = CHECKS[area]
+    if (check !== undefined && !checks.includes(check)) {
+      usage(`no check ${check} in ${area}${checks.length ? `: ${checks.join(', ')}` : ''}`)
     }
     if (rest.length > 0 && check !== 'numbers' && check !== 'board-refs' && check !== 'mutate')
       usage(`${check ?? area} takes no file`)
@@ -134,78 +80,43 @@ async function run(args: string[]): Promise<Result[]> {
     if (check === 'template') usage('template reads the repository, not a pull request')
     if (!/^[1-9]\d*$/.test(values.pr)) usage(`--pr takes a number, not ${values.pr}`)
   }
-  // The root of the project whose configuration is read, as `lntt sync` writes it.
-  const loaded = loadConfig(cwd())
-  const root = dirname(dirname(loaded.path))
-  if (area === 'cite') return citeAll(root, positionals.slice(1))
-  // A mutation rewrites files of the tree a round of lntt review reads, and its runs weigh on
-  // the machine: it takes the worktree's lock, the one a round holds (src/worktree-lock.ts).
+  if (area === undefined) return { kind: 'all', ...common }
   if (check === 'mutate') {
-    let gitDir: string
-    try {
-      gitDir = execFileSync('git', ['rev-parse', '--absolute-git-dir'], {
-        cwd: root,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }).trim()
-    } catch {
-      throw new CannotRunError(`${root} has no git directory: a mutation needs one`)
+    return {
+      kind: 'mutate',
+      anchor: rest[0] as string,
+      text: values.text as string,
+      to: values.to as string,
+      tests: values.test ?? [],
+      ...common,
     }
-    await acquireLock(gitDir, 'lntt check tests mutate')
   }
-  const options = {
-    root,
-    data: loaded.data,
-    ...(base === undefined ? {} : { base }),
-    ...(values.text === undefined
+  const body =
+    area !== 'body' || check === 'template'
       ? {}
-      : { mutation: { text: values.text, to: values.to as string, tests: values.test ?? [] } }),
-    ...(area === 'body' && check !== 'template' ? { body: await readBody(check, values.pr) } : {}),
+      : {
+          body: check === '-' ? { stdin: await readStdin() } : values.pr === undefined ? {} : { pr: Number(values.pr) },
+        }
+  return {
+    kind: 'area',
+    area: area as Area,
+    ...(check === undefined ? {} : { check }),
+    files: rest,
+    ...body,
+    ...common,
   }
-  if (check === 'mutate') return mutateTests(options, rest)
-  if (area === undefined) return AREAS.flatMap((a) => runArea(a, undefined, [], options))
-  return runArea(area as Area, check, rest, options)
 }
 
-// The value of --query, which run() has parsed already: `--query <jq>` or `--query=<jq>`.
-function queryOf(args: string[]): string | undefined {
-  const { values } = parseArgs({ args, options: { query: { type: 'string' } }, strict: false, allowPositionals: true })
-  return typeof values.query === 'string' ? values.query : undefined
-}
-
-// The line an error is reported with: a configuration error, or a check that could not
-// run at all. null for anything else, a defect of lntt, which keeps its stack.
-export function errorLine(error: unknown): string | null {
-  if (error instanceof CannotRunError) return `lntt: error: ${error.message}`
-  if (error instanceof ConfigError) return `lntt: ${error.message}`
-  if (isLocked(error)) return `lntt: error: ${error.message}`
-  return null
-}
-
-// `checks` is the run itself; a test gives another.
-export async function main(
-  args: string[],
-  checks: (args: string[]) => Result[] | Promise<Result[]> = run,
-): Promise<void> {
-  let results: Result[]
+export async function main(args: string[]): Promise<void> {
+  let parsed: CheckCommand
   try {
-    results = await checks(args)
+    parsed = await parse(args)
   } catch (error) {
-    if (error instanceof Exit) throw error
     if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
       usage(error.message)
     }
-    const line = errorLine(error)
-    if (line === null) throw error
-    stderr.write(`${line}\n`)
-    exit(1)
+    throw error
   }
-  const code = failed(results) ? 1 : 0
-  const expression = queryOf(args)
-  if (expression !== undefined) {
-    const json = args.includes('--json')
-    exit(printed(await runQuery({ input: formatJson(results), expression, json, code, command: 'lntt check' })))
-  }
-  stdout.write(args.includes('--json') ? formatJson(results) : formatText(results))
-  exit(code)
+  const { runCheck } = await import('./check/command.ts')
+  return runCheck(parsed)
 }

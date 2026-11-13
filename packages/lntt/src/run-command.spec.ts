@@ -6,7 +6,10 @@ import { Exit as LnttExit } from './exit.ts'
 import { teardownWith } from './run-command.ts'
 
 // The code the teardown leaves with for the ending of a command, and what it reported.
-async function end(ending: Exit.Exit<unknown, unknown>): Promise<{ code: number; reported: string }> {
+async function end(
+  ending: Exit.Exit<unknown, unknown>,
+  after?: (value: unknown) => Promise<number>,
+): Promise<{ code: number; reported: string }> {
   let reported = ''
   const code = await new Promise<number>((resolve) =>
     teardownWith(
@@ -14,6 +17,7 @@ async function end(ending: Exit.Exit<unknown, unknown>): Promise<{ code: number;
       (text) => {
         reported += text
       },
+      after,
     )(ending, () => {}),
   )
   return { code, reported }
@@ -47,5 +51,40 @@ describe('teardownWith', () => {
     const { code, reported } = await end(Exit.die(new TypeError('a bug')))
     assert.strictEqual(code, 1)
     assert.match(reported, /TypeError: a bug\n\s+at /)
+  })
+
+  it("on a success, runs `after` with the command's value and leaves with its code", async () => {
+    const seen: unknown[] = []
+    const after = async (value: unknown) => {
+      seen.push(value)
+      return 3
+    }
+    assert.deepStrictEqual(await end(Exit.succeed('results'), after), { code: 3, reported: '' })
+    assert.deepStrictEqual(seen, ['results'])
+  })
+
+  it('`after` runs on a success only: a failure or an exit(code) leaves as without it', async () => {
+    let ran = false
+    const after = async () => {
+      ran = true
+      return 0
+    }
+    assert.deepStrictEqual(await end(Exit.fail(new LnttExit(2)), after), { code: 2, reported: '' })
+    assert.strictEqual((await end(Exit.die(new TypeError('a bug')), after)).code, 1)
+    assert.strictEqual(ran, false)
+  })
+
+  it('`after` that throws is printed and leaves with 1; one that throws exit(code) leaves with its code', async () => {
+    const failing = await end(Exit.succeed(null), async () => {
+      throw new Error('jq broke')
+    })
+    assert.strictEqual(failing.code, 1)
+    assert.match(failing.reported, /Error: jq broke/)
+    assert.deepStrictEqual(
+      await end(Exit.succeed(null), async () => {
+        throw new LnttExit(2)
+      }),
+      { code: 2, reported: '' },
+    )
   })
 })

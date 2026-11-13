@@ -12,6 +12,7 @@ import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 import * as TestClock from 'effect/testing/TestClock'
 import * as TestConsole from 'effect/testing/TestConsole'
+import { Checks } from '../check/command.ts'
 import { ConfigInvalid, ProjectConfig } from '../config/load.ts'
 import { Gh } from '../gh/gh.ts'
 import { Git, GitError } from '../git/git.ts'
@@ -22,7 +23,6 @@ import { memoryFileSystem } from '../testing/file-system.ts'
 import { lockPath } from '../worktree/holder.ts'
 import { Pids } from '../worktree/lock.ts'
 import { AgentsProcesses } from './agents.ts'
-import { ReviewBridge } from './bridge.ts'
 import { command, type ReviewCommand } from './command.ts'
 import { PlaceInvalid } from './place.ts'
 import { makeStore, ReviewStore } from './store.ts'
@@ -250,7 +250,7 @@ function world() {
     invalid: null as string | null,
     // The place of the state store that cannot be resolved, as resolvePlace refuses it.
     placeInvalid: null as string | null,
-    // A bug of lntt, where the bridge is reached last before the agents.
+    // A bug of lntt, where lntt check's areas are reached last before the agents.
     defect: false,
     // lntt check's results for the lenses named after its areas, and the times it ran.
     checks: {} as Record<string, string>,
@@ -259,9 +259,9 @@ function world() {
     // A mailbox that cannot be found (outside a git repository).
     noMailbox: false,
   }
-  const bridge = Layer.succeed(ReviewBridge)(
-    ReviewBridge.of({
-      checks: (areas) =>
+  const checked = Layer.succeed(Checks)(
+    Checks.of({
+      lenses: (areas) =>
         project.defect
           ? Effect.die(new Error('a bug of lntt'))
           : Effect.sync(() => {
@@ -303,7 +303,7 @@ function world() {
           ).pipe(Layer.provideMerge(fs.layer)),
           repo.layer(),
           Gh.memory({}),
-          bridge,
+          checked,
           Mailbox.at(project.noMailbox ? new MailboxFailed({ message: 'not a git repository' }) : BOX),
           config,
           pids,

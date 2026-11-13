@@ -4,12 +4,20 @@
 // patterns the project forbids), `touched` (the lines the diff changes and the tests
 // that run them) and `mutate` (does a mutation make a test fail: a tool run by hand).
 
-import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, matchesGlob } from 'node:path'
-import { ANCHOR_LINE, CannotRunError, type CheckOptions, projectFiles, type Result } from './check.ts'
-import { createScratch, mutateAllUntilInterrupted, runCommand } from './mutate.ts'
+//
+// On Effect: the checks read the project as read (Tree, src/check/tree.ts) and stay plain; the
+// diff from a base comes from Git, and `touched`'s coverage runs each test file in the scratch
+// worktree through TestRunner (src/check/mutate.ts). src/check/tests.spec.ts runs them in memory.
+
+import * as Duration from 'effect/Duration'
+import * as Effect from 'effect/Effect'
+import * as FileSystem from 'effect/FileSystem'
+import * as Path from 'effect/Path'
+import { Git } from '../git/git.ts'
+import { CheckFailed, readText } from './areas.ts'
+import { matchesGlob } from './glob.ts'
+import { scratch, TestRunner } from './mutate.ts'
+import type { CheckOptions, Result } from './results.ts'
 import {
   type Candidate,
   candidates,
@@ -21,6 +29,9 @@ import {
   testFiles,
   testsConfig,
 } from './test-files.ts'
+import type { Tree } from './tree.ts'
+
+type Paths = Path.Path
 
 export const TESTS_CHECKS = ['levels', 'focus', 'rules', 'touched', 'mutate'] as const
 
@@ -28,37 +39,16 @@ function result(check: string, status: Result['status'], path: string | null, li
   return { area: 'tests', check, status, path, line, message } satisfies Result
 }
 
-// A test file as lines, and the lines (1-based) the check is about: all of them, or
-// with a base only those the diff adds.
-function read(root: string, file: string): string[] {
-  return readFileSync(join(root, file), 'utf8').split('\n')
+// A test file as lines.
+function read(tree: Tree, file: string): string[] {
+  return (tree.text(file) ?? '').split('\n')
 }
 
-// The lines each file gains from `base` to the working tree.
-export function addedLines(root: string, base: string): Map<string, Set<number>> {
-  let diff: string
-  try {
-    diff = execFileSync('git', ['-C', root, 'diff', '-U0', '--no-renames', '--no-color', '--relative', base], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-      maxBuffer: 256 * 1024 * 1024,
-    })
-  } catch {
-    throw new CannotRunError(`git diff ${base} failed in ${root}: is ${base} a ref of this repository?`)
-  }
+// The lines each file gains, from the diff (`git diff -U0`) and the files not yet tracked, which
+// are added whole: `untracked` gives each its number of lines.
+export function addedLinesOf(diff: string, untracked: [string, number][]): Map<string, Set<number>> {
   const out = new Map<string, Set<number>>()
-  // A file not yet tracked is added whole.
-  const untracked = execFileSync('git', ['-C', root, 'ls-files', '-z', '--others', '--exclude-standard'], {
-    encoding: 'utf8',
-  })
-    .split('\0')
-    .filter(Boolean)
-  for (const f of untracked) {
-    try {
-      const n = readFileSync(join(root, f), 'utf8').split('\n').length
-      out.set(f, new Set(Array.from({ length: n }, (_, i) => i + 1)))
-    } catch {}
-  }
+  for (const [f, n] of untracked) out.set(f, new Set(Array.from({ length: n }, (_, i) => i + 1)))
   let file: string | null = null
   for (const line of diff.split('\n')) {
     const header = /^\+\+\+ (?:b\/(.+)|\/dev\/null)$/.exec(line)
@@ -77,8 +67,30 @@ export function addedLines(root: string, base: string): Map<string, Set<number>>
   return out
 }
 
-interface Scope {
+// The lines each file gains from `base` to the working tree.
+export const addedLines = Effect.fnUntraced(function* (root: string, base: string) {
+  const git = yield* Git
+  const diff = yield* git
+    .addedFrom(root, base)
+    .pipe(
+      Effect.mapError(
+        () => new CheckFailed({ message: `git diff ${base} failed in ${root}: is ${base} a ref of this repository?` }),
+      ),
+    )
+  const untracked = yield* git
+    .listFiles(root, { others: true })
+    .pipe(Effect.mapError((error) => new CheckFailed({ message: error.message })))
+  const counted: [string, number][] = []
+  for (const f of untracked) {
+    const text = yield* readText(root, f).pipe(Effect.orElseSucceed(() => null))
+    if (text !== null) counted.push([f, text.split('\n').length])
+  }
+  return addedLinesOf(diff, counted)
+})
+
+export interface Scope {
   config: ReturnType<typeof testsConfig>
+  tree: Tree
   files: string[]
   tests: string[]
   // The test files and lines a check looks at: the diff's with a base, every one without.
@@ -86,12 +98,12 @@ interface Scope {
   added: Map<string, Set<number>> | null
 }
 
-function scope(options: CheckOptions): Scope {
-  const config = testsConfig(options.data)
-  const files = projectFiles(options.root)
+// What the checks look at; `added` is null without a base.
+export function scopeOf(data: Record<string, unknown>, tree: Tree, added: Map<string, Set<number>> | null): Scope {
+  const config = testsConfig(data)
+  const files = tree.files
   const tests = testFiles(config, files)
-  const added = options.base === undefined ? null : addedLines(options.root, options.base)
-  return { config, files, tests, added, touchedTests: added ? tests.filter((t) => added.has(t)) : tests }
+  return { config, tree, files, tests, added, touchedTests: added ? tests.filter((t) => added.has(t)) : tests }
 }
 
 function isNew(s: Scope, file: string, line: number): boolean {
@@ -115,7 +127,7 @@ function countTests(lines: string[]): number {
   return lines.filter((l) => TEST_CALL.test(l)).length
 }
 
-function levels(options: CheckOptions, s: Scope): Result[] {
+export function levels(s: Scope): Result[] {
   if (s.config.levels.length === 0) return [result('levels', 'NOT RUN', null, null, 'tests.levels is not configured')]
   const out: Result[] = []
   const names = s.config.levels.map((l) => l.name).join(', ')
@@ -123,7 +135,7 @@ function levels(options: CheckOptions, s: Scope): Result[] {
   const perLevel = new Map<string, { files: number; tests: number; addedFiles: number; addedTests: number }>()
   for (const level of s.config.levels) perLevel.set(level.name, { files: 0, tests: 0, addedFiles: 0, addedTests: 0 })
   for (const file of s.tests) {
-    const lines = read(options.root, file)
+    const lines = read(s.tree, file)
     const at = levelsOf(s.config, file)
     if (at.length !== 1) {
       problems++
@@ -244,10 +256,10 @@ function comment(line: string): boolean {
   return /^\s*(?:\/\/|\*|\/\*)/.test(line)
 }
 
-function focus(options: CheckOptions, s: Scope): Result[] {
+export function focus(s: Scope): Result[] {
   const out: Result[] = []
   for (const file of s.touchedTests) {
-    const lines = read(options.root, file)
+    const lines = read(s.tree, file)
     lines.forEach((line, i) => {
       if (comment(line)) return
       const n = i + 1
@@ -318,10 +330,10 @@ function focus(options: CheckOptions, s: Scope): Result[] {
 
 // ---- rules -----------------------------------------------------------------------
 
-function rules(options: CheckOptions, s: Scope): Result[] {
+export function rules(s: Scope): Result[] {
   if (s.config.rules.length === 0) return [result('rules', 'NOT RUN', null, null, 'tests.rules is not configured')]
   const out: Result[] = []
-  for (const rule of s.config.rules) out.push(...checkRule(options, s, rule))
+  for (const rule of s.config.rules) out.push(...checkRule(s, rule))
   return out
 }
 
@@ -335,12 +347,12 @@ function slug(heading: string): string {
 }
 
 // The record behind a rule: its file, and the heading its fragment names.
-export function recordMissing(root: string, anchor: string): string | null {
+export function recordMissing(tree: Tree, anchor: string): string | null {
   const hash = anchor.indexOf('#')
   const path = hash < 0 ? anchor : anchor.slice(0, hash)
   const fragment = hash < 0 ? undefined : anchor.slice(hash + 1)
-  const abs = join(root, path)
-  if (!existsSync(abs) || !statSync(abs).isFile()) return 'the record behind the rule is not there'
+  const text = tree.text(path)
+  if (text === null) return 'the record behind the rule is not there'
   if (fragment === undefined || fragment === '') return null
   let wanted: string
   try {
@@ -352,7 +364,7 @@ export function recordMissing(root: string, anchor: string): string | null {
   const seen = new Map<string, number>()
   const slugs = new Set<string>()
   let fence: string | null = null
-  for (const line of readFileSync(abs, 'utf8').split('\n')) {
+  for (const line of text.split('\n')) {
     // CommonMark: a fence opens on a run of three or more ` or ~ and closes on a bare
     // run of the same character at least as long.
     if (fence === null) {
@@ -380,12 +392,13 @@ export function recordMissing(root: string, anchor: string): string | null {
   return slugs.has(wanted) ? null : `the record has no heading #${fragment}`
 }
 
-function checkRule(options: CheckOptions, s: Scope, rule: Rule): Result[] {
+function checkRule(s: Scope, rule: Rule): Result[] {
   const where = `rule ${rule.name} (${rule.anchor})`
-  const missing = recordMissing(options.root, rule.anchor)
+  const missing = recordMissing(s.tree, rule.anchor)
   if (missing) return [result('rules', 'FAIL', null, null, `${where}: ${missing}`)]
   if (rule.assertedBy !== null) {
-    if (!existsSync(join(options.root, rule.assertedBy))) {
+    const there = s.tree.isFile(rule.assertedBy) || s.files.some((f) => f.startsWith(`${rule.assertedBy}/`))
+    if (!there) {
       return [result('rules', 'FAIL', rule.assertedBy, null, `${where}: the test that asserts it is not there`)]
     }
     return [
@@ -409,7 +422,7 @@ function checkRule(options: CheckOptions, s: Scope, rule: Rule): Result[] {
   const files = s.touchedTests.filter((f) => rule.files.length === 0 || rule.files.some((g) => matchesGlob(f, g)))
   const found: Result[] = []
   for (const file of files) {
-    read(options.root, file).forEach((line, i) => {
+    read(s.tree, file).forEach((line, i) => {
       if (comment(line) || !pattern.test(line) || !isNew(s, file, i + 1)) return
       found.push(result('rules', 'FAIL', file, i + 1, `${where}: ${rule.message ?? `matches ${rule.pattern}`}`))
     })
@@ -422,14 +435,14 @@ function checkRule(options: CheckOptions, s: Scope, rule: Rule): Result[] {
 const SOURCE = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/
 
 // Lines run (count above zero) by file, from an lcov report, keyed by absolute path.
-export function parseLcov(text: string, base: string): Map<string, Set<number>> {
+export function parseLcov(p: Pick<Paths, 'join'>, text: string, base: string): Map<string, Set<number>> {
   const out = new Map<string, Set<number>>()
   let current: Set<number> | null = null
   for (const line of text.split('\n')) {
     if (line.startsWith('SF:')) {
       const path = line.slice(3).trim()
       current = new Set()
-      out.set(path.startsWith('/') ? path : join(base, path), current)
+      out.set(path.startsWith('/') ? path : p.join(base, path), current)
     } else if (line.startsWith('DA:') && current) {
       const [n, hits] = line.slice(3).split(',')
       if (Number(hits) > 0) current.add(Number(n))
@@ -450,118 +463,145 @@ function ranges(lines: number[]): string {
   return parts.join(', ')
 }
 
-// The lines one test file runs, by coverage, or null when its level has none.
-function coverageOf(
+// The lines one test file runs, by coverage, or null when its level has none: its level's coverage
+// command run in the scratch, its lcov report read from a folder of its own under `out`.
+const coverageOf = Effect.fnUntraced(function* (
   level: Level,
   test: string,
   scratchRoot: string,
   out: string,
   cache: Map<string, Map<string, Set<number>> | null>,
-): Map<string, Set<number>> | null {
+) {
   const hit = cache.get(test)
   if (hit !== undefined) return hit
   let lines: Map<string, Set<number>> | null = null
   if (level.coverage !== null) {
-    const dir = mkdtempSync(join(out, 'cov-'))
-    runCommand(commandFor(level.coverage, level, [test], dir), join(scratchRoot, level.cwd), level.timeoutSeconds)
-    const lcov = join(dir, 'lcov.info')
-    if (existsSync(lcov)) lines = parseLcov(readFileSync(lcov, 'utf8'), join(scratchRoot, level.cwd))
+    const fs = yield* FileSystem.FileSystem
+    const p = yield* Path.Path
+    const dir = yield* fs.makeTempDirectory({ directory: out, prefix: 'cov-' })
+    const cwd = p.join(scratchRoot, level.cwd)
+    yield* (yield* TestRunner).run(
+      commandFor(p, level.coverage, level, [test], dir),
+      cwd,
+      Duration.seconds(level.timeoutSeconds),
+    )
+    const lcov = yield* fs.readFileString(p.join(dir, 'lcov.info')).pipe(Effect.option)
+    if (lcov._tag === 'Some') lines = parseLcov(p, lcov.value, cwd)
   }
   cache.set(test, lines)
   return lines
+})
+
+// What one changed file's lines are run by: the tests that import it, and (`covered`, per test)
+// the lines each runs, null for a test whose level has no coverage or was not asked for it.
+export function touchedResult(
+  file: string,
+  lines: Set<number>,
+  groups: Candidate[],
+  covered: ((test: string) => Map<string, Set<number>> | null) | null,
+  scratchRoot: string,
+  skipped: boolean,
+): Result {
+  const all = groups.flatMap((g) => g.files)
+  if (all.length === 0) {
+    return result('touched', 'INFO', file, null, `lines ${ranges([...lines])}: no test imports this file`)
+  }
+  const hits = new Map<string, string[]>()
+  let viaCoverage = true
+  for (const g of groups) {
+    for (const test of g.files) {
+      const run = covered ? covered(test) : null
+      if (run === null) {
+        viaCoverage = false
+        continue
+      }
+      const hit = [...run.entries()].find(([abs]) => abs.endsWith(`/${file}`) || abs === `${scratchRoot}/${file}`)
+      for (const n of lines) if (hit?.[1].has(n)) hits.set(`${n}`, [...(hits.get(`${n}`) ?? []), test])
+    }
+  }
+  if (!viaCoverage) {
+    return result(
+      'touched',
+      'INFO',
+      file,
+      null,
+      `lines ${ranges([...lines])}: tests that import it, from imports (${skipped ? 'coverage not run' : 'no coverage for their level'}): ${all.join(', ')}`,
+    )
+  }
+  const byTests = new Map<string, number[]>()
+  const unreached: number[] = []
+  for (const n of [...lines].sort((a, b) => a - b)) {
+    const tests = hits.get(`${n}`)
+    if (!tests) unreached.push(n)
+    else byTests.set(tests.join(', '), [...(byTests.get(tests.join(', ')) ?? []), n])
+  }
+  const parts = [...byTests.entries()].map(([tests, ns]) => `lines ${ranges(ns)}: ${tests}`)
+  if (unreached.length > 0) parts.push(`lines ${ranges(unreached)}: no test runs them`)
+  return result('touched', 'INFO', file, null, parts.join('; '))
 }
 
-function touched(options: CheckOptions, s: Scope): Result[] {
+// The lines the diff changes and the tests that run them: from coverage in a scratch worktree when
+// a level has it and the caller did not turn it off, else from imports.
+export const touched = Effect.fnUntraced(function* (options: CheckOptions, s: Scope) {
   if (s.added === null) return [result('touched', 'NOT RUN', null, null, 'needs --base: the lines the diff changes')]
   if (s.config.levels.length === 0) return [result('touched', 'NOT RUN', null, null, 'tests.levels is not configured')]
   const changed = [...s.added.entries()].filter(
     ([f, lines]) => SOURCE.test(f) && lines.size > 0 && !s.tests.includes(f),
   )
   if (changed.length === 0) return [result('touched', 'PASS', null, null, 'the diff changes no source line')]
-  const graph = new ImportGraph(options.root, new Set(s.files))
+  const p = yield* Path.Path
+  const fs = yield* FileSystem.FileSystem
+  const graph = new ImportGraph(p, s.tree)
   const useCoverage = options.coverage !== false && s.config.levels.some((l) => l.coverage !== null)
-  const scratch = useCoverage ? createScratch(options.root) : null
-  const out = scratch ? mkdtempSync(join(tmpdir(), 'lntt-cov-')) : ''
-  const cache = new Map<string, Map<string, Set<number>> | null>()
   // Coverage a level has and the caller did not ask for, as against a level without any.
   const skipped = (groups: Candidate[]) => !useCoverage && groups.some((g) => g.level.coverage !== null)
-  try {
-    return changed.map(([file, lines]) => {
-      if (!existsSync(join(options.root, file))) return result('touched', 'INFO', file, null, 'deleted')
-      const groups: Candidate[] = candidates(options.root, s.config, s.files, file, graph)
-      const all = groups.flatMap((g) => g.files)
-      if (all.length === 0) {
-        return result('touched', 'INFO', file, null, `lines ${ranges([...lines])}: no test imports this file`)
-      }
-      const hits = new Map<string, string[]>()
-      let viaCoverage = true
+  const scratchRoot = useCoverage ? (yield* scratch(options.root)).root : null
+  const out = scratchRoot === null ? '' : yield* fs.makeTempDirectoryScoped({ prefix: 'lntt-cov-' })
+  const cache = new Map<string, Map<string, Set<number>> | null>()
+  const results: Result[] = []
+  for (const [file, lines] of changed) {
+    if (!(yield* fs.exists(p.join(options.root, file)))) {
+      results.push(result('touched', 'INFO', file, null, 'deleted'))
+      continue
+    }
+    const groups = candidates(s.config, s.tree, file, graph)
+    const runs = new Map<string, Map<string, Set<number>> | null>()
+    if (scratchRoot !== null) {
       for (const g of groups) {
-        for (const test of g.files) {
-          const covered = scratch ? coverageOf(g.level, test, scratch.root, out, cache) : null
-          if (covered === null) {
-            viaCoverage = false
-            continue
-          }
-          const run = [...covered.entries()].find(
-            ([abs]) => abs.endsWith(`/${file}`) || abs === join(scratch?.root ?? '', file),
-          )
-          for (const n of lines) if (run?.[1].has(n)) hits.set(`${n}`, [...(hits.get(`${n}`) ?? []), test])
-        }
+        for (const test of g.files) runs.set(test, yield* coverageOf(g.level, test, scratchRoot, out, cache))
       }
-      if (!viaCoverage) {
-        return result(
-          'touched',
-          'INFO',
-          file,
-          null,
-          `lines ${ranges([...lines])}: tests that import it, from imports (${skipped(groups) ? 'coverage not run' : 'no coverage for their level'}): ${all.join(', ')}`,
-        )
-      }
-      const byTests = new Map<string, number[]>()
-      const unreached: number[] = []
-      for (const n of [...lines].sort((a, b) => a - b)) {
-        const tests = hits.get(`${n}`)
-        if (!tests) unreached.push(n)
-        else byTests.set(tests.join(', '), [...(byTests.get(tests.join(', ')) ?? []), n])
-      }
-      const parts = [...byTests.entries()].map(([tests, ns]) => `lines ${ranges(ns)}: ${tests}`)
-      if (unreached.length > 0) parts.push(`lines ${ranges(unreached)}: no test runs them`)
-      return result('touched', 'INFO', file, null, parts.join('; '))
-    })
-  } finally {
-    scratch?.dispose()
-    if (out) rmSync(out, { recursive: true, force: true })
+    }
+    results.push(
+      touchedResult(
+        file,
+        lines,
+        groups,
+        scratchRoot === null ? null : (test) => runs.get(test) ?? null,
+        scratchRoot ?? '',
+        skipped(groups),
+      ),
+    )
   }
-}
+  return results
+}, Effect.scoped)
 
-// ---- mutate ----------------------------------------------------------------------
+// ---- all of them -----------------------------------------------------------------
 
-// `lntt check tests mutate`: the one check that runs asynchronously, so a signal can reach it.
-export function mutateTests(options: CheckOptions, args: string[]): Promise<Result[]> {
-  const [anchor, ...extra] = args
-  const m = anchor === undefined ? null : ANCHOR_LINE.exec(anchor)
-  const { mutation } = options
-  if (!m || extra.length > 0 || !mutation) {
-    throw new CannotRunError('mutate needs one path:line, --text <what is on the line> and --to <what it becomes>')
-  }
-  return mutateAllUntilInterrupted({ root: options.root, data: options.data, files: projectFiles(options.root) }, [
-    { path: m[1] as string, line: Number(m[2]), text: mutation.text, to: mutation.to, tests: mutation.tests },
-  ]).then((done) => done.results)
-}
-
-export function runTests(check: string | undefined, options: CheckOptions): Result[] {
+// `lntt check tests`, or one of its checks but `mutate`, over the project as read.
+export const runTests = Effect.fnUntraced(function* (check: string | undefined, options: CheckOptions, tree: Tree) {
   // A project that has not described its tests is not asked to: `lntt check` alone passes
   // over it (an explicit check still runs).
   if (check === undefined && options.data.tests === undefined) {
     return [result('levels', 'NOT RUN', null, null, 'the configuration has no tests section')]
   }
-  const s = scope(options)
-  const all: Record<string, () => Result[]> = {
-    levels: () => levels(options, s),
-    focus: () => focus(options, s),
-    rules: () => rules(options, s),
-    touched: () => touched(options, s),
+  const added = options.base === undefined ? null : yield* addedLines(options.root, options.base)
+  const s = scopeOf(options.data, tree, added)
+  const plain: Record<string, () => Result[]> = {
+    levels: () => levels(s),
+    focus: () => focus(s),
+    rules: () => rules(s),
   }
-  if (check !== undefined) return (all[check] as () => Result[])()
-  return Object.values(all).flatMap((run) => run())
-}
+  if (check === 'touched') return yield* touched(options, s)
+  if (check !== undefined) return (plain[check] as () => Result[])()
+  return [...levels(s), ...focus(s), ...rules(s), ...(yield* touched(options, s))]
+})

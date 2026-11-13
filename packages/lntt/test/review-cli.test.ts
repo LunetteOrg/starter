@@ -1082,7 +1082,7 @@ describe('an agent that ignores SIGTERM, while the round goes on', () => {
 })
 
 // The lock keeps a second round or reply from overwriting the state and the progress of
-// the first (acquireLock, and the `own` guard of main).
+// the first (lockWorktree in src/worktree/lock.ts, and the `own` guard of main).
 describe('the lock of a worktree, held by a live process', () => {
   const lock = () => join(repo, '.git/lntt-review.lock')
   const progress = () => join(repo, '.git/lntt-review.progress')

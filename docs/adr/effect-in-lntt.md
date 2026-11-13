@@ -91,7 +91,7 @@ round).
   (`runCommand` in `packages/lntt/src/run-command.ts`). On SIGINT or SIGTERM, `runMain`
   interrupts the command: the interrupt runs every finalizer of the command's scope (the
   agents are released), and the command exits 130, whichever the signal. The commands
-  not yet on Effect (`lntt check tests mutate`, `lntt ci local`) exit 128 plus the
+  not yet on Effect (`lntt ci local`) exit 128 plus the
   signal, 143 for SIGTERM, until they move.
 - **The teardown gives the exit code:** 0 on success, the code of an `exit(code)` the
   command threw, 130 for an interrupt, 1 for any other failure or a defect, which it
@@ -117,10 +117,9 @@ round).
 - **The worktree's lock is a resource of the command's scope** in `lntt review` (a round,
   a reply, `allow`: `lockWorktree` in `packages/lntt/src/worktree/lock.ts`), its heartbeat
   a fiber of the same scope. The agents are fibers of `askAll` inside it, so they are
-  released before the lock. `lntt check tests mutate`, still on Promises, takes the lock through
-  the module's Promise entry (`packages/lntt/src/worktree-lock.ts`), which loads Effect to
-  run the same acquisition and releases the lock on the process's exit until that command
-  moves.
+  released before the lock. `lntt check tests mutate` holds it the same way, in the scope that
+  also holds the scratch worktree its mutation runs in, and restores the mutated file with a
+  finalizer (`packages/lntt/src/check/mutate.ts`).
 - **An agent's process group is a resource.** Its release, when the agent did not exit
   on its own: SIGTERM to the group, up to five seconds for it to go, then SIGKILL to the
   group (the spawner's `killSignal` and `forceKillAfter`). A timeout, a stop (the round's
@@ -130,26 +129,27 @@ round).
   and does not run under the runner: a jq query that holds the loop is ended by the signal
   itself ([the `lntt` command](./lntt-command.md#decision)). Every other command on Effect
   runs under it, one that holds no resource too (`lntt branch`, `lntt pr`): one way to run,
-  its expected failures reported at the edge, and 130 for a signal.
+  its expected failures reported at the edge, and 130 for a signal. A command on Effect whose
+  last step is such a query (`lntt check --query`) gives that step to `runCommand` as `after`:
+  the teardown runs it on the command's success, once `runMain` has removed its handlers of
+  SIGINT and SIGTERM, and its code is the exit code.
 
 ### The bridge, while modules move
 
 A Promise function a module on Effect still calls runs under `Effect.tryPromise`, which
-passes it a signal an interrupt aborts when it takes one (a `Spawn` does). The sync code of modules not
-yet moved that a module on Effect needs (for `lntt review`: `lntt check`'s areas, until `lntt
-check` moves, #337) is reached through a service of that module, its bridge
-(`ReviewBridge` in `packages/lntt/src/review/bridge.ts`): the live layer runs the code under
-`Effect.try`, and what it throws is a tagged error of the bridge (`ReviewFailed`), reported
-by its message like any expected failure; the unit test gives the bridge's in-memory layer.
-A command with no bridge of its own reads such code at one place, a `Context.Reference` whose
-default is the sync function (the project's configuration in `lntt branch` and `lntt pr`),
-run under `Effect.try`, which its spec replaces. What a module on Effect and the sync code of a
+passes it a signal an interrupt aborts when it takes one (a `Spawn` does). The sync code of
+modules not yet moved that a module on Effect needs is read at one place, a `Context.Reference`
+whose default is the sync function, run under `Effect.try`, which its spec replaces: what it
+throws is a tagged error of the command, reported by its message like any expected failure (the
+project's configuration in `lntt branch` and `lntt pr`; what `lntt sync` writes, which `lntt
+check` reads through `SyncAreas` in `packages/lntt/src/check/areas.ts` until those modules move,
+#341). What a module on Effect and the sync code of a
 module not yet moved both read, and which reaches nothing, is plain functions in a module that
 imports no Effect (what the base reads from the names git and GitHub give,
 `packages/lntt/src/base/names.ts`); the sync module keeps its own call to git or gh until it
 moves (`packages/lntt/src/ci/event.ts` and `packages/lntt/src/ci/candidate.ts`, until `lntt ci`
 moves, #340).
-A defect of the Effect code reaches the edge with its stack. A piece leaves the bridge when
+A defect of the Effect code reaches the edge with its stack. A reference to sync code goes when
 its module moves to Effect. The library API of
 `@lntt/lntt` (`packages/lntt/src/index.ts`) stays on `Promise`, so a script that imports
 it needs no Effect: a library function whose logic moved (`askAll`, `runRound`), and a

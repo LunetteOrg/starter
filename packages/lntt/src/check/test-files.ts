@@ -1,9 +1,13 @@
 // The project's tests as `tests.levels` describes them: which files are tests, the level
-// each sits at, and which tests run a given source file (from imports; coverage refines
-// that in check-tests.ts). Shared by `lntt check tests` and by `mutate`.
+// each sits at, and which tests run a given source file (from imports, read from the project as
+// read, src/check/tree.ts; coverage refines that in src/check/tests.ts). Shared by `lntt check
+// tests` and by `mutate`. Plain: the paths' functions are Effect's Path, given.
 
-import { existsSync, readFileSync } from 'node:fs'
-import { join, matchesGlob, posix } from 'node:path'
+import type * as Path from 'effect/Path'
+import { matchesGlob } from './glob.ts'
+import type { Tree } from './tree.ts'
+
+type Paths = Pick<Path.Path, 'dirname' | 'join' | 'normalize' | 'relative'>
 
 export interface Level {
   name: string
@@ -93,8 +97,8 @@ const EXTENSIONS = ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.
 
 // A relative specifier resolved to a file of the project, as TypeScript run directly
 // writes it (`./x.ts`) or as a bundler does (`./x`, `./x.js` for x.ts).
-function resolveSpecifier(from: string, specifier: string, known: Set<string>): string | null {
-  const base = posix.normalize(posix.join(posix.dirname(from), specifier))
+function resolveSpecifier(p: Paths, from: string, specifier: string, known: Set<string>): string | null {
+  const base = p.normalize(p.join(p.dirname(from), specifier))
   const stem = base.replace(/\.(m|c)?js$/, '')
   for (const candidate of [
     ...EXTENSIONS.map((e) => base + e),
@@ -110,16 +114,12 @@ function resolveSpecifier(from: string, specifier: string, known: Set<string>): 
 // or the path a test hands to the process it spawns (`resolve(HERE, '../bin/x.ts')`).
 const SPECIFIER = /['"`](\.{1,2}\/[^'"`\s]+)['"`]/g
 
-export function importsOf(root: string, file: string, known: Set<string>): string[] {
-  let text: string
-  try {
-    text = readFileSync(join(root, file), 'utf8')
-  } catch {
-    return []
-  }
+export function importsOf(p: Paths, tree: Tree, file: string, known: Set<string>): string[] {
+  const text = tree.text(file)
+  if (text === null) return []
   const out = new Set<string>()
   for (const m of text.matchAll(SPECIFIER)) {
-    const target = resolveSpecifier(file, m[1] as string, known)
+    const target = resolveSpecifier(p, file, m[1] as string, known)
     if (target && target !== file) out.add(target)
   }
   return [...out]
@@ -129,11 +129,13 @@ export function importsOf(root: string, file: string, known: Set<string>): strin
 export class ImportGraph {
   private readonly edges = new Map<string, string[]>()
   private readonly closures = new Map<string, Set<string>>()
-  private readonly root: string
+  private readonly paths: Paths
+  private readonly tree: Tree
   private readonly known: Set<string>
 
-  constructor(root: string, known: Set<string>) {
-    this.root = root
+  constructor(paths: Paths, tree: Tree, known: Set<string> = new Set(tree.files)) {
+    this.paths = paths
+    this.tree = tree
     this.known = known
   }
 
@@ -145,7 +147,7 @@ export class ImportGraph {
     for (let next = queue.pop(); next !== undefined; next = queue.pop()) {
       let out = this.edges.get(next)
       if (!out) {
-        out = importsOf(this.root, next, this.known)
+        out = importsOf(this.paths, this.tree, next, this.known)
         this.edges.set(next, out)
       }
       for (const target of out) {
@@ -167,14 +169,8 @@ export interface Candidate {
 
 // The tests that can run `file`, grouped by level: the test files whose imports reach
 // it. A test file is its own candidate.
-export function candidates(
-  root: string,
-  config: TestsConfig,
-  projectFiles: string[],
-  file: string,
-  graph = new ImportGraph(root, new Set(projectFiles)),
-): Candidate[] {
-  const tests = testFiles(config, projectFiles).filter((t) => existsSync(join(root, t)))
+export function candidates(config: TestsConfig, tree: Tree, file: string, graph: ImportGraph): Candidate[] {
+  const tests = testFiles(config, tree.files).filter((t) => tree.isFile(t))
   const out: Candidate[] = []
   for (const level of config.levels) {
     const files = tests.filter((t) => levelsOf(config, t)[0] === level && graph.closure(t).has(file))
@@ -188,8 +184,8 @@ export function shellQuote(value: string): string {
 }
 
 // A level's command for these files, which `cwd` makes relative.
-export function commandFor(template: string, level: Level, files: string[], out?: string): string {
-  const relative = files.map((f) => (level.cwd === '.' ? f : posix.relative(level.cwd, f)))
+export function commandFor(p: Paths, template: string, level: Level, files: string[], out?: string): string {
+  const relative = files.map((f) => (level.cwd === '.' ? f : p.relative(level.cwd, f)))
   return template
     .replaceAll('{files}', relative.map(shellQuote).join(' '))
     .replaceAll('{out}', out === undefined ? '' : shellQuote(out))

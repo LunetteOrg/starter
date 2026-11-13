@@ -87,9 +87,10 @@ and a mutation run by hand is the proof when reading leaves a doubt.
       the result is `NOT RUN`, naming the file. The other files run either way.
 - **The mutation lives in a scratch git worktree** of the head, with the uncommitted
   files laid over it and the dependencies shared, and is removed when the run ends, on
-  SIGINT and on SIGTERM too (exit 130 and 143, the test files' process groups stopped, the
-  lock given back; a process that exits any other way stops the groups still alive
-  on `exit`): the working tree is never written. `mutate` waits on its child processes
+  SIGINT and on SIGTERM too (exit 130 for both: the scratch worktree, the test files'
+  process groups and the lock are resources of the command's scope, released by an
+  interrupt as by any ending, [Effect in `lntt`](./effect-in-lntt.md)): the working tree is
+  never written. `mutate` waits on its child processes
   without blocking the event loop, so a signal is handled while a test file runs. A run
   starts by pruning the registrations of scratch worktrees whose folder is gone. A failure
   counts as killed only when the same test file passes without the mutation.
