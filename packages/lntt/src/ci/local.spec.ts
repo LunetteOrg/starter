@@ -199,7 +199,11 @@ describe('lntt ci local', () => {
     const w = world({ files, exists: true })
     return Effect.gen(function* () {
       assert.strictEqual(yield* command(input(), ROOT), 0)
+      const lenient = (yield* output).out
+      assert.match(lenient, /Not run \(⚠\) does not fail the run; --strict makes it fail\./)
       assert.strictEqual(yield* command(input({ strict: true }), ROOT), 1)
+      // The report knows the run is strict: it no longer says what --strict would do.
+      assert.notMatch((yield* output).out.slice(lenient.length), /--strict makes it fail/)
     }).pipe(Effect.provide(w.layer))
   })
 

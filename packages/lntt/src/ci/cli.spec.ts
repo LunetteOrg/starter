@@ -53,6 +53,10 @@ describe('localInput', () => {
 
   it('an event other than pull_request or push, or an option it does not know, is a usage error', () => {
     assert.deepStrictEqual(at(['--event', 'release']), { usage: '--event is pull_request or push, not release' })
-    assert.ok('usage' in at(['--no-list']))
+    assert.deepStrictEqual(at(['--no-list']), { usage: "Unknown option '--no-list'" })
+  })
+
+  it('a poll interval that is not a positive number is left out', () => {
+    for (const poll of ['', '0', 'abc']) assert.notProperty(at([], { LNTT_CI_LOCK_POLL_MS: poll }), 'poll')
   })
 })

@@ -339,6 +339,40 @@ describe('ciLock', () => {
     ).pipe(Effect.provide(w.layer))
   })
 
+  it.effect('a release that fails is one line with its reason, and the scope closes all the same', () => {
+    const w = world()
+    // The lock file cannot be removed.
+    const stuck = Layer.effect(FileSystem.FileSystem)(
+      Effect.map(FileSystem.FileSystem, (service) =>
+        FileSystem.FileSystem.of({
+          ...service,
+          remove: (path, options) =>
+            path === PATH
+              ? Effect.fail(
+                  PlatformError.systemError({
+                    _tag: 'PermissionDenied',
+                    module: 'FileSystem',
+                    method: 'remove',
+                    pathOrDescriptor: path,
+                    cause: new Error(`EPERM: operation not permitted, unlink '${path}'`),
+                  }),
+                )
+              : service.remove(path, options),
+        }),
+      ),
+    ).pipe(Layer.provide(w.fs.layer))
+    return at(
+      Effect.gen(function* () {
+        assert.isTrue(Exit.isSuccess(yield* Effect.exit(Effect.scoped(machine(w)))))
+        assert.deepStrictEqual(w.lines, [
+          `lntt ci: cannot give the ci:local lock back (EPERM: operation not permitted, unlink '${PATH}') — ${PATH}`,
+        ])
+      }),
+    ).pipe(
+      Effect.provide(Layer.mergeAll(stuck, CiProcesses.memory({ self: 1000, running: new Set() }), Git.memory({}))),
+    )
+  })
+
   it.effect('the project scope names the lock after the repository’s common dir, shared by its worktrees', () => {
     const w = world()
     const git = Git.memory({ commonDir: Effect.succeed('/r/app/.git') })

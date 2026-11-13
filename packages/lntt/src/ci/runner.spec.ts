@@ -520,6 +520,14 @@ describe('timeouts', () => {
       )
       assert.strictEqual(results[0]?.status, 'passed')
       assert.strictEqual(read, 0)
+      // The same timeout still fires once its time has come.
+      const late = yield* running(
+        [job('ci.yml/a', [{ label: 'hang', local: command('hang') }])],
+        { timeoutMs: 2 ** 40, load: Effect.succeed('load') },
+        undefined,
+        2 ** 40,
+      )
+      assert.strictEqual(late[0]?.steps[0]?.reason, `timed out after ${timeoutText(2 ** 40)} — load`)
     }),
   )
 

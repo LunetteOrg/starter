@@ -79,7 +79,8 @@ lntt ci local | candidate | proved
   or `--query`),
   or a report for a person (`lntt check` without `--json`); progress and child-process output go to stderr. Exit codes:
   0 ok, 1 a configuration error, a red result or a check that cannot run (one line on
-  stderr), 2 a usage error or a failing jq expression, 3 a stop that a person decides on (`lntt review` past
+  stderr, followed only by what the person acts on: `lntt ci local` lists the uncommitted
+  files that keep it from running), 2 a usage error or a failing jq expression, 3 a stop that a person decides on (`lntt review` past
   `delivery.review.maxRounds`) or nobody left to wait for (`lntt inbox --wait` and `--follow`
   with no child that reports to the role), 4 nothing to report on (`lntt review status` with no round
   on the current branch, also when a jq query fails while running on the missing state), an interrupted command 130 (a command on Effect, for
