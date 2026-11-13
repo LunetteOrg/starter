@@ -92,8 +92,8 @@ export const resolveBase = Effect.fnUntraced(function* <E, R>(lookup: BaseLookup
   }
   // A branch started on the candidate holds the candidate's commits, which origin/<main> does not
   // have until the candidate merges; one started on origin/<main> forks there. No fork point (no
-  // history in common, git's exit 1, is not started on the candidate; any other failure of git is
-  // its GitError.
+  // history in common (git's exit 1) is not started on the candidate; any other failure of git, one
+  // that could not start included, is its GitError.
   const fork = yield* git
     .mergeBase('HEAD', ref)
     .pipe(Effect.catchTag('GitError', (error) => (error.code === 1 ? Effect.succeed(null) : Effect.fail(error))))
