@@ -18,27 +18,20 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, mock, test } from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { GROUP_WAIT_MS, type Identity, type Owner, RELEASE_WAIT_MS } from '../../src/ci/lock-rules.ts'
 import {
   acquire,
   acquireLock,
   alive,
-  GROUP_WAIT_MS,
-  gitCommonDir,
-  groupAlive,
-  holdDeadline,
-  type Identity,
   type LockDeps,
   LockError,
-  lockDir,
-  lockError,
-  lockPath,
-  type Owner,
-  pollInterval,
-  RELEASE_WAIT_MS,
   release,
   removeStaleGuard,
-} from '../../src/ci/lock.ts'
-import { git, repo } from './helpers.ts'
+} from '../../src/ci/lock-sync.ts'
+
+// The library's ci:local lock (src/ci/lock-sync.ts), on the real file system and processes: the
+// lock on Effect that `lntt ci local` takes is src/ci/lock.spec.ts's, the rules
+// src/ci/lock-rules.spec.ts's.
 
 let dir: string
 beforeEach(() => {
@@ -286,7 +279,7 @@ describe('three waiters on a dead holder’s lock', () => {
   // leaves its record and names its pid in the dead file, so the others race to take over.
   const WAITER = `
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
-import { acquire } from ${JSON.stringify(pathToFileURL(resolve(dirname(fileURLToPath(import.meta.url)), '../../src/ci/lock.ts')).href)}
+import { acquire } from ${JSON.stringify(pathToFileURL(resolve(dirname(fileURLToPath(import.meta.url)), '../../src/ci/lock-sync.ts')).href)}
 const [dir, name] = process.argv.slice(1)
 const dead = () => (existsSync(dir + '/dead') ? readFileSync(dir + '/dead', 'utf8').split('\\n') : [])
 while (!existsSync(dir + '/go')) await new Promise((r) => setTimeout(r, 1))
@@ -487,37 +480,6 @@ describe('acquireLock', () => {
     }
     assert.equal(existsSync(path), true)
   })
-
-  test('an error with no message is named by its code, else its name', () => {
-    const coded = Object.assign(new Error(''), { code: 'EACCES' })
-    assert.equal(
-      lockError(coded, '/l').message,
-      'cannot take the ci:local lock (EACCES) — /l; --no-lock runs without it',
-    )
-    assert.match(lockError(Object.assign(new Error(' '), { stderr: '' }), '/l').message, /lock \(Error\) — /)
-    assert.match(
-      lockError({ stderr: 'fatal: not a git repository\nmore' }, '/l').message,
-      /lock \(fatal: not a git repository\) — /,
-    )
-    assert.match(lockError('boom', '/l').message, /lock \(boom\) — /)
-    assert.match(lockError({}, '/l').message, /lock \(\[object Object\]\) — /)
-  })
-
-  test('a poll interval that is not a positive number is ignored', () => {
-    assert.equal(pollInterval({ LNTT_CI_LOCK_POLL_MS: '100' }), 100)
-    for (const poll of [undefined, '', 'abc', '0', '-5', 'Infinity']) {
-      assert.equal(pollInterval({ LNTT_CI_LOCK_POLL_MS: poll }), undefined, String(poll))
-    }
-  })
-})
-
-describe('holdDeadline', () => {
-  test('the maximum hold time from when the lock was taken, with its reason', () => {
-    assert.deepEqual(holdDeadline(other({ started: '2026-10-21T10:00:00.000Z' })), {
-      at: Date.parse('2026-10-21T12:00:00.000Z'),
-      reason: "the run passed the lock's maximum hold time of 120 minutes",
-    })
-  })
 })
 
 describe('liveness', () => {
@@ -528,33 +490,9 @@ describe('liveness', () => {
     assert.equal(alive(finished), false)
     const child = spawn('sleep', ['30'], { detached: true, stdio: 'ignore' })
     const closed = new Promise((resolve) => child.on('close', resolve))
-    assert.equal(groupAlive(child.pid as number), true)
+    assert.equal(alive(-(child.pid as number)), true)
     process.kill(-(child.pid as number), 'SIGKILL')
     await closed
-    assert.equal(groupAlive(child.pid as number), false)
-  })
-})
-
-describe('where the lock is', () => {
-  test('$LNTT_CI_LOCK_DIR, else the cache folder', () => {
-    assert.equal(lockDir({ LNTT_CI_LOCK_DIR: '/x' }), '/x')
-    assert.equal(lockDir({ XDG_CACHE_HOME: '/c' }), '/c/lntt')
-    assert.match(lockDir({}), /\/\.cache\/lntt$/)
-  })
-
-  test('machine scope: one file; project scope: one per repository, shared by its worktrees', () => {
-    assert.equal(lockPath('/l', 'machine', '/r/a/.git'), '/l/ci-local.lock')
-    const a = repo({})
-    const b = repo({})
-    try {
-      git(a, 'worktree', 'add', '-q', join(a, '.git', 'wt'), '-b', 'other')
-      const main = lockPath('/l', 'project', gitCommonDir(a))
-      assert.match(main, new RegExp(`^/l/ci-local-${a.split('/').pop()}-[0-9a-f]{12}\\.lock$`))
-      assert.equal(lockPath('/l', 'project', gitCommonDir(join(a, '.git', 'wt'))), main)
-      assert.notEqual(lockPath('/l', 'project', gitCommonDir(b)), main)
-    } finally {
-      rmSync(a, { recursive: true, force: true })
-      rmSync(b, { recursive: true, force: true })
-    }
+    assert.equal(alive(-(child.pid as number)), false)
   })
 })

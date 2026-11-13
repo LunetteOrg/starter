@@ -3,44 +3,18 @@
 
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { basename } from 'node:path'
-import { cwd, env, stderr, stdout } from 'node:process'
+import { cwd, env, stderr, stdout, version } from 'node:process'
 import { parseArgs } from 'node:util'
-import { defaultBranch, projectBase, remoteRef } from '../base.ts'
-import { CANDIDATE_PREFIX } from '../branch.ts'
-import { Exit, exit, leave } from '../exit.ts'
-import {
-  acquireLock,
-  candidate,
-  candidateConfig,
-  ciConfig,
-  circleciJobs,
-  containerCommand,
-  type EventOptions,
-  exitCode,
-  formatList,
-  formatReport,
-  githubJobs,
-  holdDeadline,
-  type Lock,
-  localEvent,
-  missingTools,
-  proved,
-  runJobs,
-  stopRunning,
-} from './index.ts'
-
-const USAGE = [
-  'usage: lntt ci local [--event pull_request|push] [--base <branch>] [--job <key>]... [--list] [--strict] [--container] [--no-lock]',
-  '       lntt ci candidate [--pr <n>] [--event <action>] [--head-ref <ref>] [--labels a,b] [--merged] [--dry-run]',
-  '       lntt ci candidate --follow [--dry-run]',
-  '       lntt ci candidate --guard [--pr <n>]',
-  '       lntt ci proved --job <name>... [--step <name>] [--workflow <file>] [--sha <sha>] [--before <sha>] [--branch <name>]',
-].join('\n')
+import { Exit, exit } from '../exit.ts'
+import { candidate, candidateConfig, proved } from './index.ts'
+import type { LocalInput } from './local.ts'
+import { lockDir, pollInterval } from './lock-rules.ts'
+import { usageText } from './usage.ts'
 
 function usage(message?: string): never {
-  if (message) stderr.write(`lntt ci: ${message}\n`)
-  stderr.write(`${USAGE}\n`)
+  stderr.write(usageText(message))
   exit(2)
 }
 
@@ -57,40 +31,25 @@ function guard<T>(parse: () => T): T {
   }
 }
 
-// Gives the lock back; one that cannot be is one line, and the run's exit code stands: its
-// record goes stale by the dead pid.
-function giveBack(lock: Lock | null): void {
+// What `lntt ci local` runs with, from its arguments and the environment; a usage error is its
+// message.
+export function localInput(
+  args: string[],
+  environment: Record<string, string | undefined>,
+  home: string,
+  node: string,
+): LocalInput | { usage: string } {
+  let values: {
+    event: string
+    base?: string | undefined
+    job?: string[] | undefined
+    list: boolean
+    strict: boolean
+    container: boolean
+    'no-lock': boolean
+  }
   try {
-    lock?.release()
-  } catch (error) {
-    stderr.write(`lntt ci: cannot give the ci:local lock back (${(error as Error).message}) — ${lock?.path}\n`)
-  }
-}
-
-// The event's base and its options: --base as given; else, for a pull request, the base
-// every lntt command resolves (src/base/base.ts), and for a push the default branch; both as
-// the remote's copy.
-async function base(
-  root: string,
-  event: 'pull_request' | 'push',
-  given: string | undefined,
-): Promise<[string, EventOptions]> {
-  const candidate = candidateConfig(root)
-  const options: EventOptions = { candidatePrefix: candidate?.prefix ?? CANDIDATE_PREFIX }
-  if (given !== undefined) return [given, options]
-  if (event === 'push') {
-    const branch = await defaultBranch(root, candidate)
-    return [branch, { ...options, baseRef: await remoteRef(root, branch) }]
-  }
-  // The report names the base and the ref; only a base that may be wrong is said here.
-  const resolved = await projectBase(root, 'head')
-  if (resolved.warning) stderr.write(`lntt ci: ${resolved.warning}\n`)
-  return [resolved.branch, { ...options, baseRef: resolved.ref }]
-}
-
-async function local(args: string[]): Promise<number> {
-  const { values } = guard(() =>
-    parseArgs({
+    values = parseArgs({
       args,
       options: {
         event: { type: 'string', default: 'pull_request' },
@@ -101,82 +60,34 @@ async function local(args: string[]): Promise<number> {
         container: { type: 'boolean', default: false },
         'no-lock': { type: 'boolean', default: false },
       },
-    }),
-  )
+    }).values
+  } catch (error) {
+    return { usage: (error as Error).message }
+  }
   const event = values.event
-  if (event !== 'pull_request' && event !== 'push') usage(`--event is pull_request or push, not ${event}`)
-  const root = git('rev-parse', '--show-toplevel')
-  process.chdir(root)
-  const config = ciConfig(root)
-  const localEv = localEvent(root, event, ...(await base(root, event, values.base)))
-  const jobs = [...(await githubJobs(root, localEv, config)), ...circleciJobs(root, localEv, config)]
-  const only = values.job
-  for (const key of only ?? []) {
-    if (!jobs.some((j) => j.key === key)) usage(`no job ${key} (${jobs.map((j) => j.key).join(', ')})`)
+  if (event !== 'pull_request' && event !== 'push') return { usage: `--event is pull_request or push, not ${event}` }
+  const poll = pollInterval(environment)
+  return {
+    event,
+    ...(values.base !== undefined ? { base: values.base } : {}),
+    ...(values.job ? { only: values.job } : {}),
+    list: values.list,
+    strict: values.strict,
+    container: values.container,
+    lock: !values['no-lock'],
+    lockDir: lockDir(environment, home),
+    ...(poll ? { poll } : {}),
+    node,
   }
-  if (values.list) {
-    stdout.write(`${formatList(localEv, jobs)}\n`)
-    return 0
-  }
-  const dirty = git('status', '--porcelain')
-  if (dirty !== '') {
-    stderr.write(
-      `lntt ci: the working tree has uncommitted changes; ci:local checks the commit about to be pushed:\n${dirty}\n`,
-    )
-    return 1
-  }
-  const strict = values.strict
-  if (values.container) {
-    const missing = missingTools(jobs, only)
-    if (missing.length > 0) {
-      stderr.write(`lntt ci: container mode needs ${missing.join(', ')} on the PATH\n`)
-      return 1
-    }
-  }
-  // An interrupt starts nothing more, stops the running command's process group, which
-  // does not get the terminal's signals, gives the lock back and exits 128 + the signal's
-  // number: no report of a run cut short.
-  const interrupt = new AbortController()
-  let lock: Lock | null = null
-  let interrupted: Promise<never> | null = null
-  for (const [signal, code] of [
-    ['SIGINT', 130],
-    ['SIGTERM', 143],
-    ['SIGHUP', 129],
-    ['SIGQUIT', 131],
-  ] as const) {
-    process.on(signal, () => {
-      if (interrupted) return
-      stderr.write(`lntt ci: interrupted (${signal}): stopping the running step\n`)
-      interrupt.abort()
-      interrupted = stopRunning().then(() => {
-        giveBack(lock)
-        return leave(code)
-      })
-    })
-  }
-  if (!values['no-lock']) lock = await acquireLock(root, config.lock, (line) => stderr.write(`${line}\n`))
-  const held = lock
-  try {
-    const results = await runJobs(jobs, {
-      log: (line) => stdout.write(`${line}\n`),
-      ...(only ? { only } : {}),
-      ...(values.container ? { container: containerCommand(localEv, config) } : {}),
-      timeoutMs: config.timeoutMinutes * 60_000,
-      signal: interrupt.signal,
-      ...(held
-        ? {
-            deadline: holdDeadline(held.owner),
-            onGroup: held.setGroup,
-          }
-        : {}),
-    })
-    if (interrupted) await interrupted
-    stdout.write(`${formatReport(localEv, results, { strict })}\n`)
-    return exitCode(results, { strict })
-  } finally {
-    giveBack(lock)
-  }
+}
+
+// `lntt ci local`: the arguments and the environment are read here, then the command runs on
+// Effect (src/ci/local.ts), which this edge loads only for it.
+async function local(args: string[]): Promise<never> {
+  const input = localInput(args, env, homedir(), version)
+  if ('usage' in input) usage(input.usage)
+  const { runLocal } = await import('./local.ts')
+  return runLocal(input)
 }
 
 function candidateRun(args: string[]): number {
@@ -336,7 +247,7 @@ function provedRun(args: string[]): number {
 // `lntt ci <command> [...]`: the arguments after `ci`.
 export async function main([command, ...args]: string[]): Promise<never> {
   try {
-    if (command === 'local') exit(await local(args))
+    if (command === 'local') return await local(args)
     if (command === 'candidate') exit(candidateRun(args))
     if (command === 'proved') exit(provedRun(args))
     usage()
