@@ -55,6 +55,10 @@ export interface LocalInput {
 // A job --job names that the configuration does not have.
 export class UsageError extends Data.TaggedError('UsageError')<{ message: string }> {}
 
+// What keeps the run from starting: a working tree with uncommitted changes, container mode's tools
+// missing from the PATH.
+export class NotRun extends Data.TaggedError('NotRun')<{ message: string }> {}
+
 const say = (line: string) => Console.error(line)
 
 // The event's base and its options: --base as given; else, for a pull request, the base every
@@ -83,7 +87,7 @@ const run = Effect.fnUntraced(function* (input: LocalInput, root: string) {
   const event = yield* localEvent(input.event, base, options)
   // The processed CircleCI configurations and act's event file, gone with the command.
   const dir = yield* fs.makeTempDirectoryScoped({ prefix: 'lntt-ci-' })
-  const host = { node: input.node, dir }
+  const host = { node: input.node, root, dir }
   const jobs = [
     ...(yield* runAsks(githubJobs(root, event, config), host)),
     ...(yield* runAsks(circleciJobs(root, event, config), host)),
@@ -101,17 +105,14 @@ const run = Effect.fnUntraced(function* (input: LocalInput, root: string) {
   const git = yield* Git
   const dirty = yield* git.status
   if (dirty !== '') {
-    yield* say(
-      `lntt ci: the working tree has uncommitted changes; ci:local checks the commit about to be pushed:\n${dirty}`,
-    )
-    return 1
+    return yield* new NotRun({
+      message: `the working tree has uncommitted changes; ci:local checks the commit about to be pushed:\n${dirty}`,
+    })
   }
   if (input.container) {
     const missing = yield* Effect.filter(neededTools(jobs, only), (command) => Effect.map(onPath(command), (on) => !on))
-    if (missing.length > 0) {
-      yield* say(`lntt ci: container mode needs ${missing.join(', ')} on the PATH`)
-      return 1
-    }
+    if (missing.length > 0)
+      return yield* new NotRun({ message: `container mode needs ${missing.join(', ')} on the PATH` })
     yield* fs.writeFileString(`${dir}/event.json`, eventPayload(event))
   }
   const lock = input.lock

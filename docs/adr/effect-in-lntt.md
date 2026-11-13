@@ -116,6 +116,12 @@ round).
   the process alive; a scope's release would stop it at the end of a step, before an
   executable written just before can start. Where there is none to start (not macOS, not
   installed) the round goes on; any other failure to start it fails the round.
+- **What a passing step of `lntt ci local` started in the background outlives the step:**
+  the step's command is a resource of the step's scope, released as any other on a timeout,
+  the lock's deadline or an interrupt, and a command that fails takes its process group with
+  it; one that passes is let go of (`unref`) before its scope closes, so a server it started
+  for the job's next steps keeps running, as on a CI runner
+  (`packages/lntt/src/ci/runner.ts`).
 - **The worktree's lock is a resource of the command's scope** in `lntt review` (a round,
   a reply, `allow`: `lockWorktree` in `packages/lntt/src/worktree/lock.ts`), its heartbeat
   a fiber of the same scope. The agents are fibers of `askAll` inside it, so they are
@@ -149,8 +155,9 @@ run under `Effect.try`, which its spec replaces. What a module on Effect and the
 module not yet moved both read, and which reaches nothing, is plain functions in a module that
 imports no Effect (what the base reads from the names git and GitHub give,
 `packages/lntt/src/base/names.ts`); the sync module keeps its own call to git or gh until it
-moves (`packages/lntt/src/ci/candidate.ts`, until `lntt ci candidate` moves, #340), and so does
-the library's synchronous `localEvent` (`packages/lntt/src/ci/sync.ts`).
+moves (`packages/lntt/src/ci/candidate.ts`, until `lntt ci candidate` moves, #340). The
+library's synchronous `localEvent` keeps its own calls to git too (`packages/lntt/src/ci/sync.ts`),
+until the shells go with #341.
 A defect of the Effect code reaches the edge with its stack. A piece leaves the bridge when
 its module moves to Effect. The library API of
 `@lntt/lntt` (`packages/lntt/src/index.ts`) stays on `Promise`, so a script that imports

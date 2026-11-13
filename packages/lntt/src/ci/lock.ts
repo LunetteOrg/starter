@@ -331,11 +331,12 @@ export const ciLock = (input: Omit<LockInput, 'path'> & { dir: string; scope: Lo
       ),
       (owner) =>
         release(path, owner).pipe(
-          Effect.flatMap((done) =>
-            done ? Effect.void : Effect.fail(new Error(`the guard stayed taken for ${RELEASE_WAIT_MS} ms`)),
-          ),
-          Effect.catch((error) =>
-            input.log(`lntt ci: cannot give the ci:local lock back (${failureReason(error)}) — ${path}`),
+          Effect.map((done) => (done ? null : `the guard stayed taken for ${RELEASE_WAIT_MS} ms`)),
+          Effect.catch((error) => Effect.succeed(failureReason(error))),
+          Effect.flatMap((reason) =>
+            reason === null
+              ? Effect.void
+              : input.log(`lntt ci: cannot give the ci:local lock back (${reason}) — ${path}`),
           ),
         ),
     )

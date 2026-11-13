@@ -109,6 +109,9 @@ function job(key: string, steps: Step[], extra: Partial<Job> = {}): Job {
   return { key, provider: 'github', workflow: 'ci.yml', needs: [], state: { state: 'run' }, notes: [], steps, ...extra }
 }
 
+// The TestClock's time when a spec starts.
+const START = 0
+
 const quiet: RunOptions = { log: () => Effect.void, output: 'ignore' }
 const failure = { text: 'failure()', decide: (failed: boolean) => ({ known: true as const, value: failed }) }
 
@@ -470,6 +473,51 @@ describe('timeouts', () => {
         timeoutMs: 5000,
         load: Effect.sync(() => `load ${++read}`),
       })
+      assert.strictEqual(results[0]?.status, 'passed')
+      assert.strictEqual(read, 0)
+    }),
+  )
+
+  it.effect(
+    'a timeout well before the deadline fails its step alone: the run goes on, failure() steps included',
+    () => {
+      const spawner = inMemorySpawner(byCommand)
+      return Effect.gen(function* () {
+        const results = yield* running(
+          [
+            job('ci.yml/a', [
+              { label: 'hang', local: command('hang') },
+              { label: 'report', condition: failure, local: command('echo report') },
+            ]),
+            job('ci.yml/b', [{ label: 'b', local: command('echo b') }]),
+          ],
+          { timeoutMs: 100, deadline: { at: START + 60_000, reason: 'the deadline' }, load: Effect.succeed('load') },
+          spawner,
+          100,
+        )
+        assert.deepStrictEqual(
+          results[0]?.steps.map((s) => [s.status, s.reason]),
+          [
+            ['failed', 'timed out after 0.1s — load'],
+            ['passed', undefined],
+          ],
+        )
+        assert.strictEqual(results[1]?.status, 'passed')
+      })
+    },
+  )
+
+  // The Clock chains its timers past their 32-bit range (MAX_TIMER_MILLIS in effect's
+  // internal/effect.ts): the run only has to hand it the delay as it is.
+  it.effect('a timeout past the range of the host timers does not fire at once', () =>
+    Effect.gen(function* () {
+      let read = 0
+      const results = yield* running(
+        [job('ci.yml/a', [{ label: 'slow', local: command('slow') }])],
+        { timeoutMs: 2 ** 40, load: Effect.sync(() => `load ${++read}`) },
+        inMemorySpawner(() => ({ delayMs: 200 })),
+        200,
+      )
       assert.strictEqual(results[0]?.status, 'passed')
       assert.strictEqual(read, 0)
     }),

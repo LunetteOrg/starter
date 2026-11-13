@@ -14,11 +14,13 @@ import { CiFailed, runAsks } from './host.ts'
 // `found` on the PATH, and any other command is not installed. The argv it was asked is kept.
 function spawner(circleci: { out?: string; err?: string; code?: number; missing?: boolean }, found: string[] = []) {
   const asked: string[][] = []
+  const cwds: (string | undefined)[] = []
   const spawn = (command: ChildProcess.Command) =>
     Effect.gen(function* () {
       if (command._tag !== 'StandardCommand') return yield* Effect.die('a piped command')
       const argv = [command.command, ...command.args.map(String)]
       asked.push(argv)
+      cwds.push(command.options.cwd)
       const missing = command.command === 'circleci' ? circleci.missing : command.command !== 'sh'
       if (missing) {
         return yield* Effect.fail(
@@ -41,10 +43,10 @@ function spawner(circleci: { out?: string; err?: string; code?: number; missing?
         unref: Effect.succeed(Effect.void),
       })
     })
-  return { asked, layer: Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, ChildProcessSpawner.make(spawn)) }
+  return { asked, cwds, layer: Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, ChildProcessSpawner.make(spawn)) }
 }
 
-const input = { node: 'v24.1.0', dir: '/tmp/ci' }
+const input = { node: 'v24.1.0', root: '/repo', dir: '/tmp/ci' }
 
 describe('runAsks', () => {
   it.effect('answers files, directories, the PATH, the Node version and the changed files', () => {
@@ -81,6 +83,9 @@ describe('runAsks', () => {
       const result = yield* runAsks(processed('.circleci/config.yml', 'version: 2.1', { 'run-ci': true }), input)
       assert.deepStrictEqual(result, { config: { version: 2.1, jobs: {} }, file: '/tmp/ci/processed-1.yml' })
       assert.strictEqual(fs.text('/tmp/ci/source-1.yml'), 'version: 2.1')
+      assert.strictEqual(fs.text('/tmp/ci/processed-1.yml'), 'version: 2.1\njobs: {}\n')
+      // From the repository's root, wherever lntt was started.
+      assert.strictEqual(cli.cwds[0], '/repo')
       assert.deepStrictEqual(cli.asked[0], [
         'circleci',
         '--skip-update-check',
@@ -103,6 +108,11 @@ describe('runAsks', () => {
       'any other failure stays a generic one, with the CLI output',
       { err: 'Error: unknown orb', code: 1 },
       /^circleci config process \.circleci\/config\.yml: Error: unknown orb$/,
+    ],
+    [
+      'a CLI that says why on stdout is named by it',
+      { out: 'Error: config is invalid', code: 1 },
+      /^circleci config process \.circleci\/config\.yml: Error: config is invalid$/,
     ],
     ['a missing CLI is reported as not installed', { missing: true }, /not installed \(brew install circleci\)/],
   ] as const) {

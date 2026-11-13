@@ -19,10 +19,12 @@ export class CiFailed extends Data.TaggedError('CiFailed')<{ message: string }> 
 const failed = (error: unknown) =>
   error instanceof CiFailed ? error : new CiFailed({ message: error instanceof Error ? error.message : String(error) })
 
-// What the asks are answered with besides the services: the Node version lntt runs on, and the
-// folder where the processed configurations go.
+// What the asks are answered with besides the services: the Node version lntt runs on, the
+// repository's root, where the circleci CLI runs (a version manager's shim resolves per folder), and
+// the folder where the processed configurations go.
 export interface HostInput {
   node: string
+  root: string
   dir: string
 }
 
@@ -45,7 +47,7 @@ const expand = Effect.fnUntraced(function* (
   const n = ++count.n
   const source = `${input.dir}/source-${n}.yml`
   yield* fs.writeFileString(source, ask.text)
-  const { out, err, code } = yield* captured(spawner, 'circleci', processArgs(source, ask.parameters)).pipe(
+  const { out, err, code } = yield* captured(spawner, 'circleci', processArgs(source, ask.parameters), input.root).pipe(
     Effect.mapError((error) =>
       error.reason._tag === 'NotFound' ? new CiFailed({ message: CIRCLECI_MISSING }) : failed(error),
     ),

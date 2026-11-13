@@ -9,6 +9,7 @@ import { cwd, env, stderr, stdout, version } from 'node:process'
 import { parseArgs } from 'node:util'
 import { Exit, exit } from '../exit.ts'
 import { candidate, candidateConfig, proved } from './index.ts'
+import type { LocalInput } from './local.ts'
 import { lockDir, pollInterval } from './lock-rules.ts'
 import { usageText } from './usage.ts'
 
@@ -30,11 +31,25 @@ function guard<T>(parse: () => T): T {
   }
 }
 
-// `lntt ci local`: the arguments and the environment are read here, then the command runs on
-// Effect (src/ci/local.ts), which this edge loads only for it.
-async function local(args: string[]): Promise<never> {
-  const { values } = guard(() =>
-    parseArgs({
+// What `lntt ci local` runs with, from its arguments and the environment; a usage error is its
+// message.
+export function localInput(
+  args: string[],
+  environment: Record<string, string | undefined>,
+  home: string,
+  node: string,
+): LocalInput | { usage: string } {
+  let values: {
+    event: string
+    base?: string | undefined
+    job?: string[] | undefined
+    list: boolean
+    strict: boolean
+    container: boolean
+    'no-lock': boolean
+  }
+  try {
+    values = parseArgs({
       args,
       options: {
         event: { type: 'string', default: 'pull_request' },
@@ -45,13 +60,14 @@ async function local(args: string[]): Promise<never> {
         container: { type: 'boolean', default: false },
         'no-lock': { type: 'boolean', default: false },
       },
-    }),
-  )
+    }).values
+  } catch (error) {
+    return { usage: (error as Error).message }
+  }
   const event = values.event
-  if (event !== 'pull_request' && event !== 'push') usage(`--event is pull_request or push, not ${event}`)
-  const poll = pollInterval(env)
-  const { runLocal } = await import('./local.ts')
-  return runLocal({
+  if (event !== 'pull_request' && event !== 'push') return { usage: `--event is pull_request or push, not ${event}` }
+  const poll = pollInterval(environment)
+  return {
     event,
     ...(values.base !== undefined ? { base: values.base } : {}),
     ...(values.job ? { only: values.job } : {}),
@@ -59,10 +75,19 @@ async function local(args: string[]): Promise<never> {
     strict: values.strict,
     container: values.container,
     lock: !values['no-lock'],
-    lockDir: lockDir(env, homedir()),
+    lockDir: lockDir(environment, home),
     ...(poll ? { poll } : {}),
-    node: version,
-  })
+    node,
+  }
+}
+
+// `lntt ci local`: the arguments and the environment are read here, then the command runs on
+// Effect (src/ci/local.ts), which this edge loads only for it.
+async function local(args: string[]): Promise<never> {
+  const input = localInput(args, env, homedir(), version)
+  if ('usage' in input) usage(input.usage)
+  const { runLocal } = await import('./local.ts')
+  return runLocal(input)
 }
 
 function candidateRun(args: string[]): number {

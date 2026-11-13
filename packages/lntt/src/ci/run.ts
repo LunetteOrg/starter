@@ -158,7 +158,8 @@ export async function runJobs(jobs: Job[], options: RunOptions): Promise<JobResu
 
 // Stops the runs `runJobs` has going (an interrupt: a detached group does not get the terminal's
 // Ctrl-C), and resolves once their commands have gone, or after `capMs`. The grace before the
-// SIGKILL is each run's own `killAfterMs`.
+// SIGKILL is each run's own `killAfterMs` (runJobs' option): `killAfterMs` here is still accepted,
+// for the callers written against the library before, and has no effect.
 export function stopRunning({ capMs = KILL_AFTER_MS }: { killAfterMs?: number; capMs?: number } = {}): Promise<void> {
   const runs = [...running]
   for (const run of runs) run.stop()

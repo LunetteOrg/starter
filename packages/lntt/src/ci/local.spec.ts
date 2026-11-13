@@ -43,6 +43,18 @@ jobs:
       - run: npm publish
 `
 
+// A step that reads a secret the run does not have: not run, which --strict fails on.
+const SECRET = `
+on: [pull_request]
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - run: npm publish
+        env:
+          NPM_TOKEN: \${{ secrets.NPM_TOKEN }}
+`
+
 const input = (fields: Partial<LocalInput> = {}): LocalInput => ({
   event: 'pull_request',
   list: false,
@@ -167,6 +179,27 @@ describe('lntt ci local', () => {
       assert.strictEqual(yield* command(input(), ROOT), 1)
       assert.match((yield* output).err, /^lntt ci: the working tree has uncommitted changes; .*\n M dirty$/)
       assert.deepStrictEqual(w.ran, [])
+    }).pipe(Effect.provide(w.layer))
+  })
+
+  it.effect('a workflow that does not parse is one line naming it, exit 1, and runs nothing', () => {
+    const w = world({ files: { '.github/workflows/ci.yml': 'on: pull_request\njobs:\n  a:\n    steps: 3\n' } })
+    return Effect.gen(function* () {
+      assert.strictEqual(yield* command(input(), ROOT), 1)
+      assert.match((yield* output).err, /^lntt ci: \.github\/workflows\/ci\.yml: /)
+      assert.deepStrictEqual(w.ran, [])
+    }).pipe(Effect.provide(w.layer))
+  })
+
+  it.effect('--strict fails a run where something the cloud would run was not run', () => {
+    const files = {
+      '.github/workflows/ci.yml': CI,
+      '.github/workflows/release.yml': SECRET,
+    }
+    const w = world({ files, exists: true })
+    return Effect.gen(function* () {
+      assert.strictEqual(yield* command(input(), ROOT), 0)
+      assert.strictEqual(yield* command(input({ strict: true }), ROOT), 1)
     }).pipe(Effect.provide(w.layer))
   })
 

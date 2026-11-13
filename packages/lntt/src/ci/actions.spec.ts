@@ -1,7 +1,6 @@
 import { assert, describe, it } from '@effect/vitest'
 import { drive } from '../testing/asks.ts'
 import { actionName, localAction, versionMatches } from './actions.ts'
-import { joinPath } from './asks.ts'
 import { emptyConfig } from './config.ts'
 import type { Local } from './plan.ts'
 
@@ -78,15 +77,5 @@ describe('localAction', () => {
     assert.strictEqual(versionMatches('v24', 'v24.15.0'), true)
     assert.strictEqual(versionMatches('24.14', 'v24.15.0'), false)
     assert.strictEqual(versionMatches('>=24', 'v24.15.0'), null)
-  })
-})
-
-describe('joinPath', () => {
-  it('joins as path.posix.join does', () => {
-    assert.strictEqual(joinPath('/repo', 'packages/a'), '/repo/packages/a')
-    assert.strictEqual(joinPath('/repo', './packages//a/'), '/repo/packages/a')
-    assert.strictEqual(joinPath('/repo/x', '../y'), '/repo/y')
-    assert.strictEqual(joinPath('/', '..', 'a'), '/a')
-    assert.strictEqual(joinPath('a', '..'), '.')
   })
 })
