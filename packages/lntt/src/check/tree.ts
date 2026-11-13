@@ -8,20 +8,21 @@ import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Path from 'effect/Path'
 
-// A file larger than this is not read: its size is known, its text is not. The references to the
-// decision logs skip such a file already; a test or a source file is far below it.
-export const READ_LIMIT = 1024 * 1024
+// A file larger than this is not read: its size is known, its text is not. Far past any file a
+// check reads as text (in this repository the largest is a lockfile of a few hundred KB).
+export const READ_LIMIT = 16 * 1024 * 1024
 
-// What no check reads as text: images, fonts, archives, media. Their size is known, their text is not.
+// What no check reads as text: images, fonts, archives, media, compiled code. Their size is
+// known, their text is not.
 export const BINARY =
-  /\.(?:png|jpe?g|gif|webp|avif|ico|bmp|tiff?|pdf|zip|gz|tgz|bz2|xz|7z|jar|wasm|woff2?|ttf|otf|eot|mp[34]|mov|webm|wav|ogg|sqlite|db)$/i
+  /\.(?:png|jpe?g|gif|webp|avif|ico|bmp|tiff?|psd|pdf|zip|gz|tgz|bz2|xz|7z|jar|class|wasm|node|so|dylib|dll|exe|bin|woff2?|ttf|otf|eot|mp[34]|mov|webm|wav|ogg|sqlite|db)$/i
 
 export interface Tree {
   // The project's root, absolute.
   readonly root: string
   // The files a check reads, relative to the root: tracked or new and not ignored.
   readonly files: string[]
-  // A file's text, null when it is no file, or one too large to read.
+  // A file's text, null when it is no file, a binary file, or one too large to read.
   text(path: string): string | null
   // A file, read or not.
   isFile(path: string): boolean
@@ -73,11 +74,18 @@ export const readTree = Effect.fnUntraced(function* (
   const read = (file: string) =>
     Effect.gen(function* () {
       const abs = path.join(root, file)
-      const info = yield* fs.stat(abs).pipe(Effect.option)
-      if (info._tag === 'None') return
+      // Only a path that is not there is left out: any other failure fails the read.
+      const info = yield* fs
+        .stat(abs)
+        .pipe(
+          Effect.catchTag('PlatformError', (error) =>
+            error.reason._tag === 'NotFound' ? Effect.succeed(null) : Effect.fail(error),
+          ),
+        )
+      if (info === null) return
       there.add(normal(file))
-      if (info.value.type !== 'File') return
-      const size = Number(ByteSize.toBigInt(info.value.size))
+      if (info.type !== 'File') return
+      const size = Number(ByteSize.toBigInt(info.size))
       const text = size > limit || BINARY.test(file) ? null : yield* fs.readFileString(abs)
       entries.set(normal(file), { text, size })
     })

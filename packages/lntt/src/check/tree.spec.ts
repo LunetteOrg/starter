@@ -6,7 +6,7 @@ import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
 import * as PlatformError from 'effect/PlatformError'
 import { filesAt } from '../testing/fixtures.ts'
-import { memoryTree, readTree } from './tree.ts'
+import { BINARY, memoryTree, READ_LIMIT, readTree } from './tree.ts'
 
 describe('the project as read', () => {
   it.effect('reads the files listed and those named besides them; a listed path that is gone leaves the list', () =>
@@ -36,21 +36,34 @@ describe('the project as read', () => {
 
   it.effect('a binary file, or one past the limit, is there with its size and no text', () =>
     Effect.gen(function* () {
-      const fs = filesAt('/repo', { 'logo.png': 'not text', 'big.md': 'x'.repeat(20), 'small.md': 'ok' })
-      const tree = yield* readTree('/repo', ['logo.png', 'big.md', 'small.md'], [], 10).pipe(
+      const texts = {
+        'logo.png': 'not text',
+        'LOGO.PNG': 'not text',
+        'big.md': 'x'.repeat(11),
+        'at.md': 'y'.repeat(10),
+      }
+      const fs = filesAt('/repo', texts)
+      const tree = yield* readTree('/repo', Object.keys(texts), [], 10).pipe(
         Effect.provide(Layer.mergeAll(fs.layer, Path.layer)),
       )
-      assert.deepStrictEqual(tree.files, ['logo.png', 'big.md', 'small.md'])
       assert.deepStrictEqual(
-        ['logo.png', 'big.md', 'small.md'].map((f) => [tree.isFile(f), tree.size(f), tree.text(f)]),
+        Object.keys(texts).map((f) => [tree.isFile(f), tree.size(f), tree.text(f)]),
         [
           [true, 8, null],
-          [true, 20, null],
-          [true, 2, 'ok'],
+          [true, 8, null],
+          [true, 11, null],
+          [true, 10, 'y'.repeat(10)],
         ],
       )
     }),
   )
+
+  it('the limit is 16 MiB, and a binary file is known by its extension, whatever its case', () => {
+    assert.strictEqual(READ_LIMIT, 16 * 1024 * 1024)
+    for (const binary of ['a.png', 'b.JPG', 'c.woff2', 'd.node', 'e.dylib', 'f.class', 'g.pdf', 'h.wasm'])
+      assert.ok(BINARY.test(binary), binary)
+    for (const text of ['a.md', 'b.ts', 'c.json', 'pnpm-lock.yaml', 'png.md']) assert.ok(!BINARY.test(text), text)
+  })
 
   it.effect('a file that is there and cannot be read fails the read, never a silent pass', () =>
     Effect.gen(function* () {
