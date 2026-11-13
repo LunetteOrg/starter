@@ -1,4 +1,4 @@
-// The candidate automation (src/ci/candidate.ts) run for a spec: its steps on Effect over Gh,
+// The candidate automation's steps (src/ci/candidate-steps.ts) run for a spec: its steps on Effect over Gh,
 // Board and Git layers that answer gh's and git's arguments from records, the way a test of the
 // automation has always written GitHub (a read answered by the first key its command line holds,
 // a write recorded). A step runs to its end synchronously; its failure is thrown with its message.

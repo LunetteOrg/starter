@@ -64,7 +64,7 @@ GitHub's CLI, and the agents built on processes. A service of `lntt`'s own is de
 operations typed and run through the spawner, in the current directory or the one the layer
 names (`gitAt`, `ghAt`). A layer takes what changes how a run reaches GitHub or git: `ghAt` a token
 (the candidate automation's Projects token is a second layer of `Gh`, its service `Board` in
-`packages/lntt/src/ci/candidate.ts`) and a dry run, which prints a write's command instead of
+`packages/lntt/src/ci/candidate-steps.ts`) and a dry run, which prints a write's command instead of
 running it; `gitAt` the environment git starts with and a dry run of its push. `Gh.over` runs the
 same operations over any runner of gh's arguments, for a spec. The agents
 are `Agents` in `packages/lntt/src/review/asking.ts` (one agent run, and what keeps an agent
@@ -236,9 +236,10 @@ imports the library, gets `Promise` functions. A project that uses Effect itself
 resolves its own version beside `lntt`'s.
 
 `@lntt/lntt/ci` exports what plans and runs a project's CI on the machine (`lntt ci local`'s
-loaders, its run, its lock), in their synchronous and `Promise` forms. The candidate automation and
-the check of a tree already proved belong to their commands, `lntt ci candidate` and `lntt ci
-proved`, their only callers, and are not exported (from 0.6.5).
+loaders, its run, its lock), in their synchronous and `Promise` forms, and the reading of
+`delivery.candidate` (`candidateConfig`). The candidate automation and the check of a tree already
+proved belong to their commands, `lntt ci candidate` and `lntt ci proved`, their only callers, and
+are not exported.
 
 ## Consequences
 

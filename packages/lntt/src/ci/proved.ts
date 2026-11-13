@@ -3,7 +3,6 @@
 // *proved* only when every condition holds; anything else, an API error included, is
 // *not proved*, and the caller runs the whole job.
 
-import * as Cause from 'effect/Cause'
 import * as Data from 'effect/Data'
 import * as Effect from 'effect/Effect'
 import { Gh, type WorkflowRun } from '../gh/gh.ts'
@@ -109,8 +108,6 @@ const prove = Effect.fnUntraced(function* (input: ProvedInput) {
 export const proved = (input: ProvedInput) =>
   prove(input).pipe(
     Effect.map((reason): Proved => ({ proved: true, reason })),
-    // An answer of another shape throws where it is read: not proved either.
-    Effect.catchCause((cause) =>
-      Effect.succeed<Proved>({ proved: false, reason: (Cause.squash(cause) as Error).message ?? String(cause) }),
-    ),
+    // A refused call, an answer of another shape (Gh's GhError) and a refusal of the checks alike.
+    Effect.catch((error) => Effect.succeed<Proved>({ proved: false, reason: error.message })),
   )

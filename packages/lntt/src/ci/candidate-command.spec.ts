@@ -298,10 +298,12 @@ describe('lntt ci candidate', () => {
 // gh as a spawner in memory: what each call's environment held.
 function spawner() {
   const envs: (Record<string, unknown> | undefined)[] = []
+  const asked: string[][] = []
   const spawn = (command: ChildProcess.Command) =>
     Effect.gen(function* () {
       if (command._tag !== 'StandardCommand') return yield* Effect.die('a piped command')
       envs.push(command.options.env)
+      asked.push([command.command, ...command.args.map(String)])
       return ChildProcessSpawner.makeHandle({
         pid: ChildProcessSpawner.ProcessId(1),
         exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
@@ -316,7 +318,7 @@ function spawner() {
         unref: Effect.succeed(Effect.void),
       })
     })
-  return { envs, layer: Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, ChildProcessSpawner.make(spawn)) }
+  return { envs, asked, layer: Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, ChildProcessSpawner.make(spawn)) }
 }
 
 describe('the board’s client', () => {
@@ -353,7 +355,11 @@ describe('the clone’s git', () => {
       yield* (yield* Git).isShallow
       const env = s.envs[0] as Record<string, string>
       assert.strictEqual(env.GIT_CONFIG_KEY_0, 'http.https://github.com/.extraheader')
-      assert.match(env.GIT_CONFIG_VALUE_0 ?? '', /^AUTHORIZATION: basic /)
+      assert.strictEqual(
+        env.GIT_CONFIG_VALUE_0,
+        `AUTHORIZATION: basic ${Buffer.from('x-access-token:secret').toString('base64')}`,
+      )
+      assert.notInclude(s.asked.flat().join(' '), 'secret')
     }).pipe(
       Effect.provide(
         candidateLayers({

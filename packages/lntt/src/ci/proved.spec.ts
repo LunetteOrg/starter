@@ -230,7 +230,9 @@ describe('lntt ci proved', () => {
   it('a page of another shape, which throws where it is read, is not proved either', () => {
     const a = api()
     for (const key of Object.keys(a)) if (key.includes('/actions/workflows/')) a[key] = {}
-    assert.match(refusal(a), /workflow_runs|undefined|not iterable/)
+    const result = check(a)
+    assert.strictEqual(result.proved, false)
+    assert.match(result.reason, /an answer of another shape/)
   })
 
   it('a malformed input is not proved', () => {

@@ -386,7 +386,24 @@ function candidateOperations(runner: GhRunner): CandidateGhOperations {
       try: () => JSON.parse(out) as A,
       catch: () => new GhError({ args, output: `not JSON: ${out.slice(0, 80)}` }),
     })
-  const json = <A>(args: string[]) => Effect.flatMap(runner(args), (out) => parse<A>(args, out))
+  // An answer read with `read`, which throws on a shape it does not expect: a GhError naming it, an
+  // expected failure the automation reads as any other refusal.
+  const json =
+    <A>(args: string[]) =>
+    <B = A>(read: (value: A) => B = (value) => value as unknown as B) =>
+      Effect.flatMap(runner(args), (out) =>
+        Effect.flatMap(parse<A>(args, out), (value) =>
+          Effect.try({
+            try: () => read(value),
+            catch: () => new GhError({ args, output: `an answer of another shape: ${out.slice(0, 80)}` }),
+          }),
+        ),
+      )
+  // A list, as the automation reads one.
+  const list = <A>(value: unknown): A[] => {
+    if (!Array.isArray(value)) throw new Error('not a list')
+    return value as A[]
+  }
   // Lines of JSON, one per page.
   const lines = <A>(args: string[]) =>
     Effect.flatMap(runner(args), (out) =>
@@ -416,37 +433,31 @@ function candidateOperations(runner: GhRunner): CandidateGhOperations {
         `head:${prefix}`,
         '--json',
         'number,headRefName,headRefOid,body',
-      ]),
+      ])(list<CandidatePullRequest>),
     branchesUnder: ({ repo, prefix }) =>
-      Effect.map(json<Array<{ ref: string }>>(['api', `repos/${repo}/git/matching-refs/heads/${prefix}`]), (refs) =>
-        refs.map((ref) => ref.ref.replace(/^refs\/heads\//, '')),
+      json<Array<{ ref: string }>>(['api', `repos/${repo}/git/matching-refs/heads/${prefix}`])((refs) =>
+        list<{ ref: string }>(refs).map((ref) => ref.ref.replace(/^refs\/heads\//, '')),
       ),
     pullRequestHeads: ({ repo, prefix }) =>
-      Effect.map(
-        json<Array<{ headRefName: string }>>([
-          'pr',
-          'list',
-          '--repo',
-          repo,
-          '--state',
-          'all',
-          '--search',
-          `head:${prefix}`,
-          '--limit',
-          '100',
-          '--json',
-          'headRefName',
-        ]),
-        (prs) => prs.map((pr) => pr.headRefName),
-      ),
+      json<Array<{ headRefName: string }>>([
+        'pr',
+        'list',
+        '--repo',
+        repo,
+        '--state',
+        'all',
+        '--search',
+        `head:${prefix}`,
+        '--limit',
+        '100',
+        '--json',
+        'headRefName',
+      ])((prs) => prs.map((pr) => pr.headRefName)),
     commitOf: ({ repo, ref }) =>
-      Effect.map(
-        json<{ sha: string; commit: { tree: { sha: string } } }>(['api', `repos/${repo}/commits/${ref}`]),
-        (c) => ({
-          sha: c.sha,
-          tree: c.commit.tree.sha,
-        }),
-      ),
+      json<{ sha: string; commit: { tree: { sha: string } } }>(['api', `repos/${repo}/commits/${ref}`])((c) => ({
+        sha: c.sha,
+        tree: c.commit.tree.sha,
+      })),
     graphqlNodes: (query, fields, jq) =>
       Effect.map(
         lines<unknown[]>([
@@ -470,23 +481,27 @@ function candidateOperations(runner: GhRunner): CandidateGhOperations {
       return Effect.flatMap(write(args), data(args))
     },
     issueState: ({ repo, number }) =>
-      json(['api', `repos/${repo}/issues/${number}`, '--jq', '{state: .state, isPr: (.pull_request != null)}']),
+      json(['api', `repos/${repo}/issues/${number}`, '--jq', '{state: .state, isPr: (.pull_request != null)}'])(),
     issueCommentBodies: ({ repo, number }) =>
       Effect.map(
         lines<string[]>(['api', '--paginate', `repos/${repo}/issues/${number}/comments`, '--jq', '[.[].body]']),
         (pages) => pages.flat(),
       ),
     pullRequestsFrom: ({ repo, head, base }) =>
-      json(['pr', 'list', '--repo', repo, '--state', 'open', '--head', head, '--base', base, '--json', 'number,body']),
+      json(['pr', 'list', '--repo', repo, '--state', 'open', '--head', head, '--base', base, '--json', 'number,body'])(
+        list<{ number: number; body: string }>,
+      ),
     mergedInto: ({ repo, base, fields }) =>
-      json(['pr', 'list', '--repo', repo, '--state', 'merged', '--base', base, '--limit', '500', '--json', fields]),
+      json(['pr', 'list', '--repo', repo, '--state', 'merged', '--base', base, '--limit', '500', '--json', fields])(
+        list<MergedPullRequest>,
+      ),
     behind: ({ repo, base, head }) =>
       json([
         'api',
         `repos/${repo}/compare/${base}...${head}`,
         '--jq',
         '{behindBy: .behind_by, base: .base_commit.sha}',
-      ]),
+      ])(),
     pullRequestView: ({ repo, number }) =>
       json([
         'pr',
@@ -496,7 +511,7 @@ function candidateOperations(runner: GhRunner): CandidateGhOperations {
         repo,
         '--json',
         'number,title,body,baseRefName,headRefName,labels,mergedAt,author,isCrossRepository',
-      ]),
+      ])(),
     createCommit: ({ repo, message, tree, parent }) =>
       write([
         'api',
@@ -537,26 +552,22 @@ function candidateOperations(runner: GhRunner): CandidateGhOperations {
       Effect.asVoid(write(['pr', 'edit', String(number), '--repo', repo, '--body-file', '-'], body)),
     closeIssue: ({ repo, number }) =>
       Effect.asVoid(write(['issue', 'close', String(number), '--repo', repo, '--reason', 'completed'])),
-    commitPullRequests: ({ repo, sha }) => json(['api', `repos/${repo}/commits/${sha}/pulls`]),
+    commitPullRequests: ({ repo, sha }) =>
+      json(['api', `repos/${repo}/commits/${sha}/pulls`])(
+        list<{ number: number; merged_at: string | null; base: { ref: string }; head: { sha: string } }>,
+      ),
     treeOf: ({ repo, sha }) =>
-      Effect.map(
-        json<{ tree?: { sha?: unknown } | null }>(['api', `repos/${repo}/git/commits/${sha}`]),
-        (c) => c.tree?.sha,
-      ),
+      json<{ tree?: { sha?: unknown } | null }>(['api', `repos/${repo}/git/commits/${sha}`])((c) => c.tree?.sha),
     compareStatus: ({ repo, base, head }) =>
-      Effect.map(json<{ status: string }>(['api', `repos/${repo}/compare/${base}...${head}`]), (c) => c.status),
+      json<{ status: string }>(['api', `repos/${repo}/compare/${base}...${head}`])((c) => c.status),
     workflowRuns: ({ repo, workflow, sha }) =>
-      Effect.map(
-        json<{ workflow_runs: WorkflowRun[] }>([
-          'api',
-          `repos/${repo}/actions/workflows/${workflow}/runs?head_sha=${sha}&per_page=100`,
-        ]),
-        (page) => page.workflow_runs,
-      ),
+      json<{ workflow_runs: WorkflowRun[] }>([
+        'api',
+        `repos/${repo}/actions/workflows/${workflow}/runs?head_sha=${sha}&per_page=100`,
+      ])((page) => list(page.workflow_runs)),
     runJobs: ({ repo, run }) =>
-      Effect.map(
-        json<{ jobs: RunJob[] }>(['api', `repos/${repo}/actions/runs/${run}/jobs?per_page=100`]),
-        (page) => page.jobs,
+      json<{ jobs: RunJob[] }>(['api', `repos/${repo}/actions/runs/${run}/jobs?per_page=100`])((page) =>
+        list(page.jobs),
       ),
   }
 }

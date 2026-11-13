@@ -5,11 +5,9 @@
 // making them. The decisions, the bodies and the parsers are plain, in src/ci/candidate.ts, which
 // loads no Effect for the commands that read them.
 
-import * as Cause from 'effect/Cause'
 import * as Context from 'effect/Context'
 import * as Data from 'effect/Data'
 import * as Effect from 'effect/Effect'
-import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import { openCandidateOf } from '../base/names.ts'
@@ -106,6 +104,14 @@ const messageOf = (error: unknown) => (error as { message?: string })?.message ?
 
 const failed = (message: string) => Effect.fail(new CandidateFailed({ message }))
 
+// An answer GitHub gave, read: one of another shape, which throws where it is read, is a
+// CandidateFailed naming it, an expected failure like a refused call. A bug of lntt stays a defect.
+const reading = <A>(what: string, read: () => A) =>
+  Effect.try({
+    try: read,
+    catch: (error) => new CandidateFailed({ message: `${what}: an answer of another shape (${messageOf(error)})` }),
+  })
+
 const openCandidates = Effect.fnUntraced(function* ({ repo, config }: Pick<Run, 'repo' | 'config'>) {
   const gh = yield* Gh
   const prs: CandidatePr[] = yield* gh.candidatePullRequests({ repo, base: config.base, prefix: config.prefix })
@@ -154,6 +160,8 @@ const createCandidate = Effect.fnUntraced(function* ({ repo, config, log }: Run)
     body: candidateBody(config, n),
   })
   const number = Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0)
+  // Only a dry run creates none: a URL without a number is gh answering otherwise than expected.
+  if (number === 0 && url !== '') return yield* failed(`gh pr create gave no pull request number: ${url}`)
   return { number, headRefName: branch, created: true } satisfies CandidatePr
 })
 
@@ -215,22 +223,24 @@ const openPrs = Effect.fnUntraced(function* ({ repo }: Pick<Run, 'repo'>) {
     { owner, name },
     '[.data.repository.pullRequests.nodes[]]',
   )) as PrNode[]
-  return nodes.map((pr): OpenPullRequest => {
-    const change = pr.timelineItems.nodes[0]
-    return {
-      number: pr.number,
-      baseRef: pr.baseRefName,
-      headRef: pr.headRefName,
-      ...(pr.author?.login ? { author: pr.author.login } : {}),
-      labels: pr.labels.nodes.map((label) => label.name),
-      lastBaseChange: change
-        ? {
-            from: (change.previousRefName ?? change.oldBase) as string,
-            to: (change.currentRefName ?? change.newBase) as string,
-          }
-        : null,
-    }
-  })
+  return yield* reading('the open pull requests', () =>
+    nodes.map((pr): OpenPullRequest => {
+      const change = pr.timelineItems.nodes[0]
+      return {
+        number: pr.number,
+        baseRef: pr.baseRefName,
+        headRef: pr.headRefName,
+        ...(pr.author?.login ? { author: pr.author.login } : {}),
+        labels: pr.labels.nodes.map((label) => label.name),
+        lastBaseChange: change
+          ? {
+              from: (change.previousRefName ?? change.oldBase) as string,
+              to: (change.currentRefName ?? change.newBase) as string,
+            }
+          : null,
+      }
+    }),
+  )
 })
 
 // The merged candidate leaves open pull requests behind: they go onto the next
@@ -260,14 +270,12 @@ const readIssue = Effect.fnUntraced(function* ({ repo }: Pick<Run, 'repo'>, numb
 
 // Runs `step` on each number, going on past a failure; the failures are returned, so
 // one wrong number does not leave the others behind.
-// An answer GitHub shaped otherwise than expected throws where it is read: that counts as the
-// step's failure too.
 const eachIssue = <E, R>(numbers: number[], step: (number: number) => Effect.Effect<void, E, R>) =>
   Effect.gen(function* () {
     const failures: string[] = []
     for (const number of numbers) {
-      const exit = yield* Effect.exit(step(number))
-      if (Exit.isFailure(exit)) failures.push(`#${number}: ${messageOf(Cause.squash(exit.cause))}`)
+      const result = yield* Effect.result(step(number))
+      if (result._tag === 'Failure') failures.push(`#${number}: ${messageOf(result.failure)}`)
     }
     return failures
   })
@@ -280,8 +288,8 @@ const together = <E, R>(steps: Effect.Effect<unknown, E, R>[]) =>
   Effect.gen(function* () {
     const errors: string[] = []
     for (const step of steps) {
-      const exit = yield* Effect.exit(step)
-      if (Exit.isFailure(exit)) errors.push(messageOf(Cause.squash(exit.cause)))
+      const result = yield* Effect.result(step)
+      if (result._tag === 'Failure') errors.push(messageOf(result.failure))
     }
     if (errors.length > 0) return yield* failed(errors.join('; '))
   })
@@ -307,8 +315,12 @@ export const setBoardStatus = Effect.fnUntraced(function* (run: Run, issues: num
   const [owner, name] = repo.split('/')
   const moveOne = Effect.fnUntraced(function* (number: number) {
     const answer = yield* board.graphqlFields(BOARD_QUERY, { owner, name, number })
-    const nodes = (answer as { repository: { issue: { projectItems: { nodes: BoardItem[] } } } }).repository.issue
-      .projectItems.nodes
+    const nodes = yield* reading(
+      `the projects of #${number}`,
+      () =>
+        (answer as { repository: { issue: { projectItems: { nodes: BoardItem[] } } } }).repository.issue.projectItems
+          .nodes,
+    )
     if (nodes.length === 0) {
       log(`::notice title=Board not moved::#${number} is on no project: nothing to move to "${status}".`)
       skipped.push(number)
@@ -707,7 +719,8 @@ export const readyAfterMerge = Effect.fnUntraced(function* (run: Run, pr: PullRe
   const failures = yield* eachIssue(localIssues(run, candidateClosingReferences(pr.body)), (number) =>
     Effect.gen(function* () {
       const asked = waitingQuery(repo, number)
-      const { closed, blocked, more } = waitingOf(yield* gh.graphqlFields(asked.query, asked.variables), repo)
+      const answer = yield* gh.graphqlFields(asked.query, asked.variables)
+      const { closed, blocked, more } = yield* reading(`who waits on #${number}`, () => waitingOf(answer, repo))
       if (!closed) return
       if (more)
         log(
@@ -731,7 +744,12 @@ export const readyAfterMerge = Effect.fnUntraced(function* (run: Run, pr: PullRe
           const itemsAnswer = yield* board.graphqlFields(itemsAsked.query, itemsAsked.variables)
           const { verdict, status, target } = yield* Effect.try({
             try: () => issueOnBoardOf(issueAnswer, itemsAnswer, rules, repo),
-            catch: (error) => error,
+            catch: (error) =>
+              error instanceof NotOnBoard
+                ? error
+                : new CandidateFailed({
+                    message: `#${number} on the board: an answer of another shape (${messageOf(error)})`,
+                  }),
           })
           if (!target) {
             log(`candidate: #${number} is not on the board, the Ready check leaves it.`)

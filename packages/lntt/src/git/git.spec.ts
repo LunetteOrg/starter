@@ -5,7 +5,7 @@ import * as PlatformError from 'effect/PlatformError'
 import { type ChildProcess, ChildProcessSpawner } from 'effect/process'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
-import { Git, GitLive, gitAt } from './git.ts'
+import { Git, GitError, GitLive, gitAt } from './git.ts'
 
 const encode = (text: string) => new TextEncoder().encode(text)
 
@@ -204,6 +204,14 @@ describe('Git on the machine', () => {
 })
 
 describe('the follow of the candidate', () => {
+  it.effect('in memory, an operation not answered fails as git would, the ones that are not functions too', () =>
+    Effect.gen(function* () {
+      const error = yield* Effect.flip((yield* Git).isShallow)
+      assert.instanceOf(error, GitError)
+      assert.strictEqual(error.message, 'git isShallow failed: not in this repository')
+    }).pipe(Effect.provide(Git.memory({}))),
+  )
+
   it.effect('reads each outcome, a failure included, without failing; the hooks never run on its rebase', () => {
     const g = git((args) => (args.includes('rebase') ? { err: 'CONFLICT (content)\n', code: 1 } : { out: 'true\n' }))
     return Effect.gen(function* () {
