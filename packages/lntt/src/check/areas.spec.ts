@@ -1,4 +1,5 @@
 import { assert, describe, it } from '@effect/vitest'
+import { HOOK_LABELS, INVALID } from '../claude-settings.ts'
 import { retrospectiveBlock, retrospectiveRules } from '../pull-request.ts'
 import {
   agentsMdResults,
@@ -35,11 +36,31 @@ describe("lntt sync's areas", () => {
     )
   })
 
-  it("the plugin's settings pass when every entry is in step; an entry that is not names its key", () => {
+  it('an edited stub has its own message', () => {
+    assert.match(
+      skillsResults([{ path: '.agents/skills/review', state: 'edited' }])[0]?.message ?? '',
+      /^differs from the stub lntt sync writes/,
+    )
+  })
+
+  it("the plugin's settings pass when every entry is in step; an entry that is not names its key and its state", () => {
     assert.strictEqual(pluginResults([{ key: 'enabledPlugins', state: 'ok' }])[0]?.status, 'PASS')
+    const hook = Object.keys(HOOK_LABELS)[0] as string
     assert.deepStrictEqual(
-      pluginResults([{ key: 'enabledPlugins', state: 'off' }]).map((r) => r.message),
-      ['enabledPlugins is not enabled; run pnpm exec lntt sync'],
+      pluginResults([
+        { key: 'enabledPlugins', state: 'off' },
+        { key: 'extraKnownMarketplaces', state: 'missing' },
+        { key: 'extraKnownMarketplaces', state: 'elsewhere' },
+        { key: hook, state: 'edited' },
+        { key: 'enabledPlugins', state: 'invalid' },
+      ]).map((r) => r.message),
+      [
+        'enabledPlugins is not enabled; run pnpm exec lntt sync',
+        'extraKnownMarketplaces is missing; run pnpm exec lntt sync',
+        'extraKnownMarketplaces points elsewhere than the marketplace @lntt/lntt ships; run pnpm exec lntt sync',
+        `${hook}: the ${HOOK_LABELS[hook]} hook differs from the one lntt sync writes; run pnpm exec lntt sync`,
+        INVALID,
+      ],
     )
   })
 })

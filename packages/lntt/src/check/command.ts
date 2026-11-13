@@ -17,6 +17,7 @@ import * as Effect from 'effect/Effect'
 import type * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
+import type { PlatformError } from 'effect/PlatformError'
 import { candidateConfigOf } from '../ci/config.ts'
 import { loadConfig } from '../config/load.ts'
 import { exit, printed } from '../exit.ts'
@@ -71,7 +72,7 @@ export const runArea = Effect.fnUntraced(function* (
   check: string | undefined,
   files: string[],
   options: CheckOptions,
-  tree: Effect.Effect<Tree, CheckFailed, FileSystem.FileSystem | Path.Path | Git>,
+  tree: Effect.Effect<Tree, CheckFailed | PlatformError, FileSystem.FileSystem | Path.Path | Git>,
 ) {
   const { root } = options
   if (area === 'agents-md') return agentsMdResults(yield* synced((c) => c.agentsBlock(root)))

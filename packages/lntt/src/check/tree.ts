@@ -8,8 +8,13 @@ import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Path from 'effect/Path'
 
-// A file larger than this is not read: its size is known, its text is not.
-export const READ_LIMIT = 16 * 1024 * 1024
+// A file larger than this is not read: its size is known, its text is not. The references to the
+// decision logs skip such a file already; a test or a source file is far below it.
+export const READ_LIMIT = 1024 * 1024
+
+// What no check reads as text: images, fonts, archives, media. Their size is known, their text is not.
+export const BINARY =
+  /\.(?:png|jpe?g|gif|webp|avif|ico|bmp|tiff?|pdf|zip|gz|tgz|bz2|xz|7z|jar|wasm|woff2?|ttf|otf|eot|mp[34]|mov|webm|wav|ogg|sqlite|db)$/i
 
 export interface Tree {
   // The project's root, absolute.
@@ -53,8 +58,14 @@ const normal = (path: string) => path.replace(/^\.\//, '')
 
 // Reads `files`, and `also` (paths relative to the root that a command names), into a tree. A
 // listed path that is not there (deleted in the working tree) leaves the list; one that is not a
-// file (a submodule) stays in it, unread.
-export const readTree = Effect.fnUntraced(function* (root: string, files: string[], also: string[] = []) {
+// file (a submodule) stays in it, unread, as does a binary file or one past `limit`. A file that
+// is there and cannot be read fails the read: a check never passes on a file it did not read.
+export const readTree = Effect.fnUntraced(function* (
+  root: string,
+  files: string[],
+  also: string[] = [],
+  limit: number = READ_LIMIT,
+) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const entries = new Map<string, Entry>()
@@ -62,13 +73,14 @@ export const readTree = Effect.fnUntraced(function* (root: string, files: string
   const read = (file: string) =>
     Effect.gen(function* () {
       const abs = path.join(root, file)
-      const info = yield* fs.stat(abs)
+      const info = yield* fs.stat(abs).pipe(Effect.option)
+      if (info._tag === 'None') return
       there.add(normal(file))
-      if (info.type !== 'File') return
-      const size = Number(ByteSize.toBigInt(info.size))
-      const text = size > READ_LIMIT ? null : yield* fs.readFileString(abs)
+      if (info.value.type !== 'File') return
+      const size = Number(ByteSize.toBigInt(info.value.size))
+      const text = size > limit || BINARY.test(file) ? null : yield* fs.readFileString(abs)
       entries.set(normal(file), { text, size })
-    }).pipe(Effect.ignore)
+    })
   yield* Effect.forEach([...new Set([...files, ...also])], read, { concurrency: 16, discard: true })
   return treeOf(
     root,
