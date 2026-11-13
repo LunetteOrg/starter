@@ -144,9 +144,10 @@ round).
 ### The bridge, while modules move
 
 A Promise function a module on Effect still calls runs under `Effect.tryPromise`, which
-passes it a signal an interrupt aborts when it takes one (a `Spawn` does; so does stdin, `readStdin`
-in `packages/lntt/src/stdin.ts`, which `lntt branch check --pre-push` reads through a `Context.Reference` its
-spec replaces). The sync code of
+passes it a signal an interrupt aborts when it takes one (a `Spawn` does). One that takes none is
+read at one place the same way as the sync code below: stdin, `readStdin` in
+`packages/lntt/src/stdin.ts`, which `lntt branch check --pre-push` reads through a
+`Context.Reference` its spec replaces. The sync code of
 modules not yet moved that a module on Effect needs is read at one place, a `Context.Reference`
 whose default is the sync function, run under `Effect.try`, which its spec replaces: what it
 throws is a tagged error of the command, reported by its message like any expected failure (the

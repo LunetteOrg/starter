@@ -5,7 +5,6 @@ import { type ChildProcess, ChildProcessSpawner } from 'effect/process'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 import * as TestConsole from 'effect/testing/TestConsole'
-import { MAX_WORDS } from '../branch.ts'
 import { Gh, GhError, type Issue } from '../gh/gh.ts'
 import { repository } from '../testing/repository.ts'
 import type { Host } from '../viewer.ts'
@@ -124,16 +123,22 @@ describe('lntt branch name', () => {
     }),
   )
 
-  it.effect('without --issue, a slug that is not lower-case words within the limit is not a valid name', () =>
+  // docs/process/delivery.md: a slug is one to four lower-case words joined by `-`.
+  it.effect('without --issue, a slug of four lower-case words is a valid name, one of five is not', () =>
+    Effect.gen(function* () {
+      const four = yield* world().lntt({ kind: 'name', issue: null, type: 'docs', slug: 'a-b-c-d' })
+      assert.deepStrictEqual([four.code, four.out], [0, 'docs/no-issue/a-b-c-d'])
+      const five = yield* world().lntt({ kind: 'name', issue: null, type: 'docs', slug: 'a-b-c-d-e' })
+      assert.strictEqual(five.code, 1)
+      assert.match(five.err, /slug a-b-c-d-e is not 1 to 4 lower-case words joined by -/)
+    }),
+  )
+
+  it.effect('without --issue, a slug that is not lower-case is not a valid name', () =>
     Effect.gen(function* () {
       const r = yield* world().lntt({ kind: 'name', issue: null, type: 'docs', slug: 'Not A Slug' })
       assert.strictEqual(r.code, 1)
-      assert.match(
-        r.err,
-        new RegExp(
-          `docs/no-issue/Not A Slug is not a valid name: slug Not A Slug is not 1 to ${MAX_WORDS} lower-case words`,
-        ),
-      )
+      assert.match(r.err, /docs\/no-issue\/Not A Slug is not a valid name: slug Not A Slug is not 1 to 4/)
     }),
   )
 
