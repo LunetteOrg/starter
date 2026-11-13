@@ -570,6 +570,37 @@ describe('sweep', () => {
 // A board double: the issue's project items answered to the GraphQL read, the
 // mutations recorded.
 describe('setBoardStatus', () => {
+  it('a project with no id fails that issue before its write, rather than writing to "undefined"', () => {
+    const writes: string[] = []
+    const node = (projectId: unknown) => ({
+      id: 'I',
+      project: { id: projectId, title: 'Roadmap', field: { id: 'F', options: [{ id: 'o', name: 'In release' }] } },
+    })
+    const board: Gh = {
+      read: (args) =>
+        JSON.stringify({
+          data: {
+            repository: {
+              issue: {
+                projectItems: { nodes: args.includes('number=69') ? [node('P'), node(undefined)] : [node('P')] },
+              },
+            },
+          },
+        }),
+      write: (args) => {
+        writes.push(args.filter((a) => /^(project|item)=/.test(a)).join(' '))
+        return ''
+      },
+    }
+    assert.throws(
+      () => setBoardStatus({ ...run(fakeGh({})), board }, [69, 70], 'In release'),
+      /#69: the projects of #69: an answer of another shape \(an id that is undefined\)/,
+    )
+    // #69 has a good project and one without an id: neither is written, since the issue's projects
+    // are read whole first; #70 is.
+    assert.deepStrictEqual(writes, ['project=P item=I'])
+  })
+
   it('a project of another shape fails that issue before any write, and the others go on', () => {
     const lines: string[] = []
     const writes: string[] = []

@@ -238,7 +238,13 @@ describe('lntt ci proved', () => {
   it('an element of another shape in a list is not proved either, with the reason', () => {
     const a = api()
     a[`repos/${R}/commits/${SHA}/pulls`] = [null]
-    assert.deepStrictEqual(check(a).proved, false)
+    assert.match(refusal(a), /^no merged pull request into main explains/)
+    // A merged pull request with no head.
+    const headless = api()
+    headless[`repos/${R}/commits/${SHA}/pulls`] = [
+      { number: 7, merged_at: '2026-11-13T00:00:00Z', base: { ref: 'main' } },
+    ]
+    assert.match(refusal(headless), /^#7 has no head commit$/)
     const b = api()
     for (const key of Object.keys(b)) if (key.includes('/actions/workflows/')) b[key] = { workflow_runs: [null] }
     const result = check(b)

@@ -104,6 +104,13 @@ const messageOf = (error: unknown) => (error as { message?: string })?.message ?
 
 const failed = (message: string) => Effect.fail(new CandidateFailed({ message }))
 
+// A GraphQL id as GitHub gives it: a string, never empty; anything else is a shape to refuse
+// before it reaches a write.
+const id = (value: unknown): string => {
+  if (typeof value !== 'string' || value === '') throw new Error(`an id that is ${JSON.stringify(value)}`)
+  return value
+}
+
 // An answer GitHub gave, read: one of another shape, which throws where it is read, is a
 // CandidateFailed naming it, an expected failure like a refused call. A bug of lntt stays a defect.
 const reading = <A>(what: string, read: () => A) =>
@@ -321,11 +328,11 @@ export const setBoardStatus = Effect.fnUntraced(function* (run: Run, issues: num
       (
         answer as { repository: { issue: { projectItems: { nodes: BoardItem[] } } } }
       ).repository.issue.projectItems.nodes.map((node) => ({
-        item: String(node.id),
-        id: String(node.project.id),
+        item: id(node.id),
+        id: id(node.project.id),
         title: String(node.project.title),
-        field: node.project.field?.id ? String(node.project.field.id) : null,
-        options: (node.project.field?.options ?? []).map((o) => ({ id: String(o.id), name: String(o.name) })),
+        field: node.project.field?.id ? id(node.project.field.id) : null,
+        options: (node.project.field?.options ?? []).map((o) => ({ id: id(o.id), name: String(o.name) })),
         current: node.fieldValueByName?.optionId,
       })),
     )
