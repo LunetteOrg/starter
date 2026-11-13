@@ -96,7 +96,10 @@ small adapter that makes the calls it understands.
     candidate holds commits `origin/<default branch>` lacks) is compared with the
     candidate from that fork point, a branch just started on it included; the candidate
     itself (the branch of its name, or a detached HEAD at its head) goes into the
-    default branch; any other branch is compared with `origin/<default branch>`.
+    default branch; any other branch is compared with `origin/<default branch>`, one with no
+    history in common with the candidate (`git merge-base` exits 1) included. A git that
+    fails any other way (an unknown revision, a git that does not start) fails the command:
+    it is never read as "no common history".
 
   Which candidate is open is asked to GitHub (`gh pr list`, the query of the candidate
   automation): a merged candidate's branch stays on origin and its commits reach the

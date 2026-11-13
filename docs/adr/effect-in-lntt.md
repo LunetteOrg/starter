@@ -163,7 +163,9 @@ it needs no Effect: a library function whose logic moved (`askAll`, `runRound`),
 function a command not yet on Effect calls (`projectBase` in `packages/lntt/src/base.ts`), imports its
 Effect form with `await import(...)` when it is called and runs it with `Effect.runPromise`,
 its callbacks under `Effect.sync`, `Effect.try` and `Effect.tryPromise` (a `Spawn` is the
-`Agents` layer `Agents.fromSpawn`, an `AbortSignal` the stop). A `Spawn` that rejects is
+`Agents` layer `Agents.fromSpawn`, an `AbortSignal` the stop). The base keeps its modules and
+its layer of git and gh per directory (`packages/lntt/src/base.ts`); the layer is a description
+that holds no resource, so each run builds the services again. A `Spawn` that rejects is
 that agent's failed answer in `askAll`; an ask, a brief or a cited line that throws rejects
 `runRound` with what it threw.
 A command that does not call it loads no Effect for it.
