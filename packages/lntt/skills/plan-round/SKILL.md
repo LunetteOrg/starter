@@ -76,7 +76,7 @@ what it found and any friction it met:
 - **Greenfield:** gather the requirements from the person, then explore the repository
   for the conventions the new work must follow.
 - **A client meeting:** read it as reference material, then follow
-  [*Intake*](#intake--a-client-meeting).
+  [_Intake_](#intake--a-client-meeting).
 - **Always** the repository as it is (what exists against what the plan assumes) and
   the decision records the work touches.
 
@@ -132,11 +132,11 @@ backlog, or **close it** as obsolete. New work and the backlog are planned toget
   its horizon but gets no dates (`roadmap`, section 2).
 - **An undecided scope is not split.** A parent waiting on a decision gets one child,
   the work that produces the decision; the split follows the record.
-- **A bet becomes two children.** For each parent ask *what will we look at to know how
-  it went*. When the answer is a number expected to move: the **instrumentation**, only
-  if the event does not exist yet (checked now: after the release there is no *before*),
+- **A bet becomes two children.** For each parent ask _what will we look at to know how
+  it went_. When the answer is a number expected to move: the **instrumentation**, only
+  if the event does not exist yet (checked now: after the release there is no _before_),
   and the **analysis**, blocked by the first, in the iteration when it is looked at.
-  *Not measured* is a legitimate answer, written in the body; silence is not.
+  _Not measured_ is a legitimate answer, written in the body; silence is not.
 - **Tracks:** group the parents so independent people work in parallel, one owner per
   track; state the dependency waves and any imbalance. Hand the track set to
   `github-board` (section 7): labels are derived and confirmed, never assumed.
@@ -154,7 +154,7 @@ backlog, or **close it** as obsolete. New work and the backlog are planned toget
 title lists each `old title → new title`: a silent rename disorients.
 
 Every body follows `github-board` section 2: a child an agent cannot start cold from is
-not ready. What *Ready* means beyond that is in `docs/process/board.md`, when the project
+not ready. What _Ready_ means beyond that is in `docs/process/board.md`, when the project
 defines it (the option `board.fields.status.ready`).
 
 ## 6. Materialize
@@ -197,11 +197,11 @@ material is handled.
   with what that meeting changed.
 - **Three buckets.** Every point lands in one, presented before anything is written:
 
-  | Bucket | What it is | Where it goes |
-  |---|---|---|
-  | **Confirmed** | the client stated it, and it constrains the build | a record, the principle the work starts from |
-  | **Suspended** | it depends on something nobody knows yet | a spike: a record that lists options, no decision |
-  | **Open** | it needs the client to answer | an issue with its interlocutor, a child of the parent whose work it blocks, naming every record it touches |
+  | Bucket        | What it is                                        | Where it goes                                                                                              |
+  | ------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+  | **Confirmed** | the client stated it, and it constrains the build | a record, the principle the work starts from                                                               |
+  | **Suspended** | it depends on something nobody knows yet          | a spike: a record that lists options, no decision                                                          |
+  | **Open**      | it needs the client to answer                     | an issue with its interlocutor, a child of the parent whose work it blocks, naming every record it touches |
 
   A point that fits no bucket is a question for the person, not a bucket to invent.
 - **A record is corrected in place** when the answers arrive; a new one is written only

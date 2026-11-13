@@ -16,30 +16,30 @@ The starter targets complex full-stack TypeScript applications built by small te
 
 ### Decision
 
-| Concern | Choice |
-|---|---|
-| Runtime | Node.js 24 LTS — native type stripping; scripts run with `node` directly, never `tsx`/`ts-node` |
-| Monorepo | pnpm workspaces + Turborepo; `moduleResolution: bundler` for bundled packages (see [module resolution & import convention](#module-resolution--import-convention)), no build step for internal packages |
-| Bundler | Vite (Rolldown) |
-| Web framework | React Router v7 — loaders/actions, server-rendered, progressive enhancement |
-| Webhooks / external HTTP | Hono |
-| Database | Postgres only; Drizzle ORM + Drizzle Kit migrations |
-| Date/time | `Temporal` everywhere; `Date` is banned (see [import boundaries](./architecture-and-boundaries.md#import-boundaries)) |
-| Lint/format | Biome (single tool) |
-| Tests | Vitest + Testcontainers, Storybook + Vitest browser mode for components, Playwright for e2e (see [testing strategy](./testing.md#testing-strategy)) |
-| Git hooks | Lefthook + commitlint (conventional commits) |
-| Styling | CSS Modules for components + Tailwind for utilities |
-| TypeScript | `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitReturns` |
-| Deploy | Container-based. The template ships a Render Blueprint (`render.yaml`); self-hosted VPS (Uncloud/Kamal) is a documented alternative |
+| Concern                  | Choice                                                                                                                                                                                                                        |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime                  | Node.js 24 LTS — native type stripping; scripts run with `node` directly, never `tsx`/`ts-node`                                                                                                                               |
+| Monorepo                 | pnpm workspaces + Turborepo; `moduleResolution: bundler` for bundled packages (see [module resolution & import convention](#module-resolution--import-convention)), no build step for internal packages                       |
+| Bundler                  | Vite (Rolldown)                                                                                                                                                                                                               |
+| Web framework            | React Router v7 — loaders/actions, server-rendered, progressive enhancement                                                                                                                                                   |
+| Webhooks / external HTTP | Hono                                                                                                                                                                                                                          |
+| Database                 | Postgres only; Drizzle ORM + Drizzle Kit migrations                                                                                                                                                                           |
+| Date/time                | `Temporal` everywhere; `Date` is banned (see [import boundaries](./architecture-and-boundaries.md#import-boundaries))                                                                                                         |
+| Lint/format              | Biome (single tool), Markdown included, its frontmatter read as one (`markdown.parser.frontmatter`). `.claude/skills/postgres` is left as written: it comes from `timescale/pg-aiguide`, pinned by hash in `skills-lock.json` |
+| Tests                    | Vitest + Testcontainers, Storybook + Vitest browser mode for components, Playwright for e2e (see [testing strategy](./testing.md#testing-strategy))                                                                           |
+| Git hooks                | Lefthook + commitlint (conventional commits)                                                                                                                                                                                  |
+| Styling                  | CSS Modules for components + Tailwind for utilities                                                                                                                                                                           |
+| TypeScript               | `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitReturns`                                                                                                                                       |
+| Deploy                   | Container-based. The template ships a Render Blueprint (`render.yaml`); self-hosted VPS (Uncloud/Kamal) is a documented alternative                                                                                           |
 
 Deferred until a concrete trigger fires:
 
-| Deferred | Un-defer signal |
-|---|---|
-| Caching (Redis) | p95 response > 500ms on a read-heavy route |
-| Jobs queue (pg-boss, see [jobs and cron](../guidances/app-infrastructure.md#jobs-and-cron)) | First use case that must run async |
-| Rate limiting | First public unauthenticated endpoint |
-| External API layer (tRPC vs Hono+OpenAPI vs ElysiaJS) | First non-TS or third-party API consumer |
+| Deferred                                                                                    | Un-defer signal                            |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Caching (Redis)                                                                             | p95 response > 500ms on a read-heavy route |
+| Jobs queue (pg-boss, see [jobs and cron](../guidances/app-infrastructure.md#jobs-and-cron)) | First use case that must run async         |
+| Rate limiting                                                                               | First public unauthenticated endpoint      |
+| External API layer (tRPC vs Hono+OpenAPI vs ElysiaJS)                                       | First non-TS or third-party API consumer   |
 
 ### Consequences
 
@@ -115,7 +115,7 @@ portable end genuinely portable:
 
 **Extension ≠ portability.** Writing `.ts` does not make a React component
 Node-runnable — JSX and CSS/asset imports are what tie it to the bundler. What keeps the domain
-runnable under Node is the *absence* of bundler imports, not the extension. The
+runnable under Node is the _absence_ of bundler imports, not the extension. The
 convention aligns writing style and strictness across the tree; portability is
 earned separately, by keeping the domain layer free of bundler dependencies.
 
@@ -134,4 +134,3 @@ carve-out): [imports guidance](../guidances/imports.md).
   generated directories.
 - − `moduleResolution` is not uniform: `bundler` for UI/bundled packages,
   `nodenext` for Node-first domain/libraries. This split is the whole point.
-

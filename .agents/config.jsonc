@@ -26,6 +26,7 @@
       "packages/test-utils/**": "test helpers every project installs, citing that project's ADRs",
       "packages/lntt/schema/**": "the schema of every project's configuration, citing that project's process pages",
       "packages/lntt/test/**": "tests that name the records of their fixtures",
+      "packages/lntt/src/**/*.spec.ts": "unit tests that name the records of their fixtures",
       "packages/lntt/skills/**": "the shared skills' guides, printed in every project by lntt guide, citing that project's records"
     }
   },
@@ -37,10 +38,11 @@
     "assertions": ["run"],
     "levels": [
       {
+        // Every package's unit tests, beside their modules: the root vitest.config.ts lists the
+        // packages' own configurations (docs/adr/effect-in-lntt.md#tests-beside-each-module).
         "name": "unit",
-        "files": ["packages/test-utils/src/**/*.spec.ts"],
-        "environment": "vitest, node",
-        "cwd": "packages/test-utils",
+        "files": ["packages/*/src/**/*.spec.ts"],
+        "environment": "vitest, node; in-memory layers for lntt's services",
         "run": "pnpm exec vitest run {files}"
       },
       {
@@ -52,6 +54,8 @@
         ],
         "exclude": ["**/fixtures/**"],
         "environment": "node:test, the CLI against fixture repositories in a temp dir",
+        // One test file: test/review-cli.test.ts alone takes about 135 s.
+        "timeoutSeconds": 300,
         "run": "node --test {files}",
         "coverage": "node --test --experimental-test-coverage --test-reporter=lcov --test-reporter-destination={out}/lcov.info {files}"
       },

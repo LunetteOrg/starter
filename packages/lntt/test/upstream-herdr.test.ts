@@ -2,8 +2,7 @@ import assert from 'node:assert/strict'
 import { existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
-import { type Start, setupScript, startHerdr } from '../src/worktree.ts'
-import { runner } from '../src/worktree-cli.ts'
+import { runner, type Start, setupScript, startHerdr } from '../src/worktree.ts'
 import {
   background,
   collect,

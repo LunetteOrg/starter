@@ -10,7 +10,6 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -78,6 +77,8 @@ afterEach(() => {
   rmSync(tmp, { recursive: true, force: true })
 })
 
+// The main paths of lntt refs, through the CLI as a process with git and a gh on PATH; the lookups
+// and the cache are tested in src/refs.spec.ts and src/refs/resolve.spec.ts.
 describe('lntt refs', () => {
   test('references as arguments: each with its title and URL, or why it has none', () => {
     const out = json(lntt(['#1', 'o/r#9']))
@@ -120,48 +121,12 @@ describe('lntt refs', () => {
     assert.deepEqual(ghCalls(), [])
   })
 
-  test('--cached with nothing cached asks gh for the repository only', () => {
-    json(lntt(['--cached', '#1']))
-    assert.deepEqual(
-      ghCalls().map((c) => c.split(' ').slice(0, 2).join(' ')),
-      ['repo view'],
-    )
-  })
-
-  test('without gh: no repository, nothing looked up', () => {
-    // A PATH with git alone: the directory of the real git may hold a gh too.
-    rmSync(join(stubs, 'gh'))
-    symlinkSync(execFileSync('which', ['git'], { encoding: 'utf8' }).trim(), join(stubs, 'git'))
-    const out = json(lntt(['#1', 'o/r#1'], { path: stubs }))
-    assert.equal(out.repository, null)
-    assert.deepEqual(out.refs, [{ ref: 'o/r#1', title: null, url: null, why: 'off' }])
-  })
-
   test('a gh lookup past its timeout failed, and its gh is killed', () => {
     ghWith('exec sleep 10')
     const started = Date.now()
     const out = json(lntt(['#1']))
     assert.ok(Date.now() - started < 8000)
     assert.deepEqual(out.refs, [{ ref: 'o/r#1', title: null, url: null, why: 'failed' }])
-  })
-
-  test('a gh lookup that exits non-zero with anything but a 404 or a login failed', () => {
-    ghWith("echo 'gh: API rate limit exceeded (HTTP 403)' >&2; exit 1")
-    assert.deepEqual(json(lntt(['#1'])).refs, [{ ref: 'o/r#1', title: null, url: null, why: 'failed' }])
-  })
-
-  test('the repository is asked again once remote.origin.url changes', () => {
-    execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:o/r.git'], { cwd: repo })
-    json(lntt(['--cached', '#1']))
-    rmSync(log)
-    json(lntt(['--cached', '#1']))
-    assert.deepEqual(ghCalls(), [])
-    execFileSync('git', ['remote', 'set-url', 'origin', 'git@github.com:o/other.git'], { cwd: repo })
-    json(lntt(['--cached', '#1']))
-    assert.deepEqual(
-      ghCalls().map((c) => c.split(' ').slice(0, 2).join(' ')),
-      ['repo view'],
-    )
   })
 
   test('no text and a terminal on stdin: a usage error, nothing read', () => {

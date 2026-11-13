@@ -1,13 +1,19 @@
 // The event a local run stands in for, read from the local git state. ci:local never
-// fetches: the base is a ref of this clone (src/base.ts finds it), and the report names it.
+// fetches: the base is a ref of this clone (src/base/base.ts finds it), and the report names it.
 //
 // - `pull_request` (the default): the pull request of the current branch into `base`,
 //   ready for review, which is what the cloud runs once a draft leaves draft.
 // - `push`: a push of the current commit to `base` (the main branch: what gates a
 //   release).
+//
+// On Effect, over Git and the base's own lookups. The library's synchronous `localEvent`,
+// `changedAgainst` and `defaultBranch` are in src/ci/sync.ts, with their own git calls over the
+// same names (src/base/names.ts).
 
-import { execFileSync } from 'node:child_process'
-import { candidateAt, repositoryDefault } from '../base.ts'
+import * as Effect from 'effect/Effect'
+import { candidateAt, localRef, repositoryDefault } from '../base/base.ts'
+import { repositoryOf } from '../base/names.ts'
+import { Git } from '../git/git.ts'
 
 export type EventName = 'pull_request' | 'push'
 
@@ -28,57 +34,37 @@ export interface Event {
   defaultBranch: string
 }
 
-function git(cwd: string, ...args: string[]): string | null {
-  try {
-    return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
-  } catch {
-    return null
-  }
-}
-
-// The branch origin/HEAD points at, else `main`.
-export const defaultBranch = repositoryDefault
-
-export function repositoryOf(url: string | null): string | null {
-  const match = /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/.exec(url ?? '')
-  return match ? match[1] : null
-}
-
-// Changed files from the merge base with `ref` to HEAD.
-function changedSince(cwd: string, ref: string): string[] | null {
-  const out = git(cwd, 'diff', '--name-only', `${ref}...HEAD`)
-  return out === null ? null : out.split('\n').filter((line) => line !== '')
-}
-
-// `origin/<branch>` when it exists locally, else `<branch>`, else null: the ref of a base
-// --base names, which may be a branch only this clone has.
-export function localRef(cwd: string, branch: string): string | null {
-  return [`origin/${branch}`, branch].find((ref) => git(cwd, 'rev-parse', '--verify', '-q', ref) !== null) ?? null
-}
-
-// Files changed from the merge base with `branch` to HEAD; null without a local ref.
-export function changedAgainst(cwd: string, branch: string): string[] | null {
-  const ref = localRef(cwd, branch)
-  return ref ? changedSince(cwd, ref) : null
-}
-
 export interface EventOptions {
-  // The ref to diff against, when the base was resolved (src/base.ts); else localRef's.
+  // The ref to diff against, when the base was resolved (src/base/base.ts); else localRef's.
   baseRef?: string
   // delivery.candidate.prefix: a detached HEAD at a candidate's head is that candidate.
   candidatePrefix?: string
 }
 
-export function localEvent(cwd: string, name: EventName, base: string, options: EventOptions = {}): Event {
-  let head = git(cwd, 'rev-parse', '--abbrev-ref', 'HEAD') ?? 'HEAD'
+// What git cannot answer is not known: the event reads null, as with no ref.
+const unknown = <A, E, R>(read: Effect.Effect<A, E, R>) =>
+  read.pipe(Effect.catch(() => Effect.succeed(null as A | null)))
+
+// Changed files from the merge base with `ref` to HEAD.
+const changedSince = (ref: string) => unknown(Effect.flatMap(Git, (git) => git.changed(`${ref}...HEAD`)))
+
+// Files changed from the merge base with `branch` to HEAD; null without a local ref.
+export const changedAgainst = Effect.fnUntraced(function* (branch: string) {
+  const ref = yield* unknown(localRef(branch))
+  return ref ? yield* changedSince(ref) : null
+})
+
+export const localEvent = Effect.fnUntraced(function* (name: EventName, base: string, options: EventOptions = {}) {
+  const git = yield* Git
+  let head = (yield* unknown(git.branch)) ?? 'HEAD'
   // The workflows read the branch's name (the branch check): a candidate checked out
   // detached from origin needs no local branch named after it.
-  if (head === 'HEAD' && options.candidatePrefix) head = candidateAt(cwd, options.candidatePrefix) ?? head
-  const sha = git(cwd, 'rev-parse', 'HEAD') ?? ''
-  const baseRef = options.baseRef ?? localRef(cwd, base)
-  let changed = baseRef ? changedSince(cwd, baseRef) : null
+  if (head === 'HEAD' && options.candidatePrefix) head = (yield* unknown(candidateAt(options.candidatePrefix))) ?? head
+  const sha = (yield* unknown(git.verify('HEAD'))) ?? ''
+  const baseRef = options.baseRef ?? (yield* unknown(localRef(base)))
+  let changed = baseRef ? yield* changedSince(baseRef) : null
   // A push of a commit already on the base: the last commit is what it brings.
-  if (name === 'push' && changed?.length === 0) changed = changedSince(cwd, 'HEAD^')
+  if (name === 'push' && changed?.length === 0) changed = yield* changedSince('HEAD^')
   return {
     name,
     base,
@@ -86,7 +72,7 @@ export function localEvent(cwd: string, name: EventName, base: string, options: 
     sha,
     baseRef,
     changed,
-    repository: repositoryOf(git(cwd, 'remote', 'get-url', 'origin')),
-    defaultBranch: defaultBranch(cwd),
-  }
-}
+    repository: repositoryOf(yield* unknown(git.originUrl)),
+    defaultBranch: (yield* unknown(repositoryDefault)) ?? 'main',
+  } satisfies Event
+})

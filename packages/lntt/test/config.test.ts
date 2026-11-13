@@ -6,7 +6,8 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { candidateConfig } from '../src/ci/config.ts'
-import { ConfigError, findConfig, getValue, loadConfig, projectPhase, setValue } from '../src/index.ts'
+import { validation } from '../src/config/validate.ts'
+import { findConfig, getValue, loadConfig, setValue } from '../src/index.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
 
@@ -46,130 +47,20 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-describe('finding the file', () => {
+// The synchronous loader of the modules not yet on Effect (src/config/sync.ts) on a real file
+// system; the loader itself is specified in src/config/load.spec.ts.
+describe('finding the file, synchronously', () => {
   test('walks up from a subdirectory to .agents/config.jsonc', () => {
     const path = write('.agents/config.jsonc', JSONC)
     mkdirSync(join(root, 'packages/deep/src'), { recursive: true })
     assert.deepEqual(findConfig(join(root, 'packages/deep/src')), { path, format: 'jsonc' })
   })
-
-  test('finds .agents/config.yml', () => {
-    const path = write('.agents/config.yml', YAML)
-    assert.deepEqual(findConfig(root), { path, format: 'yaml' })
-  })
-
-  test('refuses a directory that has both formats, naming them', () => {
-    write('.agents/config.jsonc', JSONC)
-    write('.agents/config.yml', YAML)
-    assert.throws(
-      () => findConfig(root),
-      (e: unknown) => {
-        assert.ok(e instanceof ConfigError)
-        assert.match(e.message, /config\.jsonc/)
-        assert.match(e.message, /config\.yml/)
-        return true
-      },
-    )
-  })
-
-  test('says so when there is none', () => {
-    assert.throws(() => findConfig(root), /no \.agents\/config\.jsonc or \.agents\/config\.yml/)
-  })
 })
 
-describe('reading and validating', () => {
-  test('JSONC and YAML give the same data, comments ignored', () => {
-    write('.agents/config.jsonc', JSONC)
-    const fromJsonc = loadConfig(root).data
-    rmSync(join(root, '.agents/config.jsonc'))
-    write('.agents/config.yml', YAML)
-    assert.deepEqual(loadConfig(root).data, fromJsonc)
-    assert.equal(getValue(fromJsonc, 'recording.logs.adr.path'), 'docs/adr')
-  })
-
-  test('accepts the $schema key editors use', () => {
-    write('.agents/config.jsonc', `{ "$schema": "../schema.json", "recording": { "logs": {} } }`)
-    assert.deepEqual(loadConfig(root).data.recording, { logs: {} })
-  })
-
-  test('rejects an unknown section, naming it', () => {
-    write('.agents/config.jsonc', `{ "recordin": { "logs": {} } }`)
-    assert.throws(() => loadConfig(root), /recordin/)
-  })
-
-  test('rejects a value of the wrong type, naming where', () => {
-    write('.agents/config.yml', 'recording:\n  logs:\n    adr:\n      path: 42\n')
-    assert.throws(() => loadConfig(root), /\/recording\/logs\/adr\/path/)
-  })
-
-  test('reports a JSONC syntax error instead of reading half a file', () => {
-    write('.agents/config.jsonc', '{ "recording": { "logs": { } ')
-    assert.throws(() => loadConfig(root), ConfigError)
-  })
-
+describe('reading', () => {
   test('getValue fails on a missing key rather than returning undefined', () => {
     write('.agents/config.jsonc', JSONC)
     assert.throws(() => getValue(loadConfig(root).data, 'recording.logs.pdr.path'), /recording\.logs\.pdr/)
-  })
-})
-
-describe("the project's phase", () => {
-  test('development or production, read with lntt get; any other value does not validate', () => {
-    for (const phase of ['development', 'production']) {
-      write('.agents/config.jsonc', `{ "project": { "phase": "${phase}" } }`)
-      const out = execFileSync('node', [BIN, 'get', 'project.phase'], { cwd: root, encoding: 'utf8' })
-      assert.equal(JSON.parse(out), phase)
-      assert.equal(projectPhase(loadConfig(root).data), phase)
-    }
-    write('.agents/config.jsonc', `{ "project": { "phase": "development" } }`)
-    const section = execFileSync('node', [BIN, 'get', 'project'], { cwd: root, encoding: 'utf8' })
-    assert.deepEqual(JSON.parse(section), { phase: 'development' }, 'the section reads as it is written')
-    write('.agents/config.jsonc', `{ "project": { "phase": "beta" } }`)
-    assert.throws(() => loadConfig(root), /\/project\/phase/)
-  })
-
-  test('a missing key, or a missing section, is production: no project loses a check unless its team says so', () => {
-    write('.agents/config.jsonc', JSONC)
-    assert.equal(projectPhase(loadConfig(root).data), 'production')
-    write('.agents/config.jsonc', `{ "project": {} }`)
-    assert.equal(projectPhase(loadConfig(root).data), 'production')
-    const out = execFileSync('node', [BIN, 'get', 'project.phase'], { cwd: root, encoding: 'utf8' })
-    assert.equal(JSON.parse(out), 'production')
-  })
-
-  test('only project.phase reads its default: another missing key, one with a default in the schema too, exits 1', () => {
-    const schema = JSON.parse(readFileSync(resolve(dirname(BIN), '../schema/config.schema.json'), 'utf8'))
-    assert.equal(schema.properties.board.properties.provider.default, 'github')
-    write('.agents/config.jsonc', `{ "board": {} }`)
-    const r = spawnSync('node', [BIN, 'get', 'board.provider'], { cwd: root, encoding: 'utf8' })
-    assert.equal(r.status, 1)
-    assert.match(r.stderr, /no board\.provider/)
-  })
-})
-
-describe('writing keeps the comments', () => {
-  test('JSONC', () => {
-    const path = write('.agents/config.jsonc', JSONC)
-    setValue(root, 'recording.logs.process', { path: 'docs/process' })
-    const text = readFileSync(path, 'utf8')
-    assert.match(text, /\/\/ The decision logs of this repo\./)
-    assert.match(text, /\/\/ records are written in English/)
-    assert.equal(getValue(loadConfig(root).data, 'recording.logs.process.path'), 'docs/process')
-  })
-
-  test('YAML', () => {
-    const path = write('.agents/config.yml', YAML)
-    setValue(root, 'recording.logs.process', { path: 'docs/process' })
-    const text = readFileSync(path, 'utf8')
-    assert.match(text, /# The decision logs of this repo\./)
-    assert.match(text, /# records are written in English/)
-    assert.equal(getValue(loadConfig(root).data, 'recording.logs.process.path'), 'docs/process')
-  })
-
-  test('refuses to write a value the schema rejects, leaving the file as it was', () => {
-    const path = write('.agents/config.jsonc', JSONC)
-    assert.throws(() => setValue(root, 'recording.language', 7), ConfigError)
-    assert.equal(readFileSync(path, 'utf8'), JSONC)
   })
 })
 
@@ -190,29 +81,6 @@ describe('the command line', () => {
     const path = write('.agents/config.jsonc', JSONC)
     assert.equal(execFileSync('node', [BIN, 'path'], { cwd: root, encoding: 'utf8' }).trim(), path)
     assert.equal(spawnSync('node', [BIN, 'validate'], { cwd: root }).status, 0)
-  })
-
-  test('a warningRounds not below maxRounds validates, with a warning that no round blocks on blockers only', () => {
-    write('.agents/config.jsonc', '{ "delivery": { "review": { "maxRounds": 3, "warningRounds": 3 } } }')
-    const run = spawnSync('node', [BIN, 'validate'], { cwd: root, encoding: 'utf8' })
-    assert.equal(run.status, 0, run.stderr)
-    assert.match(
-      run.stderr,
-      /^lntt validate: warning: delivery\.review\.warningRounds \(3\) is not below delivery\.review\.maxRounds \(3\): no round blocks on blockers only$/m,
-    )
-    write('.agents/config.jsonc', '{ "delivery": { "review": { "maxRounds": 3, "warningRounds": 2 } } }')
-    assert.equal(spawnSync('node', [BIN, 'validate'], { cwd: root, encoding: 'utf8' }).stderr, '')
-  })
-
-  test('delivery.review.stateDir is a path; anything else does not validate', () => {
-    write('.agents/config.jsonc', '{ "delivery": { "review": { "stateDir": ".git/review" } } }')
-    assert.equal(spawnSync('node', [BIN, 'validate'], { cwd: root, encoding: 'utf8' }).status, 0)
-    for (const bad of ['3', '""', 'false']) {
-      write('.agents/config.jsonc', `{ "delivery": { "review": { "stateDir": ${bad} } } }`)
-      const run = spawnSync('node', [BIN, 'validate'], { cwd: root, encoding: 'utf8' })
-      assert.equal(run.status, 1, bad)
-      assert.match(run.stderr, /stateDir/, bad)
-    }
   })
 
   test('an invalid file exits 1 with the reason on stderr', () => {
@@ -334,12 +202,24 @@ function assertRejected(config: unknown, names: RegExp): void {
   assert.throws(() => loadConfig(root), names)
 }
 
-// Runs `lntt validate` on `config`, which the schema accepts, and returns its exit
-// status and stderr: the references between lists are checked there, not on load.
+// What `lntt validate` says of `config`, which the schema accepts: its exit status and stderr. The
+// references between lists are checked there, not on load, by src/config/validate.ts, which the
+// command runs (src/config/command.spec.ts); here it runs in process.
 function validateCli(config: unknown): { status: number | null; stderr: string } {
   write('.agents/config.jsonc', JSON.stringify(config))
-  const run = spawnSync(process.execPath, [BIN, 'validate'], { cwd: root, encoding: 'utf8' })
-  return { status: run.status, stderr: run.stderr }
+  return validateAt(root)
+}
+
+function validateAt(dir: string): { status: number | null; stderr: string } {
+  let loaded: ReturnType<typeof loadConfig>
+  try {
+    loaded = loadConfig(dir)
+  } catch (error) {
+    return { status: 1, stderr: `lntt: ${(error as Error).message}\n` }
+  }
+  const { failure, warnings } = validation(loaded.path, loaded.data)
+  if (failure !== null) return { status: 1, stderr: `lntt: ${failure}\n` }
+  return { status: 0, stderr: warnings.map((w) => `lntt validate: warning: ${w}\n`).join('') }
 }
 
 function assertValid(config: unknown): void {
@@ -901,7 +781,7 @@ describe('the configurations of the projects the starter was ported from', () =>
   for (const [project, values] of Object.entries(distinct)) {
     test(`${project}: lntt validate accepts it, and it carries the values that set it apart`, () => {
       write('.agents/config.jsonc', readFileSync(join(FIXTURES, `${project}.jsonc`), 'utf8'))
-      const valid = spawnSync(process.execPath, [BIN, 'validate'], { cwd: root, encoding: 'utf8' })
+      const valid = validateAt(root)
       assert.equal(valid.status, 0, valid.stderr)
       const data = loadConfig(root).data
       for (const [key, value] of Object.entries(values)) assert.deepEqual(getValue(data, key), value, key)
@@ -930,6 +810,7 @@ describe("the starter's own configuration", () => {
 
   test('the file passes lntt validate, and its board is the lunette roadmap Project', () => {
     assert.ok(existsSync(join(REPO, '.agents/config.jsonc')), REPO)
+    // The real command, end to end, on a real configuration.
     const valid = spawnSync(process.execPath, [BIN, 'validate'], { cwd: REPO, encoding: 'utf8' })
     assert.equal(valid.status, 0, valid.stderr)
     const data = loadConfig(REPO).data

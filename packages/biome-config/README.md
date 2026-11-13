@@ -28,17 +28,18 @@ Biome resolves `extends` by package name; a plugin is a path, so it points into
 
 Formatter: two spaces, 100 columns, single quotes, no semicolons. Linter: the
 `recommended` preset. VCS: git, honouring `.gitignore`. `*.grit` files are not
-formatted.
+formatted. Markdown: a YAML frontmatter is read as one (`markdown.parser.frontmatter`), so
+the formatter leaves it as written.
 
 ## The plugins
 
-| Plugin | Flags | Mount it on |
-|---|---|---|
-| `no-throw-new-error.grit` | `throw new <Name>Error(…)`; framework signals (`throw redirect(…)`) pass | app code |
-| `no-entity-spread-in-loader.grit` | an object spread in a `return` (`return { ...entity }`), never an array spread | route modules (loaders and actions) |
-| `no-implicit-e2e-sync.grit` | `page.waitForTimeout(…)` | e2e tests |
-| `no-react-internals.grit` | `__reactProps$` / `__reactFiber$` keys | e2e tests |
-| `e2e-test-from-helper.grit` | `test` imported from `@playwright/test` (named, renamed, default or namespace) or re-exported from it, and any `import()` or `require` of it by a string or template literal; `expect`, `devices` and types pass | e2e tests and their fixtures |
+| Plugin                            | Flags                                                                                                                                                                                                            | Mount it on                         |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `no-throw-new-error.grit`         | `throw new <Name>Error(…)`; framework signals (`throw redirect(…)`) pass                                                                                                                                         | app code                            |
+| `no-entity-spread-in-loader.grit` | an object spread in a `return` (`return { ...entity }`), never an array spread                                                                                                                                   | route modules (loaders and actions) |
+| `no-implicit-e2e-sync.grit`       | `page.waitForTimeout(…)`                                                                                                                                                                                         | e2e tests                           |
+| `no-react-internals.grit`         | `__reactProps$` / `__reactFiber$` keys                                                                                                                                                                           | e2e tests                           |
+| `e2e-test-from-helper.grit`       | `test` imported from `@playwright/test` (named, renamed, default or namespace) or re-exported from it, and any `import()` or `require` of it by a string or template literal; `expect`, `devices` and types pass | e2e tests and their fixtures        |
 
 The messages cite the ADRs of a project scaffolded from the Lunette `react-router`
 template (`docs/adr/architecture-and-boundaries.md`), where each rule's reason is

@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -67,6 +75,24 @@ test('the formatter wants single quotes and no semicolons', () => {
   const r = check(project({ 'app/style.ts': 'export const greeting = "hi";\n' }))
   assert.equal(r.ok, false)
   assert.match(r.output, /format/i)
+})
+
+// Without markdown.parser.frontmatter, Biome reads a frontmatter as a thematic break and a
+// heading: one key becomes `## name: a`, several get a blank line after the opening `---`.
+test('the formatter leaves a Markdown frontmatter byte for byte', () => {
+  const files = {
+    'one-key.md': '---\nname: a\n---\n\n# A\n',
+    'keys.md': '---\nname: b\ndescription: Do it, with `x` and more.\ntags: [x, y]\n---\n\n# B\n',
+  }
+  const dir = project(files)
+  const r = spawnSync('node', [BIOME, 'format', '--write', '--colors=off', 'src'], {
+    cwd: dir,
+    encoding: 'utf8',
+  })
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`)
+  for (const [path, content] of Object.entries(files)) {
+    assert.equal(readFileSync(join(dir, 'src', path), 'utf8'), content, path)
+  }
 })
 
 test('no-throw-new-error flags a thrown Error and leaves framework signals alone', () => {

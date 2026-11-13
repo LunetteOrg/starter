@@ -6,7 +6,7 @@ description: Check that packages/ui components and their Storybook stories/Found
 # Storybook spec alignment
 
 Produce a **report** on how well `packages/ui` components and their Storybook
-coverage agree (see the *Storybook showcase* decision in [`docs/adr/`](../../../docs/adr/README.md),
+coverage agree (see the _Storybook showcase_ decision in [`docs/adr/`](../../../docs/adr/README.md),
 the section anchored `#storybook-showcase`). Do **not** scaffold
 stories or edit files — output divergences and recommended actions only.
 

@@ -15,14 +15,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import * as jsonc from 'jsonc-parser'
-import {
-  checkClaudeSettings,
-  INSTALL_HOOK,
-  MARKETPLACE,
-  PLUGIN,
-  syncClaudeSettings,
-  TYPECHECK_HOOK,
-} from '../src/index.ts'
+import { checkClaudeSettings, INSTALL_HOOK, MARKETPLACE, PLUGIN, syncClaudeSettings } from '../src/index.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const BIN = resolve(HERE, '../bin/lntt.ts')
@@ -44,6 +37,16 @@ afterEach(() => {
 function write(value: unknown): void {
   mkdirSync(join(root, '.claude'), { recursive: true })
   writeFileSync(settings(), `${JSON.stringify(value, null, 2)}\n`)
+}
+
+// The Stop entry `lntt sync` wrote up to 0.6.4, told by its status message.
+const OLD_TYPECHECK = {
+  type: 'command',
+  command: 'node_modules/.bin/lntt hook typecheck',
+  asyncRewake: true,
+  rewakeSummary: 'Typecheck failed',
+  timeout: 900,
+  statusMessage: 'lntt: typecheck',
 }
 
 const off = () => checkClaudeSettings(root).filter((c) => c.state !== 'ok')
@@ -99,12 +102,7 @@ describe('the Claude Code settings lntt sync writes', () => {
     })
     assert.deepEqual(
       off().map((c) => `${c.state} ${c.key}`),
-      [
-        'elsewhere extraKnownMarketplaces.lunette',
-        'off enabledPlugins.lunette@lunette',
-        'edited hooks.SessionStart',
-        'missing hooks.Stop',
-      ],
+      ['elsewhere extraKnownMarketplaces.lunette', 'off enabledPlugins.lunette@lunette', 'edited hooks.SessionStart'],
     )
     syncClaudeSettings(root)
     assert.deepEqual(read().extraKnownMarketplaces.lunette, MARKETPLACE)
@@ -123,12 +121,7 @@ describe('the Claude Code settings lntt sync writes', () => {
     write({ hooks: { SessionStart: [{ hooks: [INSTALL_HOOK] }, { hooks: [INSTALL_HOOK] }] } })
     assert.deepEqual(
       off().map((c) => `${c.state} ${c.key}`),
-      [
-        'missing extraKnownMarketplaces.lunette',
-        'missing enabledPlugins.lunette@lunette',
-        'edited hooks.SessionStart',
-        'missing hooks.Stop',
-      ],
+      ['missing extraKnownMarketplaces.lunette', 'missing enabledPlugins.lunette@lunette', 'edited hooks.SessionStart'],
     )
     syncClaudeSettings(root)
     assert.equal(read().hooks.SessionStart.length, 1)
@@ -195,7 +188,7 @@ describe('the Claude Code settings lntt sync writes', () => {
   test('a byte order mark at the start is read past, and sync writes the file without it', () => {
     write({ permissions: { deny: [] } })
     writeFileSync(settings(), `\uFEFF${readFileSync(settings(), 'utf8')}`)
-    assert.equal(off().length, 4)
+    assert.equal(off().length, 3)
     syncClaudeSettings(root)
     assert.deepEqual(read().permissions, { deny: [] })
     assert.deepEqual(off(), [])
@@ -218,25 +211,85 @@ describe('the Claude Code settings lntt sync writes', () => {
         'missing extraKnownMarketplaces.lunette',
         'missing enabledPlugins.lunette@lunette',
         'missing hooks.SessionStart',
-        'missing hooks.Stop',
       ],
     )
   })
 
-  test('the typecheck goes at Stop beside the project’s own, and no format hook is written', () => {
+  test('no Stop hook is written, and the project’s own hooks are left as they are', () => {
     const own = { type: 'command', command: 'echo ours' }
     write({ hooks: { Stop: [{ hooks: [own] }], PostToolUse: [{ matcher: 'Bash', hooks: [own] }] } })
     syncClaudeSettings(root)
     const s = read()
     assert.deepEqual(s.hooks.PostToolUse, [{ matcher: 'Bash', hooks: [own] }])
-    assert.deepEqual(s.hooks.Stop, [{ hooks: [own] }, { hooks: [TYPECHECK_HOOK] }])
+    assert.deepEqual(s.hooks.Stop, [{ hooks: [own] }])
     assert.deepEqual(off(), [])
   })
 
-  test('an older typecheck line lntt wrote is replaced', () => {
-    write({ hooks: { Stop: [{ hooks: [{ ...TYPECHECK_HOOK, command: 'an older line' }] }] } })
+  test('a project with no Stop hook gets none', () => {
     syncClaudeSettings(root)
-    assert.deepEqual(read().hooks.Stop, [{ hooks: [TYPECHECK_HOOK] }])
+    assert.equal(read().hooks.Stop, undefined)
+  })
+
+  test('the typecheck hook an earlier lntt wrote is removed, with its entry and an event left empty', () => {
+    write({ hooks: { Stop: [{ hooks: [OLD_TYPECHECK] }] } })
+    syncClaudeSettings(root)
+    assert.equal(read().hooks.Stop, undefined)
+    assert.deepEqual(off(), [])
+  })
+
+  test('only its own hook goes: the project’s, in the same entry or beside it, stays', () => {
+    const own = { type: 'command', command: 'echo ours' }
+    write({ hooks: { Stop: [{ hooks: [own, OLD_TYPECHECK] }, { hooks: [OLD_TYPECHECK] }, { hooks: [own] }] } })
+    syncClaudeSettings(root)
+    assert.deepEqual(read().hooks.Stop, [{ hooks: [own] }, { hooks: [own] }])
+  })
+
+  test('an entry with no hooks stays, beside the one removed', () => {
+    write({ hooks: { Stop: [{ matcher: 'x' }, { hooks: [OLD_TYPECHECK] }] } })
+    syncClaudeSettings(root)
+    assert.deepEqual(read().hooks.Stop, [{ matcher: 'x' }])
+  })
+
+  test('two entries that are both its own leave no Stop at all', () => {
+    write({ hooks: { Stop: [{ hooks: [OLD_TYPECHECK] }, { hooks: [OLD_TYPECHECK] }] } })
+    syncClaudeSettings(root)
+    assert.equal(read().hooks.Stop, undefined)
+  })
+
+  test('a Stop with entries that are not the shape Claude Code reads is the whole file invalid, and sync refuses it', () => {
+    for (const bad of [null, 'x', { hooks: 'x' }, { hooks: [null] }]) {
+      write({ hooks: { Stop: [bad, { hooks: [OLD_TYPECHECK] }] } })
+      assert.deepEqual(
+        off().map((c) => `${c.state} ${c.key}`),
+        ['invalid .claude/settings.json'],
+        JSON.stringify(bad),
+      )
+      assert.throws(() => syncClaudeSettings(root), /not JSON, or not the shape Claude Code reads/)
+    }
+  })
+
+  test('only lntt: typecheck is removed: another lntt message, and an empty Stop of the project’s, stay', () => {
+    write({ hooks: { Stop: [{ hooks: [{ ...INSTALL_HOOK, statusMessage: 'lntt: other' }, OLD_TYPECHECK] }] } })
+    syncClaudeSettings(root)
+    assert.deepEqual(read().hooks.Stop, [{ hooks: [{ ...INSTALL_HOOK, statusMessage: 'lntt: other' }] }])
+    write({ hooks: { Stop: [] } })
+    syncClaudeSettings(root)
+    assert.deepEqual(read().hooks.Stop, [])
+  })
+
+  test('the hook of 0.6.4 left in place before the next sync is no problem for the check', () => {
+    syncClaudeSettings(root)
+    const s = read()
+    write({ ...s, hooks: { ...s.hooks, Stop: [{ hooks: [OLD_TYPECHECK] }] } })
+    assert.deepEqual(off(), [])
+  })
+
+  test('a second sync after the removal changes nothing', () => {
+    write({ hooks: { Stop: [{ hooks: [OLD_TYPECHECK] }] } })
+    syncClaudeSettings(root)
+    const first = readFileSync(settings(), 'utf8')
+    syncClaudeSettings(root)
+    assert.equal(readFileSync(settings(), 'utf8'), first)
   })
 
   test('a PostToolUse of the project’s own, even empty, is left as it is', () => {
@@ -268,11 +321,6 @@ describe('the Claude Code settings lntt sync writes', () => {
       'edited',
       { hooks: { SessionStart: [{ hooks: [{ ...INSTALL_HOOK, command: 'x' }] }] } },
       /hooks\.SessionStart: the install hook differs from the one lntt sync writes; run pnpm exec lntt sync/,
-    ],
-    [
-      'edited',
-      { hooks: { Stop: [{ hooks: [{ ...TYPECHECK_HOOK, command: 'x' }] }] } },
-      /hooks\.Stop: the typecheck hook differs from the one lntt sync writes; run pnpm exec lntt sync/,
     ],
     [
       'invalid',

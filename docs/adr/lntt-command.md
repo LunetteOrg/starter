@@ -23,7 +23,6 @@ command, so a reader who sees `lntt` in a script knows which package provides it
 
 ```
 lntt path | validate | get | set | operator | sync | guide | local app | viewer | browser | refs
-lntt hook typecheck
 lntt board sync | ready
 lntt check [agents-md | skills | plugin | decisions [structure | board-refs | numbers] | tests [levels | focus | rules | touched | mutate] | body] | check cite
 lntt branch name | check | rename
@@ -80,10 +79,20 @@ lntt ci local | candidate | proved
   or `--query`),
   or a report for a person (`lntt check` without `--json`); progress and child-process output go to stderr. Exit codes:
   0 ok, 1 a configuration error, a red result or a check that cannot run (one line on
-  stderr), 2 a usage error or a failing jq expression, 3 a stop that a person decides on (`lntt review` past
-  `delivery.review.maxRounds`), 4 nothing to report on (`lntt review status` with no round
-  on the current branch, also when a jq query fails on the missing state), an interrupted command 128 plus the signal (130 for
-  Ctrl-C); a defect of `lntt` itself exits 1 with its stack trace.
+  stderr, followed only by what the person acts on: `lntt ci local` lists the uncommitted
+  files that keep it from running), 2 a usage error or a failing jq expression, 3 a stop that a person decides on (`lntt review` past
+  `delivery.review.maxRounds`) or nobody left to wait for (`lntt inbox --wait` and `--follow`
+  with no child that reports to the role), 4 nothing to report on (`lntt review status` with no round
+  on the current branch, also when a jq query fails while running on the missing state), an interrupted command 130 (a command on Effect, for
+  SIGINT and SIGTERM alike, and `lntt ci local` for SIGHUP and SIGQUIT too: [Effect in `lntt`](./effect-in-lntt.md#how-a-command-runs-is-interrupted-and-exits);
+  one not yet on Effect, 128 plus the signal); a defect of `lntt` itself exits 1 with its stack trace. Every command ends
+  through one exit path that lets stdout and stderr drain before the process exits: a
+  pipe on macOS takes writes asynchronously, and an exit right after a long write cuts
+  the document with no sign of it. A test fails on any other exit in the package's code. A command reads stdin to its end
+  with `readStdin` (`src/stdin.ts`), never with a synchronous read of the descriptor, which
+  throws EAGAIN on a pipe whose writer has not written yet; a test fails on one.
+  A reader that leaves early (`| head`, `2>&1 | head`) does not change the exit code: it
+  stays the command's.
 - **`lntt get` prints what the file holds, and a missing key exits 1,** so a script never
   goes on with a wrong value. One key reads its schema default instead: `project.phase`,
   whose missing value means `production` by definition (a project keeps every check until
@@ -92,18 +101,22 @@ lntt ci local | candidate | proved
 - **A reading command gives a summary by default, and jq for a part of its output.** An
   agent reads through a limited window and pays for every character, so the default is
   short and each level is shown folded, as its key and its count (`findings: 14 (3 open)`).
-  `--query <jq>` runs a jq expression on the command's `--json` document, starting with
-  `lntt review status`, in the language `gh --jq` also takes: `jq-wasm` (jq 1.8.2 compiled
+  `--query <jq>`, beside every `--json`, runs a jq expression on the command's `--json`
+  document (on each of its lines for `lntt check`) and prints its result instead, keeping
+  the command's exit code, in the language `gh --jq` also takes: `jq-wasm` (jq 1.8.2 compiled
   to WebAssembly) runs it, loaded only when `--query` is given, so no other call pays for
   it. Measured on 2026-11-04, it adds about 22 ms to that call (load 3.8 ms, first query
   17.9 ms, node 24, median of 21 fresh processes, against node's own 31 ms start) and
   3.9 MB to the install. A jq failure exits 2 with jq's message on stderr and nothing on
   stdout; with no round to read, a failure while running (`.state.open[]`) exits 4, the
   no-round line before jq's message. A query that does not end is ended by a signal: a
-  reading command keeps the default handling of SIGINT and SIGTERM.
+  command that runs a jq query keeps the default handling of SIGINT and SIGTERM
+  ([Effect in `lntt`](./effect-in-lntt.md#how-a-command-runs-is-interrupted-and-exits)).
+  `runQuery` (`src/query.ts`) computes what the query prints on each stream and its exit code,
+  with no Effect and no `node:` module; the command writes them with `printed` (`src/exit.ts`).
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
   `decisions` and `tests`, whose results their review lenses read, and `agents-md`,
-  `skills`, `plugin` (the Lunette plugin and the install and typecheck hooks in `.claude/settings.json`)
+  `skills`, `plugin` (the Lunette plugin and the install hook in `.claude/settings.json`)
   and `body` (the retrospective block of a pull request body, of a candidate's
   retrospective comment and of the template), which no lens needs; a lens's checks are the area named after it. Alone it runs every
   area, which is what CI runs. Every check reports `PASS`, `FAIL` or `NOT RUN` with its
@@ -113,9 +126,12 @@ lntt ci local | candidate | proved
   `path`, `line`, `message`), `--base <ref>` limits a check to what the diff touches
   where that makes sense. What a project ships to others (a shared package, a skill)
   cites the records of the project that installs it: `recording.externalReferences`
-  names those files with the reason, and a glob that matches nothing fails. A new
-  deterministic check is a check of an area, or a new area, never a script beside a
-  skill.
+  names those files with the reason, and a glob that matches nothing fails. The checks
+  read the project's files once (`packages/lntt/src/check/tree.ts`): a binary file, known by
+  its extension, and a file past 16 MiB are there with their size and no text; a file that
+  is there and cannot be read fails the command, so a check never passes on a file it did
+  not read. A new deterministic check is a check of an area, or a new area, never a script
+  beside a skill.
 - **A report on Lunette itself goes upstream through `lntt issue`, on the operator's
   approval.** The flow and the marker are in
   [delivery](../process/delivery.md#the-retrospective). The `retrospective` skill calls
@@ -132,12 +148,15 @@ lntt ci local | candidate | proved
   ([provenance](./scaffolding-contract.md#provenance)), and `lntt issue` fails naming the
   key when it is missing. Only that repository is sent to: a report for another one
   (`--repo`, a library the project uses) is printed for the operator to file by hand,
-  and when the upstream is the repository `lntt issue` runs in, there is nothing to
-  send. A configuration that does not validate stops `lntt dump` as
+  and when the upstream is the repository `lntt issue` runs in (`GITHUB_REPOSITORY`, else
+  the origin remote of the project's root, the directory of `.agents/`), there is nothing
+  to send. A configuration that does not validate stops `lntt dump` as
   it stops every command, exit 1, after the dump is printed with the error in it.
 - **No aliases for old names.** A renamed command answers only to its new name, so its
   callers (workflows, skills, the README) change with it, in the same release: the
-  shared skills ship in `@lntt/lntt` with the command they call.
+  shared skills ship in `@lntt/lntt` with the command they call. A removed command that
+  the settings lines of an earlier sync still call is the one exception
+  ([the compatibility rule](#gates-and-agent-tools-one-package-two-groups-one-compatibility-rule)).
 
 ### Gates and agent tools: one package, two groups, one compatibility rule
 
@@ -169,15 +188,19 @@ rests on these criteria:
    template does not depend on it yet (#60), and this repo runs it from the workspace.
 3. **The configuration is a contract between versions.** The agent tools read
    `delivery.review` (`reviewConfig` in `packages/lntt/src/review.ts`), `coordinator`
-   (`gateOf` in `packages/lntt/src/coordinator.ts`) and `local` (`localApp` in
+   (`gateOf` in `packages/lntt/src/worktree/coordinator.ts`) and `local` (`localApp` in
    `packages/lntt/src/local.ts`); `lntt worktree start` reads `delivery.candidate`
-   and `delivery.branches` through the gate's branch code; `lntt worktree start`,
+   and `delivery.branches` through the gate's branch code; `lntt inbox --wait` and `--follow`
+   read the branch rules (`branchRules`, from `delivery`) for the conventional name of a branch (`checkedOutBranches` in
+   `packages/lntt/src/messages/mailbox.ts`); `lntt worktree start`,
    `lntt review` and `lntt ci local` read `delivery.candidate` to find a branch's base
-   (`projectBase` in `packages/lntt/src/base.ts`); `lntt retro add` reads
+   (`projectBase` in `packages/lntt/src/base/base.ts` for `lntt worktree start` and a round of
+   `lntt review`, on Effect, and in `packages/lntt/src/base.ts`, its Promise form, for
+   `lntt review status` and `lntt ci local`); `lntt retro add` reads
    `delivery.candidate` and `delivery.pullRequest.retrospective` (`candidateConfig` in
    `packages/lntt/src/ci/config.ts`, `retrospectiveRules` in
    `packages/lntt/src/pull-request.ts`). Every read validates the
-   whole file with Ajv (`loadConfig` in `packages/lntt/src/index.ts`) against a schema
+   whole file with Ajv (`readConfig` in `packages/lntt/src/config/project.ts`) against a schema
    that rejects unknown fields (`additionalProperties: false` in
    `packages/lntt/schema/config.schema.json`), so the contract is the whole file.
 4. **The skills call both groups.** `review` calls `lntt review`, `lntt check cite` and
@@ -190,9 +213,9 @@ rests on these criteria:
    `lntt get` and `lntt set` (gates) and `lntt board ready` (an agent tool);
    `commit-message` (`lntt get`, commitlint) and `roadmap` (`lntt get`, `lntt set`) stay on
    the gate side. In the code, `lntt review` imports the check
-   areas and the mutations and runs them in-process (`packages/lntt/src/review-cli.ts`
-   imports `runArea` and `mutateAll`), and `lntt worktree start` names branches with
-   the gate's code (`packages/lntt/src/worktree-cli.ts` imports `branchName` and
+   areas and runs them in-process (`packages/lntt/src/review-cli.ts`
+   imports `runArea`), and `lntt worktree start` names branches with
+   the gate's code (`packages/lntt/src/worktree/start.ts` imports `branchName` and
    `checkBranch`).
 5. **The cost of a split.** A second package needs its placeholder published by hand
    ([publishing](./cli-runtime-and-publishing.md#one-version-for-every-published-package-one-release)),
@@ -219,7 +242,7 @@ So:
   | `lntt validate \| get \| set \| path`: they hold the schema; `set` writes a tracked file | `lntt guide`: it prints the skills |
   | `lntt sync`: it writes tracked files (the `AGENTS.md` block, the skill stubs, the entries of `.claude/settings.json`) that `lntt check` verifies | `lntt operator`: personal context, read by no gate; `lntt pr block`: the empty retrospective block, for the template and the skill; `lntt retro add`: it writes a comment on GitHub, not the commit; `lntt dump` and `lntt issue`: a report on Lunette, filed upstream on the operator's approval |
   | the commitlint configuration (the `@lntt/lntt` export) | `lntt local app`, `lntt viewer`; `lntt board sync`: it reads and writes GitHub, not the commit, so its `--check` is a verdict on the board's state that a hook or a scheduled job runs, never a pull request's gate; `lntt board ready`, for the same reason |
-  | the configuration schema | the plugin's hooks, `lntt hook` (what the settings hooks run) and `lntt refs`; once it exists, `lntt doctor` (#124) |
+  | the configuration schema | the plugin's hooks and `lntt refs`; once it exists, `lntt doctor` (#124) |
 
 - **The configuration schema follows one compatibility rule.** Its version is the
   `@lntt/lntt` version in the project's lockfile; the file carries none.
@@ -234,6 +257,12 @@ So:
     (`packages/lntt/src/references.ts`): those checks may grow, since they fail the
     gate and never a read; the release notes name each new one
     ([delivery](../process/delivery.md#releasing)).
+  - A default changes only when the field's meaning changes with it, and the change is
+    written here. `tests.levels[].timeoutSeconds` is the time of one test file (default
+    120), as `lntt check tests mutate` runs each file in a command of its own. A project
+    that wrote the field keeps its value, which bounds one file; the release notes name
+    the change
+    ([test checks](./test-checks.md)).
   - An older `lntt` rejects a field it does not know, as `additionalProperties: false`
     does: an unknown field is a typo until proven otherwise. A project writes a new
     field after bumping `@lntt/lntt` to a version that knows it, and `lntt validate`
@@ -253,9 +282,15 @@ So:
       such a change, and these two releases are its coordination.
     - A removal with no replacement takes one release: `lntt validate` fails on the key
       with a message that names it, the release that removed it and what to do
-      (`local.hooks.format was removed in 0.6.4: delete it, formatting is the
-      pre-commit's`), not the generic unknown-property error. The key goes in `REMOVED`
+      (`local.hooks was removed in 0.6.5 (local.hooks.typecheck, and local.hooks.format
+      before it): delete it, the typecheck and the formatting are the pre-commit's`), not
+      the generic unknown-property error. The key goes in `REMOVED`
       of `released-configs.test.ts`, and the release notes name it as a breaking change.
+    - A removed command that the settings lines of an earlier `lntt sync` still call
+      answers for one release with what to do and exits 0, where a usage error would make
+      the line say to upgrade an `lntt` that is already current: `lntt hook typecheck` in
+      0.6.5 says to run `lntt sync`, which removes the line, and the release after drops
+      the command.
 - **When the split's trigger fires**, the agent tools leave `@lntt/lntt` for a second
   command at its latest version, shipped with the plugin and through `npx`. The pinned
   group stays where it is. The skills become full files beside the agent tools and the

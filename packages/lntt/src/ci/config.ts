@@ -8,7 +8,7 @@ import { readyRules } from '../board-ready.ts'
 import { ConfigError, loadConfig } from '../index.ts'
 import { retrospectiveBlock, retrospectiveRules } from '../pull-request.ts'
 import type { CandidateConfig } from './candidate.ts'
-import type { LockScope } from './lock.ts'
+import type { LockScope } from './lock-rules.ts'
 
 export type ActionMapping = { run: string } | { skip: string }
 
@@ -48,7 +48,11 @@ function data(cwd: string): Record<string, unknown> {
 }
 
 export function ciConfig(cwd: string): CiConfig {
-  const config = data(cwd)
+  return ciConfigOf(data(cwd))
+}
+
+// The same, from the configuration's data.
+export function ciConfigOf(config: Record<string, unknown>): CiConfig {
   const local = (config.ci as Section | undefined)?.local ?? {}
   return {
     cloudOnly: local.cloudOnly ?? {},
@@ -64,7 +68,11 @@ export const CANDIDATE_STATUS = Object.freeze({ inRelease: 'In release', done: '
 
 // delivery.candidate with its defaults, or null when the project has no candidate.
 export function candidateConfig(cwd: string): CandidateConfig | null {
-  const config = data(cwd)
+  return candidateConfigOf(data(cwd))
+}
+
+// The same, from the configuration's data.
+export function candidateConfigOf(config: Record<string, unknown>): CandidateConfig | null {
   const section = (config.delivery as { candidate?: Partial<CandidateConfig> & { prefix: string } } | undefined)
     ?.candidate
   if (!section) return null

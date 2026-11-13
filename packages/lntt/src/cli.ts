@@ -1,10 +1,14 @@
 // The configuration commands of `lntt` (usage: bin/lntt.ts).
 
 import { execFileSync } from 'node:child_process'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { dirname } from 'node:path'
-import { cwd, env, exit, stderr, stdout } from 'node:process'
+import { cwd, env, stderr, stdout } from 'node:process'
+import { parseArgs } from 'node:util'
 import { syncAutomated } from './automated.ts'
+import type { ConfigCommand } from './config/command.ts'
+import { findConfig } from './config/sync.ts'
+import { exit, printed } from './exit.ts'
 import {
   browserApp,
   browserPlan,
@@ -13,29 +17,23 @@ import {
   chooseViewer,
   commandExists,
   type Driver,
-  findConfig,
   formatPlan,
-  getConfigValue,
-  getValue,
   guide,
-  loadConfig,
   loadOperator,
   localApp,
   openWith,
-  setValue,
   sharedSkills,
   syncAgentsBlock,
   syncClaudeSettings,
   syncSkills,
   type Viewer,
 } from './index.ts'
-import { checkMissing, checkReferences } from './references.ts'
-import { reviewConfig, reviewWarnings } from './review.ts'
+import { runQuery } from './query.ts'
 
 const USAGE = [
   'usage: lntt path | validate | get <key> | set <key> <json> | operator [get <key> | sources]',
-  '       lntt sync | guide [<skill>] | local app <name> | viewer detect|open <url> | browser [<app>] [--json]',
-  '       lntt check [<area> [<check>]] [--base <ref>] [--json] | check cite <path:line>...',
+  '       lntt sync | guide [<skill>] | local app <name> | viewer detect|open <url> | browser [<app>] [--json] [--query <jq>]',
+  '       lntt check [<area> [<check>]] [--base <ref>] [--json] [--query <jq>] | check cite <path:line>...',
   '       lntt refs [--cached] [<text>...]',
   '       lntt board sync [--apply | --check] | board ready [--apply]',
   '       lntt branch name|check|rename [...]',
@@ -43,21 +41,63 @@ const USAGE = [
   '       lntt ci local|candidate [...]',
 ].join('\n')
 
-function usage(): never {
+function usage(message?: string): never {
+  if (message) stderr.write(`lntt: ${message}\n`)
   stderr.write(`${USAGE}\n`)
   exit(2)
 }
 
 // `lntt <command> [...]`, every command but `ci` (./ci/cli.ts).
-export function main(args: string[]): void {
+export async function main(args: string[]): Promise<void> {
   const [command, key, raw] = args
-  if (command === 'browser' && args.length > 3) usage()
   try {
-    run(command, key, raw)
+    const config = configCommand(command, key, raw)
+    if (config !== null) {
+      // On Effect (src/config/command.ts), loaded only for these commands.
+      const { runConfig } = await import('./config/command.ts')
+      return runConfig(config, cwd(), homedir())
+    }
+    if (command === 'browser') await browser(args.slice(1))
+    else run(command, key, raw)
   } catch (e) {
+    if (e instanceof TypeError && 'code' in e && String(e.code).startsWith('ERR_PARSE_ARGS')) usage(e.message)
     if (!(e instanceof ConfigError)) throw e
     stderr.write(`lntt: ${e.message}\n`)
     exit(1)
+  }
+}
+
+// A configuration command from its arguments, null for any other: usage, exit 2, before Effect
+// loads.
+function configCommand(
+  command: string | undefined,
+  key: string | undefined,
+  raw: string | undefined,
+): ConfigCommand | null {
+  switch (command) {
+    case 'path':
+      return { kind: 'path' }
+    case 'validate':
+      return { kind: 'validate' }
+    case 'get':
+      if (!key) usage()
+      return { kind: 'get', key }
+    case 'set': {
+      if (!key || raw === undefined) usage()
+      try {
+        return { kind: 'set', key, value: JSON.parse(raw) }
+      } catch {
+        stderr.write(`lntt: ${raw} is not JSON (a string needs quotes: '"it"')\n`)
+        return exit(2)
+      }
+    }
+    case 'operator':
+      if (key === undefined) return { kind: 'operator', show: 'profile' }
+      if (key === 'sources') return { kind: 'operator', show: 'sources' }
+      if (key === 'get' && raw) return { kind: 'operator', show: { key: raw } }
+      return usage()
+    default:
+      return null
   }
 }
 
@@ -69,54 +109,6 @@ function run(command: string | undefined, key: string | undefined, raw: string |
     case 'help':
       stdout.write(`${USAGE}\n`)
       break
-    case 'path':
-      stdout.write(`${findConfig(cwd()).path}\n`)
-      break
-    case 'validate': {
-      // The schema on load, then what it cannot express (./references.ts): the
-      // references between lists, and the keys the board skills need.
-      const { path, data } = loadConfig(cwd())
-      const indent = (lines: string[]) => lines.map((l) => `  ${l}`).join('\n')
-      const wrong = checkReferences(data)
-      const missing = checkMissing(data)
-      const parts = [
-        ...(wrong.length > 0 ? [`a value names no entry of its list:\n${indent(wrong)}`] : []),
-        ...(missing.length > 0 ? [`a key the board skills need is missing:\n${indent(missing)}`] : []),
-      ]
-      if (parts.length > 0) throw new ConfigError(`${path}: ${parts.join('\n')}`)
-      // What matches the schema and still reads otherwise: said, the file stays valid.
-      // A delivery.review lntt review refuses is its own error, at its first round.
-      let warnings: string[] = []
-      try {
-        warnings = reviewWarnings(reviewConfig(data))
-      } catch {}
-      for (const warning of warnings) stderr.write(`lntt validate: warning: ${warning}\n`)
-      break
-    }
-    case 'get':
-      if (!key) usage()
-      stdout.write(`${JSON.stringify(getConfigValue(loadConfig(cwd()).data, key))}\n`)
-      break
-    case 'set': {
-      if (!key || raw === undefined) usage()
-      let value: unknown
-      try {
-        value = JSON.parse(raw)
-      } catch {
-        stderr.write(`lntt: ${raw} is not JSON (a string needs quotes: '"it"')\n`)
-        exit(2)
-      }
-      setValue(cwd(), key, value)
-      break
-    }
-    case 'operator': {
-      const { profile, sources } = loadOperator(cwd())
-      if (key === undefined) stdout.write(`${JSON.stringify(profile)}\n`)
-      else if (key === 'sources') stdout.write(sources.map((s) => `${s}\n`).join(''))
-      else if (key === 'get' && raw) stdout.write(`${JSON.stringify(getValue(profile, raw))}\n`)
-      else usage()
-      break
-    }
     case 'sync':
       // The skills first: a clash with a project skill stops the command before any write.
       syncSkills(cwd())
@@ -161,24 +153,34 @@ function run(command: string | undefined, key: string | undefined, raw: string |
       } else usage()
       break
     }
-    case 'browser': {
-      const args = [key, raw].filter((a) => a !== undefined)
-      const named = args.filter((a) => a !== '--json')
-      if (named.length > 1 || named.some((a) => a.startsWith('-'))) usage()
-      const preferences = ((loadOperator(cwd()).profile.workspace as { browsers?: Driver[] } | undefined)?.browsers ??
-        []) as Driver[]
-      const app = localApp(cwd(), browserApp(cwd(), named[0]))
-      const worktree = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
-      const plan = browserPlan({
-        app,
-        choice: chooseDriver({ env, preferences, has: commandExists }),
-        worktree,
-        tmp: tmpdir(),
-      })
-      stdout.write(args.includes('--json') ? `${JSON.stringify(plan)}\n` : formatPlan(plan))
-      break
-    }
     default:
       usage()
   }
+}
+
+// `lntt browser [<app>] [--json] [--query <jq>]`: how an agent drives a browser on the app.
+async function browser(args: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { json: { type: 'boolean', default: false }, query: { type: 'string' } },
+  })
+  if (positionals.length > 1) usage()
+  const preferences = ((loadOperator(cwd()).profile.workspace as { browsers?: Driver[] } | undefined)?.browsers ??
+    []) as Driver[]
+  const app = localApp(cwd(), browserApp(cwd(), positionals[0]))
+  const worktree = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
+  const plan = browserPlan({
+    app,
+    choice: chooseDriver({ env, preferences, has: commandExists }),
+    worktree,
+    tmp: tmpdir(),
+  })
+  if (values.query !== undefined) {
+    const input = JSON.stringify(plan)
+    exit(
+      printed(await runQuery({ input, expression: values.query, json: values.json, code: 0, command: 'lntt browser' })),
+    )
+  }
+  stdout.write(values.json ? `${JSON.stringify(plan)}\n` : formatPlan(plan))
 }

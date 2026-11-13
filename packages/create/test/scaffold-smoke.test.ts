@@ -194,12 +194,19 @@ test('the published packages install into a scaffolded project, which lints, typ
   mkdirSync(tarballs)
   for (const { dir } of packages) run('pnpm', ['pack', '--pack-destination', tarballs], dir)
   const files = readdirSync(tarballs).map((f) => join(tarballs, f))
-  // The peers a project installs next to the packages.
+  // The peers a project installs next to the packages, at the range the package
+  // declares, so a moved peer range is the one the project installs here. drizzle-orm
+  // at the template's exact pre-release: a caret on a pre-release would pick a later one.
+  const peerOf = (dir: string, name: string): string => {
+    const range = JSON.parse(readFileSync(join(PACKAGES, dir, 'package.json'), 'utf8')).peerDependencies?.[name]
+    assert.ok(range, `packages/${dir} declares no peer ${name}`)
+    return `${name}@${range}`
+  }
   const peers = [
-    'stylelint@^17.0.0',
-    '@playwright/test@^1.61.1',
-    'vitest@^4.1.10',
-    'vite@^8.0.0',
+    peerOf('stylelint-config', 'stylelint'),
+    peerOf('playwright-config', '@playwright/test'),
+    peerOf('test-utils', 'vitest'),
+    peerOf('test-utils', 'vite'),
     'drizzle-orm@1.0.0-rc.4',
   ]
   run('pnpm', ['add', '-w', '-D', '--ignore-scripts', ...files, ...peers], app)

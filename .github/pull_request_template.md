@@ -15,9 +15,13 @@ Closes #
 
 <!-- lntt review: the rounds, what each found and how it ended. -->
 
+## Pre-existing findings
+
+<!-- lntt review's pre-existing findings (lines the change did not touch): id, path:line, sentence. The person decides at the squash whether each becomes an issue. -->
+
 ## Checks
 
-<!-- pnpm ci:local on the commit pushed, with its outcome; each test added or altered that guards a line, with the mutation that makes it fail (mutation-check). -->
+<!-- pnpm ci:local on the commit pushed, with its outcome. -->
 
 ## 🔁 Retrospective
 <!-- retro:start -->

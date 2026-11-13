@@ -51,11 +51,14 @@ small adapter that makes the calls it understands.
   child of a theme that has a coordinator, `orchestrator` otherwise, a child of a theme
   with no coordinator included), written before the host starts and dropped when a coordinator's start fails (an
   earlier start's marker stays); a marker that cannot be written is a warning, not a
-  failed start. At `lntt review: limit:` the round
+  failed start, and deleted by `lntt inbox --wait` and `--follow` once its worktree is gone
+  and it is older than a minute (the live children of a mailbox,
+  [coordinator mode](./coordinator-mode.md)). At `lntt review: limit:` the round
   reads it (a branch still on the name Orca gave it reads the marker of its conventional
   name) and sends the open findings there with the mailbox, without waiting for the
-  answer, and prints the id to wait on (`lntt ask --wait <id>`). A branch with no marker
-  stops at the limit with what is open on stdout and stderr only.
+  answer, and prints the id to wait on (`lntt ask --wait <id>`). A branch with no marker, or
+  whose mailbox cannot be found or read, stops at the limit with what is open on stdout and
+  stderr only.
 - **The agent, its model and its effort** (`--kind`, `--model`, `--effort`) reach each
   tool in the form it accepts:
   - Orca: one `worktree create --issue --agent --prompt`, with `--model` and
@@ -76,9 +79,11 @@ small adapter that makes the calls it understands.
     created when none is bound.
   - opencode with a model, on any host: its inline configuration
     (`OPENCODE_CONFIG_CONTENT`) on a standalone server, started as a shell command in a
-    terminal or pane of its own, and prompted once the tool sees it ready.
+    terminal or pane of its own, and prompted once the tool sees it ready (Orca's
+    `terminal wait --for tui-idle`, up to two minutes; Herdr's agent list, looked at once a
+    second for a minute); one not ready by then gets no brief, and the start fails.
   - Herdr: `herdr agent start --kind` with the model and effort after `--`.
-- **One base, found one way** (`packages/lntt/src/base.ts`) by `lntt worktree start` on
+- **One base, found one way** (`packages/lntt/src/base/base.ts`) by `lntt worktree start` on
   every host, `lntt review` and `lntt ci local`; an explicit `--base` wins in each
   (`origin/<base>`, else the branch of that name, which a stacked child's sibling may
   have only locally). Without `--base` the base is the open candidate when there is one,

@@ -1,6 +1,6 @@
 ---
 status: accepted
-date: 2026-11-06
+date: 2026-11-10
 tags: [review, agents, models, cost, lntt]
 ---
 
@@ -35,15 +35,17 @@ same way every time; the `review` skill keeps the judgement.
   a recording rule; a contradiction with an accepted record stays a blocker. So the
   decisions lens runs on a cheap model, and a broken reference or a residue is found
   the same way every round. The `tests` lens gets `levels`, `focus`, `rules` and
-  `touched` the same way, and keeps the level of each test, the stubs, the expected
-  values and the choice of mutations
+  `touched` the same way, `touched` from the diff and the imports, and keeps the level
+  of each test, the stubs, the expected values and the choice of mutations
   ([test checks](./test-checks.md)).
-- **A mutation a reviewer proposes is run, not argued.** The `tests` reviewer ends a
-  finding line with ``mutate: `text` => `mutated` ``; between the reviewers and the
-  verifiers `lntt review` runs each (`lntt check tests mutate`) on a scratch copy of
-  the head. A surviving mutant confirms the finding and a killed one refutes it, with
-  the run as the proof and no verifier asked; a run that could not happen leaves the
-  finding to the verifiers.
+- **A round runs no test.** It reads: the static checks of `lntt check`, the reviewers,
+  the citations, the verifiers; no coverage run, no mutation run, no scratch copy of
+  the head. A test the `tests` reviewer suspects would still pass with the line wrong is
+  a note that ends with ``mutate: `text` => `mutated` ``, for the author to run by hand
+  (`lntt check tests mutate`); a finding with a mutation is verified by reading at its
+  severity, like any other. When the tests run is the delivery process's
+  ([delivery](../process/delivery.md)); coverage belongs to a periodic check of the whole
+  project (#311), not to a round or a pull request.
 - **Every finding is cited before it is verified:** `lntt check cite` reads its line in
   the working tree, which a round keeps clean at the head. A finding on a line past the
   end of its file is refuted there, by `lntt check cite`, and costs no verifier; the
@@ -63,7 +65,7 @@ same way every time; the `review` skill keeps the judgement.
   lens briefs name none of those rules.
 - **Adversarial verification:** every finding at a severity in `verify.severities`
   goes, at once, to every verifier in `verify.with` other than the agents that found it,
-  each briefed to refute it (except a finding a mutation run decides, above); when those
+  each briefed to refute it; when those
   left are all optional, the required finders verify too, so a finding always has a
   required verifier. The verdict counts the
   verifiers that answered: all confirm, confirmed; all refute, refuted, kept out of the
@@ -80,14 +82,20 @@ same way every time; the `review` skill keeps the judgement.
   directory (`<common dir>/lntt-review/state/` and `ledger/`), which every worktree of
   the clone reaches; `review.stateDir` in the operator's profile (`lntt operator`), else
   `delivery.review.stateDir` in the project configuration, names another place, with a
-  folder per repository (`<org>/<repo>`, from the origin URL; a hash of the clone's common git
-  directory with no origin, or when an org or repo is `.` or `..`) inside it. The operator's own place is personal and never in the project
-  configuration; a project value is its default for everyone. The lock and the progress
+  folder per repository (`<org>/<repo>`, from the origin URL; `local/` and the first 12
+  hexadecimal digits of the SHA-1 of the clone's common git directory with no origin, or
+  when an org or repo is `.` or `..`) inside it. The operator's place is an absolute path or
+  starts with `~`; a project's relative place starts at the main checkout (the git directory
+  of a bare clone). The operator's own place is personal and never in the project
+  configuration; a project value is its default for everyone. A state or a ledger a worktree
+  kept in its own git directory before the place existed is moved in on the first look, once:
+  the newer of the two files wins, the place's when they are as old, and one that cannot be
+  read is set aside with the suffix `.unreadable`. The lock and the progress
   file belong to a running process and stay in each worktree's own git directory. The
   state is read with `lntt review status` (each level folded and a summary, `--json`, or
   `--query` for a part), never from those files. `lntt review status --clear` removes the
   current branch's state, ledger and progress once the branch is merged, or its state at
-  once when it cannot be read, never while a round holds the lock; `--prune` removes
+  once when it cannot be read, never while any holder of the worktree's lock runs; `--prune` removes
   the state and ledger of every branch that is gone (no local or remote-tracking branch of
   that name, or a local one whose upstream is gone, as GitHub deletes the head branch on
   merge), never a branch checked out in a worktree, and leaves any file whose name is not
@@ -96,10 +104,12 @@ same way every time; the `review` skill keeps the judgement.
   README. A round prints the same summary on stdout, its whole result staying in the
   state. A
   clean round (exit 0) has no blocker or warning left and no reviewer or verifier that
-  failed; notes are reported, never blocking. Past `warningRounds` a round is clean with
+  failed; notes and pre-existing findings are reported, never blocking. Past `warningRounds` a round is clean with
   warnings left too (below). A finding is a bullet with its severity,
   an anchor (a line as `:12`, a range, a column or a list, each naming its first line,
-  and an optional parenthesis after it) and its text (the action after a last separator,
+  and an optional parenthesis after it; a path with a space goes between backticks,
+  bold stars around them allowed, and is read whole, any other anchor ends at its first
+  space) and its text (the action after a last separator,
   when there is one), wrapped over as many lines as the reviewer likes. A finding may
   name several places (`a.md:24-32 e :34-37`): the first is the anchor, checked and
   cited; the others stay in the text, unchecked. A line with no path-like token before
@@ -115,19 +125,37 @@ same way every time; the `review` skill keeps the judgement.
 - **The branch keeps a ledger of what it closed**, next to its state, in the place
   described above: every finding the branch is done with, with its outcome. *Fixed*: one
   carried from an earlier round and refuted on a later head, with that head. *Refuted*:
-  a fresh one refuted, with the proof (the verifiers', `lntt check cite`'s, a killed
-  mutant's), or withdrawn by its reviewers, with the author's answer. *Accepted open*: a
+  a fresh one refuted, with the proof (the verifiers', `lntt check cite`'s), or withdrawn by its reviewers, with the author's answer. *Accepted open*: a
   note, or a confirmed warning past `warningRounds`, with the reason. Each entry keeps
   what its line read when it was closed. Only a round with no failure and no `partial`
   lens adds to it, since the next round reads its range again; a ledger that cannot be
   read is said and started again. The reviewers get the entries on the files of the
-  change and those with no anchor, each verifier the entries on its finding's file, and
+  change and those with no anchor, each verifier the entries on its finding's file but
+  the pre-existing ones (below), and
   both are told that a finding a closed entry covers is reported again only when the
   code it cites changed. A fresh finding at the place of a refuted or accepted entry, on
   a line that reads the same and at a severity no higher, goes to the round's `repeated`
   list with the entry it repeats and that entry's text: shown, never verified, never
   blocking. The match is by place, so the author reads each against the entry's text. A finding on a
   changed line, or at a higher severity, is a new finding.
+- **A finding on a line the change did not touch, which the change does not contradict,
+  is pre-existing.** Any lens may report one, with `[pre-existing]` after its severity.
+  The reviewer judges the contradiction; lntt proves the line untouched, against the
+  lines the branch wrote from its merge base (`git diff -U0`, the new side of each hunk,
+  whatever range the round reads; a diff with a file header it cannot read leaves no
+  line untouched), and drops the mark from a finding on a line the branch
+  wrote, with no line, or marked by only some of the reviewers that found it: that one is
+  reported as any other. A pre-existing finding goes to the round's `preexisting` list
+  and enters the ledger as *pre-existing* in the round that finds it. It goes to no
+  verifier: it never blocks, and the person reads each one at the squash. It does not count toward a clean round, nor toward `maxRounds` or
+  `warningRounds`, and a later round does not report it again: a fresh finding marked
+  pre-existing at its place, on a line that reads the same and at a severity no higher,
+  is a repeat. One at that place without the mark says the change now contradicts it:
+  it is verified as a new finding, and the verifier is not given the pre-existing entry
+  as a reason to refute it. `lntt review` and `lntt review status` list the branch's
+  pre-existing findings, every round's, after what blocks (`--json`: `preexisting`).
+  The author copies them into the pull request body, in a section of their own; at the
+  squash the person decides, one by one, whether each becomes an issue.
 - **A warning blocks only in the first `warningRounds` rounds:** later rounds find
   the edge cases of the fixes before them, and a round that must find nothing has no
   end on a change with many. From the next round only a blocker keeps a round from
@@ -163,13 +191,27 @@ same way every time; the `review` skill keeps the judgement.
 - **Nothing runs forever:** each agent stops at `timeoutMinutes`, the whole round (or a
   reply) at `roundTimeoutMinutes` (the round fails and keeps what it gathered), an
   interrupt keeps the waiting agents from starting, and an agent that
-  ignores SIGTERM gets SIGKILL five seconds later, or when `lntt review` exits. On macOS
-  `caffeinate` keeps the machine awake while the round runs. One round or reply runs at
-  a time in a worktree, under a lock that names its pid.
-- **Progress is a contract:** stderr carries a line when each agent starts and ends
+  ignores SIGTERM gets SIGKILL five seconds later: `lntt review` exits once its agents are
+  released ([Effect in `lntt`](./effect-in-lntt.md#how-a-command-runs-is-interrupted-and-exits)). On macOS
+  `caffeinate` keeps the machine awake while the round runs.
+- **One lock per worktree:** a round, a reply, `lntt review allow` and
+  `lntt check tests mutate` share one lock in the worktree's git directory, which holds
+  the pid and the command of its holder. Any of them refuses to start while another holds
+  it, and names the holder and its pid. The holder touches the lock (`HEARTBEAT_MS`); the
+  lock is the holder's while its pid answers (`EPERM`, a process of another user, is an
+  answer), or while it was touched within `FRESH_MS`, so a holder in another pid namespace
+  is not taken for dead; a lock untouched for 12 hours is dead whatever its pid answers,
+  as pids are reused. A lock whose holder is gone is removed under a guard file, so of two
+  runs that find it dead the second leaves the lock the first created. `lntt review status`
+  and `--clear` name the same holder, and its pid is the `running` of `status --json`,
+  whichever command holds the lock. A lock an older lntt wrote holds a pid and no command:
+  it is named "a round" (another lntt command in a refusal).
+- **Progress is a contract:** stderr starts with the line `lntt review: reviewing <commit> <subject> (<branch>)`, the commit the round
+  reads, then carries a line when each agent starts and ends
   (with its tokens), `failed` or `skipped` for one that did not answer, the agents still
-  running every 30 seconds, `round N done` at the end, `error:` for a round that could
-  not start and `limit:` for one past `maxRounds`; after `round N done` and with `limit:`,
+  running every 30 seconds, `round N done` at the end, `error:` for a round, a reply or
+  `allow` that could not start or failed (a defect of `lntt` too, before its stack) and
+  `limit:` for one past `maxRounds`; after `round N done` and with `limit:`,
   `branch total: <line>`, the branch's review cost so far. The `review` skill wakes on `failed`,
   `error:`, `limit:` and `round N done` only. The same goes as JSON events, one per
   line, to `<git dir>/lntt-review.progress`: the round with the pid of `lntt review`
@@ -188,7 +230,9 @@ same way every time; the `review` skill keeps the judgement.
 - **Seen where the person works:** under a Claude Code session in Orca, each agent is
   announced as a subagent of that session (Claude Code's `SubagentStart` and
   `SubagentStop`, sent through Orca's hook script, the start repeated every two seconds
-  while the agent works, since Orca drops subagents when the parent's turn stops). This
+  while the agent works, since Orca drops subagents when the parent's turn stops). When the
+  round ends, the agents still running are stopped and the last events get up to two seconds
+  to reach Orca, so a hook script that hangs never holds the round. This
   follows an internal Orca protocol: one small adapter, silent when any piece is
   missing. The agents themselves get none of the host's hook variables, so they never
   report as the session that started them.
@@ -215,10 +259,6 @@ same way every time; the `review` skill keeps the judgement.
   costs one call per agent and lens, plus one per verifier and finding.
 - A failed round counts toward `maxRounds`: a reviewer that keeps failing can bring a
   branch to the limit with nothing found, and the person decides there.
-- A round executes the project's own test commands (`tests.levels[].run` for the
-  mutations a reviewer proposes, `coverage` for `touched`) on a scratch copy of the head,
-  with the environment of `lntt` less `NODE_TEST*` variables: a project's tests run on
-  the machine of the person who runs the round.
 - The diff travels in the prompt: a very large change may not fit an agent's context.
 - The adapters follow `claude -p` and `opencode run`, whose flags change; the tests pin
   the calls, a trial round against the real tools confirms them.
@@ -240,6 +280,14 @@ same way every time; the `review` skill keeps the judgement.
 
 ## Discarded directions
 
+- **A lock taken over by removing the file and creating it again.** Two runs that both
+  found a dead lock could each remove the other's new one and both run (two reviews of
+  one worktree ran at once in #287); the removal is serialised by a guard file.
+- **A lock live only by its pid.** A holder in another pid namespace, or of another
+  user, is not seen as running by `kill(pid, 0)`; the heartbeat and EPERM decide too.
+- **A lock dead as soon as its heartbeat stops.** A holder in a long synchronous step
+  stops its heartbeat while its pid answers, so a quiet lock proves nothing while the
+  pid answers.
 - **One state per worktree, in the worktree's git directory.** A review on another branch
   in the same worktree overwrote the state and the ledger of the branch before it, closing
   the worktree deleted them, and the other worktrees of the clone could not see them.
@@ -250,6 +298,13 @@ same way every time; the `review` skill keeps the judgement.
 - **A repeat of a closed finding matched by its wording.** A reviewer words the same
   finding differently every round, so a match on the text would almost never hold; the
   place and the line's text decide, and the author reads the entry's text beside it.
+- **A pre-existing finding told by the diff alone.** lntt can prove a line untouched, not
+  that the change leaves it right: a record line the change makes wrong sits on an
+  untouched line too, and must block. The reviewer marks, lntt checks the line.
+- **A pre-existing finding verified.** It never blocks, so a verdict would decide nothing
+  the person does not decide at the squash.
+- **An issue opened for each pre-existing finding.** Many are not worth one; the person
+  chooses which, at the squash.
 
 - **The harness's own subagents** (Claude Code's Agent tool, opencode's agents). Claude
   Code takes only a few model aliases there and opencode fixes the model in the agent's

@@ -155,8 +155,8 @@ jobs:
         env:
           BODY: ${{ github.event.pull_request.body }}
         run: |
-          printf '%s\n' "$BODY" | pnpm exec lntt check body - --json |
-            jq -r 'select(.status == "FAIL") | .message | gsub("%"; "%25") | gsub("\r"; "%0D") | gsub("\n"; "%0A") | "::warning title=Pull request body::\(.)"'
+          printf '%s\n' "$BODY" | pnpm exec lntt check body - --query \
+            'select(.status == "FAIL") | .message | gsub("%"; "%25") | gsub("\r"; "%0D") | gsub("\n"; "%0A") | "::warning title=Pull request body::\(.)"'
       # The engine refuses a hooks module its own checker refuses, and no test sees that
       # (a function given `$` must be declared at the top of its file): validate the
       # marketplace @lntt/lntt ships, and its plugin, with the Claude Code that loads them.

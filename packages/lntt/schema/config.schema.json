@@ -922,23 +922,9 @@
     },
     "local": {
       "type": "object",
-      "description": "How the apps are started and reached locally, read by the run-local skill and lntt local; and the command of the agent's typecheck hook, read by lntt hook.",
+      "description": "How the apps are started and reached locally, read by the run-local skill and lntt local.",
       "additionalProperties": false,
       "properties": {
-        "hooks": {
-          "type": "object",
-          "additionalProperties": false,
-          "description": "The commands the hook lntt sync writes into .claude/settings.json runs, one or a list run in order (a project with more than one toolchain). Absent, the package.json script of the same name; absent both, the hook does nothing.",
-          "properties": {
-            "typecheck": {
-              "oneOf": [
-                { "type": "string", "minLength": 1 },
-                { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
-              ],
-              "description": "Runs after each turn; a failure not seen on the last run wakes the agent with the output. Every command runs; all must pass."
-            }
-          }
-        },
         "infra": {
           "type": "object",
           "additionalProperties": false,
@@ -1344,7 +1330,7 @@
         "coverage": {
           "type": "string",
           "minLength": 1,
-          "description": "Like run, plus coverage: it must write an lcov file at {out}/lcov.info. Read by lntt check tests touched; without it the tests of a line are found from imports."
+          "description": "Like run, plus coverage: it must write an lcov file at {out}/lcov.info. Read by lntt check tests touched run by hand (a round of lntt review runs no coverage); without it the tests of a line are found from imports."
         },
         "cwd": {
           "type": "string",
@@ -1359,7 +1345,7 @@
         "timeoutSeconds": {
           "type": "integer",
           "minimum": 1,
-          "description": "How long one run of the command may take. Default 600."
+          "description": "How long the command may take for one test file, in a mutation run and in a coverage run; a file that outlasts it in a mutation run is reported as a hang. Default 120."
         }
       }
     },

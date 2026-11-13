@@ -101,15 +101,9 @@ of the file (an edited entry is reformatted): the `directory` marketplace this p
 `SessionStart` hook that installs the dependencies when `node_modules/.bin/lntt` is
 missing: with pnpm, or `npm ci` in a project with only a `package-lock.json`, within ten
 minutes. The hook never fails a session: when the install cannot run it says, once,
-what to run. Beside it goes one line of `lntt hook`: `lntt hook typecheck`
-at `Stop`, in the background, which wakes the agent with a failure only when it differs
-from the last one. Its command is `local.hooks.typecheck`
-(one command or a list), else the `package.json` script of that name, else none.
-Formatting is the pre-commit's: `lntt sync` writes no format hook:
-
-```jsonc
-"local": { "hooks": { "typecheck": ["tsc --noEmit", "uv run mypy ."] } }
-```
+what to run. It writes no `Stop` hook and removes the typecheck hook a version up to
+0.6.4 wrote: the typecheck and the formatting are the pre-commit's. `local.hooks` is gone
+from the configuration; `lntt validate` names it when a file still sets it.
 
 And into the workflows: every line of `.github/workflows/*.yml` that ends with
 `# lntt sync: delivery.automated` gets the entries of `delivery.automated` (the pull
@@ -148,7 +142,7 @@ lntt check decisions board-refs docs/product/pricing.md # the board references o
 lntt check decisions numbers docs/adr/review-agents.md  # every line carrying a figure
 lntt check tests                                        # levels, focus, rules (touched needs --base)
 lntt check tests touched --base main                    # the changed lines and the tests that run them
-lntt check tests mutate src/a.ts:12 --text='a > b' --to='a < b'   # does a test fail?
+lntt check tests mutate src/a.ts:12 --text='a > b' --to='a < b' --test test/a.test.ts   # does it fail?
 lntt check cite docs/adr/review-agents.md:12 a.ts:40    # what is on those lines
 lntt check --json                                       # one JSON line per result
 ```
@@ -206,18 +200,20 @@ project's check.
   its `anchor`; a rule with `assertedBy` is cited, not checked.
 - **touched** (`--base`): per changed source file, the tests that run its changed lines
   (from the `coverage` command of their level, an lcov file at `{out}/lcov.info`) and
-  the lines no test runs; without `coverage`, the tests that import the file.
-- **mutate** `path:line --text=<on that line> --to=<mutated>`: applied in a scratch git
+  the lines no test runs; without `coverage`, the tests that import the file. A round of
+  `lntt review` runs no coverage: it gets the tests that import the file.
+- **mutate** `path:line --text=<on that line> --to=<mutated> --test=<test file>`, a tool run
+  by hand (the `mutation-check` skill), never by a review round: applied in a scratch git
   worktree (the head and the uncommitted files, dependencies shared; the working tree is
-  never written), runs the tests that import the file with the `run` command of their
-  level, `repeat` times in a row. For a file that is not code (`.md`, `.json`, `.yml`…)
-  that no test imports (a file some test imports gets only its importers), such as a
-  `SKILL.md` a test reads as text, it runs the test files whose text names the file's
-  path or its last two segments (`review/SKILL.md`), or a directory of two segments or
-  more, whole or by its last two (`skills/review`); a directory of one segment (`docs`)
-  is no name. The output says the tests were chosen by name. `PASS` is killed (the failing test and its message),
-  `FAIL` survived, `NOT RUN` when the text is not once on the line or the tests fail
-  without the mutation. Write `--text=...` with the `=` when the text starts with `-`.
+  never written), runs the test files you name with `--test` (once or more, required), one
+  at a time, each with the `run` command of its level (`repeat` times in a row) and its own
+  `timeoutSeconds`. The first test that fails ends the run; one that outlasts
+  `timeoutSeconds` is run again without the mutation, and counts as killed only if that run
+  passes. `PASS` is killed (the failing test and its message), `FAIL` survived (with the
+  files that passed), `NOT RUN` when the text is not once on the line, a `--test` is not a
+  file of the project or sits in no level, the tests fail or hang without the mutation, or
+  a level's `run` has no `{files}`. Write `--text=...` with the `=` when the text starts
+  with `-`.
 
 `cite` reads the working tree: the text of each line, or `FAIL` when the file or the
 line does not exist.
@@ -356,7 +352,7 @@ The worktree starts from the base (`--base` names another one), on every host:
 ### The base of a branch
 
 `lntt worktree start`, `lntt review` and `lntt ci local` find a branch's base one way
-(`packages/lntt/src/base.ts`, decided in the project's worktree tooling record):
+(`packages/lntt/src/base/base.ts`, decided in the project's worktree tooling record):
 
 - **The open candidate**, asked to GitHub with `gh pr list` when `delivery.candidate` is
   set: a new worktree starts from `origin/<candidate>`; a branch that descends from it
@@ -419,6 +415,7 @@ lntt ask --to coordinator --theme release-0-6-1 --issue 89 "Which pull request f
 lntt ask --to orchestrator --issue 89 "May I push?"           # topic issue-89-may-i-push, in to-orchestrator/
 lntt ask --wait 20261017-101500-issue-89-review-limit          # the answer to a message already sent
 lntt inbox --as coordinator --theme release-0-6-1 [--wait]    # unanswered messages, one JSON line each
+lntt inbox --as orchestrator --follow                         # stays running: one JSON line per new message
 lntt answer 20261017-101500-issue-89-which-pull-request "The CLI one."
 ```
 
@@ -429,6 +426,14 @@ addressed by `--issue`, a coordinator by `--theme`; sent to the orchestrator or 
 `--timeout <s>` ends a wait with exit 1 and leaves the message in place; `--wait <id>` waits
 again for its answer, with the same output and exit codes; `-` reads the text from stdin;
 `LNTT_ROLE`, `LNTT_THEME` and `LNTT_ISSUE` default `inbox`'s role and address.
+
+For the orchestrator and a coordinator, `inbox --wait` and `--follow` end with exit 3 and "no child
+reports to the <role>" when no child that reports to it is alive (the markers of `started/` whose
+branch is checked out in a worktree that exists, or younger than a minute: a start in progress), at
+start or when the last one goes; a message already there is returned first. They need no `--timeout`. `--follow` prints the unanswered messages,
+then one line per message that arrives, and is meant for a harness that streams a background
+command's lines (Claude Code's Monitor); `--wait` returns at the first message. The check deletes the
+marker of a worktree that is gone.
 
 Every wait of a child goes through the mailbox, and its brief says so: a question, an approval
 (a 1Password prompt included), the review limit. `lntt worktree start` records who each branch
@@ -466,7 +471,8 @@ GitHub for the open candidate, as every lntt command that resolves the base does
 (maxRounds and the rounds allowed), `reviewed`, `clean`, `atLimit`, `scope`, `lenses`, `open`, `replied`
 (with the `reply` the author gave), `closed` (the ledger), `failed`, `partial`, `skipped`,
 `tokens`, `cost`, `findings` (the last round's, every verdict), `refuted`, `repeated` (the
-fresh findings that repeat a ledger entry, with `closedWhat` and `closedBy`) and `rounds`
+fresh findings that repeat a ledger entry, with `closedWhat` and `closedBy`), `preexisting`
+(the ledger's pre-existing findings, every round's) and `rounds`
 (each round's cost). A state that cannot be read is an error, exit 1, with nothing on
 stdout even with `--json`. `--clear` also removes it; it never runs while a round holds
 the lock, never removes the lock, and refuses on the current branch until it is merged
@@ -528,10 +534,9 @@ A round, on a clean working tree:
    clean at the head). A finding on a line past the end of its file is refuted there,
    with no verifier; the others take the line's text to their verifiers. A file that is
    not there goes to the verifiers: the change may delete it.
-   **Mutations**: a `tests` finding that ends with ``mutate: `text` => `mutated` `` is
-   run between the reviewers and the verifiers (`lntt check tests mutate`, one scratch
-   copy for the round): survived confirms the finding and killed refutes it, the run
-   being the proof, with no verifier asked.
+   **No test runs** in a round: a `tests` note that ends with
+   ``mutate: `text` => `mutated` `` is a mutation for the author to run by hand
+   (`lntt check tests mutate`); a finding with one is verified like any other.
 5. **Verifiers**, all at once: each blocker and warning (`delivery.review.verify`) goes
    to every verifier but the agents that found it, briefed to refute it
    ([`agents/verify.md`](./agents/verify.md)), with the same list in `development`.
@@ -557,7 +562,9 @@ branch keeps a ledger of the findings it closed (fixed, refuted, accepted open) 
 its own file next to the state: each round's reviewers read the entries on the files of
 the change and those with no anchor, each verifier those on its finding's file; a
 fresh finding that repeats one on a line that did not change goes to `repeated`, not
-verified and not blocking. A reply that is neither
+verified and not blocking. A finding a reviewer marks `[pre-existing]`, on a line the
+branch did not write, is not verified and does not block: it enters the ledger at once,
+is not reported again, and is listed apart for the pull request body. A reply that is neither
 finding lines nor `no findings` counts as a failed reviewer; after a failure the next
 round reads the same range again. A reviewer is stopped after
 `delivery.review.timeoutMinutes` and counts as failed; at most
@@ -717,7 +724,7 @@ id of what it changes, so no item or issue loses a value:
   and visible fields of each set as declared (a key a view leaves out is not managed; a
   view it does not name is left alone).
 
-What the API cannot do, or what is risky, it lists under *by hand, in GitHub's UI*, each
+What the API cannot do, or what is risky, it lists under _by hand, in GitHub's UI_, each
 with the reason, the settings page and the steps: a view's grouping or a board's columns
 that differ from `groupBy` or `columns` (read from the view, set only in the UI), a
 field of another type (the API never changes a type), an iteration field (its iterations
@@ -894,8 +901,10 @@ uses it is the project's CI process description.
   controlling terminal, as on a CI runner: a step that prompts on `/dev/tty` (an ssh
   passphrase, a credential prompt, sudo) fails. One that outlasts
   `ci.local.timeoutMinutes` (default 30, at most 1440; in container mode, the whole
-  job) gets SIGTERM to its group, then SIGKILL five seconds later, and fails; one that
-  ended on its own before the signal is judged by its exit code. The following steps
+  job) gets SIGTERM to its group, then SIGKILL to what is left of it five seconds later, and
+  fails; one that ended on its own before the signal is judged by its exit code. A step that
+  passed leaves what it started in the background running, for the job's next steps, as on a
+  runner; a step that failed takes its group with it. The following steps
   go on as after any failure. The report prints next to the step the machine's load,
   read once the step was signalled, `timed out after 30m — load 48.2 / 31.0 / 20.5 on
   15 cores, 9 containers running (7 Testcontainers)` (the containers when Docker
@@ -903,8 +912,7 @@ uses it is the project's CI process description.
   line names the step. Nothing is retried: a green means every step passed once.
 - **An interrupt** (SIGINT, SIGTERM, SIGHUP, SIGQUIT) starts no further step or job,
   stops the running step's group the same way, prints `lntt ci: interrupted (<signal>)`,
-  gives the lock back and exits 128 + the signal's number (130, 143, 129, 131), with no
-  report.
+  gives the lock back and exits 130, whichever the signal, with no report.
 - **Container mode's limit.** Stopping `act` or `circleci local execute`, on a timeout
   or an interrupt, does not stop the containers they started: they keep running until
   they end or are removed by hand (`docker ps`, `docker rm -f`).

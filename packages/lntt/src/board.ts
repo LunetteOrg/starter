@@ -12,11 +12,12 @@
 // item or issue that has it) is left to a person, with the reason, the count it
 // touches, the settings page and the steps.
 //
-// The plan is computed from what GitHub shows (readBoard) and the configuration
-// (planBoard), then applied one write at a time (applyStep), each through `gh api
-// graphql`.
+// The plan is computed from what GitHub shows and the configuration (planBoard, plain
+// logic here), then applied one write at a time; the reads and the writes are Effects
+// over the Gh service (src/board/github.ts), the command src/board/command.ts.
 
-import { spawnSync } from 'node:child_process'
+// The Project is not what the configuration names, or not read whole: said as it is.
+export class BoardUnread extends Error {}
 
 export interface LiveOption {
   id: string
@@ -275,7 +276,7 @@ const LAYOUTS: Record<string, string> = { table: 'TABLE_LAYOUT', board: 'BOARD_L
 // left alone.
 function planViews(views: ViewConfig[], state: BoardState, steps: Step[], manual: Manual[]): void {
   if (views.length > 0 && !state.viewsComplete) {
-    throw new Error('the Project has more than 50 views, or a view more than 50 visible fields: not read whole')
+    throw new BoardUnread('the Project has more than 50 views, or a view more than 50 visible fields: not read whole')
   }
   // The fields the Project has, and those this run creates before the views.
   const known = new Set([
@@ -364,135 +365,10 @@ function planViews(views: ViewConfig[], state: BoardState, steps: Step[], manual
   }
 }
 
-// One request to GitHub's GraphQL API: its data, or an error with gh's message.
+// One request to GitHub's GraphQL API, synchronous: its data, or an error with gh's message. The
+// candidate automation reads the Ready check through one (src/ci/candidate.ts) until lntt ci moves
+// to Effect (#340); lntt board reads GitHub through the Gh service (src/board/github.ts).
 export type Graphql = (query: string, variables: Record<string, unknown>) => Record<string, unknown>
-
-export const ghGraphql: Graphql = (query, variables) => {
-  const run = spawnSync('gh', ['api', 'graphql', '--input', '-'], {
-    input: JSON.stringify({ query, variables }),
-    encoding: 'utf8',
-  })
-  if (run.error) throw run.error
-  if (run.status !== 0) throw new Error((run.stderr || run.stdout).trim())
-  const body = JSON.parse(run.stdout) as { data?: Record<string, unknown>; errors?: { message: string }[] }
-  if (body.errors?.length) throw new Error(body.errors.map((e) => e.message).join('; '))
-  return body.data ?? {}
-}
-
-const FIELDS = `fields(first:100){ pageInfo{ hasNextPage } nodes{
-  ... on ProjectV2FieldCommon{ id databaseId name dataType }
-  ... on ProjectV2SingleSelectField{ options{ id name color description } } } }`
-
-const NAMES = 'nodes{ ... on ProjectV2FieldCommon{ name } }'
-const VIEWS = `views(first:50){ pageInfo{ hasNextPage } nodes{ id number name layout filter
-  fields(first:50){ pageInfo{ hasNextPage } ${NAMES} } groupByFields(first:5){ ${NAMES} }
-  verticalGroupByFields(first:5){ ${NAMES} } } }`
-
-type Page<T> = { nodes: T[]; pageInfo?: { hasNextPage: boolean } }
-type Names = { nodes: { name?: string }[]; pageInfo?: { hasNextPage: boolean } }
-type LiveView = {
-  id: string
-  number: number
-  name: string
-  layout: string
-  filter: string | null
-  fields?: Names
-  groupByFields?: Names
-  verticalGroupByFields?: Names
-}
-const names = (list?: Names) => (list?.nodes ?? []).flatMap((n) => (n.name ? [n.name] : []))
-
-export function readBoard(
-  graphql: Graphql,
-  project: { owner: string; ownerType?: string; number: number },
-): BoardState {
-  const user = project.ownerType === 'user'
-  const query = user
-    ? `query($owner:String!,$number:Int!){ user(login:$owner){ id projectV2(number:$number){ id url ${FIELDS} ${VIEWS} } } }`
-    : `query($owner:String!,$number:Int!){ organization(login:$owner){ id projectV2(number:$number){ id url ${FIELDS} ${VIEWS} }
-        issueTypes(first:50){ pageInfo{ hasNextPage } nodes{ id name description } } } }`
-  const data = graphql(query, { owner: project.owner, number: project.number })
-  const owner = data[user ? 'user' : 'organization'] as
-    | {
-        id: string
-        projectV2: {
-          id: string
-          url: string
-          fields: Page<BoardState['fields'][number]>
-          views?: Page<LiveView>
-        } | null
-        issueTypes?: Page<NonNullable<BoardState['issueTypes']>[number]>
-      }
-    | undefined
-  if (!owner?.projectV2) throw new Error(`no Project ${project.number} of ${project.owner}`)
-  // One page each: past it, a field or a type that exists would look missing, and be created again.
-  if (owner.projectV2.fields.pageInfo?.hasNextPage)
-    throw new Error('the Project has more than 100 fields: not read whole')
-  if (owner.issueTypes?.pageInfo?.hasNextPage)
-    throw new Error('the organization has more than 50 issue types: not read whole')
-  return {
-    projectId: owner.projectV2.id,
-    url: owner.projectV2.url,
-    owner: project.owner,
-    ownerId: user ? null : owner.id,
-    // A field the token cannot see comes back as an empty object.
-    fields: owner.projectV2.fields.nodes.filter((f) => f.id),
-    issueTypes: user ? null : (owner.issueTypes?.nodes ?? []),
-    viewsComplete:
-      !owner.projectV2.views?.pageInfo?.hasNextPage &&
-      !(owner.projectV2.views?.nodes ?? []).some((v) => v.fields?.pageInfo?.hasNextPage),
-    views: (owner.projectV2.views?.nodes ?? []).map((v) => ({
-      id: v.id,
-      number: v.number,
-      name: v.name,
-      layout: v.layout,
-      filter: v.filter ?? '',
-      fields: names(v.fields),
-      groupBy: names(v.groupByFields),
-      columns: names(v.verticalGroupByFields),
-    })),
-  }
-}
-
-// The counts of a removal, read only when the plan has one: the items of the Project
-// once per field (a full read, ~1 point per item), the issues of a type by a search.
-export function counter(graphql: Graphql, state: BoardState): Count {
-  const values = new Map<string, Map<string, number>>()
-  return (what) => {
-    if ('type' in what) {
-      const data = graphql('query($q:String!){ search(query:$q, type:ISSUE, first:1){ issueCount } }', {
-        q: `org:${state.owner} type:"${what.type}"`,
-      }) as { search: { issueCount: number } }
-      return data.search.issueCount
-    }
-    let held = values.get(what.field)
-    if (!held) {
-      held = new Map()
-      let after: string | null = null
-      do {
-        const data = graphql(
-          `query($p:ID!,$field:String!,$after:String){ node(id:$p){ ... on ProjectV2{ items(first:100, after:$after){
-            pageInfo{ hasNextPage endCursor }
-            nodes{ v: fieldValueByName(name:$field){ ... on ProjectV2ItemFieldSingleSelectValue{ name } } } } } } }`,
-          { p: state.projectId, field: what.field, after },
-        ) as {
-          node: {
-            items: {
-              pageInfo: { hasNextPage: boolean; endCursor: string | null }
-              nodes: { v: { name?: string } | null }[]
-            }
-          }
-        }
-        for (const item of data.node.items.nodes) {
-          if (item.v?.name) held.set(item.v.name, (held.get(item.v.name) ?? 0) + 1)
-        }
-        after = data.node.items.pageInfo.hasNextPage ? data.node.items.pageInfo.endCursor : null
-      } while (after)
-      values.set(what.field, held)
-    }
-    return held.get(what.option) ?? 0
-  }
-}
 
 const optionText = (o: { name: string; color: string }) => (o.color === 'GRAY' ? o.name : `${o.name} ${o.color}`)
 
@@ -524,101 +400,6 @@ export function describeStep(step: Step): string {
   }
 }
 
-const UPDATE_FIELD =
-  'mutation($input:UpdateProjectV2FieldInput!){ updateProjectV2Field(input:$input){ projectV2Field{ ... on ProjectV2FieldCommon{ id } } } }'
-// The ids of fields by name: from the state read before the run, or asked of the
-// Project for a field this run created.
-function fieldIds(graphql: Graphql, state: BoardState, names: string[]): string[] {
-  return names.map((name) => {
-    const known = state.fields.find((f) => f.name === name)?.id
-    if (known) return known
-    const data = graphql(
-      'query($p:ID!,$name:String!){ node(id:$p){ ... on ProjectV2{ field(name:$name){ ... on ProjectV2FieldCommon{ id } } } } }',
-      { p: state.projectId, name },
-    ) as { node: { field: { id: string } | null } | null }
-    if (!data.node?.field) throw new Error(`no field ${name} on the Project`)
-    return data.node.field.id
-  })
-}
-
-const UPDATE_VIEW =
-  'mutation($input:UpdateProjectV2ViewInput!){ updateProjectV2View(input:$input){ projectV2View{ id } } }'
 // Between two writes: GitHub's secondary rate limit drops writes sent faster, and does
 // not show in rate_limit.
 export const PAUSE_MS = 1200
-export const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
-const UPDATE_TYPE = 'mutation($input:UpdateIssueTypeInput!){ updateIssueType(input:$input){ issueType{ id } } }'
-
-export function applyStep(graphql: Graphql, state: BoardState, step: Step): void {
-  switch (step.kind) {
-    case 'createField':
-      graphql(
-        'mutation($input:CreateProjectV2FieldInput!){ createProjectV2Field(input:$input){ projectV2Field{ ... on ProjectV2FieldCommon{ id } } } }',
-        {
-          input: {
-            projectId: state.projectId,
-            dataType: step.dataType,
-            name: step.name,
-            ...(step.options ? { singleSelectOptions: step.options } : {}),
-          },
-        },
-      )
-      break
-    case 'renameField':
-      graphql(UPDATE_FIELD, { input: { fieldId: step.fieldId, name: step.to } })
-      break
-    case 'updateOptions':
-      graphql(UPDATE_FIELD, { input: { fieldId: step.fieldId, singleSelectOptions: step.options } })
-      break
-    case 'createIssueType':
-      if (!state.ownerId) throw new Error('a Project owned by a user has no issue types')
-      graphql('mutation($input:CreateIssueTypeInput!){ createIssueType(input:$input){ issueType{ id } } }', {
-        input: {
-          ownerId: state.ownerId,
-          name: step.name,
-          isEnabled: true,
-          color: 'GRAY',
-          ...(step.description ? { description: step.description } : {}),
-        },
-      })
-      break
-    case 'renameIssueType':
-      graphql(UPDATE_TYPE, { input: { issueTypeId: step.id, name: step.to } })
-      break
-    case 'describeIssueType':
-      graphql(UPDATE_TYPE, { input: { issueTypeId: step.id, description: step.description } })
-      break
-    case 'createView': {
-      // The create takes the name, the layout and the visible fields; the filter is
-      // set by an update of the new view.
-      const data = graphql(
-        'mutation($input:CreateProjectV2ViewInput!){ createProjectV2View(input:$input){ projectV2View{ id } } }',
-        {
-          input: {
-            projectId: state.projectId,
-            name: step.name,
-            layout: step.layout,
-            ...(step.fields ? { configuration: { visibleFieldIds: fieldIds(graphql, state, step.fields) } } : {}),
-          },
-        },
-      ) as { createProjectV2View: { projectV2View: { id: string } } }
-      // A new view has no filter: a blank one needs no write.
-      if (step.filter?.trim()) {
-        pause(PAUSE_MS)
-        graphql(UPDATE_VIEW, { input: { viewId: data.createProjectV2View.projectV2View.id, filter: step.filter } })
-      }
-      break
-    }
-    case 'updateView': {
-      const { fields, ...rest } = step.input
-      graphql(UPDATE_VIEW, {
-        input: {
-          viewId: step.id,
-          ...rest,
-          ...(fields ? { configuration: { visibleFieldIds: fieldIds(graphql, state, fields) } } : {}),
-        },
-      })
-      break
-    }
-  }
-}

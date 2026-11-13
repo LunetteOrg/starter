@@ -1,23 +1,16 @@
-// `lntt branch`: the branch name an issue gets, a check of the current branch, and
-// the rename that fixes the name a tool gave it (usage: bin/lntt.ts).
+// `lntt branch`: the branch name an issue gets, a check of the current branch, and the rename that
+// fixes the name a tool gave it (usage: bin/lntt.ts). This module parses the arguments, exit 2
+// before Effect loads; the command runs on Effect (src/branch/command.ts). It also gives the
+// commands not yet on Effect the project's rules and an issue's name.
 
-import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
-import { cwd, env, exit, stderr, stdout } from 'node:process'
+import { cwd, env, stderr } from 'node:process'
 import { parseArgs } from 'node:util'
-import { candidateAt } from './base.ts'
-import {
-  type BranchRules,
-  branchName,
-  branchRules,
-  CANDIDATE_PREFIX,
-  checkBranch,
-  fromToolName,
-  slugify,
-  typeFor,
-} from './branch.ts'
+import type { BranchCommand } from './branch/command.ts'
+import { type BranchRules, branchRules, type IssueData, nameFromIssue as nameOf } from './branch.ts'
+import { exit } from './exit.ts'
 import { ConfigError } from './files.ts'
 import { loadConfig } from './index.ts'
+import { readStdin } from './stdin.ts'
 import { detectHost } from './viewer.ts'
 
 const USAGE = [
@@ -32,12 +25,8 @@ function usage(message?: string): never {
   exit(2)
 }
 
-function run(command: string, args: string[]): string {
-  return execFileSync(command, args, { cwd: cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
-}
-
 // A project without a configuration file has the defaults.
-function projectData(): Record<string, unknown> {
+export function projectData(): Record<string, unknown> {
   try {
     return loadConfig(cwd()).data
   } catch (error) {
@@ -50,165 +39,69 @@ export function rules(): BranchRules {
   return branchRules(projectData())
 }
 
-// The branch checked out; on a detached HEAD, the candidate whose origin/ ref points at
-// it (delivery.candidate.prefix, else CANDIDATE_PREFIX as in branchRules), so a
-// candidate's head is checked without a local branch named after it.
-function currentBranch(): string {
-  const current = run('git', ['branch', '--show-current'])
-  if (current !== '') return current
-  const delivery = projectData().delivery as { candidate?: { prefix?: string } } | undefined
-  const prefix = delivery?.candidate?.prefix ?? CANDIDATE_PREFIX
-  const candidate = candidateAt(cwd(), prefix)
-  if (candidate === null) {
-    throw new Error(`HEAD is detached and no origin/${prefix}<n> points at it: switch to a branch, or give --branch`)
-  }
-  return candidate
+// Issue `issue` of the repository in the current directory, read with gh. Loads Effect (src/gh/gh.ts)
+// when called.
+export async function readIssue(issue: number): Promise<IssueData> {
+  const [Effect, Layer, { Gh, GhLive }, { SpawnerLive }] = await Promise.all([
+    import('effect/Effect'),
+    import('effect/Layer'),
+    import('./gh/gh.ts'),
+    import('./spawner.ts'),
+  ])
+  return Effect.runPromise(
+    Effect.flatMap(Gh, (gh) => gh.issue(issue)).pipe(Effect.provide(GhLive.pipe(Layer.provide(SpawnerLive)))),
+  )
 }
 
-export interface Issue {
-  title: string
-  labels: { name: string }[]
-  type?: { name: string } | null
-}
-
-export function readIssue(issue: number): Issue {
-  return JSON.parse(run('gh', ['api', `repos/{owner}/{repo}/issues/${issue}`])) as Issue
-}
-
-export function nameFromIssue(
+// The name issue `issue` gets; `data` when the caller already read it.
+export async function nameFromIssue(
   issue: number,
   overrides: { type?: string; slug?: string },
-  data = readIssue(issue),
-): string {
-  const type = overrides.type ?? typeFor({ type: data.type?.name ?? null, labels: data.labels.map((l) => l.name) })
-  return branchName(type, issue, overrides.slug ?? slugify(data.title))
+  data?: IssueData,
+): Promise<string> {
+  return nameOf(issue, overrides, data ?? (await readIssue(issue)))
 }
 
-// The issue Orca linked to this worktree, when the session runs in Orca.
-function orcaIssue(): number | null {
-  if (detectHost(env) !== 'orca') return null
-  try {
-    const reply = JSON.parse(run('orca', ['worktree', 'current', '--json']))
-    const issue = reply?.result?.worktree?.linkedIssue
-    return typeof issue === 'number' ? issue : null
-  } catch {
-    return null
-  }
-}
-
-function name(args: string[]): void {
-  const { values } = parseArgs({
-    args,
-    options: { issue: { type: 'string' }, type: { type: 'string' }, slug: { type: 'string' } },
-  })
-  const overrides = {
-    ...(values.type ? { type: values.type } : {}),
-    ...(values.slug ? { slug: values.slug } : {}),
-  }
-  let result: string
-  if (values.issue !== undefined) {
-    if (!/^[1-9]\d*$/.test(values.issue)) usage(`--issue takes a number, not ${values.issue}`)
-    result = nameFromIssue(Number(values.issue), overrides)
-  } else {
-    if (!values.type || !values.slug) usage('without --issue, give --type and --slug')
-    result = branchName(values.type, null, values.slug)
-  }
-  const check = checkBranch(result, rules())
-  if (!check.ok) {
-    stderr.write(`lntt branch: ${result} is not a valid name: ${check.reason}; give --slug (or --type)\n`)
-    exit(1)
-  }
-  stdout.write(`${result}\n`)
-}
-
-function check(args: string[]): void {
-  const { values } = parseArgs({
-    args,
-    options: { branch: { type: 'string' }, 'pre-push': { type: 'boolean', default: false } },
-  })
-  const ruleset = rules()
-  const branches = values['pre-push'] ? pushedBranches(readFileSync(0, 'utf8')) : [values.branch || currentBranch()]
-  let failed = false
-  for (const branch of branches) {
-    const result = checkBranch(branch, ruleset)
-    if (result.ok) continue
-    const fix = result.expected
-      ? `rename it: git branch -m ${result.expected}`
-      : 'rename it to the name pnpm exec lntt branch name --issue <n> prints'
-    stderr.write(`lntt branch: ${branch} does not follow type/issue/slug: ${result.reason}; ${fix}\n`)
-    failed = true
-  }
-  if (failed) exit(1)
-}
-
-// The branches a push creates or updates, from the lines git gives the pre-push hook
-// (`<local ref> <local sha> <remote ref> <remote sha>`): tags and deletions are not
-// branch names to check.
-function pushedBranches(input: string): string[] {
-  return input
-    .split('\n')
-    .map((line) => line.trim().split(/\s+/))
-    .filter(([, localSha, remoteRef]) => localSha && !/^0+$/.test(localSha) && remoteRef?.startsWith('refs/heads/'))
-    .map(([, , remoteRef]) => (remoteRef as string).slice('refs/heads/'.length))
-}
-
-// Never fails: it runs in a worktree's setup, where a name it cannot fix is reported,
-// not fatal. CI and the pre-push hook stop the branch if it stays wrong.
-function rename(): void {
-  const current = run('git', ['branch', '--show-current'])
-  if (current === '') {
-    stderr.write('lntt branch: HEAD is detached; nothing to rename\n')
-    return
-  }
-  const ruleset = rules()
-  if (checkBranch(current, ruleset).ok) return
-  let target = fromToolName(current, ruleset)
-  if (!target) {
-    const issue = orcaIssue()
-    if (issue !== null) {
-      try {
-        target = nameFromIssue(issue, {})
-      } catch (error) {
-        stderr.write(`lntt branch: could not read issue #${issue}: ${(error as Error).message}\n`)
-      }
+// A command from its arguments: usage, exit 2, before Effect loads.
+async function parse(command: string | undefined, args: string[]): Promise<BranchCommand> {
+  if (command === 'name') {
+    const { values } = parseArgs({
+      args,
+      options: { issue: { type: 'string' }, type: { type: 'string' }, slug: { type: 'string' } },
+    })
+    const overrides = {
+      ...(values.type ? { type: values.type } : {}),
+      ...(values.slug ? { slug: values.slug } : {}),
     }
+    if (values.issue !== undefined) {
+      if (!/^[1-9]\d*$/.test(values.issue)) usage(`--issue takes a number, not ${values.issue}`)
+      return { kind: 'name', issue: Number(values.issue), ...overrides }
+    }
+    if (!values.type || !values.slug) usage('without --issue, give --type and --slug')
+    return { kind: 'name', issue: null, ...overrides }
   }
-  const valid = target ? checkBranch(target, ruleset) : null
-  if (target && valid && !valid.ok) {
-    stderr.write(
-      `lntt branch: ${target}, built from the issue, is not a valid name: ${valid.reason}; ${current} stays\n`,
-    )
-    return
+  if (command === 'check') {
+    const { values } = parseArgs({
+      args,
+      options: { branch: { type: 'string' }, 'pre-push': { type: 'boolean', default: false } },
+    })
+    if (values['pre-push']) return { kind: 'check', pushed: await readStdin() }
+    return { kind: 'check', ...(values.branch ? { branch: values.branch } : {}) }
   }
-  if (!target) {
-    stderr.write(
-      `lntt branch: ${current} does not follow type/issue/slug and holds nothing to rebuild it from; ` +
-        'rename it with git branch -m "$(pnpm exec lntt branch name --issue <n>)"\n',
-    )
-    return
-  }
-  try {
-    run('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${target}`])
-    stderr.write(`lntt branch: ${target} already exists; ${current} stays as it is\n`)
-    return
-  } catch {
-    // No branch by that name: free to take it.
-  }
-  run('git', ['branch', '-m', target])
-  stdout.write(`${current} → ${target}\n`)
+  if (command === 'rename') return { kind: 'rename', host: detectHost(env) }
+  usage()
 }
 
-export function main([command, ...args]: string[]): void {
+export async function main([command, ...args]: string[]): Promise<void> {
+  let parsed: BranchCommand
   try {
-    if (command === 'name') name(args)
-    else if (command === 'check') check(args)
-    else if (command === 'rename') rename()
-    else usage()
+    parsed = await parse(command, args)
   } catch (error) {
     if (error instanceof TypeError && 'code' in error && String(error.code).startsWith('ERR_PARSE_ARGS')) {
       usage(error.message)
     }
-    stderr.write(`lntt branch: ${(error as Error).message}\n`)
-    exit(1)
+    throw error
   }
+  const { runBranch } = await import('./branch/command.ts')
+  return runBranch(parsed)
 }

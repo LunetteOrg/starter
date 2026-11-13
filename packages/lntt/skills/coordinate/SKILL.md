@@ -80,11 +80,19 @@ pnpm exec lntt worktree start --theme <slug> --parent current --issue <n> --cont
 
 ```sh
 pnpm exec lntt inbox --as coordinator --theme <slug> --wait      # what they ask and report (returns at once while any message is unanswered: answer each one)
+pnpm exec lntt inbox --as coordinator --theme <slug> --follow    # the same as a stream: one JSON line per new message, until no child is left
 pnpm exec lntt answer <id> "<answer>"
 pnpm exec lntt ask --to orchestrator "<questions>"               # waits for the person's answer
 pnpm exec lntt ask --wait <id>                                   # the answer to a message already sent
 ```
 
+- **When to keep a wait, and when to stop.** While a child reports to you, keep a wait running:
+  `--wait` needs no `--timeout`, it ends at the first message or when the last child's worktree
+  is gone. With a harness that streams a background command's lines (Claude Code's Monitor),
+  start one `--follow` with the first child and never restart it. Exit 3, "no child reports to
+  the <role>", means nobody can write to you: stop waiting, and begin again at the next
+  `lntt worktree start`. The orchestrator follows its children the same way, with
+  `--as orchestrator`.
 - **A child's report** is one line: the pull request link, its head SHA, its checks, its
   friction. The long description is for when it is asked.
 - **The theme's friction goes on the candidate as it happens,** one sentence each, with
