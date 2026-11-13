@@ -365,11 +365,6 @@ function planViews(views: ViewConfig[], state: BoardState, steps: Step[], manual
   }
 }
 
-// One request to GitHub's GraphQL API, synchronous: its data, or an error with gh's message. The
-// candidate automation reads the Ready check through one (src/ci/candidate.ts) until lntt ci moves
-// to Effect (#340); lntt board reads GitHub through the Gh service (src/board/github.ts).
-export type Graphql = (query: string, variables: Record<string, unknown>) => Record<string, unknown>
-
 const optionText = (o: { name: string; color: string }) => (o.color === 'GRAY' ? o.name : `${o.name} ${o.color}`)
 
 export function describeStep(step: Step): string {

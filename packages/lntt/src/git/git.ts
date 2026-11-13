@@ -19,7 +19,7 @@ export class GitError extends Data.TaggedError('GitError')<{ args: readonly stri
 
 type Run<A> = Effect.Effect<A, GitError>
 
-export interface GitOperations {
+export interface GitOperations extends FollowOperations {
   // `git status --porcelain`: '' for a clean tree.
   readonly status: Run<string>
   // The branch HEAD names, 'HEAD' when it is detached.
@@ -76,8 +76,9 @@ export interface GitOperations {
   readonly topOf: (dir: string) => Run<string>
   // `git rev-parse --absolute-git-dir` in `dir`.
   readonly gitDirOf: (dir: string) => Run<string>
-  // A detached worktree of HEAD at `path`, its removal, and the prune of those whose folder is gone.
-  readonly addWorktree: (dir: string, path: string) => Run<void>
+  // A detached worktree at `path` of HEAD, or of `rev` (with no hooks when `hooks` is false), its
+  // removal, and the prune of those whose folder is gone.
+  readonly addWorktree: (dir: string, path: string, options?: { rev?: string; hooks?: boolean }) => Run<void>
   readonly removeWorktree: (dir: string, path: string) => Run<void>
   readonly pruneWorktrees: (dir: string) => Run<void>
 }
@@ -90,6 +91,9 @@ export class Git extends Context.Service<Git, GitOperations>()('@lntt/lntt/git/G
     const fn = (name: string) => () => missing(name)
     return Layer.succeed(Git)(
       Git.of({
+        ...(Object.fromEntries(
+          FOLLOW_OPERATIONS.map((name) => [name, name === 'isShallow' ? missing(name) : fn(name)]),
+        ) as unknown as FollowOperations),
         status: missing('status'),
         branch: missing('branch'),
         current: missing('current'),
@@ -126,17 +130,23 @@ export class Git extends Context.Service<Git, GitOperations>()('@lntt/lntt/git/G
   }
 }
 
+// The project's hooks, off: they do not run on the candidate automation's own worktree, rebase and
+// push.
+const NO_HOOKS = ['-c', 'core.hooksPath=/dev/null']
+
 // The paths of a -z listing.
 const split = (out: string) => out.split('\0').filter(Boolean)
 
-// git on the machine, in `dir`, else in the current directory.
-export const gitAt = (dir?: string) =>
+// git on the machine, in `dir`, else in the current directory; with `env` added to its environment
+// (the candidate automation's authentication in Actions); in a dry run, a push is printed through
+// `dryRun` (`[dry-run] git push <args>`) instead of made.
+export const gitAt = (dir?: string, options: { env?: Record<string, string>; dryRun?: (line: string) => void } = {}) =>
   Layer.effect(Git)(
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
       // Its stdout without the trailing newline, and its exit code.
       const exec = (args: string[]) =>
-        captured(spawner, 'git', args, dir).pipe(
+        captured(spawner, 'git', args, dir, undefined, options.env).pipe(
           Effect.mapError((error) => new GitError({ args, output: error.message })),
         )
       const run = (...args: string[]) =>
@@ -216,13 +226,103 @@ export const gitAt = (dir?: string) =>
           Effect.map(run('-C', dir, 'diff', '-z', '--name-only', '--no-renames', 'HEAD'), split),
         topOf: (dir) => run('-C', dir, 'rev-parse', '--show-toplevel'),
         gitDirOf: (dir) => run('-C', dir, 'rev-parse', '--absolute-git-dir'),
-        addWorktree: (dir, path) =>
-          Effect.asVoid(run('-C', dir, 'worktree', 'add', '--detach', '--quiet', path, 'HEAD')),
+        addWorktree: (dir, path, { rev = 'HEAD', hooks = true } = {}) =>
+          Effect.asVoid(
+            run('-C', dir, ...(hooks ? [] : NO_HOOKS), 'worktree', 'add', '--detach', '--quiet', path, rev),
+          ),
         removeWorktree: (dir, path) => Effect.asVoid(run('-C', dir, 'worktree', 'remove', '--force', path)),
         pruneWorktrees: (dir) => Effect.asVoid(run('-C', dir, 'worktree', 'prune')),
+        ...followOperations(
+          (args) => Effect.map(exec(args), ({ out, err, code }) => ({ status: code, stdout: out.trim(), stderr: err })),
+          options.dryRun,
+        ),
       })
     }),
   )
 
 // git on the machine, in the current directory.
 export const GitLive = gitAt()
+
+// --- The candidate following its base (src/ci/candidate.ts) -------------------------------------
+//
+// What the candidate automation runs on the clone to follow the base: each git command's outcome,
+// its exit code included, since the automation reads a conflict or a refused push from it. A
+// GitError only when git cannot start. The project's hooks do not run on the automation's own
+// rebase and push.
+
+export interface GitResult {
+  status: number
+  stdout: string
+  stderr: string
+}
+
+export interface FollowOperations {
+  readonly isShallow: Run<GitResult>
+  // Fetches `branches` from origin into their remote refs, unshallowing a shallow clone.
+  readonly fetchBranches: (fetch: { branches: string[]; unshallow: boolean }) => Run<GitResult>
+  // In the worktree `dir`: a rebase onto `onto` that keeps empty commits, its abort, HEAD, and the
+  // files in conflict.
+  readonly rebaseIn: (rebase: { dir: string; onto: string }) => Run<GitResult>
+  readonly abortRebaseIn: (dir: string) => Run<GitResult>
+  readonly headIn: (dir: string) => Run<GitResult>
+  readonly conflictsIn: (dir: string) => Run<GitResult>
+  // The tree of a merge of `theirs` into `ours`, with the names of the files in conflict.
+  readonly mergeTree: (merge: { ours: string; theirs: string }) => Run<GitResult>
+  readonly commitTree: (commit: { tree: string; parents: string[]; messages: string[] }) => Run<GitResult>
+  // Pushes `sha` to origin's `branch`, with a lease on `expected` when given.
+  readonly pushBranch: (push: { sha: string; branch: string; expected?: string }) => Run<GitResult>
+}
+
+export const FOLLOW_OPERATIONS = [
+  'isShallow',
+  'fetchBranches',
+  'rebaseIn',
+  'abortRebaseIn',
+  'headIn',
+  'conflictsIn',
+  'mergeTree',
+  'commitTree',
+  'pushBranch',
+] as const satisfies ReadonlyArray<keyof FollowOperations>
+
+// The arguments of a push, as git is run with them and a dry run prints them.
+export const pushArgs = ({ sha, branch, expected }: { sha: string; branch: string; expected?: string }) => [
+  ...(expected === undefined ? [] : [`--force-with-lease=refs/heads/${branch}:${expected}`]),
+  'origin',
+  `${sha}:refs/heads/${branch}`,
+]
+
+export function followOperations(
+  run: (args: string[]) => Run<GitResult>,
+  dryRun?: (line: string) => void,
+): FollowOperations {
+  return {
+    isShallow: run(['rev-parse', '--is-shallow-repository']),
+    fetchBranches: ({ branches, unshallow }) =>
+      run([
+        'fetch',
+        '--no-tags',
+        ...(unshallow ? ['--unshallow'] : []),
+        'origin',
+        ...branches.map((branch) => `+refs/heads/${branch}:refs/remotes/origin/${branch}`),
+      ]),
+    rebaseIn: ({ dir, onto }) => run(['-C', dir, ...NO_HOOKS, 'rebase', '--keep-empty', onto]),
+    abortRebaseIn: (dir) => run(['-C', dir, ...NO_HOOKS, 'rebase', '--abort']),
+    headIn: (dir) => run(['-C', dir, 'rev-parse', 'HEAD']),
+    conflictsIn: (dir) => run(['-C', dir, 'diff', '--name-only', '--diff-filter=U']),
+    mergeTree: ({ ours, theirs }) => run(['merge-tree', '--write-tree', '--name-only', '--no-messages', ours, theirs]),
+    commitTree: ({ tree, parents, messages }) =>
+      run(['commit-tree', tree, ...parents.flatMap((p) => ['-p', p]), ...messages.flatMap((m) => ['-m', m])]),
+    pushBranch: (push) => {
+      const args = pushArgs(push)
+      if (dryRun) {
+        const print = dryRun
+        return Effect.sync(() => {
+          print(`[dry-run] git push ${args.join(' ')}`)
+          return { status: 0, stdout: '', stderr: '' }
+        })
+      }
+      return run([...NO_HOOKS, 'push', ...args])
+    },
+  }
+}

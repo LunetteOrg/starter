@@ -62,7 +62,11 @@ GitHub's CLI, and the agents built on processes. A service of `lntt`'s own is de
 `Context.Service`, its live layer in its module: git is `Git` in
 `packages/lntt/src/git/git.ts` and GitHub's CLI is `Gh` in `packages/lntt/src/gh/gh.ts`, their
 operations typed and run through the spawner, in the current directory or the one the layer
-names (`gitAt`, `ghAt`); the agents
+names (`gitAt`, `ghAt`). A layer takes what changes how a run reaches GitHub or git: `ghAt` a token
+(the candidate automation's Projects token is a second layer of `Gh`, its service `Board` in
+`packages/lntt/src/ci/candidate-steps.ts`) and a dry run, which prints a write's command instead of
+running it; `gitAt` the environment git starts with and a dry run of its push. `Gh.over` runs the
+same operations over any runner of gh's arguments, for a spec. The agents
 are `Agents` in `packages/lntt/src/review/asking.ts` (one agent run, and what keeps an agent
 from starting), its live layer in `packages/lntt/src/review/agents.ts` over the spawner, and
 `askAll` the logic over it (a slot per provider, the optional agents' grace, a stop); the test
@@ -96,8 +100,8 @@ round).
   agents are released), and the command exits 130, whichever the signal. `lntt ci local`
   interrupts itself the same way on SIGHUP and SIGQUIT, at its edge
   (`packages/lntt/src/ci/local.ts`): its steps run in process groups of their own, which a
-  closed terminal does not reach. The commands not yet on Effect (`lntt ci candidate`, `lntt ci
-  proved`) exit 128 plus the signal, 143 for SIGTERM, until they move.
+  closed terminal does not reach. A command not on Effect exits 128 plus the signal, 143 for
+  SIGTERM.
 - **The teardown gives the exit code:** 0 on success (the code of `after` when the command
   gives one, below), the code of an `exit(code)` the command threw, 130 for an interrupt, 1 for
   any other failure or a defect, which it
@@ -162,10 +166,8 @@ check` reads through `SyncAreas` in `packages/lntt/src/check/areas.ts` until tho
 #341). What a module on Effect and the sync code of a
 module not yet moved both read, and which reaches nothing, is plain functions in a module that
 imports no Effect (what the base reads from the names git and GitHub give,
-`packages/lntt/src/base/names.ts`); the sync module keeps its own call to git or gh until it
-moves (`packages/lntt/src/ci/candidate.ts`, until `lntt ci candidate` moves, #340). The
-library's synchronous `localEvent` keeps its own calls to git too (`packages/lntt/src/ci/sync.ts`),
-until the shells go with #341.
+`packages/lntt/src/base/names.ts`); the library's synchronous `localEvent` keeps its own calls
+to git (`packages/lntt/src/ci/sync.ts`), until the shells go with #341.
 A defect of the Effect code reaches the edge with its stack. A reference to sync code goes when
 its module moves to Effect. The library API of
 `@lntt/lntt` (`packages/lntt/src/index.ts`) stays on `Promise`, so a script that imports
@@ -240,6 +242,12 @@ A project that installs `@lntt/lntt` gets `effect` in its `node_modules`, at the
 `@lntt/lntt` pins, and nothing in its own code changes: it runs `lntt` and, when it
 imports the library, gets `Promise` functions. A project that uses Effect itself
 resolves its own version beside `lntt`'s.
+
+`@lntt/lntt/ci` exports what plans and runs a project's CI on the machine (`lntt ci local`'s
+loaders, its run, its lock), in their synchronous and `Promise` forms, and the reading of
+`delivery.candidate` (`candidateConfig`). The candidate automation and the check of a tree already
+proved belong to their commands, `lntt ci candidate` and `lntt ci proved`, their only callers, and
+are not exported.
 
 ## Consequences
 

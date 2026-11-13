@@ -5,7 +5,7 @@ import * as PlatformError from 'effect/PlatformError'
 import { type ChildProcess, ChildProcessSpawner } from 'effect/process'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
-import { Gh, ghAt } from './gh.ts'
+import { Gh, GhError, ghAt } from './gh.ts'
 
 const encode = (text: string) => new TextEncoder().encode(text)
 
@@ -13,8 +13,11 @@ const encode = (text: string) => new TextEncoder().encode(text)
 function gh(
   answer: (args: string[]) => { out?: string; err?: string; code?: number } | 'missing' | 'refused',
   dir?: string,
+  options: Parameters<typeof ghAt>[1] = {},
 ) {
   const asked: string[][] = []
+  const envs: (Record<string, unknown> | undefined)[] = []
+  const extend: (boolean | undefined)[] = []
   const cwds: (string | undefined)[] = []
   // What each call got on its stdin, '' for none.
   const inputs: string[] = []
@@ -24,6 +27,8 @@ function gh(
       const args = command.args.map(String)
       asked.push([command.command, ...args])
       cwds.push(command.options.cwd)
+      envs.push(command.options.env)
+      extend.push(command.options.extendEnv)
       const stdin = command.options.stdin
       inputs.push(
         Stream.isStream(stdin)
@@ -52,10 +57,10 @@ function gh(
         unref: Effect.succeed(Effect.void),
       })
     })
-  const layer = ghAt(dir).pipe(
+  const layer = ghAt(dir, options).pipe(
     Layer.provide(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(ChildProcessSpawner.make(spawn))),
   )
-  return { asked, cwds, inputs, layer }
+  return { asked, cwds, envs, extend, inputs, layer }
 }
 
 describe('Gh on the machine', () => {
@@ -239,4 +244,131 @@ describe('Gh on the machine', () => {
       assert.strictEqual(error._tag, 'GhError')
     }),
   )
+})
+
+describe("the candidate automation's operations", () => {
+  it.effect('reads the open candidates with the fields it uses, and a GraphQL Int! as -F', () => {
+    const g = gh((args) => ({
+      out: args[0] === 'pr' ? '[{"number":40,"headRefName":"candidate/4"}]' : '{"data":{"x":1}}',
+    }))
+    return Effect.gen(function* () {
+      const client = yield* Gh
+      const prs = yield* client.candidatePullRequests({ repo: 'o/r', base: 'main', prefix: 'candidate/' })
+      assert.deepStrictEqual(prs, [{ number: 40, headRefName: 'candidate/4' }])
+      assert.deepStrictEqual(g.asked[0], [
+        'gh',
+        'pr',
+        'list',
+        '--repo',
+        'o/r',
+        '--state',
+        'open',
+        '--base',
+        'main',
+        '--search',
+        'head:candidate/',
+        '--json',
+        'number,headRefName,headRefOid,body',
+      ])
+      assert.deepStrictEqual(yield* client.graphqlFields('query', { owner: 'o', number: 7 }), { x: 1 })
+      assert.deepStrictEqual(g.asked[1], [
+        'gh',
+        'api',
+        'graphql',
+        '-f',
+        'query=query',
+        '-f',
+        'owner=o',
+        '-F',
+        'number=7',
+      ])
+    }).pipe(Effect.provide(g.layer))
+  })
+
+  it.effect('a draft pull request: its body on stdin, its URL back', () => {
+    const g = gh(() => ({ out: 'https://github.com/o/r/pull/42\n' }))
+    return Effect.gen(function* () {
+      const url = yield* (yield* Gh).createDraft({
+        repo: 'o/r',
+        base: 'main',
+        head: 'candidate/5',
+        title: 'Release 5',
+        body: 'the body',
+      })
+      assert.strictEqual(url, 'https://github.com/o/r/pull/42')
+      assert.strictEqual(g.inputs[0], 'the body')
+      assert.deepStrictEqual(g.asked[0]?.slice(1, 4), ['pr', 'create', '--repo'])
+    }).pipe(Effect.provide(g.layer))
+  })
+
+  it.effect('a token reaches gh as GH_TOKEN, over the environment gh inherits', () => {
+    const g = gh(() => ({ out: 'o/r' }), undefined, { token: 'projects' })
+    return Effect.gen(function* () {
+      yield* (yield* Gh).repository
+      assert.deepStrictEqual(g.envs[0], { GH_TOKEN: 'projects' })
+      // Added to what gh inherits: PATH and HOME stay.
+      assert.strictEqual(g.extend[0], true)
+    }).pipe(Effect.provide(g.layer))
+  })
+
+  it.effect('a dry run prints each write, its stdin too, and runs only the reads', () => {
+    const lines: string[] = []
+    const g = gh(() => ({ out: '[]' }), undefined, { dryRun: (line) => lines.push(line) })
+    return Effect.gen(function* () {
+      const client = yield* Gh
+      yield* client.retarget({ repo: 'o/r', number: 7, base: 'candidate/4' })
+      yield* client.commentPullRequest({ repo: 'o/r', number: 7, body: 'moved' })
+      yield* client.graphqlWrite('mutation', { item: 'I 1' })
+      yield* client.commentIssue({ repo: 'o/r', number: 9, body: 'told' })
+      yield* client.createIssue({ repo: 'o/r', title: 'a bug', body: 'what' })
+      yield* client.pullRequestHeads({ repo: 'o/r', prefix: 'candidate/' })
+      yield* client.graphqlFields('query', { number: 1 })
+      assert.deepStrictEqual(lines, [
+        '[dry-run] gh pr edit 7 --repo o/r --base candidate/4',
+        '[dry-run] gh pr comment 7 --repo o/r --body-file -',
+        '[dry-run] stdin:\nmoved',
+        '[dry-run] gh api graphql -f query=mutation -f "item=I 1"',
+        '[dry-run] gh issue comment 9 --repo o/r --body-file -',
+        '[dry-run] stdin:\ntold',
+        '[dry-run] gh issue create --repo o/r --title "a bug" --body-file -',
+        '[dry-run] stdin:\nwhat',
+      ])
+      // The reads still run, a GraphQL query included: the Ready check reads through one.
+      assert.deepStrictEqual(
+        g.asked.map((a) => a.slice(1, 3)),
+        [
+          ['pr', 'list'],
+          ['api', 'graphql'],
+        ],
+      )
+    }).pipe(Effect.provide(g.layer))
+  })
+
+  it.effect("a refusal is a GhError carrying gh's stderr, which the automation reads a refused token from", () => {
+    const g = gh(() => ({ err: 'GraphQL: Resource not accessible by integration', code: 1 }))
+    return Effect.gen(function* () {
+      const error = yield* Effect.flip((yield* Gh).closeIssue({ repo: 'o/r', number: 9 }))
+      assert.strictEqual(error.message, 'gh issue close failed: GraphQL: Resource not accessible by integration')
+    }).pipe(Effect.provide(g.layer))
+  })
+})
+
+describe("the candidate automation's reads of another shape", () => {
+  it.effect('a list that is not one, or a field missing, is a GhError naming the answer', () => {
+    const g = gh(() => ({ out: '{}' }))
+    return Effect.gen(function* () {
+      const client = yield* Gh
+      const reads: Effect.Effect<unknown, GhError>[] = [
+        client.candidatePullRequests({ repo: 'o/r', base: 'main', prefix: 'candidate/' }),
+        client.branchesUnder({ repo: 'o/r', prefix: 'candidate/' }),
+        client.commitPullRequests({ repo: 'o/r', sha: 'abc' }),
+        client.commitOf({ repo: 'o/r', ref: 'main' }),
+      ]
+      for (const read of reads) {
+        const error = yield* Effect.flip(read)
+        assert.instanceOf(error, GhError)
+        assert.match(error.message, /an answer of another shape: \{\}$/)
+      }
+    }).pipe(Effect.provide(g.layer))
+  })
 })
