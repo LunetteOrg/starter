@@ -36,8 +36,6 @@ function machine(cwd: string) {
           Effect.runPromise(Effect.provide(effect, live) as import('effect/Effect').Effect<A>),
       }
     })()
-    // A failed import is not kept: the next call tries again.
-    loaded.catch(() => machines.delete(cwd))
     machines.set(cwd, loaded)
   }
   return loaded

@@ -98,8 +98,8 @@ small adapter that makes the calls it understands.
     itself (the branch of its name, or a detached HEAD at its head) goes into the
     default branch; any other branch is compared with `origin/<default branch>`, one with no
     history in common with the candidate (`git merge-base` exits 1) included. A git that
-    fails any other way (an unknown revision, a git that does not start) fails the command:
-    it is never read as "no common history".
+    fails any other way (an unknown revision, a git that does not start) is an error of the
+    command that asked for the base, never "no common history".
 
   Which candidate is open is asked to GitHub (`gh pr list`, the query of the candidate
   automation): a merged candidate's branch stays on origin and its commits reach the
@@ -160,6 +160,10 @@ small adapter that makes the calls it understands.
 
 ## Discarded directions
 
+- **Reading every failure of `git merge-base` as "no common history"**, and falling back on
+  `origin/<default branch>`. An unknown revision or a git that does not start would pass for an
+  unrelated branch and hide a broken repository; only git's exit 1 says the histories share
+  nothing.
 - **A setting in each tool.** Orca has none in `orca.yaml` for the branch name or its
   prefix, Herdr has none at all, and a setting kept per machine drifts between them.
 - **Leaving the rename to whoever opens the pull request.** One more manual step at the

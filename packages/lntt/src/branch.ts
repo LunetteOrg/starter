@@ -17,7 +17,7 @@ export const CANDIDATE_PREFIX = 'candidate/'
 
 const DEFAULT_TYPES = ['feat', 'fix', 'chore', 'refactor', 'docs', 'test', 'ci', 'perf', 'build']
 const NO_ISSUE = 'no-issue'
-const MAX_WORDS = 4
+export const MAX_WORDS = 4
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/
 const STOP_WORDS = new Set(
   'a an and are as at be but by for from if in into is it its of on or so than that the this to was were with'.split(
