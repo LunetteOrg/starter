@@ -7,6 +7,7 @@
 import * as Clock from 'effect/Clock'
 import * as Console from 'effect/Console'
 import * as Context from 'effect/Context'
+import * as Data from 'effect/Data'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -16,11 +17,18 @@ import type { ConfigInvalid } from '../config/load.ts'
 import { Git, type GitError } from '../git/git.ts'
 import type { Closed, Ledger, ReviewState } from '../review.ts'
 import { ledgerPathIn, parseLedger, parseState, statePathIn } from '../review-store.ts'
-import { ReviewFailed } from './bridge.ts'
 import { type PlaceInvalid, placeOf } from './place.ts'
 
 // What reading or writing the store can end with: the place not found or not valid, a file the
 // platform refused, a state file that cannot be read.
+// What a round could not do (a state that does not parse, a tool that would not start): an
+// expected failure, reported by its message.
+export class ReviewFailed extends Data.TaggedError('ReviewFailed')<{ cause: unknown }> {
+  get message() {
+    return this.cause instanceof Error ? this.cause.message : String(this.cause)
+  }
+}
+
 export type StoreError = ReviewFailed | GitError | ConfigInvalid | PlaceInvalid | PlatformError.PlatformError
 
 export interface Store {

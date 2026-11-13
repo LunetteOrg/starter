@@ -59,9 +59,27 @@ const gitOver = (client: Git) => {
       },
       catch: (error) => new GitError({ args, output: (error as Error).message }),
     })
+  const done = (args: string[]) =>
+    Effect.flatMap(run(args), (r) =>
+      r.status === 0 ? Effect.void : Effect.fail(new GitError({ args, output: r.stderr || r.stdout })),
+    )
   return GitService.memory({
     verify: (rev) =>
       Effect.map(run(['rev-parse', '--verify', '--quiet', rev]), (r) => (r.status === 0 ? r.stdout : null)),
+    // The worktree's addition and removal, git.ts's own over `run`: a git that refuses is a GitError.
+    addWorktree: (dir, path, { rev = 'HEAD', hooks = true } = {}) =>
+      done([
+        '-C',
+        dir,
+        ...(hooks ? [] : ['-c', 'core.hooksPath=/dev/null']),
+        'worktree',
+        'add',
+        '--detach',
+        '--quiet',
+        path,
+        rev,
+      ]),
+    removeWorktree: (dir, path) => done(['-C', dir, 'worktree', 'remove', '--force', path]),
     ...followOperations(run),
   })
 }

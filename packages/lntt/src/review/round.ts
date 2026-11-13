@@ -5,7 +5,7 @@
 // library's runRound (src/review.ts) runs it with its callbacks on Promises.
 
 import * as Effect from 'effect/Effect'
-import type { Cited } from '../check.ts'
+import type { Cited } from '../check/results.ts'
 import type { HeadlessAgent as Agent, Answer, Question } from '../headless.ts'
 import {
   agentLabel,

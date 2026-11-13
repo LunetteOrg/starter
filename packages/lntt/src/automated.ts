@@ -11,7 +11,7 @@
 
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Result } from './check.ts'
+import type { Result } from './check/results.ts'
 import { loadConfig } from './index.ts'
 
 export interface Automated {

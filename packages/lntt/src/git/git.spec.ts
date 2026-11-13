@@ -54,6 +54,89 @@ function git(
 }
 
 describe('Git on the machine', () => {
+  it.effect(
+    'what lntt check asks runs git -C its directory, -z listings split, a range that does not resolve null',
+    () => {
+      const g = git((args) => {
+        if (args.includes('ls-files')) return { out: 'a.ts\0dir/b c.ts\0' }
+        if (args.includes('--name-status')) return args.at(-1) === 'nowhere...HEAD' ? { code: 128 } : { out: 'M\ta.ts' }
+        if (args.includes('--show-toplevel')) return { out: '/top\n' }
+        if (args.includes('--absolute-git-dir')) return { out: '/top/.git\n' }
+        if (args.includes('--name-only')) return { out: 'x.ts\0' }
+        return { out: '' }
+      })
+      return Effect.gen(function* () {
+        const repo = yield* Git
+        assert.deepStrictEqual(yield* repo.listFiles('/p'), ['a.ts', 'dir/b c.ts'])
+        yield* repo.listFiles('/p', { others: true })
+        yield* repo.ignoredDirectories('/p')
+        yield* repo.addedFrom('/p', 'main')
+        assert.strictEqual(yield* repo.nameStatus('/p', 'main...HEAD'), 'M\ta.ts')
+        assert.strictEqual(yield* repo.nameStatus('/p', 'nowhere...HEAD'), null)
+        assert.deepStrictEqual(yield* repo.changedFromHead('/top'), ['x.ts'])
+        assert.strictEqual(yield* repo.topOf('/p'), '/top')
+        assert.strictEqual(yield* repo.gitDirOf('/p'), '/top/.git')
+        yield* repo.addWorktree('/top', '/tmp/s/tree')
+        yield* repo.addWorktree('.', '/tmp/f', { rev: 'abc', hooks: false })
+        yield* repo.removeWorktree('/top', '/tmp/s/tree')
+        yield* repo.pruneWorktrees('/top')
+        assert.deepStrictEqual(g.asked, [
+          ['git', '-C', '/p', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+          ['git', '-C', '/p', 'ls-files', '-z', '--others', '--exclude-standard'],
+          ['git', '-C', '/p', 'ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory'],
+          [
+            'git',
+            '-C',
+            '/p',
+            '-c',
+            'core.quotePath=false',
+            'diff',
+            '-U0',
+            '--no-renames',
+            '--no-color',
+            '--no-ext-diff',
+            '--relative',
+            '--src-prefix=a/',
+            '--dst-prefix=b/',
+            'main',
+          ],
+          ['git', '-C', '/p', '-c', 'core.quotePath=false', 'diff', '--name-status', '-M', '--no-color', 'main...HEAD'],
+          [
+            'git',
+            '-C',
+            '/p',
+            '-c',
+            'core.quotePath=false',
+            'diff',
+            '--name-status',
+            '-M',
+            '--no-color',
+            'nowhere...HEAD',
+          ],
+          ['git', '-C', '/top', 'diff', '-z', '--name-only', '--no-renames', 'HEAD'],
+          ['git', '-C', '/p', 'rev-parse', '--show-toplevel'],
+          ['git', '-C', '/p', 'rev-parse', '--absolute-git-dir'],
+          ['git', '-C', '/top', 'worktree', 'add', '--detach', '--quiet', '/tmp/s/tree', 'HEAD'],
+          [
+            'git',
+            '-C',
+            '.',
+            '-c',
+            'core.hooksPath=/dev/null',
+            'worktree',
+            'add',
+            '--detach',
+            '--quiet',
+            '/tmp/f',
+            'abc',
+          ],
+          ['git', '-C', '/top', 'worktree', 'remove', '--force', '/tmp/s/tree'],
+          ['git', '-C', '/top', 'worktree', 'prune'],
+        ])
+      }).pipe(Effect.provide(g.layer))
+    },
+  )
+
   it.effect("runs git with the operation's arguments, its output without the trailing newline", () => {
     const g = git(() => ({ out: ' M a.ts\n?? b.ts\n\n' }))
     return Effect.gen(function* () {

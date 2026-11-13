@@ -225,6 +225,19 @@ describe('Gh on the machine', () => {
     }),
   )
 
+  it.effect("a pull request's body and head: the one named, else the current branch's", () => {
+    const g = gh(() => ({ out: '{"number":7,"body":null,"headRefName":"feat/7/x"}' }))
+    return Effect.gen(function* () {
+      const github = yield* Gh
+      assert.deepStrictEqual(yield* github.pullRequest(7), { number: 7, body: null, headRefName: 'feat/7/x' })
+      yield* github.pullRequest()
+      assert.deepStrictEqual(g.asked, [
+        ['gh', 'pr', 'view', '7', '--json', 'number,body,headRefName'],
+        ['gh', 'pr', 'view', '--json', 'number,body,headRefName'],
+      ])
+    }).pipe(Effect.provide(g.layer))
+  })
+
   it.effect('in memory, an operation not given fails as gh would without a connection', () =>
     Effect.gen(function* () {
       const error = yield* Effect.flip(Effect.flatMap(Gh, (g) => g.repository).pipe(Effect.provide(Gh.memory({}))))

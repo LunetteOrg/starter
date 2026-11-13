@@ -541,9 +541,10 @@ const rebased = (oldHead: string, base: string) =>
       const dir = yield* fs
         .makeTempDirectoryScoped({ prefix: 'lntt-follow-' })
         .pipe(Effect.flatMap((d) => fs.realPath(d)))
-      yield* Effect.addFinalizer(() => Effect.ignore(git.removeWorktree(dir)))
-      const add = yield* git.addWorktree({ dir, rev: oldHead })
-      if (add.status !== 0) return yield* failed(`git worktree add failed: ${pushError(add.stderr)}`)
+      yield* Effect.addFinalizer(() => Effect.ignore(git.removeWorktree('.', dir)))
+      yield* git
+        .addWorktree('.', dir, { rev: oldHead, hooks: false })
+        .pipe(Effect.catchTag('GitError', (error) => failed(`git worktree add failed: ${pushError(error.output)}`)))
       // The candidate opens with an empty commit, kept; merges of the base in its
       // history are dropped, their commits being in the base.
       const rebase = yield* git.rebaseIn({ dir, onto: base })
