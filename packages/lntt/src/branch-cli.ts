@@ -1,6 +1,6 @@
 // `lntt branch`: the branch name an issue gets, a check of the current branch, and the rename that
 // fixes the name a tool gave it (usage: bin/lntt.ts). This module parses the arguments, exit 2
-// before Effect loads; the command runs on Effect (src/branch/command.ts). It also gives the
+// before Effect loads; the command, which also reads the pre-push hook's stdin, runs on Effect (src/branch/command.ts). It also gives the
 // commands not yet on Effect the project's rules and an issue's name.
 
 import { cwd, env, stderr } from 'node:process'
@@ -10,7 +10,6 @@ import { type BranchRules, branchRules, type IssueData, nameFromIssue as nameOf 
 import { exit } from './exit.ts'
 import { ConfigError } from './files.ts'
 import { loadConfig } from './index.ts'
-import { readStdin } from './stdin.ts'
 import { detectHost } from './viewer.ts'
 
 const USAGE = [
@@ -85,7 +84,7 @@ async function parse(command: string | undefined, args: string[]): Promise<Branc
       args,
       options: { branch: { type: 'string' }, 'pre-push': { type: 'boolean', default: false } },
     })
-    if (values['pre-push']) return { kind: 'check', pushed: await readStdin() }
+    if (values['pre-push']) return { kind: 'check', fromStdin: true }
     return { kind: 'check', ...(values.branch ? { branch: values.branch } : {}) }
   }
   if (command === 'rename') return { kind: 'rename', host: detectHost(env) }

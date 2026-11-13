@@ -8,7 +8,7 @@ import * as TestConsole from 'effect/testing/TestConsole'
 import { Gh, GhError, type Issue } from '../gh/gh.ts'
 import { repository } from '../testing/repository.ts'
 import type { Host } from '../viewer.ts'
-import { type BranchCommand, command, ProjectData } from './command.ts'
+import { type BranchCommand, command, ProjectData, Stdin } from './command.ts'
 
 const ISSUE_77: Issue = {
   title: 'Branch names follow type/issue/slug whatever tool creates the worktree',
@@ -141,6 +141,36 @@ describe('lntt branch check', () => {
       assert.strictEqual(
         (yield* w.lntt({ kind: 'check', pushed: `(delete) ${ZERO} refs/heads/old-thing ${SHA}\n` })).code,
         0,
+      )
+    }),
+  )
+
+  it.effect('reads the pushed refs from stdin in the pre-push hook', () =>
+    Effect.gen(function* () {
+      const w = world()
+      const ZERO = '0000000000000000000000000000000000000000'
+      const SHA = '1111111111111111111111111111111111111111'
+      const r = yield* w
+        .lntt({ kind: 'check', fromStdin: true })
+        .pipe(Effect.provideService(Stdin, () => Promise.resolve(`refs/heads/main ${SHA} refs/heads/wip ${ZERO}\n`)))
+      assert.strictEqual(r.code, 1)
+      assert.match(r.err, /wip does not follow type\/issue\/slug/)
+    }),
+  )
+
+  it.effect('a stdin it cannot read is one line with its reason and exit 1, not a crash', () =>
+    Effect.gen(function* () {
+      const w = world()
+      const r = yield* w
+        .lntt({ kind: 'check', fromStdin: true })
+        .pipe(
+          Effect.provideService(Stdin, () =>
+            Promise.reject(new Error('EISDIR: illegal operation on a directory, read')),
+          ),
+        )
+      assert.deepStrictEqual(
+        [r.code, r.err],
+        [1, 'lntt branch: cannot read the pushed refs from stdin: EISDIR: illegal operation on a directory, read'],
       )
     }),
   )
