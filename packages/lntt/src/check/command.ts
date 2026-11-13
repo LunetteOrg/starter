@@ -21,7 +21,7 @@ import type { PlatformError } from 'effect/PlatformError'
 import { candidateConfigOf } from '../ci/config.ts'
 import { loadConfig } from '../config/load.ts'
 import { exit, printed } from '../exit.ts'
-import { Gh, GhLive } from '../gh/gh.ts'
+import { Gh, type GhError, GhLive } from '../gh/gh.ts'
 import { Git, GitLive } from '../git/git.ts'
 import { retroComment } from '../pull-request.ts'
 import { type Query, runQuery } from '../query.ts'
@@ -30,7 +30,7 @@ import { runCommand } from '../run-command.ts'
 import { SpawnerLive } from '../spawner.ts'
 import { lockWorktree, WorktreeLockLive } from '../worktree/lock.ts'
 import { agentsMdResults, bodyArea, CheckFailed, pluginResults, readText, skillsResults, synced } from './areas.ts'
-import { checkDecisions, decisionBoardRefs, decisionFigures, givenPaths } from './decisions.ts'
+import { checkDecisions, decisionBoardRefs, decisionFigures, givenPaths, NO_RECORDING } from './decisions.ts'
 import { projectTree } from './files.ts'
 import { mutateAll, type TestRunner, TestRunnerLive } from './mutate.ts'
 import {
@@ -46,7 +46,7 @@ import {
   formatText,
   type Result,
 } from './results.ts'
-import { runTests } from './tests.ts'
+import { noTestsSection, runTests } from './tests.ts'
 import type { Tree } from './tree.ts'
 
 // A command as check-cli.ts parsed it, with the directory it runs in.
@@ -79,7 +79,10 @@ export const runArea = Effect.fnUntraced(function* (
   if (area === 'skills') return skillsResults(yield* synced((c) => c.skills(root)))
   if (area === 'plugin') return pluginResults(yield* synced((c) => c.settings(root)))
   if (area === 'workflows') return yield* synced((c) => c.workflows(root, options.data))
-  if (area === 'tests') return yield* runTests(check, options, yield* tree)
+  // What runs without the project's files says so before they are read: a project that is no git
+  // repository is checked for what needs none.
+  if (area === 'tests') return noTestsSection(check, options.data) ?? (yield* runTests(check, options, yield* tree))
+  if (area === 'decisions' && options.data.recording === undefined) return [NO_RECORDING]
   if (area === 'body') return yield* bodyArea(check, options)
   if (check === 'numbers') return yield* decisionFigures(options, yield* tree, files)
   if (check === 'board-refs')
@@ -99,7 +102,13 @@ const readBody = Effect.fnUntraced(function* (
 ) {
   if ('stdin' in given) return { text: given.stdin, from: 'stdin' }
   const gh = yield* Gh
-  const cannot = (error: { message: string }) => new CheckFailed({ message: error.message.split('\n')[0] as string })
+  // What gh said, as the command it ran: its first line, or that it printed no JSON.
+  const cannot = (error: GhError) => {
+    const command = `gh ${error.args.join(' ')}`
+    if (error.output.startsWith('not JSON')) return new CheckFailed({ message: `${command} printed no JSON` })
+    const said = error.output.trim().split('\n')[0]
+    return new CheckFailed({ message: `${command} failed${said ? `: ${said}` : ''}` })
+  }
   const found = yield* gh.pullRequest(given.pr).pipe(Effect.mapError(cannot))
   if (isCandidate(candidateConfigOf(data), found.headRefName)) {
     const comments = yield* gh

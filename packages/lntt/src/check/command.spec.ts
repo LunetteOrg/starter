@@ -144,6 +144,20 @@ describe('lntt check', () => {
 })
 
 describe('what lntt check cannot do', () => {
+  it.effect('a project that is no git repository is checked for what needs no file of it', () =>
+    Effect.gen(function* () {
+      const run = yield* world({
+        texts: { '.agents/config.jsonc': '{}' },
+        git: { listFiles: () => Effect.fail(new GitError({ args: ['ls-files'], output: 'not a git repository' })) },
+      }).lntt({ kind: 'all' })
+      assert.strictEqual(run.code, 0, run.err)
+      assert.deepStrictEqual(
+        statuses(run.found).filter((s) => /decisions|tests/.test(s)),
+        ['NOT RUN decisions/structure', 'NOT RUN tests/levels'],
+      )
+    }),
+  )
+
   it.effect('no configuration is a configuration error, in one line', () =>
     Effect.gen(function* () {
       const { '.agents/config.jsonc': _, ...texts } = PROJECT
@@ -302,6 +316,12 @@ describe('lntt check body', () => {
       const run = yield* body(PROJECT, gh, {})
       assert.strictEqual(run.code, 1)
       assert.strictEqual(run.err, 'lntt: error: gh pr view failed: no pull requests found for branch "main"')
+      const notJson = yield* body(
+        PROJECT,
+        { pullRequest: () => Effect.fail(new GhError({ args: ['pr', 'view', '80'], output: 'not JSON: <html>' })) },
+        { pr: 80 },
+      )
+      assert.strictEqual(notJson.err.split('\n').at(-1), 'lntt: error: gh pr view 80 printed no JSON')
     }),
   )
 

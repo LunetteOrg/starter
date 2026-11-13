@@ -587,13 +587,17 @@ export const touched = Effect.fnUntraced(function* (options: CheckOptions, s: Sc
 
 // ---- all of them -----------------------------------------------------------------
 
+// A project that has not described its tests is not asked to: `lntt check` alone passes over it
+// (an explicit check still runs). Its result, before the project is read; null when the checks run.
+export function noTestsSection(check: string | undefined, data: Record<string, unknown>): Result[] | null {
+  if (check !== undefined || data.tests !== undefined) return null
+  return [result('levels', 'NOT RUN', null, null, 'the configuration has no tests section')]
+}
+
 // `lntt check tests`, or one of its checks but `mutate`, over the project as read.
 export const runTests = Effect.fnUntraced(function* (check: string | undefined, options: CheckOptions, tree: Tree) {
-  // A project that has not described its tests is not asked to: `lntt check` alone passes
-  // over it (an explicit check still runs).
-  if (check === undefined && options.data.tests === undefined) {
-    return [result('levels', 'NOT RUN', null, null, 'the configuration has no tests section')]
-  }
+  const skipped = noTestsSection(check, options.data)
+  if (skipped) return skipped
   const added = options.base === undefined ? null : yield* addedLines(options.root, options.base)
   const s = scopeOf(options.data, tree, added)
   const plain: Record<string, () => Result[]> = {

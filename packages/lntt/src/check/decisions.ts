@@ -548,7 +548,7 @@ function withArea(drafts: Draft[]): Result[] {
   return drafts.map((d) => ({ area: 'decisions', ...d }))
 }
 
-const NO_RECORDING: Result = {
+export const NO_RECORDING: Result = {
   area: 'decisions',
   check: 'structure',
   status: 'NOT RUN',
