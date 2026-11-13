@@ -88,9 +88,8 @@ const takeOver = Effect.fnUntraced(function* (lock: string) {
 
 // Takes the lock, created complete by linking a file that already holds the pid and the command,
 // so there is no instant with an empty lock, and atomically: of runs started together, one gets
-// it. It is not released here: lockWorktree releases it with its scope, acquireLock
-// (src/worktree-lock.ts) with the process. `judgedDead` is for tests: it runs between a run
-// judging the lock dead and removing it.
+// it. It is not released here: lockWorktree releases it with its scope. `judgedDead` is for tests:
+// it runs between a run judging the lock dead and removing it.
 export const acquire = Effect.fnUntraced(function* (
   gitDir: string,
   command: string,

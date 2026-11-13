@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { cpSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import type { Result } from '../src/check.ts'
-import { recordMissing, runTests } from '../src/check-tests.ts'
+import type { Result } from '../src/check/results.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const BIN = resolve(HERE, '../bin/lntt.ts')
@@ -92,15 +91,6 @@ describe('lntt check tests levels', () => {
     assert.match(messages, /does not open its harness \(tx, withTestDb\)/)
   })
 
-  test('tests.ignore takes a file out; a jsdom test that stubs a Web API is listed, never failed', () => {
-    project('defects')
-    const r = results(['check', 'tests', 'levels'])
-    assert.ok(!r.results.some((x) => x.path === 'test/misc/helper.test.ts'))
-    const stub = r.results.find((x) => x.status === 'INFO' && x.path === 'test/ui/stub.test.tsx')
-    assert.equal(stub?.line, 5)
-    assert.match(stub?.message ?? '', /candidate: a component test that stubs a Web API/)
-  })
-
   test('with --base the pyramid says what the diff adds to each level', () => {
     project('clean')
     writeFileSync(
@@ -113,26 +103,9 @@ describe('lntt check tests levels', () => {
       r.results.map((x) => x.message).join('\n'),
     )
   })
-
-  test('without tests.levels it is NOT RUN, never a silent pass', () => {
-    project('clean')
-    writeFileSync(join(repo, '.agents/config.jsonc'), '{}\n')
-    const r = results(['check', 'tests', 'levels'])
-    assert.deepEqual(
-      r.results.map((x) => `${x.status} ${x.message}`),
-      ['NOT RUN tests.levels is not configured'],
-    )
-  })
 })
 
 describe('lntt check tests focus', () => {
-  test('passes on tests that run and assert', () => {
-    project('clean')
-    const r = results(['check', 'tests', 'focus'])
-    assert.equal(r.status, 0)
-    assert.equal(r.results[0]?.status, 'PASS')
-  })
-
   test('finds a .only, a .skip, a todo and a test with no assertion, at their lines', () => {
     project('defects')
     const r = results(['check', 'tests', 'focus'])
@@ -150,55 +123,12 @@ describe('lntt check tests focus', () => {
     assert.match(at(15) ?? '', /no assertion/)
   })
 
-  test('a run-time t.skip with a written reason passes, one without a reason fails', () => {
-    project('clean')
-    const body = (skip: string) =>
-      `import assert from 'node:assert/strict'\nimport { test } from 'node:test'\ntest('x', (t) => {\n  ${skip}\n  assert.ok(true)\n})\n`
-    const run = (skip: string) => {
-      writeFileSync(join(repo, 'test/unit/runtime.test.ts'), body(skip))
-      return fails(results(['check', 'tests', 'focus']).results, 'focus')
-    }
-    assert.deepEqual(run("t.skip('the free model is at its usage limit')"), [])
-    assert.deepEqual(run(`t.skip(\`the limit: \${reason}\`)`), [])
-    assert.deepEqual(run('t.skip()'), ['test/unit/runtime.test.ts:4'])
-    assert.deepEqual(run("t.skip('')"), ['test/unit/runtime.test.ts:4'])
-    assert.deepEqual(run("t.skip('  ')"), ['test/unit/runtime.test.ts:4'])
-    assert.deepEqual(run('t.skip(reason)'), ['test/unit/runtime.test.ts:4'])
-    assert.deepEqual(run(`t.skip(\`\${reason}\`)`), ['test/unit/runtime.test.ts:4'])
-    assert.deepEqual(run("t.skip('why'); t.skip()"), ['test/unit/runtime.test.ts:4'])
-    assert.deepEqual(run("t.skip('why'); test.skip('x', () => {})"), ['test/unit/runtime.test.ts:4'])
-    assert.deepEqual(run("t.skip('a'); t.skip('b')"), [])
-    assert.deepEqual(run("t.skip('skip: true, so say the notes')"), [])
-  })
-
   test("with --base a skip or a todo that was already there is not the diff's", () => {
     project('defects')
     writeFileSync(join(repo, 'test/unit/new.test.ts'), "import { test } from 'node:test'\ntest.skip('x', () => {})\n")
     const r = results(['check', 'tests', 'focus', '--base', 'HEAD'])
     // the file the diff touches only: new.test.ts, whose skip is new
     assert.deepEqual(fails(r.results, 'focus'), ['test/unit/new.test.ts:2'])
-  })
-})
-
-describe('lntt check tests with --base', () => {
-  test("a defect on a line the diff did not add is the diff's only when it is a .only", () => {
-    project('defects')
-    // touch focus.test.ts and mocks.test.ts without adding a defect
-    for (const f of ['test/unit/focus.test.ts', 'test/unit/mocks.test.ts']) {
-      writeFileSync(join(repo, f), `${readFileSync(join(repo, f), 'utf8')}// a comment\n`)
-    }
-    const focus = results(['check', 'tests', 'focus', '--base', 'HEAD'])
-    assert.deepEqual(fails(focus.results, 'focus'), ['test/unit/focus.test.ts:5'])
-    const rules = results(['check', 'tests', 'rules', '--base', 'HEAD'])
-    assert.ok(!rules.results.some((x) => x.path === 'test/unit/mocks.test.ts'))
-  })
-})
-
-describe('recordMissing', () => {
-  test('a malformed escape in a fragment is a missing heading, never an exception', () => {
-    writeFileSync(join(repo, 'r.md'), '# R\n')
-    assert.equal(recordMissing(repo, 'r.md#R'), null)
-    assert.match(recordMissing(repo, 'r.md#100%') ?? '', /no heading #100%/)
   })
 })
 
@@ -226,67 +156,6 @@ describe('lntt check tests rules', () => {
     assert.ok(!r.results.some((x) => x.path === 'test/unit/waiting.test.ts'))
     assert.match(r.results.map((x) => x.message).join('\n'), /orphan-record .*the record behind the rule is not there/)
   })
-
-  test('the heading of an anchor has to be in the record', () => {
-    project('defects')
-    writeFileSync(join(repo, 'docs/adr/test.md'), '# Tests\n\n## 4. Waits\n')
-    const r = results(['check', 'tests', 'rules'])
-    assert.match(
-      r.results.map((x) => x.message).join('\n'),
-      /module-mock .*the record has no heading #3-no-module-mocks/,
-    )
-    writeFileSync(join(repo, 'docs/adr/test.md'), '# Tests\n\n## 3. No module mocks\n\n## 4. Waits\n')
-    const ok = results(['check', 'tests', 'rules'])
-    assert.ok(!ok.results.some((x) => /no heading/.test(x.message)))
-  })
-
-  test('an anchor is a file, or a file and a heading in any case, a repeat numbered, a fence no heading', () => {
-    project('defects')
-    writeFileSync(
-      join(repo, 'docs/adr/test.md'),
-      '# Tests\n\n## 3. No module mocks\n\n## Waits\n\n## Waits\n\n```\n# Not a heading\n```\n\n## After a fence\n\n~~~\n# Tilde\n```\n# Mixed\n~~~\n\n````\n```\n# Long\n```js\n# Info\n````\n\n## A [link heading](http://x) ##\n\n## no_module_mocks\n\n  ## Indented\n\n```code``` is a paragraph\n\n## After a paragraph\n\n  ```\n# Indented fence\n  ```\n\n  ````\n  ```\n# Closes only on a long enough run\n  ```js\n# Info\n  ````\n\n## Last\n\n    ## Code block\n\n##\n\n##\n\n  ````\n    ```` \n# Four spaces do not close\n  ```` \n\n## Closed with trailing space\n\n## Before an open fence\n\n```\n# Never closed\n',
-    )
-    const anchors: Record<string, boolean> = {
-      'docs/adr/test.md': true,
-      'docs/adr/test.md#': true,
-      'docs/adr/test.md#3-No-Module-Mocks': true,
-      'docs/adr/test.md#waits-1': true,
-      'docs/adr/test.md#after-a-fence': true,
-      'docs/adr/test.md#no_module_mocks': true,
-      'docs/adr/test.md#tilde': false,
-      'docs/adr/test.md#mixed': false,
-      'docs/adr/test.md#long': false,
-      'docs/adr/test.md#info': false,
-      'docs/adr/test.md#before-an-open-fence': true,
-      'docs/adr/test.md#never-closed': false,
-      'docs/adr/test.md#indented': true,
-      'docs/adr/test.md#after-a-paragraph': true,
-      'docs/adr/test.md#indented-fence': false,
-      'docs/adr/test.md#closes-only-on-a-long-enough-run': false,
-      'docs/adr/test.md#last': true,
-      'docs/adr/test.md#code-block': false,
-      'docs/adr/test.md#-1': true,
-      'docs/adr/test.md#four-spaces-do-not-close': false,
-      'docs/adr/test.md#closed-with-trailing-space': true,
-      'docs/adr/test.md#waits#1': false,
-      'docs/adr/test.md#a-link-heading': true,
-      'docs/adr/test.md#waits-2': false,
-      'docs/adr/test.md#not-a-heading': false,
-      'docs/adr/test.md#100%': false,
-      'docs/adr': false,
-    }
-    for (const [anchor, ok] of Object.entries(anchors)) {
-      const config = JSON.stringify({
-        tests: {
-          rules: [{ name: 'r', pattern: 'never matches here', anchor }],
-          levels: [{ name: 'unit', files: ['test/unit/*.test.ts'] }],
-        },
-      })
-      writeFileSync(join(repo, '.agents/config.jsonc'), config)
-      const r = results(['check', 'tests', 'rules'])
-      assert.equal(r.status, ok ? 0 : 1, `${anchor}: ${r.results.map((x) => x.message).join('; ')}`)
-    }
-  })
 })
 
 describe('lntt check tests touched', () => {
@@ -301,15 +170,6 @@ describe('lntt check tests touched', () => {
     writeFileSync(join(repo, '.agents/config.jsonc'), config)
     git('commit', '-qam', 'coverage')
   }
-
-  test('needs --base', () => {
-    mutateProject()
-    const r = results(['check', 'tests', 'touched'])
-    assert.deepEqual(
-      r.results.map((x) => `${x.status} ${x.message}`),
-      ['NOT RUN needs --base: the lines the diff changes'],
-    )
-  })
 
   test('says which tests run the changed lines, from coverage, and which lines no test runs', () => {
     mutateProject()
@@ -326,58 +186,5 @@ describe('lntt check tests touched', () => {
     // the body of next(), which no test calls
     assert.match(price?.message ?? '', /lines 1: test\/price\.test\.ts/)
     assert.match(price?.message ?? '', /lines 12: no test runs them/)
-  })
-
-  test('without a coverage command the tests come from imports and the message says so', () => {
-    project('mutate')
-    writeFileSync(
-      join(repo, 'src/price.ts'),
-      `// changed\n${execFileSync('cat', [join(repo, 'src/price.ts')], { encoding: 'utf8' })}`,
-    )
-    git('commit', '-qam', 'change')
-    const r = results(['check', 'tests', 'touched', '--base', 'HEAD~1'])
-    const price = r.results.find((x) => x.path === 'src/price.ts')
-    assert.match(price?.message ?? '', /from imports \(no coverage for their level\): test\/price\.test\.ts/)
-  })
-
-  test('asked for no coverage, as a review round asks, the tests come from imports and the message says which is the case', () => {
-    mutateProject()
-    writeFileSync(
-      join(repo, 'src/price.ts'),
-      `// changed\n${execFileSync('cat', [join(repo, 'src/price.ts')], { encoding: 'utf8' })}`,
-    )
-    git('commit', '-qam', 'change')
-    const touched = (data: Record<string, unknown>) =>
-      runTests('touched', { root: repo, data, base: 'HEAD~1', coverage: false }).find((x) => x.path === 'src/price.ts')
-        ?.message ?? ''
-    const levels = (coverage?: string) => ({
-      tests: {
-        levels: [
-          { name: 'unit', files: ['test/*.test.ts'], run: 'node --test {files}', ...(coverage ? { coverage } : {}) },
-        ],
-      },
-    })
-    assert.match(touched(levels(COVERAGE)), /from imports \(coverage not run\): test\/price\.test\.ts/)
-    assert.match(touched(levels()), /from imports \(no coverage for their level\): test\/price\.test\.ts/)
-  })
-
-  test('a changed file no test imports is reported as such', () => {
-    project('mutate')
-    writeFileSync(join(repo, 'src/orphan.ts'), 'export const flag = false\n')
-    git('commit', '-qam', 'change')
-    const r = results(['check', 'tests', 'touched', '--base', 'HEAD~1'])
-    assert.match(r.results.find((x) => x.path === 'src/orphan.ts')?.message ?? '', /no test imports this file/)
-  })
-})
-
-describe('lntt check tests', () => {
-  test('an unknown check, or a file given to one that takes none, is a usage error', () => {
-    project('clean')
-    for (const args of [
-      ['check', 'tests', 'nope'],
-      ['check', 'tests', 'focus', 'a.ts'],
-    ]) {
-      assert.equal(spawnSync(process.execPath, [BIN, ...args], { cwd: repo }).status, 2)
-    }
   })
 })

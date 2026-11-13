@@ -2,9 +2,10 @@
 // It follows Node's semantics where a module relies on them, so a spec fails where Node would:
 // a file is written only in a directory that exists, `wx` refuses a file that exists, `a`
 // appends, `link` refuses a target that exists, `utimes` reads a number as seconds, `rename` and `copyFile`
-// replace no directory, `rename` across two filesystems fails with Node's EXDEV in its cause, and a missing path is NotFound. A file's mtime is the Clock's time when it was written. Not
+// replace no directory, `rename` across two filesystems fails with Node's EXDEV in its cause, and a missing path is NotFound. A file's mtime is the Clock's time when it was written, its size its bytes in UTF-8. Not
 // published: tsconfig.build.json leaves src/testing/ out.
 
+import * as ByteSize from 'effect/ByteSize'
 import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -99,7 +100,11 @@ export function memoryFileSystem(
       if (!file && dirs.has(path))
         return Effect.succeed({ type: 'Directory', mtime: Option.none() } as FileSystem.File.Info)
       if (!file) return Effect.fail(failure('stat', path, 'NotFound'))
-      return Effect.succeed({ type: 'File', mtime: Option.some(new Date(file.mtime)) } as FileSystem.File.Info)
+      return Effect.succeed({
+        type: 'File',
+        mtime: Option.some(new Date(file.mtime)),
+        size: ByteSize.bytes(new TextEncoder().encode(file.text).length),
+      } as FileSystem.File.Info)
     },
     utimes: (path, _atime, mtime) =>
       Effect.suspend(() => {

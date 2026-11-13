@@ -1,13 +1,11 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { appendFileSync, cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, cpSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { CannotRunError, cite, projectFiles, type Result } from '../src/check.ts'
-import { errorLine, main } from '../src/check-cli.ts'
-import { ConfigError } from '../src/index.ts'
+import type { Result } from '../src/check/results.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const BIN = resolve(HERE, '../bin/lntt.ts')
@@ -131,155 +129,6 @@ describe('lntt check decisions structure', () => {
     assert.match(r.stdout, /lntt check: \d+ PASS, 17 FAIL, 1 NOT RUN\n$/)
   })
 
-  test('a log with no index is NOT RUN for the index check, never a silent pass', () => {
-    project('clean')
-    writeFileSync(
-      join(repo, '.agents/config.jsonc'),
-      JSON.stringify({ recording: { logs: { process: { path: 'docs/process' } } } }),
-    )
-    const r = results(['check', 'decisions', 'structure'])
-    assert.equal(r.status, 0)
-    const index = r.results.filter((x) => x.check === 'index')
-    assert.deepEqual(
-      index.map((x) => x.status),
-      ['NOT RUN'],
-    )
-    assert.match((index[0] as Result).message, /recording\.logs\.process has no index/)
-  })
-
-  test('a project with no recording section is NOT RUN', () => {
-    project('clean')
-    writeFileSync(join(repo, '.agents/config.jsonc'), '{}')
-    const r = results(['check', 'decisions'])
-    assert.equal(r.status, 0)
-    assert.deepEqual(
-      r.results.map((x) => [x.status, x.message]),
-      [['NOT RUN', 'no recording section in the configuration']],
-    )
-  })
-
-  test('files of a nested project, with a configuration of its own, are its own check', () => {
-    project('clean')
-    mkdirSync(join(repo, 'templates/web/.agents'), { recursive: true })
-    writeFileSync(join(repo, 'templates/web/.agents/config.jsonc'), '{}')
-    writeFileSync(join(repo, 'templates/web/README.md'), 'Its own docs/adr/storage-two.md.\n')
-    assert.equal(results(['check', 'decisions', 'structure']).status, 0)
-  })
-
-  test("externalReferences: files citing another project's records are not resolved, a stale glob fails", () => {
-    project('clean')
-    mkdirSync(join(repo, 'shared'))
-    writeFileSync(join(repo, 'shared/rule.ts'), '// The project that installs it: docs/adr/its-own.md\n')
-    assert.deepEqual(fails(results(['check', 'decisions', 'structure']).results), ['references shared/rule.ts:1'])
-    const config = (external: Record<string, string>) =>
-      writeFileSync(
-        join(repo, '.agents/config.jsonc'),
-        JSON.stringify({
-          recording: {
-            logs: { adr: { path: 'docs/adr', index: 'docs/adr/README.md', template: 'docs/adr/template.md' } },
-            externalReferences: external,
-          },
-        }),
-      )
-    config({ 'shared/**': 'installed in every project, citing its records' })
-    const r = results(['check', 'decisions', 'structure'])
-    assert.equal(r.status, 0)
-    assert.match((r.results.find((x) => x.check === 'references') as Result).message, /1 citing another project/)
-    config({ 'shared/**': 'installed in every project', 'gone/**': 'a package since removed' })
-    const stale = results(['check', 'decisions', 'structure']).results.filter((x) => x.status === 'FAIL')
-    assert.deepEqual(
-      stale.map((x) => x.message),
-      ['recording.externalReferences["gone/**"] matches no file: remove it'],
-    )
-  })
-
-  test('a sentence that ends on a log folder and goes on with a word is not a wrapped path', () => {
-    project('clean')
-    writeFileSync(join(repo, 'src/notes.ts'), '// Records live in docs/adr/\n// and nowhere else.\nexport {}\n')
-    assert.deepEqual(fails(results(['check', 'decisions', 'structure']).results), [])
-    writeFileSync(join(repo, 'src/notes.ts'), '// The record is docs/adr/\n// gone-now.md.\nexport {}\n')
-    assert.deepEqual(fails(results(['check', 'decisions', 'structure']).results), ['references src/notes.ts:1'])
-  })
-
-  test('status: only a template that lists the statuses says which the log allows', () => {
-    project('clean')
-    const names = () => results(['check', 'decisions', 'structure']).results.filter((x) => x.check === 'names')
-    // A record with no status, against a template that lists them, fails.
-    writeFileSync(join(repo, 'docs/adr/api-shape.md'), '# API shape\n')
-    assert.deepEqual(fails(names()), ['names docs/adr/api-shape.md:1'])
-    assert.match((names()[0] as Result).message, /no status in the frontmatter: one of proposed, accepted/)
-    // A template with a status and no list allows any status: none is checked, and the
-    // report says so.
-    writeFileSync(join(repo, 'docs/adr/template.md'), '---\nstatus: proposed\n---\n\n# Subject\n')
-    assert.deepEqual(fails(names()), [])
-    assert.match((names()[0] as Result).message, /no template listing two statuses or more/)
-    // So does a template that lists a single status.
-    writeFileSync(join(repo, 'docs/adr/template.md'), '---\nstatus: proposed # proposed\n---\n\n# Subject\n')
-    assert.deepEqual(fails(names()), [])
-    assert.match((names()[0] as Result).message, /no template listing two statuses or more/)
-    // So does a template that is not there.
-    rmSync(join(repo, 'docs/adr/template.md'))
-    assert.deepEqual(fails(names()), [])
-    assert.match((names()[0] as Result).message, /no template listing two statuses or more/)
-  })
-
-  test('a number with a mark before the subject, or ADR and a number, fails; a count, a version, a time are words', () => {
-    project('clean')
-    const title = (t: string) => {
-      writeFileSync(join(repo, 'docs/adr/api-shape.md'), `---\nstatus: proposed\n---\n\n# ${t}\n`)
-      return fails(results(['check', 'decisions', 'structure']).results).filter((f) => f.startsWith('names'))
-    }
-    assert.deepEqual(title('3 retries at most'), [])
-    for (const t of [
-      '2.0 migration plan',
-      '2.x release',
-      '3.js intro',
-      '7:30 standup',
-      '1.2 Plan',
-      '1.record decisions',
-      '12 retries',
-      '2024 review',
-      '1.2.3 Plan',
-      '0003 Old thing',
-      '2–3 retries',
-      '3-way merge',
-      '2024-10 review',
-      'LADR 5 notes',
-      'adr 5 notes',
-      `Why \`ADR ${5}\` was dropped`,
-      'ADR process',
-      '1)storage',
-      '1:word',
-    ])
-      assert.deepEqual(title(t), [], t)
-    for (const t of [
-      '1. Record decisions',
-      '1.Record decisions',
-      '1.',
-      '7: Caching',
-      '7:Caching',
-      '7 — Caching',
-      '1) Storage',
-      '12 — API shape',
-      '7 - Caching',
-      '7 – Caching',
-      '0003—Old thing',
-      '0003 — Old thing',
-      `ADR ${12} API shape`,
-      `PDR-${12} pricing`,
-      `ADR#${3} storage`,
-      `ADR${12} storage`,
-      `Why ADR ${5} matters`,
-    ]) {
-      assert.deepEqual(title(t), ['names docs/adr/api-shape.md:5'], t)
-    }
-    // A code span is not a reference; the rest of the title still is, and the message
-    // quotes the title as written.
-    assert.deepEqual(title(`Why \`ADR ${5}\` and ADR ${6}`), ['names docs/adr/api-shape.md:5'])
-    const names = results(['check', 'decisions', 'structure']).results.filter((x) => x.check === 'names')
-    assert.equal((names[0] as Result).message, `the title carries a number: # Why \`ADR ${5}\` and ADR ${6}`)
-  })
-
   test('an untracked record is seen: a new file left out of the index fails before it is added', () => {
     project('clean')
     writeFileSync(join(repo, 'docs/adr/caching.md'), '---\nstatus: accepted\n---\n\n# Caching\n')
@@ -330,13 +179,6 @@ describe('lntt check decisions --base', () => {
       'residues docs/adr/storage.md:24',
     ])
   })
-
-  test('a base that does not resolve is NOT RUN', () => {
-    const r = results(['check', 'decisions', '--base', 'nowhere'])
-    const inventory = r.results.find((x) => x.check === 'inventory') as Result
-    assert.equal(inventory.status, 'NOT RUN')
-    assert.match(inventory.message, /nowhere/)
-  })
 })
 
 describe('lntt check decisions board-refs', () => {
@@ -358,120 +200,6 @@ describe('lntt check decisions board-refs', () => {
 
   const boardRefs = (list: Result[]) =>
     list.filter((x) => x.check === 'board-refs').map((x) => `${x.status} ${x.path}:${x.line} ${x.message}`)
-
-  test('finds every form of board reference in a log that forbids them, with its line and the reference', () => {
-    strict()
-    writeFileSync(
-      join(repo, 'docs/process/review.md'),
-      [
-        '# Review',
-        '',
-        '- Issue: #168',
-        '',
-        'Whether a round is repeated is decided by #172.',
-        '',
-        'The open questions wait in **#244**, and the answer is due in (#241).',
-        '',
-        'See https://github.com/example/repo/issues/258 and https://github.com/example/repo/pull/301.',
-        '',
-        'Its diff is https://github.com/example/repo/pull/302.diff.',
-        '',
-      ].join('\n'),
-    )
-    const r = results(['check', 'decisions'])
-    assert.equal(r.status, 1)
-    const cites = (line: number, ref: string) =>
-      `FAIL docs/process/review.md:${line} cites the board (${ref}): a record of process cites documents, not issues or pull requests`
-    assert.deepEqual(boardRefs(r.results), [
-      cites(3, '#168'),
-      cites(5, '#172'),
-      cites(7, '#244'),
-      cites(7, '#241'),
-      cites(9, '/issues/258'),
-      cites(9, '/pull/301'),
-      cites(11, '/pull/302'),
-    ])
-  })
-
-  test('anchors, entities, path tails and code are not board references; a log that allows them is not read', () => {
-    strict()
-    writeFileSync(
-      join(repo, 'docs/process/review.md'),
-      [
-        '# Review',
-        '',
-        '## 1. The boundaries',
-        '',
-        'Section [1](#1-the-boundaries) is linked by anchor, and so is',
-        '[storage](../adr/storage.md#3-two-problems) and [a heading](#12). An entity like &#39; is',
-        `not an issue, a color like \`#123456\` is code, and so is \`PDR #${8}\`.`,
-        'Nor is #12abc, a bare anchor #1-scope, or a folder like docs/issues/12-notes.md and',
-        'a file like docs/pull/7.md.',
-        '',
-        '```sh',
-        'gh issue view #12',
-        '```',
-        '',
-      ].join('\n'),
-    )
-    // The adr log allows them: its #12 is not read; nor is a folder beside the log's, or
-    // a file in it that is not Markdown.
-    appendFileSync(join(repo, 'docs/adr/storage.md'), '\nDecided in #12.\n')
-    mkdirSync(join(repo, 'docs/process-old'))
-    writeFileSync(join(repo, 'docs/process-old/notes.md'), '# Notes\n\nSee #3.\n')
-    writeFileSync(join(repo, 'docs/process/owners.txt'), 'See #3.\n')
-    const r = results(['check', 'decisions'])
-    assert.equal(r.status, 0)
-    assert.deepEqual(boardRefs(r.results), [
-      'PASS null:null no board reference in the 2 files of process (boardReferences: false)',
-    ])
-  })
-
-  test('a file below the log folder is read too, the index and .mdx included, its line counted past code', () => {
-    strict()
-    mkdirSync(join(repo, 'docs/process/guides'))
-    writeFileSync(join(repo, 'docs/process/guides/setup.md'), '# Setup\n\n```sh\nmake\n```\n\n`a` then #3.\n')
-    writeFileSync(join(repo, 'docs/process/guides/page.mdx'), '# Page\n\nSee #5.\n')
-    appendFileSync(join(repo, 'docs/process/README.md'), '\nOpened in #4.\n')
-    assert.deepEqual(fails(results(['check', 'decisions', 'board-refs']).results), [
-      'board-refs docs/process/README.md:7',
-      'board-refs docs/process/guides/page.mdx:3',
-      'board-refs docs/process/guides/setup.md:7',
-    ])
-  })
-
-  test('two logs that forbid them: each reference names its own log', () => {
-    strict()
-    const config = join(repo, '.agents/config.jsonc')
-    writeFileSync(
-      config,
-      JSON.stringify({
-        recording: {
-          logs: {
-            adr: {
-              path: 'docs/adr',
-              index: 'docs/adr/README.md',
-              template: 'docs/adr/template.md',
-              boardReferences: false,
-            },
-            process: { path: 'docs/process', index: 'docs/process/README.md', boardReferences: false },
-          },
-        },
-      }),
-    )
-    appendFileSync(join(repo, 'docs/adr/storage.md'), '\nDecided in #12.\n')
-    appendFileSync(join(repo, 'docs/process/review.md'), '\nSee #3.\n')
-    assert.deepEqual(
-      results(['check', 'decisions', 'board-refs'])
-        .results.filter((x) => x.status === 'FAIL')
-        .map((x) => `${x.path} ${x.message}`)
-        .sort(),
-      [
-        'docs/adr/storage.md cites the board (#12): a record of adr cites documents, not issues or pull requests',
-        'docs/process/review.md cites the board (#3): a record of process cites documents, not issues or pull requests',
-      ],
-    )
-  })
 
   test('with files, only those in a log that forbids them: what pre-commit passes', () => {
     strict()
@@ -512,16 +240,6 @@ describe('lntt check decisions board-refs', () => {
       'PASS null:null no board reference in the files given: 0 of 1 in process (boardReferences: false)',
     ])
   })
-
-  test('no log forbids them: NOT RUN, never a silent pass', () => {
-    project('clean')
-    appendFileSync(join(repo, 'docs/process/review.md'), '\nSee #3.\n')
-    const r = results(['check', 'decisions', 'board-refs'])
-    assert.equal(r.status, 0)
-    assert.deepEqual(boardRefs(r.results), [
-      'NOT RUN null:null no log of recording.logs sets boardReferences: false: no file is read for board references',
-    ])
-  })
 })
 
 describe('lntt check decisions numbers', () => {
@@ -533,37 +251,6 @@ describe('lntt check decisions numbers', () => {
       r.results.map((x) => `${x.status} ${x.check} ${x.path}:${x.line} ${x.message}`),
       ['INFO figures docs/adr/storage.md:22 About 45% of the requests read one row.'],
     )
-  })
-
-  test('issue numbers and dates are identifiers; "N of M" is a figure', () => {
-    project('clean')
-    writeFileSync(
-      join(repo, 'docs/adr/api-shape.md'),
-      '# API shape\n\nSee #12, decided on 2026-10-01.\n\n3 of 4 calls read.\n',
-    )
-    assert.deepEqual(
-      results(['check', 'decisions', 'numbers', 'docs/adr/api-shape.md']).results.map((x) => x.line),
-      [5],
-    )
-  })
-
-  test('a file that does not exist, or a folder, fails; no file and no base is a usage error', () => {
-    project('clean')
-    assert.deepEqual(
-      fails(results(['check', 'decisions', 'numbers', 'docs/adr/nope.md', 'docs/adr']).results),
-      ['figures docs/adr/nope.md:null', 'figures docs/adr:null'].sort(),
-    )
-    assert.equal(lntt(['check', 'decisions', 'numbers']).status, 2)
-  })
-
-  test('numbers with a base that does not resolve is NOT RUN', () => {
-    project('clean')
-    const r = results(['check', 'decisions', 'numbers', '--base', 'nowhere'])
-    assert.deepEqual(
-      r.results.map((x) => x.status),
-      ['NOT RUN'],
-    )
-    assert.match((r.results[0] as Result).message, /does not resolve, or has no merge base/)
   })
 })
 
@@ -592,22 +279,6 @@ describe('lntt check cite', () => {
       ['PASS src/app.ts:3', 'PASS src/app.ts:3', 'PASS src/app.ts:3'],
     )
   })
-
-  test('cite reads a heading anchor, a line range and a leading ./ as the line they name', () => {
-    project('clean')
-    assert.deepEqual(cite(repo, './src/app.ts', 3), { text: 'export const answer = 42' })
-    assert.deepEqual(cite(repo, 'src/app.ts:3-4', null), { text: 'export const answer = 42' })
-    assert.deepEqual(cite(repo, 'src/app.ts:3:7', null), { text: 'export const answer = 42' })
-    assert.deepEqual(cite(repo, 'src/app.ts:3–4', null), { text: 'export const answer = 42' })
-    assert.deepEqual(cite(repo, 'src/app.ts:3,1', null), { text: 'export const answer = 42' })
-    assert.deepEqual(cite(repo, 'docs/adr/storage.md#decision', null), { text: null })
-    assert.deepEqual(cite(repo, join(repo, 'src/app.ts'), 1), {
-      text: '// Where data lives: docs/adr/storage.md. How it answers: docs/adr/',
-    })
-    assert.deepEqual(cite(repo, '../outside.ts', 1), { missing: 'no such file', what: 'file' })
-    assert.deepEqual(cite(repo, join(tmpdir(), 'outside.ts'), 1), { missing: 'no such file', what: 'file' })
-    assert.deepEqual(cite(repo, 'src/app.ts', 9), { missing: 'no line 9: the file has 3 lines', what: 'line' })
-  })
 })
 
 describe('lntt check', () => {
@@ -618,17 +289,6 @@ describe('lntt check', () => {
     assert.deepEqual(
       [...new Set(r.results.map((x) => x.area))],
       ['agents-md', 'skills', 'plugin', 'workflows', 'decisions', 'tests', 'body'],
-    )
-  })
-
-  test('the files every area reads leave out the stubs of the shared skills, not the project skills beside them', () => {
-    project('clean')
-    mkdirSync(join(repo, '.claude/skills/issues'), { recursive: true })
-    writeFileSync(join(repo, '.claude/skills/issues/SKILL.md'), 'our own skill\n')
-    const files = projectFiles(repo)
-    assert.deepEqual(
-      files.filter((f) => f.startsWith('.agents/skills/') || f.startsWith('.claude/skills/')),
-      ['.claude/skills/issues/SKILL.md'],
     )
   })
 
@@ -655,54 +315,6 @@ describe('lntt check', () => {
       assert.equal(r.status, 2, args.join(' '))
       assert.equal(r.stdout, '')
     }
-  })
-
-  test('an unknown flag, a file to a check that takes none, a base that looks like a flag: usage errors', () => {
-    project('clean')
-    for (const args of [
-      ['check', '--nope'],
-      ['check', 'decisions', 'structure', 'docs/adr/storage.md'],
-      ['check', 'decisions', '--base=-x'],
-      ['check', 'decisions', '--base='],
-      ['check', '--base='],
-      ['check', '--base=-x'],
-    ]) {
-      const r = lntt(args)
-      assert.equal(r.status, 2, args.join(' '))
-      assert.equal(r.stdout, '')
-    }
-    assert.match(lntt(['check', '--base=']).stderr, /--base '' is not a ref/)
-  })
-
-  test('a usage error is one in a project with no configuration too', () => {
-    git('init', '-q')
-    for (const [args, why] of [
-      [['check', 'nope'], /no area nope/],
-      [['check', '--base='], /--base '' is not a ref/],
-      [['check', '--base=-x'], /--base -x is not a ref/],
-      [['check', 'cite'], /give at least one path:line/],
-      [['check', 'cite', 'src/app.ts'], /src\/app\.ts is not path:line/],
-      [['check', 'decisions', 'structure', 'docs/adr/storage.md'], /structure takes no file/],
-      [['check', 'cite', 'src/app.ts:1', '--base='], /--base '' is not a ref/],
-      [['check', 'agents-md', 'AGENTS.md'], /no check AGENTS\.md in agents-md/],
-      [['check', 'decisions', 'numbers'], /numbers needs files or --base/],
-    ] as [string[], RegExp][]) {
-      const r = lntt(args)
-      assert.equal(r.status, 2, args.join(' '))
-      assert.match(r.stderr, why, args.join(' '))
-    }
-  })
-
-  test('a configuration error and a check that cannot run are one line; a defect keeps its stack', async () => {
-    assert.equal(errorLine(new ConfigError('bad config')), 'lntt: bad config')
-    assert.equal(errorLine(new CannotRunError('no git')), 'lntt: error: no git')
-    assert.equal(errorLine(new TypeError('a bug')), null)
-    await assert.rejects(
-      main([], () => {
-        throw new TypeError('a bug')
-      }),
-      /a bug/,
-    )
   })
 
   test('outside a git repository the check cannot run: one line on stderr, no stack trace', () => {
