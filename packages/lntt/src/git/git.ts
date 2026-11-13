@@ -10,8 +10,14 @@ import * as Layer from 'effect/Layer'
 import { ChildProcessSpawner } from 'effect/process'
 import { captured } from '../captured.ts'
 
-// git exited non-zero, or could not start: the command and what it said.
-export class GitError extends Data.TaggedError('GitError')<{ args: readonly string[]; output: string }> {
+// git exited non-zero, or could not start: the command and what it said. `code` is the exit code
+// git gave; a git that could not start has none. `git merge-base` answers exit 1 with no output for
+// histories with nothing in common, and 128 for a revision it does not know: `code` tells them apart.
+export class GitError extends Data.TaggedError('GitError')<{
+  args: readonly string[]
+  output: string
+  code?: number
+}> {
   get message() {
     return `git ${this.args.join(' ')} failed${this.output ? `: ${this.output}` : ''}`
   }
@@ -141,7 +147,7 @@ export const gitAt = (dir?: string) =>
         )
       const run = (...args: string[]) =>
         Effect.flatMap(exec(args), ({ out, err, code }) =>
-          code === 0 ? Effect.succeed(out) : Effect.fail(new GitError({ args, output: err })),
+          code === 0 ? Effect.succeed(out) : Effect.fail(new GitError({ args, output: err, code })),
         )
       // Its output, or null for any exit but 0: an answer of "none", not a failure.
       const ask = (...args: string[]) => Effect.map(exec(args), ({ out, code }) => (code === 0 ? out : null))

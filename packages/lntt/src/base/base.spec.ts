@@ -153,6 +153,19 @@ describe('the base of a branch', () => {
   )
 })
 
+describe('the base of a branch, when git cannot find the fork point', () => {
+  it.effect('a merge-base that fails for another reason than "no common history" is its GitError', () =>
+    Effect.gen(function* () {
+      const { c, resolve } = setup()
+      c.switch('feat/8/x', 'origin/candidate/13')
+      c.brokenMergeBase()
+      const error = yield* Effect.flip(resolve({}))
+      assert.strictEqual(error._tag, 'GitError')
+      assert.match(error.message, /merge-base.*fatal: Not a valid object name/)
+    }),
+  )
+})
+
 describe('the candidate at a detached HEAD', () => {
   it.effect('is the candidate whose origin/ ref points at it; none for another commit', () =>
     Effect.gen(function* () {

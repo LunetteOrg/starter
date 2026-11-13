@@ -150,11 +150,23 @@ describe('Git on the machine', () => {
       const error = yield* Effect.flip(Effect.flatMap(Git, (repo) => repo.root).pipe(Effect.provide(failing.layer)))
       assert.strictEqual(error._tag, 'GitError')
       assert.strictEqual(error.message, 'git rev-parse --show-toplevel failed: fatal: not a git repository')
+      assert.strictEqual(error.code, 128)
       const missing = git(() => 'missing')
       const gone = yield* Effect.flip(Effect.flatMap(Git, (repo) => repo.gitDir).pipe(Effect.provide(missing.layer)))
       assert.strictEqual(gone._tag, 'GitError')
+      assert.strictEqual(gone.code, undefined)
     })
   })
+
+  it.effect('a merge-base of histories with nothing in common is a GitError with code 1', () =>
+    Effect.gen(function* () {
+      const unrelated = git(() => ({ code: 1 }))
+      const error = yield* Effect.flip(
+        Effect.flatMap(Git, (repo) => repo.mergeBase('HEAD', 'origin/main')).pipe(Effect.provide(unrelated.layer)),
+      )
+      assert.deepStrictEqual([error._tag, error.code, error.output], ['GitError', 1, ''])
+    }),
+  )
 
   it.effect("the origin's URL, '' with no origin; a git that cannot start is a GitError", () =>
     Effect.gen(function* () {
