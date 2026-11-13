@@ -901,8 +901,10 @@ uses it is the project's CI process description.
   controlling terminal, as on a CI runner: a step that prompts on `/dev/tty` (an ssh
   passphrase, a credential prompt, sudo) fails. One that outlasts
   `ci.local.timeoutMinutes` (default 30, at most 1440; in container mode, the whole
-  job) gets SIGTERM to its group, then SIGKILL five seconds later, and fails; one that
-  ended on its own before the signal is judged by its exit code. The following steps
+  job) gets SIGTERM to its group, then SIGKILL to what is left of it five seconds later, and
+  fails; one that ended on its own before the signal is judged by its exit code. A step that
+  passed leaves what it started in the background running, for the job's next steps, as on a
+  runner; a step that failed takes its group with it. The following steps
   go on as after any failure. The report prints next to the step the machine's load,
   read once the step was signalled, `timed out after 30m — load 48.2 / 31.0 / 20.5 on
   15 cores, 9 containers running (7 Testcontainers)` (the containers when Docker
@@ -910,8 +912,7 @@ uses it is the project's CI process description.
   line names the step. Nothing is retried: a green means every step passed once.
 - **An interrupt** (SIGINT, SIGTERM, SIGHUP, SIGQUIT) starts no further step or job,
   stops the running step's group the same way, prints `lntt ci: interrupted (<signal>)`,
-  gives the lock back and exits 128 + the signal's number (130, 143, 129, 131), with no
-  report.
+  gives the lock back and exits 130, whichever the signal, with no report.
 - **Container mode's limit.** Stopping `act` or `circleci local execute`, on a timeout
   or an interrupt, does not stop the containers they started: they keep running until
   they end or are removed by hand (`docker ps`, `docker rm -f`).

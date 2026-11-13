@@ -90,9 +90,11 @@ round).
 - **A command is one Effect, run by `NodeRuntime.runMain`** with `lntt`'s teardown
   (`runCommand` in `packages/lntt/src/run-command.ts`). On SIGINT or SIGTERM, `runMain`
   interrupts the command: the interrupt runs every finalizer of the command's scope (the
-  agents are released), and the command exits 130, whichever the signal. The commands
-  not yet on Effect (`lntt check tests mutate`, `lntt ci local`) exit 128 plus the
-  signal, 143 for SIGTERM, until they move.
+  agents are released), and the command exits 130, whichever the signal. `lntt ci local`
+  interrupts itself the same way on SIGHUP and SIGQUIT, at its edge
+  (`packages/lntt/src/ci/local.ts`): its steps run in process groups of their own, which a
+  closed terminal does not reach. The command not yet on Effect (`lntt check tests mutate`)
+  exits 128 plus the signal, 143 for SIGTERM, until it moves.
 - **The teardown gives the exit code:** 0 on success, the code of an `exit(code)` the
   command threw, 130 for an interrupt, 1 for any other failure or a defect, which it
   prints with `util.inspect` (the error and its stack). It leaves through `leave`
@@ -147,8 +149,8 @@ run under `Effect.try`, which its spec replaces. What a module on Effect and the
 module not yet moved both read, and which reaches nothing, is plain functions in a module that
 imports no Effect (what the base reads from the names git and GitHub give,
 `packages/lntt/src/base/names.ts`); the sync module keeps its own call to git or gh until it
-moves (`packages/lntt/src/ci/event.ts` and `packages/lntt/src/ci/candidate.ts`, until `lntt ci`
-moves, #340).
+moves (`packages/lntt/src/ci/candidate.ts`, until `lntt ci candidate` moves, #340), and so does
+the library's synchronous `localEvent` (`packages/lntt/src/ci/sync.ts`).
 A defect of the Effect code reaches the edge with its stack. A piece leaves the bridge when
 its module moves to Effect. The library API of
 `@lntt/lntt` (`packages/lntt/src/index.ts`) stays on `Promise`, so a script that imports
@@ -170,7 +172,10 @@ service), and their shell `packages/lntt/src/config/sync.ts`, which is also the 
 synchronous `findConfig`, `loadConfig`, `setValue` and `loadOperator`. The worktree's lock is
 another: the rules of who holds it are plain (`packages/lntt/src/worktree/holder.ts`), and
 `packages/lntt/src/worktree-lock.ts` is the shell `lntt review status` reads the holder through.
-The shells are transitional: each goes when the last module that calls it moves, with #341.
+So is the ci:local lock: its rules are plain (`packages/lntt/src/ci/lock-rules.ts`), `lntt ci local`
+takes it on Effect as a resource of its scope (`packages/lntt/src/ci/lock.ts`), and the library's
+`acquireLock` is its shell (`packages/lntt/src/ci/lock-sync.ts`), whose `release` returns once the
+file is changed. The shells are transitional: each goes when the last module that calls it moves, with #341.
 
 Where the plain logic is a sequence of calls to tools with decisions between them (the worktree
 adapters of `lntt worktree start`, which the library exports synchronously as `startOrca`,
@@ -180,7 +185,11 @@ tool to run, a setup script, a pause, a worktree's setup) and receives its resul
 the library's `Runner` (`packages/lntt/src/worktree.ts`), which loads no Effect, and one on
 Effect over the spawner, the Clock and the FileSystem (`packages/lntt/src/worktree/steps.ts`). A
 step that fails is thrown into the generator, so an adapter catches what it expects as plain code
-does, and what it throws is the command's tagged error.
+does, and what it throws is the command's tagged error. The loaders of `lntt ci local` are written
+the same way (`packages/lntt/src/ci/asks.ts`: a file, a directory, the PATH, the files changed, a
+CircleCI configuration processed): the library's `githubJobs`, `circleciJobs` and `localAction`
+drive them over `node:` (`packages/lntt/src/ci/sync.ts`), the command over the FileSystem, the
+spawner and Git (`packages/lntt/src/ci/host.ts`).
 
 ### Tests beside each module
 
@@ -237,8 +246,8 @@ resolves its own version beside `lntt`'s.
 - While modules move, two styles live side by side, and the bridge is code that exists
   only for the migration.
 - An interrupted command exits 130 for SIGTERM too: a caller can no longer tell the two
-  signals apart by the code. Until every command moves, the commands not on Effect still
-  exit 143 for SIGTERM.
+  signals apart by the code. Until every command moves, the command not on Effect still
+  exits 143 for SIGTERM.
 - `@effect/vitest` follows vitest's major versions: the repo moves to a new vitest
   major with it, and with `@lntt/test-utils`, whose vitest peer every template installs.
 
