@@ -5,9 +5,9 @@ import * as Exit from 'effect/Exit'
 import * as Layer from 'effect/Layer'
 import * as TestClock from 'effect/testing/TestClock'
 import * as TestConsole from 'effect/testing/TestConsole'
-import type { Subagents } from '../orca-subagents.ts'
 import { memoryFileSystem } from '../testing/file-system.ts'
 import { Pids } from '../worktree/lock.ts'
+import type { Subagents } from './orca.ts'
 import { reporting } from './reporter.ts'
 import { ReviewStore } from './store.ts'
 
@@ -127,12 +127,14 @@ describe('the reporter of lntt review', () => {
     const orca: Subagents = {
       start: (id, label) => void heard.push(`start ${id} ${label}`),
       stop: (id, _label, outcome) => void heard.push(`stop ${id} ${outcome}`),
-      close: () => void heard.push(`close after ${events().length} events`),
     }
     return Effect.gen(function* () {
       yield* (yield* ReviewStore).startProgress
       yield* Effect.scoped(
         Effect.gen(function* () {
+          // Orca's subagents are a resource of the scope the reporter runs in, acquired before it
+          // (src/review/command.ts): released after it.
+          yield* Effect.addFinalizer(() => Effect.sync(() => void heard.push(`close after ${events().length} events`)))
           const report = yield* reporting(orca)
           report.progress({ type: 'start', index: 0, label: LABEL, optional: false })
           report.progress(answered)

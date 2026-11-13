@@ -1,4 +1,4 @@
-// The worktree's lock on Effect (the rules of who holds it: src/worktree-lock.ts). A command
+// The worktree's lock on Effect (the rules of who holds it: src/worktree/holder.ts). A command
 // holds it with lockWorktree, a resource of its scope: taken atomically, touched by a heartbeat
 // fiber of the same scope, and released when the scope closes, whether the command succeeded,
 // failed or was interrupted (docs/adr/effect-in-lntt.md).
@@ -13,16 +13,8 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import type * as PlatformError from 'effect/PlatformError'
-import {
-  GUARD_MS,
-  HEARTBEAT_MS,
-  type Holder,
-  judge,
-  lockedMessage,
-  lockPath,
-  namedPid,
-  visible,
-} from '../worktree-lock.ts'
+import { visible } from '../worktree-lock.ts'
+import { GUARD_MS, HEARTBEAT_MS, type Holder, judge, lockedMessage, lockPath, namedPid } from './holder.ts'
 
 // The processes of the machine as the lock sees them: its own pid, and whether another is running.
 export class Pids extends Context.Service<

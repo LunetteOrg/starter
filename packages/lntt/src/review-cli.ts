@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { stderr, stdout } from 'node:process'
+import { env, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import { projectBase } from './base.ts'
 import { Exit, exit, printed } from './exit.ts'
@@ -401,7 +401,7 @@ export async function main([command, ...args]: string[]): Promise<void> {
     // A round, a reply or allow holds the worktree's lock, a round or a reply its agents: they
     // run on Effect, which releases both however the command ends (src/review/command.ts).
     const { runReview } = await import('./review/command.ts')
-    return runReview(parsed, homedir())
+    return runReview(parsed, homedir(), env)
   } catch (error) {
     await failed(error)
   }

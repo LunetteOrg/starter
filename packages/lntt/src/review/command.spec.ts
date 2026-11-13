@@ -15,14 +15,14 @@ import * as TestConsole from 'effect/testing/TestConsole'
 import { ConfigInvalid, ProjectConfig } from '../config/load.ts'
 import { Gh } from '../gh/gh.ts'
 import { Git, GitError } from '../git/git.ts'
-import type { Started } from '../messages.ts'
+import { Mailbox, MailboxFailed } from '../messages/mailbox.ts'
 import type { Closed, ReviewState } from '../review.ts'
 import { branchKey } from '../review-store.ts'
 import { memoryFileSystem } from '../testing/file-system.ts'
+import { lockPath } from '../worktree/holder.ts'
 import { Pids } from '../worktree/lock.ts'
-import { lockPath } from '../worktree-lock.ts'
 import { AgentsProcesses } from './agents.ts'
-import { ReviewBridge, ReviewFailed } from './bridge.ts'
+import { ReviewBridge } from './bridge.ts'
 import { command, type ReviewCommand } from './command.ts'
 import { PlaceInvalid } from './place.ts'
 import { makeStore, ReviewStore } from './store.ts'
@@ -30,6 +30,7 @@ import { makeStore, ReviewStore } from './store.ts'
 const ROOT = '/repo'
 const GIT_DIR = '/repo/.git'
 const STORE = '/repo/.git/lntt-review'
+const BOX = '/repo/.git/lntt-messages'
 const PROGRESS = `${GIT_DIR}/lntt-review.progress`
 const SELF = 4242
 
@@ -251,37 +252,23 @@ function world() {
     placeInvalid: null as string | null,
     // A bug of lntt, where the bridge is reached last before the agents.
     defect: false,
-    // The parent the branch reports to, and the limits sent to it.
-    parent: null as Started | null,
-    sent: [] as string[],
     // lntt check's results for the lenses named after its areas, and the times it ran.
     checks: {} as Record<string, string>,
     checked: 0,
     areas: [] as string[][],
-    // A bridge that throws where the limit reaches the parent.
-    parentFails: false,
+    // A mailbox that cannot be found (outside a git repository).
+    noMailbox: false,
   }
   const bridge = Layer.succeed(ReviewBridge)(
     ReviewBridge.of({
       checks: (areas) =>
-        Effect.sync(() => {
-          project.checked++
-          project.areas.push([...areas])
-          return Object.fromEntries(areas.map((area) => [area, project.checks[area] ?? '[]']))
-        }),
-      reportsTo: () =>
-        project.parentFails
-          ? Effect.fail(new ReviewFailed({ cause: new Error('the mailbox cannot be read') }))
-          : Effect.sync(() => project.parent),
-      askAtLimit: (_marker, _branch, text) =>
-        Effect.sync(() => {
-          project.sent.push(text)
-          return {
-            asked: { id: 'm1', to: 'orchestrator', path: '/box/m1.md' },
-            line: 'limit: sent m1 to the orchestrator; wait with: pnpm exec lntt ask --wait m1',
-          }
-        }),
-      orca: () => (project.defect ? Effect.die(new Error('a bug of lntt')) : Effect.succeed(null)),
+        project.defect
+          ? Effect.die(new Error('a bug of lntt'))
+          : Effect.sync(() => {
+              project.checked++
+              project.areas.push([...areas])
+              return Object.fromEntries(areas.map((area) => [area, project.checks[area] ?? '[]']))
+            }),
     }),
   )
   // The configuration as the loader gives it, or its failure for a file that does not validate.
@@ -317,6 +304,7 @@ function world() {
           repo.layer(),
           Gh.memory({}),
           bridge,
+          Mailbox.at(project.noMailbox ? new MailboxFailed({ message: 'not a git repository' }) : BOX),
           config,
           pids,
           AgentsProcesses.pipe(Layer.provideMerge(agent.layer)),
@@ -353,6 +341,16 @@ function world() {
         .filter(Boolean)
         .map((line) => JSON.parse(line) as Record<string, unknown> & { type: string }),
     locked: () => fs.files.has(lockPath(GIT_DIR)),
+    // The branch reports to `marker`, as lntt worktree start records it.
+    parent: (marker: Record<string, unknown>) =>
+      fs.put(`${BOX}/started/feat%2F1%2Fx.json`, JSON.stringify({ branch: 'feat/1/x', ...marker })),
+    // The messages sent to the orchestrator, oldest first: their paths and texts.
+    sent: () =>
+      [...fs.files.entries()]
+        .filter(([path]) => path.startsWith(`${BOX}/to-orchestrator/`))
+        .filter(([path]) => !path.endsWith('.answer.md'))
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([path, file]) => ({ path, text: file.text })),
     withConfig(change: (review: Record<string, unknown>) => void) {
       const config = CONFIG()
       change(config.delivery.review)
@@ -1002,7 +1000,7 @@ describe('lntt review at delivery.review.maxRounds, and allow', () => {
         failed: 0,
       })
       assert.strictEqual(w.events().at(-1)?.asked, undefined, 'a branch with no parent sends nothing')
-      assert.deepStrictEqual(w.project.sent, [])
+      assert.deepStrictEqual(w.sent(), [])
     })
   })
 
@@ -1012,28 +1010,43 @@ describe('lntt review at delivery.review.maxRounds, and allow', () => {
       w.withConfig((review) => {
         review.maxRounds = 1
       })
-      w.project.parent = { to: 'orchestrator', theme: null, issue: 326 } as unknown as Started
+      yield* w.parent({ to: 'orchestrator', issue: 326 })
       Object.assign(w.agent.answers, WARNING)
       yield* w.round()
       w.repo.commit({ 'a.ts': 'export const a = 3' })
       const r = yield* w.round()
       assert.strictEqual(r.code, 3, r.err)
-      assert.match(r.err, /^lntt review: limit: sent m1 to the orchestrator; wait with: pnpm exec lntt ask --wait m1$/m)
-      assert.deepStrictEqual(w.events().at(-1)?.asked, { id: 'm1', to: 'orchestrator', path: '/box/m1.md' })
-      const [text = ''] = w.project.sent
-      assert.match(text.split('\n')[0] ?? '', /^#326 feat\/1\/x: lntt review limit, round 2 would pass/)
-      assert.match(text, /^- f1 \[warning, confirmed\] a\.ts:1 — w — a$/m)
+      const [first] = w.sent()
+      assert.ok(first, 'one message to the orchestrator')
+      const id = first.path.slice(`${BOX}/to-orchestrator/`.length, -'.md'.length)
+      assert.match(id, /^\d{8}-\d{6}-issue-326-review-limit$/)
+      assert.include(
+        r.err,
+        `lntt review: limit: sent ${id} to the orchestrator; wait with: pnpm exec lntt ask --wait ${id}`,
+      )
+      assert.deepStrictEqual(w.events().at(-1)?.asked, { id, to: 'orchestrator', path: first.path })
+      assert.match(first.text.split('\n')[0] ?? '', /^#326 feat\/1\/x: lntt review limit, round 2 would pass/)
+      assert.match(first.text, /^- f1 \[warning, confirmed\] a\.ts:1 — w — a$/m)
 
-      // A parent on no issue: the first line starts with the branch.
-      w.project.parent = { to: 'orchestrator', theme: null, issue: null } as unknown as Started
+      // Not answered yet: the next refusal points at the same message, and sends none.
+      const again = yield* w.round()
+      assert.include(again.err, `limit: already sent ${id} to the orchestrator`)
+      assert.strictEqual(w.sent().length, 1)
+
+      // Answered, and a parent on no issue: a new message, whose first line starts with the branch.
+      yield* w.fs.put(`${BOX}/to-orchestrator/${id}.answer.md`, 'more rounds\n')
+      yield* w.parent({ to: 'orchestrator', issue: null })
+      yield* TestClock.adjust('1 second')
       yield* w.round()
-      assert.match(w.project.sent[1]?.split('\n')[0] ?? '', /^feat\/1\/x: lntt review limit, round 2 would pass/)
+      assert.strictEqual(w.sent().length, 2)
+      assert.match(w.sent()[1]?.text.split('\n')[0] ?? '', /^feat\/1\/x: lntt review limit, round 2 would pass/)
 
-      // A mailbox the bridge cannot read: the round's error, exit 1.
-      w.project.parentFails = true
-      const failing = yield* w.round()
-      assert.strictEqual(failing.code, 1)
-      assert.match(failing.err, /^lntt review: error: the mailbox cannot be read$/m)
+      // A mailbox that cannot be found has no parent: the limit still stops the round, and sends nothing.
+      w.project.noMailbox = true
+      const lost = yield* w.round()
+      assert.strictEqual(lost.code, 3)
+      assert.notInclude(lost.err, 'limit: sent')
+      assert.strictEqual(w.sent().length, 2)
     })
   })
 

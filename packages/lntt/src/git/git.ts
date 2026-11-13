@@ -57,6 +57,8 @@ export interface GitOperations {
   // The lines a range writes, with no context, prefixes a/ and b/ and the paths from the root
   // whatever diff.noprefix, diff.relative or core.quotePath the user set.
   readonly written: (range: string) => Run<string>
+  // `git worktree list --porcelain` of the repository whose git directory is `gitDir`.
+  readonly worktrees: (gitDir: string) => Run<string>
 }
 
 export class Git extends Context.Service<Git, GitOperations>()('@lntt/lntt/git/Git') {
@@ -86,6 +88,7 @@ export class Git extends Context.Service<Git, GitOperations>()('@lntt/lntt/git/G
         changed: fn('changed'),
         diff: fn('diff'),
         written: fn('written'),
+        worktrees: fn('worktrees'),
         ...answers,
       }),
     )
@@ -146,6 +149,7 @@ export const gitAt = (dir?: string) =>
             '--dst-prefix=b/',
             range,
           ),
+        worktrees: (gitDir) => run('--git-dir', gitDir, 'worktree', 'list', '--porcelain'),
       })
     }),
   )

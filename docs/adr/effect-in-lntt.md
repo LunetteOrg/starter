@@ -67,7 +67,12 @@ are `Agents` in `packages/lntt/src/review/asking.ts` (one agent run, and what ke
 from starting), its live layer in `packages/lntt/src/review/agents.ts` over the spawner, and
 `askAll` the logic over it (a slot per provider, the optional agents' grace, a stop). A
 module's logic depends on services, never on `node:` modules, and its test provides in-memory
-layers.
+layers. A command that does not load Effect's `Config` for anything else reads the environment
+at the edge, in its parser, and passes it in as an input (the operator's home, `LNTT_MESSAGES_DIR`,
+the session's variables as `HostEnv` in `packages/lntt/src/review/orca.ts`): `Config` alone took
+some 70 ms to load in #335's measure (`effect` 4.1.4). Code that a command reaches with `Config`
+already loaded reads it there (`GITHUB_REPOSITORY` in the base, `CLAUDE_CODE_SESSION_ID` in a
+round).
 
 ### Errors
 
@@ -131,9 +136,8 @@ layers.
 
 A Promise function a module on Effect still calls runs under `Effect.tryPromise`, which
 passes it a signal an interrupt aborts when it takes one (a `Spawn` does). The sync code of modules not
-yet moved that a module on Effect needs (for `lntt review`: `lntt check`'s areas, the parent
-the branch reports to and the limit's message, Orca's subagents) is reached through a service of that
-module, its bridge
+yet moved that a module on Effect needs (for `lntt review`: `lntt check`'s areas, until `lntt
+check` moves, #337) is reached through a service of that module, its bridge
 (`ReviewBridge` in `packages/lntt/src/review/bridge.ts`): the live layer runs the code under
 `Effect.try`, and what it throws is a tagged error of the bridge (`ReviewFailed`), reported
 by its message like any expected failure; the unit test gives the bridge's in-memory layer.
@@ -163,8 +167,20 @@ no Effect. The project's configuration and the operator profile are such a modul
 is plain (`packages/lntt/src/config/project.ts`, `packages/lntt/src/config/operator.ts`), their
 Effect form `packages/lntt/src/config/load.ts` (with `ProjectConfig`, the configuration as a
 service), and their shell `packages/lntt/src/config/sync.ts`, which is also the library's
-synchronous `findConfig`, `loadConfig`, `setValue` and `loadOperator`. The shell is
-transitional: it goes when the last module that calls it moves, with #341.
+synchronous `findConfig`, `loadConfig`, `setValue` and `loadOperator`. The worktree's lock is
+another: the rules of who holds it are plain (`packages/lntt/src/worktree/holder.ts`), and
+`packages/lntt/src/worktree-lock.ts` is the shell `lntt review status` reads the holder through.
+The shells are transitional: each goes when the last module that calls it moves, with #341.
+
+Where the plain logic is a sequence of calls to tools with decisions between them (the worktree
+adapters of `lntt worktree start`, which the library exports synchronously as `startOrca`,
+`startHerdr` and `startGit`), it is written once as a generator that yields the step it needs (a
+tool to run, a setup script, a pause, a worktree's setup) and receives its result
+(`packages/lntt/src/worktree/hosts.ts`). Two drivers run the same steps: a synchronous one over
+the library's `Runner` (`packages/lntt/src/worktree.ts`), which loads no Effect, and one on
+Effect over the spawner, the Clock and the FileSystem (`packages/lntt/src/worktree/steps.ts`). A
+step that fails is thrown into the generator, so an adapter catches what it expects as plain code
+does, and what it throws is the command's tagged error.
 
 ### Tests beside each module
 

@@ -8,8 +8,10 @@
 //
 // The logic reaches the machine only through services: git (Git), GitHub (Gh), the agents (Agents), the state
 // store and the progress file (ReviewStore), the working tree (FileSystem, Path), the clock
-// (Clock), processes (ChildProcessSpawner), the terminal (Console), the environment (Config), the
-// project's configuration (ProjectConfig), and the sync code of modules not yet on Effect through the bridge (ReviewBridge). src/review/command.spec.ts runs it on their in-memory layers.
+// (Clock), processes (ChildProcessSpawner), the terminal (Console), the environment (Config, HostEnv), the
+// project's configuration (ProjectConfig), the agents' mailbox (Mailbox), and lntt check's areas, not
+// yet on Effect, through the bridge (ReviewBridge). src/review/command.spec.ts runs it on their
+// in-memory layers.
 
 import * as Clock from 'effect/Clock'
 import * as Config from 'effect/Config'
@@ -35,6 +37,7 @@ import { exit, Exit as LnttExit } from '../exit.ts'
 import { GhLive } from '../gh/gh.ts'
 import { Git, type GitError, GitLive } from '../git/git.ts'
 import { type HeadlessAgent as Agent, type Progress, type Question, timerMs } from '../headless.ts'
+import { askAtLimit, mailboxIn, reportsTo } from '../messages/mailbox.ts'
 import {
   agentLabel,
   type Checked,
@@ -60,6 +63,7 @@ import { type LockedError, lockWorktree, Pids, WorktreeLockLive } from '../workt
 import { AgentsLive } from './agents.ts'
 import { Agents, askAll } from './asking.ts'
 import { ReviewBridge, ReviewBridgeLive, ReviewFailed } from './bridge.ts'
+import { HostEnv, orcaSubagents } from './orca.ts'
 import { reporting } from './reporter.ts'
 import { runRound } from './round.ts'
 import { ReviewStore, ReviewStoreLive } from './store.ts'
@@ -193,7 +197,6 @@ const stopAtLimit = Effect.fnUntraced(function* (
   rules: BranchRules,
 ) {
   const store = yield* ReviewStore
-  const bridge = yield* ReviewBridge
   const own = state?.branch === branch ? withDefaults(state) : null
   const allowed = own?.allowed ?? 0
   const open = (own?.result.findings ?? []).filter((f) => f.verdict !== 'withdrawn')
@@ -212,13 +215,13 @@ const stopAtLimit = Effect.fnUntraced(function* (
   yield* say(`branch total: ${cost.line}`)
   // A branch lntt worktree start started reports to its parent as well: the open
   // findings in full, so the answer needs nothing else.
-  const marker = yield* bridge.reportsTo(branch, rules)
+  const marker = yield* reportsTo(branch, rules)
   const details = open.map((f) => {
     const anchor = f.path === null ? '(no anchor)' : `${f.path}${f.line === null ? '' : `:${f.line}`}`
     return `- ${f.id} [${f.severity}, ${f.verdict}] ${anchor} — ${f.what} — ${f.action}`
   })
   const sent = marker
-    ? yield* bridge.askAtLimit(
+    ? yield* askAtLimit(
         marker,
         branch,
         [
@@ -330,7 +333,7 @@ export const round = Effect.fnUntraced(function* (
     optionalGraceMs: config.optionalGraceMinutes * 60_000,
   })
   const checks = files.length === 0 ? {} : yield* bridge.checks(areas, { root, data, base: range.from })
-  const report = yield* reporting(yield* bridge.orca(root))
+  const report = yield* reporting(yield* orcaSubagents(root))
   const began = yield* Clock.currentTimeMillis
   const diff = files.length > 0 ? yield* git.diff(`${range.from}..${head}`) : ''
   // The lines the whole branch wrote, from the merge base whatever range the round reads.
@@ -551,9 +554,9 @@ export const command = (parsed: ReviewCommand) =>
     )
   }).pipe(Effect.scoped)
 
-// The services on the machine; the operator's home is read at the edge.
-const live = (home: string) =>
-  ReviewStoreLive(home).pipe(
+// The services on the machine; the operator's home and the environment are read at the edge.
+const live = (home: string, env: Record<string, string | undefined>) =>
+  Layer.mergeAll(ReviewStoreLive(home), mailboxIn(env.LNTT_MESSAGES_DIR || undefined)).pipe(
     Layer.provideMerge(Layer.mergeAll(GitLive, GhLive)),
     Layer.provideMerge(ProjectConfigLive),
     Layer.provideMerge(
@@ -563,6 +566,12 @@ const live = (home: string) =>
 
 // Runs a round, a reply or `allow` as the process's main program (src/run-command.ts): its exit
 // code; 130 for an interrupt once the agents and the lock are released.
-export function runReview(parsed: ReviewCommand, home: string): Promise<never> {
-  return runCommand(command(parsed).pipe(Effect.map(exit), Effect.provide(live(home))))
+export function runReview(
+  parsed: ReviewCommand,
+  home: string,
+  env: Record<string, string | undefined>,
+): Promise<never> {
+  return runCommand(
+    command(parsed).pipe(Effect.map(exit), Effect.provideService(HostEnv, env), Effect.provide(live(home, env))),
+  )
 }

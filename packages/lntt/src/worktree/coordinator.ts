@@ -1,13 +1,15 @@
-// Coordinator mode: a theme's parent worktree delegates each issue to a child worktree
-// and writes no code. This module holds what lntt decides for it: the model of each role,
-// the gate on starting a child, and the two briefs. Starting the worktrees is
-// worktree.ts; the questions between the agents are messages.ts.
+// Coordinator mode: a theme's parent worktree delegates each issue to a child worktree and writes
+// no code. This module holds what lntt decides for it: the model of each role, the gate on
+// starting a child, and the two briefs, as plain functions over the templates; and the list of the
+// children a person approved, on Effect's FileSystem. Starting the worktrees is
+// src/worktree/start.ts; the questions between the agents are src/messages/.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { fill } from './template.ts'
-import { type Agent, waitingSection } from './worktree.ts'
+import * as Effect from 'effect/Effect'
+import * as FileSystem from 'effect/FileSystem'
+import * as Random from 'effect/Random'
+import { MailboxFailed } from '../messages/mailbox.ts'
+import { fill } from '../template.ts'
+import { type Agent, type Templates, template, waitingSection } from './hosts.ts'
 
 export const SIZES = ['XS', 'S', 'M', 'L', 'XL'] as const
 export type Size = (typeof SIZES)[number]
@@ -26,15 +28,12 @@ interface CoordinatorSection {
 
 export type Config = { coordinator?: CoordinatorSection }
 
-const AGENTS = join(dirname(fileURLToPath(import.meta.url)), '../agents')
-const template = (name: string) => readFileSync(join(AGENTS, name), 'utf8')
-
 export function gateOf(config: Config): Gate {
   return config.coordinator?.gate ?? 'propose'
 }
 
-// The agent a role runs on: the configuration's entry for the role (a child's by Size),
-// each field overridden by what the command line gave.
+// The agent a role runs on: the configuration's entry for the role (a child's by Size), each field
+// overridden by what the command line gave.
 export function agentFor(
   config: Config,
   who: { role: 'coordinator' } | { role: 'child'; size?: string },
@@ -54,45 +53,56 @@ export function agentFor(
   return { kind, ...(model ? { model } : {}), ...(effort ? { effort } : {}) }
 }
 
-// A proposal is approved by an answer that is one of these words: "yes, but not #84"
-// approves nothing.
+// A proposal is approved by an answer that is one of these words: "yes, but not #84" approves
+// nothing.
 export function isApproval(answer: string): boolean {
   return /^\s*(approve|approved|yes|ok)[.!]?\s*$/i.test(answer)
 }
 
-// The children a person approved for a theme, kept next to the mailbox they were
-// approved through. No lntt command lets a coordinator add to it; one that writes the
-// file itself is outside what the gate can stop (docs/adr/coordinator-mode.md).
-const approvedFile = (root: string, theme: string) => {
+// The children a person approved for a theme, kept next to the mailbox they were approved through.
+// No lntt command lets a coordinator add to it; one that writes the file itself is outside what the
+// gate can stop (docs/adr/coordinator-mode.md).
+export const approvedFile = (root: string, theme: string) => {
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(theme)) throw new Error(`the theme ${theme} is not a slug`)
-  return join(root, `approved-${theme}.txt`)
+  return `${root}/approved-${theme}.txt`
 }
 
-export function approvals(root: string, theme: string): Set<number> {
-  const file = approvedFile(root, theme)
-  if (!existsSync(file)) return new Set()
-  return new Set(
-    readFileSync(file, 'utf8')
+// The issues a list holds: one number a line, anything else skipped (a hand-edited CRLF file too).
+export const approvedIn = (text: string): Set<number> =>
+  new Set(
+    text
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => /^[1-9]\d*$/.test(line))
       .map(Number),
   )
-}
 
-export function approve(root: string, theme: string, issues: number[]): void {
-  mkdirSync(root, { recursive: true })
-  const all = new Set([...approvals(root, theme), ...issues])
-  // Whole or not at all: a concurrent reader never sees half a list.
-  const file = approvedFile(root, theme)
-  const temporary = `${file}.${process.pid}.tmp`
-  try {
-    writeFileSync(temporary, `${[...all].join('\n')}\n`)
-    renameSync(temporary, file)
-  } finally {
-    rmSync(temporary, { force: true })
-  }
-}
+const plainly = <A>(run: () => A) =>
+  Effect.try({
+    try: run,
+    catch: (error) => new MailboxFailed({ message: error instanceof Error ? error.message : String(error) }),
+  })
+
+export const approvals = Effect.fnUntraced(function* (root: string, theme: string) {
+  const file = yield* plainly(() => approvedFile(root, theme))
+  const text = yield* (yield* FileSystem.FileSystem).readFileString(file).pipe(Effect.option)
+  return text._tag === 'Some' ? approvedIn(text.value) : new Set<number>()
+})
+
+// Adds to a theme's list, whole or not at all: a concurrent reader never sees half a list.
+export const approve = Effect.fnUntraced(function* (root: string, theme: string, issues: number[]) {
+  const fs = yield* FileSystem.FileSystem
+  const file = yield* plainly(() => approvedFile(root, theme))
+  yield* fs.makeDirectory(root, { recursive: true })
+  const all = new Set([...(yield* approvals(root, theme)), ...issues])
+  const scratch = `${file}.${(yield* Random.next).toString(36).slice(2)}.tmp`
+  yield* fs
+    .writeFileString(scratch, `${[...all].join('\n')}\n`)
+    .pipe(
+      Effect.andThen(fs.rename(scratch, file)),
+      Effect.ensuring(fs.remove(scratch, { force: true }).pipe(Effect.ignore)),
+    )
+})
 
 function describeAgent(agent: StartAgent): string {
   const what = [agent.kind && agent.kind !== 'claude' ? agent.kind : null, agent.model ?? 'default']
@@ -143,8 +153,8 @@ export interface CoordinatorValues {
   orca: string | null
 }
 
-export function coordinatorBrief(v: CoordinatorValues): string {
-  return fill(template('coordinator.md'), {
+export function coordinatorBrief(templates: Templates, v: CoordinatorValues): string {
+  return fill(template(templates, 'coordinator.md'), {
     theme: v.theme,
     worktree: v.worktree,
     branch: v.branch,
@@ -152,7 +162,7 @@ export function coordinatorBrief(v: CoordinatorValues): string {
     models: modelsText(v.config),
     gate: gateText(v.config, v.issues, v.approved),
     card: v.orca ? orcaCard(v.orca) : '',
-    waiting: fill(template('coordinator-waiting.md'), { theme: v.theme }).trimEnd(),
+    waiting: fill(template(templates, 'coordinator-waiting.md'), { theme: v.theme }).trimEnd(),
   })
 }
 
@@ -163,16 +173,17 @@ export interface ChildValues {
   worktree: string
 }
 
-// The brief of one issue. With a theme, the child belongs to a coordinator: the context
-// the coordinator wrote, how to ask and report, and, on request, the workflow section.
-// Every child routes its waits through the mailbox: to the coordinator, else the
-// orchestrator. A theme can have no coordinator worktree (the orchestrator starts its
-// children itself, for the theme's context and Size): with `coordinator: false` the
-// brief keeps the theme and sends everything to the orchestrator.
+// The brief of one issue. With a theme, the child belongs to a coordinator: the context the
+// coordinator wrote, how to ask and report, and, on request, the workflow section. Every child
+// routes its waits through the mailbox: to the coordinator, else the orchestrator. A theme can have
+// no coordinator worktree (the orchestrator starts its children itself, for the theme's context
+// and Size): with `coordinator: false` the brief keeps the theme and sends everything to the
+// orchestrator.
 export function childBrief(
+  templates: Templates,
   v: ChildValues,
   options: { theme?: string; coordinator?: boolean; context?: string; workflow?: boolean; orca?: string | null },
-  brief = template('brief.md'),
+  brief = template(templates, 'brief.md'),
 ): string {
   const coordinated = options.coordinator ?? true
   const role = coordinated ? 'coordinator' : 'orchestrator'
@@ -183,7 +194,7 @@ export function childBrief(
     ...v,
     theme: options.context?.trim() ? `## The theme\n\n${options.context.trim()}` : '',
     reporting: options.theme
-      ? fill(template('reporting.md'), {
+      ? fill(template(templates, 'reporting.md'), {
           theme: options.theme,
           issue: v.issue,
           card,
@@ -191,7 +202,7 @@ export function childBrief(
           to: coordinated ? `--to coordinator --theme ${options.theme}` : '--to orchestrator',
         }).trimEnd()
       : '',
-    waiting: waitingSection(v.issue, coordinated ? options.theme : undefined),
-    workflow: options.workflow ? template('workflow.md').trimEnd() : '',
+    waiting: waitingSection(templates, v.issue, coordinated ? options.theme : undefined),
+    workflow: options.workflow ? template(templates, 'workflow.md').trimEnd() : '',
   })
 }

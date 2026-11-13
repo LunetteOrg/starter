@@ -1,19 +1,13 @@
 // The bridge of lntt review's commands on Effect to the sync code of modules not yet moved
-// (docs/adr/effect-in-lntt.md#the-bridge-while-modules-move): lntt check's areas, the limit's message to the
-// parent, Orca's subagents. The live layer runs that
-// code under Effect.try, and what it throws is a ReviewFailed; a spec gives its own answers.
-// Each piece leaves the bridge when its module moves to Effect.
+// (docs/adr/effect-in-lntt.md#the-bridge-while-modules-move): lntt check's areas, the last piece,
+// which leaves with lntt check's move to Effect (#337), and the bridge with it. The live layer runs
+// that code under Effect.try, and what it throws is a ReviewFailed; a spec gives its own answers.
 
-import { env } from 'node:process'
 import * as Context from 'effect/Context'
 import * as Data from 'effect/Data'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import type { BranchRules } from '../branch.ts'
 import { type Area, formatJson, runArea } from '../check.ts'
-import type { Started } from '../messages.ts'
-import { orcaSubagents, type Subagents } from '../orca-subagents.ts'
-import { type Asked, askAtLimit, reportsTo } from './host.ts'
 
 // What the sync code threw: an expected failure, reported by its message.
 export class ReviewFailed extends Data.TaggedError('ReviewFailed')<{ cause: unknown }> {
@@ -30,11 +24,6 @@ export interface Bridged {
     areas: Area[],
     options: { root: string; data: Record<string, unknown>; base: string },
   ) => Failing<Record<string, string>>
-  // Who the branch reports to, and the limit sent there.
-  readonly reportsTo: (branch: string, rules: BranchRules) => Failing<Started | null>
-  readonly askAtLimit: (marker: Started, branch: string, text: string) => Failing<{ asked: Asked | null; line: string }>
-  // Orca's subagents of the Claude Code session, when lntt review runs under one.
-  readonly orca: (root: string) => Failing<Subagents | null>
 }
 
 export class ReviewBridge extends Context.Service<ReviewBridge, Bridged>()('@lntt/lntt/review/bridge/ReviewBridge') {}
@@ -54,9 +43,6 @@ export const ReviewBridgeLive = Layer.effect(ReviewBridge)(
             ]),
           ),
         ),
-      reportsTo: (branch, rules) => bridged(() => reportsTo(branch, rules)),
-      askAtLimit: (marker, branch, text) => bridged(() => askAtLimit(marker, branch, text)),
-      orca: (root) => bridged(() => orcaSubagents(env, root)),
     }),
   ),
 )

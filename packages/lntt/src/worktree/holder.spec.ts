@@ -1,5 +1,5 @@
 import { assert, describe, it } from '@effect/vitest'
-import { EMPTY_MS, FRESH_MS, judge, lockedMessage, MAX_HOLD_MS, namedPid } from './worktree-lock.ts'
+import { EMPTY_MS, FRESH_MS, judge, lockedMessage, MAX_HOLD_MS, namedPid } from './holder.ts'
 
 const SELF = 100
 
