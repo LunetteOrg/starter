@@ -10,7 +10,7 @@
 // with the same functions as the base on Effect (src/base/names.ts).
 
 import { execFileSync } from 'node:child_process'
-import { defaultOf, highestCandidate, localRefs } from '../base/names.ts'
+import { defaultOf, highestCandidate, localRefs, repositoryOf } from '../base/names.ts'
 
 export type EventName = 'pull_request' | 'push'
 
@@ -42,11 +42,6 @@ function git(cwd: string, ...args: string[]): string | null {
 // The branch origin/HEAD points at, else `main`.
 export function defaultBranch(cwd: string): string {
   return defaultOf(git(cwd, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD'))
-}
-
-export function repositoryOf(url: string | null): string | null {
-  const match = /github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/.exec(url ?? '')
-  return match ? match[1] : null
 }
 
 // Changed files from the merge base with `ref` to HEAD.

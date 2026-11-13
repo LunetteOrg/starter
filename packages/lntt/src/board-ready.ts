@@ -9,6 +9,11 @@
 // holds only when the configuration has what it reads: no board.fields.size, no size to
 // ask for. The reads split the issue from its board item because the candidate workflow
 // holds two tokens, one for the repository and one for the Projects permission.
+//
+// Plain logic, no node: module: the queries and how an answer reads. lntt board ready runs
+// them as Effects over the Gh service (src/board/ready.ts); the candidate's merge runs them
+// over its synchronous Graphql (readWaiting, readIssueOnBoard, moveToReady) until lntt ci
+// moves to Effect (#340).
 
 import { type Graphql, same } from './board.ts'
 
@@ -263,56 +268,69 @@ export interface ProjectIssue extends ReadyFacts {
   target: ReadyTarget
 }
 
-// Every open issue of `repo` at the first status of the configured Project: the Project
-// may be shared by an organization's repositories, and this configuration speaks for
-// its own.
-export function readFirstStatus(graphql: Graphql, rules: ReadyRules, repo: string): ProjectIssue[] {
+// The query that reads a page of the configured Project's items, with the status field.
+export function firstStatusQuery(rules: ReadyRules): string {
   const root = rules.project.ownerType === 'user' ? 'user' : 'organization'
-  const query = `query($owner:String!,$number:Int!,$after:String){ ${root}(login:$owner){ projectV2(number:$number){
+  return `query($owner:String!,$number:Int!,$after:String){ ${root}(login:$owner){ projectV2(number:$number){
     id ${STATUS_FIELD(rules)}
     items(first:100, after:$after){ pageInfo{ hasNextPage endCursor } nodes{ id isArchived ${STATUS_VALUE(rules)} ${itemFields(rules)}
       content{ __typename ... on Issue{ ${issueFields(rules)} } } } } } } }`
-  const found: ProjectIssue[] = []
-  let after: string | null = null
-  for (;;) {
-    const data = graphql(query, { owner: rules.project.owner, number: rules.project.number, after })[root] as {
-      projectV2: {
-        id: string
-        field?: StatusField | null
-        items: {
-          pageInfo: { hasNextPage: boolean; endCursor: string | null }
-          nodes: Array<LiveValues & { content?: (LiveIssue & { __typename: string }) | null }>
-        }
-      }
-    }
-    const project = data.projectV2
-    const where = readyOption(rules, project.field)
-    for (const node of project.items.nodes) {
-      const issue = node.content
-      if (node.isArchived || issue?.__typename !== 'Issue' || !isOpen(issue.state)) continue
-      if (!sameRepo(issue.repository.nameWithOwner, repo)) continue
-      if (!same(node.status?.name ?? '', rules.status.initial)) continue
-      const facts = factsOf(rules, issue, node)
-      found.push({
-        ...facts,
-        verdict: assess(rules, facts, repo),
-        target: { project: project.id, item: node.id, ...where },
-      })
-    }
-    if (!project.items.pageInfo.hasNextPage) return found
-    after = project.items.pageInfo.endCursor
-  }
 }
 
-export function moveToReady(graphql: Graphql, target: ReadyTarget): void {
-  graphql(
-    `mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
+// The open issues of `repo` at the first status in one page GitHub answered, and the cursor of
+// the next page, null at the last: the Project may be shared by an organization's
+// repositories, and this configuration speaks for its own.
+export function firstStatusPage(
+  rules: ReadyRules,
+  answer: Record<string, unknown>,
+  repo: string,
+): { found: ProjectIssue[]; after: string | null } {
+  const root = rules.project.ownerType === 'user' ? 'user' : 'organization'
+  const project = (
+    answer[root] as
+      | {
+          projectV2: {
+            id: string
+            field?: StatusField | null
+            items: {
+              pageInfo: { hasNextPage: boolean; endCursor: string | null }
+              nodes: Array<LiveValues & { content?: (LiveIssue & { __typename: string }) | null }>
+            }
+          } | null
+        }
+      | null
+      | undefined
+  )?.projectV2
+  // A Project that does not exist, or one the token cannot see, reads as null.
+  if (!project) throw new NotOnBoard(`no Project ${rules.project.number} of ${rules.project.owner}`)
+  const where = readyOption(rules, project.field)
+  const found: ProjectIssue[] = []
+  for (const node of project.items.nodes) {
+    const issue = node.content
+    if (node.isArchived || issue?.__typename !== 'Issue' || !isOpen(issue.state)) continue
+    if (!sameRepo(issue.repository.nameWithOwner, repo)) continue
+    if (!same(node.status?.name ?? '', rules.status.initial)) continue
+    const facts = factsOf(rules, issue, node)
+    found.push({
+      ...facts,
+      verdict: assess(rules, facts, repo),
+      target: { project: project.id, item: node.id, ...where },
+    })
+  }
+  return { found, after: project.items.pageInfo.hasNextPage ? project.items.pageInfo.endCursor : null }
+}
+
+// The write that moves an item to the ready status.
+export const MOVE_TO_READY = `mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
       updateProjectV2ItemFieldValue(input: {
         projectId: $project, itemId: $item, fieldId: $field, value: { singleSelectOptionId: $option }
       }) { projectV2Item { id } }
-    }`,
-    { ...target },
-  )
+    }`
+
+// The move, synchronous, for the candidate's merge until lntt ci moves to Effect (#340); lntt
+// board ready writes it through the Gh service (src/board/ready.ts).
+export function moveToReady(graphql: Graphql, target: ReadyTarget): void {
+  graphql(MOVE_TO_READY, { ...target })
 }
 
 // --- One issue, for the candidate's merge -----------------------------------------

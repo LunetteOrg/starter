@@ -1,5 +1,13 @@
 import { assert, describe, it } from '@effect/vitest'
-import { checkBody, retrospectiveBlock, retrospectiveRules, upstreamItems } from './pull-request.ts'
+import {
+  appendRetro,
+  checkBody,
+  findLabel,
+  retroComment,
+  retrospectiveBlock,
+  retrospectiveRules,
+  upstreamItems,
+} from './pull-request.ts'
 
 const DEFAULTS = retrospectiveRules({})
 
@@ -248,5 +256,122 @@ describe('the upstream marker', () => {
     const lines = ['- **Friction:** none <!-- [upstream:LunetteOrg/starter] -->', ...FILLED.slice(1)]
     assert.deepStrictEqual(checkBody(body(...lines), DEFAULTS), [])
     assert.deepStrictEqual(upstreamItems(body(...lines)), [])
+  })
+})
+
+// The retrospective block's labels, the append and the comment that holds it: what lntt retro add
+// writes (src/retro/command.ts).
+const RULES = retrospectiveRules({})
+const EMPTY = retrospectiveBlock(RULES)
+
+describe('findLabel', () => {
+  it('the configured label equal ignoring case, else the only one it starts', () => {
+    assert.strictEqual(findLabel(RULES, 'friction'), 'Friction')
+    assert.strictEqual(findLabel(RULES, 'to automate'), 'To automate (hook/skill/agent)')
+    assert.strictEqual(findLabel(RULES, 'R'), null, 'Rule rediscovered and Rework cause both start with R')
+    assert.strictEqual(findLabel(RULES, 'cost'), null)
+    assert.strictEqual(findLabel(RULES, ' '), null)
+  })
+})
+
+describe('appendRetro', () => {
+  it('an empty label takes the item on its line; the markers and the other labels stay', () => {
+    const next = appendRetro(EMPTY, 'Friction', 'the review did not converge', RULES)
+    assert.strictEqual(next, EMPTY.replace('- **Friction:**', '- **Friction:** the review did not converge'))
+    assert.deepStrictEqual(
+      checkBody(next, RULES).map((p) => p.replace(/"(.+)" is empty.*/, '$1')),
+      [
+        'retrospective: To automate (hook/skill/agent)',
+        'retrospective: Rule rediscovered (→ ADR/AGENTS.md)',
+        'retrospective: Rework cause',
+      ],
+    )
+  })
+
+  it('a label with one item gets sub-bullets, the first item kept first', () => {
+    const one = appendRetro(EMPTY, 'Friction', 'first', RULES)
+    const two = appendRetro(one, 'Friction', 'second', RULES)
+    assert.match(two, /- \*\*Friction:\*\*\n {2}- first\n {2}- second\n- \*\*To automate/)
+  })
+
+  it('a label with sub-bullets gets one more, after the last one', () => {
+    const text = EMPTY.replace('- **Friction:**', '- **Friction:**\n  - first\n  - second')
+    const next = appendRetro(text, 'Friction', 'third', RULES)
+    assert.match(next, /- \*\*Friction:\*\*\n {2}- first\n {2}- second\n {2}- third\n- \*\*To automate/)
+  })
+
+  it('the last label, right above the end marker', () => {
+    const next = appendRetro(EMPTY, 'Rework cause', 'the squash order', RULES)
+    assert.match(next, /- \*\*Rework cause:\*\* the squash order\n<!-- retro:end -->/)
+  })
+
+  it('none and a placeholder comment are replaced by the item', () => {
+    const none = EMPTY.replace('- **Friction:**', '- **Friction:** none')
+    assert.match(appendRetro(none, 'Friction', 'x', RULES), /- \*\*Friction:\*\* x\n/)
+    const placeholder = EMPTY.replace('- **Friction:**', '- **Friction:** <!-- what was hard -->')
+    assert.match(appendRetro(placeholder, 'Friction', 'x', RULES), /- \*\*Friction:\*\* x\n/)
+  })
+
+  it('a placeholder comment across lines, or left open, is no value either', () => {
+    for (const placeholder of ['- **Friction:** <!--\n  what was hard\n  -->', '- **Friction:** <!-- what was hard']) {
+      const text = EMPTY.replace('- **Friction:**', placeholder)
+      assert.match(appendRetro(text, 'Friction', 'x', RULES), /- \*\*Friction:\*\* x\n- \*\*To automate/)
+    }
+  })
+
+  it('none on the label line with sub-bullets below: none goes, the sub-bullets stay, one more', () => {
+    const text = EMPTY.replace('- **Friction:**', '- **Friction:** none\n  - first')
+    assert.match(appendRetro(text, 'Friction', 'x', RULES), /- \*\*Friction:\*\*\n {2}- first\n {2}- x\n/)
+  })
+
+  it('none on the label line with free text and a placeholder below: none goes, the text stays', () => {
+    const text = EMPTY.replace('- **Friction:**', '- **Friction:** none\n  the review stalled\n  <!-- more -->')
+    assert.match(
+      appendRetro(text, 'Friction', 'x', RULES),
+      /- \*\*Friction:\*\*\n {2}the review stalled\n {2}<!-- more -->\n {2}- x\n- \*\*To/,
+    )
+  })
+
+  it('an empty label line with a value on the lines below: the item after them', () => {
+    const text = EMPTY.replace('- **Friction:**', '- **Friction:**\n  the review stalled\n  twice')
+    assert.match(
+      appendRetro(text, 'Friction', 'x', RULES),
+      /:\*\*\n {2}the review stalled\n {2}twice\n {2}- x\n- \*\*To/,
+    )
+  })
+
+  it('a value on the label line with more below: the value becomes the first sub-bullet', () => {
+    const text = EMPTY.replace('- **Friction:**', '- **Friction:** first\n  - second')
+    assert.match(appendRetro(text, 'Friction', 'third', RULES), /:\*\*\n {2}- first\n {2}- second\n {2}- third\n/)
+  })
+
+  it('text around the block, and CRLF line endings, are kept', () => {
+    const text = `Lead.\r\n\r\n${EMPTY.replaceAll('\n', '\r\n')}After.`
+    const next = appendRetro(text, 'Friction', 'x', RULES)
+    assert.ok(next.startsWith('Lead.\r\n\r\n## 🔁 Retrospective\r\n'))
+    assert.ok(next.endsWith('<!-- retro:end -->\r\nAfter.'))
+    assert.ok(next.includes('- **Friction:** x\r\n'))
+  })
+
+  it('no block, or a block without the label, is refused', () => {
+    assert.throws(
+      () => appendRetro('no block', 'Friction', 'x', RULES),
+      /no <!-- retro:start --> … <!-- retro:end --> block/,
+    )
+    const without = EMPTY.replace('- **Friction:**\n', '')
+    assert.throws(() => appendRetro(without, 'Friction', 'x', RULES), /no "Friction" line in the block/)
+  })
+})
+
+describe('retroComment', () => {
+  it('the first comment holding the start marker on a line of its own', () => {
+    const all = [
+      { id: 1, body: 'Moved onto candidate/8.' },
+      { id: 2, body: 'The block sits between `<!-- retro:start -->` and its end.' },
+      { id: 3, body: EMPTY },
+      { id: 4, body: EMPTY },
+    ]
+    assert.strictEqual(retroComment(all)?.id, 3)
+    assert.strictEqual(retroComment(all.slice(0, 2)), null)
   })
 })

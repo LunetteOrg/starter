@@ -1,11 +1,10 @@
 // `lntt refs`: the references of a text with their titles, as JSON (src/refs.ts;
-// usage: bin/lntt.ts).
+// usage: bin/lntt.ts). This module parses the arguments and reads the text, exit 2 before Effect
+// loads; the command runs on Effect (src/refs/command.ts).
 
-import { execFile } from 'node:child_process'
-import { stderr, stdin, stdout } from 'node:process'
+import { stderr, stdin } from 'node:process'
 import { parseArgs } from 'node:util'
-import { Exit, exit } from './exit.ts'
-import { type RefsRun, resolveRefs } from './refs.ts'
+import { exit } from './exit.ts'
 import { readStdin } from './stdin.ts'
 
 const USAGE = 'usage: lntt refs [--cached] [<text>...]   (no text: read from stdin)'
@@ -16,16 +15,6 @@ function usage(message?: string): never {
   exit(2)
 }
 
-// Each command in a child of its own, killed past its timeout; an exit code other than
-// 0 is an answer, not a rejection.
-const run: RefsRun = (command, args, timeoutMs) =>
-  new Promise((resolve, reject) => {
-    execFile(command, args, { encoding: 'utf8', timeout: timeoutMs, killSignal: 'SIGKILL' }, (error, out, err) => {
-      if (error && (typeof error.code !== 'number' || error.killed)) reject(error)
-      else resolve({ exitCode: error ? (error.code as number) : 0, stdout: out, stderr: err })
-    })
-  })
-
 export async function main(args: string[]): Promise<void> {
   let values: { cached?: boolean }
   let positionals: string[]
@@ -34,14 +23,14 @@ export async function main(args: string[]): Promise<void> {
   } catch (error) {
     usage((error as Error).message)
   }
+  if (!positionals.length && stdin.isTTY) usage('give the text, or pipe it on stdin')
+  let text: string
   try {
-    if (!positionals.length && stdin.isTTY) usage('give the text, or pipe it on stdin')
-    const text = positionals.length ? positionals.join('\n') : await readStdin()
-    const refs = await resolveRefs(text, { run, now: Date.now, cached: values.cached ?? false })
-    stdout.write(`${JSON.stringify(refs)}\n`)
+    text = positionals.length ? positionals.join('\n') : await readStdin()
   } catch (error) {
-    if (error instanceof Exit) throw error
     stderr.write(`lntt refs: ${(error as Error).message}\n`)
     exit(1)
   }
+  const { runRefs } = await import('./refs/command.ts')
+  return runRefs({ text, cached: values.cached ?? false })
 }

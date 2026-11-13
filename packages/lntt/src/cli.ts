@@ -8,7 +8,7 @@ import { parseArgs } from 'node:util'
 import { syncAutomated } from './automated.ts'
 import type { ConfigCommand } from './config/command.ts'
 import { findConfig } from './config/sync.ts'
-import { exit } from './exit.ts'
+import { exit, printed } from './exit.ts'
 import {
   browserApp,
   browserPlan,
@@ -178,7 +178,9 @@ async function browser(args: string[]): Promise<void> {
   })
   if (values.query !== undefined) {
     const input = JSON.stringify(plan)
-    exit(await runQuery({ input, expression: values.query, json: values.json, code: 0, command: 'lntt browser' }))
+    exit(
+      printed(await runQuery({ input, expression: values.query, json: values.json, code: 0, command: 'lntt browser' })),
+    )
   }
   stdout.write(values.json ? `${JSON.stringify(plan)}\n` : formatPlan(plan))
 }

@@ -111,6 +111,8 @@ lntt ci local | candidate | proved
   no-round line before jq's message. A query that does not end is ended by a signal: a
   command that runs a jq query keeps the default handling of SIGINT and SIGTERM
   ([Effect in `lntt`](./effect-in-lntt.md#how-a-command-runs-is-interrupted-and-exits)).
+  `runQuery` (`src/query.ts`) computes what the query prints on each stream and its exit code,
+  with no Effect and no `node:` module; the command writes them with `printed` (`src/exit.ts`).
 - **`lntt check` is the one verb for what is checked without judgement**, in areas:
   `decisions` and `tests`, whose results their review lenses read, and `agents-md`,
   `skills`, `plugin` (the Lunette plugin and the install hook in `.claude/settings.json`)
@@ -142,8 +144,9 @@ lntt ci local | candidate | proved
   ([provenance](./scaffolding-contract.md#provenance)), and `lntt issue` fails naming the
   key when it is missing. Only that repository is sent to: a report for another one
   (`--repo`, a library the project uses) is printed for the operator to file by hand,
-  and when the upstream is the repository `lntt issue` runs in, there is nothing to
-  send. A configuration that does not validate stops `lntt dump` as
+  and when the upstream is the repository `lntt issue` runs in (`GITHUB_REPOSITORY`, else
+  the origin remote of the project's root, the directory of `.agents/`), there is nothing
+  to send. A configuration that does not validate stops `lntt dump` as
   it stops every command, exit 1, after the dump is printed with the error in it.
 - **No aliases for old names.** A renamed command answers only to its new name, so its
   callers (workflows, skills, the README) change with it, in the same release: the

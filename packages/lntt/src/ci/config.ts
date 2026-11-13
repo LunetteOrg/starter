@@ -67,7 +67,7 @@ export function candidateConfig(cwd: string): CandidateConfig | null {
   return candidateConfigOf(data(cwd))
 }
 
-// delivery.candidate of a configuration's data, with its defaults; null when it has none.
+// The same, from the configuration's data.
 export function candidateConfigOf(config: Record<string, unknown>): CandidateConfig | null {
   const section = (config.delivery as { candidate?: Partial<CandidateConfig> & { prefix: string } } | undefined)
     ?.candidate
