@@ -1,11 +1,9 @@
-import assert from 'node:assert/strict'
-import { rmSync } from 'node:fs'
-import { afterEach, describe, test } from 'node:test'
-import { emptyConfig } from '../../src/ci/config.ts'
-import { localEvent } from '../../src/ci/event.ts'
-import { githubJobs } from '../../src/ci/github.ts'
-import type { Job } from '../../src/ci/plan.ts'
-import { repo } from './helpers.ts'
+import { assert, describe, it } from '@effect/vitest'
+import { drive } from '../testing/asks.ts'
+import { emptyConfig } from './config.ts'
+import type { Event } from './event.ts'
+import { githubJobs } from './github.ts'
+import type { Job } from './plan.ts'
 
 const CI = `
 on:
@@ -46,16 +44,30 @@ jobs:
       - run: npm publish
 `
 
-let root: string
-afterEach(() => rmSync(root, { recursive: true, force: true }))
+const root = '/repo'
+
+// A pull request of feat/x, which changes src/a.ts, into `base`; or a push to it.
+const event = (name: 'pull_request' | 'push', base: string): Event => ({
+  name,
+  base,
+  head: 'feat/x',
+  sha: '0123456789abcdef',
+  baseRef: `origin/${base}`,
+  changed: ['src/a.ts'],
+  repository: null,
+  defaultBranch: 'main',
+})
+
+// The files of the repository, by their paths under the root.
+const under = (files: Record<string, string>) =>
+  Object.fromEntries(Object.entries(files).map(([path, text]) => [`${root}/${path}`, text]))
 
 async function jobs(
   files: Record<string, string>,
   config = emptyConfig(),
   name: 'pull_request' | 'push' = 'pull_request',
 ) {
-  root = repo({ '.nvmrc': '24\n', ...files })
-  return githubJobs(root, localEvent(root, name, 'main'), config)
+  return drive(githubJobs(root, event(name, 'main'), config), { files: under({ '.nvmrc': '24\n', ...files }) })
 }
 
 const byKey = (list: Job[], key: string) => {
@@ -65,11 +77,11 @@ const byKey = (list: Job[], key: string) => {
 }
 
 describe('githubJobs', () => {
-  test('a pull request into main runs ci, in order, with each step mapped', async () => {
+  it('a pull request into main runs ci, in order, with each step mapped', async () => {
     const list = await jobs({ '.github/workflows/ci.yml': CI })
     const ci = byKey(list, 'ci.yml/ci')
-    assert.deepEqual(ci.state, { state: 'run' })
-    assert.deepEqual(
+    assert.deepStrictEqual(ci.state, { state: 'run' })
+    assert.deepStrictEqual(
       ci.steps.map((s) => [s.label, s.local.kind]),
       [
         ['uses: actions/checkout@v7', 'noop'],
@@ -81,43 +93,46 @@ describe('githubJobs', () => {
       ],
     )
     const check = ci.steps[3]
-    assert.equal(check.condition?.text, "success() && (github.event_name == 'pull_request')")
-    assert.deepEqual(check.condition?.decide(false), { known: true, value: true })
-    assert.deepEqual(check.condition?.decide(true), { known: true, value: false })
-    assert.equal(check.local.kind === 'run' && check.local.command, 'sh check.sh origin/main')
+    assert.strictEqual(check.condition?.text, "success() && (github.event_name == 'pull_request')")
+    assert.deepStrictEqual(check.condition?.decide(false), { known: true, value: true })
+    assert.deepStrictEqual(check.condition?.decide(true), { known: true, value: false })
+    assert.strictEqual(check.local.kind === 'run' && check.local.command, 'sh check.sh origin/main')
     const tests = ci.steps[4].local
     assert.ok(tests.kind === 'run')
-    assert.equal(tests.cwd, `${root}/packages/a`)
-    assert.deepEqual(tests.env, { TOP: 'top', SMOKE: '1' })
+    assert.strictEqual(tests.cwd, `${root}/packages/a`)
+    assert.deepStrictEqual(tests.env, { TOP: 'top', SMOKE: '1' })
   })
 
-  test('a workflow the event does not trigger is listed as skipped, with the reason', async () => {
+  it('a workflow the event does not trigger is listed as skipped, with the reason', async () => {
     const list = await jobs({ '.github/workflows/ci.yml': CI, '.github/workflows/release.yml': RELEASE })
-    assert.deepEqual(byKey(list, 'release.yml/release').state, {
+    assert.deepStrictEqual(byKey(list, 'release.yml/release').state, {
       state: 'skipped',
       reason: 'on: release, not pull_request',
     })
   })
 
-  test('a pull request into another branch skips a workflow filtered on main', async () => {
-    root = repo({ '.github/workflows/ci.yml': CI })
-    const list = await githubJobs(root, localEvent(root, 'pull_request', 'candidate/1'), emptyConfig())
-    assert.equal(byKey(list, 'ci.yml/ci').state.state, 'skipped')
+  it('a pull request into another branch skips a workflow filtered on main', async () => {
+    const list = await drive(githubJobs(root, event('pull_request', 'candidate/1'), emptyConfig()), {
+      files: under({ '.github/workflows/ci.yml': CI }),
+    })
+    assert.strictEqual(byKey(list, 'ci.yml/ci').state.state, 'skipped')
   })
 
-  test('a cloud-only job, by job key or by workflow file', async () => {
+  it('a cloud-only job, by job key or by workflow file', async () => {
     const config = emptyConfig()
     config.cloudOnly = { 'ci.yml/ci': 'deploys' }
-    assert.deepEqual(byKey(await jobs({ '.github/workflows/ci.yml': CI }, config), 'ci.yml/ci').state, {
+    assert.deepStrictEqual(byKey(await jobs({ '.github/workflows/ci.yml': CI }, config), 'ci.yml/ci').state, {
       state: 'cloud-only',
       reason: 'deploys',
     })
-    rmSync(root, { recursive: true, force: true })
     config.cloudOnly = { 'ci.yml': 'whole workflow' }
-    assert.equal(byKey(await jobs({ '.github/workflows/ci.yml': CI }, config), 'ci.yml/ci').state.state, 'cloud-only')
+    assert.strictEqual(
+      byKey(await jobs({ '.github/workflows/ci.yml': CI }, config), 'ci.yml/ci').state.state,
+      'cloud-only',
+    )
   })
 
-  test('an undeclared secret blocks its step, a fake one is used', async () => {
+  it('an undeclared secret blocks its step, a fake one is used', async () => {
     const wf = `
 on: pull_request
 jobs:
@@ -129,17 +144,16 @@ jobs:
           TOKEN: \${{ secrets.CANARY }}
 `
     const blocked = byKey(await jobs({ '.github/workflows/a.yml': wf }), 'a.yml/a').steps[0].local
-    assert.equal(blocked.kind, 'blocked')
+    assert.strictEqual(blocked.kind, 'blocked')
     assert.match(blocked.kind === 'blocked' ? blocked.reason : '', /secrets\.CANARY.*ci\.local\.fake\.secrets/)
-    rmSync(root, { recursive: true, force: true })
     const config = emptyConfig()
     config.fake.secrets = { CANARY: 'not-a-secret' }
     const run = byKey(await jobs({ '.github/workflows/a.yml': wf }, config), 'a.yml/a').steps[0].local
     assert.ok(run.kind === 'run')
-    assert.equal(run.env.TOKEN, 'not-a-secret')
+    assert.strictEqual(run.env.TOKEN, 'not-a-secret')
   })
 
-  test('an unknown action fails, a mapped one runs or is skipped', async () => {
+  it('an unknown action fails, a mapped one runs or is skipped', async () => {
     const wf = `
 on: pull_request
 jobs:
@@ -156,13 +170,13 @@ jobs:
       'owner/lint': { run: 'pnpm lint' },
     }
     const steps = byKey(await jobs({ '.github/workflows/a.yml': wf }, config), 'a.yml/a').steps
-    assert.deepEqual(
+    assert.deepStrictEqual(
       steps.map((s) => s.local.kind),
       ['fail', 'noop', 'run'],
     )
   })
 
-  test('a job condition the local run cannot evaluate blocks the job, naming what it reads', async () => {
+  it('a job condition the local run cannot evaluate blocks the job, naming what it reads', async () => {
     const wf = `
 on: pull_request
 jobs:
@@ -176,12 +190,12 @@ jobs:
     steps: [{ run: 'true' }]
 `
     const b = byKey(await jobs({ '.github/workflows/a.yml': wf }), 'a.yml/b')
-    assert.equal(b.state.state, 'blocked')
-    assert.deepEqual(b.needs, ['a.yml/a'])
+    assert.strictEqual(b.state.state, 'blocked')
+    assert.deepStrictEqual(b.needs, ['a.yml/a'])
     assert.match(b.state.state === 'blocked' ? b.state.reason : '', /needs\.a\.outputs\.changed/)
   })
 
-  test('a draft-only or push-only condition is evaluated against the event', async () => {
+  it('a draft-only or push-only condition is evaluated against the event', async () => {
     const wf = `
 on: [push, pull_request]
 jobs:
@@ -190,15 +204,14 @@ jobs:
     runs-on: ubuntu-latest
     steps: [{ run: 'true' }]
 `
-    assert.equal(byKey(await jobs({ '.github/workflows/a.yml': wf }), 'a.yml/only-push').state.state, 'skipped')
-    rmSync(root, { recursive: true, force: true })
-    assert.equal(
+    assert.strictEqual(byKey(await jobs({ '.github/workflows/a.yml': wf }), 'a.yml/only-push').state.state, 'skipped')
+    assert.strictEqual(
       byKey(await jobs({ '.github/workflows/a.yml': wf }, emptyConfig(), 'push'), 'a.yml/only-push').state.state,
       'run',
     )
   })
 
-  test('paths-ignore skips a workflow when every changed file is ignored', async () => {
+  it('paths-ignore skips a workflow when every changed file is ignored', async () => {
     const wf = `
 on:
   pull_request:
@@ -208,10 +221,10 @@ jobs:
     runs-on: ubuntu-latest
     steps: [{ run: 'true' }]
 `
-    assert.equal(byKey(await jobs({ '.github/workflows/a.yml': wf }), 'a.yml/a').state.state, 'skipped')
+    assert.strictEqual(byKey(await jobs({ '.github/workflows/a.yml': wf }), 'a.yml/a').state.state, 'skipped')
   })
 
-  test('services and matrices are reported', async () => {
+  it('services and matrices are reported', async () => {
     const wf = `
 on: pull_request
 jobs:
@@ -230,13 +243,17 @@ jobs:
 `
     const list = await jobs({ '.github/workflows/a.yml': wf })
     assert.match(byKey(list, 'a.yml/a').notes.join('\n'), /services not started locally: postgres/)
-    assert.equal(byKey(list, 'a.yml/m').state.state, 'blocked')
+    assert.strictEqual(byKey(list, 'a.yml/m').state.state, 'blocked')
   })
 
-  test('a broken workflow is an error, not an empty plan', async () => {
-    await assert.rejects(
-      jobs({ '.github/workflows/a.yml': 'on: pull_request\njobs:\n  a:\n    runs-on: x\n    steps: 3\n' }),
+  it('a broken workflow is an error, not an empty plan', async () => {
+    const error = await jobs({
+      '.github/workflows/a.yml': 'on: pull_request\njobs:\n  a:\n    runs-on: x\n    steps: 3\n',
+    }).then(
+      () => null,
+      (error: Error) => error,
     )
+    assert.match(error?.message ?? '', /^\.github\/workflows\/a\.yml: /)
   })
 })
 
@@ -257,21 +274,21 @@ jobs:
         run: pnpm test
 `
 
-  test('a pull request into the default branch runs the tests, one into a candidate does not', async () => {
-    root = repo({ '.github/workflows/ci.yml': wf })
-    const full = byKey(await githubJobs(root, localEvent(root, 'pull_request', 'main'), emptyConfig()), 'ci.yml/ci')
-    assert.deepEqual(full.steps[1].condition?.decide(false), { known: true, value: true })
+  it('a pull request into the default branch runs the tests, one into a candidate does not', async () => {
+    const files = { files: under({ '.github/workflows/ci.yml': wf }) }
+    const full = byKey(await drive(githubJobs(root, event('pull_request', 'main'), emptyConfig()), files), 'ci.yml/ci')
+    assert.deepStrictEqual(full.steps[1].condition?.decide(false), { known: true, value: true })
     const minimal = byKey(
-      await githubJobs(root, localEvent(root, 'pull_request', 'candidate/3'), emptyConfig()),
+      await drive(githubJobs(root, event('pull_request', 'candidate/3'), emptyConfig()), files),
       'ci.yml/ci',
     )
-    assert.deepEqual(minimal.state, { state: 'run' })
-    assert.deepEqual(minimal.steps[1].condition?.decide(false), { known: true, value: false })
+    assert.deepStrictEqual(minimal.state, { state: 'run' })
+    assert.deepStrictEqual(minimal.steps[1].condition?.decide(false), { known: true, value: false })
   })
 })
 
 describe('review fixes', () => {
-  test('an unknown action fails even when its inputs read an undeclared secret', async () => {
+  it('an unknown action fails even when its inputs read an undeclared secret', async () => {
     const wf = `
 on: pull_request
 jobs:
@@ -283,10 +300,10 @@ jobs:
           token: \${{ secrets.DEPLOY }}
 `
     const local = byKey(await jobs({ '.github/workflows/a.yml': wf }), 'a.yml/a').steps[0].local
-    assert.equal(local.kind, 'fail')
+    assert.strictEqual(local.kind, 'fail')
   })
 
-  test('without shell: bash -e as GitHub runs it; an explicit shell: bash adds pipefail', async () => {
+  it('without shell: bash -e as GitHub runs it; an explicit shell: bash adds pipefail', async () => {
     const wf = `
 on: pull_request
 jobs:
@@ -298,8 +315,8 @@ jobs:
         shell: bash
 `
     const steps = byKey(await jobs({ '.github/workflows/a.yml': wf }), 'a.yml/a').steps
-    assert.deepEqual(steps[0].local.kind === 'run' && steps[0].local.shell, ['bash', '-e', '-c'])
-    assert.deepEqual(steps[1].local.kind === 'run' && steps[1].local.shell, [
+    assert.deepStrictEqual(steps[0].local.kind === 'run' && steps[0].local.shell, ['bash', '-e', '-c'])
+    assert.deepStrictEqual(steps[1].local.kind === 'run' && steps[1].local.shell, [
       'bash',
       '--noprofile',
       '--norc',
@@ -309,7 +326,7 @@ jobs:
     ])
   })
 
-  test('a job with needs gets its condition decided after them', async () => {
+  it('a job with needs gets its condition decided after them', async () => {
     const wf = `
 on: pull_request
 jobs:
@@ -323,8 +340,8 @@ jobs:
     steps: [{ run: 'true' }]
 `
     const notify = byKey(await jobs({ '.github/workflows/a.yml': wf }), 'a.yml/notify')
-    assert.deepEqual(notify.state, { state: 'run' })
-    assert.deepEqual(notify.condition?.decide({ success: false, failure: true }), { known: true, value: true })
-    assert.deepEqual(notify.condition?.decide({ success: true, failure: false }), { known: true, value: false })
+    assert.deepStrictEqual(notify.state, { state: 'run' })
+    assert.deepStrictEqual(notify.condition?.decide({ success: false, failure: true }), { known: true, value: true })
+    assert.deepStrictEqual(notify.condition?.decide({ success: true, failure: false }), { known: true, value: false })
   })
 })

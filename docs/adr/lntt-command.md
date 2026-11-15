@@ -79,11 +79,12 @@ lntt ci local | candidate | proved
   or `--query`),
   or a report for a person (`lntt check` without `--json`); progress and child-process output go to stderr. Exit codes:
   0 ok, 1 a configuration error, a red result or a check that cannot run (one line on
-  stderr), 2 a usage error or a failing jq expression, 3 a stop that a person decides on (`lntt review` past
+  stderr, followed only by what the person acts on: `lntt ci local` lists the uncommitted
+  files that keep it from running), 2 a usage error or a failing jq expression, 3 a stop that a person decides on (`lntt review` past
   `delivery.review.maxRounds`) or nobody left to wait for (`lntt inbox --wait` and `--follow`
   with no child that reports to the role), 4 nothing to report on (`lntt review status` with no round
   on the current branch, also when a jq query fails while running on the missing state), an interrupted command 130 (a command on Effect, for
-  SIGINT and SIGTERM alike: [Effect in `lntt`](./effect-in-lntt.md#how-a-command-runs-is-interrupted-and-exits);
+  SIGINT and SIGTERM alike, and `lntt ci local` for SIGHUP and SIGQUIT too: [Effect in `lntt`](./effect-in-lntt.md#how-a-command-runs-is-interrupted-and-exits);
   one not yet on Effect, 128 plus the signal); a defect of `lntt` itself exits 1 with its stack trace. Every command ends
   through one exit path that lets stdout and stderr drain before the process exits: a
   pipe on macOS takes writes asynchronously, and an exit right after a long write cuts
