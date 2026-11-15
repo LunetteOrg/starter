@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import type { Gh } from '../packages/lntt/src/ci/candidate.ts'
+import type { Gh } from './upstream-issue.mts'
 import { boardTarget, type Failure, failingTests, report, type Target } from './upstream-issue.mts'
 
 // The end of a red `pnpm --filter @lntt/lntt test:upstream`, as node --test prints it.

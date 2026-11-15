@@ -1,5 +1,14 @@
 import { assert, describe, it } from '@effect/vitest'
-import { assess, holdsLine, type ReadyFacts, readIssueOnBoard, readWaiting, readyRules } from './board-ready.ts'
+import {
+  assess,
+  holdsLine,
+  issueOnBoardOf,
+  issueQuery,
+  type ReadyFacts,
+  readyRules,
+  waitingOf,
+  waitingQuery,
+} from './board-ready.ts'
 
 const BOARD = {
   github: { project: { owner: 'DemoOrg', number: 1, title: 'Demo' } },
@@ -193,7 +202,8 @@ describe('the reads of one issue', () => {
         },
       },
     })
-    assert.deepStrictEqual(readWaiting(graphql, 'o/r', 9), { closed: true, blocked: [1], more: false })
+    assert.match(waitingQuery('o/r', 9).query, /blocking\(first:100\)/)
+    assert.deepStrictEqual(waitingOf(graphql(), 'o/r'), { closed: true, blocked: [1], more: false })
   })
 
   const onBoard = (items: unknown[]) => {
@@ -207,7 +217,7 @@ describe('the reads of one issue', () => {
     }
     const graphql = () => ({ repository: { issue } })
     const board = () => ({ repository: { issue: { projectItems: { nodes: items } } } })
-    return readIssueOnBoard(graphql, board, rules(), 'o/r', 7)
+    return issueOnBoardOf(graphql(), board(), rules(), 'o/r')
   }
   const boardItem = (id: string, owner: string, over: Record<string, unknown> = {}) => ({
     id,
@@ -251,7 +261,7 @@ describe('the reads of one issue', () => {
       }
     }
     const board = () => ({ repository: { issue: { projectItems: { nodes: [boardItem('ours', 'DemoOrg')] } } } })
-    const found = readIssueOnBoard(graphql, board, onIssue, 'o/r', 7)
+    const found = issueOnBoardOf(graphql(issueQuery(onIssue, 'o/r', 7).query), board(), onIssue, 'o/r')
     assert.strictEqual(found.facts.moreFields, true)
     assert.match(queries[0] ?? '', /issueFieldValues\(first:100\)\{ pageInfo\{ hasNextPage \}/)
   })

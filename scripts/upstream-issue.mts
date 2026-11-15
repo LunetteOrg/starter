@@ -14,12 +14,49 @@
 // Project. Inside Actions without it, the issue is opened off the board, with a notice.
 // --dry-run prints every write instead of making it. Run from the repository root.
 
+import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { argv, cwd, env, exit, stderr, stdout } from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
-import { BOARD_MUTATION, type Gh, makeGh, NOT_PERMITTED, pickBoard } from '../packages/lntt/src/ci/candidate.ts'
+import { BOARD_MUTATION, NOT_PERMITTED, pickBoard } from '../packages/lntt/src/ci/candidate.ts'
 import { loadConfig } from '../packages/lntt/src/index.ts'
+
+// gh for this script, synchronous: a read's stdout, trimmed; a write that a dry run logs instead.
+// gh's own refusal text (a token without a permission) is in the error, where NOT_PERMITTED reads
+// it. `token` is the Projects token, as GH_TOKEN.
+export interface Gh {
+  read: (args: string[]) => string
+  write: (args: string[], input?: string) => string
+}
+
+export function makeGh({ dryRun, log, token }: { dryRun: boolean; log: (line: string) => void; token?: string }): Gh {
+  const run = (args: string[], input?: string) => {
+    const result = spawnSync('gh', args, {
+      encoding: 'utf8',
+      input,
+      ...(token ? { env: { ...process.env, GH_TOKEN: token } } : {}),
+    })
+    if (result.stderr) process.stderr.write(result.stderr)
+    if (result.error) throw result.error
+    if (result.status !== 0) {
+      const detail = result.stderr.trim()
+      throw new Error(`Command failed: gh ${args.slice(0, 2).join(' ')}${detail ? `: ${detail}` : ''}`)
+    }
+    return result.stdout.trim()
+  }
+  return {
+    read: (args) => run(args),
+    write: (args, input) => {
+      if (dryRun) {
+        log(`[dry-run] gh ${args.map((a) => (/\s/.test(a) ? JSON.stringify(a) : a)).join(' ')}`)
+        if (input !== undefined) log(`[dry-run] stdin:\n${input}`)
+        return ''
+      }
+      return run(args, input)
+    },
+  }
+}
 
 // The issue type of a red, when board.issueTypes has it.
 const BUG = 'Bug'

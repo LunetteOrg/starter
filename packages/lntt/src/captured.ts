@@ -1,5 +1,5 @@
 // A short command run through Effect's ChildProcessSpawner to its end, `input` on its stdin when
-// given: its stdout without the trailing newline, its stderr trimmed, its exit code. What lntt's own services over a CLI (Git,
+// given, `env` added to the inherited environment when given: its stdout without the trailing newline, its stderr trimmed, its exit code. What lntt's own services over a CLI (Git,
 // Gh) share; a command that cannot start is the spawner's PlatformError.
 
 import * as Effect from 'effect/Effect'
@@ -20,6 +20,7 @@ export const captured = (
   args: readonly string[],
   cwd?: string,
   input?: string,
+  env?: Record<string, string>,
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -27,6 +28,7 @@ export const captured = (
         ChildProcess.make(command, args, {
           stdin: input === undefined ? 'ignore' : Stream.make(new TextEncoder().encode(input)),
           ...(cwd === undefined ? {} : { cwd }),
+          ...(env === undefined ? {} : { env, extendEnv: true }),
         }),
       )
       const [out, err, code] = yield* Effect.all([text(child.stdout), text(child.stderr), child.exitCode], {
