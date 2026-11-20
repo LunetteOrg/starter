@@ -79,7 +79,10 @@ at the edge, in its parser, and passes it in as an input (the operator's home, `
 the session's variables as `HostEnv` in `packages/lntt/src/review/orca.ts`): `Config` alone took
 some 70 ms to load in #335's measure (`effect` 4.1.4). Code that a command reaches with `Config`
 already loaded reads it there (`GITHUB_REPOSITORY` in the base, `CLAUDE_CODE_SESSION_ID` in a
-round).
+round). The files `lntt` ships beside its code (`agents/`, `skills/`) are read
+through the FileSystem from a directory a `Context.Reference` gives, beside `src/` in the
+repository and in `dist/`, which a spec places in memory (`PackageDir` in
+`packages/lntt/src/sync/project.ts`).
 
 ### Errors
 
@@ -110,11 +113,13 @@ round).
   alone exits at once on any code but 0, and a pipe on macOS takes writes
   asynchronously, so a document written before an exit 3 or 4 would arrive cut.
   `runMain`'s own error reporting is off: its log format is not `lntt`'s.
-- **`exit.ts` imports no Effect,** because every command loads it: `effect/Runtime` and
+- **`exit.ts` imports no Effect,** because every command loads it while it reads its
+  arguments, before Effect: a usage error exits 2 having loaded none. `effect/Runtime` and
   `NodeRuntime` take about 24 ms each to load (measured on 2026-11-11, `effect` 4.1.4,
-  node 24.22.1, median of 11 fresh processes), against about 140 ms for a whole command
-  that loads none (`lntt guide`, measured on 2026-11-12, median of 21).
-  Only a command on Effect loads `run-command.ts`.
+  node 24.22.1, median of 11 fresh processes). Running on `runCommand` is what a command
+  pays for one way to run: `lntt guide`, which prints a file, took 120 ms with no Effect and
+  takes 156 ms on Effect (measured on 2026-11-20, `effect` 4.1.4, node 24.22.1, median of 21
+  fresh processes). Only a command on Effect loads `run-command.ts`.
 - **A resource is acquired with its release** (`Effect.acquireRelease`), in the scope of
   the command or of the step that uses it. Nothing on Effect is released from
   `process.on('exit')` or from a signal handler.
@@ -164,17 +169,17 @@ read at one place the same way as the sync code below: stdin, `readStdin` in
 modules not yet moved that a module on Effect needs is read at one place, a `Context.Reference`
 whose default is the sync function, run under `Effect.try`, which its spec replaces: what it
 throws is a tagged error of the command, reported by its message like any expected failure (the
-project's configuration in `lntt branch` and `lntt pr`; what `lntt sync` writes, which `lntt
-check` reads through `SyncAreas` in `packages/lntt/src/check/areas.ts` until those modules move,
-#341). What a module on Effect and the sync code of a
+project's configuration in `lntt branch` and `lntt pr`). What a module on Effect and the sync code of a
 module not yet moved both read, and which reaches nothing, is plain functions in a module that
 imports no Effect (what the base reads from the names git and GitHub give,
 `packages/lntt/src/base/names.ts`); the library's synchronous `localEvent` keeps its own calls
 to git (`packages/lntt/src/ci/sync.ts`), until the shells go with #341.
 A defect of the Effect code reaches the edge with its stack. A reference to sync code goes when
 its module moves to Effect. The library API of
-`@lntt/lntt` (`packages/lntt/src/index.ts`) stays on `Promise`, so a script that imports
-it needs no Effect: a library function whose logic moved (`askAll`, `runRound`), and a
+`@lntt/lntt` (`packages/lntt/src/index.ts`) is on `Promise`, so a script that imports
+it needs no Effect, and it exports what a script outside `lntt` uses: a function that only
+`lntt`'s own commands called goes from it when its module moves (what `lntt sync` writes and
+`lntt check` reads). A library function whose logic moved (`askAll`, `runRound`), and a
 function a command not yet on Effect calls (`projectBase` in `packages/lntt/src/base.ts`), imports its
 Effect form with `await import(...)` when it is called and runs it with `Effect.runPromise`,
 its callbacks under `Effect.sync`, `Effect.try` and `Effect.tryPromise` (a `Spawn` is the

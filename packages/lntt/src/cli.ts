@@ -2,12 +2,9 @@
 
 import { execFileSync } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
-import { dirname } from 'node:path'
 import { cwd, env, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
-import { syncAutomated } from './automated.ts'
 import type { ConfigCommand } from './config/command.ts'
-import { findConfig } from './config/sync.ts'
 import { exit, printed } from './exit.ts'
 import {
   browserApp,
@@ -18,17 +15,13 @@ import {
   commandExists,
   type Driver,
   formatPlan,
-  guide,
   loadOperator,
   localApp,
   openWith,
-  sharedSkills,
-  syncAgentsBlock,
-  syncClaudeSettings,
-  syncSkills,
   type Viewer,
 } from './index.ts'
 import { runQuery } from './query.ts'
+import type { SyncCommand } from './sync/command.ts'
 
 const USAGE = [
   'usage: lntt path | validate | get <key> | set <key> <json> | operator [get <key> | sources]',
@@ -56,6 +49,12 @@ export async function main(args: string[]): Promise<void> {
       // On Effect (src/config/command.ts), loaded only for these commands.
       const { runConfig } = await import('./config/command.ts')
       return runConfig(config, cwd(), homedir())
+    }
+    const sync = syncCommand(command, key, args.length)
+    if (sync !== null) {
+      // On Effect (src/sync/command.ts), loaded only for these commands.
+      const { runSync } = await import('./sync/command.ts')
+      return runSync(sync)
     }
     if (command === 'browser') await browser(args.slice(1))
     else run(command, key, raw)
@@ -101,6 +100,17 @@ function configCommand(
   }
 }
 
+// `lntt sync` or `lntt guide [<skill>]` from its arguments, null for any other command: usage,
+// exit 2, before Effect loads.
+function syncCommand(command: string | undefined, key: string | undefined, count: number): SyncCommand | null {
+  if (command === 'sync') return count === 1 ? { kind: 'sync', cwd: cwd() } : usage()
+  if (command === 'guide') {
+    if (count > 2) usage()
+    return key === undefined ? { kind: 'guide' } : { kind: 'guide', name: key }
+  }
+  return null
+}
+
 function run(command: string | undefined, key: string | undefined, raw: string | undefined): void {
   switch (command) {
     // Asked for, the usage is the answer: stdout, exit 0 (`npx @lntt/lntt --help`).
@@ -109,30 +119,6 @@ function run(command: string | undefined, key: string | undefined, raw: string |
     case 'help':
       stdout.write(`${USAGE}\n`)
       break
-    case 'sync':
-      // The skills first: a clash with a project skill stops the command before any write.
-      syncSkills(cwd())
-      syncAgentsBlock(cwd())
-      syncClaudeSettings(cwd())
-      syncAutomated(dirname(dirname(findConfig(cwd()).path)))
-      break
-    case 'guide': {
-      if (key === undefined) {
-        stdout.write(
-          sharedSkills()
-            .map((s) => `${s}\n`)
-            .join(''),
-        )
-        break
-      }
-      const text = guide(key)
-      if (text === null) {
-        stderr.write(`lntt guide: no skill ${key}; the skills are ${sharedSkills().join(', ')}\n`)
-        exit(1)
-      }
-      stdout.write(text)
-      break
-    }
     case 'local':
       if (key !== 'app' || !raw) usage()
       stdout.write(`${JSON.stringify(localApp(cwd(), raw))}\n`)

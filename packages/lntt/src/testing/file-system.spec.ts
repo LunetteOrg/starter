@@ -17,6 +17,23 @@ describe('the file system in memory', () => {
     }).pipe(Effect.provide(memory.layer))
   })
 
+  it.effect('removes a directory, with what it holds, only when recursive; a missing path only with force', () => {
+    const memory = memoryFileSystem()
+    return Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      yield* memory.put('/box/a/deeper/two.md', '2')
+      yield* memory.put('/box/ab.md', 'kept')
+      const plain = yield* Effect.flip(fs.remove('/box/a'))
+      assert.strictEqual(plain.reason._tag, 'Unknown')
+      yield* fs.remove('/box/a', { recursive: true })
+      assert.deepStrictEqual(yield* fs.readDirectory('/box'), ['ab.md'])
+      assert.strictEqual(yield* fs.exists('/box/a/deeper'), false)
+      const missing = yield* Effect.flip(fs.remove('/box/gone.md'))
+      assert.strictEqual(missing.reason._tag, 'NotFound')
+      yield* fs.remove('/box/gone.md', { force: true })
+    }).pipe(Effect.provide(memory.layer))
+  })
+
   it.effect('a directory that is not there is NotFound; a file is BadResource, as Node’s ENOTDIR', () => {
     const memory = memoryFileSystem()
     return Effect.gen(function* () {

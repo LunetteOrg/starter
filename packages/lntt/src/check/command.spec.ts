@@ -6,10 +6,11 @@ import * as TestConsole from 'effect/testing/TestConsole'
 import { Gh, GhError } from '../gh/gh.ts'
 import { Git, GitError } from '../git/git.ts'
 import { RETRO_START } from '../pull-request.ts'
+import { PackageDir } from '../sync/project.ts'
 import { filesAt } from '../testing/fixtures.ts'
+import { PACKAGE, PACKAGE_FILES, SYNCED } from '../testing/package.ts'
 import { lockPath } from '../worktree/holder.ts'
 import { Pids } from '../worktree/lock.ts'
-import { SyncAreas, type SyncChecks } from './areas.ts'
 import { type CheckCommand, Checks, ChecksLive, command, queryOf } from './command.ts'
 import { TestRunner } from './mutate.ts'
 import type { Result } from './results.ts'
@@ -30,29 +31,17 @@ const PROJECT = {
   'src/app.ts': '// Where data lives: docs/adr/storage.md\nexport const answer = 42\n',
 }
 
-// What lntt sync's areas say, all in step.
-const IN_STEP: SyncChecks = {
-  agentsBlock: () => true,
-  skills: () => [],
-  stubFolders: () => [],
-  settings: () => [],
-  workflows: () => [
-    { area: 'workflows', check: 'automated', status: 'PASS', path: null, line: null, message: 'in step' },
-  ],
-}
-
-// The project in memory, git and GitHub as they answer, lntt sync's areas, and the processes.
+// The project in memory, as lntt sync leaves it unless `texts` say otherwise, lntt's package
+// beside it, git and GitHub as they answer, and the processes.
 function world(
-  options: {
-    texts?: Record<string, string>
-    git?: Partial<Git['Service']>
-    gh?: Partial<Gh['Service']>
-    sync?: Partial<SyncChecks>
-  } = {},
+  options: { texts?: Record<string, string>; git?: Partial<Git['Service']>; gh?: Partial<Gh['Service']> } = {},
 ) {
   const texts = options.texts ?? PROJECT
-  const fs = filesAt(ROOT, texts)
+  const fs = filesAt(ROOT, { ...SYNCED, ...texts })
   fs.files.delete(`${ROOT}/.git`)
+  for (const [path, text] of Object.entries(PACKAGE_FILES)) {
+    Effect.runSync(fs.put(path, text))
+  }
   const git = Git.memory({
     listFiles: (_dir, list = {}) => Effect.succeed(list.others ? [] : Object.keys(texts)),
     gitDirOf: () => Effect.succeed(GIT_DIR),
@@ -70,10 +59,7 @@ function world(
       const out = (yield* TestConsole.logLines).join('\n')
       const err = (yield* TestConsole.errorLines).join('\n')
       return { code, found, out, err }
-    }).pipe(
-      Effect.provide(Layer.mergeAll(layer, TestConsole.layer)),
-      Effect.provideService(SyncAreas, { ...IN_STEP, ...options.sync }),
-    )
+    }).pipe(Effect.provide(Layer.mergeAll(layer, TestConsole.layer)), Effect.provideService(PackageDir, PACKAGE))
   return { fs, lntt }
 }
 
@@ -89,7 +75,7 @@ describe('lntt check', () => {
         ['agents-md', 'skills', 'plugin', 'workflows', 'decisions', 'tests', 'body'],
       )
       assert.match(passing.out, /^lntt check: \d+ PASS, 0 FAIL, \d+ NOT RUN$/m)
-      const failing = yield* world({ sync: { agentsBlock: () => false } }).lntt({ kind: 'all', json: true })
+      const failing = yield* world({ texts: { ...PROJECT, 'AGENTS.md': '# Ours\n' } }).lntt({ kind: 'all', json: true })
       assert.strictEqual(failing.code, 1)
       const printed = failing.out.split('\n').filter((l) => l.startsWith('{'))
       assert.strictEqual(printed.length, failing.found.length)
@@ -125,15 +111,35 @@ describe('lntt check', () => {
     }),
   )
 
+  it.effect('the plugin and workflows areas fail on what lntt sync has not written', () =>
+    Effect.gen(function* () {
+      const marked = 'name: CI\njobs:\n  ci:\n    env:\n      AUTOMATED: \'["x"]\' # lntt sync: delivery.automated\n'
+      const texts = { ...PROJECT, '.claude/settings.json': '{}\n', '.github/workflows/ci.yml': marked }
+      const plugin = yield* world({ texts }).lntt({ kind: 'area', area: 'plugin', files: [] })
+      assert.strictEqual(plugin.code, 1)
+      assert.deepStrictEqual(statuses(plugin.found), [
+        'FAIL plugin/settings',
+        'FAIL plugin/settings',
+        'FAIL plugin/settings',
+      ])
+      const workflows = yield* world({ texts }).lntt({ kind: 'area', area: 'workflows', files: [] })
+      assert.strictEqual(workflows.code, 1)
+      assert.deepStrictEqual(
+        workflows.found.map((r) => `${r.status} ${r.path}:${r.line}`),
+        ['FAIL .github/workflows/ci.yml:5'],
+      )
+    }),
+  )
+
   it.effect('the files every area reads leave out the stubs of the shared skills and a nested project', () =>
     Effect.gen(function* () {
       const texts = {
         ...PROJECT,
-        '.claude/skills/review/SKILL.md': 'Cites docs/adr/gone.md.\n',
+        '.claude/skills/review/SKILL.md': `${SYNCED['.claude/skills/review/SKILL.md']}Cites docs/adr/gone.md.\n`,
         'templates/web/.agents/config.jsonc': '{}',
         'templates/web/README.md': 'Its own docs/adr/storage-two.md.\n',
       }
-      const run = yield* world({ texts, sync: { stubFolders: () => ['.claude/skills/review'] } }).lntt({
+      const run = yield* world({ texts }).lntt({
         kind: 'area',
         area: 'decisions',
         files: [],
@@ -187,17 +193,13 @@ describe('what lntt check cannot do', () => {
     }),
   )
 
-  it.effect("what the sync code of lntt sync's areas throws is one line", () =>
+  it.effect('a skill of the package that gives no stub: the skills area cannot run, one line', () =>
     Effect.gen(function* () {
-      const run = yield* world({
-        sync: {
-          skills: () => {
-            throw new Error('.agents/skills cannot be read')
-          },
-        },
-      }).lntt({ kind: 'area', area: 'skills', files: [] })
+      const w = world()
+      yield* w.fs.put(`${PACKAGE}/skills/review/SKILL.md`, '# Review\n')
+      const run = yield* w.lntt({ kind: 'area', area: 'skills', files: [] })
       assert.strictEqual(run.code, 1)
-      assert.strictEqual(run.err, 'lntt: error: .agents/skills cannot be read')
+      assert.strictEqual(run.err, 'lntt: error: skills/review/SKILL.md of @lntt/lntt has no frontmatter')
     }),
   )
 
@@ -358,10 +360,7 @@ describe('the areas lntt review reads', () => {
       const checks = yield* Effect.gen(function* () {
         const checked = yield* Checks
         return yield* checked.lenses(['decisions', 'tests'], { root: ROOT, data: JSON.parse(CONFIG), base: 'main' })
-      }).pipe(
-        Effect.provide(ChecksLive.pipe(Layer.provide(Layer.mergeAll(fs.layer, Path.layer, git, runner)))),
-        Effect.provideService(SyncAreas, IN_STEP),
-      )
+      }).pipe(Effect.provide(ChecksLive.pipe(Layer.provide(Layer.mergeAll(fs.layer, Path.layer, git, runner)))))
       assert.deepStrictEqual(Object.keys(checks), ['decisions', 'tests'])
       const decisions = (checks.decisions as string)
         .split('\n')

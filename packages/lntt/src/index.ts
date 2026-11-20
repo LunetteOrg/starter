@@ -2,7 +2,6 @@
 // Effect (docs/adr/effect-in-lntt.md#the-bridge-while-modules-move). The configuration is read,
 // validated and edited by src/config/: `.agents/config.jsonc` or `.agents/config.yml`.
 
-export { checkAgentsBlock, managedBlock, syncAgentsBlock } from './agents.ts'
 export {
   type BranchRules,
   branchName,
@@ -24,15 +23,7 @@ export {
   type DriverChoice,
   formatPlan,
 } from './browser.ts'
-export {
-  checkClaudeSettings,
-  INSTALL_HOOK,
-  MARKETPLACE,
-  PLUGIN,
-  SETTINGS,
-  type SettingsEntry,
-  syncClaudeSettings,
-} from './claude-settings.ts'
+export { INSTALL_HOOK, MARKETPLACE, PLUGIN, SETTINGS, type SettingsEntry } from './claude-settings.ts'
 export { commitlintConfig } from './commitlint.ts'
 export type { Operator } from './config/operator.ts'
 export { getConfigValue, getValue, type Loaded, projectPhase } from './config/project.ts'
@@ -107,17 +98,7 @@ export {
   verdict,
   verifiersFor,
 } from './review.ts'
-export {
-  checkSkills,
-  guide,
-  type InstalledSkill,
-  SKILL_DIRS,
-  sharedSkills,
-  skillFolder,
-  stub,
-  stubFolders,
-  syncSkills,
-} from './skills.ts'
+export { type InstalledSkill, SKILL_DIRS } from './skills.ts'
 export { type Choice, chooseViewer, commandExists, detectHost, type Host, openWith, type Viewer } from './viewer.ts'
 export {
   type Agent,

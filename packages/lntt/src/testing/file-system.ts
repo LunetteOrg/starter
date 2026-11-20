@@ -2,7 +2,8 @@
 // It follows Node's semantics where a module relies on them, so a spec fails where Node would:
 // a file is written only in a directory that exists, `wx` refuses a file that exists, `a`
 // appends, `link` refuses a target that exists, `utimes` reads a number as seconds, `rename` and `copyFile`
-// replace no directory, `rename` across two filesystems fails with Node's EXDEV in its cause, and a missing path is NotFound. A file's mtime is the Clock's time when it was written, its size its bytes in UTF-8. Not
+// replace no directory, `rename` across two filesystems fails with Node's EXDEV in its cause, `remove` takes a
+// directory only when `recursive`, and a missing path is NotFound. A file's mtime is the Clock's time when it was written, its size its bytes in UTF-8. Not
 // published: tsconfig.build.json leaves src/testing/ out.
 
 import * as ByteSize from 'effect/ByteSize'
@@ -136,8 +137,15 @@ export function memoryFileSystem(
               Object.assign(new Error('cross-device link not permitted'), { code: 'EXDEV' }),
             ),
           ),
+    // As Node's fs.rm: a directory only with `recursive`, everything below it with it.
     remove: (path, options) =>
       Effect.suspend(() => {
+        if (dirs.has(path)) {
+          if (!options?.recursive) return Effect.fail(failure('remove', path, 'Unknown'))
+          for (const at of [...files.keys()]) if (at.startsWith(`${path}/`)) files.delete(at)
+          for (const at of [...dirs]) if (at === path || at.startsWith(`${path}/`)) dirs.delete(at)
+          return Effect.void
+        }
         if (!files.delete(path) && !options?.force) return Effect.fail(failure('remove', path, 'NotFound'))
         return Effect.void
       }),

@@ -4,12 +4,11 @@
 // dependencies when lntt itself is missing. `lntt sync` writes them, removes the Stop
 // typecheck hook an earlier version wrote, and keeps whatever else the file holds; `lntt
 // check plugin` says when they are missing or point elsewhere.
+//
+// Plain logic, on the file's text: src/sync/project.ts reads and writes it.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
 import * as jsonc from 'jsonc-parser'
 import { ConfigError } from './files.ts'
-import { findConfig } from './index.ts'
 
 export const SETTINGS = '.claude/settings.json'
 
@@ -69,10 +68,6 @@ interface Settings {
   hooks?: Record<string, HookEntry[]>
 }
 
-function projectRoot(cwd: string): string {
-  return dirname(dirname(findConfig(cwd).path))
-}
-
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 // The keys lntt reads and writes, in the shape Claude Code reads: objects, and each event
@@ -92,9 +87,10 @@ function wellShaped(s: Record<string, unknown>): boolean {
   })
 }
 
-function load(file: string): { text: string; settings: Settings } | null {
+// The file's text, null when there is none.
+function load(file: string | null): { text: string; settings: Settings } | null {
   // A byte order mark some editors write is no part of the JSON.
-  const text = existsSync(file) ? readFileSync(file, 'utf8').replace(/^\uFEFF/, '') : '{}\n'
+  const text = file === null ? '{}\n' : file.replace(/^\uFEFF/, '')
   const errors: jsonc.ParseError[] = []
   const settings = jsonc.parse(text, errors, { allowTrailingComma: true })
   if (errors.length > 0 || !isObject(settings) || !wellShaped(settings)) return null
@@ -138,8 +134,9 @@ function entries(settings: Settings): SettingsEntry[] {
   ]
 }
 
-export function checkClaudeSettings(cwd: string): SettingsEntry[] {
-  const loaded = load(join(projectRoot(cwd), SETTINGS))
+// The entries lntt writes, as the file (null when there is none) holds them.
+export function settingsEntries(file: string | null): SettingsEntry[] {
+  const loaded = load(file)
   if (loaded === null) return [{ key: SETTINGS, state: 'invalid' }]
   return entries(loaded.settings)
 }
@@ -202,10 +199,11 @@ function removeStopTypecheck(text: string, list: HookEntry[] | undefined): strin
   return length === 0 && list.length > 0 ? edit(next, ['hooks', 'Stop'], undefined) : next
 }
 
-// Writes the entries, each only when it is off, with edits that keep the rest of the file
-// as it is: the project's own hooks of each event stay beside lntt's.
-export function syncClaudeSettings(cwd: string): void {
-  const file = join(projectRoot(cwd), SETTINGS)
+// The file with the entries, each written only when it is off, with edits that keep the rest
+// of the file as it is: the project's own hooks of each event stay beside lntt's. Null when
+// the file (null when there is none) needs no change; a file that is not the shape Claude Code
+// reads throws a ConfigError.
+export function syncedSettings(file: string | null): string | null {
   const loaded = load(file)
   if (loaded === null) throw new ConfigError(INVALID)
   const [marketplace, plugin, ...hooks] = entries(loaded.settings) as SettingsEntry[]
@@ -216,7 +214,6 @@ export function syncClaudeSettings(cwd: string): void {
     if (hooks[i]?.state !== 'ok') text = placeHook(text, loaded.settings.hooks?.[placed.event], placed)
   })
   text = removeStopTypecheck(text, loaded.settings.hooks?.Stop)
-  if (text === loaded.text && existsSync(file)) return
-  mkdirSync(dirname(file), { recursive: true })
-  writeFileSync(file, text.endsWith('\n') ? text : `${text}\n`)
+  if (text === loaded.text && file !== null) return null
+  return text.endsWith('\n') ? text : `${text}\n`
 }

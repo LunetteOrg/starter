@@ -5,7 +5,8 @@
 
 import * as Effect from 'effect/Effect'
 import { Git } from '../git/git.ts'
-import { CheckFailed, synced } from './areas.ts'
+import { stubFolders } from '../sync/project.ts'
+import { CheckFailed } from './areas.ts'
 import { readTree } from './tree.ts'
 
 // The files of git's listing a check reads, sorted: what is below a nested project or a stub
@@ -31,7 +32,7 @@ export const listedFiles = Effect.fnUntraced(function* (root: string) {
         () => new CheckFailed({ message: `git cannot list the files of ${root}: lntt check reads a git repository` }),
       ),
     )
-  return keptFiles(listed, yield* synced((checks) => checks.stubFolders(root)))
+  return keptFiles(listed, yield* stubFolders(root))
 })
 
 // The project read: its files, and `also`, the paths a command names besides them.
