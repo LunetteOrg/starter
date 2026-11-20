@@ -2,4 +2,4 @@
 // commit-message skill reads; every rule's message names that skill.
 import { commitlintConfig } from '@lntt/lntt'
 
-export default commitlintConfig()
+export default await commitlintConfig()

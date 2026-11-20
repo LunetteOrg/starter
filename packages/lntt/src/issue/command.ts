@@ -6,9 +6,8 @@
 // The logic reaches the machine only through services: GitHub (Gh), git in the project's root
 // (GitIn, the origin remote), the project's configuration (ProjectConfig, and findConfig for its
 // root), the file system (the draft, a saved dump, the project's package.json), the terminal
-// (Console). What is not yet on Effect, lntt dump's collection and redaction (#341), is read at one
-// place, IssueBridge, whose default is the sync code and which a spec replaces.
-// src/issue/command.spec.ts runs it on in-memory layers.
+// (Console), and lntt dump's collection and redaction of the environment (src/dump/collect.ts, over
+// the files and the processes). src/issue/command.spec.ts runs it on in-memory layers.
 
 import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
@@ -22,7 +21,8 @@ import * as Path from 'effect/Path'
 import type { ChildProcessSpawner } from 'effect/process'
 import { repositoryOf } from '../base/names.ts'
 import { findConfig, ProjectConfig, ProjectConfigLive } from '../config/load.ts'
-import { type Dump, type Redaction, redact, withAgent } from '../dump.ts'
+import { collectDump, type Machine, redactionIn } from '../dump/collect.ts'
+import { type Dump, redact, withAgent } from '../dump.ts'
 import { exit } from '../exit.ts'
 import { Gh, GhLive } from '../gh/gh.ts'
 import { Git, gitAt } from '../git/git.ts'
@@ -35,7 +35,6 @@ import {
   sameRepository,
   upstreamRepository,
 } from '../issue.ts'
-import { issueBridge } from '../issue-cli.ts'
 import { runCommand } from '../run-command.ts'
 import { SpawnerLive } from '../spawner.ts'
 
@@ -57,18 +56,9 @@ export type IssueCommand =
       send: boolean
       env: Env
       cwd: string
+      // What the dump reads from the session, at the edge.
+      machine: Machine
     }
-
-// What lntt issue reads with the code not yet on Effect.
-export interface IssueBridgeService {
-  // lntt dump's collection of the environment, and what it redacts.
-  readonly collect: (input: { root: string; env: Env; harness?: string; model?: string }) => Dump
-  readonly redaction: (root: string, env: Env) => Redaction
-}
-
-export const IssueBridge = Context.Reference<IssueBridgeService>('@lntt/lntt/issue/command/IssueBridge', {
-  defaultValue: () => issueBridge,
-})
 
 // git in a directory: on the machine gitAt over the spawner; a spec gives its in-memory Git.
 export const GitIn = Context.Reference<
@@ -78,15 +68,6 @@ export const GitIn = Context.Reference<
 // An expected failure of lntt issue, reported on one line, exit 1: a refusal with a reason the
 // person can act on, a file that cannot be read, a gh that fails.
 export class IssueFailed extends Data.TaggedError('IssueFailed')<{ message: string }> {}
-
-// What the sync code gives; what it throws is an IssueFailed with its message.
-const bridged = <A>(f: (bridge: IssueBridgeService) => A) =>
-  Effect.flatMap(IssueBridge, (bridge) =>
-    Effect.try({
-      try: () => f(bridge),
-      catch: (cause) => new IssueFailed({ message: cause instanceof Error ? cause.message : String(cause) }),
-    }),
-  )
 
 // The plain logic's refusals (IssueError) as IssueFailed.
 const refused = <A>(f: () => A) =>
@@ -213,10 +194,10 @@ const file = Effect.fnUntraced(function* (parsed: Extract<IssueCommand, { kind: 
   }
   const dump =
     parsed.dump === undefined
-      ? yield* bridged((bridge) => bridge.collect({ root, env: parsed.env, ...given }))
+      ? yield* collectDump({ root, env: parsed.env, machine: parsed.machine, ...given })
       : withAgent(yield* readDump(parsed.dump), given)
   // The draft and the project's name leave the machine too: redacted as the dump is.
-  const redaction = yield* bridged((bridge) => bridge.redaction(root, parsed.env))
+  const redaction = yield* redactionIn(root, parsed.env, parsed.machine.home)
   const title = redact(draft.title, redaction)
   const body = redact(issueBody(draft, dump, parsed.project ?? (yield* projectName(root))), redaction)
   // A comment has no title.

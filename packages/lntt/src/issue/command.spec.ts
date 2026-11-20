@@ -2,14 +2,19 @@ import * as NodePath from '@effect/platform-node-shared/NodePath'
 import { assert, describe, it } from '@effect/vitest'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
-import { ChildProcessSpawner } from 'effect/process'
 import * as TestConsole from 'effect/testing/TestConsole'
 import { ConfigInvalid, ProjectConfig } from '../config/load.ts'
-import { type Dump, withAgent } from '../dump.ts'
+import type { Dump } from '../dump.ts'
 import { Gh, type IssueHit } from '../gh/gh.ts'
 import { Git, GitError } from '../git/git.ts'
+import { PackageDir } from '../sync/project.ts'
 import { memoryFileSystem } from '../testing/file-system.ts'
-import { command, GitIn, IssueBridge, type IssueCommand } from './command.ts'
+import { PACKAGE } from '../testing/package.ts'
+import { memorySpawner } from '../testing/spawner.ts'
+import { command, GitIn, type IssueCommand } from './command.ts'
+
+// What the dump reads from the session.
+const MACHINE = { node: 'v24.1.0', os: 'Darwin 27.0.0 arm64', home: '/home/me' }
 
 const ROOT = '/home/me/app'
 
@@ -46,7 +51,6 @@ function world() {
     config: structuredClone(UPSTREAM) as Record<string, unknown>,
     // The origin remote's URL; null: git cannot start.
     origin: '' as string | null,
-    collected: 0,
     // What the configuration's loader throws, for one that does not validate.
     refused: null as string | null,
   }
@@ -54,7 +58,9 @@ function world() {
   // The directories git was asked in.
   const gitDirs: string[] = []
   const writes: { args: string; body: string }[] = []
-  const fs = memoryFileSystem({ dirs: [ROOT] })
+  // lntt's own package, whose version the collected dump names.
+  const fs = memoryFileSystem({ dirs: [ROOT, `${PACKAGE}/dist`] })
+  fs.files.set(`${PACKAGE}/package.json`, { text: '{"name":"@lntt/lntt","version":"9.9.9"}', mtime: 0 })
   const put = (path: string, text: string) => fs.put(`${ROOT}/${path}`, text)
   const hits: IssueHit[] = [{ number: 7, title: 't', url: 'u' }]
   const layer = Layer.mergeAll(
@@ -70,10 +76,9 @@ function world() {
         ),
       }),
     ),
-    // No process runs: git is the in-memory one GitIn gives.
-    Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
-      ChildProcessSpawner.make(() => Effect.die('no process runs in this spec')),
-    ),
+    // The one process the dump runs: git remote -v, with no remote. The origin is the in-memory git
+    // GitIn gives.
+    memorySpawner((command, args) => (command === 'git' && args[0] === 'remote' ? { out: '' } : 'missing')).layer,
     Gh.memory({
       searchIssues: ({ repo, words }) =>
         Effect.sync(() => {
@@ -94,7 +99,7 @@ function world() {
   )
   // One run of `lntt issue`: its exit code, stdout and stderr.
   const lntt = (parsed: Partial<Extract<IssueCommand, { kind: 'file' }>> = {}, env: Record<string, string> = {}) =>
-    run({ kind: 'file', draft: { path: `${ROOT}/draft.md` }, send: false, env, cwd: ROOT, ...parsed })
+    run({ kind: 'file', draft: { path: `${ROOT}/draft.md` }, send: false, env, cwd: ROOT, machine: MACHINE, ...parsed })
   const run = (parsed: IssueCommand) =>
     Effect.gen(function* () {
       const code = yield* command(parsed)
@@ -112,13 +117,7 @@ function world() {
           ),
         })
       }),
-      Effect.provideService(IssueBridge, {
-        collect: ({ harness, model }) => {
-          state.collected++
-          return withAgent(DUMP, { ...(harness ? { harness } : {}), ...(model ? { model } : {}) })
-        },
-        redaction: () => ({ home: '/home/me', remotes: [], secrets: [] }),
-      }),
+      Effect.provideService(PackageDir, `${PACKAGE}/dist`),
       Effect.provide(Layer.mergeAll(layer, Layer.fresh(TestConsole.layer))),
     )
   const ready = Effect.all([
@@ -139,6 +138,8 @@ describe('lntt issue', () => {
       assert.match(r.out, /^To LunetteOrg\/starter: lntt review loses its state/)
       assert.match(r.out, /### Model\n\nm1\n/)
       assert.match(r.out, /### Project\n\nacme-app\n/)
+      assert.match(r.out, /- version: 9\.9\.9\n/, 'the environment is collected, lntt named by its package')
+      assert.match(r.out, /- Node: v24\.1\.0\n/)
       assert.match(r.out, /<\/details>\n$/, 'printed as it is, with no newline added')
       assert.match(r.err, /nothing sent: --send opens it/)
       assert.deepStrictEqual(w.writes, [])
@@ -181,7 +182,7 @@ describe('lntt issue', () => {
       const r = yield* w.lntt({ dump: `${ROOT}/dump.json` })
       assert.strictEqual(r.code, 0, r.err)
       assert.match(r.out, /### Harness\n\nClaude Code 2\.3\.4\n/)
-      assert.strictEqual(w.state.collected, 0, 'the environment is not collected')
+      assert.notInclude(r.out, 'version: 9.9.9', 'the environment is not collected')
       const model = yield* w.lntt({ dump: `${ROOT}/dump.json`, model: 'm9' })
       assert.match(model.out, /### Model\n\nm9\n/)
       assert.match(model.out, /- model: m9/)
@@ -323,7 +324,6 @@ describe('lntt issue', () => {
         assert.match(r.err, /nothing to send: LunetteOrg\/starter is this repository \(lunetteorg\/Starter\)/)
       }
       assert.deepStrictEqual(w.writes, [])
-      assert.strictEqual(w.state.collected, 0, 'nothing is collected for a report that is not sent')
     }),
   )
 
@@ -412,6 +412,7 @@ describe('lntt issue', () => {
         send: false,
         env: {},
         cwd: `${ROOT}/src/deep`,
+        machine: MACHINE,
       })
       assert.strictEqual(deep.code, 0, deep.err)
       assert.deepStrictEqual(w.gitDirs, [ROOT, ROOT])

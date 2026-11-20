@@ -1,18 +1,17 @@
 // `lntt dump` and `lntt issue`: a report on Lunette itself, its environment collected and
 // redacted, filed on the Lunette repository once the operator has read it (usage:
-// bin/lntt.ts). `lntt issue` runs on Effect (src/issue/command.ts): this module parses its
-// arguments, exit 2 before Effect loads, and reads a draft given on stdin. `lntt dump` runs here
-// until its module moves to Effect (#341).
+// bin/lntt.ts). Both run on Effect (src/dump/command.ts, src/issue/command.ts): this module parses
+// their arguments, exit 2 before Effect loads, reads what they take from the session (the
+// directory, the variables, Node's version, the OS, the home) and a draft given on stdin.
 
-import { dirname } from 'node:path'
-import { cwd, env, stderr, stdout } from 'node:process'
+import { arch, homedir, release, type } from 'node:os'
+import { cwd, env, stderr, version } from 'node:process'
 import { parseArgs } from 'node:util'
-import { collectDump, redactionFor, renderDump, runFailing } from './dump.ts'
-import { Exit, exit, printed } from './exit.ts'
-import { findConfig, NoConfigError } from './index.ts'
-import type { IssueBridgeService, IssueCommand } from './issue/command.ts'
+import type { Machine } from './dump/collect.ts'
+import type { DumpCommand } from './dump/command.ts'
+import { Exit, exit } from './exit.ts'
+import type { IssueCommand } from './issue/command.ts'
 import { REPOSITORY } from './issue.ts'
-import { runQuery } from './query.ts'
 import { readStdin } from './stdin.ts'
 
 const USAGE = [
@@ -48,51 +47,30 @@ export async function main(command: 'dump' | 'issue', args: string[]): Promise<v
     const { runIssue } = await import('./issue/command.ts')
     return runIssue(report)
   }
-  try {
-    await dump(parsed)
-  } catch (error) {
-    if (error instanceof Exit) throw error
-    // A refusal, a configuration error or a failed gh: one line, no stack.
-    if (!(error instanceof Error)) throw error
-    stderr.write(`lntt dump: ${error.message}\n`)
-    exit(1)
-  }
+  const { runDump } = await import('./dump/command.ts')
+  return runDump(dump(parsed))
 }
 
-// The project's root: the directory of .agents/, else the current one.
-function projectRoot(): string {
-  try {
-    return dirname(dirname(findConfig(cwd()).path))
-  } catch (error) {
-    if (error instanceof NoConfigError) return cwd()
-    throw error
-  }
-}
+// What a report reads from the session.
+const machine = (): Machine => ({ node: version, os: `${type()} ${release()} ${arch()}`, home: env.HOME ?? homedir() })
 
-async function dump({ values, positionals }: Parsed): Promise<void> {
-  const root = projectRoot()
+// The command lntt dump runs: usage, exit 2, before Effect loads.
+function dump({ values, positionals }: Parsed): DumpCommand {
   const failing = values.failing
   if (failing === undefined && positionals.length > 0) usage('the failing command goes after --')
   for (const flag of ['repo', 'dump', 'project', 'comment', 'send'] as const) {
     if (values[flag] !== undefined && values[flag] !== false) usage(`--${flag} is an option of lntt issue`)
   }
-  const result = collectDump({
-    root,
+  return {
+    cwd: cwd(),
     env,
+    machine: machine(),
+    json: values.json,
+    ...(values.query === undefined ? {} : { query: values.query }),
     ...(values.harness === undefined ? {} : { harness: values.harness }),
     ...(values.model === undefined ? {} : { model: values.model }),
-    ...(failing === undefined ? {} : { command: runFailing(failing, cwd()) }),
-  })
-  if (values.query !== undefined) {
-    const input = JSON.stringify(result)
-    const code = result.configError === undefined ? 0 : 1
-    const ran = printed(
-      await runQuery({ input, expression: values.query, json: values.json, code, command: 'lntt dump' }),
-    )
-    if (ran !== code) exit(ran)
-  } else stdout.write(values.json ? `${JSON.stringify(result)}\n` : renderDump(result))
-  // Printed whole, then red: a configuration that does not validate is an error.
-  if (result.configError !== undefined) throw new Error(result.configError)
+    ...(failing === undefined ? {} : { failing }),
+  }
 }
 
 // The command lntt issue runs: usage, exit 2, before Effect loads; a draft on stdin read here.
@@ -127,13 +105,8 @@ async function issue({ values, positionals }: Parsed): Promise<IssueCommand> {
     send: values.send,
     env,
     cwd: cwd(),
+    machine: machine(),
   }
-}
-
-// What lntt issue reads with the code not yet on Effect (its IssueBridge).
-export const issueBridge: IssueBridgeService = {
-  collect: (input) => collectDump(input),
-  redaction: (root, environment) => redactionFor(root, environment),
 }
 
 type Parsed = ReturnType<typeof parse>

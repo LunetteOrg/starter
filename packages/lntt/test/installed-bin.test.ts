@@ -176,7 +176,7 @@ describe('the installed package', () => {
       "import { createRequire } from 'node:module'",
       'const require = createRequire(import.meta.url)',
       'console.log(JSON.stringify({',
-      '  extends: commitlintConfig(process.cwd()).extends,',
+      '  extends: (await commitlintConfig(process.cwd())).extends,',
       '  ci: typeof localAction,',
       "  config: require('@lntt/lntt/schema.json').$id,",
       "  operator: require('@lntt/lntt/operator-schema.json').$id,",
