@@ -1,8 +1,10 @@
 import { assert, describe, it } from '@effect/vitest'
 import * as Digest from 'effect/crypto/Digest'
 import * as Effect from 'effect/Effect'
+import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
+import * as PlatformError from 'effect/PlatformError'
 import * as TestConsole from 'effect/testing/TestConsole'
 import { ProjectConfig } from '../config/load.ts'
 import { Gh } from '../gh/gh.ts'
@@ -64,6 +66,8 @@ function world(
     files?: Record<string, string>
     data?: Record<string, unknown>
     git?: Partial<Git['Service']>
+    // A directory whose listing the platform refuses.
+    unlistable?: string
   } = {},
 ) {
   const current = options.current ?? BRANCH
@@ -81,8 +85,26 @@ function world(
     ...options.git,
   })
   const pids = Layer.succeed(Pids)(Pids.of({ self: SELF, visible: (pid) => Effect.succeed(pid === LIVE) }))
+  const files = options.unlistable
+    ? Layer.effect(FileSystem.FileSystem)(
+        Effect.map(FileSystem.FileSystem, (inner) => ({
+          ...inner,
+          readDirectory: (path: string) =>
+            path === options.unlistable
+              ? Effect.fail(
+                  PlatformError.systemError({
+                    _tag: 'PermissionDenied',
+                    module: 'FileSystem',
+                    method: 'readDirectory',
+                    pathOrDescriptor: path,
+                  }),
+                )
+              : inner.readDirectory(path),
+        })),
+      ).pipe(Layer.provide(fs.layer))
+    : fs.layer
   const layer = Layer.mergeAll(
-    fs.layer,
+    files,
     Path.layer,
     Digest.layerWebCrypto,
     git,
@@ -349,6 +371,20 @@ describe('lntt review status --prune', () => {
   )
 })
 
+describe('lntt review status --prune, a folder it cannot read', () => {
+  it.effect('a state folder it may not list fails the command, never "nothing to prune"', () =>
+    Effect.gen(function* () {
+      const git = { branchRefs: Effect.succeed(''), worktrees: () => Effect.succeed('') }
+      const r = yield* world({ files: { [state('feat/2/gone')]: '{}' }, git, unlistable: `${PLACE}/state` }).lntt({
+        prune: true,
+      })
+      assert.strictEqual(r.code, 1)
+      assert.match(r.err, /^lntt review: error: .*PermissionDenied/)
+      assert.notInclude(r.out, 'nothing to prune')
+    }),
+  )
+})
+
 describe('lntt review cost', () => {
   it.effect('the line of the branch’s rounds; --json each round and the total; a query waits for after', () =>
     Effect.gen(function* () {
@@ -366,7 +402,18 @@ describe('lntt review cost', () => {
     Effect.gen(function* () {
       assert.strictEqual((yield* world().lntt({ kind: 'cost', json: false })).out, 'no rounds')
       assert.strictEqual((yield* world({ current: '' }).lntt({ kind: 'cost', json: false })).code, 0)
-      for (const text of ['{', 'null', JSON.stringify({ ...stateOf(), branch: 'feat/2/y' })]) {
+      const partial = JSON.stringify({
+        branch: BRANCH,
+        rounds: [{ round: 1, head: 'h', tokens: 10, usd: 0.5, noTokens: [], noUsd: [] }],
+      })
+      const read = yield* world({ files: { [state()]: partial } }).lntt({ kind: 'cost', json: false })
+      assert.deepStrictEqual([read.code, read.out], [0, '1 round, 10 tokens, 0.50 USD'], 'only the rounds are needed')
+      for (const text of [
+        '{',
+        'null',
+        JSON.stringify({ ...stateOf(), branch: 'feat/2/y' }),
+        `{"branch":"${BRANCH}","rounds":5}`,
+      ]) {
         const broken = yield* world({ files: { [state()]: text } }).lntt({ kind: 'cost', json: false })
         assert.strictEqual(broken.code, 1, text)
         assert.match(

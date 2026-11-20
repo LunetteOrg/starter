@@ -231,7 +231,7 @@ const cost = Effect.fnUntraced(function* (parsed: Extract<StatusCommand, { kind:
   const git = yield* Git
   const { dir } = yield* placeOf(home)
   const branch = yield* git.branch
-  const state = branch === 'HEAD' ? null : ((yield* readStatusState(dir, branch))?.state ?? null)
+  const state = branch === 'HEAD' ? null : yield* readCostState(dir, branch)
   const rounds = state?.rounds ?? []
   const total = reviewCost(rounds, legacyRounds(state))
   const document = {
@@ -248,6 +248,25 @@ const cost = Effect.fnUntraced(function* (parsed: Extract<StatusCommand, { kind:
   if (parsed.query !== undefined) return { query: query(document, parsed.query, parsed.json, 0) } as Ending
   yield* out(parsed.json ? JSON.stringify(document, null, 2) : total.line)
   return { code: 0 } as Ending
+})
+
+// The state as cost reads it: what it needs is the branch's rounds, so a state of another branch,
+// one that is not JSON, or one whose rounds are not a list cannot be read; one written before the
+// rounds were kept has none.
+const readCostState = Effect.fnUntraced(function* (dir: string, branch: string) {
+  const fs = yield* FileSystem.FileSystem
+  const path = statePathIn(dir, branch)
+  if (!(yield* fs.exists(path))) return null
+  let state: ReviewState | null = null
+  try {
+    state = JSON.parse(yield* fs.readFileString(path)) as ReviewState | null
+  } catch {}
+  if (state?.branch !== branch || (state.rounds !== undefined && !Array.isArray(state.rounds))) {
+    return yield* new StatusFailed({
+      message: `${path} cannot be read: pnpm exec lntt review status --clear removes it`,
+    })
+  }
+  return state
 })
 
 // What `lntt review status` reads: the current branch's state, each level folded, one line of
