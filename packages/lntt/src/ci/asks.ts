@@ -1,11 +1,10 @@
 // What the loaders of `lntt ci local` ask of the machine while they turn the provider's files into
 // jobs (src/ci/github.ts, src/ci/circleci.ts, src/ci/actions.ts). Each loader is a generator that
 // yields the ask it needs and receives its answer, so it reaches nothing itself
-// (docs/adr/effect-in-lntt.md#the-bridge-while-modules-move). Two drivers answer the same asks: the
-// one on Effect, over the FileSystem, the spawner and Git, that `lntt ci local` uses
-// (src/ci/host.ts), and the synchronous one over `node:` that the library's `githubJobs`,
-// `circleciJobs` and `localAction` use (src/ci/sync.ts). An ask that fails is thrown into the
-// generator, so a loader catches what it expects as plain code does.
+// (docs/adr/effect-in-lntt.md#the-edge-the-library-and-the-plain-logic). The driver on Effect
+// answers them over the FileSystem, the spawner and Git (src/ci/host.ts); a spec answers them from
+// a record (src/testing/asks.ts). An ask that fails is thrown into the generator, so a loader
+// catches what it expects as plain code does.
 
 import type { Processed } from './circleci.ts'
 

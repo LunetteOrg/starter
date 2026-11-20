@@ -1,6 +1,5 @@
-// The library API of @lntt/lntt, on Promise or synchronous, so a script that imports it needs no
-// Effect (docs/adr/effect-in-lntt.md#the-bridge-while-modules-move). The configuration is read,
-// validated and edited by src/config/: `.agents/config.jsonc` or `.agents/config.yml`.
+// The library API of @lntt/lntt: plain functions, and Promise ones for what runs on Effect, so a
+// script that imports it needs no Effect (docs/adr/effect-in-lntt.md#the-edge-the-library-and-the-plain-logic).
 
 export {
   type BranchRules,
@@ -27,7 +26,6 @@ export { INSTALL_HOOK, MARKETPLACE, PLUGIN, SETTINGS, type SettingsEntry } from 
 export { commitlintConfig } from './commitlint.ts'
 export type { Operator } from './config/operator.ts'
 export { getConfigValue, getValue, type Loaded, projectPhase } from './config/project.ts'
-export { findConfig, loadConfig, loadOperator, setValue } from './config/sync.ts'
 export { ConfigError, type Format, type Located, NoConfigError } from './files.ts'
 export {
   type Answer,
@@ -101,16 +99,9 @@ export {
   type Agent,
   agentArgs,
   type BriefValues,
-  type Runner,
-  renderBrief,
-  type SetupFor,
   type Start,
   type Started,
-  setupScript,
   shellLaunch,
-  startGit,
-  startHerdr,
-  startOrca,
   toolFailure,
   type WorktreeHost,
   worktreeHost,

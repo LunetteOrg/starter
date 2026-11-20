@@ -5,9 +5,10 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { candidateConfig } from '../src/ci/config.ts'
+import { candidateConfigOf } from '../src/ci/config.ts'
 import { validation } from '../src/config/validate.ts'
-import { findConfig, getValue, loadConfig, setValue } from '../src/index.ts'
+import { getValue } from '../src/index.ts'
+import { findConfig, loadConfig, setValue } from './config-files.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
 
@@ -164,10 +165,10 @@ describe('delivery.candidate', () => {
 
   test('a candidate status left out of the file takes its default, a written one is kept', () => {
     write('.agents/config.jsonc', JSON.stringify({ delivery: { candidate: { prefix: 'release/' } } }))
-    assert.deepEqual(candidateConfig(root)?.status, { inRelease: 'In release', done: 'Done' })
+    assert.deepEqual(candidateConfigOf(loadConfig(root).data)?.status, { inRelease: 'In release', done: 'Done' })
     const candidate = { prefix: 'release/', status: { inRelease: 'To release' } }
     write('.agents/config.jsonc', JSON.stringify({ delivery: { candidate } }))
-    assert.deepEqual(candidateConfig(root)?.status, { inRelease: 'To release', done: 'Done' })
+    assert.deepEqual(candidateConfigOf(loadConfig(root).data)?.status, { inRelease: 'To release', done: 'Done' })
   })
 
   test('the candidate carries the empty retrospective block of the configuration, for its comment', () => {
@@ -177,7 +178,7 @@ describe('delivery.candidate', () => {
       JSON.stringify({ delivery: { candidate: { prefix: 'release/' }, pullRequest: { retrospective } } }),
     )
     assert.equal(
-      candidateConfig(root)?.retrospective,
+      candidateConfigOf(loadConfig(root).data)?.retrospective,
       '## Retro\n<!-- retro:start -->\n- **Attrito:**\n<!-- retro:end -->\n',
     )
   })

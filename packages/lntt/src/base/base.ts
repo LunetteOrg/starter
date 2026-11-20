@@ -1,8 +1,7 @@
 // The base a branch is compared with or started from, found one way by lntt worktree start, lntt
 // review and lntt ci local (docs/adr/worktree-tooling.md): the open candidate when there is one,
 // else the default branch, always as the remote's copy. A local branch may be behind its remote,
-// so it is never the base unless --base names it. On Effect, over the Git and Gh services; the
-// Promise form for the commands not yet on Effect is src/base.ts.
+// so it is never the base unless --base names it. On Effect, over the Git and Gh services.
 
 import * as Config from 'effect/Config'
 import * as Data from 'effect/Data'

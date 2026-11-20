@@ -6,9 +6,7 @@
 // - `push`: a push of the current commit to `base` (the main branch: what gates a
 //   release).
 //
-// On Effect, over Git and the base's own lookups. The library's synchronous `localEvent`,
-// `changedAgainst` and `defaultBranch` are in src/ci/sync.ts, with their own git calls over the
-// same names (src/base/names.ts).
+// On Effect, over Git and the base's own lookups.
 
 import * as Effect from 'effect/Effect'
 import { candidateAt, localRef, repositoryDefault } from '../base/base.ts'

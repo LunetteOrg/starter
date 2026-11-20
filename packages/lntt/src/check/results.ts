@@ -1,8 +1,7 @@
 // What `lntt check` says, with no Effect and no node: module: every check says PASS, FAIL or NOT
 // RUN with its reason; INFO is what a check prints without passing or failing (the diff
 // inventory, the figures of a record). The areas, the options a check reads, the anchors of
-// `cite`, and the text and JSON reports. Plain, so lntt review and the modules not yet on Effect
-// read them without loading Effect.
+// `cite`, and the text and JSON reports. Plain logic, which lntt check and lntt review share.
 
 export type Status = 'PASS' | 'FAIL' | 'NOT RUN' | 'INFO'
 

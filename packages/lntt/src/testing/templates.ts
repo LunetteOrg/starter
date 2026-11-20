@@ -14,6 +14,13 @@ const LENSES = readdirSync(join(AGENTS, 'review')).filter(
   (name) => name.endsWith('.md') && name !== 'common.md' && name !== 'before-production.md',
 )
 
+// Every text of agents/ by its file name: the briefs of a worktree's agent (src/worktree/hosts.ts).
+export const AGENT_FILES: Record<string, string> = Object.fromEntries(
+  readdirSync(AGENTS)
+    .filter((name) => name.endsWith('.md'))
+    .map((name) => [name, read(name)]),
+)
+
 export const TEMPLATES: Templates = {
   common: read('review', 'common.md'),
   beforeProduction: read('review', 'before-production.md'),

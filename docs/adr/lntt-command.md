@@ -84,9 +84,8 @@ lntt ci local | candidate | proved
   files that keep it from running), 2 a usage error or a failing jq expression, 3 a stop that a person decides on (`lntt review` past
   `delivery.review.maxRounds`) or nobody left to wait for (`lntt inbox --wait` and `--follow`
   with no child that reports to the role), 4 nothing to report on (`lntt review status` with no round
-  on the current branch, also when a jq query fails while running on the missing state), an interrupted command 130 (a command on Effect, for
-  SIGINT and SIGTERM alike, and `lntt ci local` for SIGHUP and SIGQUIT too: [Effect in `lntt`](./effect-in-lntt.md#how-a-command-runs-is-interrupted-and-exits);
-  one not yet on Effect, 128 plus the signal); a defect of `lntt` itself exits 1 with its stack trace. Every command ends
+  on the current branch, also when a jq query fails while running on the missing state), an interrupted command 130 (SIGINT and SIGTERM alike,
+  and for `lntt ci local` SIGHUP and SIGQUIT too: [Effect in `lntt`](./effect-in-lntt.md#how-a-command-runs-is-interrupted-and-exits)); a defect of `lntt` itself exits 1 with its stack trace. Every command ends
   through one exit path that lets stdout and stderr drain before the process exits: a
   pipe on macOS takes writes asynchronously, and an exit right after a long write cuts
   the document with no sign of it. A test fails on any other exit in the package's code. A command reads stdin to its end
@@ -195,10 +194,8 @@ rests on these criteria:
    read the branch rules (`branchRules`, from `delivery`) for the conventional name of a branch (`checkedOutBranches` in
    `packages/lntt/src/messages/mailbox.ts`); `lntt worktree start`,
    `lntt review` and `lntt ci local` read `delivery.candidate` to find a branch's base
-   (`projectBase` in `packages/lntt/src/base/base.ts` for `lntt worktree start` and a round of
-   `lntt review`, on Effect, and in `packages/lntt/src/base.ts`, its Promise form, for
-   `lntt review status` and `lntt ci local`); `lntt retro add` reads
-   `delivery.candidate` and `delivery.pullRequest.retrospective` (`candidateConfig` in
+   (`projectBase` in `packages/lntt/src/base/base.ts`); `lntt retro add` reads
+   `delivery.candidate` and `delivery.pullRequest.retrospective` (`candidateConfigOf` in
    `packages/lntt/src/ci/config.ts`, `retrospectiveRules` in
    `packages/lntt/src/pull-request.ts`). Every read validates the
    whole file with Ajv (`readConfig` in `packages/lntt/src/config/project.ts`) against a schema

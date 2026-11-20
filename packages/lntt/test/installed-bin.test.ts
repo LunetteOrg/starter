@@ -172,12 +172,12 @@ describe('the installed package', () => {
   test('a project imports the package, its ci entry and its schemas by name', () => {
     const script = [
       "import { commitlintConfig } from '@lntt/lntt'",
-      "import { localAction } from '@lntt/lntt/ci'",
+      "import { candidateConfigOf } from '@lntt/lntt/ci'",
       "import { createRequire } from 'node:module'",
       'const require = createRequire(import.meta.url)',
       'console.log(JSON.stringify({',
       '  extends: (await commitlintConfig(process.cwd())).extends,',
-      '  ci: typeof localAction,',
+      '  ci: typeof candidateConfigOf,',
       "  config: require('@lntt/lntt/schema.json').$id,",
       "  operator: require('@lntt/lntt/operator-schema.json').$id,",
       '}))',

@@ -1,7 +1,6 @@
 // The two formats a Lunette file can take, parsed and validated the same way:
 // `<name>.jsonc` or `<name>.yml`, one of the two in a directory. Plain logic, with no file
-// system: the caller says which files exist (src/config/load.ts on Effect, src/config/sync.ts
-// for the modules not yet on it).
+// system: the caller says which files exist (src/config/load.ts on Effect).
 
 import type { ErrorObject, ValidateFunction } from 'ajv'
 import jsonc from 'jsonc-parser'

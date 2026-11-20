@@ -1,6 +1,6 @@
 // The rules of the ci:local lock, plain: where it is, what its record says, when it can be taken
-// over, and the lines a run prints about it. The lock on Effect (src/ci/lock.ts) and the library's
-// synchronous shell (src/ci/lock-sync.ts) act on the files with these.
+// over, and the lines a run prints about it. The lock on Effect (src/ci/lock.ts) acts on the files
+// with these.
 //
 // The lock is a file in a folder of the machine's cache, holding the owner's record (pid, host,
 // worktree, the moment it took the lock, the process group of the step it runs); a run that finds

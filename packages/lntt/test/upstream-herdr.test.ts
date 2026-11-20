@@ -2,14 +2,16 @@ import assert from 'node:assert/strict'
 import { existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
-import { runner, type Start, setupScript, startHerdr } from '../src/worktree.ts'
+import { type Start, startHerdr } from '../src/worktree/hosts.ts'
 import {
   background,
   collect,
   drawn,
+  drive,
   flagsOf,
   helpFlags,
   missingFlags,
+  onMachine,
   ownArgs,
   recorder,
   throwawayHome,
@@ -48,8 +50,8 @@ describe('Herdr flags', () => {
       'herdr pane list': JSON.stringify({ result: { panes: [{ pane_id: 'p1' }] } }),
       'herdr agent list': JSON.stringify({ result: { agents: [{ pane_id: 'p1' }] } }),
     })
-    startHerdr(START, recording, () => null)
-    startHerdr({ ...START, agent: OPENCODE }, recording, () => null)
+    drive(startHerdr, START, recording)
+    drive(startHerdr, { ...START, agent: OPENCODE }, recording)
     const used = new Map<string, Set<string>>()
     for (const [command, ...args] of calls) {
       if (command !== 'herdr') continue
@@ -106,12 +108,12 @@ describe('Herdr headless', () => {
   test('startHerdr, claude with model and effort: agent start in the new pane, the brief prompted', {
     skip,
     timeout: 180_000,
-  }, () => {
-    const started = startHerdr(
-      { ...START, root: repo, brief: 'lntt upstream check: Herdr starts the agent' },
-      runner,
-      setupScript,
-    )
+  }, async () => {
+    const started = await onMachine(startHerdr, {
+      ...START,
+      root: repo,
+      brief: 'lntt upstream check: Herdr starts the agent',
+    })
     assert.ok(started.path && existsSync(started.path), `the worktree exists: ${started.path}`)
     assert.ok(worktrees().includes(`worktree ${started.path}\n`), 'git lists the worktree')
     assert.equal(started.agent, 'feat-137-upstream-herdr')
@@ -131,11 +133,13 @@ describe('Herdr headless', () => {
     timeout: 180_000,
   }, async () => {
     const brief = 'Reply with the single word ok.'
-    const started = startHerdr(
-      { ...START, branch: 'feat/137/upstream-herdr-shell', root: repo, brief, agent: OPENCODE },
-      runner,
-      setupScript,
-    )
+    const started = await onMachine(startHerdr, {
+      ...START,
+      branch: 'feat/137/upstream-herdr-shell',
+      root: repo,
+      brief,
+      agent: OPENCODE,
+    })
     assert.ok(started.path && existsSync(started.path), `the worktree exists: ${started.path}`)
     assert.ok(worktrees().includes(`worktree ${started.path}\n`), 'git lists the worktree')
     const listed = agents().find((a) => a.pane_id === started.agent)

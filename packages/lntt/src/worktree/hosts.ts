@@ -4,11 +4,10 @@
 //
 // The adapters are plain: each is a generator that yields the step it needs (a tool to run, a
 // script to run, a pause, the setup of a worktree) and receives its result, so it reaches nothing
-// itself. Two drivers run the same steps: the synchronous one over a Runner, which the library's
-// startOrca, startHerdr and startGit use and which loads no Effect (src/worktree.ts), and the one on
-// Effect, over the spawner, the Clock and the FileSystem, which `lntt worktree start` uses
-// (src/worktree/steps.ts). A step that fails is thrown into the generator, so an adapter catches
-// what it expects (untrack) as plain code would.
+// itself. The driver on Effect runs them over the spawner, the Clock and the FileSystem, as `lntt
+// worktree start` does (src/worktree/steps.ts); a spec drives them over answers of its own (`drive`).
+// A step that fails is thrown into the generator, so an adapter catches what it expects (untrack)
+// as plain code would.
 
 import { parse } from 'yaml'
 import { fill } from '../template.ts'

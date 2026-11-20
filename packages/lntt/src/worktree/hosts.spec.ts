@@ -1,19 +1,45 @@
 import { assert, describe, it } from '@effect/vitest'
+import { AGENT_FILES } from '../testing/templates.ts'
 import {
   agentArgs,
-  type Runner,
-  renderBrief,
+  type BriefValues,
+  drive,
+  renderBrief as fillBrief,
+  startGit as gitSteps,
+  startHerdr as herdrSteps,
+  startOrca as orcaSteps,
   type Start,
+  type Started,
   shellLaunch,
-  startGit,
-  startHerdr,
-  startOrca,
   toolFailure,
   worktreeHost,
-} from '../worktree.ts'
+} from './hosts.ts'
 
-// The adapters' steps (src/worktree/hosts.ts), run through the library's synchronous driver
-// (src/worktree.ts) with a runner that records each call: what each host is asked, in order.
+// The adapters' steps, run through `drive` with a runner that records each call: what each host
+// is asked, in order. `lntt worktree start` runs the same steps on Effect (src/worktree/steps.ts).
+
+interface Runner {
+  run(command: string, args: string[], opts?: { cwd?: string }): string
+  shell(script: string, cwd: string): void
+  sleep(ms: number): void
+}
+
+const steps =
+  (adapter: typeof orcaSteps) =>
+  (start: Start, runner: Runner, setupFor: (worktree: string) => string | null = () => null): Started =>
+    drive(adapter(start), (step) => {
+      if (step.kind === 'run') return runner.run(step.command, step.args, step.cwd ? { cwd: step.cwd } : undefined)
+      if (step.kind === 'shell') return runner.shell(step.script, step.cwd)
+      if (step.kind === 'sleep') return runner.sleep(step.ms)
+      return setupFor(step.worktree)
+    })
+
+const startOrca = steps(orcaSteps)
+const startHerdr = steps(herdrSteps)
+const startGit = steps(gitSteps)
+
+// The brief of a plain issue, from `template` or the shipped agents/brief.md.
+const renderBrief = (template: string | undefined, values: BriefValues) => fillBrief(AGENT_FILES, template, values)
 
 describe('the host that creates the worktree', () => {
   it('Orca, Herdr, or plain git', () => {

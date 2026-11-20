@@ -1,8 +1,7 @@
 // What the base reads from the names git and GitHub give (docs/adr/worktree-tooling.md): the
 // default branch from origin/HEAD, the candidate among the refs at a commit, the open candidate
 // among the pull requests, the ref --base names. Plain functions, no Effect: the base on Effect
-// (src/base/base.ts) and the library's synchronous event of lntt ci (src/ci/sync.ts) read the
-// names the same way.
+// (src/base/base.ts) and the event of lntt ci (src/ci/event.ts) read the names the same way.
 
 export interface CandidateRules {
   // The branch a candidate's pull request goes into: delivery.candidate.base.

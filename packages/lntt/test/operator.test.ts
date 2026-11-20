@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { loadOperator } from '../src/index.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
 
@@ -41,49 +40,8 @@ afterEach(() => {
   rmSync(tmp, { recursive: true, force: true })
 })
 
-// The synchronous profile of the modules not yet on Effect (src/config/sync.ts), on a real git
-// clone; the lookup itself is specified in src/config/load.spec.ts.
-describe('finding the operator profile, synchronously', () => {
-  test("from a linked worktree, reads the main checkout's .agents/local/", () => {
-    const path = write(join(main, '.agents/local/operator.jsonc'), '{ "handle": "ada" // me\n}')
-    const { profile, sources } = loadOperator(worktree, { home })
-    assert.equal(profile.handle, 'ada')
-    assert.deepEqual(sources, [path])
-  })
-
-  test('the project profile wins over the global one, key by key', () => {
-    const global = write(
-      join(home, '.agents/operator.yml'),
-      'language: en\nrole: developer\naccounts:\n  github: ada\n',
-    )
-    const project = write(
-      join(main, '.agents/local/operator.jsonc'),
-      '{ "role": "product", "accounts": { "google": "ada@example.org" } }',
-    )
-    const { profile, sources } = loadOperator(worktree, { home })
-    assert.deepEqual(profile, {
-      language: 'en',
-      role: 'product',
-      accounts: { github: 'ada', google: 'ada@example.org' },
-    })
-    assert.deepEqual(sources, [global, project])
-  })
-
-  test('without a main-checkout file, falls back to ~/.agents/projects/<org>/<repo>/', () => {
-    const path = write(join(home, '.agents/projects/LunetteOrg/demo/operator.yml'), 'handle: ada\n')
-    const { profile, sources } = loadOperator(worktree, { home })
-    assert.equal(profile.handle, 'ada')
-    assert.deepEqual(sources, [path])
-  })
-
-  test('outside a git repository, only the global profile counts', () => {
-    const outside = join(tmp, 'outside')
-    mkdirSync(outside)
-    write(join(home, '.agents/operator.yml'), 'handle: ada\n')
-    assert.equal(loadOperator(outside, { home }).profile.handle, 'ada')
-  })
-})
-
+// The lookup of the profile is specified in src/config/load.spec.ts; here, the command line on a
+// real git clone.
 describe('the command line', () => {
   test('operator prints the merged profile, operator get one key', () => {
     write(join(home, '.agents/operator.yml'), 'language: it\n')
