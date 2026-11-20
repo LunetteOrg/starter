@@ -79,7 +79,10 @@ at the edge, in its parser, and passes it in as an input (the operator's home, `
 the session's variables as `HostEnv` in `packages/lntt/src/review/orca.ts`): `Config` alone took
 some 70 ms to load in #335's measure (`effect` 4.1.4). Code that a command reaches with `Config`
 already loaded reads it there (`GITHUB_REPOSITORY` in the base, `CLAUDE_CODE_SESSION_ID` in a
-round).
+round). The files `lntt` ships beside its code (`agents/`, `skills/`) are read
+through the FileSystem from a directory a `Context.Reference` gives, beside `src/` in the
+repository and in `dist/`, which a spec places in memory (`PackageDir` in
+`packages/lntt/src/sync/project.ts`).
 
 ### Errors
 
@@ -173,8 +176,10 @@ imports no Effect (what the base reads from the names git and GitHub give,
 to git (`packages/lntt/src/ci/sync.ts`), until the shells go with #341.
 A defect of the Effect code reaches the edge with its stack. A reference to sync code goes when
 its module moves to Effect. The library API of
-`@lntt/lntt` (`packages/lntt/src/index.ts`) stays on `Promise`, so a script that imports
-it needs no Effect: a library function whose logic moved (`askAll`, `runRound`), and a
+`@lntt/lntt` (`packages/lntt/src/index.ts`) is on `Promise`, so a script that imports
+it needs no Effect, and it exports what a script outside `lntt` uses: a function that only
+`lntt`'s own commands called goes from it when its module moves (what `lntt sync` writes and
+`lntt check` reads). A library function whose logic moved (`askAll`, `runRound`), and a
 function a command not yet on Effect calls (`projectBase` in `packages/lntt/src/base.ts`), imports its
 Effect form with `await import(...)` when it is called and runs it with `Effect.runPromise`,
 its callbacks under `Effect.sync`, `Effect.try` and `Effect.tryPromise` (a `Spawn` is the

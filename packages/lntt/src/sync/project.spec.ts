@@ -144,6 +144,18 @@ describe('the stubs lntt sync writes', () => {
     )
   })
 
+  it.effect('a file with a shared skill’s name in a skill directory is a clash, kept as it is', () => {
+    const w = world()
+    return w.run(
+      Effect.gen(function* () {
+        yield* w.put('.agents/skills/review', 'a file\n')
+        assert.include(yield* off(), 'clash .agents/skills/review')
+        assert.match((yield* Effect.flip(syncSkills(ROOT))).message, /^\.agents\/skills\/review: /)
+        assert.strictEqual(w.text('.agents/skills/review'), 'a file\n')
+      }),
+    )
+  })
+
   it.effect('an empty folder, or one holding hidden files only, is free: sync writes the stub in it', () => {
     const w = world()
     return w.run(

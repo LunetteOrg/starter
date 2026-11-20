@@ -123,15 +123,14 @@ const folderAt = Effect.fnUntraced(function* (folder: string) {
   return { names: yield* fs.readDirectory(folder), skill: yield* readOrNull(path.join(folder, 'SKILL.md')) }
 })
 
-// The folders of a skill directory, by name; none when there is no directory.
+// What a skill directory holds, by name, a file as a folder that holds itself; nothing when
+// there is no directory.
 const foldersIn = Effect.fnUntraced(function* (dir: string) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
-  const folders: Record<string, Folder | null> = {}
+  const folders = new Map<string, Folder | null>()
   if (!(yield* isDirectory(dir))) return folders
-  for (const name of yield* fs.readDirectory(dir)) {
-    if (yield* isDirectory(path.join(dir, name))) folders[name] = yield* folderAt(path.join(dir, name))
-  }
+  for (const name of yield* fs.readDirectory(dir)) folders.set(name, yield* folderAt(path.join(dir, name)))
   return folders
 })
 
@@ -145,7 +144,7 @@ export const installedSkills = Effect.fnUntraced(function* (root: string) {
   for (const dir of SKILL_DIRS) {
     const folders = yield* foldersIn(path.join(root, dir))
     for (const name of names) {
-      installed.push({ path: `${dir}/${name}`, state: skillState(folders[name] ?? null, yield* stubOf(name)) })
+      installed.push({ path: `${dir}/${name}`, state: skillState(folders.get(name) ?? null, yield* stubOf(name)) })
     }
     for (const name of stubNames(folders).filter((n) => !names.includes(n))) {
       unknown.push({ path: `${dir}/${name}`, state: 'unknown' })

@@ -111,6 +111,26 @@ describe('lntt check', () => {
     }),
   )
 
+  it.effect('the plugin and workflows areas fail on what lntt sync has not written', () =>
+    Effect.gen(function* () {
+      const marked = 'name: CI\njobs:\n  ci:\n    env:\n      AUTOMATED: \'["x"]\' # lntt sync: delivery.automated\n'
+      const texts = { ...PROJECT, '.claude/settings.json': '{}\n', '.github/workflows/ci.yml': marked }
+      const plugin = yield* world({ texts }).lntt({ kind: 'area', area: 'plugin', files: [] })
+      assert.strictEqual(plugin.code, 1)
+      assert.deepStrictEqual(statuses(plugin.found), [
+        'FAIL plugin/settings',
+        'FAIL plugin/settings',
+        'FAIL plugin/settings',
+      ])
+      const workflows = yield* world({ texts }).lntt({ kind: 'area', area: 'workflows', files: [] })
+      assert.strictEqual(workflows.code, 1)
+      assert.deepStrictEqual(
+        workflows.found.map((r) => `${r.status} ${r.path}:${r.line}`),
+        ['FAIL .github/workflows/ci.yml:5'],
+      )
+    }),
+  )
+
   it.effect('the files every area reads leave out the stubs of the shared skills and a nested project', () =>
     Effect.gen(function* () {
       const texts = {

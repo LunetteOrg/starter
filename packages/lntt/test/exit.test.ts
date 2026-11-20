@@ -168,6 +168,8 @@ describe('a usage error passes the catch-all of its command', () => {
     ['browser', '--bogus'],
     ['review', 'allow', 'x'],
     ['retro', 'add'],
+    ['sync', 'extra'],
+    ['guide', 'decisions', 'extra'],
   ]) {
     test(args.join(' '), () => {
       const r = cli(p, args)

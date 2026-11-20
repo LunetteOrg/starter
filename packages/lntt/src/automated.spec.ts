@@ -67,6 +67,14 @@ describe('the synced line', () => {
     )
   })
 
+  it('two marked lines of one workflow are both rewritten, each in its place', () => {
+    const text = `${workflow(`A: '[]' ${AUTOMATED_MARKER}`)}  other:\n    env:\n      B: '[]' ${AUTOMATED_MARKER}\n`
+    const [synced] = syncedWorkflows([{ path: '.github/workflows/ci.yml', text }], data([DEPENDABOT]))
+    const lines = (synced?.text ?? '').split('\n')
+    assert.strictEqual(lines[5], `          ${automatedLine('A', [DEPENDABOT])}`)
+    assert.strictEqual(lines[9], `      ${automatedLine('B', [DEPENDABOT])}`)
+  })
+
   it('a line that drifted from the configuration fails, naming the fix', () => {
     const workflows = [{ path: '.github/workflows/ci.yml', text: workflow(automatedLine('AUTOMATED', [DEPENDABOT])) }]
     const [result] = automatedResults(workflows, data([DEPENDABOT, RENOVATE]))

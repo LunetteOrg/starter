@@ -46,12 +46,14 @@ describe("a shared skill's folder", () => {
 
   it('the stubs of a directory are its folders holding one, sorted', () => {
     assert.deepStrictEqual(
-      stubNames({
-        review: { names: ['SKILL.md'], skill: written },
-        gone: { names: ['SKILL.md'], skill: written },
-        ours: { names: ['SKILL.md'], skill: 'ours\n' },
-        empty: null,
-      }),
+      stubNames(
+        new Map([
+          ['review', { names: ['SKILL.md'], skill: written }],
+          ['gone', { names: ['SKILL.md'], skill: written }],
+          ['ours', { names: ['SKILL.md'], skill: 'ours\n' }],
+          ['empty', null],
+        ]),
+      ),
       ['gone', 'review'],
     )
   })

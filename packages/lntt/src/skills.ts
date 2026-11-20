@@ -80,9 +80,10 @@ export function skillState(folder: Folder | null, written: string): InstalledSki
 }
 
 // The names of a skill directory's folders that are stubs, sorted.
-export function stubNames(folders: Record<string, Folder | null>): string[] {
-  return Object.keys(folders)
-    .filter((name) => isStubFolder(folders[name] ?? null))
+export function stubNames(folders: ReadonlyMap<string, Folder | null>): string[] {
+  return [...folders]
+    .filter(([, folder]) => isStubFolder(folder))
+    .map(([name]) => name)
     .sort()
 }
 
