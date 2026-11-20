@@ -4,7 +4,11 @@
 // read through `readBrief` and `cite`, which the command gives over the file system. The
 // library's runRound (src/review.ts) runs it with its callbacks on Promises.
 
+import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
+import * as NodePath from '@effect/platform-node-shared/NodePath'
 import * as Effect from 'effect/Effect'
+import * as FileSystem from 'effect/FileSystem'
+import * as Layer from 'effect/Layer'
 import type { Cited } from '../check/results.ts'
 import type { HeadlessAgent as Agent, Answer, Question } from '../headless.ts'
 import {
@@ -33,6 +37,7 @@ import {
   verdict,
   verifiersFor,
 } from '../review.ts'
+import { readTemplates } from './templates.ts'
 
 // The agents a round asks, each answer in its question's place.
 export type Ask<E = never> = (questions: Question[]) => Effect.Effect<Answer[], E>
@@ -257,25 +262,31 @@ export const runRound = <E>(
   })
 
 // The library's runRound: its asks, its brief and its cited lines on Promises, each rejection
-// the round's.
+// the round's. With no readBrief a brief is read from the working directory, and with no templates
+// lntt's own are read, both through the FileSystem on Node.
 export function runRoundWith(
   config: ReviewConfig,
   input: PromiseInput,
   ask: PromiseAsk,
   open: Checked[],
 ): Promise<RoundResult> {
-  const { readBrief, cite, ...values } = input
+  const { readBrief, cite, templates, ...values } = input
   const sync = <A>(run: () => A) => Effect.try({ try: run, catch: (error) => error })
-  return Effect.runPromise(
-    runRound<unknown>(
+  const round = Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem
+    return yield* runRound<unknown>(
       config,
       {
         ...values,
-        ...(readBrief ? { readBrief: (path: string) => sync(() => readBrief(path)) } : {}),
+        templates: templates ?? (yield* readTemplates),
+        readBrief: readBrief
+          ? (path: string) => sync(() => readBrief(path))
+          : (path: string) => fs.readFileString(path),
         ...(cite ? { cite: (path: string, line: number | null) => sync(() => cite(path, line)) } : {}),
       },
       (questions) => Effect.tryPromise({ try: () => ask(questions), catch: (error) => error }),
       open,
-    ),
-  )
+    )
+  })
+  return Effect.runPromise(round.pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))))
 }

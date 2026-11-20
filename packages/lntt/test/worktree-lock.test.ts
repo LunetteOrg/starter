@@ -20,8 +20,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import * as Effect from 'effect/Effect'
-import { lockWorktree, WorktreeLockLive } from '../src/worktree/lock.ts'
-import { FRESH_MS, heldBy, lockPath } from '../src/worktree-lock.ts'
+import { FRESH_MS, lockPath } from '../src/worktree/holder.ts'
+import { heldBy, lockWorktree, WorktreeLockLive } from '../src/worktree/lock.ts'
 
 let gitDir: string
 const sleepers: ChildProcess[] = []
@@ -50,6 +50,9 @@ function hold<A>(command: string, during: () => A = () => undefined as A): Promi
     ),
   )
 }
+
+// Who holds the lock now, read as lntt review status reads it.
+const holder = () => Effect.runPromise(heldBy(gitDir).pipe(Effect.provide(WorktreeLockLive)))
 
 const OLD = FRESH_MS * 4
 
@@ -80,12 +83,12 @@ describe('the lock of a worktree on Node', () => {
     held(`${pid} lntt review`)
     assert.equal(await hold('lntt check tests mutate'), `lntt review is already running in this worktree (pid ${pid})`)
     assert.equal(readFileSync(lockPath(gitDir), 'utf8'), `${pid} lntt review`, 'the holder keeps its lock')
-    assert.deepEqual(heldBy(gitDir), { pid, command: 'lntt review' })
+    assert.deepEqual(await holder(), { pid, command: 'lntt review' })
   })
 
   test('a lock whose process is gone, and untouched for a while, is taken over', async () => {
     held('999999 lntt review', OLD)
-    assert.equal(heldBy(gitDir), null)
+    assert.equal(await holder(), null)
     assert.equal(
       await hold('lntt check tests mutate', () => readFileSync(lockPath(gitDir), 'utf8')),
       `${process.pid} lntt check tests mutate`,
@@ -101,9 +104,9 @@ describe('the lock of a worktree on Node', () => {
     assert.match(String(await hold('lntt check tests mutate')), /lntt review is already running .*\(pid 1\)/)
   })
 
-  test('a lock naming this very process is not held by another', () => {
+  test('a lock naming this very process is not held by another', async () => {
     held(`${process.pid} lntt review`)
-    assert.equal(heldBy(gitDir), null)
+    assert.equal(await holder(), null)
   })
 
   test("lockWorktree's heartbeat sets the lock's real mtime to now, and the scope removes it", async () => {

@@ -196,10 +196,8 @@ no Effect. The project's configuration and the operator profile are such a modul
 is plain (`packages/lntt/src/config/project.ts`, `packages/lntt/src/config/operator.ts`), their
 Effect form `packages/lntt/src/config/load.ts` (with `ProjectConfig`, the configuration as a
 service), and their shell `packages/lntt/src/config/sync.ts`, which is also the library's
-synchronous `findConfig`, `loadConfig`, `setValue` and `loadOperator`. The worktree's lock is
-another: the rules of who holds it are plain (`packages/lntt/src/worktree/holder.ts`), and
-`packages/lntt/src/worktree-lock.ts` is the shell `lntt review status` reads the holder through.
-So is the ci:local lock: its rules are plain (`packages/lntt/src/ci/lock-rules.ts`), `lntt ci local`
+synchronous `findConfig`, `loadConfig`, `setValue` and `loadOperator`. The ci:local lock is
+another: its rules are plain (`packages/lntt/src/ci/lock-rules.ts`), `lntt ci local`
 takes it on Effect as a resource of its scope (`packages/lntt/src/ci/lock.ts`), and the library's
 `acquireLock` is its shell (`packages/lntt/src/ci/lock-sync.ts`), whose `release` returns once the
 file is changed. The shells are transitional: each goes when the last module that calls it moves, with #341.

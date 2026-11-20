@@ -65,6 +65,9 @@ export interface GitOperations extends FollowOperations {
   readonly written: (range: string) => Run<string>
   // `git worktree list --porcelain` of the repository whose git directory is `gitDir`.
   readonly worktrees: (gitDir: string) => Run<string>
+  // The local and remote-tracking branches, one `<ref>\t<upstream track>` line each (`[gone]` for a
+  // local branch whose upstream is gone).
+  readonly branchRefs: Run<string>
 
   // What lntt check reads, in `dir` (`git -C <dir>`): the project's root, below the top of the
   // working tree when the project is nested.
@@ -120,6 +123,7 @@ export class Git extends Context.Service<Git, GitOperations>()('@lntt/lntt/git/G
         diff: fn('diff'),
         written: fn('written'),
         worktrees: fn('worktrees'),
+        branchRefs: missing('branchRefs'),
         listFiles: fn('listFiles'),
         ignoredDirectories: fn('ignoredDirectories'),
         addedFrom: fn('addedFrom'),
@@ -200,6 +204,7 @@ export const gitAt = (dir?: string, options: { env?: Record<string, string>; dry
             range,
           ),
         worktrees: (gitDir) => run('--git-dir', gitDir, 'worktree', 'list', '--porcelain'),
+        branchRefs: run('for-each-ref', '--format=%(refname)%09%(upstream:track)', 'refs/heads', 'refs/remotes'),
         listFiles: (dir, options = {}) =>
           Effect.map(
             run('-C', dir, 'ls-files', '-z', ...(options.others ? [] : ['--cached']), '--others', '--exclude-standard'),

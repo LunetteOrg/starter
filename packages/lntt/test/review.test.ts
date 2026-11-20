@@ -10,13 +10,14 @@ import {
   isNoFindings,
   lensApplies,
   mergeFindings,
+  type PromptValues,
   parseFindings,
   parseOutcome,
   parseWithdrawal,
   type ReviewState,
   type RoundCost,
-  renderReviewPrompt,
-  renderVerifyPrompt,
+  renderReviewPrompt as renderReview,
+  renderVerifyPrompt as renderVerify,
   reviewConfig,
   reviewCost,
   roundCosts,
@@ -29,6 +30,13 @@ import {
   verdict,
   verifiersFor,
 } from '../src/index.ts'
+import { TEMPLATES } from '../src/testing/templates.ts'
+
+// The prompts filled from lntt's own texts (agents/).
+const renderReviewPrompt = (lens: string, values: Omit<PromptValues, 'templates'>, brief?: string) =>
+  renderReview(lens, { templates: TEMPLATES, ...values }, brief)
+const renderVerifyPrompt = (found: Found, values: Omit<PromptValues, 'templates'>) =>
+  renderVerify(found, { templates: TEMPLATES, ...values })
 
 describe('the configuration', () => {
   test('default: decisions on haiku, code and tests on sonnet, verified on sonnet for blockers and warnings', () => {

@@ -13,7 +13,6 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import type * as PlatformError from 'effect/PlatformError'
-import { visible } from '../worktree-lock.ts'
 import { GUARD_MS, HEARTBEAT_MS, type Holder, judge, lockedMessage, lockPath, namedPid } from './holder.ts'
 
 // The processes of the machine as the lock sees them: its own pid, and whether another is running.
@@ -21,6 +20,16 @@ export class Pids extends Context.Service<
   Pids,
   { readonly self: number; readonly visible: (pid: number) => Effect.Effect<boolean> }
 >()('@lntt/lntt/worktree/lock/Pids') {}
+
+// ESRCH is a pid that is gone; EPERM is a process of another user, which is running.
+const visible = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
 
 export const PidsLive = Layer.succeed(Pids)(
   Pids.of({ self: process.pid, visible: (pid) => Effect.sync(() => visible(pid)) }),
@@ -52,6 +61,10 @@ const holder = Effect.fnUntraced(function* (lock: string) {
   const seen = pid === null ? false : yield* pids.visible(pid)
   return judge(text, now - touched, pids.self, seen)
 })
+
+// Who holds the lock of the worktree whose git directory is `gitDir`, null when nobody does: what
+// lntt review status reads, never taking it.
+export const heldBy = (gitDir: string) => holder(lockPath(gitDir))
 
 // The lock names this process.
 const mine = Effect.fnUntraced(function* (lock: string) {
