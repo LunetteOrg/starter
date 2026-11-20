@@ -17,6 +17,12 @@ const failing = (argv: string[], timeoutMs?: number) =>
 // The failing command on real processes: the spawner stops a command that hangs at the timeout,
 // the shell's child included, and names the signal that killed one. The rest: src/dump/collect.spec.ts.
 describe('runFailing', () => {
+  test('the exit code and the output, stderr merged in the order written', async () => {
+    const run = await failing(['sh', '-c', 'echo out; echo err >&2; exit 4'])
+    assert.equal(run.status, 4)
+    assert.equal(run.output, 'out\nerr\n')
+  })
+
   test('a command that hangs is stopped at the timeout, and says so', async () => {
     for (const argv of [
       ['sleep', '10'],

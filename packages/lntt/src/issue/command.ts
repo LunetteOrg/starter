@@ -229,6 +229,7 @@ export const command = (parsed: IssueCommand) =>
   (parsed.kind === 'search' ? search(parsed) : file(parsed)).pipe(
     Effect.catchTags({
       IssueFailed: (error) => Effect.as(say(error.message), 1),
+      DumpFailed: (error) => Effect.as(say(error.message), 1),
       GhError: (error) => Effect.as(say(error.message), 1),
     }),
   )

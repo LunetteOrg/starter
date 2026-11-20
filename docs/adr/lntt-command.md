@@ -39,8 +39,9 @@ lntt ci local | candidate | proved
   `src/cli.ts` (configuration, operator, `AGENTS.md`, local apps, viewer, browser),
   `src/check-cli.ts`, `src/branch-cli.ts`, `src/review-cli.ts`, `src/worktree-cli.ts`,
   `src/refs-cli.ts`, `src/hook-cli.ts`, `src/board-cli.ts`, `src/pull-request-cli.ts`, `src/retro-cli.ts`, `src/issue-cli.ts` (`dump`, `issue`), `src/messages-cli.ts` (`ask`, `inbox`,
-  `answer`) and `src/ci/cli.ts`.
-  A group loads only when it runs. What a script needs as a library, `@lntt/lntt`
+  `answer`) and `src/ci/cli.ts`. Each parses its commands, a usage error exiting 2 before
+  Effect loads, and runs them on Effect from the group's folder (`src/check/`, `src/dump/`,
+  `src/hook/`, …). A group loads only when it runs. What a script needs as a library, `@lntt/lntt`
   exports too (`resolveRefs` and `mentions` for `lntt refs`).
 - **`lntt board sync` writes only what keeps an id.** It adds, sets colors and
   descriptions, renames by case, and creates and updates the declared views (name,
@@ -241,8 +242,13 @@ So:
   | `lntt branch check`, and `branch name` and `branch rename`, so the name an agent gets is the one the gate accepts | `lntt ask \| inbox \| answer` |
   | `lntt validate \| get \| set \| path`: they hold the schema; `set` writes a tracked file | `lntt guide`: it prints the skills |
   | `lntt sync`: it writes tracked files (the `AGENTS.md` block, the skill stubs, the entries of `.claude/settings.json`) that `lntt check` verifies | `lntt operator`: personal context, read by no gate; `lntt pr block`: the empty retrospective block, for the template and the skill; `lntt retro add`: it writes a comment on GitHub, not the commit; `lntt dump` and `lntt issue`: a report on Lunette, filed upstream on the operator's approval |
-  | the commitlint configuration (the `@lntt/lntt` export) | `lntt local app`, `lntt viewer`; `lntt board sync`: it reads and writes GitHub, not the commit, so its `--check` is a verdict on the board's state that a hook or a scheduled job runs, never a pull request's gate; `lntt board ready`, for the same reason |
+  | the commitlint configuration (the `@lntt/lntt` export, a Promise the project's `commitlint.config.mjs` awaits) | `lntt local app`, `lntt viewer`; `lntt board sync`: it reads and writes GitHub, not the commit, so its `--check` is a verdict on the board's state that a hook or a scheduled job runs, never a pull request's gate; `lntt board ready`, for the same reason |
   | the configuration schema | the plugin's hooks and `lntt refs`; once it exists, `lntt doctor` (#124) |
+
+  `commitlintConfig` returning a Promise (0.6.5) is a change of the pinned group that is not an
+  addition, taken by the operator with #341 while this repository was the one project importing
+  it: the release notes name it, with the line a project writes,
+  `export default await commitlintConfig()`.
 
 - **The configuration schema follows one compatibility rule.** Its version is the
   `@lntt/lntt` version in the project's lockfile; the file carries none.

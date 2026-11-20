@@ -107,7 +107,8 @@ function failing(out: string, end: { code: number } | { signal: string } | 'neve
   const asked: string[][] = []
   const spawn = (command: ChildProcess.Command) =>
     Effect.sync(() => {
-      if (command._tag === 'StandardCommand') asked.push([command.command, ...command.args.map(String)])
+      if (command._tag === 'StandardCommand')
+        asked.push([String(command.options.cwd), command.command, ...command.args.map(String)])
       return ChildProcessSpawner.makeHandle({
         pid: ChildProcessSpawner.ProcessId(1),
         exitCode:
@@ -147,7 +148,7 @@ describe('the failing command', () => {
     return Effect.gen(function* () {
       const ran = yield* runFailing(['pnpm', 'test'], '/r')
       assert.deepStrictEqual(ran, { argv: ['pnpm', 'test'], status: 4, output: 'out\nerr\n' })
-      assert.deepStrictEqual(f.asked, [['sh', '-c', 'exec "$@" 2>&1', 'sh', 'pnpm', 'test']])
+      assert.deepStrictEqual(f.asked, [['/r', 'sh', '-c', 'exec "$@" 2>&1', 'sh', 'pnpm', 'test']])
     }).pipe(Effect.provide(f.layer))
   })
 

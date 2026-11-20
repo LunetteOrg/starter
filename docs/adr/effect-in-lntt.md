@@ -250,8 +250,10 @@ agent's search tools skip `node_modules`, a folder git ignores, so the paths are
 ### What a project inherits
 
 A project that installs `@lntt/lntt` gets `effect` in its `node_modules`, at the version
-`@lntt/lntt` pins, and nothing in its own code changes: it runs `lntt` and, when it
-imports the library, gets `Promise` functions. A project that uses Effect itself
+`@lntt/lntt` pins. It runs `lntt` and, when it imports the library, gets `Promise`
+functions: its commitlint configuration awaits `commitlintConfig()`
+([the compatibility rule](./lntt-command.md#gates-and-agent-tools-one-package-two-groups-one-compatibility-rule)).
+A project that uses Effect itself
 resolves its own version beside `lntt`'s.
 
 `@lntt/lntt/ci` exports what plans and runs a project's CI on the machine (`lntt ci local`'s

@@ -60,6 +60,10 @@ function world() {
   const writes: { args: string; body: string }[] = []
   // lntt's own package, whose version the collected dump names.
   const fs = memoryFileSystem({ dirs: [ROOT, `${PACKAGE}/dist`] })
+  // The one process the dump runs: git remote -v, with no remote.
+  const spawner = memorySpawner((command, args) =>
+    command === 'git' && args[0] === 'remote' ? { out: '' } : 'missing',
+  )
   fs.files.set(`${PACKAGE}/package.json`, { text: '{"name":"@lntt/lntt","version":"9.9.9"}', mtime: 0 })
   const put = (path: string, text: string) => fs.put(`${ROOT}/${path}`, text)
   const hits: IssueHit[] = [{ number: 7, title: 't', url: 'u' }]
@@ -76,9 +80,8 @@ function world() {
         ),
       }),
     ),
-    // The one process the dump runs: git remote -v, with no remote. The origin is the in-memory git
-    // GitIn gives.
-    memorySpawner((command, args) => (command === 'git' && args[0] === 'remote' ? { out: '' } : 'missing')).layer,
+    // The origin is the in-memory git GitIn gives.
+    spawner.layer,
     Gh.memory({
       searchIssues: ({ repo, words }) =>
         Effect.sync(() => {
@@ -125,7 +128,7 @@ function world() {
     put('package.json', '{"name":"acme-app"}'),
     put('.agents/config.jsonc', '{}'),
   ])
-  return { state, asked, gitDirs, writes, put, lntt, run, ready }
+  return { state, asked, gitDirs, writes, put, lntt, run, ready, processes: spawner.asked }
 }
 
 describe('lntt issue', () => {
@@ -324,6 +327,7 @@ describe('lntt issue', () => {
         assert.match(r.err, /nothing to send: LunetteOrg\/starter is this repository \(lunetteorg\/Starter\)/)
       }
       assert.deepStrictEqual(w.writes, [])
+      assert.deepStrictEqual(w.processes, [], 'nothing is collected for a report that is not sent')
     }),
   )
 

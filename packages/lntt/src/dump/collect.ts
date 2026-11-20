@@ -3,6 +3,7 @@
 // harness's version and the failing command through the spawner, lntt's own package from
 // PackageDir. What the dump says is plain (src/dump.ts).
 
+import * as Data from 'effect/Data'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -30,6 +31,10 @@ import {
 import { PackageDir } from '../sync/project.ts'
 
 type Env = Record<string, string | undefined>
+
+// What keeps a dump from being gathered at all: lntt's own package not found. Reported by its
+// message, exit 1.
+export class DumpFailed extends Data.TaggedError('DumpFailed')<{ message: string }> {}
 
 // What a report reads from the session, at the edge: Node's version, the OS, the operator's home.
 export interface Machine {
@@ -66,7 +71,7 @@ export const lnttPackage = Effect.gen(function* () {
     const pkg = yield* jsonOf(path.join(dir, 'package.json'))
     if (pkg?.name === '@lntt/lntt') return { dir, version: typeof pkg.version === 'string' ? pkg.version : 'unknown' }
     if (path.dirname(dir) === dir)
-      return yield* Effect.die(new Error('the package.json of @lntt/lntt is not above its code'))
+      return yield* new DumpFailed({ message: 'the package.json of @lntt/lntt is not above its code' })
   }
 })
 
@@ -161,6 +166,7 @@ export const runFailing = Effect.fnUntraced(function* (argv: string[], cwd: stri
         }),
       )
       yield* read
+      chunks.push(decoder.decode())
       if (bytes > OUTPUT_LIMIT) return { status: null, stopped: OUTPUT_STOPPED }
       return yield* child.exitCode.pipe(
         Effect.map((code) => ({ status: Number(code) as number | null, stopped: undefined as string | undefined })),

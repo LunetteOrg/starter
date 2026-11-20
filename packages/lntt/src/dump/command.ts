@@ -71,6 +71,7 @@ export const command = (parsed: DumpCommand) =>
     return { code: 1, dump } as Ending
   }).pipe(
     Effect.catchTags({
+      DumpFailed: (error) => fail(`lntt dump: ${error.message}`),
       ConfigInvalid: (error) => fail(`lntt dump: ${error.message}`),
       PlatformError: (error) => fail(`lntt dump: ${error.message}`),
     }),
