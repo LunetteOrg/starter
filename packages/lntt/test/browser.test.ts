@@ -102,6 +102,15 @@ describe('the command line', () => {
     assert.equal(JSON.parse(result.stdout).app, 'web')
   })
 
+  test('an unknown app exits 1, naming the known ones; --query prints a part of the plan', () => {
+    const unknown = run(main, ['browser', 'nope'])
+    assert.equal(unknown.status, 1)
+    assert.match(unknown.stderr, /^lntt: no app nope in local\.apps \(web\)$/m)
+    const query = run(main, ['browser', '--query', '.url'])
+    assert.equal(query.status, 0, query.stderr)
+    assert.equal(query.stdout, 'http://localhost:5173\n')
+  })
+
   test('more than one app, or an unknown flag, is a usage error', () => {
     for (const args of [['web', 'admin'], ['--json', 'web', 'admin'], ['web', '--json', 'x'], ['-x']]) {
       assert.equal(run(main, ['browser', ...args]).status, 2, args.join(' '))

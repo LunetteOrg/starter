@@ -1,6 +1,6 @@
 import { assert, describe, it } from '@effect/vitest'
 import { ConfigError } from './files.ts'
-import { appOf, liveWorktrees, resolvedApp, slotIn } from './local.ts'
+import { appOf, liveWorktrees, resolvedApp, slotIn, slotsOf } from './local.ts'
 
 const WEB = {
   port: 5173,
@@ -42,6 +42,13 @@ describe('an app of local.apps', () => {
 
 describe('the slot of a worktree', () => {
   const porcelain = (...paths: string[]) => paths.map((p) => `worktree ${p}\nHEAD abc\ndetached\n`).join('\n')
+
+  it('the slots a file holds: a JSON object of whole numbers, else none', () => {
+    assert.deepStrictEqual(slotsOf('{"/a": 1, "/b": 2}'), { '/a': 1, '/b': 2 })
+    for (const text of ['nope', 'null', '[1]', '"x"', '3', '{"/a": "one"}', '{"/a": 1.5}']) {
+      assert.strictEqual(slotsOf(text), null, text)
+    }
+  })
 
   it('the worktrees git lists', () => {
     assert.deepStrictEqual([...liveWorktrees(porcelain('/main', '/a'))], ['/main', '/a'])

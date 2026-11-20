@@ -99,7 +99,7 @@ export {
   verifiersFor,
 } from './review.ts'
 export { type InstalledSkill, SKILL_DIRS } from './skills.ts'
-export { type Choice, chooseViewer, detectHost, type Host, type Viewer } from './viewer.ts'
+export type { Choice, Host, Viewer } from './viewer.ts'
 export {
   type Agent,
   agentArgs,

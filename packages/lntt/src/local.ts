@@ -47,6 +47,18 @@ export function appOf(data: Record<string, unknown>, name: string): App {
   throw new ConfigError(`no app ${name} in local.apps (${names.length > 0 ? names.join(', ') : 'none configured'})`)
 }
 
+// The slots a file holds, from its text: null when it is not a JSON object of numbers.
+export function slotsOf(text: string): Record<string, number> | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return null
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+  return Object.values(parsed).every((v) => Number.isInteger(v)) ? (parsed as Record<string, number>) : null
+}
+
 // The worktrees `git worktree list --porcelain` names.
 export function liveWorktrees(porcelain: string): Set<string> {
   return new Set(

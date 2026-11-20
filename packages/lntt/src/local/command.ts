@@ -97,7 +97,8 @@ interface Ending {
 
 const fail = (line: string) => Effect.as(Console.error(line), { code: 1 } as Ending)
 
-// A command's exit code: 1 for an expected failure, said in one line.
+// How a command ends: its exit code (1 for an expected failure, said in one line), and what a query
+// reads.
 export const command = (parsed: LocalCommand) =>
   Effect.gen(function* () {
     if (parsed.kind === 'app') {

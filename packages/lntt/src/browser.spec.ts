@@ -240,6 +240,18 @@ describe('the plan for each driver', () => {
   })
 })
 
+describe('the temporary directory', () => {
+  it('a trailing slash of the temporary directory is not doubled in the output folder', () => {
+    const plan = browserPlan({
+      app: app(),
+      choice: { host: 'terminal', driver: 'playwright', reason: 'r' },
+      worktree: '/w',
+      tmp: '/t/',
+    })
+    assert.match(JSON.stringify(plan.operations.open), /"command":"PLAYWRIGHT_MCP_OUTPUT_DIR=\/t\/lntt-web-5183 /)
+  })
+})
+
 describe('the app to drive', () => {
   const web = { port: 5173, url: 'http://localhost:{port}', commands: {} }
 

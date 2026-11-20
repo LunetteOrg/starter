@@ -11,7 +11,7 @@ import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import * as Scope from 'effect/Scope'
 import { captured, onPath } from '../captured.ts'
 import { Git } from '../git/git.ts'
-import { appOf, liveWorktrees, PORTS, resolvedApp, slotIn } from '../local.ts'
+import { appOf, liveWorktrees, PORTS, resolvedApp, slotIn, slotsOf } from '../local.ts'
 import { noTab, type Opening } from '../viewer.ts'
 
 // What a command of these refuses or cannot do: an app local.apps does not have, a viewer that
@@ -31,10 +31,12 @@ export const worktreeSlot = Effect.gen(function* () {
   const live = liveWorktrees(yield* git.worktrees(gitDir))
   const file = path.join(common, ...PORTS)
   const text = (yield* fs.exists(file)) ? yield* fs.readFileString(file) : '{}'
-  const known = yield* Effect.try({
-    try: () => JSON.parse(text) as Record<string, number>,
-    catch: () => new LocalFailed({ message: `${file} is not JSON: remove it, and the slots start again` }),
-  })
+  const known = slotsOf(text)
+  if (known === null) {
+    return yield* new LocalFailed({
+      message: `${file} is not a JSON object of slots: remove it, and the slots start again`,
+    })
+  }
   const { slot, slots } = slotIn(known, live, here)
   yield* fs.makeDirectory(path.dirname(file), { recursive: true })
   yield* fs.writeFileString(file, `${JSON.stringify(slots, null, 2)}\n`)
@@ -50,11 +52,16 @@ export const localApp = Effect.fnUntraced(function* (data: Record<string, unknow
   return resolvedApp(name, app, yield* worktreeSlot)
 })
 
-// Which of `commands` are on the PATH, asked once each, all at once.
+// Which of `commands` are on the PATH, asked once each, all at once. A command not asked is a bug
+// of lntt: it throws.
 export const onPathOf = Effect.fnUntraced(function* (commands: string[]) {
   const unique = [...new Set(commands)]
   const found = yield* Effect.forEach(unique, onPath, { concurrency: 'unbounded' })
-  return (command: string) => found[unique.indexOf(command)] === true
+  return (command: string) => {
+    const at = unique.indexOf(command)
+    if (at === -1) throw new Error(`${command} was not looked for on the PATH: add it to the commands asked`)
+    return found[at] === true
+  }
 })
 
 // Runs a viewer's command to its end; one that fails is a LocalFailed with what it printed.
@@ -85,7 +92,7 @@ export const open = Effect.fnUntraced(function* (opening: Opening) {
   }
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
   const own = yield* Scope.make()
-  const release = yield* spawner
+  const letGo = yield* spawner
     .spawn(
       ChildProcess.make(opening.command, opening.args, {
         stdin: 'ignore',
@@ -98,5 +105,5 @@ export const open = Effect.fnUntraced(function* (opening: Opening) {
       Scope.provide(own),
       Effect.map((handle) => handle.unref),
     )
-  yield* release.pipe(Effect.ignore)
+  yield* letGo.pipe(Effect.ignore)
 })

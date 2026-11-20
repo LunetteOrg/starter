@@ -170,6 +170,9 @@ describe('a usage error passes the catch-all of its command', () => {
     ['retro', 'add'],
     ['sync', 'extra'],
     ['guide', 'decisions', 'extra'],
+    ['local', 'app'],
+    ['viewer', 'open'],
+    ['viewer', 'detect', 'extra'],
   ]) {
     test(args.join(' '), () => {
       const r = cli(p, args)

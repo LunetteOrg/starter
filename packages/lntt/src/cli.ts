@@ -1,5 +1,5 @@
-// The commands of `lntt` src/cli.ts dispatches (usage: bin/lntt.ts): each parsed here, a usage
-// error exits 2 before Effect loads, then run on Effect by its module.
+// The commands bin/lntt.ts hands to this module (usage: bin/lntt.ts): each is parsed here, where a
+// usage error exits 2 before Effect loads, then run on Effect by its own module.
 
 import { homedir, tmpdir } from 'node:os'
 import { cwd, env, platform, stderr, stdout } from 'node:process'

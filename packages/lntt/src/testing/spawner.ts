@@ -1,6 +1,6 @@
 // Effect's ChildProcessSpawner in memory, for the specs of commands that run short processes: each
 // command answered by `answer` from its name and arguments, and what was asked recorded, with
-// whether it was started detached. Not published: tsconfig.build.json leaves src/testing/ out.
+// whether it was started detached and whether it was let go of (its `unref` run). Not published: tsconfig.build.json leaves src/testing/ out.
 
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -17,6 +17,7 @@ export interface Asked {
   command: string
   args: string[]
   detached: boolean
+  released?: true
 }
 
 export function memorySpawner(answer: (command: string, args: string[]) => Said) {
@@ -25,7 +26,8 @@ export function memorySpawner(answer: (command: string, args: string[]) => Said)
     Effect.gen(function* () {
       if (command._tag !== 'StandardCommand') return yield* Effect.die('a piped command')
       const args = command.args.map(String)
-      asked.push({ command: command.command, args, detached: command.options.detached === true })
+      const entry: Asked = { command: command.command, args, detached: command.options.detached === true }
+      asked.push(entry)
       const said = answer(command.command, args)
       if (said === 'missing')
         return yield* PlatformError.systemError({
@@ -45,7 +47,11 @@ export function memorySpawner(answer: (command: string, args: string[]) => Said)
         all: Stream.empty,
         getInputFd: () => Sink.drain,
         getOutputFd: () => Stream.empty,
-        unref: Effect.succeed(Effect.void),
+        // Running unref lets the process go; what it returns would take it back.
+        unref: Effect.sync(() => {
+          entry.released = true
+          return Effect.void
+        }),
       })
     })
   return { asked, layer: Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(ChildProcessSpawner.make(spawn)) }

@@ -86,19 +86,21 @@ describe('lntt local app', () => {
     }),
   )
 
-  it.effect('an unknown app, or a slots file that is not JSON, exits 1 in one line', () =>
+  it.effect('an unknown app, or a slots file that is not a JSON object of slots, exits 1 in one line', () =>
     Effect.gen(function* () {
       const unknown = yield* world().lntt({ kind: 'app', name: 'admin' })
       assert.deepStrictEqual([unknown.code, unknown.err], [1, 'lntt: no app admin in local.apps (web)'])
-      const broken = yield* world({ at: LINKED, files: { [`${MAIN}/.git/lunette/ports.json`]: 'nope' } }).lntt({
-        kind: 'app',
-        name: 'web',
-      })
-      assert.strictEqual(broken.code, 1)
-      assert.strictEqual(
-        broken.err,
-        `lntt: ${MAIN}/.git/lunette/ports.json is not JSON: remove it, and the slots start again`,
-      )
+      for (const text of ['nope', 'null', '[1]', '{"/work/a": "one"}']) {
+        const broken = yield* world({ at: LINKED, files: { [`${MAIN}/.git/lunette/ports.json`]: text } }).lntt({
+          kind: 'app',
+          name: 'web',
+        })
+        assert.strictEqual(broken.code, 1, text)
+        assert.strictEqual(
+          broken.err,
+          `lntt: ${MAIN}/.git/lunette/ports.json is not a JSON object of slots: remove it, and the slots start again`,
+        )
+      }
     }),
   )
 })
@@ -153,7 +155,9 @@ describe('lntt viewer', () => {
       const files = { [`${HOME}/.agents/operator.jsonc`]: '{"workspace":{"viewers":["playwright"]}}' }
       const playwright = world({ path: ['playwright'], files, answer: () => ({}) })
       assert.strictEqual((yield* playwright.lntt({ kind: 'viewer', open: 'u' })).code, 0)
-      assert.deepStrictEqual(playwright.ran(), [{ command: 'playwright', args: ['open', 'u'], detached: true }])
+      assert.deepStrictEqual(playwright.ran(), [
+        { command: 'playwright', args: ['open', 'u'], detached: true, released: true },
+      ])
       const wave = world({ path: ['wsh'], answer: () => ({}) })
       assert.strictEqual((yield* wave.lntt({ kind: 'viewer', env: { TERM_PROGRAM: 'waveterm' }, open: 'u' })).code, 0)
       assert.deepStrictEqual(wave.ran(), [{ command: 'wsh', args: ['web', 'open', 'u'], detached: false }])
@@ -189,6 +193,16 @@ describe('lntt browser', () => {
         plan.operations.open.command,
         `orca goto --url http://localhost:5183 --worktree path:${LINKED} --json`,
       )
+    }),
+  )
+
+  it.effect('without --json, the plan as a document, its last line ending the output', () =>
+    Effect.gen(function* () {
+      const run = yield* world().lntt({ kind: 'browser' })
+      assert.strictEqual(run.code, 0)
+      assert.match(run.out, /^Driver playwright, on host terminal/)
+      assert.match(run.out, /\nclose {7}\S/)
+      assert.isFalse(run.out.endsWith('\n'))
     }),
   )
 
