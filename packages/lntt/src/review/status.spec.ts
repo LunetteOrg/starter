@@ -366,12 +366,14 @@ describe('lntt review cost', () => {
     Effect.gen(function* () {
       assert.strictEqual((yield* world().lntt({ kind: 'cost', json: false })).out, 'no rounds')
       assert.strictEqual((yield* world({ current: '' }).lntt({ kind: 'cost', json: false })).code, 0)
-      const broken = yield* world({ files: { [state()]: '{' } }).lntt({ kind: 'cost', json: false })
-      assert.strictEqual(broken.code, 1)
-      assert.match(
-        broken.err,
-        /^lntt review: error: .* cannot be read: pnpm exec lntt review status --clear removes it$/,
-      )
+      for (const text of ['{', 'null', JSON.stringify({ ...stateOf(), branch: 'feat/2/y' })]) {
+        const broken = yield* world({ files: { [state()]: text } }).lntt({ kind: 'cost', json: false })
+        assert.strictEqual(broken.code, 1, text)
+        assert.match(
+          broken.err,
+          /^lntt review: error: .* cannot be read: pnpm exec lntt review status --clear removes it$/,
+        )
+      }
     }),
   )
 })

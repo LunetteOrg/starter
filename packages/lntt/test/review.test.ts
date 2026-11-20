@@ -10,14 +10,11 @@ import {
   isNoFindings,
   lensApplies,
   mergeFindings,
-  type PromptValues,
   parseFindings,
   parseOutcome,
   parseWithdrawal,
   type ReviewState,
   type RoundCost,
-  renderReviewPrompt as renderReview,
-  renderVerifyPrompt as renderVerify,
   reviewConfig,
   reviewCost,
   roundCosts,
@@ -30,6 +27,11 @@ import {
   verdict,
   verifiersFor,
 } from '../src/index.ts'
+import {
+  type PromptValues,
+  renderReviewPrompt as renderReview,
+  renderVerifyPrompt as renderVerify,
+} from '../src/review.ts'
 import { TEMPLATES } from '../src/testing/templates.ts'
 
 // The prompts filled from lntt's own texts (agents/).
@@ -299,6 +301,13 @@ describe('the prompt', () => {
     assert.match(prompt, /\[blocker\|warning\|note\]/)
     assert.match(prompt, /read-only|only read/i)
     assert.doesNotMatch(prompt, /\{\{/)
+  })
+
+  test('a lens with no brief of its own and none shipped is an error, not an empty prompt', () => {
+    assert.throws(
+      () => renderReviewPrompt('security', { base: 'mb', head: 'h', files: [], diff: '', records: '' }),
+      /the lens security has no brief: give it one in delivery\.review/,
+    )
   })
 
   test('the decisions lens gets the records to check against', () => {

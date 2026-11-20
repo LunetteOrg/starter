@@ -9,13 +9,12 @@ import {
   type Ask,
   type Checked,
   mergeFindings,
-  type PromptValues,
   parseFindings,
-  renderReviewPrompt as renderReview,
   reviewConfig,
   roundRange,
   runRound,
 } from '../src/index.ts'
+import { type PromptValues, renderReviewPrompt as renderReview } from '../src/review.ts'
 import { TEMPLATES } from '../src/testing/templates.ts'
 
 // The prompts filled from lntt's own texts (agents/).

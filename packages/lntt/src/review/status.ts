@@ -191,8 +191,15 @@ const clear = Effect.fnUntraced(function* (dir: string, gitDir: string, current:
 const prune = Effect.fnUntraced(function* (dir: string, gitDir: string, dry: boolean) {
   const fs = yield* FileSystem.FileSystem
   const git = yield* Git
+  // A folder not there holds no branch; any other failure to read it is the command's.
   const names = (folder: string) =>
-    fs.readDirectory(`${dir}/${folder}`).pipe(Effect.orElseSucceed(() => [] as string[]))
+    fs
+      .readDirectory(`${dir}/${folder}`)
+      .pipe(
+        Effect.catchTag('PlatformError', (error) =>
+          error.reason._tag === 'NotFound' ? Effect.succeed([] as string[]) : Effect.fail(error),
+        ),
+      )
   const refs = parseRefs(yield* git.branchRefs, yield* git.worktrees(gitDir))
   let gone = 0
   for (const branch of branchesIn(yield* names('state'), yield* names('ledger')).sort()) {
@@ -224,7 +231,7 @@ const cost = Effect.fnUntraced(function* (parsed: Extract<StatusCommand, { kind:
   const git = yield* Git
   const { dir } = yield* placeOf(home)
   const branch = yield* git.branch
-  const state = branch === 'HEAD' ? null : yield* readCostState(dir, branch)
+  const state = branch === 'HEAD' ? null : ((yield* readStatusState(dir, branch))?.state ?? null)
   const rounds = state?.rounds ?? []
   const total = reviewCost(rounds, legacyRounds(state))
   const document = {
@@ -241,27 +248,6 @@ const cost = Effect.fnUntraced(function* (parsed: Extract<StatusCommand, { kind:
   if (parsed.query !== undefined) return { query: query(document, parsed.query, parsed.json, 0) } as Ending
   yield* out(parsed.json ? JSON.stringify(document, null, 2) : total.line)
   return { code: 0 } as Ending
-})
-
-// The state as a round reads it: one that names another branch, or is not JSON, cannot be read.
-const readCostState = Effect.fnUntraced(function* (dir: string, branch: string) {
-  const fs = yield* FileSystem.FileSystem
-  const path = statePathIn(dir, branch)
-  if (!(yield* fs.exists(path))) return null
-  const text = yield* fs.readFileString(path)
-  let state: ReviewState | null = null
-  try {
-    state = JSON.parse(text) as ReviewState | null
-  } catch {
-    return yield* new StatusFailed({
-      message: `${path} cannot be read: pnpm exec lntt review status --clear removes it`,
-    })
-  }
-  if (state?.branch !== branch)
-    return yield* new StatusFailed({
-      message: `${path} cannot be read: pnpm exec lntt review status --clear removes it`,
-    })
-  return state
 })
 
 // What `lntt review status` reads: the current branch's state, each level folded, one line of
