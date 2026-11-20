@@ -4,6 +4,7 @@ import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
 import * as TestConsole from 'effect/testing/TestConsole'
 import { projectConfigIn } from '../config/load.ts'
+import { retrospectiveBlock, retrospectiveRules } from '../pull-request.ts'
 import { memoryFileSystem } from '../testing/file-system.ts'
 import { block } from './command.ts'
 
@@ -35,7 +36,8 @@ describe('lntt pr block', () => {
   it.effect("the empty block of the configuration's labels, found from a folder below the root; exit 0", () =>
     Effect.gen(function* () {
       const expected = '## 🔁 Retro\n<!-- retro:start -->\n- **Friction:**\n- **Review cost:**\n<!-- retro:end -->'
-      assert.deepStrictEqual([(yield* run(RETRO)).code, (yield* run(RETRO)).out], [0, expected])
+      const root = yield* run(RETRO)
+      assert.deepStrictEqual([root.code, root.out], [0, expected])
       const below = yield* run(RETRO, `${ROOT}/src/deep`)
       assert.deepStrictEqual([below.code, below.out], [0, expected])
     }),
@@ -44,8 +46,7 @@ describe('lntt pr block', () => {
   it.effect('no configuration is the defaults; one that does not validate is one line and exit 1, no stack', () =>
     Effect.gen(function* () {
       const none = yield* run(null)
-      assert.strictEqual(none.code, 0)
-      assert.match(none.out, /^## .*\n<!-- retro:start -->\n/)
+      assert.deepStrictEqual([none.code, none.out], [0, retrospectiveBlock(retrospectiveRules({})).replace(/\n$/, '')])
       const invalid = yield* run('{ "nope": 1 }')
       assert.deepStrictEqual([invalid.code, invalid.out], [1, ''])
       assert.match(invalid.err, /^lntt pr: \/project\/\.agents\/config\.jsonc does not match the schema/)

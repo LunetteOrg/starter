@@ -60,17 +60,23 @@ for (let round = 1; round <= 8; round++) {
     const started = new Date(Date.now() - 5 * 60_000).toISOString()
     writeFileSync(join(dir, 'ci-local.lock'), JSON.stringify({ pid: 1, host: 'here', worktree: '/w/other', started }))
     writeFileSync(join(dir, 'dead'), '1\n')
+    // Each waiter's exit code and what it said on stderr, for a failure to name its cause.
     const waiters = ['a', 'b', 'c'].map(
       (name) =>
-        new Promise<number | null>((done) =>
-          spawn(process.execPath, ['--input-type=module', '-e', WAITER, dir, name], {
-            stdio: 'inherit',
+        new Promise<string>((done) => {
+          const child = spawn(process.execPath, ['--input-type=module', '-e', WAITER, dir, name], {
+            stdio: ['ignore', 'ignore', 'pipe'],
             cwd: resolve(dirname(fileURLToPath(import.meta.url)), '../..'),
-          }).on('close', done),
-        ),
+          })
+          let said = ''
+          child.stderr.on('data', (chunk) => {
+            said += chunk
+          })
+          child.on('close', (code) => done(`${code}${said ? `: ${said}` : ''}`))
+        }),
     )
     writeFileSync(join(dir, 'go'), '')
-    assert.deepEqual(await Promise.all(waiters), [0, 0, 0])
+    assert.deepEqual(await Promise.all(waiters), ['0', '0', '0'])
     const log = readFileSync(join(dir, 'log'), 'utf8').trim().split('\n')
     assert.equal(log.length, 48)
     for (let i = 0; i < log.length; i += 2) {

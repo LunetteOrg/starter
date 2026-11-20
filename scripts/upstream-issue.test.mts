@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, test } from 'node:test'
 import type { Gh } from './upstream-issue.mts'
-import { boardTarget, type Failure, failingTests, report, type Target } from './upstream-issue.mts'
+import { boardSection, boardTarget, type Failure, failingTests, report, type Target } from './upstream-issue.mts'
 
 // The end of a red `pnpm --filter @lntt/lntt test:upstream`, as node --test prints it.
 const RED = `▶ opencode
@@ -112,6 +115,44 @@ describe('failingTests', () => {
   test('several failures are sorted and counted once', () => {
     const log = '✖ failing tests:\n\ntest at a:1:1\n✖ b two (1ms)\ntest at a:2:1\n✖ a one (2.5ms)\n✖ b two (1ms)\n'
     assert.deepEqual(failingTests(log), ['a one', 'b two'])
+  })
+})
+
+describe('boardSection', () => {
+  // A project with `config` as its .agents/config.jsonc (none when null), and a folder below it.
+  function project(config: string | null) {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-upstream-board-')))
+    mkdirSync(join(root, 'src/deep'), { recursive: true })
+    if (config !== null) {
+      mkdirSync(join(root, '.agents'))
+      writeFileSync(join(root, '.agents/config.jsonc'), config)
+    }
+    return root
+  }
+
+  test('the board section, found from a folder below the root; none when the configuration has none', () => {
+    const board = { issueTypes: { children: ['Task'] } }
+    const root = project(`// the project's\n${JSON.stringify({ board })}`)
+    const bare = project('{}')
+    try {
+      assert.deepEqual(boardSection(join(root, 'src/deep')), board)
+      assert.equal(boardSection(bare), undefined)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+      rmSync(bare, { recursive: true, force: true })
+    }
+  })
+
+  test("no configuration, or one that does not validate, throws with lntt's message", () => {
+    const none = project(null)
+    const invalid = project('{ "nope": 1 }')
+    try {
+      assert.throws(() => boardSection(none), /no \.agents\/config\.jsonc or \.agents\/config\.yml/)
+      assert.throws(() => boardSection(invalid), /does not match the schema/)
+    } finally {
+      rmSync(none, { recursive: true, force: true })
+      rmSync(invalid, { recursive: true, force: true })
+    }
   })
 })
 
