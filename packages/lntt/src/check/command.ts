@@ -3,8 +3,8 @@
 // before Effect loads, and loads this module when the command runs.
 //
 // The logic reaches the machine only through services: git (Git), GitHub (Gh), the working tree
-// (FileSystem, Path), the tests a mutation runs (TestRunner), the worktree's lock (lockWorktree),
-// the terminal (Console), and the sync code of `lntt sync`'s areas (SyncAreas, src/check/areas.ts).
+// (FileSystem, Path), the tests a mutation runs (TestRunner), the worktree's lock (lockWorktree)
+// and the terminal (Console).
 // A mutation holds the worktree's lock and its scratch worktree as resources of the command's
 // scope: an interrupt releases them, then the command exits 130. src/check/command.spec.ts runs it
 // on in-memory layers.
@@ -28,8 +28,9 @@ import { type Query, runQuery } from '../query.ts'
 import { isCandidate } from '../retro.ts'
 import { runCommand } from '../run-command.ts'
 import { SpawnerLive } from '../spawner.ts'
+import { agentsBlockHeld, installedSkills, settingsOf, workflowResults } from '../sync/project.ts'
 import { lockWorktree, WorktreeLockLive } from '../worktree/lock.ts'
-import { agentsMdResults, bodyArea, CheckFailed, pluginResults, readText, skillsResults, synced } from './areas.ts'
+import { agentsMdResults, bodyArea, CheckFailed, pluginResults, readText, skillsResults } from './areas.ts'
 import { checkDecisions, decisionBoardRefs, decisionFigures, givenPaths, NO_RECORDING } from './decisions.ts'
 import { projectTree } from './files.ts'
 import { mutateAll, type TestRunner, TestRunnerLive } from './mutate.ts'
@@ -75,10 +76,15 @@ export const runArea = Effect.fnUntraced(function* (
   tree: Effect.Effect<Tree, CheckFailed | PlatformError, FileSystem.FileSystem | Path.Path | Git>,
 ) {
   const { root } = options
-  if (area === 'agents-md') return agentsMdResults(yield* synced((c) => c.agentsBlock(root)))
-  if (area === 'skills') return skillsResults(yield* synced((c) => c.skills(root)))
-  if (area === 'plugin') return pluginResults(yield* synced((c) => c.settings(root)))
-  if (area === 'workflows') return yield* synced((c) => c.workflows(root, options.data))
+  if (area === 'agents-md') return agentsMdResults(yield* agentsBlockHeld(root))
+  if (area === 'skills') {
+    const installed = yield* installedSkills(root).pipe(
+      Effect.catchTag('SyncFailed', (error) => Effect.fail(new CheckFailed({ message: error.message }))),
+    )
+    return skillsResults(installed)
+  }
+  if (area === 'plugin') return pluginResults(yield* settingsOf(root))
+  if (area === 'workflows') return yield* workflowResults(root, options.data)
   // What runs without the project's files says so before they are read: a project that is no git
   // repository is checked for what needs none.
   if (area === 'tests') return noTestsSection(check, options.data) ?? (yield* runTests(check, options, yield* tree))

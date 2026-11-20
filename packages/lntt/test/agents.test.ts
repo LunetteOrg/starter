@@ -5,66 +5,33 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { checkAgentsBlock, managedBlock, syncAgentsBlock } from '../src/index.ts'
 
-const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
+// The main path of the managed block through the CLI, from the package's own agents/block.md; what
+// it writes and when it is held: src/agents.spec.ts, src/sync/project.spec.ts.
+
+const HERE = dirname(fileURLToPath(import.meta.url))
+const BIN = resolve(HERE, '../bin/lntt.ts')
 
 let root: string
-let agents: string
 
 beforeEach(() => {
   root = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-agents-')))
   mkdirSync(join(root, '.agents'))
   writeFileSync(join(root, '.agents/config.jsonc'), '{}')
-  agents = join(root, 'AGENTS.md')
 })
 
 afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-describe('the managed block', () => {
-  test('is wrapped in the lunette markers, naming the command that writes it', () => {
-    const block = managedBlock()
-    assert.match(block, /^<!-- lunette:start — managed by lntt sync:/)
-    assert.match(block, /<!-- lunette:end -->\n$/)
-  })
-
-  test('sync creates AGENTS.md with the block when there is none', () => {
-    syncAgentsBlock(root)
-    assert.equal(readFileSync(agents, 'utf8'), managedBlock())
-  })
-
-  test('sync puts the block on top of an AGENTS.md that has none, keeping its text', () => {
-    writeFileSync(agents, '# My project\n\nOur own rule.\n')
-    syncAgentsBlock(root)
-    assert.equal(readFileSync(agents, 'utf8'), `${managedBlock()}\n# My project\n\nOur own rule.\n`)
-  })
-
-  test('sync replaces only what is between the markers', () => {
-    writeFileSync(agents, '<!-- lunette:start -->\nold rules\n<!-- lunette:end -->\n\n# Mine\n\nKeep me.\n')
-    syncAgentsBlock(root)
-    assert.equal(readFileSync(agents, 'utf8'), `${managedBlock()}\n# Mine\n\nKeep me.\n`)
-  })
-
-  test('check passes after sync and fails on a hand edit inside the block', () => {
-    syncAgentsBlock(root)
-    assert.equal(checkAgentsBlock(root), true)
-    writeFileSync(agents, readFileSync(agents, 'utf8').replace('Give criteria', 'Give options'))
-    assert.equal(checkAgentsBlock(root), false)
-  })
-
-  test('check fails when AGENTS.md or the block is missing', () => {
-    assert.equal(checkAgentsBlock(root), false)
-    writeFileSync(agents, '# Mine\n')
-    assert.equal(checkAgentsBlock(root), false)
-  })
-})
-
 describe('the command line', () => {
-  test('sync then check', () => {
-    assert.equal(spawnSync('node', [BIN, 'check'], { cwd: root }).status, 1)
+  test('sync writes the block from the package, then check passes', () => {
+    writeFileSync(join(root, 'AGENTS.md'), '# Ours\n')
+    assert.equal(spawnSync('node', [BIN, 'check', 'agents-md'], { cwd: root }).status, 1)
     assert.equal(spawnSync('node', [BIN, 'sync'], { cwd: root }).status, 0)
+    const text = readFileSync(join(root, 'AGENTS.md'), 'utf8')
+    assert.ok(text.includes(readFileSync(resolve(HERE, '../agents/block.md'), 'utf8').trimEnd()), text)
+    assert.ok(text.endsWith('\n# Ours\n'), text)
     assert.equal(spawnSync('node', [BIN, 'check'], { cwd: root }).status, 0)
   })
 })

@@ -2,56 +2,22 @@
 // of AGENTS.md, the installed skills, the plugin's settings, the synced workflow lines, and the
 // retrospective block of a pull request's body and template.
 //
-// The first four read what `lntt sync` writes, with code not yet on Effect (src/agents.ts,
-// src/skills.ts, src/claude-settings.ts, src/automated.ts, #341). lntt check reaches it at one
-// place, SyncAreas, a Context.Reference whose default is that sync code, run under Effect.try: what
-// it throws is a CheckFailed (docs/adr/effect-in-lntt.md#the-bridge-while-modules-move). A spec
-// gives its own answers. What the results say is plain.
+// The first four read what `lntt sync` writes (src/sync/project.ts); what their results say is
+// plain.
 
-import * as Context from 'effect/Context'
 import * as Data from 'effect/Data'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Path from 'effect/Path'
-import { checkAgentsBlock } from '../agents.ts'
-import { checkAutomated } from '../automated.ts'
-import { checkClaudeSettings, HOOK_LABELS, INVALID, SETTINGS, type SettingsEntry } from '../claude-settings.ts'
+import { HOOK_LABELS, INVALID, SETTINGS, type SettingsEntry } from '../claude-settings.ts'
 import { checkBody, RETRO_START, retrospectiveBlock, retrospectiveRules } from '../pull-request.ts'
-import { checkSkills, type InstalledSkill, stubFolders } from '../skills.ts'
+import type { InstalledSkill } from '../skills.ts'
 import type { CheckOptions, Result, Status } from './results.ts'
 
 // A check that cannot run at all (the project is not a git repository, git is missing, a pull
-// request cannot be read), or sync code that threw: reported by its message, exit 1.
+// request cannot be read, a skill of the package cannot give its stub): reported by its message,
+// exit 1.
 export class CheckFailed extends Data.TaggedError('CheckFailed')<{ message: string }> {}
-
-export interface SyncChecks {
-  // The managed block of AGENTS.md matches its source.
-  readonly agentsBlock: (root: string) => boolean
-  readonly skills: (root: string) => InstalledSkill[]
-  // The stub folders of the shared skills, relative to the root.
-  readonly stubFolders: (root: string) => string[]
-  readonly settings: (root: string) => SettingsEntry[]
-  readonly workflows: (root: string, data: Record<string, unknown>) => Result[]
-}
-
-export const SyncAreas = Context.Reference<SyncChecks>('@lntt/lntt/check/areas/SyncAreas', {
-  defaultValue: () => ({
-    agentsBlock: checkAgentsBlock,
-    skills: checkSkills,
-    stubFolders,
-    settings: checkClaudeSettings,
-    workflows: checkAutomated,
-  }),
-})
-
-// One call of the sync code; what it throws is a CheckFailed.
-export const synced = <A>(run: (checks: SyncChecks) => A) =>
-  Effect.flatMap(SyncAreas, (checks) =>
-    Effect.try({
-      try: () => run(checks),
-      catch: (cause) => new CheckFailed({ message: cause instanceof Error ? cause.message : String(cause) }),
-    }),
-  )
 
 export function agentsMdResults(ok: boolean): Result[] {
   return [

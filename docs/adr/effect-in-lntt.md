@@ -110,11 +110,13 @@ round).
   alone exits at once on any code but 0, and a pipe on macOS takes writes
   asynchronously, so a document written before an exit 3 or 4 would arrive cut.
   `runMain`'s own error reporting is off: its log format is not `lntt`'s.
-- **`exit.ts` imports no Effect,** because every command loads it: `effect/Runtime` and
+- **`exit.ts` imports no Effect,** because every command loads it while it reads its
+  arguments, before Effect: a usage error exits 2 having loaded none. `effect/Runtime` and
   `NodeRuntime` take about 24 ms each to load (measured on 2026-11-11, `effect` 4.1.4,
-  node 24.22.1, median of 11 fresh processes), against about 140 ms for a whole command
-  that loads none (`lntt guide`, measured on 2026-11-12, median of 21).
-  Only a command on Effect loads `run-command.ts`.
+  node 24.22.1, median of 11 fresh processes). Running on `runCommand` is what a command
+  pays for one way to run: `lntt guide`, which prints a file, took 120 ms with no Effect and
+  takes 156 ms on Effect (measured on 2026-11-20, `effect` 4.1.4, node 24.22.1, median of 21
+  fresh processes). Only a command on Effect loads `run-command.ts`.
 - **A resource is acquired with its release** (`Effect.acquireRelease`), in the scope of
   the command or of the step that uses it. Nothing on Effect is released from
   `process.on('exit')` or from a signal handler.
@@ -164,9 +166,7 @@ read at one place the same way as the sync code below: stdin, `readStdin` in
 modules not yet moved that a module on Effect needs is read at one place, a `Context.Reference`
 whose default is the sync function, run under `Effect.try`, which its spec replaces: what it
 throws is a tagged error of the command, reported by its message like any expected failure (the
-project's configuration in `lntt branch` and `lntt pr`; what `lntt sync` writes, which `lntt
-check` reads through `SyncAreas` in `packages/lntt/src/check/areas.ts` until those modules move,
-#341). What a module on Effect and the sync code of a
+project's configuration in `lntt branch` and `lntt pr`). What a module on Effect and the sync code of a
 module not yet moved both read, and which reaches nothing, is plain functions in a module that
 imports no Effect (what the base reads from the names git and GitHub give,
 `packages/lntt/src/base/names.ts`); the library's synchronous `localEvent` keeps its own calls
