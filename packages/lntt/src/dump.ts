@@ -4,14 +4,10 @@
 // the project's configuration, skills, hooks and Lunette packages, and the failing command
 // with its output when there is one. The operator reads the whole dump before it leaves
 // the machine (lntt issue sends nothing without --send).
+//
+// Plain logic, on the facts src/dump/collect.ts gathers from the machine.
 
-import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { arch, homedir, release, type } from 'node:os'
-import { dirname, join, relative } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { parseDocument } from 'yaml'
-import { loadConfig, NoConfigError } from './index.ts'
 
 export interface DumpSection {
   title: string
@@ -38,16 +34,45 @@ export interface FailedCommand {
   stopped?: string
 }
 
-export interface DumpInput {
+type Env = Record<string, string | undefined>
+
+// What the project holds that a dump reports, as src/dump/collect.ts read it.
+export interface ProjectFacts {
+  // Its package.json, null when there is none or it is not JSON.
+  pkg: Record<string, unknown> | null
+  // The lockfiles of LOCKS present at its root.
+  locks: string[]
+  // The folders of each skill directory, sorted.
+  skills: { dir: string; names: string[] }[]
+  // The text of its lefthook configuration, null without one.
+  lefthook: string | null
+  // Its .claude/settings.json, null when there is none or it is not JSON.
+  claude: Record<string, unknown> | null
+  // The version installed of each @lntt package it declares, null when not installed.
+  installed: Record<string, string | null>
+  // Its configuration: the file and its data, none (the defaults), or why it does not validate.
+  config: { path: string; data: Record<string, unknown> } | { none: string } | { invalid: string }
+}
+
+// Everything a dump reports, gathered from the machine.
+export interface DumpFacts {
   root: string
-  env: Record<string, string | undefined>
+  env: Env
   // Given by the agent, which knows them better than the environment does.
   harness?: string
   model?: string
+  // The version of the harness detected, null when none is or its --version does not run.
+  harnessVersion: string | null
+  // lntt's version and the directory of its package.json.
+  lntt: { version: string; dir: string }
+  // Node's version (`v24.1.0`) and the OS (`Darwin 27.0.0 arm64`).
+  node: string
+  os: string
+  home: string
+  // The project's git remotes, written as git prints them.
+  remotes: string[]
+  project: ProjectFacts
   command?: FailedCommand
-  // `<command> --version`, the first line; null when it does not run.
-  version?: (command: string) => string | null
-  home?: string
 }
 
 // The output of the failing command keeps its last lines: the error is at the end.
@@ -63,6 +88,11 @@ export function detectHarness(env: Record<string, string | undefined>): string |
   return HARNESSES.find((h) => h.when(env))?.name ?? null
 }
 
+// The command whose --version names the harness detected, null when none is.
+export function harnessCommand(env: Record<string, string | undefined>): string | null {
+  return HARNESSES.find((h) => h.when(env))?.command ?? null
+}
+
 // Where this lntt runs from, seen from the project's root.
 export function installKind(packageDir: string, root: string): string {
   if (packageDir.includes('/_npx/')) return 'npx'
@@ -72,31 +102,10 @@ export function installKind(packageDir: string, root: string): string {
   return 'from source (a workspace package)'
 }
 
-// The directory of @lntt/lntt: src/ in this repo, dist/src/ once packed.
-export function packageDir(): string {
-  for (let dir = dirname(fileURLToPath(import.meta.url)); ; dir = dirname(dir)) {
-    const file = join(dir, 'package.json')
-    if (existsSync(file) && readJson(file)?.name === '@lntt/lntt') return dir
-    if (dirname(dir) === dir) throw new Error('lntt: the package.json of @lntt/lntt is not above its code')
-  }
-}
-
-export function packageJson(): { version?: string; repository?: string | { url?: string } } {
-  return readJson(join(packageDir(), 'package.json')) ?? {}
-}
-
-function readJson(file: string): Record<string, unknown> | null {
-  try {
-    return JSON.parse(readFileSync(file, 'utf8'))
-  } catch {
-    return null
-  }
-}
-
-function defaultVersion(command: string): string | null {
-  const run = spawnSync(command, ['--version'], { encoding: 'utf8', timeout: 5000 })
-  if (run.status !== 0) return null
-  const first = run.stdout.trim().split('\n')[0] ?? ''
+// The version a `--version` prints: the first version-looking word of its first line, else the
+// line; null when it printed nothing.
+export function versionIn(stdout: string): string | null {
+  const first = stdout.trim().split('\n')[0] ?? ''
   return /\d+\.\d+[\w.+-]*/.exec(first)?.[0] ?? (first || null)
 }
 
@@ -159,59 +168,59 @@ export function redact(text: string, { home, remotes, secrets }: Redaction): str
 }
 
 // What is hidden in everything a report sends: the dump, and the draft beside it.
-export function redactionFor(root: string, env: Record<string, string | undefined>, home?: string): Redaction {
-  return { home: home ?? env.HOME ?? homedir(), remotes: gitRemotes(root), secrets: environmentSecrets(env) }
+export function redactionOf(home: string, remotes: string[], env: Env): Redaction {
+  return { home, remotes, secrets: environmentSecrets(env) }
 }
 
-function gitRemotes(root: string): string[] {
-  const run = spawnSync('git', ['remote', '-v'], { cwd: root, encoding: 'utf8' })
-  if (run.status !== 0) return []
-  return [...new Set(run.stdout.split('\n').map((l) => l.split(/\s+/)[1] ?? ''))].filter((r) => r !== '')
+// The remotes of `git remote -v`, once each.
+export function remotesIn(output: string): string[] {
+  return [...new Set(output.split('\n').map((l) => l.split(/\s+/)[1] ?? ''))].filter((r) => r !== '')
 }
 
-function packageManager(root: string, pkg: Record<string, unknown> | null): string {
+// The lockfiles a dump looks for, and the manager each names.
+export const LOCKS: [string, string][] = [
+  ['pnpm-lock.yaml', 'pnpm'],
+  ['package-lock.json', 'npm'],
+  ['yarn.lock', 'yarn'],
+  ['bun.lock', 'bun'],
+  ['bun.lockb', 'bun'],
+]
+
+// The lefthook configurations a dump looks for, in order.
+export const LEFTHOOKS = ['lefthook.yml', 'lefthook.yaml', '.lefthook.yml']
+
+function packageManager(pkg: Record<string, unknown> | null, locks: string[]): string {
   if (typeof pkg?.packageManager === 'string') return pkg.packageManager.replace(/\+sha\d+\..*$/, '')
-  const locks: [string, string][] = [
-    ['pnpm-lock.yaml', 'pnpm'],
-    ['package-lock.json', 'npm'],
-    ['yarn.lock', 'yarn'],
-    ['bun.lock', 'bun'],
-    ['bun.lockb', 'bun'],
-  ]
-  return locks.find(([file]) => existsSync(join(root, file)))?.[1] ?? 'unknown'
+  return LOCKS.find(([file]) => locks.includes(file))?.[1] ?? 'unknown'
 }
 
-function dirs(path: string): string[] {
-  try {
-    return readdirSync(path, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => d.name)
-      .sort()
-  } catch {
-    return []
+// The @lntt packages a package.json declares, by name, with their ranges.
+export function lnttPackages(pkg: Record<string, unknown> | null): Record<string, string> {
+  const declared: Record<string, string> = {}
+  for (const field of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']) {
+    for (const [name, range] of Object.entries((pkg?.[field] ?? {}) as Record<string, string>)) {
+      if (name.startsWith('@lntt/')) declared[name] = range
+    }
   }
+  return declared
 }
 
-function projectLines(root: string): { lines: string[]; configError?: string } {
+function projectLines(root: string, facts: ProjectFacts): { lines: string[]; configError?: string } {
   const lines: string[] = []
-  const pkg = readJson(join(root, 'package.json'))
-
-  const skills = ['.agents/skills', '.claude/skills']
-    .map((dir) => [dir, dirs(join(root, dir))] as const)
-    .filter(([, names]) => names.length > 0)
-    .map(([dir, names]) => `${dir}: ${names.join(', ')}`)
+  const skills = facts.skills
+    .filter(({ names }) => names.length > 0)
+    .map(({ dir, names }) => `${dir}: ${names.join(', ')}`)
   lines.push(`skills: ${skills.length > 0 ? skills.join('; ') : 'none'}`)
 
-  const lefthook = ['lefthook.yml', 'lefthook.yaml', '.lefthook.yml'].map((f) => join(root, f)).find(existsSync)
-  if (lefthook) {
-    const data = parseDocument(readFileSync(lefthook, 'utf8')).toJS() as Record<string, unknown> | null
+  if (facts.lefthook !== null) {
+    const data = parseDocument(facts.lefthook).toJS() as Record<string, unknown> | null
     const hooks = Object.entries(data ?? {})
       .filter(([, v]) => v !== null && typeof v === 'object' && !Array.isArray(v))
       .map(([k]) => k)
       .sort()
     lines.push(`git hooks (lefthook): ${hooks.join(', ') || 'none'}`)
   }
-  const claude = readJson(join(root, '.claude/settings.json'))
+  const claude = facts.claude
   if (claude) {
     lines.push(`agent hooks (.claude/settings.json): ${Object.keys(claude.hooks ?? {}).join(', ') || 'none'}`)
     const plugins = Object.entries((claude.enabledPlugins ?? {}) as Record<string, boolean>)
@@ -220,58 +229,54 @@ function projectLines(root: string): { lines: string[]; configError?: string } {
     lines.push(`plugins: ${plugins.join(', ') || 'none'}`)
   }
 
-  const declared: Record<string, string> = {}
-  for (const field of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']) {
-    for (const [name, range] of Object.entries((pkg?.[field] ?? {}) as Record<string, string>)) {
-      if (name.startsWith('@lntt/')) declared[name] = range
-    }
-  }
-  const packages = Object.entries(declared)
+  const packages = Object.entries(lnttPackages(facts.pkg))
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([name, range]) => {
-      const installed = readJson(join(root, 'node_modules', name, 'package.json'))?.version
+      const installed = facts.installed[name]
       return `${name}: ${range}${typeof installed === 'string' ? `, installed ${installed}` : ', not installed'}`
     })
   lines.push(`Lunette packages: ${packages.length > 0 ? '' : 'none'}`.trimEnd(), ...packages.map((p) => `  - ${p}`))
 
-  try {
-    const config = loadConfig(root)
-    // Where the project came from (the lunette key, written by @lntt/create): a report on a
-    // template names it.
-    const lunette = (config.data as { lunette?: { template: string; version: string } }).lunette
-    lines.push(`template: ${lunette ? `${lunette.template}, @lntt/create ${lunette.version}` : 'none'}`)
-    lines.push(`configuration: ${relative(root, config.path)}`, '```json', JSON.stringify(config.data, null, 2), '```')
-  } catch (error) {
-    const message = (error as Error).message
-    lines.push(`configuration: ${message}`)
-    // No file is the defaults, as for every command; a file that does not validate is an error.
-    return error instanceof NoConfigError ? { lines } : { lines, configError: message }
+  const config = facts.config
+  if ('none' in config) {
+    // No file is the defaults, as for every command.
+    lines.push(`configuration: ${config.none}`)
+    return { lines }
   }
+  if ('invalid' in config) {
+    // A file that does not validate is an error.
+    lines.push(`configuration: ${config.invalid}`)
+    return { lines, configError: config.invalid }
+  }
+  // Where the project came from (the lunette key, written by @lntt/create): a report on a template
+  // names it.
+  const lunette = (config.data as { lunette?: { template: string; version: string } }).lunette
+  lines.push(`template: ${lunette ? `${lunette.template}, @lntt/create ${lunette.version}` : 'none'}`)
+  const at = config.path.startsWith(`${root}/`) ? config.path.slice(root.length + 1) : config.path
+  lines.push(`configuration: ${at}`, '```json', JSON.stringify(config.data, null, 2), '```')
   return { lines }
 }
 
-export function collectDump(input: DumpInput): Dump {
-  const { root, env } = input
-  const version = input.version ?? defaultVersion
-  const pkg = packageJson()
-  const lntt = pkg.version ?? 'unknown'
-  const dir = packageDir()
+// The dump of the facts gathered, redacted.
+export function dumpOf(input: DumpFacts): Dump {
+  const { root, env, harnessVersion } = input
+  const lntt = input.lntt.version
+  const dir = input.lntt.dir
 
   const detected = HARNESSES.find((h) => h.when(env))
-  const harnessVersion = detected ? version(detected.command) : null
   const harness = input.harness ?? (detected ? `${detected.name}${harnessVersion ? ` ${harnessVersion}` : ''}` : null)
   // ANTHROPIC_MODEL is Claude Code's: under another harness it names no model of its.
   const model = input.model ?? (detected?.name === 'Claude Code' ? env.ANTHROPIC_MODEL : undefined) ?? null
 
-  const project = projectLines(root)
+  const project = projectLines(root, input.project)
   const sections: DumpSection[] = [
     { title: 'lntt', lines: [`version: ${lntt}`, `installed: ${installKind(dir, root)}`, `path: ${dir}`] },
     {
       title: 'Runtime',
       lines: [
-        `Node: ${process.version}`,
-        `package manager: ${packageManager(root, readJson(join(root, 'package.json')))}`,
-        `OS: ${type()} ${release()} ${arch()}`,
+        `Node: ${input.node}`,
+        `package manager: ${packageManager(input.project.pkg, input.project.locks)}`,
+        `OS: ${input.os}`,
       ],
     },
     {
@@ -297,7 +302,7 @@ export function collectDump(input: DumpInput): Dump {
     })
   }
 
-  const redaction = redactionFor(root, env, input.home)
+  const redaction = redactionOf(input.home, input.remotes, env)
   const clean = (text: string) => redact(text, redaction)
   return {
     sections: sections.map((s) => ({ title: s.title, lines: s.lines.map(clean) })),
@@ -338,30 +343,14 @@ export function renderDump(dump: Dump): string {
     .join('\n')
 }
 
-// Runs the failing command as its words are given (sh only merges its stderr into its
-// stdout, in the order they were written).
-// It is stopped after `timeoutMs` (default 10 minutes), so a command that hangs does not
-// hang the dump.
-export function runFailing(argv: string[], cwd: string, timeoutMs = 10 * 60 * 1000): FailedCommand {
-  // exec: the command takes the shell's place, so the timeout stops the command itself; a
-  // process it started may outlive it.
-  const run = spawnSync('sh', ['-c', 'exec "$@" 2>&1', 'sh', ...argv], {
-    cwd,
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-    timeout: timeoutMs,
-  })
-  const code = (run.error as NodeJS.ErrnoException | undefined)?.code
-  const stopped =
-    code === 'ETIMEDOUT'
-      ? `stopped after ${timeoutMs < 1000 ? `${timeoutMs} ms` : `${Math.round(timeoutMs / 1000)} s`}`
-      : code === 'ENOBUFS'
-        ? 'stopped: its output passed 64 MB'
-        : run.signal
-          ? `killed by ${run.signal}`
-          : undefined
-  return { argv, status: run.status, output: run.stdout ?? '', ...(stopped ? { stopped } : {}) }
-}
+// Why a failing command stopped with no exit code, in a dump's words.
+export const stoppedAfter = (timeoutMs: number): string =>
+  `stopped after ${timeoutMs < 1000 ? `${timeoutMs} ms` : `${Math.round(timeoutMs / 1000)} s`}`
+
+// The most output a failing command may print before it is stopped, in bytes.
+export const OUTPUT_LIMIT = 64 * 1024 * 1024
+
+export const OUTPUT_STOPPED = 'stopped: its output passed 64 MB'
 
 // The harness and the model the agent gives, over those of a dump read from a file.
 export function withAgent(dump: Dump, given: { harness?: string; model?: string }): Dump {

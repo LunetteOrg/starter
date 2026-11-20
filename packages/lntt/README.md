@@ -70,12 +70,13 @@ Editors validate the file against the schema through its first line:
 
 `commitlintConfig()` builds a commitlint configuration from `delivery.commits`
 (language, scopes, line length, trailers exempt from it), with rules whose messages say
-what to write instead and name the `commit-message` skill:
+what to write instead and name the `commit-message` skill. It returns a Promise, which the
+configuration awaits:
 
 ```js
 // commitlint.config.mjs
 import { commitlintConfig } from '@lntt/lntt'
-export default commitlintConfig()
+export default await commitlintConfig()
 ```
 
 ## AGENTS.md and the shared skills
