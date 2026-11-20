@@ -35,9 +35,7 @@ export function emptyConfig(): CiConfig {
   return { cloudOnly: {}, fake: { secrets: {}, vars: {} }, actions: {}, lock: 'machine', timeoutMinutes: 30 }
 }
 
-// The configuration's data; none at all is a project that has not adopted it yet,
-// while a broken one is an error to fix.
-// The same, from the configuration's data.
+// The ci.local section of the configuration's data, with its defaults.
 export function ciConfigOf(config: Record<string, unknown>): CiConfig {
   const local = (config.ci as Section | undefined)?.local ?? {}
   return {
@@ -52,8 +50,8 @@ export function ciConfigOf(config: Record<string, unknown>): CiConfig {
 // The board statuses a candidate sets when delivery.candidate.status leaves them out.
 export const CANDIDATE_STATUS = Object.freeze({ inRelease: 'In release', done: 'Done' })
 
-// delivery.candidate with its defaults, or null when the project has no candidate.
-// The same, from the configuration's data.
+// delivery.candidate of the configuration's data with its defaults, or null when the project has no
+// candidate.
 export function candidateConfigOf(config: Record<string, unknown>): CandidateConfig | null {
   const section = (config.delivery as { candidate?: Partial<CandidateConfig> & { prefix: string } } | undefined)
     ?.candidate

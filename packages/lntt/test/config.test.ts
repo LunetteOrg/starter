@@ -48,9 +48,9 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-// The synchronous loader of the modules not yet on Effect (src/config/sync.ts) on a real file
-// system; the loader itself is specified in src/config/load.spec.ts.
-describe('finding the file, synchronously', () => {
+// The file found on a real file system (test/config-files.ts); lntt's own loader is specified in
+// src/config/load.spec.ts.
+describe('finding the file', () => {
   test('walks up from a subdirectory to .agents/config.jsonc', () => {
     const path = write('.agents/config.jsonc', JSONC)
     mkdirSync(join(root, 'packages/deep/src'), { recursive: true })

@@ -116,9 +116,9 @@ repository and in `dist/`, which a spec places in memory (`PackageDir` in
   arguments, before Effect: a usage error exits 2 having loaded none. `effect/Runtime` and
   `NodeRuntime` take about 24 ms each to load (measured on 2026-11-11, `effect` 4.1.4,
   node 24.22.1, median of 11 fresh processes). Running on `runCommand` is what a command
-  pays for one way to run: `lntt guide`, which prints a file, took 120 ms with no Effect and
-  takes 156 ms on Effect (measured on 2026-11-20, `effect` 4.1.4, node 24.22.1, median of 21
-  fresh processes). A command loads `run-command.ts` once its arguments are read.
+  pays for one way to run: `lntt guide`, which prints a file, took 120 ms before it ran on
+  Effect (commit 8b077ee) and 156 ms after (09be0a7), measured on 2026-11-20, `effect` 4.1.4,
+  node 24.22.1, median of 21 fresh processes. A command loads `run-command.ts` once its arguments are read.
 - **A resource is acquired with its release** (`Effect.acquireRelease`), in the scope of
   the command or of the step that uses it. Nothing on Effect is released from
   `process.on('exit')` or from a signal handler.
@@ -302,9 +302,8 @@ are not exported.
   gives a module on Effect would stop at every call into one that is not.
 - **A synchronous library form beside the Effect one** (`findConfig`, `acquireLock`,
   `startOrca`, `githubJobs`, kept as thin shells over `node:`). A second implementation of each
-  reading of the machine, kept in step with the first by hand, for scripts outside `lntt` that
-  do not exist: the one project importing `@lntt/lntt` imports `commitlintConfig`, which awaits
-  its Effect form.
+  reading of the machine, kept in step with the first by hand; a script that needs the machine
+  awaits a `Promise` form instead, as a commitlint configuration awaits `commitlintConfig()`.
 - **The whole package at once.** One change that rewrites every command can be reviewed
   only as a whole, and keeps the package out of a release until it is all done: a
   module moves with its tests beside it, in a change of its own.

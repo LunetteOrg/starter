@@ -1,6 +1,6 @@
 // A clone of a local origin as a branch's base sees it: origin/main ahead of the local
 // main, which is stale, and an open candidate (origin/candidate/13) one commit ahead of
-// origin/main. Shared by the tests of the base resolution (src/base.ts).
+// origin/main. Shared by the end-to-end tests that need a branch's base on a real clone.
 
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
