@@ -91,8 +91,8 @@ describe('lntt dump', () => {
     Effect.gen(function* () {
       const run = yield* lntt({}, undefined, { lntt: false })
       assert.deepStrictEqual(
-        [run.code, run.err],
-        [1, 'lntt dump: the package.json of @lntt/lntt is not above its code'],
+        [run.code, run.out, run.err],
+        [1, '', 'lntt dump: the package.json of @lntt/lntt is not above its code'],
       )
     }),
   )

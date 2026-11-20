@@ -128,7 +128,7 @@ function world() {
     put('package.json', '{"name":"acme-app"}'),
     put('.agents/config.jsonc', '{}'),
   ])
-  return { state, asked, gitDirs, writes, put, lntt, run, ready, processes: spawner.asked }
+  return { state, asked, gitDirs, writes, put, lntt, run, ready, processes: spawner.asked, fs }
 }
 
 describe('lntt issue', () => {
@@ -390,6 +390,17 @@ describe('lntt issue', () => {
       assert.strictEqual(r.code, 0, r.err)
       assert.strictEqual(r.out, '{"number":7,"title":"t","url":"u"}\n')
       assert.deepStrictEqual(w.asked, ['issue list --repo LunetteOrg/starter --search review state'])
+    }),
+  )
+
+  it.effect('lntt’s own package not found: the environment cannot be collected, one line, exit 1', () =>
+    Effect.gen(function* () {
+      const w = world()
+      yield* w.ready
+      w.fs.files.delete(`${PACKAGE}/package.json`)
+      const r = yield* w.lntt()
+      assert.deepStrictEqual([r.code, r.out], [1, ''])
+      assert.strictEqual(r.err, 'lntt issue: the package.json of @lntt/lntt is not above its code\n')
     }),
   )
 

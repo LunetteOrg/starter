@@ -103,7 +103,7 @@ describe('what a dump gathers', () => {
 
 // A failing command whose process prints `out` and then ends as `end` says: an exit code, a
 // signal, or never.
-function failing(out: string, end: { code: number } | { signal: string } | 'never') {
+function failing(out: string | Uint8Array, end: { code: number } | { signal: string } | 'never') {
   const asked: string[][] = []
   const spawn = (command: ChildProcess.Command) =>
     Effect.sync(() => {
@@ -130,8 +130,8 @@ function failing(out: string, end: { code: number } | { signal: string } | 'neve
         stdin: Sink.drain,
         stdout:
           end === 'never'
-            ? Stream.concat(Stream.make(new TextEncoder().encode(out)), Stream.never)
-            : Stream.make(new TextEncoder().encode(out)),
+            ? Stream.concat(Stream.make(typeof out === 'string' ? new TextEncoder().encode(out) : out), Stream.never)
+            : Stream.make(typeof out === 'string' ? new TextEncoder().encode(out) : out),
         stderr: Stream.empty,
         all: Stream.empty,
         getInputFd: () => Sink.drain,
@@ -151,6 +151,13 @@ describe('the failing command', () => {
       assert.deepStrictEqual(f.asked, [['/r', 'sh', '-c', 'exec "$@" 2>&1', 'sh', 'pnpm', 'test']])
     }).pipe(Effect.provide(f.layer))
   })
+
+  it.effect('an output that ends inside a multibyte character keeps it, as the replacement character', () =>
+    Effect.gen(function* () {
+      const ran = yield* runFailing(['x'], '/r')
+      assert.strictEqual(ran.output, 'a\uFFFD')
+    }).pipe(Effect.provide(failing(new Uint8Array([0x61, 0xe2, 0x82]), { code: 1 }).layer)),
+  )
 
   it.effect('a command killed by a signal says which', () =>
     Effect.gen(function* () {
