@@ -6,8 +6,8 @@
 import * as Data from 'effect/Data'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
-import { ChildProcess, ChildProcessSpawner } from 'effect/process'
-import { captured } from '../captured.ts'
+import { ChildProcessSpawner } from 'effect/process'
+import { captured, onPath } from '../captured.ts'
 import type { Ask, Asks } from './asks.ts'
 import { CIRCLECI_MISSING, processArgs, processedOf, processFailure } from './circleci.ts'
 import { changedAgainst } from './event.ts'
@@ -27,15 +27,6 @@ export interface HostInput {
   root: string
   dir: string
 }
-
-// Whether `command` is on the PATH.
-export const onPath = (command: string) =>
-  Effect.flatMap(ChildProcessSpawner.ChildProcessSpawner, (spawner) =>
-    spawner.exitCode(ChildProcess.make('sh', ['-c', 'command -v "$0"', command], { stdin: 'ignore' })),
-  ).pipe(
-    Effect.map((code) => code === 0),
-    Effect.orElseSucceed(() => false),
-  )
 
 const expand = Effect.fnUntraced(function* (
   ask: Extract<Ask, { kind: 'process' }>,

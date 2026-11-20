@@ -1,9 +1,10 @@
 // A short command run through Effect's ChildProcessSpawner to its end, `input` on its stdin when
 // given, `env` added to the inherited environment when given: its stdout without the trailing newline, its stderr trimmed, its exit code. What lntt's own services over a CLI (Git,
-// Gh) share; a command that cannot start is the spawner's PlatformError.
+// Gh) share; a command that cannot start is the spawner's PlatformError. And whether a command is on
+// the PATH.
 
 import * as Effect from 'effect/Effect'
-import { ChildProcess, type ChildProcessSpawner } from 'effect/process'
+import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import * as Stream from 'effect/Stream'
 
 const text = <E>(stream: Stream.Stream<Uint8Array, E>) => Stream.mkString(Stream.decodeText(stream))
@@ -36,4 +37,13 @@ export const captured = (
       })
       return { out: out.trimEnd(), err: err.trim(), code: Number(code) } satisfies Captured
     }),
+  )
+
+// Whether `command` is on the PATH, as the shell finds it.
+export const onPath = (command: string) =>
+  Effect.flatMap(ChildProcessSpawner.ChildProcessSpawner, (spawner) =>
+    spawner.exitCode(ChildProcess.make('sh', ['-c', 'command -v "$0"', command], { stdin: 'ignore' })),
+  ).pipe(
+    Effect.map((code) => code === 0),
+    Effect.orElseSucceed(() => false),
   )

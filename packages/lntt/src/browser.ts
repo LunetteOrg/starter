@@ -3,12 +3,10 @@
 // first of the operator's preferred browsers (workspace.browsers) usable in this
 // session, else the host's own, else Playwright through npx. Each driver answers the
 // same operations, as shell commands or as tool calls only the agent can make; this
-// module describes them and runs none.
+// module describes them and runs none: src/local/command.ts gathers what it reads.
 
-import { join } from 'node:path'
 import { ConfigError } from './files.ts'
-import { loadConfig } from './index.ts'
-import type { LocalApp } from './local.ts'
+import { appsOf, type LocalApp } from './local.ts'
 import { detectHost, type Host } from './viewer.ts'
 
 export type Driver = 'orca' | 'claude-desktop' | 'chrome' | 'playwright'
@@ -82,12 +80,10 @@ export function chooseDriver(options: {
   return { host, driver: 'playwright', reason: `${why}; playwright through npx` }
 }
 
-// The app to drive: the one named, or the only one local.apps has.
-export function browserApp(cwd: string, name?: string): string {
+// The app to drive: the one named, or the only one local.apps of the configuration `data` has.
+export function browserApp(data: Record<string, unknown>, name?: string): string {
   if (name) return name
-  const names = Object.keys(
-    ((loadConfig(cwd).data.local as { apps?: Record<string, unknown> } | undefined)?.apps ?? {}) as object,
-  )
+  const names = Object.keys(appsOf(data))
   if (names.length === 1) return names[0] as string
   throw new ConfigError(
     `name the app: pnpm exec lntt browser <app> (local.apps: ${names.length > 0 ? names.join(', ') : 'none configured'})`,
@@ -130,7 +126,7 @@ const PLAYWRIGHT_CLI = '@playwright/cli@0.1.22'
 function playwright(app: LocalApp, tmp: string): Pick<BrowserPlan, 'setup' | 'operations'> {
   const session = `lntt-${app.name.replaceAll(/[^\w.-]+/g, '-')}-${app.port}`
   const pw = (args: string) => ({
-    command: `PLAYWRIGHT_MCP_OUTPUT_DIR=${quote(join(tmp, session))} npx -y ${PLAYWRIGHT_CLI} -s=${session} ${args}`,
+    command: `PLAYWRIGHT_MCP_OUTPUT_DIR=${quote(`${tmp.replace(/\/+$/, '')}/${session}`)} npx -y ${PLAYWRIGHT_CLI} -s=${session} ${args}`,
   })
   const signIn = app.signIn?.test
     ? `; to sign in, run "${pw('state-load <file>').command}" next, with <file> a storage state saved by ${app.signIn.test}`
