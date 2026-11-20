@@ -1,26 +1,12 @@
-// The configuration commands of `lntt` (usage: bin/lntt.ts).
+// The commands bin/lntt.ts hands to this module (usage: bin/lntt.ts): each is parsed here, where a
+// usage error exits 2 before Effect loads, then run on Effect by its own module.
 
-import { execFileSync } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
-import { cwd, env, stderr, stdout } from 'node:process'
+import { cwd, env, platform, stderr, stdout } from 'node:process'
 import { parseArgs } from 'node:util'
 import type { ConfigCommand } from './config/command.ts'
-import { exit, printed } from './exit.ts'
-import {
-  browserApp,
-  browserPlan,
-  ConfigError,
-  chooseDriver,
-  chooseViewer,
-  commandExists,
-  type Driver,
-  formatPlan,
-  loadOperator,
-  localApp,
-  openWith,
-  type Viewer,
-} from './index.ts'
-import { runQuery } from './query.ts'
+import { exit } from './exit.ts'
+import type { LocalCommand } from './local/command.ts'
 import type { SyncCommand } from './sync/command.ts'
 
 const USAGE = [
@@ -56,13 +42,16 @@ export async function main(args: string[]): Promise<void> {
       const { runSync } = await import('./sync/command.ts')
       return runSync(sync)
     }
-    if (command === 'browser') await browser(args.slice(1))
-    else run(command, key, raw)
+    const local = localCommand(args)
+    if (local !== null) {
+      // On Effect (src/local/command.ts), loaded only for these commands.
+      const { runLocal } = await import('./local/command.ts')
+      return runLocal(local)
+    }
+    run(command)
   } catch (e) {
     if (e instanceof TypeError && 'code' in e && String(e.code).startsWith('ERR_PARSE_ARGS')) usage(e.message)
-    if (!(e instanceof ConfigError)) throw e
-    stderr.write(`lntt: ${e.message}\n`)
-    exit(1)
+    throw e
   }
 }
 
@@ -111,7 +100,39 @@ function syncCommand(command: string | undefined, key: string | undefined, count
   return null
 }
 
-function run(command: string | undefined, key: string | undefined, raw: string | undefined): void {
+// `lntt local app <name>`, `lntt viewer detect|open <url>` or `lntt browser [<app>] [--json]
+// [--query <jq>]` from its arguments, null for any other command: usage, exit 2, before Effect
+// loads. What it reads from the session is read here.
+function localCommand(args: string[]): LocalCommand | null {
+  const [command, key, raw] = args
+  if (command !== 'local' && command !== 'viewer' && command !== 'browser') return null
+  const session = { cwd: cwd(), home: homedir(), env, platform }
+  if (command === 'local') {
+    if (key !== 'app' || !raw || args.length > 3) usage()
+    return { ...session, kind: 'app', name: raw }
+  }
+  if (command === 'viewer') {
+    if (key === 'detect' && args.length === 2) return { ...session, kind: 'viewer' }
+    if (key === 'open' && raw && args.length === 3) return { ...session, kind: 'viewer', open: raw }
+    return usage()
+  }
+  const { values, positionals } = parseArgs({
+    args: args.slice(1),
+    allowPositionals: true,
+    options: { json: { type: 'boolean', default: false }, query: { type: 'string' } },
+  })
+  if (positionals.length > 1) usage()
+  return {
+    ...session,
+    kind: 'browser',
+    json: values.json,
+    tmp: tmpdir(),
+    ...(positionals[0] === undefined ? {} : { app: positionals[0] }),
+    ...(values.query === undefined ? {} : { query: values.query }),
+  }
+}
+
+function run(command: string | undefined): void {
   switch (command) {
     // Asked for, the usage is the answer: stdout, exit 0 (`npx @lntt/lntt --help`).
     case '--help':
@@ -119,54 +140,7 @@ function run(command: string | undefined, key: string | undefined, raw: string |
     case 'help':
       stdout.write(`${USAGE}\n`)
       break
-    case 'local':
-      if (key !== 'app' || !raw) usage()
-      stdout.write(`${JSON.stringify(localApp(cwd(), raw))}\n`)
-      break
-    case 'viewer': {
-      const preferences = ((loadOperator(cwd()).profile.workspace as { viewers?: Viewer[] } | undefined)?.viewers ??
-        []) as Viewer[]
-      const choice = chooseViewer({ env, preferences, has: commandExists })
-      if (key === 'detect') stdout.write(`${JSON.stringify(choice)}\n`)
-      else if (key === 'open' && raw) {
-        const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
-        if (!openWith(choice, raw, root)) {
-          stdout.write(
-            `${JSON.stringify({ viewer: choice.viewer, ...(choice.agentCall ? { call: choice.agentCall } : {}), url: raw })}\n`,
-          )
-          exit(3)
-        }
-      } else usage()
-      break
-    }
     default:
       usage()
   }
-}
-
-// `lntt browser [<app>] [--json] [--query <jq>]`: how an agent drives a browser on the app.
-async function browser(args: string[]): Promise<void> {
-  const { values, positionals } = parseArgs({
-    args,
-    allowPositionals: true,
-    options: { json: { type: 'boolean', default: false }, query: { type: 'string' } },
-  })
-  if (positionals.length > 1) usage()
-  const preferences = ((loadOperator(cwd()).profile.workspace as { browsers?: Driver[] } | undefined)?.browsers ??
-    []) as Driver[]
-  const app = localApp(cwd(), browserApp(cwd(), positionals[0]))
-  const worktree = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()
-  const plan = browserPlan({
-    app,
-    choice: chooseDriver({ env, preferences, has: commandExists }),
-    worktree,
-    tmp: tmpdir(),
-  })
-  if (values.query !== undefined) {
-    const input = JSON.stringify(plan)
-    exit(
-      printed(await runQuery({ input, expression: values.query, json: values.json, code: 0, command: 'lntt browser' })),
-    )
-  }
-  stdout.write(values.json ? `${JSON.stringify(plan)}\n` : formatPlan(plan))
 }

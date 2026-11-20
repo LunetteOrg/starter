@@ -227,8 +227,9 @@ spawner and Git (`packages/lntt/src/ci/host.ts`).
   (`it.effect`, `it.layer`), with the in-memory layers of the services it uses. The specs
   share one in-memory `FileSystem` (`packages/lntt/src/testing/file-system.ts`), which follows
   Node's semantics where a module relies on them (a missing directory, `wx`, `link` on an
-  existing path, `utimes` in seconds), so a spec fails where Node would; `src/testing/` is
-  not published.
+  existing path, `utimes` in seconds), so a spec fails where Node would, and one in-memory
+  `ChildProcessSpawner` that answers each command by its name and arguments and records what
+  it was asked (`packages/lntt/src/testing/spawner.ts`); `src/testing/` is not published.
 - **One `unit` level for the whole repo** (`tests.levels` in `.agents/config.jsonc`), run
   by vitest from the root, whose `vitest.config.ts` only lists the
   packages' own configurations as `projects`. Each package keeps its vitest settings in

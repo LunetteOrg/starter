@@ -43,7 +43,7 @@ export {
   type Spawn,
   timerMs,
 } from './headless.ts'
-export { type LocalApp, localApp } from './local.ts'
+export type { LocalApp } from './local.ts'
 export {
   entry,
   type Mention,
@@ -99,7 +99,7 @@ export {
   verifiersFor,
 } from './review.ts'
 export { type InstalledSkill, SKILL_DIRS } from './skills.ts'
-export { type Choice, chooseViewer, commandExists, detectHost, type Host, openWith, type Viewer } from './viewer.ts'
+export type { Choice, Host, Viewer } from './viewer.ts'
 export {
   type Agent,
   agentArgs,

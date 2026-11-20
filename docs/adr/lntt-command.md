@@ -188,7 +188,7 @@ rests on these criteria:
    template does not depend on it yet (#60), and this repo runs it from the workspace.
 3. **The configuration is a contract between versions.** The agent tools read
    `delivery.review` (`reviewConfig` in `packages/lntt/src/review.ts`), `coordinator`
-   (`gateOf` in `packages/lntt/src/worktree/coordinator.ts`) and `local` (`localApp` in
+   (`gateOf` in `packages/lntt/src/worktree/coordinator.ts`) and `local` (`appOf` in
    `packages/lntt/src/local.ts`); `lntt worktree start` reads `delivery.candidate`
    and `delivery.branches` through the gate's branch code; `lntt inbox --wait` and `--follow`
    read the branch rules (`branchRules`, from `delivery`) for the conventional name of a branch (`checkedOutBranches` in
