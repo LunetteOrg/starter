@@ -10,11 +10,16 @@ import {
   type Checked,
   mergeFindings,
   parseFindings,
-  renderReviewPrompt,
   reviewConfig,
   roundRange,
   runRound,
 } from '../src/index.ts'
+import { type PromptValues, renderReviewPrompt as renderReview } from '../src/review.ts'
+import { TEMPLATES } from '../src/testing/templates.ts'
+
+// The prompts filled from lntt's own texts (agents/).
+const renderReviewPrompt = (lens: string, values: Omit<PromptValues, 'templates'>, brief?: string) =>
+  renderReview(lens, { templates: TEMPLATES, ...values }, brief)
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const BIN = resolve(HERE, '../bin/lntt.ts')

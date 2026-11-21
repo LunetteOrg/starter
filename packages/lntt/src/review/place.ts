@@ -6,9 +6,6 @@
 // The place is, in order: the operator profile's `review.stateDir`, the project's
 // `delivery.review.stateDir`, the clone's common git directory (`lntt-review/` in it). A
 // configured place is shared by clones, so it holds a folder per repository, `<org>/<repo>`.
-//
-// `lntt review status` and `cost`, not yet on Effect, run it through runPlace (src/review/host.ts
-// loads this module when they need the place).
 
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
@@ -184,7 +181,3 @@ export const PlaceLive = Layer.mergeAll(
   GitLive.pipe(Layer.provide(NodeChildProcessSpawner.layer)),
   Digest.layerWebCrypto,
 ).pipe(Layer.provideMerge(NodeLive))
-
-// The place for a caller not on Effect: it rejects with the failure, its message what to say.
-export const runPlace = (home: string): Promise<Place> =>
-  Effect.runPromise(placeOf(home).pipe(Effect.provide(PlaceLive)))

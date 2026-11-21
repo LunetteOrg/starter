@@ -275,8 +275,8 @@ So:
     at that version is the check.
   - A missing file means the defaults (`NoConfigError` in
     `packages/lntt/src/files.ts`); a file that does not validate stops the command
-    with the error, as `lntt review` does (`loaded` in
-    `packages/lntt/src/review-cli.ts`). An invalid file gets an error, not the
+    with the error, as `lntt review` does (`projectConfigIn` in
+    `packages/lntt/src/config/load.ts`). An invalid file gets an error, not the
     defaults, in every command that reads the configuration, `lntt worktree start`
     (`projectConfig`) and the commitlint configuration (`commits`) included.
   - A removal or a rename is a breaking change, told apart by whether the user of the

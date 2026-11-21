@@ -7,9 +7,10 @@
 // The place is resolved in src/review/place.ts.
 // The lock and the progress file of a running round stay in the worktree's own git
 // directory: they belong to the process, not to the branch.
+//
+// Plain logic: the store reads and writes the files on Effect (src/review/store.ts, and
+// src/review/status.ts for lntt review status, cost, --clear and --prune).
 
-import { existsSync, readdirSync, unlinkSync } from 'node:fs'
-import { join } from 'node:path'
 import type { Closed, Ledger, ReviewState } from './review.ts'
 
 // A branch name as a file name: percent-encoded, capitals too, so `feat/1/x` is `feat%2F1%2Fx`
@@ -27,8 +28,8 @@ export function keyBranch(key: string): string | null {
   }
 }
 
-export const statePathIn = (dir: string, branch: string): string => join(dir, 'state', `${branchKey(branch)}.json`)
-export const ledgerPathIn = (dir: string, branch: string): string => join(dir, 'ledger', `${branchKey(branch)}.json`)
+export const statePathIn = (dir: string, branch: string): string => `${dir}/state/${branchKey(branch)}.json`
+export const ledgerPathIn = (dir: string, branch: string): string => `${dir}/ledger/${branchKey(branch)}.json`
 
 // A branch's state file as a round reads it: one that names another branch is an error, as one
 // that is not JSON throws, never a round started on a guess.
@@ -50,18 +51,13 @@ export function parseLedger(text: string, branch: string): Closed[] | null {
   return null
 }
 
-function keysIn(folder: string): string[] {
-  if (!existsSync(folder)) return []
-  return readdirSync(folder)
-    .filter((name) => name.endsWith('.json'))
-    .map((name) => name.slice(0, -'.json'.length))
-}
-
-// The branches that have a state or a ledger in the place, by the name of their file: a
-// file that cannot be read is listed too. A name that is not the key of any branch (not
-// percent-encoded, or encoded another way) names no branch and is left alone.
-export function branchesIn(dir: string): string[] {
-  const keys = new Set([...keysIn(join(dir, 'state')), ...keysIn(join(dir, 'ledger'))])
+// The branches that have a state or a ledger in the place, from the names of the files in its
+// state/ and ledger/ folders: a file that cannot be read is listed too. A name that is not the key
+// of any branch (not percent-encoded, or encoded another way) names no branch and is left alone.
+export function branchesIn(stateNames: string[], ledgerNames: string[]): string[] {
+  const keys = new Set(
+    [...stateNames, ...ledgerNames].filter((name) => name.endsWith('.json')).map((name) => name.slice(0, -5)),
+  )
   return [...keys].flatMap((key) => {
     const branch = keyBranch(key)
     return branch !== null && branchKey(branch) === key ? [branch] : []
@@ -106,17 +102,4 @@ export function parseRefs(forEachRef: string, worktrees: string): Refs {
       .map((l) => l.slice('branch refs/heads/'.length)),
   )
   return { local, remote, checkedOut }
-}
-
-export function removeBranch(dir: string, branch: string): string[] {
-  const removed: string[] = []
-  for (const [name, path] of [
-    ['state', statePathIn(dir, branch)],
-    ['ledger', ledgerPathIn(dir, branch)],
-  ] as const) {
-    if (!existsSync(path)) continue
-    unlinkSync(path)
-    removed.push(name)
-  }
-  return removed
 }

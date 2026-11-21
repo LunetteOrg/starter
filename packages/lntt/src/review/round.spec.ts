@@ -12,6 +12,7 @@ import {
   roundRange,
   type Severity,
 } from '../review.ts'
+import { TEMPLATES } from '../testing/templates.ts'
 import { type Ask, runRound } from './round.ts'
 
 // The round on Effect: its asks, its brief and its cited lines are Effects, as the command
@@ -70,6 +71,7 @@ describe('a round', () => {
     files: ['a.ts'],
     diff: 'DIFF',
     records: 'R',
+    templates: TEMPLATES,
     range: roundRange(null, 'b', 'h2', 'mb', () => true),
   }
 
@@ -356,6 +358,7 @@ describe('what the first real round taught', () => {
     files: ['a.ts'],
     diff: 'D',
     records: '',
+    templates: TEMPLATES,
     range: roundRange(null, 'b', 'h2', 'mb', () => true),
   }
   const reviewerFirst = (prompt: string) => (prompt.split('\n')[0] as string).includes('Lens:')
@@ -561,6 +564,7 @@ describe('what the first real round taught', () => {
       files: ['a.ts'],
       diff: 'D',
       records: '',
+      templates: TEMPLATES,
       range: roundRange(null, 'b', 'h', 'mb', () => true),
     }
     const first = (p: string) => p.split('\n')[0] as string
@@ -714,6 +718,7 @@ describe('what the fourth real round taught', () => {
         files: ['a.ts'],
         diff: 'D',
         records: '',
+        templates: TEMPLATES,
         range: roundRange(null, 'b', 'h', 'mb', () => true),
       }
       const ask: Ask = (qs) =>
@@ -754,6 +759,7 @@ describe('what the branch already closed, and the rounds where a warning blocks'
       () => true,
     )
   const input = (n: number, lines: Record<number, string>) => ({
+    templates: TEMPLATES,
     base: 'mb',
     head: `h${n}`,
     files: ['a.ts'],
@@ -1099,6 +1105,7 @@ describe('a pre-existing finding', () => {
     files: ['a.ts'],
     diff: 'D',
     records: '',
+    templates: TEMPLATES,
     range: roundRange(
       n === 1 ? null : ({ branch: 'b', round: n - 1, reviewed: 'h0' } as ReviewState),
       'b',

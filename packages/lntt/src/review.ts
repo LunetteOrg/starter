@@ -4,9 +4,7 @@
 // comes back is one list, by severity. The agent that runs it keeps only the judgement:
 // fix, answer the reviewer, or stop and ask.
 
-import { readFileSync } from 'node:fs'
-import { dirname, join, matchesGlob } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { matchesGlob } from './check/glob.ts'
 import type { HeadlessAgent as Agent, Answer, Question } from './headless.ts'
 
 export type Severity = 'blocker' | 'warning' | 'note'
@@ -656,13 +654,23 @@ function closedForVerifier(found: Found, ledger: Closed[] | undefined): string {
   ].join('\n')
 }
 
-const AGENTS = join(dirname(fileURLToPath(import.meta.url)), '../agents')
+// The texts the prompts are filled from (lntt's agents/, read by src/review/templates.ts).
+export interface Templates {
+  // The frame of every lens's prompt, and what it adds in development.
+  common: string
+  beforeProduction: string
+  // Each shipped lens's brief, by its name.
+  lenses: Record<string, string>
+  verify: string
+  reply: string
+}
 
 function fill(template: string, values: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (whole, key: string) => values[key] ?? whole)
 }
 
 export interface PromptValues {
+  templates: Templates
   base: string
   head: string
   files: string[]
@@ -681,7 +689,7 @@ export interface PromptValues {
 // The same section in the frame of every lens and in the verifier's prompt, or nothing.
 function phaseSection(values: PromptValues): string {
   if (values.phase !== 'development') return ''
-  return `${readFileSync(join(AGENTS, 'review', 'before-production.md'), 'utf8').trim()}\n\n`
+  return `${values.templates.beforeProduction.trim()}\n\n`
 }
 
 // What lntt check found for a lens, before the reviewers: they judge, it counts.
@@ -702,8 +710,9 @@ function checksSection(lens: string, values: PromptValues): string {
 
 // The lens brief (shipped, or the text of the project's) inside the common frame.
 export function renderReviewPrompt(lens: string, values: PromptValues, brief?: string): string {
-  const text = brief ?? readFileSync(join(AGENTS, 'review', `${lens}.md`), 'utf8')
-  return fill(readFileSync(join(AGENTS, 'review', 'common.md'), 'utf8'), {
+  const text = brief ?? values.templates.lenses[lens]
+  if (text === undefined) throw new Error(`the lens ${lens} has no brief: give it one in delivery.review`)
+  return fill(values.templates.common, {
     lens,
     brief: text.trim(),
     phase: phaseSection(values),
@@ -727,7 +736,7 @@ function citedLine(found: Found): string {
 }
 
 export function renderVerifyPrompt(found: Found, values: PromptValues): string {
-  return fill(readFileSync(join(AGENTS, 'verify.md'), 'utf8'), {
+  return fill(values.templates.verify, {
     severity: found.severity,
     anchor: anchorOf(found),
     cited: citedLine(found),
@@ -740,8 +749,8 @@ export function renderVerifyPrompt(found: Found, values: PromptValues): string {
   })
 }
 
-export function renderReplyPrompt(found: Found, answer: string): string {
-  return fill(readFileSync(join(AGENTS, 'reply.md'), 'utf8'), {
+export function renderReplyPrompt(found: Found, answer: string, templates: Templates): string {
+  return fill(templates.reply, {
     id: found.id,
     finding: `[${found.severity}] ${anchorOf(found)} — ${found.what} — ${found.action}`,
     answer,
@@ -875,7 +884,9 @@ function unquote(quoted: string): string | undefined {
   }
 }
 
-export interface RoundInput extends PromptValues {
+export interface RoundInput extends Omit<PromptValues, 'templates'> {
+  // The texts of the prompts: lntt's own when not given.
+  templates?: Templates
   range: Range
   // The text of a project lens's brief, by its path in the repository.
   readBrief?: (path: string) => string
@@ -889,7 +900,7 @@ export interface RoundInput extends PromptValues {
 
 // One round, for the library's callers: the Effect form (src/review/round.ts), loaded only when
 // a round runs, with the asks, the brief and the cited lines on Promises. A brief is read from
-// the working directory when no readBrief is given.
+// the working directory when no readBrief is given, the templates from lntt when none are.
 export async function runRound(
   config: ReviewConfig,
   input: RoundInput,
@@ -897,5 +908,5 @@ export async function runRound(
   open: Checked[] = [],
 ): Promise<RoundResult> {
   const { runRoundWith } = await import('./review/round.ts')
-  return runRoundWith(config, { ...input, readBrief: input.readBrief ?? ((p) => readFileSync(p, 'utf8')) }, ask, open)
+  return runRoundWith(config, input, ask, open)
 }

@@ -15,8 +15,6 @@ import {
   parseWithdrawal,
   type ReviewState,
   type RoundCost,
-  renderReviewPrompt,
-  renderVerifyPrompt,
   reviewConfig,
   reviewCost,
   roundCosts,
@@ -29,6 +27,18 @@ import {
   verdict,
   verifiersFor,
 } from '../src/index.ts'
+import {
+  type PromptValues,
+  renderReviewPrompt as renderReview,
+  renderVerifyPrompt as renderVerify,
+} from '../src/review.ts'
+import { TEMPLATES } from '../src/testing/templates.ts'
+
+// The prompts filled from lntt's own texts (agents/).
+const renderReviewPrompt = (lens: string, values: Omit<PromptValues, 'templates'>, brief?: string) =>
+  renderReview(lens, { templates: TEMPLATES, ...values }, brief)
+const renderVerifyPrompt = (found: Found, values: Omit<PromptValues, 'templates'>) =>
+  renderVerify(found, { templates: TEMPLATES, ...values })
 
 describe('the configuration', () => {
   test('default: decisions on haiku, code and tests on sonnet, verified on sonnet for blockers and warnings', () => {
@@ -291,6 +301,13 @@ describe('the prompt', () => {
     assert.match(prompt, /\[blocker\|warning\|note\]/)
     assert.match(prompt, /read-only|only read/i)
     assert.doesNotMatch(prompt, /\{\{/)
+  })
+
+  test('a lens with no brief of its own and none shipped is an error, not an empty prompt', () => {
+    assert.throws(
+      () => renderReviewPrompt('security', { base: 'mb', head: 'h', files: [], diff: '', records: '' }),
+      /the lens security has no brief: give it one in delivery\.review/,
+    )
   })
 
   test('the decisions lens gets the records to check against', () => {

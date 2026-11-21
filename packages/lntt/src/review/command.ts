@@ -67,6 +67,7 @@ import { HostEnv, orcaSubagents } from './orca.ts'
 import { reporting } from './reporter.ts'
 import { runRound } from './round.ts'
 import { ReviewFailed, ReviewStore, ReviewStoreLive } from './store.ts'
+import { readTemplates } from './templates.ts'
 import {
   destinations,
   duration,
@@ -364,6 +365,7 @@ export const round = Effect.fnUntraced(function* (
   const result = yield* runRound<PlatformError>(
     config,
     {
+      templates: yield* readTemplates,
       base: range.from,
       head,
       files,
@@ -453,10 +455,11 @@ export const reply = Effect.fnUntraced(function* ({ id, answer }: { id: string; 
   const finders = finding.foundBy
   if (finders.length === 0) return yield* new ReviewRefused({ message: `${id}: no reviewer to answer` })
   const report = yield* reporting()
+  const templates = yield* readTemplates
   const answers = yield* askAll(
     finders.map((b) => ({
       agent: known.get(b.agent) as Agent,
-      prompt: renderReplyPrompt(finding, answer),
+      prompt: renderReplyPrompt(finding, answer, templates),
       session: b.session as string,
       label: `reply ${id} · ${b.agent}`,
     })),

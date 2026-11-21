@@ -1288,7 +1288,6 @@ describe('the base a round reads from', () => {
 // `lntt review status`: the worktree's state read through lntt review, never from the
 // files in the git directory; exit 0 clean, 1 to act on, 3 at the limit, 4 no round here.
 describe('lntt review status', () => {
-  const gitDir = (...names: string[]) => join(repo, '.git', ...names)
   const json = (args: string[] = [], env: Record<string, string> = {}) => {
     const r = lntt(['status', '--json', ...args], env)
     return { code: r.code, out: JSON.parse(r.out), err: r.err }
@@ -1456,73 +1455,11 @@ describe('lntt review status', () => {
     assert.deepEqual(json().out, { branch: null, running: null, state: null })
   })
 
-  test('no state: exit 4, and state null', () => {
-    const r = lntt(['status'])
-    assert.equal(r.code, 4, r.err)
-    assert.equal(r.out, 'lntt review: no round on feat/1/x yet\n')
-    assert.deepEqual(json().out, { branch: 'feat/1/x', running: null, state: null })
-  })
-
-  test('a state that cannot be read: an error, exit 1, and --clear removes it', () => {
-    for (const text of ['{', 'null', '[]', '{"branch":"feat/1/x","round":1,"reviewed":null}']) {
-      put(stateFile(), text)
-      const r = lntt(['status'])
-      assert.equal(r.code, 1, text)
-      assert.match(
-        r.err,
-        /^lntt review: error: .*state\/feat%2F1%2Fx\.json cannot be read: pnpm exec lntt review status --clear removes it$/m,
-        text,
-      )
-    }
-    const cleared = lntt(['status', '--clear'])
-    assert.equal(cleared.code, 0, cleared.err)
-    assert.match(cleared.out, /^lntt review: cleared an unreadable state: its state$/m)
-    assert.ok(!existsSync(stateFile()))
-  })
-
-  test('a state written before a field existed reads with its default', () => {
-    const r = lntt(['--base', 'main'], {
-      FAKE_REVIEW: '- [note] a.ts:1 — n — fix\\n- [blocker] .agents/config.jsonc:1 — b — fix',
-      FAKE_VERIFY: 'confirmed\\np',
-    })
-    assert.equal(r.code, 1, r.err)
-    const old = state()
-    delete old.result.blocking
-    delete old.result.skipped
-    delete old.result.closed
-    delete old.rounds
-    // A note listed before the blocker: the summary still puts what blocks first.
-    old.result.findings.reverse()
-    put(stateFile(), JSON.stringify(old))
-    const summary = lntt(['status'])
-    assert.equal(summary.code, 1, summary.err)
-    assert.match(
-      summary.out,
-      /^ {2}f\d blocker confirmed \.agents\/config\.jsonc:1 — b\n {2}f\d note unverified a\.ts:1 — n$/m,
-    )
-    const json = JSON.parse(lntt(['status', '--json']).out)
-    assert.deepEqual(json.state.blocking, ['blocker', 'warning'])
-    assert.deepEqual(json.state.skipped, [])
-    assert.deepEqual(json.state.repeated, [])
-    assert.deepEqual(json.state.rounds, [])
-  })
-
   test('a branch with no commit yet is named, not taken for a detached HEAD', () => {
     git('switch', '-q', '--orphan', 'feat/9/new')
     const r = lntt(['status'])
     assert.equal(r.code, 4)
     assert.match(r.out, /^lntt review: no round on feat\/9\/new yet$/m)
-  })
-
-  test('a lock created an instant ago is no round running yet, and --clear waits for it', () => {
-    git('switch', '-qc', 'feat/2/y')
-    writeFileSync(gitDir('lntt-review.lock'), '')
-    const r = lntt(['status', '--json'])
-    assert.equal(JSON.parse(r.out).running, null)
-    assert.doesNotMatch(lntt(['status']).out, /running/)
-    const cleared = lntt(['status', '--clear'])
-    assert.equal(cleared.code, 1)
-    assert.match(cleared.err, /a round is running in this worktree \(pid starting\): nothing cleared/)
   })
 
   test('in a linked worktree and in the main checkout, each reads its own state', () => {
@@ -1548,93 +1485,6 @@ describe('lntt review status', () => {
       repo = main
       rmSync(dir, { recursive: true, force: true })
     }
-  })
-
-  test('a round running: reported with its pid, and --clear refused with nothing removed', () => {
-    assert.equal(lntt(['--base', 'main']).code, 0)
-    git('switch', '-qc', 'feat/2/y')
-    const sleeper = spawn('sleep', ['30'], { stdio: 'ignore' })
-    try {
-      writeFileSync(gitDir('lntt-review.lock'), String(sleeper.pid))
-      const r = lntt(['status'])
-      assert.equal(r.code, 4)
-      assert.match(r.out, new RegExp(`; a round is running \\(pid ${sleeper.pid}\\)\\n$`))
-      assert.equal(json().out.running, sleeper.pid)
-      const clear = lntt(['status', '--clear'])
-      assert.equal(clear.code, 1)
-      assert.match(clear.err, /^lntt review: error: /m)
-      assert.equal(existsSync(stateFile()), true)
-      assert.equal(readFileSync(gitDir('lntt-review.lock'), 'utf8'), String(sleeper.pid))
-    } finally {
-      sleeper.kill()
-    }
-  })
-
-  test('a lock held by lntt check tests mutate: status and --clear name it, as the refusals do', () => {
-    assert.equal(lntt(['--base', 'main']).code, 0)
-    git('switch', '-qc', 'feat/2/y')
-    const sleeper = spawn('sleep', ['30'], { stdio: 'ignore' })
-    try {
-      writeFileSync(gitDir('lntt-review.lock'), `${sleeper.pid} lntt check tests mutate`)
-      assert.match(
-        lntt(['status']).out,
-        new RegExp(`; lntt check tests mutate is running \\(pid ${sleeper.pid}\\)\\n$`),
-      )
-      assert.equal(json().out.running, sleeper.pid)
-      assert.match(
-        lntt(['status', '--clear']).err,
-        new RegExp(`lntt check tests mutate is running in this worktree \\(pid ${sleeper.pid}\\): nothing cleared`),
-      )
-    } finally {
-      sleeper.kill()
-    }
-  })
-
-  test('--clear: refused on the current unmerged branch, whose state stays; the lock is never removed', () => {
-    assert.equal(lntt(['--base', 'main'], blocker).code, 1)
-    assert.equal(lntt(['reply', 'f1', 'fair'], { FAKE_REPLY: 'withdrawn\\nfair' }).code, 0)
-    const refused = lntt(['status', '--clear'])
-    assert.equal(refused.code, 1)
-    assert.match(
-      refused.err,
-      /^lntt review: error: the state is feat\/1\/x's, the current branch, and whether it is merged cannot be told \(.+\): nothing cleared$/m,
-    )
-    assert.equal(existsSync(stateFile()), true)
-
-    const dead = spawnSync('true').pid as number
-    writeFileSync(gitDir('lntt-review.lock'), String(dead))
-    assert.equal(json().out.running, dead, 'a lock touched a moment ago is a round running, its pid seen or not')
-    ageLock(gitDir('lntt-review.lock'))
-    assert.equal(json().out.running, null, 'a lock whose process is gone is no round running')
-    assert.equal(lntt(['status', '--clear']).code, 1, 'still not merged')
-    assert.equal(existsSync(stateFile()), true)
-    assert.equal(existsSync(ledgerFile()), true)
-    assert.equal(readFileSync(gitDir('lntt-review.lock'), 'utf8'), String(dead), 'the lock is never removed')
-
-    git('switch', '-qc', 'feat/2/y')
-    const nothing = lntt(['status', '--clear'])
-    assert.equal(nothing.code, 0)
-    assert.equal(nothing.out, 'lntt review: nothing to clear\n')
-    assert.equal(existsSync(stateFile()), true, "another branch's state is not this branch's to clear")
-  })
-
-  test('--clear of a state that cannot be read keeps the ledger of a branch that is not merged', () => {
-    assert.equal(lntt(['--base', 'main'], blocker).code, 1)
-    assert.equal(lntt(['reply', 'f1', 'fair'], { FAKE_REPLY: 'withdrawn\\nfair' }).code, 0)
-    const ledger = readFileSync(ledgerFile(), 'utf8')
-    put(stateFile(), '{')
-    const r = lntt(['status', '--clear'])
-    assert.equal(r.code, 0, r.err)
-    assert.equal(r.out, 'lntt review: cleared an unreadable state: its state and progress\n')
-    assert.equal(existsSync(stateFile()), false)
-    assert.equal(readFileSync(ledgerFile(), 'utf8'), ledger)
-  })
-
-  test('a ledger that cannot be read closes nothing in status', () => {
-    assert.equal(lntt(['--base', 'main'], blocker).code, 1)
-    assert.equal(lntt(['reply', 'f1', 'fair'], { FAKE_REPLY: 'withdrawn\\nfair' }).code, 0)
-    put(ledgerFile(), '{')
-    assert.deepEqual(json().out.state.closed, [])
   })
 
   test('--clear on the current branch once it is merged into the base', () => {
@@ -1772,28 +1622,6 @@ describe('reading a part of the review state', () => {
       )
     })
 
-    test('a clean round has every count at zero, and its one line', () => {
-      assert.equal(lntt(['--base', 'main']).code, 0)
-      const head = git('rev-parse', '--short', 'HEAD')
-      const r = lntt(['status'])
-      assert.equal(r.code, 0, r.err)
-      assert.equal(
-        r.out,
-        [
-          'findings: 0 (0 open)',
-          'refuted: 0',
-          'repeated: 0',
-          'closed: 0',
-          'failed: 0',
-          'partial: 0',
-          'skipped: 0',
-          'rounds: 1',
-          `lntt review: feat/1/x: round 1 of 4, reviewed ${head}, clean; 0 open, 0 replied, 0 closed, 1.5k tokens, $0.01`,
-          '',
-        ].join('\n'),
-      )
-    })
-
     test('a failed agent takes one short line, its whole error left in the state', () => {
       fullState()
       const saved = JSON.parse(readFileSync(stateFile(), 'utf8'))
@@ -1815,25 +1643,6 @@ describe('reading a part of the review state', () => {
       saved.result.skipped = [{ lens: 'code', agent: 'a', error: 'e' }]
       put(stateFile(), JSON.stringify(saved))
       assert.match(lntt(['status']).out, /, 1 partial, 1 skipped, /)
-    })
-
-    test("no state, and another branch's: the one line, nothing folded", () => {
-      assert.equal(lntt(['status']).out, 'lntt review: no round on feat/1/x yet\n')
-      fullState()
-      git('switch', '-qc', 'feat/2/y')
-      const r = lntt(['status'])
-      assert.equal(r.code, 4, r.err)
-      assert.equal(r.out.split('\n').length, 2, r.out)
-      assert.equal(r.out, 'lntt review: no round on feat/2/y yet\n')
-    })
-
-    test('a state saved before scope and lenses existed reads with their defaults', () => {
-      fullState()
-      const saved = JSON.parse(readFileSync(stateFile(), 'utf8'))
-      delete saved.result.scope
-      delete saved.result.lenses
-      put(stateFile(), JSON.stringify(saved))
-      assert.equal(query('.state | [.scope, .lenses]').out, '["",[]]\n')
     })
 
     test('--json carries the last round whole, and the rounds', () => {

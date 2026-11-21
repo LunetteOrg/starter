@@ -19,7 +19,9 @@ import { Git, GitError } from '../git/git.ts'
 import { Mailbox, MailboxFailed } from '../messages/mailbox.ts'
 import type { Closed, ReviewState } from '../review.ts'
 import { branchKey } from '../review-store.ts'
+import { PackageDir } from '../sync/project.ts'
 import { memoryFileSystem } from '../testing/file-system.ts'
+import { templateFiles } from '../testing/templates.ts'
 import { lockPath } from '../worktree/holder.ts'
 import { Pids } from '../worktree/lock.ts'
 import { AgentsProcesses } from './agents.ts'
@@ -29,6 +31,7 @@ import { makeStore, ReviewStore } from './store.ts'
 
 const ROOT = '/repo'
 const GIT_DIR = '/repo/.git'
+const PACKAGE = '/lntt'
 const STORE = '/repo/.git/lntt-review'
 const BOX = '/repo/.git/lntt-messages'
 const PROGRESS = `${GIT_DIR}/lntt-review.progress`
@@ -234,10 +237,13 @@ function agents() {
 // A worktree with a branch feat/1/x one commit past main, the project's configuration, and the
 // state store under its git directory: each run of `lntt` is a fresh process on the same files.
 function world() {
-  const fs = memoryFileSystem({ dirs: [GIT_DIR] })
+  const fs = memoryFileSystem({ dirs: [GIT_DIR, `${PACKAGE}/agents/review`] })
+  // lntt's own prompt texts, which a round and a reply read.
+  for (const [path, text] of Object.entries(templateFiles(PACKAGE))) fs.files.set(path, { text, mtime: 0 })
   // The working tree is the tree HEAD names: what a reviewer reads, and a finding cites.
   const repo = repository((tree) => {
-    for (const path of [...fs.files.keys()]) if (!path.startsWith(`${GIT_DIR}/`)) fs.files.delete(path)
+    for (const path of [...fs.files.keys()])
+      if (path.startsWith(`${ROOT}/`) && !path.startsWith(`${GIT_DIR}/`)) fs.files.delete(path)
     for (const [path, text] of Object.entries(tree)) fs.files.set(`${ROOT}/${path}`, { text, mtime: 0 })
   })
   repo.commit({ 'a.ts': 'export const a = 1' }, 'base')
@@ -290,6 +296,7 @@ function world() {
       const err = (yield* TestConsole.errorLines).join('\n')
       return { code, out, err }
     }).pipe(
+      Effect.provideService(PackageDir, PACKAGE),
       Effect.provide(
         Layer.mergeAll(
           (project.placeInvalid === null
