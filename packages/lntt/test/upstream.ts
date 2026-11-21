@@ -7,7 +7,12 @@ import { execFileSync, spawn } from 'node:child_process'
 import { appendFileSync, closeSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Runner } from '../src/worktree.ts'
+import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
+import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
+import { SpawnerLive } from '../src/spawner.ts'
+import { drive as driveSteps, type Start, type Started, type startOrca } from '../src/worktree/hosts.ts'
+import { runSteps } from '../src/worktree/steps.ts'
 
 export type Tool = 'orca' | 'herdr' | 'claude' | 'opencode'
 
@@ -30,6 +35,36 @@ export const FEDERATION = [
 ] as const
 export function federationMissing(env: NodeJS.ProcessEnv): string[] {
   return FEDERATION.filter((name) => !env[name])
+}
+
+// What an adapter's steps are run against: a tool's stdout, a setup script, a pause.
+export interface Runner {
+  run(command: string, args: string[], opts?: { cwd?: string }): string
+  shell(script: string, cwd: string): void
+  sleep(ms: number): void
+}
+
+type Adapter = typeof startOrca
+
+// An adapter's steps run against a Runner, with no process: what the adapter asks, in order.
+export function drive(adapter: Adapter, start: Start, runner: Runner): Started {
+  return driveSteps(adapter(start), (step) => {
+    if (step.kind === 'run') return runner.run(step.command, step.args, step.cwd ? { cwd: step.cwd } : undefined)
+    if (step.kind === 'shell') return runner.shell(step.script, step.cwd)
+    if (step.kind === 'sleep') return runner.sleep(step.ms)
+    return null
+  })
+}
+
+// An adapter on the machine, as `lntt worktree start` runs it (src/worktree/steps.ts): the real
+// tools, the worktree's own orca.yaml setup. A step that fails rejects with its message.
+export function onMachine(adapter: Adapter, start: Start): Promise<Started> {
+  return Effect.runPromise(
+    runSteps(adapter(start)).pipe(
+      Effect.mapError((error) => new Error(error.message)),
+      Effect.provide(Layer.mergeAll(SpawnerLive, NodeFileSystem.layer)),
+    ),
+  )
 }
 
 // Records every call and answers from a table keyed by the command and its first

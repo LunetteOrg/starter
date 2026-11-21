@@ -5,9 +5,10 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { candidateConfig } from '../src/ci/config.ts'
+import { candidateConfigOf } from '../src/ci/config.ts'
 import { validation } from '../src/config/validate.ts'
-import { findConfig, getValue, loadConfig, setValue } from '../src/index.ts'
+import { getValue } from '../src/index.ts'
+import { findConfig, loadConfig, setValue } from './config-files.ts'
 
 const BIN = resolve(dirname(fileURLToPath(import.meta.url)), '../bin/lntt.ts')
 
@@ -47,9 +48,9 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-// The synchronous loader of the modules not yet on Effect (src/config/sync.ts) on a real file
-// system; the loader itself is specified in src/config/load.spec.ts.
-describe('finding the file, synchronously', () => {
+// The file found on a real file system (test/config-files.ts); lntt's own loader is specified in
+// src/config/load.spec.ts.
+describe('finding the file', () => {
   test('walks up from a subdirectory to .agents/config.jsonc', () => {
     const path = write('.agents/config.jsonc', JSONC)
     mkdirSync(join(root, 'packages/deep/src'), { recursive: true })
@@ -164,10 +165,10 @@ describe('delivery.candidate', () => {
 
   test('a candidate status left out of the file takes its default, a written one is kept', () => {
     write('.agents/config.jsonc', JSON.stringify({ delivery: { candidate: { prefix: 'release/' } } }))
-    assert.deepEqual(candidateConfig(root)?.status, { inRelease: 'In release', done: 'Done' })
+    assert.deepEqual(candidateConfigOf(loadConfig(root).data)?.status, { inRelease: 'In release', done: 'Done' })
     const candidate = { prefix: 'release/', status: { inRelease: 'To release' } }
     write('.agents/config.jsonc', JSON.stringify({ delivery: { candidate } }))
-    assert.deepEqual(candidateConfig(root)?.status, { inRelease: 'To release', done: 'Done' })
+    assert.deepEqual(candidateConfigOf(loadConfig(root).data)?.status, { inRelease: 'To release', done: 'Done' })
   })
 
   test('the candidate carries the empty retrospective block of the configuration, for its comment', () => {
@@ -177,7 +178,7 @@ describe('delivery.candidate', () => {
       JSON.stringify({ delivery: { candidate: { prefix: 'release/' }, pullRequest: { retrospective } } }),
     )
     assert.equal(
-      candidateConfig(root)?.retrospective,
+      candidateConfigOf(loadConfig(root).data)?.retrospective,
       '## Retro\n<!-- retro:start -->\n- **Attrito:**\n<!-- retro:end -->\n',
     )
   })

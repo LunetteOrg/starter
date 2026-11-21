@@ -15,12 +15,14 @@
 // --dry-run prints every write instead of making it. Run from the repository root.
 
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { argv, cwd, env, exit, stderr, stdout } from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { BOARD_MUTATION, NOT_PERMITTED, pickBoard } from '../packages/lntt/src/ci/candidate.ts'
-import { loadConfig } from '../packages/lntt/src/index.ts'
+import { CONFIG_DIR, CONFIG_NAME, noConfig, readConfig } from '../packages/lntt/src/config/project.ts'
+import { ancestors, candidates, pick } from '../packages/lntt/src/files.ts'
 
 // gh for this script, synchronous: a read's stdout, trimmed; a write that a dry run logs instead.
 // gh's own refusal text (a token without a permission) is in the error, where NOT_PERMITTED reads
@@ -394,9 +396,20 @@ function main(args: string[]): number {
     makeGh({ dryRun, log, token }),
   )
   const repo = env.GITHUB_REPOSITORY || gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])
-  const target = boardTarget(loadConfig(cwd()).data.board as BoardSection | undefined)
+  const target = boardTarget(boardSection(cwd()))
   report({ gh, ...(board ? { board } : {}), repo, target, log }, { tool, version, step, run, log: text || '(no log)' })
   return 0
+}
+
+// The board section of the configuration found from `dir`, read as lntt reads it (its plain logic,
+// over node:fs): undefined when the configuration has none; no configuration, or one that does not
+// validate, throws with lntt's message.
+export function boardSection(dir: string): BoardSection | undefined {
+  for (const at of ancestors(dir, dirname)) {
+    const located = pick(candidates(join(at, CONFIG_DIR), CONFIG_NAME, join).filter((f) => existsSync(f.path)))
+    if (located) return readConfig(readFileSync(located.path, 'utf8'), located).board as BoardSection | undefined
+  }
+  throw noConfig(dir)
 }
 
 if (argv[1] === fileURLToPath(import.meta.url)) exit(main(argv.slice(2)))

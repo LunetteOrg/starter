@@ -1,11 +1,10 @@
-// The sections of .agents/config.* that `lntt ci` reads, with `loadConfig`:
+// The sections of .agents/config.* that `lntt ci` reads, from the configuration's data:
 // `ci.local` (without it: nothing cloud-only, no fake values, the built-in actions
 // only, a machine-wide lock, 30 minutes per step) and `delivery.candidate` (without
 // it: no candidate).
 
 import { automatedEntries } from '../automated.ts'
 import { readyRules } from '../board-ready.ts'
-import { ConfigError, loadConfig } from '../index.ts'
 import { retrospectiveBlock, retrospectiveRules } from '../pull-request.ts'
 import type { CandidateConfig } from './candidate.ts'
 import type { LockScope } from './lock-rules.ts'
@@ -36,22 +35,7 @@ export function emptyConfig(): CiConfig {
   return { cloudOnly: {}, fake: { secrets: {}, vars: {} }, actions: {}, lock: 'machine', timeoutMinutes: 30 }
 }
 
-// The configuration's data; none at all is a project that has not adopted it yet,
-// while a broken one is an error to fix.
-function data(cwd: string): Record<string, unknown> {
-  try {
-    return loadConfig(cwd).data
-  } catch (error) {
-    if (error instanceof ConfigError && error.message.startsWith('no .agents/config')) return {}
-    throw error
-  }
-}
-
-export function ciConfig(cwd: string): CiConfig {
-  return ciConfigOf(data(cwd))
-}
-
-// The same, from the configuration's data.
+// The ci.local section of the configuration's data, with its defaults.
 export function ciConfigOf(config: Record<string, unknown>): CiConfig {
   const local = (config.ci as Section | undefined)?.local ?? {}
   return {
@@ -66,12 +50,8 @@ export function ciConfigOf(config: Record<string, unknown>): CiConfig {
 // The board statuses a candidate sets when delivery.candidate.status leaves them out.
 export const CANDIDATE_STATUS = Object.freeze({ inRelease: 'In release', done: 'Done' })
 
-// delivery.candidate with its defaults, or null when the project has no candidate.
-export function candidateConfig(cwd: string): CandidateConfig | null {
-  return candidateConfigOf(data(cwd))
-}
-
-// The same, from the configuration's data.
+// delivery.candidate of the configuration's data with its defaults, or null when the project has no
+// candidate.
 export function candidateConfigOf(config: Record<string, unknown>): CandidateConfig | null {
   const section = (config.delivery as { candidate?: Partial<CandidateConfig> & { prefix: string } } | undefined)
     ?.candidate

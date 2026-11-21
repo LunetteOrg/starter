@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import jsonc from 'jsonc-parser'
-import { loadConfig } from '../src/index.ts'
+import { loadConfig } from './config-files.ts'
 
 // One configuration per released version of @lntt/lntt, written with every field that
 // version knew. The schema only grows (the compatibility rule in docs/adr/lntt-command.md):

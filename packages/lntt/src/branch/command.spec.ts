@@ -5,10 +5,11 @@ import { type ChildProcess, ChildProcessSpawner } from 'effect/process'
 import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 import * as TestConsole from 'effect/testing/TestConsole'
+import { ConfigInvalid, ProjectConfig } from '../config/load.ts'
 import { Gh, GhError, type Issue } from '../gh/gh.ts'
 import { repository } from '../testing/repository.ts'
 import type { Host } from '../viewer.ts'
-import { type BranchCommand, command, ProjectData, Stdin } from './command.ts'
+import { type BranchCommand, command, Stdin } from './command.ts'
 
 const ISSUE_77: Issue = {
   title: 'Branch names follow type/issue/slug whatever tool creates the worktree',
@@ -60,12 +61,18 @@ function world() {
       const err = (yield* TestConsole.errorLines).join('\n')
       return { code, out, err }
     }).pipe(
-      Effect.provideService(ProjectData, () => {
-        if (state.refused !== null) throw new Error(state.refused)
-        return state.config
-      }),
       Effect.provide(
         Layer.mergeAll(
+          // The project's configuration, read from the state when the command asks for it.
+          Layer.succeed(ProjectConfig)(
+            ProjectConfig.of({
+              data: Effect.suspend(() =>
+                state.refused === null
+                  ? Effect.succeed(state.config)
+                  : Effect.fail(new ConfigInvalid({ message: state.refused })),
+              ),
+            }),
+          ),
           repo.layer(),
           Gh.memory({
             issue: (n) =>

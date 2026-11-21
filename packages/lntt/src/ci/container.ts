@@ -2,9 +2,8 @@
 // step by step on the host. CircleCI: `circleci local execute` on the processed
 // configuration, one job at a time, with the fake secrets as `-e`. GitHub Actions:
 // `act`, with an event file describing the same pull request or push and the fake
-// secrets as `-s`. The event file is written by the caller: `lntt ci local` in a folder of
-// its scope (src/ci/local.ts), the library's `containerCommand` in the system's temporary
-// folder (src/ci/sync.ts).
+// secrets as `-s`. The event file is written by the caller, `lntt ci local`, in a folder of its
+// scope (src/ci/local.ts).
 
 import type { CiConfig } from './config.ts'
 import type { Event } from './event.ts'

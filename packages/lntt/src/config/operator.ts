@@ -10,7 +10,7 @@
 //
 // A project profile wins over the global one key by key. With no profile at all the speaker is
 // treated as a developer. No file system and no git here: src/config/load.ts finds and reads the
-// files on Effect, src/config/sync.ts for the modules not yet on it.
+// files on Effect.
 
 import { Ajv } from 'ajv'
 import schema from '../../schema/operator.schema.json' with { type: 'json' }

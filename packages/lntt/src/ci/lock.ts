@@ -2,7 +2,7 @@
 // each other's tests. Its files through Effect's FileSystem, the time through the Clock, the
 // processes through CiProcesses; its rules are plain (src/ci/lock-rules.ts). `ciLock` takes it as
 // a resource of the current scope: released when the scope closes, whether the run ended, failed
-// or was interrupted. The library's `acquireLock` is the synchronous shell in src/ci/lock-sync.ts.
+// or was interrupted.
 
 import * as Clock from 'effect/Clock'
 import * as Context from 'effect/Context'

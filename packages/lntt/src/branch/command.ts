@@ -3,10 +3,11 @@
 // arguments and loads this module when the command runs.
 //
 // The logic reaches the machine only through services: git (Git), GitHub (Gh), Orca's CLI
-// (ChildProcessSpawner), the terminal (Console). The project's configuration is read at one place,
-// `configured`, with the loader that is not yet on Effect (ProjectData, which a spec replaces).
-// src/branch/command.spec.ts runs it on in-memory layers.
+// (ChildProcessSpawner), the project's configuration (ProjectConfig: none is the defaults), the
+// terminal (Console). src/branch/command.spec.ts runs it on in-memory layers.
 
+import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
+import * as NodePath from '@effect/platform-node-shared/NodePath'
 import * as Console from 'effect/Console'
 import * as Context from 'effect/Context'
 import * as Data from 'effect/Data'
@@ -24,8 +25,8 @@ import {
   nameFromIssue,
   pushedBranches,
 } from '../branch.ts'
-import { projectData } from '../branch-cli.ts'
 import { captured } from '../captured.ts'
+import { ProjectConfig, ProjectConfigLive } from '../config/load.ts'
 import { exit } from '../exit.ts'
 import { Gh, GhLive } from '../gh/gh.ts'
 import { Git, GitLive } from '../git/git.ts'
@@ -46,11 +47,6 @@ export type BranchCommand =
 // An expected failure of `lntt branch`, reported by its message, exit 1.
 export class BranchFailed extends Data.TaggedError('BranchFailed')<{ message: string }> {}
 
-// The loader of the project's configuration (none is the defaults), sync until it moves to Effect.
-export const ProjectData = Context.Reference<() => Record<string, unknown>>('@lntt/lntt/branch/command/ProjectData', {
-  defaultValue: () => projectData,
-})
-
 // The reader of stdin, which a spec replaces.
 export const Stdin = Context.Reference<() => Promise<string>>('@lntt/lntt/branch/command/Stdin', {
   defaultValue: () => readStdin,
@@ -67,12 +63,9 @@ const pushedOnStdin = Effect.flatMap(Stdin, (read) =>
   }),
 )
 
-// The project's configuration; one the loader refuses is a BranchFailed.
-const configured = Effect.flatMap(ProjectData, (load) =>
-  Effect.try({
-    try: load,
-    catch: (cause) => new BranchFailed({ message: cause instanceof Error ? cause.message : String(cause) }),
-  }),
+// The project's configuration; one that does not validate is a BranchFailed.
+const configured = Effect.flatMap(ProjectConfig, (config) => config.data).pipe(
+  Effect.mapError((error) => new BranchFailed({ message: error.message })),
 )
 
 const say = (line: string) => Console.error(`lntt branch: ${line}`)
@@ -212,7 +205,9 @@ export const command = (parsed: BranchCommand) =>
   )
 
 // The services on the machine.
-const Live = Layer.mergeAll(GitLive, GhLive).pipe(Layer.provideMerge(SpawnerLive))
+const Live = Layer.mergeAll(GitLive, GhLive, ProjectConfigLive).pipe(
+  Layer.provideMerge(Layer.mergeAll(SpawnerLive, NodeFileSystem.layer, NodePath.layer)),
+)
 
 // Runs a command as the process's main program (src/run-command.ts): its exit code.
 export function runBranch(parsed: BranchCommand): Promise<never> {

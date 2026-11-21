@@ -2,8 +2,7 @@
 // `.agents/config.yml`, read from its text, validated against the schema, and edited keeping
 // its comments (jsonc-parser `modify`, the `yaml` Document API). Both formats carry comments,
 // which is why scripts read the file through lntt instead of `jq` or `JSON.parse`. No file
-// system here: src/config/load.ts reads and writes the file on Effect, src/config/sync.ts for
-// the modules not yet on it.
+// system here: src/config/load.ts reads and writes the file on Effect.
 
 import { Ajv } from 'ajv'
 import jsonc from 'jsonc-parser'

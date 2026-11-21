@@ -1,15 +1,12 @@
 // `lntt branch`: the branch name an issue gets, a check of the current branch, and the rename that
 // fixes the name a tool gave it (usage: bin/lntt.ts). This module parses the arguments, exit 2
-// before Effect loads; the command, which also reads the pre-push hook's stdin, runs on Effect (src/branch/command.ts). It also gives the
-// commands not yet on Effect the project's rules and an issue's name.
+// before Effect loads; the command, which also reads the pre-push hook's stdin, runs on Effect
+// (src/branch/command.ts).
 
-import { cwd, env, stderr } from 'node:process'
+import { env, stderr } from 'node:process'
 import { parseArgs } from 'node:util'
 import type { BranchCommand } from './branch/command.ts'
-import { type BranchRules, branchRules, type IssueData, nameFromIssue as nameOf } from './branch.ts'
 import { exit } from './exit.ts'
-import { ConfigError } from './files.ts'
-import { loadConfig } from './index.ts'
 import { detectHost } from './viewer.ts'
 
 const USAGE = [
@@ -22,43 +19,6 @@ function usage(message?: string): never {
   if (message) stderr.write(`lntt branch: ${message}\n`)
   stderr.write(`${USAGE}\n`)
   exit(2)
-}
-
-// A project without a configuration file has the defaults.
-export function projectData(): Record<string, unknown> {
-  try {
-    return loadConfig(cwd()).data
-  } catch (error) {
-    if (error instanceof ConfigError && /no \.agents\/config/.test(error.message)) return {}
-    throw error
-  }
-}
-
-export function rules(): BranchRules {
-  return branchRules(projectData())
-}
-
-// Issue `issue` of the repository in the current directory, read with gh. Loads Effect (src/gh/gh.ts)
-// when called.
-export async function readIssue(issue: number): Promise<IssueData> {
-  const [Effect, Layer, { Gh, GhLive }, { SpawnerLive }] = await Promise.all([
-    import('effect/Effect'),
-    import('effect/Layer'),
-    import('./gh/gh.ts'),
-    import('./spawner.ts'),
-  ])
-  return Effect.runPromise(
-    Effect.flatMap(Gh, (gh) => gh.issue(issue)).pipe(Effect.provide(GhLive.pipe(Layer.provide(SpawnerLive)))),
-  )
-}
-
-// The name issue `issue` gets; `data` when the caller already read it.
-export async function nameFromIssue(
-  issue: number,
-  overrides: { type?: string; slug?: string },
-  data?: IssueData,
-): Promise<string> {
-  return nameOf(issue, overrides, data ?? (await readIssue(issue)))
 }
 
 // A command from its arguments: usage, exit 2, before Effect loads.

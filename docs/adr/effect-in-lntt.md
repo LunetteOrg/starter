@@ -28,9 +28,9 @@ one in a test.
 
 ## Decision
 
-`@lntt/lntt` is written on Effect, module by module, until every module has moved; a
-module that moved stays on Effect. A module moved to Effect follows the rules below; a
-module not yet moved keeps working as it is, and the two meet at a bridge (below).
+`@lntt/lntt` is written on Effect: every command, and every module that reaches the machine,
+follows the rules below. What reaches nothing is plain functions, and the library a script
+imports is on `Promise` (below).
 
 ### The dependency
 
@@ -103,8 +103,7 @@ repository and in `dist/`, which a spec places in memory (`PackageDir` in
   agents are released), and the command exits 130, whichever the signal. `lntt ci local`
   interrupts itself the same way on SIGHUP and SIGQUIT, at its edge
   (`packages/lntt/src/ci/local.ts`): its steps run in process groups of their own, which a
-  closed terminal does not reach. A command not on Effect exits 128 plus the signal, 143 for
-  SIGTERM.
+  closed terminal does not reach.
 - **The teardown gives the exit code:** 0 on success (the code of `after` when the command
   gives one, below), the code of an `exit(code)` the command threw, 130 for an interrupt, 1 for
   any other failure or a defect, which it
@@ -117,18 +116,21 @@ repository and in `dist/`, which a spec places in memory (`PackageDir` in
   arguments, before Effect: a usage error exits 2 having loaded none. `effect/Runtime` and
   `NodeRuntime` take about 24 ms each to load (measured on 2026-11-11, `effect` 4.1.4,
   node 24.22.1, median of 11 fresh processes). Running on `runCommand` is what a command
-  pays for one way to run: `lntt guide`, which prints a file, took 120 ms with no Effect and
-  takes 156 ms on Effect (measured on 2026-11-20, `effect` 4.1.4, node 24.22.1, median of 21
-  fresh processes). Only a command on Effect loads `run-command.ts`.
+  pays for one way to run: `lntt guide`, which prints a file, took 120 ms before it ran on
+  Effect (commit 8b077ee) and 156 ms after (09be0a7), measured on 2026-11-20, `effect` 4.1.4,
+  node 24.22.1, median of 21 fresh processes. A command loads `run-command.ts` once its arguments are read.
 - **A resource is acquired with its release** (`Effect.acquireRelease`), in the scope of
   the command or of the step that uses it. Nothing on Effect is released from
   `process.on('exit')` or from a signal handler.
-- **A child that ends itself with `lntt` belongs to no scope:** `caffeinate -i -w <pid>`,
+- **A child that is not `lntt`'s to stop belongs to no scope:** `caffeinate -i -w <pid>`,
   which keeps macOS awake while `lntt review` runs, exits with `lntt`'s process however it
-  ends. It is started through the spawner in a process group of its own and does not keep
-  the process alive; a scope's release would stop it at the end of a step, before an
-  executable written just before can start. Where there is none to start (not macOS, not
-  installed) the round goes on; any other failure to start it fails the round.
+  ends; the viewer `lntt viewer open` starts detached (Playwright, the system browser) shows
+  the page after `lntt` has exited (`packages/lntt/src/local/machine.ts`). Each is started
+  through the spawner in a process group of its own, in a scope nothing closes, and let go of
+  (`unref`), so it does not keep the process alive; a scope's release would stop it at the end
+  of a step, before an executable written just before can start. Where there is no
+  `caffeinate` to start (not macOS, not installed) the round goes on; any other failure to
+  start it fails the round.
 - **What a passing step of `lntt ci local` started in the background outlives the step:**
   the step's command is a resource of the step's scope, released as any other on a timeout,
   the lock's deadline or an interrupt, and a command that fails takes its process group with
@@ -159,62 +161,44 @@ repository and in `dist/`, which a spec places in memory (`PackageDir` in
   branch`, `lntt pr`): one way to run, its expected failures reported at the edge, and 130 for
   a signal.
 
-### The bridge, while modules move
+### The edge, the library and the plain logic
 
-A Promise function a module on Effect still calls runs under `Effect.tryPromise`, which
-passes it a signal an interrupt aborts when it takes one (a `Spawn` does). One that takes none is
-read at one place the same way as the sync code below: stdin, `readStdin` in
-`packages/lntt/src/stdin.ts`, which `lntt branch check --pre-push` reads through a
-`Context.Reference` its spec replaces. The sync code of
-modules not yet moved that a module on Effect needs is read at one place, a `Context.Reference`
-whose default is the sync function, run under `Effect.try`, which its spec replaces: what it
-throws is a tagged error of the command, reported by its message like any expected failure (the
-project's configuration in `lntt branch` and `lntt pr`). What a module on Effect and the sync code of a
-module not yet moved both read, and which reaches nothing, is plain functions in a module that
-imports no Effect (what the base reads from the names git and GitHub give,
-`packages/lntt/src/base/names.ts`); the library's synchronous `localEvent` keeps its own calls
-to git (`packages/lntt/src/ci/sync.ts`), until the shells go with #341.
-A defect of the Effect code reaches the edge with its stack. A reference to sync code goes when
-its module moves to Effect. The library API of
-`@lntt/lntt` (`packages/lntt/src/index.ts`) is on `Promise`, so a script that imports
-it needs no Effect, and it exports what a script outside `lntt` uses: a function that only
-`lntt`'s own commands called goes from it when its module moves (what `lntt sync` writes and
-`lntt check` reads). A library function whose logic moved (`askAll`, `runRound`), and a
-function a command not yet on Effect calls (`projectBase` in `packages/lntt/src/base.ts`), imports its
-Effect form with `await import(...)` when it is called and runs it with `Effect.runPromise`,
-its callbacks under `Effect.sync`, `Effect.try` and `Effect.tryPromise` (a `Spawn` is the
-`Agents` layer `Agents.fromSpawn`, an `AbortSignal` the stop). The base keeps its modules and
-its layer of git and gh per directory (`packages/lntt/src/base.ts`); the layer is a description
-that holds no resource, so each run builds the services again. A `Spawn` that rejects is
-that agent's failed answer in `askAll`; an ask, a brief or a cited line that throws rejects
-`runRound` with what it threw.
-A command that does not call it loads no Effect for it.
-
-The other way round, a module on Effect that modules not yet moved call synchronously keeps a
-synchronous form for them: a thin shell over `node:` around the same plain logic, which loads
-no Effect. The project's configuration and the operator profile are such a module: their logic
-is plain (`packages/lntt/src/config/project.ts`, `packages/lntt/src/config/operator.ts`), their
-Effect form `packages/lntt/src/config/load.ts` (with `ProjectConfig`, the configuration as a
-service), and their shell `packages/lntt/src/config/sync.ts`, which is also the library's
-synchronous `findConfig`, `loadConfig`, `setValue` and `loadOperator`. The ci:local lock is
-another: its rules are plain (`packages/lntt/src/ci/lock-rules.ts`), `lntt ci local`
-takes it on Effect as a resource of its scope (`packages/lntt/src/ci/lock.ts`), and the library's
-`acquireLock` is its shell (`packages/lntt/src/ci/lock-sync.ts`), whose `release` returns once the
-file is changed. The shells are transitional: each goes when the last module that calls it moves, with #341.
-
-Where the plain logic is a sequence of calls to tools with decisions between them (the worktree
-adapters of `lntt worktree start`, which the library exports synchronously as `startOrca`,
-`startHerdr` and `startGit`), it is written once as a generator that yields the step it needs (a
-tool to run, a setup script, a pause, a worktree's setup) and receives its result
-(`packages/lntt/src/worktree/hosts.ts`). Two drivers run the same steps: a synchronous one over
-the library's `Runner` (`packages/lntt/src/worktree.ts`), which loads no Effect, and one on
-Effect over the spawner, the Clock and the FileSystem (`packages/lntt/src/worktree/steps.ts`). A
-step that fails is thrown into the generator, so an adapter catches what it expects as plain code
-does, and what it throws is the command's tagged error. The loaders of `lntt ci local` are written
-the same way (`packages/lntt/src/ci/asks.ts`: a file, a directory, the PATH, the files changed, a
-CircleCI configuration processed): the library's `githubJobs`, `circleciJobs` and `localAction`
-drive them over `node:` (`packages/lntt/src/ci/sync.ts`), the command over the FileSystem, the
-spawner and Git (`packages/lntt/src/ci/host.ts`).
+- **The edge of a command is its parser** (`packages/lntt/src/*-cli.ts`, `packages/lntt/src/ci/cli.ts`):
+  it reads the arguments, a usage error exiting 2 before Effect loads, and what the command takes
+  from the session (the directory, the operator's home, the variables, the platform), and reads
+  stdin to its end with `readStdin` (`packages/lntt/src/stdin.ts`) when the command takes it as an
+  input (a draft, a hook's input). `lntt branch check --pre-push` reads it inside the command,
+  through a `Context.Reference` its spec replaces, so a stdin it cannot read is the command's
+  failure.
+- **The library is on `Promise`.** `@lntt/lntt` (`packages/lntt/src/index.ts`) and
+  `@lntt/lntt/ci` export plain functions and `Promise` functions, so a script that imports them
+  needs no Effect, and they export what a script outside `lntt` uses: there is no synchronous
+  form of what `lntt` reads on Effect (the configuration, the ci:local lock, the worktree
+  adapters, the CI's loaders). A library function whose logic is on Effect (`askAll`,
+  `runRound`, `runJobs`, `commitlintConfig`) imports its Effect form with `await import(...)`
+  when it is called and runs it with `Effect.runPromise` on Node's layers, its callbacks under
+  `Effect.sync`, `Effect.try` and `Effect.tryPromise` (a `Spawn` is the `Agents` layer
+  `Agents.fromSpawn`, an `AbortSignal` the stop). A `Spawn` that rejects is that agent's failed
+  answer in `askAll`; an ask, a brief or a cited line that throws rejects `runRound` with what it
+  threw. A command that does not call it loads no Effect for it.
+- **What reaches nothing is plain functions** in modules that import no Effect, with plain specs,
+  and the Effect form beside them reads and writes what they compute: the project's configuration
+  and the operator profile (`packages/lntt/src/config/project.ts`,
+  `packages/lntt/src/config/operator.ts`, read by `packages/lntt/src/config/load.ts`, with
+  `ProjectConfig`, the configuration as a service), what `lntt sync` writes
+  (`packages/lntt/src/agents.ts`, `packages/lntt/src/skills.ts`, read and written by
+  `packages/lntt/src/sync/project.ts`), the rules of the locks (`packages/lntt/src/worktree/holder.ts`,
+  `packages/lntt/src/ci/lock-rules.ts`), what the base reads from the names git and GitHub give
+  (`packages/lntt/src/base/names.ts`).
+- **A sequence of calls to tools with decisions between them is a generator** that yields the
+  step it needs (a tool to run, a setup script, a pause, a file, the PATH, the files changed, a
+  CircleCI configuration processed) and receives its result: the worktree adapters of `lntt
+  worktree start` (`packages/lntt/src/worktree/hosts.ts`) and the loaders of `lntt ci local`
+  (`packages/lntt/src/ci/asks.ts`). A driver on Effect runs it over the spawner, the Clock, the
+  FileSystem and Git (`packages/lntt/src/worktree/steps.ts`, `packages/lntt/src/ci/host.ts`); a step
+  that fails is thrown into the generator, so an adapter catches what it expects as plain code
+  does, and what it throws is the command's tagged error. A spec drives the same generator over
+  answers of its own.
 
 ### Tests beside each module
 
@@ -254,9 +238,10 @@ functions: its commitlint configuration awaits `commitlintConfig()`
 A project that uses Effect itself
 resolves its own version beside `lntt`'s.
 
-`@lntt/lntt/ci` exports what plans and runs a project's CI on the machine (`lntt ci local`'s
-loaders, its run, its lock), in their synchronous and `Promise` forms, and the reading of
-`delivery.candidate` (`candidateConfig`). The candidate automation and the check of a tree already
+`@lntt/lntt/ci` exports the plain logic of a project's CI on the machine (the expressions, the
+actions, CircleCI's `when` and mapping, the report, the reading of `ci.local` and
+`delivery.candidate`: `ciConfigOf`, `candidateConfigOf`) and the run of a plan on `Promise`
+(`runJobs`, `stopRunning`, `machineLoad`). The candidate automation and the check of a tree already
 proved belong to their commands, `lntt ci candidate` and `lntt ci proved`, their only callers, and
 are not exported.
 
@@ -277,12 +262,8 @@ are not exported.
 - 59 MB more in every project's `node_modules`, and Effect's major versions to follow:
   a major bump of `effect` is a change of `lntt` like any other, released in a version
   of `@lntt/lntt`.
-- While modules move, two styles live side by side, and the Promise wrappers, the
-  `Context.Reference`s to sync code and the sync shells are code that exists only for the
-  migration.
 - An interrupted command exits 130 for SIGTERM too: a caller can no longer tell the two
-  signals apart by the code. Until every command moves, the command not on Effect still
-  exits 143 for SIGTERM.
+  signals apart by the code.
 - `@effect/vitest` follows vitest's major versions: the repo moves to a new vitest
   major with it, and with `@lntt/test-utils`, whose vitest peer every template installs.
 
@@ -316,9 +297,13 @@ are not exported.
   releases resources at the end of a block, but gives no interruption that reaches a
   running child process, no errors in the signature and no service injection: the
   tests would still go through the CLI.
-- **Keeping the modules not yet moved on Promises.** Two styles would live side by side for
-  good, and the bridge between them would stay: the resources, errors and services this
-  record gives a module on Effect would stop at every call into one that is not.
+- **Some modules on Promises beside those on Effect.** Two styles would live side by side for
+  good, and a bridge between them would stay: the resources, errors and services this record
+  gives a module on Effect would stop at every call into one that is not.
+- **A synchronous library form beside the Effect one** (`findConfig`, `acquireLock`,
+  `startOrca`, `githubJobs`, kept as thin shells over `node:`). A second implementation of each
+  reading of the machine, kept in step with the first by hand; a script that needs the machine
+  awaits a `Promise` form instead, as a commitlint configuration awaits `commitlintConfig()`.
 - **The whole package at once.** One change that rewrites every command can be reviewed
   only as a whole, and keeps the package out of a release until it is all done: a
   module moves with its tests beside it, in a change of its own.

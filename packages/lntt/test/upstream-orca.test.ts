@@ -8,13 +8,15 @@ import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import { HostEnv, orcaSubagents, subagentEvent } from '../src/review/orca.ts'
 import { SpawnerLive } from '../src/spawner.ts'
-import { runner, type Start, setupScript, startOrca } from '../src/worktree.ts'
+import { type Start, startOrca } from '../src/worktree/hosts.ts'
 import {
   background,
   collect,
   drawn,
+  drive,
   flagsOf,
   missingFlags,
+  onMachine,
   readLog,
   recorder,
   throwawayHome,
@@ -62,13 +64,13 @@ describe('Orca flags', () => {
       'orca terminal wait': JSON.stringify({ result: { wait: { satisfied: true } } }),
       'orca orchestration worker-start': JSON.stringify({ result: { dispatch: { dispatchId: 'd' } } }),
     })
-    startOrca(START, recording)
-    startOrca({ ...START, agent: { kind: 'opencode', model: 'opencode/free' } }, recording)
+    drive(startOrca, START, recording)
+    drive(startOrca, { ...START, agent: { kind: 'opencode', model: 'opencode/free' } }, recording)
     const worker = recorder({
       'orca worktree create --help': '--name <name> --agent <id>',
       'orca worktree create': JSON.stringify({ result: { worktree: { path: '/w' } } }),
     })
-    startOrca(START, worker.runner)
+    drive(startOrca, START, worker.runner)
     const used = new Map<string, Set<string>>()
     for (const [command, ...args] of [...calls, ...worker.calls]) {
       if (command !== 'orca' || args.includes('--help')) continue
@@ -134,11 +136,13 @@ describe('Orca headless', () => {
     timeout: 180_000,
   }, async () => {
     const brief = 'lntt upstream check: Orca starts the agent'
-    const started = startOrca(
-      { ...START, branch: 'feat/137/upstream-host', root: repo, brief, parent: undefined },
-      runner,
-      setupScript,
-    )
+    const started = await onMachine(startOrca, {
+      ...START,
+      branch: 'feat/137/upstream-host',
+      root: repo,
+      brief,
+      parent: undefined,
+    })
     assert.ok(started.path && existsSync(started.path), `the worktree exists: ${started.path}`)
     assert.ok(worktrees().includes(`worktree ${started.path}\n`), 'git lists the worktree')
     assert.ok(started.agent && started.agent !== 'unknown', `the agent's handle: ${started.agent}`)
@@ -159,18 +163,14 @@ describe('Orca headless', () => {
     timeout: 180_000,
   }, async () => {
     const brief = 'Reply with the single word ok.'
-    const started = startOrca(
-      {
-        ...START,
-        branch: 'feat/137/upstream-shell',
-        root: repo,
-        brief,
-        parent: undefined,
-        agent: { kind: 'opencode', model: process.env.UPSTREAM_OPENCODE_MODEL ?? 'opencode/deepseek-v4.1-flash-free' },
-      },
-      runner,
-      setupScript,
-    )
+    const started = await onMachine(startOrca, {
+      ...START,
+      branch: 'feat/137/upstream-shell',
+      root: repo,
+      brief,
+      parent: undefined,
+      agent: { kind: 'opencode', model: process.env.UPSTREAM_OPENCODE_MODEL ?? 'opencode/deepseek-v4.1-flash-free' },
+    })
     assert.ok(started.path && existsSync(started.path), `the worktree exists: ${started.path}`)
     assert.ok(worktrees().includes(`worktree ${started.path}\n`), 'git lists the worktree')
     assert.match(started.agent ?? '', /\S/)
