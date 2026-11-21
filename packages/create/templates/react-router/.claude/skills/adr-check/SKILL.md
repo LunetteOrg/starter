@@ -23,7 +23,7 @@ and recommended actions only.
 
 2. **Derive the check matrix at runtime — do not hardcode it.** The ADR set
    evolves (decisions get added and rewritten in place), so build the matrix
-   *now* from what you just read: for each accepted ADR, turn its `## Decision`
+   _now_ from what you just read: for each accepted ADR, turn its `## Decision`
    into one or more checkable rules, and pull the enforceable rules listed under
    "Architecture Rules" in `CLAUDE.md`. Tie every rule back to the file and
    heading it came from by reading it, never by reciting from memory. (Each rule is the mechanically-checkable form of an ADR's

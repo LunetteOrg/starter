@@ -7,7 +7,7 @@ description: Audit the design/UX discipline — tokens vs raw values, light+dark
 
 Produce a **report** on how well the UI and its styles respect the project's
 design discipline: tokens as the single source of truth, light+dark theming,
-accessibility and consistency (see the *Design tokens* and *Dark theme*
+accessibility and consistency (see the _Design tokens_ and _Dark theme_
 decisions in [`docs/adr/`](../../../docs/adr/README.md), anchored
 `#design-tokens` / `#dark-theme`). Do **not** edit files — output violations
 and recommended actions only, ordered by severity.

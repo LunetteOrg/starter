@@ -2,7 +2,7 @@
 
 - Status: guidance
 
-> **Recommended, not enforced.** The *decision* — every story runs in a real
+> **Recommended, not enforced.** The _decision_ — every story runs in a real
 > browser and an axe violation fails the build — lives in
 > [testing → Component tests](../adr/testing.md#component-tests). This page
 > is about the opposite: what that gate **does not** catch, so a green run isn't
@@ -54,7 +54,7 @@ component that carries the risky surfaces, rather than a blanket doubling.
 
 Note that the starter's dark neutrals are a **starting point, not a validated
 palette**: docs/adr/design-system.md records the `--shadow-*` and feedback colours
-(`--color-success/-warning/-danger`) as deliberately *not* remapped for dark. Turn
+(`--color-success/-warning/-danger`) as deliberately _not_ remapped for dark. Turn
 the dark check on and those will surface as real contrast failures — that is the
 check working, and the signal to tune the palette to your brand.
 
@@ -87,11 +87,11 @@ something axe can verify — it only sees the DOM at rest.
 
 **Assert it in a `play` function.** The exemplar demonstrates the shape: Tab to
 the control, assert focus landed on it, activate with Enter, assert the handler
-fired. Do the keyboard assertions *before* any mouse click, or the click will
+fired. Do the keyboard assertions _before_ any mouse click, or the click will
 have moved focus already and the reachability assertion proves nothing.
 
 ## The rule of thumb
 
-Treat a green axe run as *"no obvious markup defect"*, never as *"accessible"*.
+Treat a green axe run as _"no obvious markup defect"_, never as _"accessible"_.
 The gate exists to make regressions loud, not to certify the component. The three
 gaps above are where human judgement still does the work.

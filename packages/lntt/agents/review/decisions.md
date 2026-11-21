@@ -17,10 +17,13 @@ is what needs judgement.
    those: a process rule inside an ADR, a configuration value copied instead of cited
    by its key, a document that narrates how it was reached instead of the state it
    proposes, options not taken scattered through the text instead of closing it under
-   *Discarded directions*.
+   _Discarded directions_.
 6. **Figures** (the `figures` lines, from the records the change touches): a figure
    about the world outside (a price, a count of users, another tool's version, what is
    on the board) or a count of the code as it is today goes stale without anyone
    deciding anything: a warning. Ask of each: would it measure the same in a year? A
    figure about the technology (what an encoding costs) holds. The same figure anchored
    to two different quantities is a warning too.
+
+In 5 and 6, a line of a touched record that the change did not touch, and does not
+contradict, is a pre-existing finding: `[pre-existing]` after its severity (below).

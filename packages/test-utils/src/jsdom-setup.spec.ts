@@ -117,22 +117,22 @@ describe('the stubs', () => {
   })
 })
 
+let unmountTimerRan = false
+// An editor destroyed in `setTimeout(…, 1)` when its component unmounts.
+function Editor() {
+  useEffect(
+    () => () => {
+      setTimeout(() => {
+        unmountTimerRan = true
+      }, 1)
+    },
+    [],
+  )
+  return createElement('p', null, 'left behind')
+}
+
 // The two tests run in order: the second sees what the first left.
 describe('after each test', () => {
-  let unmountTimerRan = false
-  // An editor destroyed in `setTimeout(…, 1)` when its component unmounts.
-  function Editor() {
-    useEffect(
-      () => () => {
-        setTimeout(() => {
-          unmountTimerRan = true
-        }, 1)
-      },
-      [],
-    )
-    return createElement('p', null, 'left behind')
-  }
-
   it('a test renders and moves to fake timers', () => {
     render(createElement(Editor))
     vi.useFakeTimers()

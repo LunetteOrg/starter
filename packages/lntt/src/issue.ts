@@ -5,10 +5,10 @@
 // run, the default) and approves it, and only then is it sent (--send). The skill calls
 // lntt issue, never gh, so another way to send it is added here without changing the
 // skill (#184).
+//
+// Plain logic, no node: module: the draft, the body and its limits. The command runs on
+// Effect (src/issue/command.ts), its searches and writes through the Gh service.
 
-import { spawnSync } from 'node:child_process'
-import type { Gh } from './ci/candidate.ts'
-import { repositoryOf } from './ci/event.ts'
 import { type Dump, renderDump } from './dump.ts'
 
 // The fields of a report, in their order, each a `### <field>` heading as GitHub writes
@@ -39,16 +39,6 @@ export function upstreamRepository(config: {
     )
   }
   return configured
-}
-
-// The repository the command runs in: GITHUB_REPOSITORY in Actions, else the origin
-// remote's, read from git with no network call (gh repo view would follow gh's default
-// repository, the upstream in a fork). Null when neither tells: a report to it is no
-// report, its items are handled here.
-export function currentRepository(root: string, env: Record<string, string | undefined>): string | null {
-  if (env.GITHUB_REPOSITORY) return env.GITHUB_REPOSITORY
-  const origin = spawnSync('git', ['-C', root, 'remote', 'get-url', 'origin'], { encoding: 'utf8' })
-  return origin.status === 0 ? repositoryOf(origin.stdout.trim()) : null
 }
 
 // GitHub names a repository ignoring case: LunetteOrg/starter is lunetteorg/starter.
@@ -144,37 +134,4 @@ export function bodyTooLong(title: string, body: string): string | null {
   const length = [...body].length
   if (length <= BODY_LIMIT) return null
   return `the body is ${length} characters, GitHub takes ${BODY_LIMIT}: shorten the draft, or dump without the failing command`
-}
-
-export interface FoundIssue {
-  number: number
-  title: string
-  url: string
-}
-
-// The open issues of the repository that match: before a draft, the one it would repeat.
-export function searchIssues(gh: Gh, repo: string, words: string): FoundIssue[] {
-  const out = gh.read([
-    'issue',
-    'list',
-    '--repo',
-    repo,
-    '--state',
-    'open',
-    '--search',
-    words,
-    '--json',
-    'number,title,url',
-    '--limit',
-    '20',
-  ])
-  return out === '' ? [] : (JSON.parse(out) as FoundIssue[])
-}
-
-export function fileIssue(gh: Gh, repo: string, title: string, body: string): string {
-  return gh.write(['issue', 'create', '--repo', repo, '--title', title, '--body-file', '-'], body)
-}
-
-export function commentIssue(gh: Gh, repo: string, number: number, body: string): string {
-  return gh.write(['issue', 'comment', String(number), '--repo', repo, '--body-file', '-'], body)
 }

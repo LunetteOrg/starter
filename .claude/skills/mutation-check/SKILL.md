@@ -1,6 +1,6 @@
 ---
 name: mutation-check
-description: Check that a test falls for the right reason before it is accepted — break the line it guards with lntt check tests mutate, see which test fails and why, and report the mutation in the pull request body. Reads `tests.levels` from `.agents/config.*`. Use after writing or changing a test that guards a line, before the first review round of a change that adds tests, and when asked whether a test would catch the code being wrong.
+description: Check by hand that a test fails for the right reason — break the line it guards with lntt check tests mutate and see which test fails and why. A tool, never required. Reads `tests.levels` from `.agents/config.*`. Use when the author doubts a test, when a note of the `tests` review lens proposes a mutation, and when asked whether a test would catch the code being wrong.
 ---
 <!-- installed by lntt sync from @lntt/lntt: edit the skill in the package, not this stub -->
 

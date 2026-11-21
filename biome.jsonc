@@ -1,0 +1,68 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.7/schema.json",
+  "files": {
+    "includes": [
+      "packages/create/bin/**",
+      "packages/create/test/**",
+      "packages/lntt/**",
+      "!packages/lntt/plugin",
+      // Left as written: check.test.ts asserts the line of each defect planted in these
+      // records, and formatting moves the lines.
+      "!packages/lntt/test/fixtures/decisions",
+      // Left as written: the coordinator's brief sets the issues and the waiting fragment
+      // inside list items, so their indent is the code's; src/worktree/coordinator.spec.ts reads the brief.
+      "!packages/lntt/agents/coordinator.md",
+      "!packages/lntt/agents/coordinator-waiting.md",
+      "packages/biome-config/**",
+      "packages/typescript-config/**",
+      "packages/stylelint-config/**",
+      "packages/playwright-config/**",
+      "packages/test-utils/**",
+      "!packages/test-utils/src/__fixtures__",
+      "scripts/**",
+      "package.json",
+      "biome.jsonc",
+      "commitlint.config.mjs",
+      "!**/node_modules",
+      "!**/templates"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 120
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended"
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["packages/lntt/test/**"],
+      "linter": { "domains": { "test": "none" } }
+    },
+    {
+      "includes": ["packages/typescript-config/*.json"],
+      "json": { "parser": { "allowComments": true } }
+    }
+  ],
+  // Biome reads a YAML frontmatter only with this option; without it, it rewrites one
+  // as a thematic break and a heading.
+  "markdown": {
+    "parser": { "frontmatter": true }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "semicolons": "asNeeded"
+    }
+  },
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  }
+}

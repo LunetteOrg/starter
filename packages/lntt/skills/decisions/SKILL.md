@@ -6,9 +6,9 @@ description: Write, update and check a Lunette project's decision records (ADRs,
 # Decision records
 
 One skill for every record a Lunette project keeps: architecture decisions (ADRs),
-product decisions (PDRs) and process descriptions. The rules for *how* a record is
+product decisions (PDRs) and process descriptions. The rules for _how_ a record is
 written are the same everywhere and live in this skill
-([`references/recording-rules.md`](./references/recording-rules.md)). *Which* logs a
+([`references/recording-rules.md`](./references/recording-rules.md)). _Which_ logs a
 project has, where and in which language, is the project's own, in its configuration.
 This skill is installed unchanged in every project: never edit it to fit one.
 
@@ -40,10 +40,10 @@ Follow [`references/recording-rules.md`](./references/recording-rules.md). In sh
   description ([`references/process-descriptions.md`](./references/process-descriptions.md)).
   Process descriptions are never mixed into ADRs.
 - **Find the subject first.** A decision about a subject that already has a file is
-  written *into that file*, rewriting what changed. A new file only for a new subject.
+  written _into that file_, rewriting what changed. A new file only for a new subject.
 - **Write the state, not the history.** The file says what holds now; git keeps how it
   got there. No `superseded by`, no struck-through text, no amendment sections.
-- **Options not taken** go in *Discarded directions* at the end, each with its reason.
+- **Options not taken** go in _Discarded directions_ at the end, each with its reason.
 - **A log with `boardReferences: false` cites documents only:** no issue number, no
   issue or pull request link. What the record does not settle yet is said in words.
 - **Copy the log's `template`** for a new file, and add it to the log's `index`.
@@ -82,7 +82,7 @@ apply fixes: output findings and recommended actions only.
 6. **Read the prose of the records the change touches** against the recording rules:
    a process rule inside an ADR, a value repeated from the configuration instead of
    citing its key, a record that narrates how it was reached, discarded options outside
-   *Discarded directions*.
+   _Discarded directions_.
 7. **Reconcile the figures** of those records (`pnpm exec lntt check decisions numbers <file>`,
    or the `figures` lines with `--base`): a figure about the world outside or a count
    of today's code is stale in a year; one about the technology holds.

@@ -37,7 +37,7 @@ Ship four spaces in every scaffolded project:
 
 - **`docs/product/`**: the **product-decision log** (PDR), one file per product
   subject, corrected in place like the ADRs ([recording decisions](./recording-decisions.md)).
-  It is the *source of truth* for product/design choices, next to `docs/adr/`.
+  It is the _source of truth_ for product/design choices, next to `docs/adr/`.
 - **`reference/`** — a top-level **quarantine** for raw input. Committed (the
   reference travels with the code) but excluded from the toolchain: it is no
   workspace package (so Turbo/pnpm ignore it) and is added to Biome's ignore list,

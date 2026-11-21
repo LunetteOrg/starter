@@ -64,9 +64,14 @@ describe('BIOME_DOMAIN_OF_DEPENDENCY', () => {
   it('maps every dependency to a rule domain Biome knows', () => {
     const schemaPath = createRequire(import.meta.url).resolve('@biomejs/biome/configuration_schema.json')
     const schema = JSON.parse(readFileSync(schemaPath, 'utf8')) as {
-      $defs: { RuleDomain: { oneOf: { const: string }[] } }
+      $defs?: { RuleDomains?: { properties?: Record<string, unknown> } }
     }
-    const known = new Set(schema.$defs.RuleDomain.oneOf.map((domain) => domain.const))
+    // Biome 2.6 lists the domains as the properties of RuleDomains; another shape fails
+    // here, by name, rather than as an unknown domain.
+    const domains = schema.$defs?.RuleDomains?.properties
+    expect(domains, 'the domains of $defs.RuleDomains.properties in Biome’s schema').toBeTypeOf('object')
+    const known = new Set(Object.keys(domains ?? {}))
+    expect(known.size).toBeGreaterThan(0)
     expect(Object.values(BIOME_DOMAIN_OF_DEPENDENCY).filter((domain) => !known.has(domain))).toEqual([])
   })
 })

@@ -1,6 +1,6 @@
 # Product decisions — writing & reviewing
 
-> **Recommended, not enforced.** The template ships the *shape* — a granular PDR
+> **Recommended, not enforced.** The template ships the _shape_ — a granular PDR
 > log ([`docs/product/`](../product/README.md)) rendered for review in Storybook's
 > `Product/` section, a quarantined [`reference/`](../../reference/README.md)
 > for the raw material, and [`compliance/`](../../compliance/README.md) for the
@@ -30,7 +30,7 @@ to catch drift (a PDR with no page, a page importing a missing file, a PDR citin
 
 ## Reviewing with non-technical stakeholders
 
-The point of rendering in Storybook is that stakeholders review *choices* without
+The point of rendering in Storybook is that stakeholders review _choices_ without
 touching markdown or the repo. Enable comments with the least friction they'll
 tolerate:
 
@@ -39,7 +39,7 @@ tolerate:
 [Chromatic](https://www.chromatic.com/) (by the Storybook team) hosts the built
 Storybook and provides **native review + commenting** on any story or page:
 reviewers open a link, comment on the decision page, and sign off. Set-up lives in
-*your* project, not the template — publish on CI and share the library link:
+_your_ project, not the template — publish on CI and share the library link:
 
 ```jsonc
 // package.json — add to the design-system app
@@ -57,7 +57,7 @@ start; move on if you outgrow the snapshot budget.
 
 ### Evolution — anonymous in-page comments
 
-If stakeholders balk at *any* login, drop a lightweight comment widget straight
+If stakeholders balk at _any_ login, drop a lightweight comment widget straight
 into the decision pages so they leave a name + comment, no account:
 
 - **[Cusdis](https://cusdis.com/)** — tiny, SaaS free tier or self-hosted.
@@ -65,7 +65,7 @@ into the decision pages so they leave a name + comment, no account:
   self-hosted, anonymous allowed.
 
 Embed the widget's snippet in a shared MDX component and render it at the bottom of
-each `Product/*` page. This trades Chromatic's review *workflow* (assignees,
+each `Product/*` page. This trades Chromatic's review _workflow_ (assignees,
 approval) for the lowest possible friction.
 
 > For non-technical stakeholders a GitHub account (Discussions, PR comments) is

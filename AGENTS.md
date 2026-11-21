@@ -39,3 +39,10 @@ that ships them. The layout and the commands are in the [README](./README.md).
 - **A change to the scaffolding contract changes the CLI and every template in the
   same pull request.**
 - **Releases are published by CI, never by hand** ([delivery](./docs/process/delivery.md)).
+- **Code on Effect** (`packages/lntt`, [Effect in `lntt`](./docs/adr/effect-in-lntt.md)): before
+  writing it, read Effect's guide for agents at the installed version,
+  `packages/lntt/node_modules/effect/AGENTS.md` (Effect's `LLMS.md`). Look up idiomatic usage,
+  module structure and APIs in `packages/lntt/node_modules/effect/src` and
+  `packages/lntt/node_modules/@effect/platform-node-shared/src` rather than guessing: the search
+  tools skip `node_modules`, so name these paths. Import Effect's modules by path
+  (`effect/Effect`), never from the `effect` index.

@@ -4,10 +4,12 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -28,7 +30,7 @@ function clean(): Record<string, string> {
 }
 
 function lntt(args: string[], cwd = repo) {
-  return spawnSync(process.execPath, [BIN, ...args], { cwd, encoding: 'utf8', env: clean() })
+  return spawnSync(process.execPath, [BIN, ...args], { cwd, encoding: 'utf8', env: clean(), timeout: 30_000 })
 }
 
 beforeEach(() => {
@@ -45,6 +47,19 @@ afterEach(() => rmSync(tmp, { recursive: true, force: true }))
 
 const box = () => join(repo, '.git', 'lntt-messages')
 
+// The branch `other` is checked out in `worktree`: a child that reports to a role with a marker
+// on it is alive. Written long ago, as a started child's is: a marker younger than a minute is a
+// start in progress, live and never cleared.
+function marker(branch: string, to = 'orchestrator', extra: object = {}) {
+  mkdirSync(join(box(), 'started'), { recursive: true })
+  const file = join(box(), 'started', `${encodeURIComponent(branch)}.json`)
+  writeFileSync(file, `${JSON.stringify({ branch, issue: 7, to, ...extra })}\n`)
+  const hourAgo = new Date(Date.now() - 3_600_000)
+  utimesSync(file, hourAgo, hourAgo)
+}
+const markers = () => (existsSync(join(box(), 'started')) ? readdirSync(join(box(), 'started')) : [])
+const removeWorktree = () => execFileSync('git', ['worktree', 'remove', '--force', worktree], { cwd: repo })
+
 describe('lntt ask / inbox / answer', () => {
   test('a question from one worktree is in the inbox of another, and the answer reaches ask', async () => {
     const asking = spawn(
@@ -59,6 +74,7 @@ describe('lntt ask / inbox / answer', () => {
     const done = new Promise<number | null>((ok) => asking.on('close', ok))
 
     // The coordinator waits in the main checkout; the question comes from a linked worktree.
+    marker('other', 'coordinator', { theme: 'alpha' })
     const listed = lntt(['inbox', '--as', 'coordinator', '--wait', '--interval', '0.05', '--timeout', '20'])
     assert.equal(listed.status, 0, listed.stderr)
     const [first, ...others] = listed.stdout.trim().split('\n')
@@ -77,14 +93,6 @@ describe('lntt ask / inbox / answer', () => {
     assert.equal(lntt(['inbox', '--as', 'coordinator']).stdout, '')
   })
 
-  test('works on the files already in use: a hand-written question and its .answer.md', () => {
-    mkdirSync(join(box(), 'to-coordinator'), { recursive: true })
-    writeFileSync(join(box(), 'to-coordinator', '20261015-090000-adr-level.md'), 'Which ADR level?\n')
-    writeFileSync(join(box(), 'to-coordinator', '20261015-090000-adr-level.answer.md'), 'Level 2.\n')
-    // An answered question is not listed.
-    assert.equal(lntt(['inbox', '--as', 'coordinator']).stdout, '')
-  })
-
   test('ask reads the question from stdin with -', () => {
     const asked = spawnSync(
       process.execPath,
@@ -100,210 +108,6 @@ describe('lntt ask / inbox / answer', () => {
     assert.match(asked.stderr, /no answer to .* in 0\.1 s/)
     const [file] = readdirSync(join(box(), 'to-orchestrator'))
     assert.equal(readFileSync(join(box(), 'to-orchestrator', file as string), 'utf8'), 'A question\nover lines\n')
-  })
-
-  test('a child is addressed by its issue', () => {
-    const asked = lntt([
-      'ask',
-      '--to',
-      'child',
-      '--issue',
-      '84',
-      '--topic',
-      'hint',
-      '--timeout',
-      '0.1',
-      '--interval',
-      '0.05',
-      'Try X',
-    ])
-    assert.equal(asked.status, 1)
-    assert.ok(existsSync(join(box(), 'to-child-84')))
-    assert.equal(JSON.parse(lntt(['inbox', '--as', 'child', '--issue', '84']).stdout).question, 'Try X')
-    assert.equal(lntt(['inbox', '--as', 'child']).stdout, '')
-  })
-
-  test('a child asks the orchestrator about its issue: the issue tags the topic, inbox and answer find it', () => {
-    const asked = lntt(
-      [
-        'ask',
-        '--to',
-        'orchestrator',
-        '--issue',
-        '84',
-        '--topic',
-        'limit',
-        '--timeout',
-        '0.1',
-        '--interval',
-        '0.05',
-        'q',
-      ],
-      worktree,
-    )
-    assert.equal(asked.status, 1, asked.stderr)
-    assert.match(asked.stderr, /no answer to \d{8}-\d{6}-issue-84-limit in 0\.1 s/)
-    const listed = lntt(['inbox', '--as', 'orchestrator'])
-    assert.equal(listed.status, 0, listed.stderr)
-    const message = JSON.parse(listed.stdout)
-    assert.equal(message.topic, 'issue-84-limit')
-    assert.equal(message.path, join(box(), 'to-orchestrator', `${message.id}.md`))
-    const replied = lntt(['answer', message.id, 'go'])
-    assert.equal(replied.status, 0, replied.stderr)
-    assert.equal(lntt(['inbox', '--as', 'orchestrator']).stdout, '')
-    assert.ok(!existsSync(join(box(), 'to-child-84')))
-  })
-
-  test('a child of a theme asks its coordinator about its issue, and the coordinator answers', async () => {
-    const asking = spawn(
-      process.execPath,
-      [
-        BIN,
-        'ask',
-        '--to',
-        'coordinator',
-        '--theme',
-        'alpha',
-        '--issue',
-        '84',
-        '--interval',
-        '0.05',
-        '--timeout',
-        '20',
-        'Which base?',
-      ],
-      { cwd: worktree, env: clean() },
-    )
-    let out = ''
-    asking.stdout.on('data', (d) => {
-      out += d
-    })
-    const done = new Promise<number | null>((ok) => asking.on('close', ok))
-    const listed = lntt([
-      'inbox',
-      '--as',
-      'coordinator',
-      '--theme',
-      'alpha',
-      '--wait',
-      '--interval',
-      '0.05',
-      '--timeout',
-      '20',
-    ])
-    assert.equal(listed.status, 0, listed.stderr)
-    const message = JSON.parse(listed.stdout)
-    assert.equal(message.topic, 'issue-84-which-base')
-    assert.equal(lntt(['answer', message.id, 'main']).status, 0)
-    assert.equal(await done, 0)
-    assert.equal(out, 'main\n')
-  })
-
-  test('inbox --issue still narrows only a child', () => {
-    assert.equal(lntt(['inbox', '--as', 'orchestrator', '--issue', '84']).status, 1)
-  })
-
-  test('ask --wait waits for the answer of a message already sent', async () => {
-    const sent = lntt([
-      'ask',
-      '--to',
-      'orchestrator',
-      '--topic',
-      'later',
-      '--timeout',
-      '0.1',
-      '--interval',
-      '0.05',
-      'q',
-    ])
-    assert.equal(sent.status, 1)
-    const id = JSON.parse(lntt(['inbox', '--as', 'orchestrator']).stdout).id
-    const waiting = spawn(process.execPath, [BIN, 'ask', '--wait', id, '--interval', '0.05', '--timeout', '20'], {
-      cwd: worktree,
-      env: clean(),
-    })
-    let out = ''
-    let err = ''
-    waiting.stdout.on('data', (d) => {
-      out += d
-    })
-    waiting.stderr.on('data', (d) => {
-      err += d
-    })
-    const done = new Promise<number | null>((ok) => waiting.on('close', ok))
-    assert.equal(lntt(['answer', id, 'Yes.']).status, 0)
-    assert.equal(await done, 0, err)
-    assert.equal(out, 'Yes.\n')
-    assert.match(err, new RegExp(`waiting for the answer to ${id}`))
-    // An answer already there is printed at once.
-    const again = lntt(['ask', '--wait', `${id}.md`])
-    assert.equal(again.status, 0, again.stderr)
-    assert.equal(again.stdout, 'Yes.\n')
-  })
-
-  test('ask --wait finds a message sent to a child', () => {
-    const dir = join(box(), 'to-child-84')
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, '20260101-000000-decision.md'), 'q\n')
-    writeFileSync(join(dir, '20260101-000000-decision.answer.md'), 'Go.\n')
-    const r = lntt(['ask', '--wait', '20260101-000000-decision'])
-    assert.equal(r.status, 0, r.stderr)
-    assert.equal(r.stdout, 'Go.\n')
-  })
-
-  test('ask --wait on an unknown id, or with no answer in time, exits 1', () => {
-    const unknown = lntt(['ask', '--wait', '20260101-000000-none'])
-    assert.equal(unknown.status, 1)
-    assert.match(unknown.stderr, /^lntt ask: no message 20260101-000000-none/)
-    mkdirSync(join(box(), 'to-coordinator-alpha'), { recursive: true })
-    writeFileSync(join(box(), 'to-coordinator-alpha', '20261015-090000-q.md'), 'Q\n')
-    const late = lntt(['ask', '--wait', '20261015-090000-q', '--timeout', '0.1', '--interval', '0.05'])
-    assert.equal(late.status, 1)
-    assert.match(late.stderr, /no answer to 20261015-090000-q in 0\.1 s/)
-  })
-
-  test('ask --wait takes no question and no address', () => {
-    assert.equal(lntt(['ask', '--wait', '20261015-090000-q', 'question']).status, 2)
-    for (const [flag, value] of [
-      ['--to', 'orchestrator'],
-      ['--issue', '84'],
-      ['--theme', 'alpha'],
-      ['--topic', 'q'],
-    ]) {
-      const r = lntt(['ask', '--wait', '20261015-090000-q', flag as string, value as string])
-      assert.equal(r.status, 2, `${flag}: ${r.stderr}`)
-      assert.match(r.stderr, new RegExp(`--wait takes no ${flag}`))
-    }
-  })
-
-  test('ask --wait on an id in two directories exits 1: it names more than one message', () => {
-    for (const dir of ['to-orchestrator', 'to-coordinator-alpha']) {
-      mkdirSync(join(box(), dir), { recursive: true })
-      writeFileSync(join(box(), dir, '20261015-090000-q.md'), 'Q\n')
-    }
-    const r = lntt(['ask', '--wait', '20261015-090000-q', '--timeout', '0.1', '--interval', '0.05'])
-    assert.equal(r.status, 1)
-    assert.match(r.stderr, /^lntt ask: 20261015-090000-q names more than one message: /)
-  })
-
-  test('two coordinators in one repository have a mailbox each', () => {
-    lntt([
-      'ask',
-      '--to',
-      'coordinator',
-      '--theme',
-      'alpha',
-      '--topic',
-      'q',
-      '--timeout',
-      '0.1',
-      '--interval',
-      '0.05',
-      'for alpha',
-    ])
-    assert.equal(JSON.parse(lntt(['inbox', '--as', 'coordinator', '--theme', 'alpha']).stdout).question, 'for alpha')
-    assert.equal(lntt(['inbox', '--as', 'coordinator', '--theme', 'beta']).stdout, '')
-    assert.ok(existsSync(join(box(), 'to-coordinator-alpha')))
   })
 
   test('the role of the inbox may come from LNTT_ROLE', () => {
@@ -364,6 +168,52 @@ describe('lntt ask / inbox / answer', () => {
     assert.match(outside.stderr, /^lntt inbox: the mailbox lives in the git common directory/)
   })
 
+  test('stdin that cannot be read is one line and exit 1', () => {
+    const asked = spawnSync(process.execPath, [BIN, 'ask', '--to', 'orchestrator', '-'], {
+      cwd: repo,
+      encoding: 'utf8',
+      env: clean(),
+      // A directory as stdin: a read of it fails with EISDIR.
+      stdio: [openSync(tmp, 'r'), 'pipe', 'pipe'],
+    })
+    assert.equal(asked.status, 1, asked.stderr)
+    assert.match(asked.stderr, /^lntt ask: EISDIR/)
+    assert.equal(asked.stderr.trim().split('\n').length, 1)
+  })
+
+  test('an --issue left empty on ask is no issue: the topic is not tagged', () => {
+    const asked = lntt([
+      'ask',
+      '--to',
+      'orchestrator',
+      '--issue',
+      '',
+      '--topic',
+      't',
+      '--timeout',
+      '0.1',
+      '--interval',
+      '0.05',
+      'q',
+    ])
+    assert.equal(asked.status, 1)
+    assert.match(asked.stderr, /no answer to \d{8}-\d{6}-t in 0\.1 s/)
+  })
+
+  test('ask --wait takes no question and no address', () => {
+    assert.equal(lntt(['ask', '--wait', '20261015-090000-q', 'question']).status, 2)
+    for (const [flag, value] of [
+      ['--to', 'orchestrator'],
+      ['--issue', '84'],
+      ['--theme', 'alpha'],
+      ['--topic', 'q'],
+    ]) {
+      const r = lntt(['ask', '--wait', '20261015-090000-q', flag as string, value as string])
+      assert.equal(r.status, 2, `${flag}: ${r.stderr}`)
+      assert.match(r.stderr, new RegExp(`--wait takes no ${flag}`))
+    }
+  })
+
   test('usage errors exit 2, others exit 1 with one line', () => {
     assert.equal(lntt(['ask', 'Question without --to']).status, 2)
     assert.equal(lntt(['ask', '--to', 'coordinator', '--timeout', 'soon', 'q']).status, 2)
@@ -371,11 +221,55 @@ describe('lntt ask / inbox / answer', () => {
     assert.equal(unknown.status, 1)
     assert.match(unknown.stderr, /^lntt answer: no message 20260101-000000-none/)
     assert.equal(lntt(['ask', '--to', 'boss', 'q']).status, 1)
+    assert.equal(lntt(['inbox', '--as', 'orchestrator', '--follow', '--wait']).status, 2)
+  })
+})
+
+// The children that can write to a mailbox are the markers of `started/` whose branch is
+// still checked out in a worktree that exists: `other` is, in `worktree`, from beforeEach.
+describe('lntt inbox follows the children that report to it', () => {
+  const ask = (text: string, topic = 'later') =>
+    lntt(['ask', '--to', 'orchestrator', '--timeout', '0.1', '--interval', '0.05', '--topic', topic, text])
+
+  test('--wait with no live writer exits 3 at once, and clears the markers of removed worktrees', () => {
+    marker('feat/gone')
+    marker('other')
+    removeWorktree()
+    const r = lntt(['inbox', '--as', 'orchestrator', '--wait', '--interval', '5'])
+    assert.equal(r.status, 3, r.stderr)
+    assert.match(r.stderr, /no child reports to the orchestrator/)
+    assert.deepEqual(markers(), [])
   })
 
-  test('inbox --wait with --timeout ends with exit 1 when nothing comes', () => {
-    const r = lntt(['inbox', '--as', 'coordinator', '--wait', '--interval', '0.05', '--timeout', '0.1'])
-    assert.equal(r.status, 1)
-    assert.match(r.stderr, /no message to the coordinator/)
+  test('a mailbox outside a git directory cannot tell who is alive: exit 1 with the reason', () => {
+    const outside = join(tmp, 'plain')
+    mkdirSync(join(outside, 'started'), { recursive: true })
+    writeFileSync(
+      join(outside, 'started', 'other.json'),
+      `${JSON.stringify({ branch: 'other', issue: 7, to: 'orchestrator' })}\n`,
+    )
+    const r = spawnSync(process.execPath, [BIN, 'inbox', '--as', 'orchestrator', '--wait', '--interval', '0.05'], {
+      cwd: repo,
+      encoding: 'utf8',
+      env: { ...clean(), LNTT_MESSAGES_DIR: outside },
+      timeout: 30_000,
+    })
+    assert.equal(r.status, 1, r.stderr)
+    assert.match(r.stderr, /cannot list the worktrees/)
+  })
+
+  test('--follow prints the unanswered messages at start, not the answered ones, then ends with no writer', () => {
+    ask('Answered', 'answered')
+    lntt(['answer', JSON.parse(lntt(['inbox', '--as', 'orchestrator']).stdout).id, 'done'])
+    ask('Early')
+    const r = lntt(['inbox', '--as', 'orchestrator', '--follow', '--interval', '0.05'])
+    assert.equal(r.status, 3)
+    assert.deepEqual(
+      r.stdout
+        .trim()
+        .split('\n')
+        .map((l) => JSON.parse(l).question),
+      ['Early'],
+    )
   })
 })

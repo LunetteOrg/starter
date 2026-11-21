@@ -12,6 +12,6 @@
   },
   "devDependencies": {
     "@starter/stylelint-config": "workspace:*",
-    "stylelint": "^17.14.0"
+    "stylelint": "^17.16.0"
   }
 }

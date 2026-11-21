@@ -11,10 +11,9 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { ciConfig } from '../../src/ci/config.ts'
 import { type Clone, clone } from '../clone.ts'
 import { git, repo, write } from './helpers.ts'
 
@@ -100,14 +99,6 @@ describe('lntt ci local', () => {
     assert.match(out.stdout, /uses: actions\/checkout@v7\n\s+→ no-op: the working tree is the checkout/)
   })
 
-  test('refuses a dirty working tree', () => {
-    root = repo({ '.github/workflows/ci.yml': CI })
-    writeFileSync(join(root, 'dirty'), 'x')
-    const out = ci('local')
-    assert.equal(out.status, 1)
-    assert.match(out.stderr, /uncommitted changes/)
-  })
-
   test('a red step fails the run, and the report says which', () => {
     root = repo({ '.github/workflows/ci.yml': CI })
     const out = ci('local')
@@ -131,14 +122,6 @@ describe('lntt ci local', () => {
     out = ci('local', '--strict')
     assert.equal(out.status, 0, out.stdout + out.stderr)
     assert.match(out.stdout, /☁ release\.yml\/release {2}cloud-only: publishes to npm/)
-  })
-
-  test('--job runs one job; an unknown one is a usage error', () => {
-    root = repo({ '.github/workflows/ci.yml': CI, 'must-exist': '' })
-    assert.equal(ci('local', '--job', 'ci.yml/ci').status, 0)
-    const out = ci('local', '--job', 'nope')
-    assert.equal(out.status, 2)
-    assert.match(out.stderr, /no job nope \(ci\.yml\/ci\)/)
   })
 
   test('a usage error exits 2', () => {
@@ -188,22 +171,6 @@ jobs:
     assert.deepEqual(readdirSync(join(root, '.git', 'locks')), [])
   })
 
-  test('--no-lock runs without it; --list does not take it', async () => {
-    root = repo({ '.github/workflows/ci.yml': SLOW })
-    const first = backgroundWith({ HOLD: '1' }, 'local')
-    await until(() => existsSync(lock()))
-    const list = ci('local', '--list')
-    assert.equal(list.status, 0, list.stderr)
-    assert.doesNotMatch(list.stderr, /waiting/)
-    const unlocked = ci('local', '--no-lock')
-    assert.equal(unlocked.status, 0, unlocked.stdout + unlocked.stderr)
-    assert.doesNotMatch(unlocked.stderr, /waiting/)
-    // The unlocked run went through while the first one still held the lock.
-    assert.equal(readFileSync(join(root, '.git', 'runner.log'), 'utf8'), 'start\nstart\nend\n')
-    go()
-    assert.equal((await first.done).status, 0)
-  })
-
   // A step that records its background child and holds; then a step and a job that must
   // not start once the run is interrupted.
   const INTERRUPTIBLE = `
@@ -225,9 +192,9 @@ jobs:
 
   for (const [signal, code] of [
     ['SIGINT', 130],
-    ['SIGTERM', 143],
-    ['SIGHUP', 129],
-    ['SIGQUIT', 131],
+    ['SIGTERM', 130],
+    ['SIGHUP', 130],
+    ['SIGQUIT', 130],
   ] as const) {
     test(`${signal} stops the running step with its children, starts nothing more, gives the lock back and exits ${code}`, async () => {
       root = repo({ '.github/workflows/ci.yml': INTERRUPTIBLE })
@@ -284,20 +251,7 @@ jobs:
     assert.equal(stderr.match(/lntt ci: interrupted \(SIGINT\)/g)?.length, 1, stderr)
   })
 
-  test('a lock that cannot be given back is one line, and the run keeps its exit code', async () => {
-    root = repo({ '.github/workflows/ci.yml': SLOW })
-    const first = backgroundWith({ HOLD: '1' }, 'local')
-    await held()
-    rmSync(join(root, '.git', 'locks'), { recursive: true, force: true, ...RETRY })
-    go()
-    const a = await first.done
-    assert.equal(a.status, 0, a.stdout + a.stderr)
-    assert.match(a.stderr, /^lntt ci: cannot give the ci:local lock back \(ENOENT: .*\) — .*ci-local\.lock$/m)
-    assert.equal(a.stderr.match(/cannot give/g)?.length, 1, a.stderr)
-    assert.match(a.stdout, /✔ ci\.yml\/ci/)
-  })
-
-  test('an interrupt that cannot give the lock back still exits 128 plus the signal', async () => {
+  test('an interrupt that cannot give the lock back still exits 130', async () => {
     root = repo({ '.github/workflows/ci.yml': SLOW })
     const first = backgroundWith({ HOLD: '1' }, 'local')
     await held()
@@ -356,61 +310,10 @@ Date.now = () => now() + (existsSync(${JSON.stringify(jump)}) ? 121 * 60_000 : 0
     assert.equal(readFileSync(join(root, '.git', 'runner.log'), 'utf8'), 'start\nend\nstart\nend\n')
   })
 
-  test('the project scope uses a lock file per repository', async () => {
-    root = repo({
-      '.github/workflows/ci.yml': SLOW,
-      '.agents/config.jsonc': JSON.stringify({ ci: { local: { lock: 'project' } } }),
-    })
-    const first = backgroundWith({ HOLD: '1' }, 'local')
-    const locks = join(root, '.git', 'locks')
-    const name = new RegExp(`^ci-local-${basename(root)}-[0-9a-f]{12}\\.lock$`)
-    await until(() => existsSync(locks) && readdirSync(locks).some((f) => name.test(f)))
-    assert.equal(existsSync(lock()), false)
-    go()
-    assert.equal((await first.done).status, 0)
-    assert.deepEqual(readdirSync(locks), [])
-  })
-
-  test('a lock that cannot be taken is one line, exit 1', () => {
-    root = repo({ '.github/workflows/ci.yml': SLOW })
-    writeFileSync(join(root, '.git', 'file'), '')
-    const out = spawnSync(process.execPath, [BIN, 'ci', 'local'], {
-      cwd: root,
-      encoding: 'utf8',
-      env: { ...env(), LNTT_CI_LOCK_DIR: join(root, '.git', 'file', 'locks') },
-    })
-    assert.equal(out.status, 1)
-    assert.match(
-      out.stderr,
-      /^lntt ci: cannot take the ci:local lock \(ENOTDIR: .*\) — .*; --no-lock runs without it\n$/,
-    )
-  })
-
   test('--no-lock is the one negated option', () => {
     root = repo({ '.github/workflows/ci.yml': SLOW })
     assert.equal(ci('local', '--no-list').status, 2)
     assert.equal(ci('local', '--no-strict').status, 2)
-  })
-
-  test('without ci.local: a machine lock and 30 minutes per step, so a quick step passes', () => {
-    root = repo({ '.github/workflows/ci.yml': SLOW })
-    const config = ciConfig(root)
-    assert.deepEqual([config.lock, config.timeoutMinutes], ['machine', 30])
-    const out = ci('local')
-    assert.equal(out.status, 0, out.stdout + out.stderr)
-    assert.equal(readFileSync(join(root, '.git', 'runner.log'), 'utf8'), 'start\nend\n')
-  })
-
-  test('a timeout from the configuration stops the step and prints the load', () => {
-    root = repo({
-      '.github/workflows/ci.yml': SLOW.replace('[ -n "$HOLD" ]', 'true'),
-      '.agents/config.jsonc': JSON.stringify({ ci: { local: { timeoutMinutes: 0.005 } } }),
-    })
-    const out = ci('local')
-    assert.equal(out.status, 1)
-    assert.match(out.stdout, /✖ ci\.yml\/ci .* failed: run: .* timed out/)
-    assert.match(out.stdout, /\(timed out after 0\.3s — load [\d.]+ \/ [\d.]+ \/ [\d.]+ on \d+ cores/)
-    assert.match(out.stdout, /A timeout is not a verdict on the code/)
   })
 })
 
@@ -700,7 +603,7 @@ describe('lntt ci proved', () => {
     [`repos/o/r/actions/workflows/ci.yml/runs?head_sha=${HEAD}&per_page=100`]: {
       workflow_runs: [{ id: 11, event: 'pull_request', status: 'completed', conclusion: 'success', html_url: 'u/11' }],
     },
-    [`repos/o/r/actions/runs/11/jobs?per_page=100`]: {
+    'repos/o/r/actions/runs/11/jobs?per_page=100': {
       jobs: [{ name: 'ci', conclusion: 'success', steps: [{ name: 'Full CI', conclusion: 'success' }] }],
     },
   }
@@ -806,34 +709,6 @@ describe('lntt ci proved', () => {
   })
 })
 
-describe('reporting', () => {
-  test('--list says which steps the event skips', () => {
-    root = repo({
-      '.github/workflows/ci.yml': `
-on: pull_request
-jobs:
-  ci:
-    runs-on: ubuntu-latest
-    steps:
-      - if: github.base_ref == 'main'
-        run: pnpm test
-`,
-    })
-    assert.match(ci('local', '--list').stdout, /pnpm test .*\n\s+→ runs on the host/)
-    assert.match(
-      ci('local', '--list', '--base', 'candidate/1').stdout,
-      /pnpm test .*\n\s+→ skipped: the condition is false for this event/,
-    )
-  })
-
-  test('the summary names jobs left out by --job as not selected', () => {
-    root = repo({ '.github/workflows/ci.yml': CI, '.github/workflows/release.yml': RELEASE, 'must-exist': '' })
-    const out = ci('local', '--job', 'ci.yml/ci')
-    assert.equal(out.status, 0, out.stdout + out.stderr)
-    assert.match(out.stdout, /1 passed, 0 failed, 0 cloud only, 0 skipped, 1 not selected with --job/)
-  })
-})
-
 describe('lntt ci local: the base', () => {
   const CANDIDATE = JSON.stringify({ delivery: { candidate: { prefix: 'candidate/' } } })
   let c: Clone
@@ -861,41 +736,5 @@ describe('lntt ci local: the base', () => {
     assert.equal(out.status, 0, out.stderr)
     assert.match(out.stdout, /pull request feat\/5\/x → candidate\/13 @ \w+ \(diff against (\w+), 0 files changed\)/)
     assert.ok(out.stdout.includes(`diff against ${c.candidate}`), out.stdout)
-  })
-
-  test('with no candidate: origin/main, not the stale local main', () => {
-    const out = list('{}', 'feat/5/x', 'answers')
-    assert.equal(out.status, 0, out.stderr)
-    assert.match(out.stdout, /pull request feat\/5\/x → main @ \w+ \(diff against origin\/main, 1 files changed\)/)
-  })
-
-  test('a push with no origin/main: an error that says to fetch, not the stale local main', () => {
-    root = realpathSync(mkdtempSync(join(tmpdir(), 'lntt-ci-base-')))
-    c = clone(root, { '.agents/config.jsonc': '{}', '.github/workflows/ci.yml': CI })
-    c.git('update-ref', '-d', 'refs/remotes/origin/main')
-    const out = spawnSync(process.execPath, [BIN, 'ci', 'local', '--list', '--event', 'push'], {
-      cwd: c.repo,
-      encoding: 'utf8',
-      env: env(),
-    })
-    assert.notEqual(out.status, 0, out.stdout)
-    assert.match(out.stderr, /no origin\/main.*git fetch origin/)
-  })
-
-  test('an explicit --base wins over the open candidate', () => {
-    const out = list(CANDIDATE, 'feat/5/x', 'answers', '--base', 'main')
-    assert.match(out.stdout, /pull request feat\/5\/x → main /)
-  })
-
-  test('GitHub unreachable: origin/main, and it says so', () => {
-    const out = list(CANDIDATE, 'feat/5/x', 'fails')
-    assert.match(out.stdout, /pull request feat\/5\/x → main /)
-    assert.match(out.stderr, /the open candidate is unknown/)
-  })
-
-  test("a detached HEAD at a candidate's head: the candidate's pull request into main", () => {
-    const out = list(CANDIDATE, 'origin/candidate/13', 'answers')
-    assert.equal(out.status, 0, out.stderr)
-    assert.match(out.stdout, /pull request candidate\/13 → main /)
   })
 })

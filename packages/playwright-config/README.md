@@ -25,7 +25,7 @@ A fixed `port` collides when two worktrees run their suites at once: `e2ePort` f
 ## What it encodes
 
 - `testDir: './__tests__'`, `testMatch: '**/*.e2e.ts'`.
-- **No `webServer`**: Playwright would start it *before* `globalSetup`, before the
+- **No `webServer`**: Playwright would start it _before_ `globalSetup`, before the
   containers the app needs. The app's `globalSetup` starts its containers, then the
   dev server.
 - A clean `storageState` (`{ cookies: [], origins: [] }`): tests that need cookies set

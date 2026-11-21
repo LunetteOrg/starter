@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, wr
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, test } from 'node:test'
-import { FAILURES, issueTitles, KEPT, KEYS_PER_RUN, LNTT_TIMEOUT_MS, WAIT_MS } from './issue-titles-hook.js'
+import { FAILURES, issueTitles, KEPT, KEYS_PER_RUN, LNTT_TIMEOUT_MS, SETTLE_MS } from './issue-titles-hook.js'
 import { LOOKUPS_AT_ONCE } from '../../src/refs.ts'
 import { register } from './register.js'
 
@@ -52,24 +52,30 @@ const fakeRun = async (argv, init, { gh = {}, cache = {}, home = 'o/r' }) => ({
   stderr: '',
 })
 
+// What a drawn block reads as, one line per row of the box, as text.
+const flatten = (node) => {
+  if (typeof node === 'string') return node
+  const kids = node.props.children
+  if (node.props.flexDirection === 'column') return kids.map(flatten).join('\n')
+  return kids.map(flatten).join('')
+}
+
 // A fake engine: lntt answers as fakeRefs, unless `lntt` replaces it (an Error to throw,
 // or a function returning a run's result); `local` says whether the project has its own
-// lntt. Every lntt run is recorded with its options. The clock's sleep never ends, so
-// a delta waits for lntt, unless `late` makes it end after a turn of the event loop:
-// then a call still running is past its wait.
-function engine({
-  gh = {},
-  cache = {},
-  home = 'o/r',
-  local = true,
-  late = false,
-  lntt = null,
-  auth = 0,
-  version = '0.6.2',
-} = {}) {
+// lntt. Every lntt run is recorded with its options. The clock's sleep ends at once.
+// `draw(text)` is the hook's drawing of one AssistantMessage block (what Claude Code
+// draws is the string 'BLOCK'); `flush` plays a message of deltas: the text is drawn when
+// complete, left to settle, and drawn again, as what shows once lookups ended.
+function engine({ gh = {}, cache = {}, home = 'o/r', local = true, lntt = null, auth = 0, version = '0.6.2', hold = false, brokenState = false, now = () => 1000 } = {}) {
   const runs = []
   const waits = []
   const auths = []
+  const invalidated = []
+  const gates = []
+  // The session's list of what was cited (`$.state`, one value), and a clock that says one
+  // time always: the order of the list must not depend on it.
+  const kept = { value: undefined, version: 0, writes: [] }
+  const el = (type) => (props) => ({ type, props })
   const $ = {
     process: {
       run: async (argv, init) => {
@@ -95,48 +101,197 @@ function engine({
         throw new Error(`ENOENT: ${p}`)
       },
     },
-    clock: {
-      sleep: (ms) => {
-        waits.push(ms)
-        return late ? new Promise((r) => setImmediate(r)) : new Promise(() => {})
+    state: {
+      get: async () => {
+        if (brokenState) throw new Error('state is down')
+        return { value: kept.value, version: kept.version }
+      },
+      set: async (ref, value, opts) => {
+        if (brokenState) throw new Error('state is down')
+        if (opts?.ifVersion !== undefined && opts.ifVersion !== kept.version) return { isSet: false, version: kept.version }
+        kept.writes.push(ref)
+        kept.value = value
+        kept.version += 1
+        return { isSet: true, version: kept.version }
       },
     },
+    clock: {
+      now: async () => now(),
+      sleep: (ms) => {
+        waits.push(ms)
+        // `hold`: a sleep ends when `settle()` says, so that a block grows meanwhile.
+        return hold ? new Promise((r) => gates.push(r)) : Promise.resolve()
+      },
+    },
+    ui: { invalidate: (event) => invalidated.push(event), resolve: () => ({ Box: el('Box'), Text: el('Text') }) },
   }
   const hooks = {}
-  issueTitles((event, hook) => {
-    hooks[event] = hook
-    return { catch: () => {} }
-  })
-  // `lag`: the hooks below answer only after a turn of the event loop.
-  const flush = (id, delta, final = false, below = {}, lag = false) =>
-    hooks['classic.MessageDisplay']($, { message_id: id, delta, final }, async () => {
-      if (lag) await new Promise((r) => setImmediate(r))
-      return below
-    })
+  const ended = []
+  issueTitles(
+    (event, matcher, hook) => {
+      hooks[event] = { matcher, hook: hook ?? matcher }
+      return {
+        catch: (catcher) => {
+          hooks[event].catcher = catcher
+        },
+      }
+    },
+    { ended: () => ended.push(true) },
+  )
+  const draw = (text) =>
+    hooks['ui.render'].hook($, { surface: 'terminal', component: 'AssistantMessage', props: { text } }, async () => 'BLOCK')
+  const texts = new Map()
+  const flush = async (id, delta, final = false) => {
+    texts.set(id, (texts.get(id) ?? '') + delta)
+    if (!final) return {}
+    const text = texts.get(id)
+    texts.delete(id)
+    await draw(text)
+    for (let i = 0; i < 40; i += 1) await tick()
+    const shown = await draw(text)
+    return shown === 'BLOCK' ? {} : { displayContent: flatten(shown).replace(/^BLOCK/, delta) }
+  }
   // The references each full lookup asked for.
   const lookups = () => runs.filter((r) => r.argv[2] !== '--cached').map((r) => r.argv.slice(2))
-  return { flush, runs, waits, lookups, cache, auths }
+  const settle = async (count = gates.length, from = 0) => {
+    for (const r of gates.splice(from, count)) r()
+    for (let i = 0; i < 40; i += 1) await tick()
+  }
+  return { draw, flush, runs, waits, lookups, cache, auths, invalidated, hooks, $, ended, settle, kept }
 }
 
 // Whether a message ends with its box of what it cited.
 const boxed = (shown) => /╭─ cited/.test(shown?.displayContent ?? '')
 
+const tick = () => new Promise((r) => setImmediate(r))
+
 // What a notice reads, without the terminal's dim sequences.
 const plain = (text) => (text ?? '').replaceAll(/\u001b\[\d+m/g, '')
 
-const tick = () => new Promise((r) => setImmediate(r))
-
 describe('the issue titles hook', () => {
+  describe('the list of what the session cited, for the pane (issues-pane.mjs)', () => {
+    // The rows of the list, most recent first, as [ref, title].
+    const listed = (kept) => (kept.value?.rows ?? []).sort((a, b) => b.at - a.at || a.i - b.i).map((r) => [r.ref, r.title])
+
+    test('a block that cites titled references puts them in the list, under the lunette.cited name', async () => {
+      const { flush, kept } = engine({ gh: { 'o/r#1': 'One', 'o/r#2': 'Two' } })
+      await flush('m1', 'see #1 and #2\n', true)
+      assert.deepEqual(listed(kept), [['o/r#1', 'One'], ['o/r#2', 'Two']])
+      assert.equal(kept.value.home, 'o/r')
+      assert.deepEqual(kept.writes[0], { plugin: 'lunette', key: 'cited' })
+      assert.deepEqual(kept.value.rows.map((r) => r.url), ['https://github.com/o/r/issues/1', 'https://github.com/o/r/issues/2'])
+    })
+
+    test('the most recently cited block comes first, a reference cited again moves up, with a clock that stands still', async () => {
+      const { flush, kept } = engine({ gh: { 'o/r#1': 'One', 'o/r#2': 'Two', 'o/r#3': 'Three' } })
+      await flush('m1', '#1 and #2\n', true)
+      await flush('m2', '#2 and #3\n', true)
+      assert.deepEqual(listed(kept).map((r) => r[0]), ['o/r#2', 'o/r#3', 'o/r#1'])
+    })
+
+    test('a cached title is in the list at once, one that arrives later is added when it does, with no second lookup', async () => {
+      let found
+      const slow = new Promise((r) => (found = r))
+      const { flush, kept, lookups } = engine({ cache: { 'o/r#1': 'One' }, gh: { 'o/r#2': () => slow } })
+      const message = flush('m1', '#1 and #2\n', true)
+      for (let i = 0; i < 40; i += 1) await tick()
+      assert.deepEqual(listed(kept), [['o/r#1', 'One']])
+      found('Two')
+      await message
+      assert.deepEqual(listed(kept), [['o/r#1', 'One'], ['o/r#2', 'Two']])
+      assert.deepEqual(lookups(), [['o/r#2']])
+    })
+
+    test('a reference with no title is not in the list: gh does not know it, or lookups are off', async () => {
+      const { flush, kept } = engine({ gh: { 'o/r#1': 'One' } })
+      await flush('m1', '#1 and #2\n', true)
+      assert.deepEqual(listed(kept), [['o/r#1', 'One']])
+      const none = engine({ home: null })
+      await none.flush('m1', '#1\n', true)
+      assert.equal(none.kept.value, undefined)
+    })
+
+    test('a clock that goes back never puts a later block under an earlier one', async () => {
+      const times = [5000, 100]
+      const { flush, kept } = engine({ now: () => times.shift(), gh: { 'o/r#1': 'One', 'o/r#2': 'Two' } })
+      await flush('m1', '#1\n', true)
+      await flush('m2', '#2\n', true)
+      assert.deepEqual(listed(kept).map((r) => r[0]), ['o/r#2', 'o/r#1'])
+    })
+
+    test('a clock that fails or answers no time still lists the block, in the order of the blocks', async () => {
+      for (const now of [() => { throw new Error('no clock') }, () => Number.NaN]) {
+        const { flush, kept } = engine({ now, gh: { 'o/r#1': 'One', 'o/r#2': 'Two' } })
+        await flush('m1', '#1\n', true)
+        await flush('m2', '#2\n', true)
+        assert.deepEqual(listed(kept).map((r) => r[0]), ['o/r#2', 'o/r#1'])
+        assert.ok(kept.value.rows.every((r) => Number.isFinite(r.at)))
+      }
+    })
+
+    test('a block that is read while a slower one waits for a title keeps its place when that one ends', async () => {
+      let found
+      const slow = new Promise((r) => (found = r))
+      const { flush, kept } = engine({ gh: { 'o/r#1': () => slow, 'o/r#2': 'Two' } })
+      const first = flush('m1', 'one #1 and #2\n', true)
+      for (let i = 0; i < 40; i += 1) await tick()
+      await flush('m2', 'again #1\n', true).catch(() => {})
+      found('One')
+      await first
+      for (let i = 0; i < 40; i += 1) await tick()
+      assert.deepEqual(listed(kept).map((r) => r[0]), ['o/r#1', 'o/r#2'])
+    })
+
+    test('a number at the end of a block waits one more SETTLE_MS to be listed, and a block that grows lists none of it', async () => {
+      const { draw, settle, kept } = engine({ hold: true, cache: { 'o/r#1': 'One' }, gh: { 'o/r#138': 'Publish lntt' } })
+      await draw('See #1')
+      await settle()
+      assert.equal(kept.value, undefined)
+      await draw('See #138 and more')
+      await settle()
+      await settle()
+      assert.deepEqual(listed(kept), [['o/r#138', 'Publish lntt']])
+      const calm = engine({ hold: true, gh: { 'o/r#5': 'Five' } })
+      await calm.draw('See #5')
+      await calm.settle()
+      assert.equal(calm.kept.value, undefined)
+      await calm.settle()
+      assert.deepEqual(listed(calm.kept), [['o/r#5', 'Five']])
+    })
+
+    test('a block that cites nothing leaves the list as it was', async () => {
+      const { flush, kept } = engine({ gh: { 'o/r#1': 'One' } })
+      await flush('m1', 'plain text\n', true)
+      assert.equal(kept.value, undefined)
+    })
+
+    test('the list survives a reload: the new copy of the hook adds to what the state holds', async () => {
+      const first = engine({ gh: { 'o/r#1': 'One' } })
+      await first.flush('m1', '#1\n', true)
+      const second = engine({ gh: { 'o/r#2': 'Two' } })
+      second.kept.value = first.kept.value
+      second.kept.version = first.kept.version
+      await second.flush('m1', '#2\n', true)
+      assert.deepEqual(listed(second.kept).map((r) => r[0]), ['o/r#2', 'o/r#1'])
+    })
+
+    test('a state that fails leaves the box under the block as it was', async () => {
+      const { flush } = engine({ gh: { 'o/r#1': 'One' }, brokenState: true })
+      assert.ok(boxed(await flush('m1', '#1\n', true)))
+    })
+  })
+
   test('the plugin registers it', () => {
     const events = []
     register((event) => {
       events.push(event)
       return { catch: () => {} }
     })
-    assert.ok(events.includes('classic.MessageDisplay'))
+    assert.ok(events.includes('ui.render'))
+    assert.ok(!events.includes('classic.MessageDisplay'))
   })
 
-  test('the deltas of a message run nothing and change nothing; the box comes once, on the last', async () => {
+  test('the box comes under the block once lntt has read it: nothing before the text is whole', async () => {
     const { flush, runs } = engine({ gh: { 'o/r#138': 'Publish lntt' } })
     assert.deepEqual(await flush('m1', 'Do #138.\n'), {})
     assert.deepEqual(runs, [])
@@ -190,9 +345,9 @@ describe('the issue titles hook', () => {
           : { exitCode: 1, stdout: '', stderr: 'boom' },
     })
     const many = Array.from({ length: 2 * KEYS_PER_RUN + 1 }, (_, i) => `#${i + 1}`).join(' ')
-    await flush('m1', `${many}\n`, true)
+    await flush('m1', `${many}\nm1\n`, true)
     assert.equal(runs.filter((r) => r.argv[2] !== '--cached').length, 3)
-    for (const id of ['m2', 'm3']) await flush(id, '#1 again\n', true)
+    for (const id of ['m2', 'm3']) await flush(id, `#1 again ${id}\n`, true)
     assert.equal(runs.filter((r) => r.argv[2] === '--cached').length, 3)
   })
 
@@ -209,16 +364,15 @@ describe('the issue titles hook', () => {
     })
     const held = []
     const { flush, lookups } = engine({
-      late: true,
-      lntt: (argv, init) => {
+        lntt: (argv, init) => {
         if (argv[2] === '--cached') return { exitCode: 0, stdout: JSON.stringify(cached(init.stdin)), stderr: '' }
         return new Promise((resolve) => held.push({ keys: argv.slice(2), resolve }))
       },
     })
     const many = Array.from({ length: KEYS_PER_RUN + 2 }, (_, i) => `#${i + 1}`).join(' ')
-    await flush('m1', `${many}\n`, true)
+    await flush('m1', `${many}\nm1\n`, true)
     assert.equal(held.length, 2)
-    await flush('m2', `${many}\n`, true)
+    await flush('m2', `${many}\nm2\n`, true)
     assert.equal(lookups().length, 2)
     const [first, second] = held
     const ok = {
@@ -229,7 +383,7 @@ describe('the issue titles hook', () => {
     first.resolve({ exitCode: 0, stdout: JSON.stringify(ok), stderr: '' })
     second.resolve({ exitCode: 1, stdout: '', stderr: 'boom' })
     for (let i = 0; i < 5; i++) await tick()
-    await flush('m3', `${many}\n`, true)
+    await flush('m3', `${many}\nm3\n`, true)
     assert.deepEqual(lookups().slice(2), [second.keys])
   })
 
@@ -250,14 +404,13 @@ describe('the issue titles hook', () => {
     })
     const held = []
     const { flush, lookups } = engine({
-      late: true,
-      lntt: (argv, init) => {
+        lntt: (argv, init) => {
         if (argv[2] === '--cached') return { exitCode: 0, stdout: JSON.stringify(cached(init.stdin)), stderr: '' }
         return new Promise((resolve) => held.push({ keys: argv.slice(2), resolve }))
       },
     })
     const many = Array.from({ length: 2 * KEYS_PER_RUN + 1 }, (_, i) => `#${i + 1}`).join(' ')
-    await flush('m1', `${many}\n`, true)
+    await flush('m1', `${many}\nm1\n`, true)
     assert.equal(held.length, 3)
     const out = {
       repository: 'o/r',
@@ -266,7 +419,7 @@ describe('the issue titles hook', () => {
     }
     held[0].resolve({ exitCode: 0, stdout: JSON.stringify(out), stderr: '' })
     for (let i = 0; i < 5; i++) await tick()
-    await flush('m2', `${many}\n`, true)
+    await flush('m2', `${many}\nm2\n`, true)
     assert.equal(lookups().length, 3)
   })
 
@@ -299,7 +452,7 @@ describe('the issue titles hook', () => {
   test('a failed lookup is asked again in the next message', async () => {
     const { flush, lookups } = engine({ gh: { 'o/r#8': 'failed' } })
     assert.deepEqual(await flush('m1', '#8\n', true), {})
-    await flush('m2', '#8\n', true)
+    await flush('m2', '#8 again\n', true)
     assert.deepEqual(lookups(), [['o/r#8'], ['o/r#8']])
   })
 
@@ -441,29 +594,9 @@ describe('the issue titles hook', () => {
     assert.equal(LNTT_TIMEOUT_MS, 2 * 3000 + 2000)
   })
 
-  test('a number split across deltas is the one cited: the message is read whole', async () => {
-    const { flush, lookups } = engine({ gh: { 'o/r#1': 'Issue one', 'o/r#138': 'Publish lntt' } })
-    assert.deepEqual(await flush('m1', 'See #1'), {})
-    assert.deepEqual(await flush('m1', '38 now.'), {})
-    const end = await flush('m1', ' end', true)
-    assert.doesNotMatch(end.displayContent, /Issue one|\/1\b/)
-    assert.match(plain(end.displayContent), /#138 Publish lntt/)
-    assert.deepEqual(lookups(), [['o/r#138']])
-  })
-
   test('a number at the end of the last delta is cited', async () => {
     const { flush } = engine({ gh: { 'o/r#5': 'Five' } })
     assert.match(plain((await flush('m1', 'See #5', true)).displayContent), /#5 Five/)
-  })
-
-  test('a delta that arrives while an earlier one is still being passed down is added after it', async () => {
-    const { flush, runs } = engine({ gh: { 'o/r#138': 'Publish lntt' } })
-    const first = flush('m1', 'See #1', false, {}, true)
-    const second = flush('m1', '38 now.\n', false, {}, true)
-    const end = await flush('m1', 'end', true)
-    await Promise.all([first, second])
-    assert.equal(runs[0].init.stdin, 'See #138 now.\nend')
-    assert.match(plain(end.displayContent), /#138 Publish lntt/)
   })
 
   test('a ref lntt gives that is not a lower-case owner/repo#N is ignored', async () => {
@@ -509,7 +642,7 @@ describe('the issue titles hook', () => {
     const { flush } = engine({ gh: { 'o/r#4': 'Four' } })
     await flush('m1', '#4 here\n')
     const end = await flush('m1', 'end', true)
-    assert.match(end.displayContent, /│\u001b\[22m #4 \u001b\[2mFour/)
+    assert.match(end.displayContent, /│ #4 Four/)
   })
 
   test('a message with no number runs nothing', async () => {
@@ -535,40 +668,6 @@ describe('the issue titles hook', () => {
     assert.deepEqual(waits, [])
   })
 
-  test('a lntt refs --cached slower than the wait leaves the message as written', async () => {
-    const lntt = () => new Promise(() => {})
-    const { flush } = engine({ lntt, late: true })
-    assert.deepEqual(await flush('m1', '#1\n', true), {})
-  })
-
-  test('a --cached answer later than the wait still gives the session its titles, for the next message', async () => {
-    let calls = 0
-    const lntt = (argv, init) => {
-      calls += 1
-      // Later runs know no title: what shows comes from the first answer.
-      if (calls > 1) return fakeRun(argv, init, { cache: {} })
-      // The first answer comes after the wait.
-      return new Promise((r) => setImmediate(() => r(fakeRun(argv, init, { cache: { 'o/r#1': 'One' } }))))
-    }
-    const { flush } = engine({ lntt, late: true })
-    assert.deepEqual(await flush('m1', '#1\n', true), {})
-    await tick()
-    await tick()
-    assert.match(plain((await flush('m2', '#1 again\n', true)).displayContent), /#1 One/)
-  })
-
-  test('a title not found within the wait is not in the box, and is there in the next message', async () => {
-    let release
-    const slow = () => new Promise((r) => (release = () => r('Slow one')))
-    const { flush, lookups } = engine({ gh: { 'o/r#3': slow }, late: true })
-    assert.deepEqual(await flush('m1', '#3 now\n', true), {})
-    await flush('m2', '#3 meanwhile\n', true)
-    assert.deepEqual(lookups(), [['o/r#3']])
-    release()
-    await tick()
-    assert.match(plain((await flush('m3', '#3 later\n', true)).displayContent), /#3 Slow one/)
-  })
-
   test('a number missing after a failure is asked again on the last delta, for the box', async () => {
     let tries = 0
     const flaky = async () => {
@@ -580,42 +679,236 @@ describe('the issue titles hook', () => {
     assert.match((await flush('m2', '#2 again\n', true)).displayContent, /cited.*Second try/s)
   })
 
-  test('one timer for the whole wait of a message, and none when nothing waits', async () => {
-    const { flush, waits } = engine({ gh: { 'o/r#9': 'Nine', 'o/r#1': () => new Promise(() => {}) }, late: true })
-    await flush('m1', '#9\n', true)
-    assert.equal(waits.length, 1)
+
+  test(`a block that grows is read once it settles (${SETTLE_MS} ms): only its last text is asked for`, async () => {
+    const { draw, runs, waits, settle } = engine({ hold: true, gh: { 'o/r#138': 'Publish lntt' } })
+    await draw('See #1')
+    await draw('See #138 now.')
+    await settle()
+    assert.deepEqual(waits, [SETTLE_MS, SETTLE_MS])
+    assert.deepEqual(
+      runs.filter((r) => r.argv[2] === '--cached').map((r) => r.init.stdin),
+      ['See #138 now.'],
+    )
+    assert.match(flatten(await draw('See #138 now.')), /#138 Publish lntt/)
+  })
+
+  test('a block drawn again (a scroll, an invalidate) asks lntt for nothing the session knows', async () => {
+    const { draw, flush, runs } = engine({ gh: { 'o/r#138': 'Publish lntt' } })
+    await flush('m1', 'See #138\n', true)
+    const asked = runs.length
+    for (let i = 0; i < 3; i += 1) assert.match(flatten(await draw('See #138\n')), /#138 Publish lntt/)
     await tick()
-    await flush('m2', 'no number\n', true)
-    assert.equal(waits.length, 1, 'a message with no number starts no timer')
-    await flush('m3', '#1 slow\n', true)
-    assert.equal(waits.length, 2, 'a slow lookup waits on the same timer as lntt')
+    assert.equal(runs.length, asked)
   })
 
-  test(`a message waits for its lookups at most WAIT_MS (${WAIT_MS} ms)`, async () => {
-    const { flush, waits } = engine({ gh: { 'o/r#1': () => new Promise(() => {}) }, late: true })
-    await flush('m1', '#1\n', true)
-    assert.deepEqual(waits, [WAIT_MS])
+  test('a title found after the block was drawn redraws it', async () => {
+    let release
+    const slow = () => new Promise((r) => (release = () => r('Slow one')))
+    const { draw, flush, invalidated } = engine({ gh: { 'o/r#3': slow } })
+    assert.deepEqual(await flush('m1', '#3 now\n', true), {})
+    assert.deepEqual(invalidated, [])
+    release()
+    await tick()
+    await tick()
+    assert.deepEqual(invalidated, ['ui.render'])
+    assert.match(flatten(await draw('#3 now\n')), /#3 Slow one/)
   })
 
-  test(`at most ${KEPT} unfinished messages are kept: the oldest is forgotten`, async () => {
-    const { flush } = engine({ gh: { 'o/r#1': 'One' } })
-    await flush('m0', '#1\n')
-    for (let i = 1; i <= KEPT; i += 1) await flush(`m${i}`, 'text\n')
-    const end = await flush('m0', 'end', true)
-    assert.doesNotMatch(end?.displayContent ?? '', /cited/)
+  test('a title already cached shows from the first reading, with one redraw', async () => {
+    const { flush, invalidated } = engine({ cache: { 'o/r#5': 'Cached' } })
+    assert.match(plain((await flush('m1', '#5\n', true)).displayContent), /#5 Cached/)
+    assert.deepEqual(invalidated, ['ui.render'])
   })
 
-  test('the text Claude wrote is the one read: what a hook below rewrote gets the box after it', async () => {
-    const { flush, runs } = engine({ gh: { 'o/r#138': 'Publish lntt' } })
-    const shown = await flush('m1', 'raw #138\n', true, { displayContent: 'rewritten, no number\n' })
-    assert.equal(runs[0].init.stdin, 'raw #138\n')
-    assert.match(plain(shown.displayContent), /^rewritten, no number\n\n╭─ cited\n│ #138 Publish lntt/)
+  test('the first draw of a block shows it as Claude Code draws it, and never waits for lntt', async () => {
+    const { draw } = engine({ lntt: () => new Promise(() => {}) })
+    assert.equal(await draw('See #1'), 'BLOCK')
   })
 
-  test('nothing to change returns what came from below, as it came', async () => {
-    const { flush } = engine()
-    const below = { displayContent: 'rewritten, no numbers\n' }
-    assert.equal(await flush('m1', 'raw\n', false, below), below)
+  test('the box is drawn with the elements of the surface, with no terminal sequence in a text', async () => {
+    const { draw, flush } = engine({ gh: { 'o/r#138': 'Publish\u001b[2m lntt' } })
+    await flush('m1', 'See #138\n', true)
+    const tree = await draw('See #138\n')
+    assert.equal(tree.type, 'Box')
+    assert.equal(tree.props.children[0], 'BLOCK')
+    assert.ok(flatten(tree).includes('Publish[2m lntt'))
+    assert.ok(!flatten(tree).includes('\u001b'))
+    const row = tree.props.children[2]
+    assert.equal(row.type, 'Box')
+    assert.deepEqual(
+      row.props.children.map((t) => [t.props.children[0], t.props.dimColor]),
+      [['│ ', true], ['#138 ', false], ['Publish[2m lntt', true]],
+    )
+  })
+
+  test(`the session remembers the last ${KEPT} blocks: an older one is read again when drawn`, async () => {
+    const { draw, runs } = engine({ gh: { 'o/r#1': 'One' } })
+    const cachedRuns = () => runs.filter((r) => r.argv[2] === '--cached').length
+    for (let i = 0; i <= KEPT; i += 1) {
+      await draw(`block ${i} #1`)
+      for (let t = 0; t < 10; t += 1) await tick()
+    }
+    assert.equal(cachedRuns(), KEPT + 1)
+    await draw('block 0 #1')
+    for (let t = 0; t < 10; t += 1) await tick()
+    assert.equal(cachedRuns(), KEPT + 2)
+  })
+
+  test('the notice stays on its block when it is drawn again, and no other block carries it', async () => {
+    const { draw, flush } = engine({ local: false, lntt: () => Promise.reject(new Error('spawn lntt ENOENT')) })
+    await flush('m1', '#1 first\n', true)
+    assert.match(plain(flatten(await draw('#1 first\n'))), /issue titles off: lntt is not installed/)
+    assert.match(plain(flatten(await draw('#1 first\n'))), /issue titles off: lntt is not installed/)
+    await flush('m2', '#2 second\n', true)
+    assert.equal(await draw('#2 second\n'), 'BLOCK')
+  })
+
+  test('the end of a turn tells the plugin its first message ended, and goes on to the hooks beneath', async () => {
+    const { hooks, $, ended } = engine()
+    assert.equal(ended.length, 0)
+    const result = await hooks['turn.complete'].hook($, {}, async () => ({ below: true }))
+    assert.equal(ended.length, 1)
+    assert.deepEqual(result, { below: true })
+  })
+
+  test('a failing `ended` never stops the end of a turn', async () => {
+    const { $ } = engine()
+    const on = []
+    issueTitles((event, matcher, hook) => (on.push([event, hook ?? matcher]), { catch: () => {} }), {
+      ended: () => {
+        throw new Error('boom')
+      },
+    })
+    const turn = on.find(([event]) => event === 'turn.complete')[1]
+    assert.deepEqual(await turn($, {}, async () => ({ below: true })), { below: true })
+  })
+
+  test('the hook is registered for the AssistantMessage component alone', () => {
+    const { hooks } = engine()
+    assert.deepEqual(hooks['ui.render'].matcher, { component: 'AssistantMessage' })
+  })
+
+  test('a block with no text, or props with no text, is drawn as Claude Code draws it', async () => {
+    const { hooks, $, runs } = engine()
+    for (const props of [{}, { text: 42 }, { text: null }]) {
+      const e = { surface: 'terminal', component: 'AssistantMessage', props }
+      assert.equal(await hooks['ui.render'].hook($, e, async () => 'BLOCK'), 'BLOCK')
+    }
+    assert.deepEqual(runs, [])
+  })
+
+  test('a block that fails to be read is read once: drawn again it asks lntt for nothing', async () => {
+    const { draw, flush, runs } = engine({ lntt: async () => ({ exitCode: 1, stdout: '', stderr: 'boom' }) })
+    await flush('m1', '#1 here\n', true)
+    const asked = runs.length
+    await draw('#1 here\n')
+    await draw('#1 here\n')
+    await tick()
+    assert.equal(runs.length, asked)
+  })
+
+  test('a block asleep when the titles turn off is not read', async () => {
+    const { draw, settle, runs } = engine({
+      hold: true,
+      lntt: async () => ({ exitCode: 2, stdout: '', stderr: 'usage: lntt path' }),
+    })
+    await draw('first #1')
+    await draw('second #2')
+    await settle(1)
+    assert.equal(runs.length, 1)
+    await settle()
+    assert.equal(runs.length, 1)
+  })
+
+  test('a block that grows drops the shorter text it began with: that one is read again if drawn', async () => {
+    const { draw, runs, settle } = engine({ gh: { 'o/r#138': 'Publish lntt' } })
+    const cached = () => runs.filter((r) => r.argv[2] === '--cached').length
+    await draw('See #1')
+    await settle()
+    assert.equal(cached(), 1)
+    await draw('See #138 now.')
+    await settle()
+    assert.equal(cached(), 2)
+    await draw('See #1')
+    await settle()
+    assert.equal(cached(), 3)
+  })
+
+  test('a block that does not begin with the one drawn before stays kept: drawn again, it is not read again', async () => {
+    const { draw, runs, settle } = engine({ gh: { 'o/r#1': 'One', 'o/r#2': 'Two' } })
+    const cached = () => runs.filter((r) => r.argv[2] === '--cached').length
+    await draw('See #1')
+    await settle()
+    await draw('Other #2')
+    await settle()
+    assert.equal(cached(), 2)
+    await draw('See #1')
+    await draw('Other #2')
+    await settle()
+    assert.equal(cached(), 2)
+  })
+
+  test('a number cut at the end of a text is looked up only if the block did not grow', async () => {
+    const { draw, lookups, settle } = engine({ hold: true, gh: { 'o/r#1': 'One', 'o/r#138': 'Publish lntt' } })
+    await draw('See #1')
+    await settle()
+    await draw('See #138 and more')
+    await settle()
+    await settle()
+    assert.deepEqual(lookups(), [['o/r#138']])
+  })
+
+  test('a number at the end of a block that does not grow is looked up after one more SETTLE_MS', async () => {
+    const { draw, lookups, waits, settle } = engine({ hold: true, gh: { 'o/r#5': 'Five' } })
+    await draw('See #5')
+    await settle()
+    assert.deepEqual(lookups(), [])
+    await settle()
+    assert.deepEqual(lookups(), [['o/r#5']])
+    assert.deepEqual(waits, [SETTLE_MS, SETTLE_MS])
+    assert.match(flatten(await draw('See #5')), /#5 Five/)
+  })
+
+  test('a block that grew while it was read leaves the notice to the next one', async () => {
+    let release
+    const slow = () => new Promise((r) => (release = () => r('off')))
+    const { draw, settle } = engine({ hold: true, auth: 1, gh: { 'o/r#1': slow } })
+    await draw('See #1 now')
+    await settle()
+    await draw('See #1 now, and more')
+    release()
+    await settle(0)
+    await settle()
+    await settle()
+    assert.match(plain(flatten(await draw('See #1 now, and more'))), /gh is not logged in/)
+  })
+
+  test('a block asleep for its last number is not looked up when the titles turned off meanwhile', async () => {
+    const lntt = (argv, init) =>
+      init?.stdin?.startsWith('Other')
+        ? { exitCode: 2, stdout: '', stderr: 'usage: lntt path' }
+        : fakeRun(argv, init, { gh: { 'o/r#7': 'Seven' } })
+    const { draw, settle, lookups } = engine({ hold: true, lntt })
+    await draw('See #7')
+    await settle()
+    await draw('Other #9 now')
+    // Only the second block wakes: its lntt has no refs, the titles are off.
+    await settle(1, 1)
+    await settle()
+    assert.deepEqual(lookups(), [])
+  })
+
+  test('a failing hook draws the block as Claude Code does', async () => {
+    const { hooks, $ } = engine()
+    const e = { surface: 'terminal', component: 'AssistantMessage', props: {} }
+    assert.equal(await hooks['ui.render'].catcher($, e, async () => 'BLOCK'), 'BLOCK')
+  })
+
+  test('a notice that only appears, with no box, redraws the block', async () => {
+    const { flush, invalidated } = engine({ local: false, lntt: () => Promise.reject(new Error('spawn lntt ENOENT')) })
+    await flush('m1', '#1 first\n', true)
+    assert.deepEqual(invalidated, ['ui.render'])
   })
 })
 
@@ -631,7 +924,7 @@ esac
 `
 
 describe('the issue titles hook with the real lntt refs', () => {
-  test('the box on the last delta, and nothing in the text before it', async () => {
+  test('the box under the block, drawn again once lntt found the title', async () => {
     const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'issue-titles-')))
     try {
       const stubs = join(tmp, 'bin')
@@ -655,20 +948,26 @@ describe('the issue titles hook with the real lntt refs', () => {
           child.stdin.on('error', () => {})
           child.stdin.end(init.stdin ?? '')
         })
+      let changed
+      const redrawn = new Promise((r) => (changed = r))
+      const el = (type) => (props) => ({ type, props })
       const $ = {
         process: { run },
         fs: { exists: async (p) => existsSync(p) },
-        clock: { sleep: () => new Promise(() => {}) },
+        clock: { sleep: () => Promise.resolve() },
+        ui: { invalidate: () => changed(), resolve: () => ({ Box: el('Box'), Text: el('Text') }) },
       }
       let hook
-      issueTitles((_, h) => {
-        hook = h
+      issueTitles((event, matcher, h) => {
+        if (event === 'ui.render') hook = h ?? matcher
         return { catch: () => {} }
       })
-      const flush = (delta, final = false) => hook($, { message_id: 'm1', delta, final }, async () => ({}))
-      assert.deepEqual(await flush('Do #1.\n'), {})
-      const end = (await flush('Done.', true)).displayContent
-      assert.match(end, /^Done\.\n.*╭─ cited.*#1 .*One.*https:\/\/github\.com\/o\/r\/issues\/1/s)
+      const draw = () =>
+        hook($, { surface: 'terminal', component: 'AssistantMessage', props: { text: 'Do #1.\n' } }, async () => 'BLOCK')
+      assert.equal(await draw(), 'BLOCK')
+      await redrawn
+      const end = flatten(await draw())
+      assert.match(end, /^BLOCK\n╭─ cited\n│ #1 One\n│ {4}https:\/\/github\.com\/o\/r\/issues\/1\n╰─$/)
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }

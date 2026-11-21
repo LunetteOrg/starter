@@ -1,31 +1,23 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { afterEach, describe, type TestContext, test } from 'node:test'
-import { parse } from 'yaml'
-import {
-  CircleciLoginRejected,
-  circleciJobs,
-  circleciUnavailable,
-  cliProcessor,
-  type Processor,
-} from '../../src/ci/circleci.ts'
+import { spawnSync } from 'node:child_process'
+import { rmSync } from 'node:fs'
+import { afterEach, describe, test } from 'node:test'
+import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
+import * as Effect from 'effect/Effect'
+import * as FileSystem from 'effect/FileSystem'
+import * as Layer from 'effect/Layer'
+import { circleciJobs } from '../../src/ci/circleci.ts'
 import { emptyConfig } from '../../src/ci/config.ts'
 import { localEvent } from '../../src/ci/event.ts'
+import { runAsks } from '../../src/ci/host.ts'
 import type { Job } from '../../src/ci/plan.ts'
+import { gitAt } from '../../src/git/git.ts'
+import { SpawnerLive } from '../../src/spawner.ts'
 import { repo } from './helpers.ts'
 
-// Stands in for `circleci config process` on configs without orbs, commands or job
-// parameters, where the processed config has the same jobs and workflows. The
-// parameters it receives are recorded, and workflows whose `when` is the bare
-// parameter are dropped as the CLI drops them.
-function fakeProcessor(seen: Array<{ path: string; parameters: Record<string, unknown> }>): Processor {
-  return (path, text, parameters) => {
-    seen.push({ path, parameters })
-    return { config: parse(text) }
-  }
-}
+// The real circleci CLI, through the loaders lntt ci local runs (src/ci/host.ts) on the machine:
+// where it runs and its login is valid. What the CLI's failures say is src/ci/host.spec.ts's, the
+// loader's logic src/ci/circleci.spec.ts's.
 
 const PROBE = `
 version: 2.1
@@ -38,49 +30,6 @@ jobs:
 workflows:
   probe:
     jobs: [probe]
-`
-
-const SIMPLE = `
-version: 2.1
-jobs:
-  test:
-    docker:
-      - image: cimg/node:24.15
-      - image: cimg/postgres:17.0
-    environment:
-      FOO: bar
-    steps:
-      - checkout
-      - restore_cache:
-          keys: [x]
-      - run: pnpm install --frozen-lockfile
-      - run:
-          name: tests
-          command: pnpm test
-          environment:
-            SMOKE: '1'
-      - run:
-          name: on failure
-          command: echo failed
-          when: on_fail
-      - store_test_results:
-          path: reports
-      - some_orb/unknown_command
-  deploy:
-    docker:
-      - image: cimg/base:current
-    steps:
-      - run: ./deploy.sh
-workflows:
-  ci:
-    jobs:
-      - test
-      - deploy:
-          requires: [test]
-          context: production
-          filters:
-            branches:
-              only: main
 `
 
 // A dynamic configuration shaped like a path-filtering setup, with the choosing job
@@ -141,108 +90,24 @@ const byKey = (list: Job[], key: string) => {
   return job
 }
 
-describe('circleciJobs', () => {
-  test('no .circleci/config.yml, no jobs', () => {
-    root = repo({})
-    assert.deepEqual(circleciJobs(root, localEvent(root, 'pull_request', 'main'), emptyConfig(), fakeProcessor([])), [])
-  })
-
-  test('steps are mapped, secondary images and filters reported, a context blocks the job', () => {
-    root = repo({ '.circleci/config.yml': SIMPLE })
-    const list = circleciJobs(root, localEvent(root, 'pull_request', 'main'), emptyConfig(), fakeProcessor([]))
-    const job = byKey(list, 'circleci/test')
-    assert.deepEqual(job.state, { state: 'run' })
-    assert.deepEqual(
-      job.steps.map((s) => [s.label, s.local.kind]),
-      [
-        ['checkout', 'noop'],
-        ['restore_cache', 'noop'],
-        ['run: pnpm install --frozen-lockfile', 'run'],
-        ['run: tests', 'run'],
-        ['run: on failure', 'run'],
-        ['store_test_results', 'noop'],
-        ['some_orb/unknown_command', 'fail'],
-      ],
-    )
-    const tests = job.steps[3].local
-    assert.ok(tests.kind === 'run')
-    assert.deepEqual(tests.env, { FOO: 'bar', SMOKE: '1' })
-    assert.deepEqual(tests.shell, ['/bin/bash', '-eo', 'pipefail', '-c'])
-    assert.deepEqual(job.steps[4].condition?.decide(false), { known: true, value: false })
-    assert.deepEqual(job.steps[4].condition?.decide(true), { known: true, value: true })
-    assert.match(job.notes.join('\n'), /cimg\/postgres:17\.0/)
-    // deploy only runs on main: the pull request's branch is feat/x.
-    assert.equal(byKey(list, 'circleci/deploy').state.state, 'skipped')
-  })
-
-  test('a job with a context is blocked unless cloud-only', () => {
-    root = repo({ '.circleci/config.yml': SIMPLE })
-    execFileSync('git', ['switch', '-q', 'main'], { cwd: root })
-    const event = localEvent(root, 'push', 'main')
-    const deploy = byKey(circleciJobs(root, event, emptyConfig(), fakeProcessor([])), 'circleci/deploy')
-    assert.equal(deploy.state.state, 'blocked')
-    assert.match(deploy.state.state === 'blocked' ? deploy.state.reason : '', /context production/)
-    const config = emptyConfig()
-    config.cloudOnly = { 'circleci/deploy': 'deploys to production' }
-    assert.equal(
-      byKey(circleciJobs(root, event, config, fakeProcessor([])), 'circleci/deploy').state.state,
-      'cloud-only',
-    )
-  })
-
-  test('dynamic config: a pull request into main follows the full continuation, with the mapped parameters', () => {
+describe('the circleci CLI', () => {
+  test('the real circleci CLI processes the same dynamic config', { skip: realCliSkip() }, async () => {
     root = repo({
       '.circleci/config.yml': SETUP,
       '.circleci/full.yml': continuation('test'),
       '.circleci/minimal.yml': continuation('lint'),
     })
-    const seen: Array<{ path: string; parameters: Record<string, unknown> }> = []
-    const list = circleciJobs(root, localEvent(root, 'pull_request', 'main'), emptyConfig(), fakeProcessor(seen))
-    const choose = byKey(list, 'circleci/choose').state
-    assert.equal(choose.state, 'cloud-only')
-    assert.match(choose.state === 'cloud-only' ? choose.reason : '', /\.circleci\/full\.yml.*run-ci=true/)
-    assert.deepEqual(byKey(list, 'circleci/test').state, { state: 'run' })
-    assert.equal(
-      list.some((j) => j.key === 'circleci/lint'),
-      false,
-    )
-    assert.deepEqual(seen.find((s) => s.path.endsWith('full.yml'))?.parameters, { 'run-ci': true })
-  })
-
-  test('dynamic config: a pull request into a candidate follows the minimal continuation', () => {
-    root = repo({
-      '.circleci/config.yml': SETUP,
-      '.circleci/full.yml': continuation('test'),
-      '.circleci/minimal.yml': continuation('lint'),
+    const load = Effect.gen(function* () {
+      const event = yield* localEvent('pull_request', 'main')
+      const dir = yield* (yield* FileSystem.FileSystem).makeTempDirectoryScoped({ prefix: 'lntt-ci-' })
+      return yield* runAsks(circleciJobs(root, event, emptyConfig()), { node: process.version, root, dir })
     })
-    const list = circleciJobs(root, localEvent(root, 'pull_request', 'candidate/2'), emptyConfig(), fakeProcessor([]))
-    assert.deepEqual(byKey(list, 'circleci/lint').state, { state: 'run' })
-    assert.equal(
-      list.some((j) => j.key === 'circleci/test'),
-      false,
+    const list = await Effect.runPromise(
+      load.pipe(
+        Effect.scoped,
+        Effect.provide(Layer.mergeAll(gitAt(root).pipe(Layer.provide(SpawnerLive)), SpawnerLive, NodeFileSystem.layer)),
+      ),
     )
-  })
-
-  test('dynamic config: a change to docs only sets no parameter, and the continuation runs nothing', () => {
-    root = repo(
-      {
-        '.circleci/config.yml': SETUP,
-        '.circleci/full.yml': continuation('test'),
-        '.circleci/minimal.yml': continuation('lint'),
-      },
-      { 'docs/a.md': 'x\n' },
-    )
-    const list = circleciJobs(root, localEvent(root, 'pull_request', 'main'), emptyConfig(), fakeProcessor([]))
-    assert.equal(byKey(list, 'circleci/test').state.state, 'skipped')
-  })
-
-  test('the real circleci CLI processes the same dynamic config', { skip: realCliSkip() }, () => {
-    root = repo({
-      '.circleci/config.yml': SETUP,
-      '.circleci/full.yml': continuation('test'),
-      '.circleci/minimal.yml': continuation('lint'),
-    })
-    const list = circleciJobs(root, localEvent(root, 'pull_request', 'main'), emptyConfig(), cliProcessor(root))
     const job = byKey(list, 'circleci/test')
     assert.deepEqual(job.state, { state: 'run' })
     assert.deepEqual(
@@ -250,74 +115,18 @@ describe('circleciJobs', () => {
       ['checkout', 'run: pnpm test'],
     )
   })
-
-  test('a rejected token is named, not reported as a generic failure', (t) => {
-    root = repo({ '.circleci/config.yml': SIMPLE })
-    stubCircleci(t, root, 'echo "Error: The API token was rejected by CircleCI" >&2; exit 255')
-    assert.throws(() => cliProcessor(root)('.circleci/config.yml', SIMPLE, {}), CircleciLoginRejected)
-  })
-
-  test('any other failure of config process stays a generic one, with the CLI output', (t) => {
-    root = repo({ '.circleci/config.yml': SIMPLE })
-    stubCircleci(t, root, 'echo "Error: unknown orb" >&2; exit 1')
-    assert.throws(
-      () => cliProcessor(root)('.circleci/config.yml', SIMPLE, {}),
-      (error) =>
-        !(error instanceof CircleciLoginRejected) &&
-        /config process \.circleci\/config\.yml: .*unknown orb/.test(String(error)),
-    )
-  })
-
-  test('circleciUnavailable is null when the CLI runs', (t) => {
-    root = repo({})
-    stubCircleci(t, root, 'exit 0')
-    assert.equal(circleciUnavailable(root), null)
-  })
-
-  test('circleciUnavailable names the folder when the CLI does not run from it', (t) => {
-    root = repo({})
-    stubCircleci(t, root, 'echo "No version is set for shim: circleci" >&2; exit 126')
-    assert.ok(String(circleciUnavailable(root)).includes(`does not run from ${root}`))
-  })
-
-  test('a missing CLI is reported as not installed, by the probe and by the processor', (t) => {
-    root = repo({})
-    const path = process.env.PATH
-    process.env.PATH = join(root, 'empty')
-    t.after(() => {
-      process.env.PATH = path
-    })
-    assert.match(String(circleciUnavailable(root)), /not installed/)
-    assert.throws(() => cliProcessor(root)('.circleci/config.yml', SIMPLE, {}), /not installed/)
-  })
 })
 
-// Puts a `circleci` script first on PATH for the test.
-function stubCircleci(t: TestContext, dir: string, body: string): void {
-  const bin = join(dir, 'bin')
-  mkdirSync(bin, { recursive: true })
-  writeFileSync(join(bin, 'circleci'), `#!/bin/sh\n${body}\n`, { mode: 0o755 })
-  const path = process.env.PATH
-  process.env.PATH = `${bin}:${path}`
-  t.after(() => {
-    process.env.PATH = path
-  })
-}
-
-// Why the real-CLI test cannot run on this machine, or false: the CLI does not run from
-// a temporary repo (where the test runs it), or the stored login is rejected, which a
-// trivial `config process` shows. It runs when the file loads, since `skip` is decided
-// at declaration; the call is one request to CircleCI, made only where the CLI is.
+// Why the real-CLI test cannot run on this machine, or false: the CLI does not run from a
+// temporary repo (where the test runs it), or its stored login is rejected, which a trivial
+// `config process` shows. It runs when the file loads, since `skip` is decided at declaration;
+// the call is one request to CircleCI, made only where the CLI is.
 function realCliSkip(): string | false {
-  const dir = repo({})
+  const dir = repo({ 'probe.yml': PROBE })
   try {
-    const unavailable = circleciUnavailable(dir)
-    if (unavailable) return unavailable
-    cliProcessor(dir)('probe.yml', PROBE, {})
-    return false
-  } catch (error) {
-    if (error instanceof CircleciLoginRejected) return error.message
-    // Any other failure (the network, a regression) runs the test, which then fails with it.
+    const r = spawnSync('circleci', ['config', 'process', 'probe.yml'], { cwd: dir, encoding: 'utf8' })
+    if (r.error) return 'the circleci CLI is not installed'
+    if (r.status !== 0) return `circleci config process failed here: ${(r.stderr || r.stdout).trim().split('\n')[0]}`
     return false
   } finally {
     rmSync(dir, { recursive: true, force: true })
