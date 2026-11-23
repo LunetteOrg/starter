@@ -1,5 +1,5 @@
 ---
-status: proposed # proposed | accepted
+status: accepted # proposed | accepted
 date: 2026-11-23
 tags: [lntt, effect, architecture, hexagonal, ports, adapters, cli, tests]
 ---
@@ -32,12 +32,12 @@ The goals of `lntt` are a board, a version control and a way of isolating work t
 replaced: GitHub Projects by GitLab or another tracker, git by Jujutsu, a worktree per issue by
 another way of isolating work, the history kept elsewhere until it is published.
 
-Accepted, this record changes what [lntt-command](./lntt-command.md#decision) says of the entry
-point, the parsers and `--query`, and what [effect-in-lntt](./effect-in-lntt.md) says of the
-services (`Git`, `Gh`, `gitAt`, `ghAt`), the edge, the library and the test levels, and what
-[test-checks](./test-checks.md) says of the levels: those passages are rewritten in the change
-that moves the code they describe. The record is accepted when its first area, `board`, has
-this shape.
+The code takes this shape one area at a time. Until an area has moved, what
+[lntt-command](./lntt-command.md#decision) says of the entry point, the parsers and `--query`,
+what [effect-in-lntt](./effect-in-lntt.md) says of the services (`Git`, `Gh`, `gitAt`, `ghAt`),
+the edge, the library and the test levels, and what [test-checks](./test-checks.md) says of the
+levels describe its code; each passage is rewritten in the change that moves the code it
+describes.
 
 ## Decision
 
@@ -55,7 +55,7 @@ the hexagon:
 src/
   main.ts                 the CLI: every area's command and the exit codes
   lib/                    the library a script imports (index.ts, ci.ts)
-  ports/                  ports every area shares: WorkingDir, ProjectConfig
+  ports/                  what every area's adapters read: WorkingDir
   board/
     domain/               plain types and functions: no Effect, no node:
     ports/                Context.Service interfaces, in the area's terms
@@ -63,14 +63,13 @@ src/
     app/                  the use cases: Effect programs that ask only for ports
     cli/                  the area's Command (effect/cli)
     live.ts               the area's live layers: its adapters, composed
-  platform/               adapters shared across areas: process, git, gh, fs, and the
-                          configuration files behind ProjectConfig
+  platform/               adapters shared across areas: process, git, gh, fs
 ```
 
 | Folder | May import |
 |---|---|
 | `domain/` | other `domain/` files |
-| the shared `src/ports/` | `domain/`, Effect: no `ports/`, `platform/` or adapter |
+| the shared `src/ports/` | Effect: nothing of `lntt` |
 | `ports/` | `domain/`, the shared `src/ports/`, Effect |
 | `app/` | `domain/`, `ports/`, the shared `src/ports/`, Effect |
 | `adapters/` | `domain/`, `ports/`, the shared `src/ports/`, `platform/`, Effect |
@@ -105,9 +104,10 @@ above, each turned on for an area when its code takes this shape.
   worktree, a clone, a Jujutsu workspace, a branch in place) and `History` (how the work is
   recorded and published: commits and a push, Jujutsu changes and bookmarks, a store that is
   published at the end). A use case never names `git add`, a staging area or a worktree.
-- **Each port has one way in.** The configuration is the `ProjectConfig` port; `loadConfig` is
-  its adapter's. A process is started only in `platform/process` (`run`, `which`), used by
-  adapters; a use case never starts one.
+- **Each port has one way in.** The configuration is `ProjectConfig`, the `config` area's port,
+  which the other areas import from `config/ports/`; `loadConfig` is its adapter's. A process
+  is started only in `platform/process` (`run`, `which`), used by adapters; a use case never
+  starts one.
 - **The place is a reference, not an argument.** The directory a port works in is
   `WorkingDir`, a `Context.Reference` declared in the shared `src/ports/` whose default is the
   process's directory; an adapter reads it on each call. A part of a program that works
