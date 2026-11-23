@@ -17,8 +17,9 @@ have live and in-memory layers. What the code does not have is one place for eac
 - **The services are shaped by the technology, not by what `lntt` needs.** `Gh` is one service
   with every command's operations and a generic `graphql(query, vars)`; the board's program sends
   GraphQL strings through it, so a spec of `lntt board` answers GraphQL, and a board on GitLab
-  would change the program. Git is reached through `gitAt`, `GitIn` and nine inline
-  `ChildProcess.make`, so the worktree workflow is git's worktree, by construction.
+  would change the program. Git is reached through `gitAt`, `GitIn` and `ChildProcess.make`
+  written inline in several modules, so the worktree workflow is git's worktree, by
+  construction.
 - **Two dispatchers** (`bin/lntt.ts`, `src/cli.ts`) and the handling of a usage error copied in
   six parsers.
 - **The same task done several ways:** the configuration read through `ProjectConfig` in some
@@ -30,6 +31,11 @@ have live and in-memory layers. What the code does not have is one place for eac
 The goals of `lntt` are a board, a version control and a way of isolating work that can each be
 replaced: GitHub Projects by GitLab or another tracker, git by Jujutsu, a worktree per issue by
 another way of isolating work, the history kept elsewhere until it is published.
+
+Accepted, this record changes what [lntt-command](./lntt-command.md#decision) says of the entry
+point, the parsers and `--query`, and what [effect-in-lntt](./effect-in-lntt.md) says of the
+edge, the library and the test levels: those passages are rewritten in the change that moves
+the code they describe.
 
 ## Decision
 
@@ -44,7 +50,7 @@ folder shows the hexagon:
 
 ```
 src/
-  main.ts                 the CLI: every area's command, the layers, the exit codes
+  main.ts                 the CLI: every area's command and the exit codes
   lib/                    the library a script imports (index.ts, ci.ts)
   board/
     domain/               plain types and functions: no Effect, no node:
@@ -52,6 +58,7 @@ src/
     adapters/             one file per technology: github.ts, memory.ts
     app/                  the use cases: Effect programs that ask only for ports
     cli/                  the area's Command (effect/cli)
+    live.ts               the area's live layers: its adapters, composed
   platform/               adapters shared across areas: process, git, gh, fs, config
 ```
 
@@ -61,11 +68,17 @@ src/
 | `ports/` | `domain/`, Effect |
 | `app/` | `domain/`, `ports/`, Effect |
 | `adapters/` | `domain/`, `ports/`, `platform/`, Effect |
-| `cli/` | `domain/`, `app/`, `ports/`, Effect's CLI |
-| `main.ts`, `lib/` | anything: they compose |
+| `cli/` | `domain/`, `ports/`, Effect's CLI; `app/` and `live.ts` with `import()` |
+| `live.ts`, `main.ts`, `lib/` | anything: they compose |
+| `platform/` | `platform/`, Effect: no area |
 
-A file has one responsibility: one that needs an "and" to be described is two files. Biome's
-`noImportCycles` keeps the graph acyclic.
+Between areas, a file imports another area's `domain/`, `ports/` and `app/`, never its
+`adapters/` or `cli/`, and the areas form no cycle: `ci` runs `local`'s use case, `local` imports
+nothing of `ci`.
+
+A file has one responsibility: one that needs an "and" to be described is two files. Biome
+enforces the graph: `noImportCycles` for cycles, `noRestrictedImports` per folder for the table
+above, each turned on for an area when its code takes this shape.
 
 ### Ports in the domain's terms
 
@@ -89,27 +102,34 @@ A file has one responsibility: one that needs an "and" to be described is two fi
 - **Each port has one way in.** The configuration is the `ProjectConfig` port; `loadConfig` is
   its adapter's. A process is started only in `platform/process` (`run`, `which`), used by
   adapters; a use case never starts one.
-- **The place is part of the layer.** An adapter bound to a directory is built for it; a part of
-  a program that works elsewhere gets its own layer, provided to that part alone:
+- **The place is a reference, not an argument.** The directory a port works in is
+  `WorkingDir`, a `Context.Reference` declared in `platform/` whose default is the process's
+  directory; an adapter reads it on each call. A part of a program that works elsewhere gets
+  another value, for that part alone, and stays free of adapters:
 
   ```ts
   const created = yield* Workspace.start(issue)
-  yield* setUp.pipe(Effect.provide(HistoryGit.at(created.path)))
+  yield* setUp.pipe(Effect.provideService(WorkingDir, created.path))
   ```
 
 ### Adapters
 
 - **An adapter is a separate export, named `<Port><Technology>`:** `BoardStoreGitHub`,
-  `BoardStoreMemory`, `LedgerFs`. A port's file imports none of its adapters; only `main.ts`,
-  `lib/` and the tests do.
+  `BoardStoreMemory`, `LedgerFs`. A port's file imports none of its adapters; only the
+  composing files (`live.ts`, `main.ts`, `lib/`) and the tests do.
 - **Every port has a `memory` adapter**, which starts from a given state and records what it was
   asked, so a spec asserts the state that results, not the strings sent to a tool.
 
 ### The CLI and the library are driving adapters
 
 - **The CLI is `effect/cli`.** Each area exports a `Command` (its flags, arguments, description
-  and handler); `main.ts` composes them under `lntt`, with `--json` and `--query` as global flags.
-  Help and shell completion are generated from them.
+  and handler); `main.ts` composes them under `lntt`. Help and shell completion are generated
+  from them. `--json` and `--query` are one shared pair of flags that every command printing a
+  document declares, so they keep their place after the command (`lntt board --json`).
+- **A command's declaration loads its use case when it runs.** The handler imports `app/` and
+  the area's `live.ts` with `import()`, so `main.ts` loads every declaration and only the
+  code of the command that runs, as [lntt-command](./lntt-command.md#decision) asks of a
+  group.
 - **`main.ts` gives the exit codes** of [the `lntt` command](./lntt-command.md#decision): a
   `CliError` is a usage error and exits 2; the rest are
   [effect-in-lntt](./effect-in-lntt.md#how-a-command-runs-is-interrupted-and-exits)'s.
@@ -126,26 +146,22 @@ A short name stays inside the `domain/` file that defines it.
 
 | Kind | Name and place | Runs against |
 |---|---|---|
-| unit | `*.spec.ts` beside the file | nothing real: plain functions, use cases over `memory` adapters, a `Command` over `Command.runWith` |
-| integration | `*.test.ts` beside the adapter | the real service: git, the file system and processes in a temp dir; GitHub on a sandbox repository, in CI only, skipped and said so elsewhere |
-| end-to-end | `packages/lntt/test/<area>/*.test.ts` | the `lntt` binary |
+| Kind and level | Name and place | Runs against |
+|---|---|---|
+| unit, level `unit` | `*.spec.ts` beside the file | nothing real: plain functions, use cases over `memory` adapters, a `Command` over `Command.runWith` |
+| adapter, level `adapters` | `*.test.ts` beside the adapter in `packages/lntt/src` | the real service: git, the file system and processes in a temp dir; GitHub on a sandbox repository, in CI only, skipped and said so elsewhere |
+| end-to-end, level `cli` | `packages/lntt/test/<area>/*.test.ts` | the `lntt` binary |
 
-Each kind is a level of `tests.levels` in `.agents/config.jsonc`.
-
-### Moving there
-
-An area moves in a change of its own, with its tests: `board` first, as the pilot that settles
-the shape, `review` last. Biome's rules for the folders are turned on per area as each one moves.
-This record is accepted when the pilot is merged; [effect-in-lntt](./effect-in-lntt.md) and
-[lntt-command](./lntt-command.md) are rewritten, where they describe the parsers, the dispatch and
-the library, in the change that moves the code they describe.
+`adapters` is a level of `tests.levels` beside the existing `unit` and `cli`, with the files of
+its own glob, so `lntt check tests` finds each test at exactly one level
+([test-checks](./test-checks.md)).
 
 ## Consequences
 
 ### Positive
 
-- A replaced technology is a new adapter and a layer chosen in `main.ts`: the use cases and their
-  specs do not change.
+- A replaced technology is a new adapter and a layer chosen in the area's `live.ts`: the use
+  cases and their specs do not change.
 - A reader finds a concern by its folder: the rules in `domain/`, the use case in `app/`, the
   technology in `adapters/`.
 - A spec describes the area (a board in this state) instead of a tool's protocol.
@@ -153,7 +169,8 @@ the library, in the change that moves the code they describe.
 
 ### Negative / accepted risks
 
-- Every command loads Effect, `lntt get` included: what `effect/cli` costs at start is accepted.
+- Every command loads Effect and every command's declaration, `lntt get` included: what
+  `effect/cli` and the declarations cost at start is accepted.
 - More, smaller files and services; a port per need instead of one `Gh`.
 - The help's format and some option syntax change with `effect/cli`; end-to-end tests that read
   usage messages change with them.
@@ -161,7 +178,8 @@ the library, in the change that moves the code they describe.
 
 ### When to deviate (revisit triggers)
 
-- `lntt get`, measured as in [effect-in-lntt](./effect-in-lntt.md), slower than a hook can wait.
+- `lntt get` or `lntt --help`, measured as in [effect-in-lntt](./effect-in-lntt.md), slower
+  than a hook can wait.
 - A port with a single adapter that no test or plan replaces, whose indirection only costs.
 - `effect/cli` unable to express a command `lntt` needs.
 
@@ -173,9 +191,13 @@ the library, in the change that moves the code they describe.
   layer says nothing about which port a program reaches or which technology an adapter wraps.
 - **Ports shaped by the technology** (`Gh.graphql`, `Git` commands). They tie each use case to
   GitHub and git, which the goals of `lntt` allow to change.
-- **A dispatcher and parsers of `lntt`'s own**, with a usage error before Effect loads. It saves
-  some tens of milliseconds at start, and keeps a parser, help text and error handling to
+- **A dispatcher and parsers of `lntt`'s own**, with a usage error before Effect loads (what
+  [lntt-command](./lntt-command.md#decision) describes today). It saves some tens of
+  milliseconds at start, and keeps a parser, help text and error handling per group to
   maintain by hand.
+- **`--json` and `--query` as global flags of `lntt`.** A flag of the root command is written
+  before the subcommand (`lntt --json board`), which breaks every script and hook that writes it
+  after.
 - **Adapters as static members of the port** (`BoardStore.github`). The port's file would import
   GitHub, the file system and gh: the most central file would know every technology.
 - **End-to-end tests inside each area** (`src/board/test/`). An end-to-end test runs the whole
