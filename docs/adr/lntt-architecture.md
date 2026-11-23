@@ -34,8 +34,9 @@ another way of isolating work, the history kept elsewhere until it is published.
 
 Accepted, this record changes what [lntt-command](./lntt-command.md#decision) says of the entry
 point, the parsers and `--query`, and what [effect-in-lntt](./effect-in-lntt.md) says of the
-edge, the library and the test levels: those passages are rewritten in the change that moves
-the code they describe.
+services (`Git`, `Gh`, `gitAt`, `ghAt`), the edge, the library and the test levels: those
+passages are rewritten in the change that moves the code they describe. The record is accepted
+when its first area, `board`, has this shape.
 
 ## Decision
 
@@ -45,13 +46,15 @@ adapters, chosen at the edge.
 
 ### An area and its folders
 
-An area is a feature of `lntt` (`board`, `worktree`, `review`, `ci`, `check`, `config`, …). Its
+An area is a feature of `lntt` (`board`, `worktree`, `review`, `ci`, `local`, `check`,
+`config`, …). Its
 folder shows the hexagon:
 
 ```
 src/
   main.ts                 the CLI: every area's command and the exit codes
   lib/                    the library a script imports (index.ts, ci.ts)
+  ports/                  ports every area shares: WorkingDir, ProjectConfig
   board/
     domain/               plain types and functions: no Effect, no node:
     ports/                Context.Service interfaces, in the area's terms
@@ -65,12 +68,12 @@ src/
 | Folder | May import |
 |---|---|
 | `domain/` | other `domain/` files |
-| `ports/` | `domain/`, Effect |
-| `app/` | `domain/`, `ports/`, Effect |
-| `adapters/` | `domain/`, `ports/`, `platform/`, Effect |
+| `ports/` | `domain/`, the shared `src/ports/`, Effect |
+| `app/` | `domain/`, `ports/`, the shared `src/ports/`, Effect |
+| `adapters/` | `domain/`, `ports/`, the shared `src/ports/`, `platform/`, Effect |
 | `cli/` | `domain/`, `ports/`, Effect's CLI; `app/` and `live.ts` with `import()` |
 | `live.ts`, `main.ts`, `lib/` | anything: they compose |
-| `platform/` | `platform/`, Effect: no area |
+| `platform/` | `platform/`, the shared `src/ports/`, Effect: no area |
 
 Between areas, a file imports another area's `domain/`, `ports/` and `app/`, never its
 `adapters/` or `cli/`, and the areas form no cycle: `ci` runs `local`'s use case, `local` imports
@@ -103,9 +106,9 @@ above, each turned on for an area when its code takes this shape.
   its adapter's. A process is started only in `platform/process` (`run`, `which`), used by
   adapters; a use case never starts one.
 - **The place is a reference, not an argument.** The directory a port works in is
-  `WorkingDir`, a `Context.Reference` declared in `platform/` whose default is the process's
-  directory; an adapter reads it on each call. A part of a program that works elsewhere gets
-  another value, for that part alone, and stays free of adapters:
+  `WorkingDir`, a `Context.Reference` declared in the shared `src/ports/` whose default is the
+  process's directory; an adapter reads it on each call. A part of a program that works
+  elsewhere gets another value, for that part alone, and stays free of adapters:
 
   ```ts
   const created = yield* Workspace.start(issue)
@@ -144,8 +147,6 @@ A short name stays inside the `domain/` file that defines it.
 
 ### Tests
 
-| Kind | Name and place | Runs against |
-|---|---|---|
 | Kind and level | Name and place | Runs against |
 |---|---|---|
 | unit, level `unit` | `*.spec.ts` beside the file | nothing real: plain functions, use cases over `memory` adapters, a `Command` over `Command.runWith` |
