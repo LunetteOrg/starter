@@ -34,9 +34,10 @@ another way of isolating work, the history kept elsewhere until it is published.
 
 Accepted, this record changes what [lntt-command](./lntt-command.md#decision) says of the entry
 point, the parsers and `--query`, and what [effect-in-lntt](./effect-in-lntt.md) says of the
-services (`Git`, `Gh`, `gitAt`, `ghAt`), the edge, the library and the test levels: those
-passages are rewritten in the change that moves the code they describe. The record is accepted
-when its first area, `board`, has this shape.
+services (`Git`, `Gh`, `gitAt`, `ghAt`), the edge, the library and the test levels, and what
+[test-checks](./test-checks.md) says of the levels: those passages are rewritten in the change
+that moves the code they describe. The record is accepted when its first area, `board`, has
+this shape.
 
 ## Decision
 
@@ -46,9 +47,9 @@ adapters, chosen at the edge.
 
 ### An area and its folders
 
-An area is a feature of `lntt` (`board`, `worktree`, `review`, `ci`, `local`, `check`,
-`config`, …). Its
-folder shows the hexagon:
+An area is a feature of `lntt`: `board`, `worktree`, `review`, `ci`, `local` (the project's
+app run on the machine), `check`, `config`, and the others its commands name. Its folder shows
+the hexagon:
 
 ```
 src/
@@ -62,12 +63,14 @@ src/
     app/                  the use cases: Effect programs that ask only for ports
     cli/                  the area's Command (effect/cli)
     live.ts               the area's live layers: its adapters, composed
-  platform/               adapters shared across areas: process, git, gh, fs, config
+  platform/               adapters shared across areas: process, git, gh, fs, and the
+                          configuration files behind ProjectConfig
 ```
 
 | Folder | May import |
 |---|---|
 | `domain/` | other `domain/` files |
+| the shared `src/ports/` | `domain/`, Effect: no `ports/`, `platform/` or adapter |
 | `ports/` | `domain/`, the shared `src/ports/`, Effect |
 | `app/` | `domain/`, `ports/`, the shared `src/ports/`, Effect |
 | `adapters/` | `domain/`, `ports/`, the shared `src/ports/`, `platform/`, Effect |
