@@ -24,6 +24,7 @@ decisions) is in [`docs/process/`](../process/README.md).
 | [worktree-tooling](./worktree-tooling.md) | Branch names, setup, brief and agent launch decided in `lntt`; Orca, Herdr and git as adapters | accepted |
 | [coordinator-mode](./coordinator-mode.md) | A theme's coordinator worktree delegates each issue to a child and writes no code; the gate, the model per role and the mailbox (`lntt ask`) | accepted |
 | [effect-in-lntt](./effect-in-lntt.md) | `@lntt/lntt` on Effect: `effect` and `@effect/platform-node-shared`, services with live and in-memory layers, typed errors, a command run by `runMain` that drains and exits 130 when interrupted, unit tests beside each module on `@effect/vitest` | accepted |
+| [lntt-architecture](./lntt-architecture.md) | The shape of `lntt`'s code: hexagonal per area (`domain/`, `ports/`, `adapters/`, `app/`, `cli/`), ports in the domain's terms (`Workspace`, `History`, `BoardStore`), adapters named `<Port><Technology>` with a `memory` one each, the CLI on `effect/cli`, spec, adapter and end-to-end tests | proposed |
 
 A new subject gets its own file: copy [`template.md`](./template.md) to
 `<subject>.md` and add a row above. A changed decision is rewritten in its file.
