@@ -35,9 +35,8 @@ another way of isolating work, the history kept elsewhere until it is published.
 The code takes this shape one area at a time. Until an area has moved, what
 [lntt-command](./lntt-command.md#decision) says of the entry point, the parsers and `--query`,
 what [effect-in-lntt](./effect-in-lntt.md) says of the services (`Git`, `Gh`, `gitAt`, `ghAt`),
-the edge, the library and the test levels, and what [test-checks](./test-checks.md) says of the
-levels describe its code; each passage is rewritten in the change that moves the code it
-describes.
+the edge, the library and the test levels describe its code; each passage is rewritten in the
+change that moves the code it describes.
 
 ## Decision
 
