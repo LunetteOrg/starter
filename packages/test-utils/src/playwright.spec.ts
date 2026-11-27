@@ -202,19 +202,19 @@ describe('hydrationDelayFixture', () => {
     ).resolves.toBeUndefined()
   })
 
-  it.each<[TestInfo['status']]>([
-    ['failed'],
-    ['passed'],
-  ])('leaves a test expected to fail that %s with its own outcome', async (status) => {
-    const { context, load } = fakeContext()
-    await expect(
-      hydrationDelayFixture(1)(
-        { context, hydrationChunk: REACT_DOM_CLIENT_CHUNK },
-        () => load('http://x/a.js'),
-        info(status, 'failed'),
-      ),
-    ).resolves.toBeUndefined()
-  })
+  it.each<[TestInfo['status']]>([['failed'], ['passed']])(
+    'leaves a test expected to fail that %s with its own outcome',
+    async (status) => {
+      const { context, load } = fakeContext()
+      await expect(
+        hydrationDelayFixture(1)(
+          { context, hydrationChunk: REACT_DOM_CLIENT_CHUNK },
+          () => load('http://x/a.js'),
+          info(status, 'failed'),
+        ),
+      ).resolves.toBeUndefined()
+    },
+  )
 
   it('delays nothing and checks nothing when the test sets the chunk to null', async () => {
     const { context, routes, load } = fakeContext()

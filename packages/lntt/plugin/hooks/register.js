@@ -3,11 +3,13 @@
 // failure in red), with no Claude turn; `/review-status` prints the same. It reads the
 // progress events lntt review writes to <git dir>/lntt-review.progress and only shows
 // them: what to show is review-band.mjs, tested on its own. The issue titles on screen
-// are issue-titles-hook.js. At session start it reads the project's .claude/settings.json:
+// are issue-titles-hook.js, and `/issues` opens a pane of what the session cited
+// (issues-pane.mjs). At session start it reads the project's .claude/settings.json:
 // entries that are not as lntt sync writes them are said in the band, with the command
-// that fixes them, until the first message ends.
+// that fixes them, until the first turn ends.
 
 import { issueTitles } from './issue-titles-hook.js'
+import { announce, issuesPane } from './issues-pane.mjs'
 import { noticeText, settingsProblems } from './notices.mjs'
 import { bandLines, fold, ownedBy, readEvents, SPIN_MS } from './review-band.mjs'
 
@@ -15,7 +17,7 @@ let progressFile = null
 let session = null // this Claude Code session's id, which lntt review records with its round
 let view = null
 let alive = null // whether the round's lntt review process still runs, null when unknown
-let settings = null // what .claude/settings.json lacks, said until the first message ends
+let settings = null // what .claude/settings.json lacks, said until the first turn ends
 
 async function locate($) {
   try {
@@ -74,6 +76,7 @@ export function register(on) {
       settings = null
     },
   })
+  issuesPane(on)
   on('session.start', async ($, e, next) => {
     await locate($)
     await checkSettings($)
@@ -82,6 +85,7 @@ export function register(on) {
     $.clock.every(SPIN_MS, () => {
       if (running()) $.ui.invalidate('ui.render')
     })
+    await announce($)
     try {
       await $.command.register({
         name: 'review-status',

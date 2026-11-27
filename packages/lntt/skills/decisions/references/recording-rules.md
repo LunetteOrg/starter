@@ -49,11 +49,17 @@ tags: [] # searchable keywords, kebab-case
 # Subject
 
 ## Context
+
 ## Decision
+
 ## Consequences
+
 ### Positive
+
 ### Negative / accepted risks
+
 ### When to deviate (revisit triggers)
+
 ## Discarded directions
 ```
 

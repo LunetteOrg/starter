@@ -15,10 +15,10 @@ pnpm add -D @lntt/typescript-config typescript
 { "extends": "@lntt/typescript-config/browser.json" }
 ```
 
-| Config | What it sets |
-|---|---|
-| `base.json` | `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitReturns`; ES2024, `module: ESNext` with `moduleResolution: bundler`; `verbatimModuleSyntax`, `isolatedModules`; declarations and source maps |
-| `browser.json` | `base.json` plus the DOM libs, `jsx: react-jsx`, `noEmit`, and `allowImportingTsExtensions`, so relative imports carry their real extension (`./x.tsx`) |
+| Config         | What it sets                                                                                                                                                                                                                |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `base.json`    | `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitReturns`; ES2024, `module: ESNext` with `moduleResolution: bundler`; `verbatimModuleSyntax`, `isolatedModules`; declarations and source maps |
+| `browser.json` | `base.json` plus the DOM libs, `jsx: react-jsx`, `noEmit`, and `allowImportingTsExtensions`, so relative imports carry their real extension (`./x.tsx`)                                                                     |
 
 A package that emits and wants explicit `.ts` specifiers adds
 `allowImportingTsExtensions` and `rewriteRelativeImportExtensions` itself: the first

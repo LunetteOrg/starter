@@ -6,8 +6,8 @@ Empty scaffold. Define the tokens in `tokens.css` as CSS custom properties on `:
 
 ```css
 /* apps/<app>/app/root.css */
-@import '@starter/ui-tokens/tokens.css';
-@import '@starter/ui-tokens/fonts.css';
+@import "@starter/ui-tokens/tokens.css";
+@import "@starter/ui-tokens/fonts.css";
 ```
 
 ## Conventions

@@ -17,7 +17,7 @@ export default definePlaywrightConfig({
 ## What it encodes
 
 - `testDir: './__tests__'`, `testMatch: '**/*.e2e.ts'` — aligned with the E2E lint in `biome.json`.
-- **No `webServer`**: Playwright would start it *before* `globalSetup`, missing the testcontainers. The dev server must be started inside `globalSetup` with the `@starter/test-utils` helpers.
+- **No `webServer`**: Playwright would start it _before_ `globalSetup`, missing the testcontainers. The dev server must be started inside `globalSetup` with the `@starter/test-utils` helpers.
 - Clean `storageState` (`{ cookies: [], origins: [] }`): tests that need cookies set them explicitly.
 - `workers: 1`, `fullyParallel: false`, `retries: 0`, `forbidOnly` in CI, `list` reporter, `trace: 'on-first-retry'`.
 - `chromium` project (Desktop Chrome); optional `warmup` (`warmupSetup`) to warm up Vite's optimizer.

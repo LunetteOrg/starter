@@ -14,12 +14,51 @@
 // Project. Inside Actions without it, the issue is opened off the board, with a notice.
 // --dry-run prints every write instead of making it. Run from the repository root.
 
-import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { argv, cwd, env, exit, stderr, stdout } from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
-import { BOARD_MUTATION, type Gh, makeGh, NOT_PERMITTED, pickBoard } from '../packages/lntt/src/ci/candidate.ts'
-import { loadConfig } from '../packages/lntt/src/index.ts'
+import { BOARD_MUTATION, NOT_PERMITTED, pickBoard } from '../packages/lntt/src/ci/candidate.ts'
+import { CONFIG_DIR, CONFIG_NAME, noConfig, readConfig } from '../packages/lntt/src/config/project.ts'
+import { ancestors, candidates, pick } from '../packages/lntt/src/files.ts'
+
+// gh for this script, synchronous: a read's stdout, trimmed; a write that a dry run logs instead.
+// gh's own refusal text (a token without a permission) is in the error, where NOT_PERMITTED reads
+// it. `token` is the Projects token, as GH_TOKEN.
+export interface Gh {
+  read: (args: string[]) => string
+  write: (args: string[], input?: string) => string
+}
+
+export function makeGh({ dryRun, log, token }: { dryRun: boolean; log: (line: string) => void; token?: string }): Gh {
+  const run = (args: string[], input?: string) => {
+    const result = spawnSync('gh', args, {
+      encoding: 'utf8',
+      input,
+      ...(token ? { env: { ...process.env, GH_TOKEN: token } } : {}),
+    })
+    if (result.stderr) process.stderr.write(result.stderr)
+    if (result.error) throw result.error
+    if (result.status !== 0) {
+      const detail = result.stderr.trim()
+      throw new Error(`Command failed: gh ${args.slice(0, 2).join(' ')}${detail ? `: ${detail}` : ''}`)
+    }
+    return result.stdout.trim()
+  }
+  return {
+    read: (args) => run(args),
+    write: (args, input) => {
+      if (dryRun) {
+        log(`[dry-run] gh ${args.map((a) => (/\s/.test(a) ? JSON.stringify(a) : a)).join(' ')}`)
+        if (input !== undefined) log(`[dry-run] stdin:\n${input}`)
+        return ''
+      }
+      return run(args, input)
+    },
+  }
+}
 
 // The issue type of a red, when board.issueTypes has it.
 const BUG = 'Bug'
@@ -357,9 +396,20 @@ function main(args: string[]): number {
     makeGh({ dryRun, log, token }),
   )
   const repo = env.GITHUB_REPOSITORY || gh.read(['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'])
-  const target = boardTarget(loadConfig(cwd()).data.board as BoardSection | undefined)
+  const target = boardTarget(boardSection(cwd()))
   report({ gh, ...(board ? { board } : {}), repo, target, log }, { tool, version, step, run, log: text || '(no log)' })
   return 0
+}
+
+// The board section of the configuration found from `dir`, read as lntt reads it (its plain logic,
+// over node:fs): undefined when the configuration has none; no configuration, or one that does not
+// validate, throws with lntt's message.
+export function boardSection(dir: string): BoardSection | undefined {
+  for (const at of ancestors(dir, dirname)) {
+    const located = pick(candidates(join(at, CONFIG_DIR), CONFIG_NAME, join).filter((f) => existsSync(f.path)))
+    if (located) return readConfig(readFileSync(located.path, 'utf8'), located).board as BoardSection | undefined
+  }
+  throw noConfig(dir)
 }
 
 if (argv[1] === fileURLToPath(import.meta.url)) exit(main(argv.slice(2)))

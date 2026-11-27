@@ -92,7 +92,7 @@ resource.
   expiry; kept in a `700` folder outside the repo (not `/tmp`, lost on reboot); loaded with
   `set -a; . <file>; set +a` and never printed; revoked as soon as their step is done.
   With some dashboards the expiry date also sets the start date: a token made "until
-  <date>" is valid only *from* it, answers `401`, and its verify endpoint still says
+  <date>" is valid only _from_ it, answers `401`, and its verify endpoint still says
   active. The host may refuse to let you write credentials to disk: the person writes the
   file with a one-line `!` command that reads `pbpaste` and prints only the value's length.
 - **Removing a lock from the infrastructure code may not remove the lock.** With some

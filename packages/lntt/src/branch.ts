@@ -74,6 +74,30 @@ export function branchName(type: string, issue: number | null, slug: string): st
   return `${type}/${issue ?? NO_ISSUE}/${slug}`
 }
 
+// An issue as GitHub gives it, with what a branch name reads of it.
+export interface IssueData {
+  title: string
+  labels: { name: string }[]
+  type?: { name: string } | null
+}
+
+// The name issue `issue` gets: its type, its number, a slug of its title, unless overridden.
+export function nameFromIssue(issue: number, overrides: { type?: string; slug?: string }, data: IssueData): string {
+  const type = overrides.type ?? typeFor({ type: data.type?.name ?? null, labels: data.labels.map((l) => l.name) })
+  return branchName(type, issue, overrides.slug ?? slugify(data.title))
+}
+
+// The branches a push creates or updates, from the lines git gives the pre-push hook
+// (`<local ref> <local sha> <remote ref> <remote sha>`): tags and deletions are not branch names
+// to check.
+export function pushedBranches(input: string): string[] {
+  return input
+    .split('\n')
+    .map((line) => line.trim().split(/\s+/))
+    .filter(([, localSha, remoteRef]) => localSha && !/^0+$/.test(localSha) && remoteRef?.startsWith('refs/heads/'))
+    .map(([, , remoteRef]) => (remoteRef as string).slice('refs/heads/'.length))
+}
+
 function exempt(name: string, rules: BranchRules): boolean {
   return rules.exempt.some((e) => (/[/._-]$/.test(e) ? name.startsWith(e) : name === e))
 }

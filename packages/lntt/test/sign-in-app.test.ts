@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { type LocalApp, localApp } from '../src/index.ts'
+import type { LocalApp } from '../src/index.ts'
 
 // run-local's sign-in procedure (skills/run-local, section 4) proved on a fixture app:
 // two seeded users from the configuration, a one-time code in the server log, a
@@ -16,6 +16,7 @@ import { type LocalApp, localApp } from '../src/index.ts'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const FIXTURE = join(HERE, 'fixtures/sign-in-app')
 const PLAYWRIGHT = resolve(HERE, '../node_modules/.bin/playwright')
+const LNTT = resolve(HERE, '../bin/lntt.ts')
 
 interface Instance {
   app: LocalApp
@@ -62,7 +63,10 @@ async function ready(url: string): Promise<void> {
 }
 
 async function start(root: string, name: string): Promise<Instance> {
-  const app = localApp(root, name)
+  // The app as lntt resolves it for this checkout.
+  const app: LocalApp = JSON.parse(
+    execFileSync(process.execPath, [LNTT, 'local', 'app', name], { cwd: root, encoding: 'utf8' }),
+  )
   const log = join(root, 'app.log')
   const fd = openSync(log, 'w')
   const server = spawn(app.commands.start.run, {

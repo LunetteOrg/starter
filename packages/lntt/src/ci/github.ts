@@ -4,9 +4,8 @@
 // normalized conditions; the parsed token tree gives what the template drops (`with`,
 // `working-directory`, `shell`, `defaults`).
 
-import { readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { localAction, SHELLS } from './actions.ts'
+import { type Asks, awaited, joinPath, list, read } from './asks.ts'
 import type { CiConfig } from './config.ts'
 import type { Event } from './event.ts'
 import { type Context, evaluate, interpolate, type Outcome } from './expressions.ts'
@@ -147,7 +146,12 @@ interface StepScope {
   defaults: { shell?: string; workingDirectory?: string }
 }
 
-function step(converted: TemplateJob & { type: 'job' }, index: number, raw: Token | undefined, scope: StepScope): Step {
+function* step(
+  converted: TemplateJob & { type: 'job' },
+  index: number,
+  raw: Token | undefined,
+  scope: StepScope,
+): Asks<Step> {
   const source = converted.steps[index] as { if?: { expression: string }; run?: Token; uses?: Token; name?: Token }
   const name = source.name && isString(source.name) ? source.name.value : undefined
   const label = (text: string) => (name ? `${name} (${text})` : text)
@@ -166,7 +170,7 @@ function step(converted: TemplateJob & { type: 'job' }, index: number, raw: Toke
     const inputs = strings(find(raw, 'with'), context)
     // The action decides first: one with no local equivalent fails whatever its inputs
     // read, so a secret in its inputs cannot turn the failure into "not run".
-    let local = localAction(usesText, inputs.known ? inputs.value : {}, scope.root, scope.config)
+    let local = yield* localAction(usesText, inputs.known ? inputs.value : {}, scope.root, scope.config)
     if (local.kind !== 'fail' && !inputs.known) local = { kind: 'blocked', reason: why(inputs.unknown) }
     return { label: label(`uses: ${usesText}`), ...base, local }
   }
@@ -185,7 +189,7 @@ function step(converted: TemplateJob & { type: 'job' }, index: number, raw: Toke
     kind: 'run',
     command: run.value,
     shell,
-    cwd: directory ? join(scope.root, directory) : scope.root,
+    cwd: directory ? joinPath(scope.root, directory) : scope.root,
     env: { ...scope.env, ...env.value },
   })
 }
@@ -201,14 +205,16 @@ function jobNotes(job: TemplateJob & { type: 'job' }): string[] {
   return notes
 }
 
-async function workflowJobs(root: string, file: string, event: Event, config: CiConfig): Promise<Job[]> {
-  const content = readFileSync(join(root, '.github/workflows', file), 'utf8')
+function* workflowJobs(root: string, file: string, event: Event, config: CiConfig): Asks<Job[]> {
+  const content = yield* read(joinPath(root, '.github/workflows', file))
+  if (content === null) throw new Error(`.github/workflows/${file}: cannot be read`)
   const parsed = parseWorkflow({ name: file, content }, new NoOperationTraceWriter())
   const errors = parsed.context.errors.getErrors()
   if (errors.length > 0 || !parsed.value) {
     throw new Error(`.github/workflows/${file}: ${errors.map((e) => e.message).join('; ') || 'not a workflow'}`)
   }
-  const template = await convertWorkflowTemplate(parsed.context, parsed.value)
+  const value = parsed.value
+  const template = yield* awaited(() => convertWorkflowTemplate(parsed.context, value))
   const trigger = triggered(template.events, event)
   const rawRoot = parsed.value as Token
   const github = githubContext(event, root)
@@ -282,14 +288,17 @@ async function workflowJobs(root: string, file: string, event: Event, config: Ci
         literal(find(rawRoot, 'defaults', 'run', 'working-directory')),
     }
     const rawSteps = find(rawJob, 'steps')
-    const steps = job.steps.map((_, i) =>
-      step(
-        job,
-        i,
-        rawSteps && isSequence(rawSteps) ? (rawSteps as unknown as { get(i: number): Token }).get(i) : undefined,
-        { root, config, context, env, defaults },
-      ),
-    )
+    const steps: Step[] = []
+    for (let i = 0; i < job.steps.length; i++) {
+      steps.push(
+        yield* step(
+          job,
+          i,
+          rawSteps && isSequence(rawSteps) ? (rawSteps as unknown as { get(i: number): Token }).get(i) : undefined,
+          { root, config, context, env, defaults },
+        ),
+      )
+    }
     jobs.push({
       ...base,
       ...condition,
@@ -302,16 +311,12 @@ async function workflowJobs(root: string, file: string, event: Event, config: Ci
   return jobs
 }
 
-export async function githubJobs(root: string, event: Event, config: CiConfig): Promise<Job[]> {
-  let files: string[]
-  try {
-    files = readdirSync(join(root, '.github/workflows'))
-  } catch {
-    return []
-  }
+// The jobs of every workflow in .github/workflows, in the order of their files.
+export function* githubJobs(root: string, event: Event, config: CiConfig): Asks<Job[]> {
+  const files = yield* list(joinPath(root, '.github/workflows'))
   const jobs: Job[] = []
-  for (const file of files.filter((f) => /\.ya?ml$/.test(f)).sort()) {
-    jobs.push(...(await workflowJobs(root, file, event, config)))
+  for (const file of (files ?? []).filter((f) => /\.ya?ml$/.test(f)).sort()) {
+    jobs.push(...(yield* workflowJobs(root, file, event, config)))
   }
   return jobs
 }

@@ -310,7 +310,10 @@ test('the language menu opens', async ({ page }) => {
   await page.goto('/')
   const trigger = page.getByRole('button', { name: 'Language' })
   const menu = page.getByRole('menu')
-  await repeatUntil(() => trigger.click(ATTEMPT), () => expect(menu).toBeVisible(ATTEMPT))
+  await repeatUntil(
+    () => trigger.click(ATTEMPT),
+    () => expect(menu).toBeVisible(ATTEMPT),
+  )
 })
 ```
 
@@ -357,14 +360,14 @@ that narrows it declares `"passThroughEnv": ["E2E_HYDRATION_DELAY_MS"]` on `test
 
 ## The guards
 
-| Export | Asserts |
-|---|---|
-| `assertLayerBoundaries`, `assertNoForbiddenImports`, `getImports` | import boundaries between layers, dynamic `import()` included |
-| `assertNoEntitySpreadInReturn`, `findReturnSpreads` | no `return { ...entity }` in loaders and actions |
-| `assertNoSourcePattern`, `findSourceMatches`, `blankCommentsAndStrings` | a forbidden pattern in code, comments and strings aside |
-| `assertNoMigrationSafetyViolations`, `checkMigration` | migrations follow expand/migrate/contract; no down-migrations |
-| `assertNoJsdomSetupImports`, `findJsdomSetupImports` | the jsdom setup is listed in `setupFiles`, never imported |
-| `defineFixture` | a builder with defaults, deep-merged overrides |
+| Export                                                                  | Asserts                                                       |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `assertLayerBoundaries`, `assertNoForbiddenImports`, `getImports`       | import boundaries between layers, dynamic `import()` included |
+| `assertNoEntitySpreadInReturn`, `findReturnSpreads`                     | no `return { ...entity }` in loaders and actions              |
+| `assertNoSourcePattern`, `findSourceMatches`, `blankCommentsAndStrings` | a forbidden pattern in code, comments and strings aside       |
+| `assertNoMigrationSafetyViolations`, `checkMigration`                   | migrations follow expand/migrate/contract; no down-migrations |
+| `assertNoJsdomSetupImports`, `findJsdomSetupImports`                    | the jsdom setup is listed in `setupFiles`, never imported     |
+| `defineFixture`                                                         | a builder with defaults, deep-merged overrides                |
 
 Their messages cite the ADRs of a project scaffolded from the Lunette `react-router`
 template (`docs/adr/architecture-and-boundaries.md`, `docs/adr/data-and-migrations.md`);
@@ -380,15 +383,15 @@ which also says why each rule holds. Each fails when its scan finds nothing to r
 package), so a moved folder cannot pass vacuously; `assertWaitingWorkspacesRunTheGuard`
 then passes a project whose tests do not wait.
 
-| Export | Asserts |
-|---|---|
-| `assertNoModuleMocks`, `findModuleMocks` | no hoisted `vi.mock`; a `vi.doMock` has `vi.resetModules()` before the first `vi.doMock` and after the last `vi.doUnmock` |
-| `assertWaitsDeclareTimeout`, `findWaits` (`@lntt/test-utils/waits`) | every `findBy*`, `findAllBy*`, `vi.waitFor`, and every `waitFor` and `waitForElementToBeRemoved` imported from `@testing-library/*`, `storybook/test` or `@storybook/test`, passes `WAIT` as its timeout (a helper of the project named `waitFor`, or Playwright's `locator.waitFor()`, is not a wait) |
-| `assertWaitingWorkspacesRunTheGuard` (`@lntt/test-utils/waits`) | every workspace whose tests wait has a spec or test that imports `assertWaitsDeclareTimeout` from `@lntt/test-utils/waits` and calls it at its top level or in a test, suite or hook that is not skipped (`.skip`, `.todo`, `.skipIf`, `.runIf`, `.fails`, `x`-prefixed); a call inside another function does not count. The path it is given and a condition around it are not checked |
-| `assertBiomeDomainsDeclared`, `enabledBiomeDomains`, `BIOME_DOMAIN_OF_DEPENDENCY` | a dependency with a Biome rule domain (`vitest` → `test`, `react` → `react`…) finds it switched on in the project's Biome config |
-| `assertLintFailsOnWarnings` | every `lint` and `lint:*` script runs `biome check` with `--error-on-warnings` and `stylelint` with `--max-warnings 0` |
-| `assertTestsUseTxFixture`, `findDirectTestDbCalls` | no test module calls `withTestDb(` itself: integration tests take `tx` from the fixture `txTest(db.withTestDb)` builds. It pairs with `txTest`, the tx fixture of this package: turn it on once the project builds its fixture with `txTest` |
-| `assertTestProjectsAreDependencies`, `testProjectPackages` | every package a vitest test project includes files from, or points at with `root`, is a dependency of the workspace; the packages are found from the root holding `pnpm-workspace.yaml`, and an include into a directory that is no `apps/*` or `packages/*` package fails, naming it |
+| Export                                                                            | Asserts                                                                                                                                                                                                                                                                                                                                                                                 |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `assertNoModuleMocks`, `findModuleMocks`                                          | no hoisted `vi.mock`; a `vi.doMock` has `vi.resetModules()` before the first `vi.doMock` and after the last `vi.doUnmock`                                                                                                                                                                                                                                                               |
+| `assertWaitsDeclareTimeout`, `findWaits` (`@lntt/test-utils/waits`)               | every `findBy*`, `findAllBy*`, `vi.waitFor`, and every `waitFor` and `waitForElementToBeRemoved` imported from `@testing-library/*`, `storybook/test` or `@storybook/test`, passes `WAIT` as its timeout (a helper of the project named `waitFor`, or Playwright's `locator.waitFor()`, is not a wait)                                                                                  |
+| `assertWaitingWorkspacesRunTheGuard` (`@lntt/test-utils/waits`)                   | every workspace whose tests wait has a spec or test that imports `assertWaitsDeclareTimeout` from `@lntt/test-utils/waits` and calls it at its top level or in a test, suite or hook that is not skipped (`.skip`, `.todo`, `.skipIf`, `.runIf`, `.fails`, `x`-prefixed); a call inside another function does not count. The path it is given and a condition around it are not checked |
+| `assertBiomeDomainsDeclared`, `enabledBiomeDomains`, `BIOME_DOMAIN_OF_DEPENDENCY` | a dependency with a Biome rule domain (`vitest` → `test`, `react` → `react`…) finds it switched on in the project's Biome config                                                                                                                                                                                                                                                        |
+| `assertLintFailsOnWarnings`                                                       | every `lint` and `lint:*` script runs `biome check` with `--error-on-warnings` and `stylelint` with `--max-warnings 0`                                                                                                                                                                                                                                                                  |
+| `assertTestsUseTxFixture`, `findDirectTestDbCalls`                                | no test module calls `withTestDb(` itself: integration tests take `tx` from the fixture `txTest(db.withTestDb)` builds. It pairs with `txTest`, the tx fixture of this package: turn it on once the project builds its fixture with `txTest`                                                                                                                                            |
+| `assertTestProjectsAreDependencies`, `testProjectPackages`                        | every package a vitest test project includes files from, or points at with `root`, is a dependency of the workspace; the packages are found from the root holding `pnpm-workspace.yaml`, and an include into a directory that is no `apps/*` or `packages/*` package fails, naming it                                                                                                   |
 
 The scans read `apps/*` and `packages/*` (directories with a `package.json`): specs and
 tests, stories, `*-kit.ts(x)` helpers and any module under a `test/` directory, since a

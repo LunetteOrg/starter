@@ -10,14 +10,11 @@
 // `mapping` sets the continuation's parameters from the files changed against its
 // `base-revision`.
 
-import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { parse, stringify } from 'yaml'
+import { type Asks, changed as changedAgainst, processed as expand, joinPath, read } from './asks.ts'
 import { evaluateWhen, type PipelineValues, substituteParameters } from './circleci-when.ts'
 import type { CiConfig } from './config.ts'
-import { changedAgainst, type Event } from './event.ts'
+import type { Event } from './event.ts'
 import { cloudOnlyReason, type Job, type JobState, type Local, type Step } from './plan.ts'
 
 export interface Processed {
@@ -40,48 +37,28 @@ export class CircleciLoginRejected extends Error {
   }
 }
 
-// Whether the CLI runs from `cwd`, the folder `cliProcessor` runs it in (a version
-// manager's shim resolves per folder), and why not. Null when it does.
-export function circleciUnavailable(cwd: string): string | null {
-  try {
-    execFileSync('circleci', ['--skip-update-check', 'version'], { cwd, stdio: 'ignore' })
-    return null
-  } catch (error) {
-    if ((error as { code?: string }).code === 'ENOENT')
-      return 'the circleci CLI is not installed (brew install circleci)'
-    return `the circleci CLI does not run from ${cwd}`
-  }
+export const CIRCLECI_MISSING = 'the circleci CLI is not installed (brew install circleci)'
+
+// The arguments of `circleci config process` on `source`, with these pipeline parameters.
+export function processArgs(source: string, parameters: Record<string, unknown>): string[] {
+  return [
+    '--skip-update-check',
+    'config',
+    'process',
+    ...(Object.keys(parameters).length > 0 ? ['--pipeline-parameters', JSON.stringify(parameters)] : []),
+    source,
+  ]
 }
 
-export function cliProcessor(root: string): Processor {
-  const dir = mkdtempSync(join(tmpdir(), 'lntt-ci-circleci-'))
-  let n = 0
-  return (path, text, parameters) => {
-    const source = join(dir, `source-${++n}.yml`)
-    writeFileSync(source, text)
-    let out: string
-    try {
-      out = execFileSync(
-        'circleci',
-        [
-          '--skip-update-check',
-          'config',
-          'process',
-          ...(Object.keys(parameters).length > 0 ? ['--pipeline-parameters', JSON.stringify(parameters)] : []),
-          source,
-        ],
-        { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-      )
-    } catch (error) {
-      const e = error as { code?: string; stderr?: string }
-      if (e.code === 'ENOENT') throw new Error('the circleci CLI is not installed (brew install circleci)')
-      if (/API token was rejected/i.test(e.stderr ?? '')) throw new CircleciLoginRejected()
-      throw new Error(`circleci config process ${path}: ${e.stderr?.trim() ?? String(error)}`)
-    }
-    const file = join(dir, `processed-${n}.yml`)
-    writeFileSync(file, out)
-    return { config: parse(out), file }
-  }
+// Why `circleci config process` of `path` failed, from what it said on stderr.
+export function processFailure(path: string, stderr: string): Error {
+  if (/API token was rejected/i.test(stderr)) return new CircleciLoginRejected()
+  return new Error(`circleci config process ${path}: ${stderr.trim()}`)
+}
+
+// The processed configuration, read with `yaml`, and its file.
+export function processedOf(out: string, file: string): Processed {
+  return { config: parse(out), file }
 }
 
 type Map = Record<string, unknown>
@@ -154,7 +131,7 @@ function runStep(value: unknown, jobEnv: Record<string, string>, root: string): 
   const name = run.name ? String(run.name) : command.trim().split('\n')[0]
   const env = { ...jobEnv, ...((run.environment as Record<string, string> | undefined) ?? {}) }
   const shell = run.shell ? [...String(run.shell).split(/\s+/), '-c'] : DEFAULT_SHELL
-  const cwd = run.working_directory ? join(root, String(run.working_directory).replace(/^~\/project\/?/, '')) : root
+  const cwd = run.working_directory ? joinPath(root, String(run.working_directory).replace(/^~\/project\/?/, '')) : root
   const when = (run.when as string | undefined) ?? 'on_success'
   const condition =
     when === 'on_success'
@@ -199,12 +176,12 @@ interface Scope {
   root: string
   event: Event
   config: CiConfig
-  processor: Processor
   values: PipelineValues
 }
 
-function configJobs(scope: Scope, path: string, parameters: Record<string, unknown>, state: JobState): Job[] {
-  const text = readFileSync(join(scope.root, path), 'utf8')
+function* configJobs(scope: Scope, path: string, parameters: Record<string, unknown>, state: JobState): Asks<Job[]> {
+  const text = yield* read(joinPath(scope.root, path))
+  if (text === null) throw new Error(`${path}: no such file`)
   const raw = (parse(text) ?? {}) as Map
   const defaults = Object.fromEntries(
     Object.entries((raw.parameters as Record<string, Map> | undefined) ?? {}).map(([k, v]) => [k, v?.default]),
@@ -222,7 +199,7 @@ function configJobs(scope: Scope, path: string, parameters: Record<string, unkno
       }),
     ),
   }
-  const processed = scope.processor(path, stringify(stripped), params)
+  const processed = yield* expand(path, stringify(stripped), params)
   const config = processed.config as Map
   const definitions = (config.jobs as Record<string, Map> | undefined) ?? {}
   const workflows = (config.workflows as Record<string, Map> | undefined) ?? {}
@@ -264,7 +241,7 @@ function configJobs(scope: Scope, path: string, parameters: Record<string, unkno
         let nextState: JobState = { state: 'run' }
         if (typeof rawArgs.mapping === 'string') {
           const revision = String(rawArgs['base-revision'] ?? 'main')
-          const changed = changedAgainst(scope.root, revision)
+          const changed = yield* changedAgainst(revision)
           if (changed === null) {
             nextState = {
               state: 'blocked',
@@ -284,7 +261,7 @@ function configJobs(scope: Scope, path: string, parameters: Record<string, unkno
           },
           steps: steps(definition, {}, scope.root),
         })
-        jobs.push(...configJobs(scope, continuation, next, nextState))
+        jobs.push(...(yield* configJobs(scope, continuation, next, nextState)))
         continue
       }
 
@@ -314,23 +291,13 @@ function configJobs(scope: Scope, path: string, parameters: Record<string, unkno
   return jobs
 }
 
-export function circleciJobs(
-  root: string,
-  event: Event,
-  config: CiConfig,
-  processor: Processor = cliProcessor(root),
-): Job[] {
-  let present = true
-  try {
-    readFileSync(join(root, '.circleci/config.yml'))
-  } catch {
-    present = false
-  }
-  if (!present) return []
+// The jobs of .circleci/config.yml, none when there is no such file.
+export function* circleciJobs(root: string, event: Event, config: CiConfig): Asks<Job[]> {
+  if ((yield* read(joinPath(root, '.circleci/config.yml'))) === null) return []
   const values: PipelineValues = {
     'pipeline.event.name': event.name,
     'pipeline.git.branch': event.name === 'pull_request' ? event.head : event.base,
     ...(event.name === 'pull_request' ? { 'pipeline.event.github.pull_request.base.ref': event.base } : {}),
   }
-  return configJobs({ root, event, config, processor, values }, '.circleci/config.yml', {}, { state: 'run' })
+  return yield* configJobs({ root, event, config, values }, '.circleci/config.yml', {}, { state: 'run' })
 }

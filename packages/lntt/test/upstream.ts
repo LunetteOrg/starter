@@ -7,7 +7,12 @@ import { execFileSync, spawn } from 'node:child_process'
 import { appendFileSync, closeSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Runner } from '../src/worktree.ts'
+import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
+import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
+import { SpawnerLive } from '../src/spawner.ts'
+import { drive as driveSteps, type Start, type Started, type startOrca } from '../src/worktree/hosts.ts'
+import { runSteps } from '../src/worktree/steps.ts'
 
 export type Tool = 'orca' | 'herdr' | 'claude' | 'opencode'
 
@@ -30,6 +35,36 @@ export const FEDERATION = [
 ] as const
 export function federationMissing(env: NodeJS.ProcessEnv): string[] {
   return FEDERATION.filter((name) => !env[name])
+}
+
+// What an adapter's steps are run against: a tool's stdout, a setup script, a pause.
+export interface Runner {
+  run(command: string, args: string[], opts?: { cwd?: string }): string
+  shell(script: string, cwd: string): void
+  sleep(ms: number): void
+}
+
+type Adapter = typeof startOrca
+
+// An adapter's steps run against a Runner, with no process: what the adapter asks, in order.
+export function drive(adapter: Adapter, start: Start, runner: Runner): Started {
+  return driveSteps(adapter(start), (step) => {
+    if (step.kind === 'run') return runner.run(step.command, step.args, step.cwd ? { cwd: step.cwd } : undefined)
+    if (step.kind === 'shell') return runner.shell(step.script, step.cwd)
+    if (step.kind === 'sleep') return runner.sleep(step.ms)
+    return null
+  })
+}
+
+// An adapter on the machine, as `lntt worktree start` runs it (src/worktree/steps.ts): the real
+// tools, the worktree's own orca.yaml setup. A step that fails rejects with its message.
+export function onMachine(adapter: Adapter, start: Start): Promise<Started> {
+  return Effect.runPromise(
+    runSteps(adapter(start)).pipe(
+      Effect.mapError((error) => new Error(error.message)),
+      Effect.provide(Layer.mergeAll(SpawnerLive, NodeFileSystem.layer)),
+    ),
+  )
 }
 
 // Records every call and answers from a table keyed by the command and its first
@@ -195,10 +230,13 @@ export function drawn(screen: string, brief: string): boolean {
   return screen.includes(brief) && !screen.includes('OPENCODE_CONFIG_CONTENT')
 }
 
-// A provider's usage limit in the JSON events a tool printed (one per line): the
-// message of an error event of type `provider.free-limit` or status 429, else null.
-// That is the provider's quota running out on the runner, not a break of lntt. A line
-// that is not a JSON object (`null`, a number, a string) is skipped like a non-JSON one.
+// A provider's usage limit in the JSON a tool printed (one value per line): the message
+// of opencode's error event of type `provider.free-limit` or status 429, or of claude's
+// error reply (`type: result`, `is_error: true`) with status 429 or the credit balance
+// exhausted (claude answers that one with a plain 400, so the message is the signal,
+// never the status), else null. That is the provider's quota running out on the runner,
+// not a break of lntt. A line that is not a JSON object (`null`, a number, a string) is
+// skipped like a non-JSON one.
 export function usageLimit(output: string): string | null {
   for (const line of output.split('\n')) {
     let parsed: unknown
@@ -208,10 +246,22 @@ export function usageLimit(output: string): string | null {
       continue
     }
     if (typeof parsed !== 'object' || parsed === null) continue
-    const event = parsed as { type?: string; error?: { type?: string; status?: number; message?: string } }
-    if (event.type !== 'error') continue
-    if (event.error?.type === 'provider.free-limit' || event.error?.status === 429) {
-      return event.error.message ?? 'usage limit reached'
+    const event = parsed as {
+      type?: string
+      error?: { type?: string; status?: number; message?: string }
+      is_error?: boolean
+      api_error_status?: number
+      result?: unknown
+    }
+    if (event.type === 'error') {
+      if (event.error?.type === 'provider.free-limit' || event.error?.status === 429) {
+        return event.error.message ?? 'usage limit reached'
+      }
+    } else if (event.type === 'result' && event.is_error === true) {
+      const message = typeof event.result === 'string' ? event.result : ''
+      if (event.api_error_status === 429 || /credit balance is too low/i.test(message)) {
+        return message || 'usage limit reached'
+      }
     }
   }
   return null

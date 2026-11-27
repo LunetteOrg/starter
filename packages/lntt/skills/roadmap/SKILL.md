@@ -8,10 +8,10 @@ description: Plan beyond one round — split a broad objective into parent issue
 Two tiers of planning, kept apart:
 
 - **`roadmap`** (this skill): **objective → parents**, placed by horizon, and dated
-  across iterations by the velocity observed when the board has them. *What are the big
-  pieces, and roughly when.*
-- **`plan-round`**: **parents → children** for the round coming up. *Exactly what we
-  build now.*
+  across iterations by the velocity observed when the board has them. _What are the big
+  pieces, and roughly when._
+- **`plan-round`**: **parents → children** for the round coming up. _Exactly what we
+  build now._
 
 The cycle: objective → `roadmap` → `plan-round` → the adapter (every write) →
 `retrospective` → velocity → `roadmap` again.
@@ -31,11 +31,11 @@ section 0): the roadmap is the parents by horizon. Then resolve the ids
 
 This skill needs more of the board than the others. What it does without each piece:
 
-| Missing | What the roadmap does |
-|---|---|
-| `board.issueTypes.parents` and `board.subIssues` | no parents to schedule: say so, and offer to plan with `plan-round` alone |
-| `board.fields.iteration` | velocity per window of `cycle.iteration.days`, counted on the closing dates of the children; with neither, no velocity: say so, and date nothing |
-| `board.fields.startDate`, `targetDate` | the forecast is reported, not written on the Project: propose the fields |
+| Missing                                          | What the roadmap does                                                                                                                            |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `board.issueTypes.parents` and `board.subIssues` | no parents to schedule: say so, and offer to plan with `plan-round` alone                                                                        |
+| `board.fields.iteration`                         | velocity per window of `cycle.iteration.days`, counted on the closing dates of the children; with neither, no velocity: say so, and date nothing |
+| `board.fields.startDate`, `targetDate`           | the forecast is reported, not written on the Project: propose the fields                                                                         |
 
 ## 1. What the roadmap shows
 
@@ -65,7 +65,7 @@ forecast; the base layer of section 1 still lists them, apart, with their horizo
 ## 3. Measure velocity (with iterations) — after the fact, never estimated ahead
 
 - For each **closed** iteration, count the children whose status reached
-  `board.fields.status.done` while in it ([reference, *Velocity*](../github-board/references/github-project.md#velocity)).
+  `board.fields.status.done` while in it ([reference, _Velocity_](../github-board/references/github-project.md#velocity)).
   The children of a permanent parent count: they are work done; only the parent has no
   end.
 - When a plain count hides a large spread, weigh each done child by a proxy measured on
@@ -82,7 +82,7 @@ forecast; the base layer of section 1 still lists them, apart, with their horizo
 From the remaining parents and the measured velocity, project how many iterations each
 needs and date it (`startDate`, `targetDate`, written as their `kind` says: an issue
 field on the issue) so its bar spans the right iterations. **The roadmap and the
-iterations agree:** a parent dated for iteration *N* has its children in *N*, through
+iterations agree:** a parent dated for iteration _N_ has its children in _N_, through
 `plan-round`; reconcile, never let the two drift.
 
 ## 5. Re-forecast at each iteration's close

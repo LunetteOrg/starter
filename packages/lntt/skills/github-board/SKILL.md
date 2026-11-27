@@ -8,12 +8,12 @@ description: Open, write, triage, prioritize, organize and link GitHub issues on
 This skill is the **adapter of the `github` provider** (`board.provider`, the default):
 it owns the **mechanics** of issues and of the Project on GitHub, how an issue is
 written, typed, placed and linked. `plan-round` (a round of work) and `roadmap` (the long
-horizon) decide *what* goes on the board and defer here for *how*. The `gh` and GraphQL
+horizon) decide _what_ goes on the board and defer here for _how_. The `gh` and GraphQL
 recipes are in [`references/github-project.md`](./references/github-project.md): read
 the sections a step names before running it.
 
 The values are the project's: the `board` section of `.agents/config.*`. Why the team
-works this way (what *Ready* means, what a milestone stands for, the meaning of a field
+works this way (what _Ready_ means, what a milestone stands for, the meaning of a field
 of its own) is in `docs/process/board.md`, when the project has one. This skill is the
 procedure; it is never edited to fit one project.
 
@@ -39,16 +39,16 @@ Then read `docs/process/board.md` when it exists.
 **What the section leaves out, the project does not use**, and the skill does without
 it instead of failing or creating it:
 
-| The configuration | When present | When absent |
-|---|---|---|
-| `board.issueTypes` | set one of its types on every issue; `parents` hold work and never enter an iteration, `children` are the work | set no issue type |
-| `board.subIssues: true` | link the work to its parent as a sub-issue | no sub-issues: name the parent in the body |
-| `board.milestones: true` | the milestones add-on (section 5): set the milestone on parents and children | no milestone |
-| `board.blockedBy: true` | a hard dependency is a blocked-by relation | write it in the body |
-| `board.fields.iteration` | the iterations add-on (section 5) | no iteration |
-| `board.fields.<key>` | set it, on the issues its `on` names (`parents`, `children`; absent, any issue, but the horizon's is parents and the iteration's children), with one of its `options` | leave it alone |
-| `board.tracks` | a track label and its owner on every issue | no track label |
-| `team.members` | assignees are members | assign whom the person names |
+| The configuration        | When present                                                                                                                                                          | When absent                                |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `board.issueTypes`       | set one of its types on every issue; `parents` hold work and never enter an iteration, `children` are the work                                                        | set no issue type                          |
+| `board.subIssues: true`  | link the work to its parent as a sub-issue                                                                                                                            | no sub-issues: name the parent in the body |
+| `board.milestones: true` | the milestones add-on (section 5): set the milestone on parents and children                                                                                          | no milestone                               |
+| `board.blockedBy: true`  | a hard dependency is a blocked-by relation                                                                                                                            | write it in the body                       |
+| `board.fields.iteration` | the iterations add-on (section 5)                                                                                                                                     | no iteration                               |
+| `board.fields.<key>`     | set it, on the issues its `on` names (`parents`, `children`; absent, any issue, but the horizon's is parents and the iteration's children), with one of its `options` | leave it alone                             |
+| `board.tracks`           | a track label and its owner on every issue                                                                                                                            | no track label                             |
+| `team.members`           | assignees are members                                                                                                                                                 | assign whom the person names               |
 
 A field's GitHub name is its `name`, never its key: the horizon may be called anything
 on the Project. A field of the project's own (any other key) is set when
@@ -62,7 +62,7 @@ sets (`delivery.candidate.status`) are never set by hand.
 
 **Never add an option to a field, nor create a field or an issue type, without the
 person's go**: an option set rewritten without its ids clears every item's value
-([reference, *Changing a field's options*](./references/github-project.md#changing-a-fields-options)).
+([reference, _Changing a field's options_](./references/github-project.md#changing-a-fields-options)).
 A value the board needs and the configuration lacks is a proposal for the configuration,
 then for the Project: once it is in the configuration, `pnpm exec lntt board sync` shows what it
 would add (a dry run), and `pnpm exec lntt board sync --apply` adds it, with the person's go.
@@ -70,7 +70,7 @@ would add (a dry run), and `pnpm exec lntt board sync --apply` adds it, with the
 ## 1. Resolve the ids, once per session
 
 The configuration names things; GitHub wants ids. Resolve them once and keep them in
-variables ([reference, *Discovery*](./references/github-project.md#discovery)): the
+variables ([reference, _Discovery_](./references/github-project.md#discovery)): the
 Project's node id (from `board.github.project`: `owner`, `ownerType` and `number`), each
 configured field's id and option ids, the current iteration when `fields.iteration` is
 set, the issue types' node ids when `issueTypes` is set, the labels.
@@ -79,7 +79,7 @@ The Projects API is GraphQL only, and its budget (5000 points an hour) is shared
 every session and agent using the same token. Two commands spend it: a full item list
 (~100 points per 100 items) and the field list (~100). Read the fields **once per
 session**; for one issue, ask the issue for its item id (1 point), never list the board
-([reference, *Cost*](./references/github-project.md#cost)).
+([reference, _Cost_](./references/github-project.md#cost)).
 
 ## 2. Write an issue
 
@@ -103,13 +103,13 @@ parts, headed in `team.language`:
 - **Tasks:** the checklist of the work.
 - **Definition of Done:** how the work is checked, the review included; for a UI change,
   a check in the browser against its source, happy and non-happy states.
-- **Depends on:** hard and soft dependencies, and what it does *not* depend on when
+- **Depends on:** hard and soft dependencies, and what it does _not_ depend on when
   someone would assume it.
 
-A body that bets on a number (*changing the button raises the clicks*) says what will be
-looked at to know how it went: the measure, *not yet, a first sub-issue produces it*, or
-*not measured* with the reason. Silence is not a fourth answer: an event not
-instrumented before the release has no *before* to compare with.
+A body that bets on a number (_changing the button raises the clicks_) says what will be
+looked at to know how it went: the measure, _not yet, a first sub-issue produces it_, or
+_not measured_ with the reason. Silence is not a fourth answer: an event not
+instrumented before the release has no _before_ to compare with.
 
 ## 3. One issue: the fast path
 
@@ -122,7 +122,7 @@ the steps.
 2. **Create** it with the title and body of section 2, its track label and the track's
    owner as assignee (`board.tracks`), and the milestone when `board.milestones`.
    REST creates it with its type in one call
-   ([reference, *REST*](./references/github-project.md#rest-a-separate-budget-and-fewer-steps)).
+   ([reference, _REST_](./references/github-project.md#rest-a-separate-budget-and-fewer-steps)).
 3. **Type**, when `board.issueTypes`: a child type for work under a parent, a parent
    type for an issue that will hold others. An issue that stands alone takes the type
    `docs/process/board.md` says, a child type when it says nothing.
@@ -134,7 +134,7 @@ the steps.
    configured field whose `on` fits the issue and whose value is known now (never the
    horizon on a child: it takes its parent's). A field of
    `kind: issue` is written on the issue, never on the item, or it fails, sometimes
-   silently ([reference, *Issue fields*](./references/github-project.md#issue-fields)).
+   silently ([reference, _Issue fields_](./references/github-project.md#issue-fields)).
 6. **Parent**, when `board.subIssues` and a parent holds it.
 7. **Iteration**: only for a child chosen for an iteration now, whose parent is in the
    nearest horizon (section 5).
@@ -149,7 +149,7 @@ the steps.
 - **Triage** (one issue or a batch): type, Project, the fields that apply, track label
   and owner, milestone, parent. **Triaged is not scheduled:** a triaged backlog has its
   fields set and `iteration` and `horizon` **empty**. Filling them at triage would put
-  the whole backlog in the current iteration, or *Now*.
+  the whole backlog in the current iteration, or _Now_.
 - **Structure**: parents hold children (`subIssues`); a parent has at most about **8–10
   open children**: past that its grouped view reads as one long list again, and the
   signal is to split it along a real seam (an area, or the nature of the work).
@@ -160,7 +160,7 @@ the steps.
 - **Writes in bulk** fail silently three ways: about 20 aliased mutations per call (more
   exceed the resource limit), ~1.2 s between mutations (the secondary rate limit does not
   show in `rate_limit`), and a `--silent` that hides each failure. Count the outcomes and
-  read the result back ([reference, *Writing in bulk*](./references/github-project.md#writing-in-bulk)).
+  read the result back ([reference, _Writing in bulk_](./references/github-project.md#writing-in-bulk)).
 
 ## 5. The layers: horizon, milestones, iterations
 
@@ -190,11 +190,11 @@ on by its key, and each adds to the base without replacing it.
 **The incoherences** between the layers are reported (section 4, and by `plan-round` at
 triage), never fixed silently; the person decides which side moves:
 
-| With | Incoherence |
-|---|---|
+| With       | Incoherence                                                                                   |
+| ---------- | --------------------------------------------------------------------------------------------- |
 | milestones | a child in an open milestone whose parent is past the next horizon (beyond the second option) |
-| milestones | a parent in the nearest horizon with no child in an open milestone |
-| iterations | a child in the current iteration whose parent is not in the nearest horizon |
+| milestones | a parent in the nearest horizon with no child in an open milestone                            |
+| iterations | a child in the current iteration whose parent is not in the nearest horizon                   |
 
 ## 6. Dependencies
 
@@ -202,9 +202,9 @@ Two mechanisms for two meanings:
 
 - **Hard:** the work cannot be built correctly before another lands; starting early is
   rework. With `board.blockedBy`, a native blocked-by relation (reference,
-  *Dependencies*); without it, a line in the body's *Depends on*.
+  _Dependencies_); without it, a line in the body's _Depends on_.
 - **Soft:** it can start in parallel, a sequence is preferred. A higher priority on the
-  prerequisite (when `fields.priority` exists), and a `Soft: #N` line in *Depends on*.
+  prerequisite (when `fields.priority` exists), and a `Soft: #N` line in _Depends on_.
   Never a blocked-by: it pollutes every "unblocked work" filter.
 - **A blocker and the issue it blocks, with different assignees, never share an
   iteration:** the blocked issue goes in the iteration after the blocker's, so its
@@ -239,7 +239,7 @@ has no multi-select field). Prefix a label that carries a dimension (`lever:grow
   linked; otherwise it is a child whose deliverable is the written decision. A parent
   whose scope is undecided is not split into children: that would split a scope that
   does not exist yet. A decision that will not mature by waiting (it needs customers, a
-  market, data months away) is closed as *not planned*, and the question moves to where
+  market, data months away) is closed as _not planned_, and the question moves to where
   someone will meet it: the open questions of the record it concerns.
 - **A container born from a theme** rather than a piece of work (it holds things with
   different owners, or placeholder children "to detail later") is split and closed. A

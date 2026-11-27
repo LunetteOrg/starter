@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import jsonc from 'jsonc-parser'
-import { levelsOf, testsConfig } from '../src/test-files.ts'
+import { levelsOf, testsConfig } from '../src/check/test-files.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const BIN = resolve(HERE, '../bin/lntt.ts')

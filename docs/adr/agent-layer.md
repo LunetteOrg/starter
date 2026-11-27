@@ -33,8 +33,7 @@ places a skill reads:
   of another list) and for what every reader would fail on if the schema required it
   (a key the skills need, so a section written in steps still loads).
   Sections are named after fixed process areas (`recording`, `board`, `ci`,
-  `delivery`, `cycle`, `spaces`, `team`, `local`, which holds the commands of the
-  agent's hooks beside the local apps); a section is added when a skill needs it. A short reason for a value is a comment next to it. A section that a
+  `delivery`, `cycle`, `spaces`, `team`, `local`, which holds the local apps); a section is added when a skill needs it. A short reason for a value is a comment next to it. A section that a
   platform serves names it (`board.provider`), keeps that platform's own keys under its
   name (`board.github`) and the concepts every platform shares beside it; a skill of
   that platform, its adapter, does the reads and writes (`github-board` for `github`),
@@ -130,11 +129,10 @@ guidance use `.agents/skills/` and `~/.agents/skills/` across clients.
 
 A hook goes in the `lunette` plugin only when a project setting cannot carry it: the
 hooks that change what Claude Code draws (the `lntt review` band above the prompt and
-`/review-status`, the issue titles in a message). Every other hook goes in the
+`/review-status`, the issue titles in a message and the pane of the issues a session
+cited). Every other hook goes in the
 project's `.claude/settings.json`, written by `lntt sync` beside the project's own
-hooks, as a thin line that calls `lntt` with its logic in the package (`lntt hook
-<name>`, `packages/lntt/src/hook.ts`, its exit codes in `hook-cli.ts`).
-A settings line runs the worktree's `lntt` and reaches a cloud session; the plugin
+hooks. A settings line runs the worktree's `lntt` and reaches a cloud session; the plugin
 does neither (below). It is the path the skills take, and `lntt sync` can write the
 same line in another agent's hook format.
 
@@ -155,75 +153,59 @@ October 2026). The plugin cannot import `lntt`, so it reads `.claude/settings.js
 a reader of its own, which drops comments, trailing commas and a leading byte order mark
 as `lntt` does (`lntt sync` writes the file back without the mark).
 
-Two settings hooks are Lunette's (`packages/lntt/src/claude-settings.ts`), each told
+One settings hook is Lunette's (`packages/lntt/src/claude-settings.ts`), told
 from the project's own by its `statusMessage`: `lntt sync` replaces a hook with that
 message and a different line, so the message of a hook stays the same across versions.
 
 - **Install**, at `SessionStart`: when `node_modules/.bin/lntt` is missing, it installs
   the dependencies with pnpm, the manager of a Lunette project, or with `npm ci` in a
   project that has only a `package-lock.json`; another lockfile (yarn, bun) gets pnpm
-  too. It installs `lntt`, so it is a shell line, not `lntt hook`.
-- **Typecheck**, at `Stop`, in the background: `lntt hook typecheck` runs the typecheck
-  commands and wakes the agent with the output of a failure, so the first real error
-  reaches it at once rather than at the next commit. It wakes only on a failure it has
-  not seen: the last failing output, without colours and timings, is kept in the
-  worktree's git directory (outside git, in the temporary directory), a run that fails
-  the same way stays quiet, and a green run clears it.
+  too. It installs `lntt`, so it is a shell line that needs no `lntt`.
 
-Formatting is the pre-commit's alone: it formats the staged files and stages the fix
-(`lefthook.yml`), and no hook formats the file while the agent works on it.
-
-The typecheck command is a project's: `local.hooks.typecheck` of
-`.agents/config`, one command or a list run in order (a project with more than one
-toolchain, such as `tsc` and `mypy`, every one of which must pass); without the key, the
-`package.json` script of the same name; without both, the hook does nothing and says
-nothing. They run from the project root, within one limit for the whole list (ten
-minutes), below the hook's own timeout
-in the settings. Each runs in a process group of its own: at the limit the whole group
-gets SIGTERM, and SIGKILL a second later, the processes it started included (`tsc` under
-`pnpm run`), and the commands left are not run; the typecheck reports both as part of its failure. Its output reaches
-the agent up to 64 MB.
-
-`lntt hook` answers its settings line with an exit code: 0 nothing to report, 1 a
-typecheck failure not reported yet (the line exits 2, which wakes the agent with the
-output), 2 the usage, which an `lntt` older than `hook` also answers. A defect of the
-typecheck hook itself (its own error, a state it cannot read or write) never wakes the
-agent: it exits 0 with a `systemMessage`, which Claude Code gives the agent at its next
-turn. It is said once per session, told by the `session_id` of the hook input (a marker
-in the temporary directory); with no id, or a marker that cannot be kept, every time.
+The typecheck and the formatting are the pre-commit's alone: it formats the staged files
+and stages the fix, and runs the typecheck (`lefthook.yml`, in this repo and in every
+template), and no hook runs either while the agent works. `lntt sync` writes no `Stop`
+hook and removes the typecheck hook a version up to 0.6.4 wrote, told by its status
+message `lntt: typecheck`, with the project's other hooks left as they are (an event
+left with no entry goes too; a `Stop` that was already empty stays, and one whose shape
+Claude Code does not read makes the file invalid, which `lntt sync` refuses like any other
+key it reads). `local.hooks` is not in the configuration schema:
+`lntt validate` fails on it with a message that names the key, the release that removed
+it (0.6.5) and what to do, as the
+[removal rule](./lntt-command.md#gates-and-agent-tools-one-package-two-groups-one-compatibility-rule)
+says; the same rule covers the Stop line a sync of 0.6.4 wrote, which runs `lntt hook
+typecheck` until the project syncs again.
 
 Every other hook is measured before it is adopted: what it costs in tokens and turns
 against what it catches that the next gate (the pre-commit, `ci:local`, the review) would
-catch later at a higher cost. The measure of October 2026, on the Claude Code transcripts
-of three Lunette projects (about 2,400 sessions, 1,381 commits): the typecheck at `Stop`
-woke the agent 77 times, 66 of them in one project, where 65 rewakes changed nothing
-while the typecheck stayed red, for 203 model calls and 85k output tokens; the waking on
-a new failure only removes that repetition. The formatting hook ran 2,040 times and
-caused 281 file-changed notices (about 56k tokens) for the formatting the agent would
-otherwise meet at the commit. None of the other hooks measured pays for itself today (see
-the discarded directions).
+catch later at a higher cost. None of the hooks measured pays for itself today (see the
+discarded directions).
 
 A mechanism of the plugin or a hook of `lntt` that cannot work never errors and never
 blocks a turn: it says once per session what is missing and the command that fixes it,
 after a fix by hand when `lntt sync` cannot read the file
 (`packages/lntt/plugin/hooks/notices.mjs`). The band says it in the band, until the
-first message ends (`.claude/settings.json` not as `lntt sync` writes it); the titles at
-the end of a message (`lntt` not installed, an `lntt` with no `refs`, `gh` missing or
+first turn ends (`.claude/settings.json` not as `lntt sync` writes it); the titles under
+the first block that finds it out (`lntt` not installed, an `lntt` with no `refs`, `gh` missing or
 not logged in); a settings hook in a `systemMessage`, which Claude Code shows the
-person for the install hook and gives the agent at its next turn for the
-typecheck, which runs in the background. A configuration `lntt` cannot read is said once
-until it changes: the typecheck wakes the agent with it, as a failure.
+person.
 
 ### What a number means is shown on screen, not asked of the agent
 
-In Claude Code the `lunette` plugin ends each message with a box of the issues and pull
-requests it cited (`#N`, `repo#N` or `owner/repo#N`): each with its title and its URL
-(`packages/lntt/plugin/hooks/issue-titles.mjs`). The text of the message is not touched.
-It is a `MessageDisplay` hook: it changes the screen only, and what the agent wrote and
-reads stays as it was.
+In Claude Code the `lunette` plugin draws, under each block of a message that cites
+issues or pull requests (`#N`, `repo#N` or `owner/repo#N`), a box of them: each with its
+title and its URL (`packages/lntt/plugin/hooks/issue-titles.mjs`). The text of the message
+is not touched. It is a `ui.render` hook on `AssistantMessage`, drawn with the elements of
+the surface (`$.ui.resolve`), one tree for the terminal, desktop, vscode and mobile by
+the engine's contract: it changes the screen only, and what the agent wrote and reads stays as it was.
+The hook never waits for `lntt`: it draws the block as Claude Code does with the titles
+the session knows, reads a block's text once it has stopped growing, and redraws the
+blocks (`$.ui.invalidate`) when a lookup finds a title. A block drawn again, on a scroll,
+asks `lntt refs` for nothing the session knows.
 
-The rules below, the cache and the `gh` lookups are `lntt refs`
-(`packages/lntt/src/refs.ts`), for the hook and for any agent: it reads a text and
+The rules below, the cache and the `gh` lookups are `lntt refs` (the rules and the
+cache's text in `packages/lntt/src/refs.ts`, the lookups and the cache's file in
+`packages/lntt/src/refs/resolve.ts`), for the hook and for any agent: it reads a text and
 prints, as JSON, each reference with where it sits, its title and URL, or why it has
 none. The titles come from `gh`, cached for a day in the git directory
 (`lntt-issue-titles.json`, with the session's repository, which holds while the git
@@ -232,17 +214,19 @@ a credential: a fork, `gh repo set-default` or a changed URL asks for it again;
 concurrent calls merge, the newest entry of each key kept, and an entry lost in a race
 is only asked again): `#N` (and `repo#N` naming the same repository) from the session's
 repository as `gh repo view` names it, `owner/repo#N` from that repository. The hook
-keeps the display and calls `lntt refs`, the project's `node_modules/.bin/lntt`, else
-`lntt` on `PATH`. The deltas of a message only add to its text, in the order they come,
-and show as they are; the last one calls `lntt refs` with the whole text and waits for
-lntt and the titles at most `WAIT_MS` (`issue-titles-hook.js`); a slower title is cached
-and shows in the box of the next message that cites it, and a `--cached` answer later
-than that still gives the session its repository and the titles it holds. The titles
-still missing are asked in `lntt refs` runs of at most `KEYS_PER_RUN` references, side
-by side, so that one run fits
-`LNTT_TIMEOUT_MS` however many a message cites; the runs of one lookup count as one
-failure at most. The text read is the one Claude wrote (`delta`), never the display
-another hook below may have changed; the box goes after that display.
+draws the block as Claude Code does and calls `lntt refs`, the project's
+`node_modules/.bin/lntt`, else `lntt` on `PATH`. A block's text is read, with the whole
+text on stdin, once it has stayed as it is for `SETTLE_MS` (`issue-titles-hook.js`); the
+box under it shows the titles the session knows, and the block is drawn again when a
+lookup finds one, so that a slow title shows without a message waiting for it. The
+titles still missing are asked in `lntt refs` runs of at most `KEYS_PER_RUN` references,
+side by side, so that one run fits `LNTT_TIMEOUT_MS` however many a block cites; the runs
+of one lookup count as one failure at most. The text read is the block's markdown as
+the transcript draws it (`e.props.text`). A block that grows is read again at its last
+text, and the shorter texts it passed through are forgotten; a number touching the end
+of the text waits one more `SETTLE_MS` (a complete block ending in a number shows its
+title that much later), so that a pause cutting `#138` after `#1` looks up no wrong
+issue.
 
 - **Never a title from the wrong repository:** a message that cites another
   repository shows every bare `#N` after that as written. Any other `word#N` is no
@@ -259,7 +243,7 @@ another hook below may have changed; the box goes after that display.
   start, runs past `LNTT_TIMEOUT_MS` or answers no JSON with `mentions` and `refs`;
   it finds no repository when `gh repo view` fails or does not answer within
   `GH_TIMEOUT_MS` (`gh` missing, not logged in, no GitHub remote). Such a run shows
-  its delta as written, with no reference, not even a cached one, and the next lookup
+  the block as written, with no reference, not even a cached one, and the next lookup
   runs `lntt` again; a run that finds the repository starts the count again. A lookup
   that fails otherwise (past `GH_TIMEOUT_MS`, the network, a rate limit) is tried
   again. A `ref` from `lntt` that is not a lower-case `owner/repo#N` is ignored.
@@ -268,6 +252,44 @@ another hook below may have changed; the box goes after that display.
   shown only when it is a plain `https` address, from `gh` or from the cache.
 
 How a title is written is the `github-board` skill's.
+
+### The issues a session cited are listed in a pane, opened on request
+
+`/issues`, a command of the `lunette` plugin, opens a pane beside the chat
+(`$.ui.open`, drawn by a `ui.render` hook on `Pane` for its id;
+`packages/lntt/plugin/hooks/issues-pane.mjs`). The person's command opens it and the plugin
+never does: a pane the person opens seats on the terminal at any width. It lists each issue
+or pull request the session cited, the most recently cited first (a reference cited again
+moves to the top; those of one block keep the order of its text): its number as the box
+writes it, its title and its URL under it, drawn with the elements of the surface (`Box`,
+`Text`), as the box is. The engine scrolls it.
+
+It shows what the box under each block already learned and asks for nothing. The
+issue-titles hook writes the references of a block that have a title into the plugin's
+`$.state` (`lunette.cited`, `{ home, rows }`; the contract is
+`packages/lntt/plugin/types/index.d.ts`, named in `plugin.json`) when the block is read and
+again when a title arrives, and the pane draws from that value: a new citation or a title
+found later appears in an open pane, and the list outlives a reload of the plugin.
+
+- **What is listed:** the references of the assistant's blocks, those the box reads, that
+  have a title. One with no title (`gh` does not know it, lookups are off, its title is
+  still being asked) appears when its title does. A number touching the end of a block
+  is listed with the same wait as its lookup. `KEPT` rows are kept, the oldest cited
+  forgotten first.
+- **Order:** each block is stamped when it is read, from the clock and always later than
+  the block read before it, so a clock that stands still or goes back does not reorder
+  them, and a reload starts from the clock's epoch time, above what was stored. A row
+  already stored under a later stamp keeps it when an earlier block finds its title late.
+- **Writes:** a value is read, changed and written with the version it was read at
+  (`ifVersion`), again on what stands when another write landed first, `TRIES` times at
+  most. A write that cannot be kept never reaches the box: it is drawn whatever the state
+  does. A block that grew since it was read writes nothing.
+- **Reading back:** a row is checked as a title from `lntt` is (a reference of the
+  lower-case shape, a clean title, a plain `https` URL), and a value stored in another shape
+  reads as an empty list.
+- **Where a surface places no pane,** the command answers with the same list as text.
+- **No state of the issue** (open, closed, merged) is shown: `lntt refs` gives a title and a
+  URL (see the discarded directions).
 
 ## Consequences
 
@@ -291,10 +313,8 @@ How a title is written is the `github-board` skill's.
   checkout's plugin against it; an output the plugin does not know is ignored.
 - A cloud session adds no `directory` marketplace: it has the skills and the settings
   hooks, not the band or the titles.
-- The typecheck runs at every `Stop`, in the background, and a failure that changes at
-  each run wakes the agent at each run.
-- A settings line of `lntt hook` that meets an `lntt` with no `hook` says what to run once
-  per Claude Code process, which is the session's; with `lntt` missing it says nothing.
+- A project that upgrades `@lntt/lntt` and does not run `lntt sync` keeps the `Stop` line
+  of 0.6.4, which says at every `Stop` what to run, until it does.
 - Claude Code keeps one registered `lunette` marketplace per machine: each Lunette
   project's session start points it at that project's path, and every session loads
   its own project's copy (observed with Claude Code 2.1.312, two projects in one
@@ -310,14 +330,16 @@ How a title is written is the `github-board` skill's.
   they would have been right, so that none is ever wrong.
 - The titles on screen are Claude Code's and the plugin's alone: another agent, a
   session without `gh`, or one where an organization manages Claude Code (plugin
-  hooks on `MessageDisplay` run only for plugins it lists) shows numbers as written.
+  hooks run only for plugins it lists) shows numbers as written.
   Another agent can resolve its references with `lntt refs` before writing, so its
   text carries the titles. A renamed issue shows its old title for up to a day, from
   the cache.
-- A message that holds a number starts one `lntt` process at its last delta (`lntt refs
-  --cached`, with the whole message on stdin) within `WAIT_MS`, and one more for each
-  `KEYS_PER_RUN` titles still missing: a machine slow to start Node shows more titles a
-  message late.
+- The pane is the box's list kept for the session: the assistant's blocks, with a title. How
+  desktop, vscode and mobile draw it is the engine's; only the terminal has been seen live.
+- A block that holds a number starts one `lntt` process once its text has stayed as it is
+  for `SETTLE_MS` (`lntt refs --cached`, with the whole block on stdin), and one more for
+  each `KEYS_PER_RUN` titles still missing: the box appears under the block after the
+  block is drawn, and a machine slow to start Node shows it later.
 - Skills depend on `lntt`; a generated project needs it installed, which ties the
   template to a published `@lntt/lntt`.
 - Reading the profile from the main checkout fails over to the home directory when the
@@ -358,11 +380,18 @@ How a title is written is the `github-board` skill's.
   plugin skills and `agents/block.md` as a subagent.
 - **Command hooks in the plugin.** They would run the main checkout's `lntt` in every
   worktree and miss cloud sessions; a settings line has neither limit.
-- **A typecheck at `Stop` that wakes the agent at every red run.** While the typecheck
-  stayed red it woke a turn that changed nothing at each `Stop` (65 of one project's 66
-  rewakes); the waking on a new failure only keeps the first.
-- **The typecheck left to the pre-commit alone.** The first real error reaches the agent
-  a commit later.
+- **A typecheck at `Stop`, in the background.** `lntt hook typecheck` ran the project's
+  typecheck at the end of every agent turn and woke the agent on a failure it had not
+  reported yet, so the first real error reached it at once. The measure of October 2026,
+  on the Claude Code transcripts of three Lunette projects (about 2,400 sessions, 1,381
+  commits): it woke the agent 77 times, 66 of them in one project, where 65 rewakes
+  changed nothing while the typecheck stayed red (203 model calls, 85k output tokens);
+  waking only on a new failure removed that repetition and not the rest. A test written
+  before the code does not typecheck on purpose, and the hook woke the agent for it (6
+  times in a row for one issue on 2026-11-10); and every stop of every agent ran a
+  whole-repo typecheck, a near-continuous `tsc` with several agents working at once. The
+  pre-commit runs the same typecheck, so the hook only moved an error the commit finds a
+  few minutes earlier, at a cost that outweighs it.
 - **A format hook after `Write` and `Edit`.** The file changes under the agent while it
   works: a scripted replacement (python, sed) written against the text it last read
   missed its target after the formatter rewrote the file, twice in one pull request
@@ -402,8 +431,31 @@ How a title is written is the `github-board` skill's.
 - **The title beside each number, inserted into the streamed text.** A title goes at a
   position counted in the message so far, and the hook read that message delta by delta
   on screen: in live sessions three titles landed inside an earlier line (a backticked
-  path, words), none after their numbers. The box at the end of the message reads the
+  path, words), none after their numbers. The box under the block reads the
   whole text once and cannot misplace anything.
+- **A `classic.MessageDisplay` hook that ends the message's last delta with the box.**
+  Claude Code's built-in plugins sit before every plugin of a project and send the event
+  past it: the hook was skipped at every message, with a notice of it, when this was
+  found (#329). A `ui.render` hook on `AssistantMessage` runs beside them.
+- **A `ui.render` hook that waits for `lntt` and the titles, as the `MessageDisplay` one
+  did (a wait of up to 800 ms).** A hook that waits holds the drawing of the block, and a title slower
+  than the wait showed one message late; drawing at once and redrawing when a title is
+  found shows each title as soon as it is known.
+- **The pane opened by the plugin at session start.** A pane opened unasked waits on a narrow
+  terminal and takes the room of the transcript when it seats; a person who wants the list
+  asks for it with `/issues`.
+- **A variable of the hook's module holding the list.** A reload of the plugin starts the
+  module over and the pane would open empty in a session that already cited issues; `$.state`
+  outlives it.
+- **The state of the issue (open, closed, merged) in the pane.** It takes `lntt refs` reading
+  `state` and `pull_request.merged_at`, a field more in the cache and in its JSON, and a
+  shorter life for that field than for the title: the cache would otherwise show an issue
+  closed this morning as open.
+- **The numbers the person typed in the pane too.** It takes a hook on the person's
+  messages and a second read by `lntt refs`; the box, and so the pane, are about what
+  the assistant wrote.
+- **A second `lntt refs` run for the pane.** The box already asked for each title; the pane
+  reads what it learned.
 - **A rule in AGENTS.md that an agent writes each issue's title beside its number.**
   Agents given it broke it in three samples of four, always the same way: an opening
   line repeating the numbers the person used, before any title. The reader needs to see

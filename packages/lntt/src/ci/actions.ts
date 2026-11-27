@@ -3,9 +3,7 @@
 // the run, so a new action in a workflow forces a decision: map it to a local
 // command, skip it with a reason, or declare its job cloud-only.
 
-import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { type Asks, joinPath, nodeVersion, onPath, read } from './asks.ts'
 import type { CiConfig } from './config.ts'
 import type { Local } from './plan.ts'
 
@@ -32,39 +30,35 @@ export function versionMatches(spec: string, version: string): boolean | null {
   return wanted.split('.').every((part, i) => part === have[i])
 }
 
-function setupNode(root: string, inputs: Record<string, string>): Local {
+// A check's answer is read when the plan is made: the check of the step gives it.
+const checked = (note: string, problem: string | null): Local => ({ kind: 'check', note, check: () => problem })
+
+function* setupNode(root: string, inputs: Record<string, string>): Asks<Local> {
   const file = inputs['node-version-file']
   let spec = inputs['node-version']
   let source = 'node-version'
   if (!spec && file) {
-    const path = join(root, file)
-    if (!existsSync(path)) return { kind: 'fail', reason: `node-version-file ${file} does not exist` }
-    spec = readFileSync(path, 'utf8').trim()
+    const text = yield* read(joinPath(root, file))
+    if (text === null) return { kind: 'fail', reason: `node-version-file ${file} does not exist` }
+    spec = text.trim()
     source = file
   }
   if (!spec) return { kind: 'noop', note: 'no Node version asked for: the host Node is used' }
-  const asked = spec
-  return {
-    kind: 'check',
-    note: `the host Node matches ${source} (${asked})`,
-    check: () => {
-      const match = versionMatches(asked, process.version)
-      if (match === null) return null
-      return match ? null : `host Node is ${process.version}, ${source} asks for ${asked}`
-    },
-  }
+  const version = yield* nodeVersion()
+  const match = versionMatches(spec, version)
+  return checked(
+    `the host Node matches ${source} (${spec})`,
+    match === false ? `host Node is ${version}, ${source} asks for ${spec}` : null,
+  )
 }
 
-function onPath(command: string): boolean {
-  try {
-    execFileSync(command, ['--version'], { stdio: 'ignore' })
-    return true
-  } catch {
-    return false
-  }
-}
-
-export function localAction(uses: string, inputs: Record<string, string>, root: string, config: CiConfig): Local {
+// What the local run does in place of `uses`, with `inputs` from `with:`.
+export function* localAction(
+  uses: string,
+  inputs: Record<string, string>,
+  root: string,
+  config: CiConfig,
+): Asks<Local> {
   const name = actionName(uses)
   const mapped = config.actions[name]
   if (mapped && 'run' in mapped) return { kind: 'run', command: mapped.run, shell: SHELLS.default, cwd: root, env: {} }
@@ -77,13 +71,9 @@ export function localAction(uses: string, inputs: Record<string, string>, root: 
     case 'actions/cache/save':
       return { kind: 'noop', note: 'no cloud cache on a local run' }
     case 'pnpm/action-setup':
-      return {
-        kind: 'check',
-        note: 'pnpm is on the PATH',
-        check: () => (onPath('pnpm') ? null : 'pnpm is not on the PATH'),
-      }
+      return checked('pnpm is on the PATH', (yield* onPath('pnpm')) ? null : 'pnpm is not on the PATH')
     case 'actions/setup-node':
-      return setupNode(root, inputs)
+      return yield* setupNode(root, inputs)
     default:
       return {
         kind: 'fail',

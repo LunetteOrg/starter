@@ -52,6 +52,7 @@ REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 ## Discovery & bootstrap
 
 1. **Milestones (releases).** List, then create on request:
+
    ```sh
    gh api "repos/$REPO/milestones?state=all" --jq '.[] | {title,state,due_on}'
    # create (confirm first):
@@ -61,12 +62,15 @@ REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
 
 2. **Project (v2).** Find a project owned by `$OWNER`; pick the one the user
    means (ask if several). Inspect its fields:
+
    ```sh
    gh project list --owner "$OWNER" --format json
    gh project field-list <NUMBER> --owner "$OWNER" --format json
    ```
+
    If there is no suitable project, or it lacks a `Priority` field, propose
    creating them (confirm first):
+
    ```sh
    gh project create --owner "$OWNER" --title "<repo> board"
    # Priority field — single-select P0..P3 (gh can create SINGLE_SELECT fields):
@@ -74,6 +78,7 @@ REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
      --name "Priority" --data-type SINGLE_SELECT \
      --single-select-options "P0,P1,P2,P3"
    ```
+
    Note: **Iteration fields cannot be created via `gh`** (GraphQL/web-UI only).
    Iterations are out of scope here; milestones cover release planning. If the
    user wants an Iteration field, point them to the web UI and then read it back.
@@ -101,6 +106,7 @@ For each issue being triaged:
 1. Set the **release milestone**: `gh issue edit <N> -R "$REPO" --milestone "v0.1"`.
 2. Add it to the **Project**: `gh project item-add <NUMBER> --owner "$OWNER" --url <issue-url>`.
 3. Set **Priority**. This needs IDs resolved from JSON (no name-based shortcut):
+
    ```sh
    # project id + Priority field id + option ids
    gh project field-list <NUMBER> --owner "$OWNER" --format json   # → field id, options[].id

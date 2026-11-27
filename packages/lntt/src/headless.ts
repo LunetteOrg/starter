@@ -169,60 +169,14 @@ export interface AskOptions {
 }
 
 // Every question runs as soon as its provider has a free slot; each answer stays in its
-// question's place. Progress hears each start when the agent starts, and each end.
+// question's place. Progress hears each start when the agent starts, and each end. The Effect
+// form (src/review/asking.ts), loaded only when agents are asked: this module loads no Effect.
 export async function askAll(
   questions: Question[],
   spawn: Spawn,
   progress: (event: Progress) => void = () => {},
   options: AskOptions = {},
 ): Promise<Answer[]> {
-  const limit = options.perProvider ?? Number.POSITIVE_INFINITY
-  const queues = new Map<string, { running: number; waiting: (() => void)[] }>()
-  const slot = async (provider: string): Promise<() => void> => {
-    const q = queues.get(provider) ?? { running: 0, waiting: [] }
-    queues.set(provider, q)
-    if (q.running >= limit) await new Promise<void>((resolve) => q.waiting.push(resolve))
-    q.running++
-    return () => {
-      q.running--
-      q.waiting.shift()?.()
-    }
-  }
-  const stop = new AbortController()
-  const required = questions.filter((q) => !q.agent.optional).length
-  let answered = 0
-  const grace = options.optionalGraceMs
-  const runs = questions.map(async (q, index): Promise<Answer> => {
-    const label = q.label ?? q.agent.kind
-    const optional = q.agent.optional === true
-    // Optional agents queue apart: a slow one never holds a required agent's turn.
-    const release = await slot(`${providerOf(q.agent)}${optional ? ' (optional)' : ''}`)
-    const signals = [options.signal, optional ? stop.signal : undefined].filter(
-      (s): s is AbortSignal => s !== undefined,
-    )
-    const signal = signals.length > 0 ? AbortSignal.any(signals) : undefined
-    let answer: Answer
-    if (signal?.aborted) {
-      release()
-      answer = { ok: false, error: String(signal.reason) }
-      progress({ type: 'end', index, label, optional, answer, ms: 0 })
-      return answer
-    }
-    const started = Date.now()
-    progress({ type: 'start', index, label, optional })
-    try {
-      const stdout = await spawn(headlessInvocation(q.agent, q.prompt, q.session), signal)
-      answer = { ok: true, reply: parseReply(q.agent.kind, stdout) }
-    } catch (error) {
-      answer = { ok: false, error: (error as Error).message }
-    }
-    release()
-    progress({ type: 'end', index, label, optional, answer, ms: Date.now() - started })
-    if (!optional && ++answered === required && grace !== undefined) {
-      const reason = `stopped: the other agents answered ${Math.round(grace / 1000)}s before`
-      setTimeout(() => stop.abort(reason), timerMs(grace)).unref()
-    }
-    return answer
-  })
-  return Promise.all(runs)
+  const { askWithSpawn } = await import('./review/asking.ts')
+  return askWithSpawn(questions, spawn, progress, options)
 }

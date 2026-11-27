@@ -24,7 +24,7 @@ function configure(commits: unknown): void {
 
 async function check(message: string): Promise<string[]> {
   // `extends` resolves from the package, where @commitlint/config-conventional is installed.
-  const config = await load(commitlintConfig(root), { cwd: import.meta.dirname })
+  const config = await load(await commitlintConfig(root), { cwd: import.meta.dirname })
   const result = await lint(message, config.rules, {
     plugins: config.plugins,
     parserOpts: config.parserPreset?.parserOpts as never,
@@ -83,15 +83,15 @@ describe('the commitlint configuration built from delivery.commits', () => {
 })
 
 describe('the configuration file', () => {
-  test('a missing file gives the defaults', () => {
+  test('a missing file gives the defaults', async () => {
     rmSync(join(root, '.agents'), { recursive: true })
-    assert.doesNotThrow(() => commitlintConfig(root))
+    assert.equal((await commitlintConfig(root)).rules['header-max-length'][2], 100)
   })
 
-  test('an invalid file stops with its error', () => {
+  test('an invalid file rejects with its error', async () => {
     writeFileSync(join(root, '.agents/config.jsonc'), '{ "delivery": ')
-    assert.throws(() => commitlintConfig(root), /config\.jsonc/)
+    await assert.rejects(commitlintConfig(root), /config\.jsonc/)
     configure({ maxLineLength: 'long' })
-    assert.throws(() => commitlintConfig(root), /schema/)
+    await assert.rejects(commitlintConfig(root), /schema/)
   })
 })

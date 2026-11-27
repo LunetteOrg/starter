@@ -42,7 +42,7 @@ gh label list -R "$REPO" --limit 200 --json name,description
 gh api "repos/$REPO/collaborators" --jq '.[].login'
 ```
 
-An organization may also have an *issue* field with the same name as a *Project* field
+An organization may also have an _issue_ field with the same name as a _Project_ field
 (a `Priority` of both kinds). The configured `kind` says which one is the board's; the
 other is read by nothing.
 
@@ -52,13 +52,13 @@ Projects v2 is GraphQL only. The budget is 5000 points an hour per user, shared 
 session and agent using the token. A query costs by the nodes it could return (full
 pages assumed, divided by 100):
 
-| command | points |
-| --- | --- |
-| `gh project item-list --limit 500` | ~500 |
-| `gh project item-list --limit 100` | ~100 |
-| `gh project field-list`, or the fields query above | ~100 |
-| a query aimed at one issue or one item | 1 |
-| `gh issue create` / `edit` / `view`, a field mutation | 1 |
+| command                                               | points |
+| ----------------------------------------------------- | ------ |
+| `gh project item-list --limit 500`                    | ~500   |
+| `gh project item-list --limit 100`                    | ~100   |
+| `gh project field-list`, or the fields query above    | ~100   |
+| a query aimed at one issue or one item                | 1      |
+| `gh issue create` / `edit` / `view`, a field mutation | 1      |
 
 `gh api rate_limit --jq .resources` shows the buckets apart (`core` for REST,
 `graphql`): a `graphql` at zero with `core` full is an item list or a field list in a
@@ -93,8 +93,8 @@ gh issue create -R "$REPO" --title "<title>" --body-file body.md \
 gh issue list -R "$REPO" --state all --limit <sized> --json number,id   # number → node id I_…
 ```
 
-Set the issue type with the type's node id (the REST number fails with *Could not
-resolve to a node with the global id*):
+Set the issue type with the type's node id (the REST number fails with _Could not
+resolve to a node with the global id_):
 
 ```sh
 gh api graphql -f query='mutation($id:ID!,$t:ID!){
@@ -157,8 +157,8 @@ control characters in a title: filter with `gh`'s own `--jq`, not a strict JSON 
 ### Issue fields
 
 A field of `kind: issue` belongs to the organization's issues: `item-edit` and
-`updateProjectV2ItemFieldValue` fail on it, sometimes with *only custom fields can be
-updated*, sometimes silently. Write it on the issue (the issue's node id, `I_…`):
+`updateProjectV2ItemFieldValue` fail on it, sometimes with _only custom fields can be
+updated_, sometimes silently. Write it on the issue (the issue's node id, `I_…`):
 
 ```sh
 gh api graphql -f query='mutation($i:ID!,$f:ID!,$d:String!){
@@ -205,8 +205,8 @@ same reason.
 
 ## Writing in bulk
 
-- **About 20 aliased mutations per call**: 80 return *Resource limits for this query
-  exceeded*.
+- **About 20 aliased mutations per call**: 80 return _Resource limits for this query
+  exceeded_.
 - **About 1.2 s between mutating calls**: the secondary rate limit does not show in
   `rate_limit`; 114 labels in a loop with no pause applied 5, with `sleep 1.2` all 114.
 - **Count the outcomes**: with `--silent` a failure is invisible, and a failed alias
@@ -274,7 +274,7 @@ iteration from the saved file.
 ## Views
 
 A view is created with its name and layout, then given its filter; the grouping, the
-sort and *Show hierarchy* have no input and are set by a person in the UI. A new view
+sort and _Show hierarchy_ have no input and are set by a person in the UI. A new view
 is a change to the Project: only with the person's go. The views the configuration
 declares (`board.github.views`) are kept by `lntt board sync`, which creates and updates
 them and prints a grouping that differs, with the view's page and the steps; the recipe
@@ -290,7 +290,7 @@ gh api graphql -f query='mutation($v:ID!,$f:String!){
 ```
 
 The filter is not checked when it is written: read the view back and open it once. With
-*Show hierarchy* on, an item sits in the group of its root ancestor, so a view of
+_Show hierarchy_ on, an item sits in the group of its root ancestor, so a view of
 children by iteration keeps hierarchy off. The
 Project's built-in workflows (auto-add, the status on close, on a linked pull request)
 are listed by the API (`workflows{ name enabled }`) but their values are read in the UI.

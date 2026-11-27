@@ -8,11 +8,10 @@
 // A workflow reads the entries before any checkout, where lntt cannot run: `lntt sync`
 // writes them, minified, into every workflow line that ends with AUTOMATED_MARKER, and
 // `lntt check workflows` fails when a line differs from the configuration.
+//
+// Plain logic, on the workflows' texts: src/sync/project.ts reads and writes them.
 
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import type { Result } from './check.ts'
-import { loadConfig } from './index.ts'
+import type { Result } from './check/results.ts'
 
 export interface Automated {
   author: string
@@ -22,7 +21,7 @@ export interface Automated {
 }
 
 export const AUTOMATED_MARKER = '# lntt sync: delivery.automated'
-const WORKFLOWS = '.github/workflows'
+export const WORKFLOWS = '.github/workflows'
 // `  KEY: '<json>' # lntt sync: delivery.automated`: the indent and the key are the file's.
 const LINE = /^(\s*)([A-Za-z_][A-Za-z0-9_-]*): .* # lntt sync: delivery\.automated\s*$/
 
@@ -51,6 +50,12 @@ export function automatedLine(key: string, entries: Automated[]): string {
   return `${key}: '${json.replace(/'/g, "''")}' ${AUTOMATED_MARKER}`
 }
 
+// A workflow file of the project: its path from the root, and its text.
+export interface Workflow {
+  path: string
+  text: string
+}
+
 interface Marked {
   path: string
   line: number
@@ -58,40 +63,37 @@ interface Marked {
   synced: string
 }
 
-function marked(root: string, entries: Automated[]): Marked[] {
-  let files: string[]
-  try {
-    files = readdirSync(join(root, WORKFLOWS))
-      .filter((f) => /\.ya?ml$/.test(f))
-      .sort()
-  } catch {
-    return []
-  }
-  return files.flatMap((file) => {
-    const path = `${WORKFLOWS}/${file}`
-    return readFileSync(join(root, path), 'utf8')
-      .split('\n')
-      .flatMap((text, i) => {
-        const m = LINE.exec(text)
-        return m ? [{ path, line: i + 1, text, synced: `${m[1]}${automatedLine(m[2] as string, entries)}` }] : []
-      })
+// The workflow files lntt reads, `.yml` and `.yaml`, from the names in the directory, sorted.
+export function workflowFiles(names: string[]): string[] {
+  return names
+    .filter((f) => /\.ya?ml$/.test(f))
+    .sort()
+    .map((f) => `${WORKFLOWS}/${f}`)
+}
+
+function marked(workflows: Workflow[], entries: Automated[]): Marked[] {
+  return workflows.flatMap(({ path, text: file }) =>
+    file.split('\n').flatMap((text, i) => {
+      const m = LINE.exec(text)
+      return m ? [{ path, line: i + 1, text, synced: `${m[1]}${automatedLine(m[2] as string, entries)}` }] : []
+    }),
+  )
+}
+
+// The workflows whose marked lines differ from the configuration, with those lines rewritten.
+export function syncedWorkflows(workflows: Workflow[], data: Record<string, unknown>): Workflow[] {
+  const stale = marked(workflows, automatedEntries(data)).filter((m) => m.text !== m.synced)
+  return workflows.flatMap(({ path, text }) => {
+    const lines = stale.filter((s) => s.path === path)
+    if (lines.length === 0) return []
+    const next = text.split('\n')
+    for (const m of lines) next[m.line - 1] = m.synced
+    return [{ path, text: next.join('\n') }]
   })
 }
 
-// Rewrites the marked lines that differ; returns the files it wrote.
-export function syncAutomated(root: string, data: Record<string, unknown> = loadConfig(root).data): string[] {
-  const stale = marked(root, automatedEntries(data)).filter((m) => m.text !== m.synced)
-  const files = [...new Set(stale.map((m) => m.path))]
-  for (const path of files) {
-    const lines = readFileSync(join(root, path), 'utf8').split('\n')
-    for (const m of stale.filter((s) => s.path === path)) lines[m.line - 1] = m.synced
-    writeFileSync(join(root, path), lines.join('\n'))
-  }
-  return files
-}
-
-export function checkAutomated(root: string, data: Record<string, unknown> = loadConfig(root).data): Result[] {
-  const lines = marked(root, automatedEntries(data))
+export function automatedResults(workflows: Workflow[], data: Record<string, unknown>): Result[] {
+  const lines = marked(workflows, automatedEntries(data))
   const result = (status: Result['status'], path: string | null, line: number | null, message: string): Result => ({
     area: 'workflows',
     check: 'automated',
