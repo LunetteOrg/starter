@@ -54,6 +54,10 @@ imports is on `Promise` (below).
 
 ### Services
 
+This section describes the areas whose code has not yet taken the shape of
+[lntt-architecture](./lntt-architecture.md); an area that has takes its ports from that record,
+written in the area's terms.
+
 What reaches outside the process is a service, and reached only through it: processes
 (Effect's `ChildProcessSpawner`: a command in a process group of its own, stopped with a
 signal to the group and a forced kill after a delay), the file system (Effect's
@@ -163,6 +167,10 @@ repository and in `dist/`, which a spec places in memory (`PackageDir` in
 
 ### The edge, the library and the plain logic
 
+This section describes the areas whose code has not yet taken the shape of
+[lntt-architecture](./lntt-architecture.md); in an area that has, the edge is the area's
+`effect/cli` command and the library is in `src/lib/`.
+
 - **The edge of a command is its parser** (`packages/lntt/src/*-cli.ts`, `packages/lntt/src/ci/cli.ts`):
   it reads the arguments, a usage error exiting 2 before Effect loads, and what the command takes
   from the session (the directory, the operator's home, the variables, the platform), and reads
@@ -201,6 +209,9 @@ repository and in `dist/`, which a spec places in memory (`PackageDir` in
   answers of its own.
 
 ### Tests beside each module
+
+An area whose code has taken the shape of [lntt-architecture](./lntt-architecture.md) follows
+that record's kinds and levels of tests.
 
 - **A module's unit test sits beside it, named `*.spec.ts`** (`src/review/agents.ts`,
   `src/review/agents.spec.ts`, which provides an in-memory `ChildProcessSpawner`), as in

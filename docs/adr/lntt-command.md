@@ -35,7 +35,9 @@ lntt ask | inbox | answer
 lntt ci local | candidate | proved
 ```
 
-- **One entry point, one module per command group.** `bin/lntt.ts` dispatches to
+- **One entry point, one module per command group.** This describes the groups whose code has
+  not yet taken the shape of [lntt-architecture](./lntt-architecture.md), where the entry point
+  is one `effect/cli` command in `src/main.ts`. `bin/lntt.ts` dispatches to
   `src/cli.ts` (configuration, operator, `AGENTS.md`, local apps, viewer, browser),
   `src/check-cli.ts`, `src/branch-cli.ts`, `src/review-cli.ts`, `src/worktree-cli.ts`,
   `src/refs-cli.ts`, `src/hook-cli.ts`, `src/board-cli.ts`, `src/pull-request-cli.ts`, `src/retro-cli.ts`, `src/issue-cli.ts` (`dump`, `issue`), `src/messages-cli.ts` (`ask`, `inbox`,
